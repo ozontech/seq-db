@@ -1,0 +1,208 @@
+syntax = "proto3";
+
+option go_package = "github.com/ozontech/seq-db/pkg/seqproxyapi/v1;seqproxyapi";
+
+package seqproxyapi.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
+
+service SeqProxyApi {
+  rpc Search(SearchRequest) returns (SearchResponse) {
+    option (google.api.http) = {
+      post: "/search"
+      body: "*"
+    };
+  }
+
+  rpc ComplexSearch(ComplexSearchRequest) returns (ComplexSearchResponse) {
+    option (google.api.http) = {
+      post: "/complex-search"
+      body: "*"
+    };
+  }
+
+  rpc GetAggregation(GetAggregationRequest) returns (GetAggregationResponse) {
+    option (google.api.http) = {
+      post: "/aggregate"
+      body: "*"
+    };
+  }
+
+  rpc GetHistogram(GetHistogramRequest) returns (GetHistogramResponse) {
+    option (google.api.http) = {
+      post: "/histogram"
+      body: "*"
+    };
+  }
+
+  rpc Fetch(FetchRequest) returns (stream Document) {
+    option (google.api.http) = {
+      post: "/fetch"
+      body: "*"
+    };
+  }
+
+  rpc Mapping(MappingRequest) returns (MappingResponse) {
+    option (google.api.http) = {
+      get: "/mappings"
+    };
+  }
+
+  rpc Export(ExportRequest) returns (stream ExportResponse) {
+    option (google.api.http) = {
+      post: "/export"
+      body: "*"
+    };
+  }
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_NO = 1;
+  ERROR_CODE_PARTIAL_RESPONSE = 2;
+}
+
+message Error {
+  ErrorCode code = 1;
+  string message = 2;
+}
+
+message Document {
+  string id = 1;
+  bytes data = 2;
+}
+
+message Aggregation {
+  message Bucket {
+    uint64 doc_count = 1 [deprecated = true];
+    string key = 2;
+    double value = 3;
+    int64 not_exists = 4;
+    repeated double quantiles = 5;
+  }
+
+  repeated Bucket buckets = 1;
+  int64 not_exists = 2;
+}
+
+message Histogram {
+  message Bucket {
+    uint64 doc_count = 1;
+    google.protobuf.Timestamp ts = 2;
+  }
+
+  repeated Bucket buckets = 1;
+}
+
+message SearchQuery {
+  string query = 1;
+  google.protobuf.Timestamp from = 2;
+  google.protobuf.Timestamp to = 3;
+  bool explain = 4;
+}
+
+enum AggFunc {
+  AGG_FUNC_COUNT = 0;
+  AGG_FUNC_SUM = 1;
+  AGG_FUNC_MIN = 2;
+  AGG_FUNC_MAX = 3;
+  AGG_FUNC_AVG = 4;
+  AGG_FUNC_QUANTILE = 5;
+  AGG_FUNC_UNIQUE = 6;
+}
+
+enum Order {
+  ORDER_DESC = 0;
+  ORDER_ASC = 1;
+}
+
+message AggQuery {
+  string field = 1;
+  reserved 2;
+  string group_by = 3;
+  AggFunc func = 4;
+  repeated double quantiles = 5;
+}
+
+message HistQuery {
+  string interval = 1;
+}
+
+message SearchRequest {
+  SearchQuery query = 1;
+  int64 size = 2;
+  int64 offset = 3;
+  bool with_total = 4;
+  Order order = 5;
+}
+
+message ComplexSearchRequest {
+  SearchQuery query = 1;
+  repeated AggQuery aggs = 2;
+  optional HistQuery hist = 3;
+  int64 size = 4;
+  int64 offset = 5;
+  bool with_total = 6;
+  Order order = 7;
+}
+
+message SearchResponse {
+  bool partial_response = 1 [deprecated = true];
+  int64 total = 2;
+  repeated Document docs = 3;
+  Error error = 4;
+}
+
+message ComplexSearchResponse {
+  bool partial_response = 1 [deprecated = true];
+  int64 total = 2;
+  repeated Document docs = 3;
+  repeated Aggregation aggs = 4;
+  optional Histogram hist = 5;
+  Error error = 6;
+}
+
+message GetAggregationRequest {
+  SearchQuery query = 1;
+  repeated AggQuery aggs = 2;
+}
+
+message GetAggregationResponse {
+  bool partial_response = 1 [deprecated = true];
+  int64 total = 2;
+  repeated Aggregation aggs = 3;
+  Error error = 4;
+}
+
+message GetHistogramRequest {
+  SearchQuery query = 1;
+  HistQuery hist = 2;
+}
+
+message GetHistogramResponse {
+  bool partial_response = 1 [deprecated = true];
+  int64 total = 2;
+  Histogram hist = 3;
+  Error error = 4;
+}
+
+message FetchRequest {
+  repeated string ids = 1;
+}
+
+message MappingRequest {}
+
+message MappingResponse {
+  bytes data = 1;
+}
+
+message ExportRequest {
+  SearchQuery query = 1;
+  int64 size = 2;
+  int64 offset = 3;
+}
+
+message ExportResponse {
+  Document doc = 1;
+}

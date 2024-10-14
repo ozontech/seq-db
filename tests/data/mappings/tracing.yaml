@@ -1,0 +1,40 @@
+mapping-list:
+  - name: "trace_id"
+    type: keyword
+  - name: "trace_duration"
+    type: keyword
+  - name: "service"
+    type: keyword
+  - name: "spans"
+    type: nested
+    mapping-list:
+      - name: "span_id"
+        type: keyword
+      - name: "duration"
+        type: keyword
+      - name: "error_tag"
+        type: keyword
+      - name: "process"
+        type: object
+        mapping-list:
+          - name: "service_name"
+            type: keyword
+      - name: "operation_name"
+        type: keyword
+      - name: "tagsMap"
+        type: object
+        mapping-list:
+          - name: "error"
+            type: keyword
+          - name: "ip"
+            type: keyword
+          - name: "span.kind"
+            type: keyword
+          - name: "page.type"
+            type: keyword
+          - name: "slo.violated"
+            type: keyword
+          - name: "http.url"
+            type: keyword
+          - name: "http.method"
+            type: keyword

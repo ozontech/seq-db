@@ -1,0 +1,26 @@
+services:
+  store:
+    environment:
+      - JAEGER_AGENT_HOST=${JAEGER_AGENT_HOST}
+      - JAEGER_AGENT_PORT=${JAEGER_AGENT_PORT}
+    build: .
+    ports:
+      - "9003:9003"
+      - "9203:9200"
+    command: --mode store --addr :9003 --data-dir /seq-db/data/ --mapping=/seq-db/mappings/logging-new.yaml
+    volumes:
+      - "./data/:/seq-db/data/"
+      - "./tests/data/mappings/:/seq-db/mappings/"
+
+  proxy:
+    build: .
+    environment:
+      - JAEGER_AGENT_HOST=${JAEGER_AGENT_HOST}
+      - JAEGER_AGENT_PORT=${JAEGER_AGENT_PORT}
+    ports:
+      - "9002:9002"
+      - "9004:9004"
+    command: --mode ingestor --hot-stores store:9003 --replicas 1 --mapping=/seq-db/mappings/logging-new.yaml --proxy-grpc-addr :9004
+    volumes:
+      - "./tests/data/mappings/:/seq-db/mappings/"
+

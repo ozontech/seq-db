@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+option go_package = "github.com/ozontech/seq-db/pkg/storeapi;storeapi";
+
+package api;
+
+import "google/protobuf/empty.proto";
+
+service StoreApi {
+  rpc Bulk(BulkRequest) returns (google.protobuf.Empty) {}
+
+  rpc Search(SearchRequest) returns (SearchResponse) {}
+
+  rpc Fetch(FetchRequest) returns (stream BinaryData) {}
+}
+
+message BulkRequest {
+  int64 count = 1;
+  bytes docs = 2;
+  bytes metas = 3;
+}
+
+message BinaryData {
+  bytes data = 1;
+}
+
+enum AggFunc {
+  AGG_FUNC_COUNT = 0;
+  AGG_FUNC_SUM = 1;
+  AGG_FUNC_MIN = 2;
+  AGG_FUNC_MAX = 3;
+  AGG_FUNC_AVG = 4;
+  AGG_FUNC_QUANTILE = 5;
+  AGG_FUNC_UNIQUE = 6;
+}
+
+enum Order {
+  ORDER_DESC = 0;
+  ORDER_ASC = 1;
+}
+
+message AggQuery {
+  string field = 1;
+  reserved 2;
+  string group_by = 3;
+  AggFunc func = 4;
+  repeated double quantiles = 5;
+}
+
+message SearchRequest {
+  string query = 1;
+  int64 from = 2;
+  int64 to = 3;
+  int64 size = 4;
+  int64 offset = 5;
+  int64 interval = 6;
+  string aggregation = 7 [deprecated = true];
+  bool explain = 8;
+  bool with_total = 10;
+  string aggregation_filter = 11 [deprecated = true];
+  repeated AggQuery aggs = 12;
+  Order order = 13;
+}
+
+message SearchResponse {
+  message Id {
+    uint64 mid = 1;
+    uint64 rid = 2;
+  }
+  message IdWithHint {
+    Id     id = 1;
+    string hint = 3;
+  }
+
+  message Histogram {
+    double min = 1;
+    double max = 2;
+    double sum = 3;
+    int64 total = 4;
+    int64 not_exists = 5;
+    repeated double samples = 6;
+  }
+  message Agg {
+    map<string, uint64> agg = 1 [deprecated = true];
+    map<string, Histogram> agg_histogram = 2;
+    int64 not_exists = 3;
+  }
+
+  bytes data = 1 [deprecated = true];
+  repeated IdWithHint id_sources = 2;
+  map<uint64, uint64> histogram = 3;
+  repeated Agg aggs = 4;
+  uint64 total = 5;
+  repeated string errors = 6;
+  SearchErrorCode code = 7;
+}
+
+enum SearchErrorCode {
+  NO_ERROR = 0;
+  INGESTOR_QUERY_WANTS_OLD_DATA = 1;
+  TOO_MANY_UNIQ_VALUES = 2;
+}
+
+message IdWithHint {
+  string id = 1;
+  string hint = 2;
+}
+
+message FetchRequest {
+  repeated string ids = 1;
+  bool explain = 3;
+  repeated IdWithHint ids_with_hints = 4;
+}
