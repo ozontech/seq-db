@@ -1028,6 +1028,8 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 }
 
 func (s *IntegrationTestSuite) TestSeal() {
+	s.T().Skip("test disabled because it uses a lot of memory")
+
 	env := setup.NewTestingEnv(s.Config)
 
 	bulksNum := getBulkIterationsNum(env)
