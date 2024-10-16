@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        flags: [ '', '-race' ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        env:
+          GOFLAGS: ${{ matrix.flags }}
+          LOG_LEVEL: error
+        run: go test -coverprofile=profile.out -covermode=atomic -coverpkg=./... ./...
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage
+          path: profile.out
+          if-no-files-found: error
+          retention-days: 1
+
+  upload:
+    runs-on: ubuntu-latest
+    needs:
+      - test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: coverage
+
+      - name: Send coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: profile.out
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          only-new-issues: false
+          args: --timeout 5m
+          # Package/build cache already provided above.
+          #
+          # Disable module cache.
+          skip-pkg-cache: true
+          # Disable build cache.
+          skip-build-cache: true
+
+  check-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download && go mod tidy
+
+      - name: Verify modules
+        run: go mod verify
+
+      - name: Go generate
+        run: go generate ./...
+
+      - name: Check git diff
+        run: git diff --exit-code
