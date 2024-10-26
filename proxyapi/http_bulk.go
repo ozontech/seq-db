@@ -38,6 +38,13 @@ var (
 		Name:      "api_errors_total",
 		Help:      "",
 	})
+	bulkReadDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "seq_db_ingestor",
+		Subsystem: "bulk",
+		Name:      "read_duration_seconds",
+		Help:      "",
+		Buckets:   metric.SecondsBuckets,
+	})
 )
 
 type DocumentsProcessor interface {
@@ -56,13 +63,31 @@ func NewBulkHandler(proc DocumentsProcessor, maxDocumentSize int) *BulkHandler {
 	}
 }
 
+type measuredReader struct {
+	metric prometheus.Histogram
+	reader io.Reader
+}
+
+func newMeasuredReader(reader io.Reader, histogram prometheus.Histogram) *measuredReader {
+	return &measuredReader{
+		reader: reader,
+		metric: histogram,
+	}
+}
+
+func (mr *measuredReader) Read(p []byte) (int, error) {
+	t := time.Now()
+	defer func() { mr.metric.Observe(time.Since(t).Seconds()) }()
+	return mr.reader.Read(p)
+}
+
 func (h *BulkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tracing.HTTPSpan(r, "search_proxy.ServeBulk", 0.01)
 	defer span.End()
 
 	t := time.Now()
 
-	body := io.Reader(r.Body)
+	body := io.Reader(newMeasuredReader(r.Body, bulkReadDurationSeconds))
 	if r.Header.Get("Content-Encoding") == "gzip" {
 		gz, err := acquireGzipReader(body)
 		if err != nil {

@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/ozontech/seq-db/seq"
+
 	"go.uber.org/atomic"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/query"
 )
 
 const (
@@ -42,7 +43,7 @@ func (c *StoreConfig) setDefaults() error {
 	return nil
 }
 
-func NewStore(ctx context.Context, config StoreConfig, mapping query.Mapping) (*Store, error) {
+func NewStore(ctx context.Context, config StoreConfig, mapping seq.Mapping) (*Store, error) {
 	if err := config.setDefaults(); err != nil {
 		return nil, err
 	}

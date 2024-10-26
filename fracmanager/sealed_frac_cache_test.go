@@ -8,12 +8,11 @@ import (
 	"sync"
 	"testing"
 
+	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
-	insaneJSON "github.com/vitkovskii/insane-json"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
@@ -281,7 +280,7 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	dp := frac.NewDocProvider(query.TestMapping, consts.DefaultMaxTokenSize, false)
+	dp := frac.NewDocProvider()
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
@@ -368,7 +367,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	dp := frac.NewDocProvider(query.TestMapping, consts.DefaultMaxTokenSize, false)
+	dp := frac.NewDocProvider()
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
@@ -429,7 +428,7 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	dp := frac.NewDocProvider(query.TestMapping, consts.DefaultMaxTokenSize, false)
+	dp := frac.NewDocProvider()
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 

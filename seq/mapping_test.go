@@ -1,4 +1,4 @@
-package query
+package seq
 
 import (
 	"fmt"

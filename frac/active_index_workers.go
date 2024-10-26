@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"sync"
 
-	insaneJSON "github.com/vitkovskii/insane-json"
+	insaneJSON "github.com/ozontech/insane-json"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 

@@ -1,4 +1,4 @@
-package query
+package seq
 
 import (
 	"encoding/json"
@@ -85,12 +85,6 @@ type MappingTypes struct {
 
 // Mapping - maps fields to tokenizers. For fields with multiple types there must be a key for each type
 type Mapping map[string]MappingTypes
-
-type DocStructMapping Mapping
-
-func (ds DocStructMapping) Types(fieldName string) MappingTypes {
-	return ds[fieldName]
-}
 
 type FieldMapping Mapping
 

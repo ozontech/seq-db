@@ -57,11 +57,8 @@ func (b *DiskIDsBlock) packMIDs(p *packer.BytesPacker) {
 }
 
 func (b *DiskIDsBlock) packRIDs(p *packer.BytesPacker) {
-	var rid, prev uint64
 	for _, id := range b.ids {
-		rid = uint64(id.RID)
-		p.PutVarint(int64(rid - prev))
-		prev = rid
+		p.PutUint64(uint64(id.RID))
 	}
 }
 

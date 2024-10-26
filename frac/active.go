@@ -64,6 +64,15 @@ type ActiveDataProvider struct {
 	inverser *inverser
 }
 
+// getInverser creates on demand and returns inverser
+// inverser creation is expensive operation
+func (dp *ActiveDataProvider) getInverser() *inverser {
+	if dp.inverser == nil {
+		dp.inverser = dp.Active.inverser(dp.tracer)
+	}
+	return dp.inverser
+}
+
 func (dp *ActiveDataProvider) Tracer() *tracer.Tracer {
 	return dp.tracer
 }
@@ -72,7 +81,7 @@ func (dp *ActiveDataProvider) IDsProvider(_, _ *UnpackCache) IDsProvider {
 	return &ActiveIDsProvider{
 		mids:     dp.MIDs.GetVals(),
 		rids:     dp.RIDs.GetVals(),
-		inverser: dp.inverser,
+		inverser: dp.getInverser(),
 	}
 }
 
@@ -81,7 +90,7 @@ func (dp *ActiveDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) 
 }
 
 func (dp *ActiveDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Active.GetLIDsFromTIDs(tids, dp.inverser, stats, minLID, maxLID, dp.tracer, order)
+	return dp.Active.GetLIDsFromTIDs(tids, dp.getInverser(), stats, minLID, maxLID, dp.tracer, order)
 }
 
 func (dp *ActiveDataProvider) Fetch(id seq.ID, docsBuf []byte, _, _ *UnpackCache) ([]byte, []byte, error) {
@@ -134,6 +143,7 @@ func NewActive(baseFileName string, metaRemove bool, indexWorkers *IndexWorkers,
 			reader:        reader,
 			info: &Info{
 				Ver:                   buildinfo.Version,
+				BinaryDataVer:         BinaryDataV1,
 				Path:                  baseFileName,
 				From:                  math.MaxUint64,
 				To:                    0,
@@ -398,14 +408,6 @@ func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint
 	return result
 }
 
-func (f *Active) IDsProvider(_ *SearchCell, _, _ *UnpackCache, inv *inverser) IDsProvider {
-	return &ActiveIDsProvider{
-		mids:     f.MIDs.GetVals(),
-		rids:     f.RIDs.GetVals(),
-		inverser: inv,
-	}
-}
-
 func (f *Active) inverser(tr *tracer.Tracer) *inverser {
 	m := tr.Start("get_all_documents")
 	mapping := f.GetAllDocuments()
@@ -576,23 +578,21 @@ func (f *Active) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 		return dp, releaseSealed, ok
 	}
 
-	tr := tracer.New()
-	inverser := f.inverser(tr)
-
-	if inverser == nil {
+	if f.MIDs.Len() == 0 {
 		f.useLock.RUnlock()
 		return nil, nil, false
 	}
 
 	dp := ActiveDataProvider{
-		Active:   f,
-		sc:       NewSearchCell(ctx),
-		tracer:   tr,
-		inverser: inverser,
+		Active: f,
+		sc:     NewSearchCell(ctx),
+		tracer: tracer.New(),
 	}
 
 	return &dp, func() {
-		inverser.Release()
+		if dp.inverser != nil {
+			dp.inverser.Release()
+		}
 		f.useLock.RUnlock()
 	}, true
 }

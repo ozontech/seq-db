@@ -8,6 +8,10 @@ import (
 	context "context"
 	binary "encoding/binary"
 	fmt "fmt"
+	io "io"
+	math "math"
+	unsafe "unsafe"
+
 	protohelpers "github.com/planetscale/vtprotobuf/protohelpers"
 	timestamppb1 "github.com/planetscale/vtprotobuf/types/known/timestamppb"
 	grpc "google.golang.org/grpc"
@@ -16,9 +20,6 @@ import (
 	proto "google.golang.org/protobuf/proto"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	io "io"
-	math "math"
-	unsafe "unsafe"
 )
 
 const (

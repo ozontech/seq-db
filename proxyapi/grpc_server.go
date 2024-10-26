@@ -5,6 +5,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/ozontech/seq-db/seq"
+
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/encoding/gzip" // Register gzip compressor
@@ -16,7 +18,6 @@ import (
 	"github.com/ozontech/seq-db/network/ratelimiter"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/tracing"
 )
 
@@ -25,7 +26,7 @@ type grpcServer struct {
 }
 
 func newGRPCServer(apiConfig APIConfig, si *search.Ingestor,
-	ac *query.RawMapping, rl *ratelimiter.RateLimiter, mirror seqproxyapi.SeqProxyApiClient,
+	ac *seq.RawMapping, rl *ratelimiter.RateLimiter, mirror seqproxyapi.SeqProxyApiClient,
 ) *grpcServer {
 	s := initServer()
 

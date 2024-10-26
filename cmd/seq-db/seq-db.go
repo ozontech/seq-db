@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ozontech/seq-db/seq"
+
 	"github.com/mailru/easyjson/buffer"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
@@ -33,7 +35,6 @@ import (
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/storeapi"
 	"github.com/ozontech/seq-db/tracing"
 )
@@ -67,23 +68,25 @@ var (
 	futureAllowedTimeDrift = kingpin.Flag("future-allowed-time-drift", `maximum future allowed time since the message timestamp`).Default(consts.FutureAllowedTimeDrift).Duration()
 	maxInflightBulks       = kingpin.Flag("max-inflight-bulks", `max ingestor inflight bulk requests`).Default(strconv.Itoa(consts.IngestorMaxInflightBulks)).Int()
 	shuffleReplicas        = kingpin.Flag("shuffle-replicas", `shuffle replicas before performing search`).Default("false").Bool()
-	maxPoolSize            = kingpin.Flag("max-pool-size", ``).Default("1024").Int()
-	maxTokenSize           = kingpin.Flag("max-token-size", ``).Default("72").Int()
-	maxBufferCap           = kingpin.Flag("max-buffer-cap", ``).Default("32768").Int()
-	tracingProbability     = kingpin.Flag("tracing-probability", ``).Default("0.01").Float64()
-	searchWorkersCount     = kingpin.Flag("search-workers-count", `the number of workers that will be process factions`).Default("128").Int()
-	bulkShardTimeout       = kingpin.Flag("bulk-shard-timeout", `timeout for a shard to process bulk`).Default("10s").Duration()
-	bulkErrPercentage      = kingpin.Flag("bulk-err-percentage", "check circuitbreaker/README.md for more details").Default("50").Int64()
-	bulkBucketWidth        = kingpin.Flag("bulk-bucket-width", "check circuitbreaker/README.md for more details").Default("1s").Duration()
-	bulkBucketsCount       = kingpin.Flag("bulk-err-count", "check circuitbreaker/README.md for more details").Default("10").Int()
-	bulkSleepWindow        = kingpin.Flag("bulk-sleep-window", "check circuitbreaker/README.md for more details").Default("5s").Duration()
-	bulkVolumeThreshold    = kingpin.Flag("bulk-request-volume-threshold", "check circuitbreaker/README.md for more details").Default("5").Int64()
-	readerWorkers          = kingpin.Flag("reader-workers", "size of readers pool").Default(strconv.Itoa(consts.ReaderWorkers)).Uint64()
-	caseSensitive          = kingpin.Flag("case-sensitive", "case insensitive to tokens").Default("false").Bool()
-	skipFsync              = kingpin.Flag("skip-fsync", "skip fsyncs for active fraction").Default("false").Bool()
-	maxSearchDocs          = kingpin.Flag("max-search-docs", `maximum number of documents returned by search query`).Default(strconv.Itoa(consts.DefaultMaxRequestedDocuments)).Uint64()
-	partialFieldIndexing   = kingpin.Flag("partial-indexing", `index only the first part of long fields`).Default("false").Bool()
-	esVersion              = kingpin.Flag("es-version", "ES version to return in the `/` handler").Default("8.9.0").String()
+	// Deprecated: do not use.
+	_ = kingpin.Flag("max-pool-size", ``).Default("1024").Hidden().Int()
+	// Deprecated: do not use.
+	_                    = kingpin.Flag("max-buffer-cap", ``).Default("32768").Hidden().Int()
+	maxTokenSize         = kingpin.Flag("max-token-size", ``).Default("72").Int()
+	tracingProbability   = kingpin.Flag("tracing-probability", ``).Default("0.01").Float64()
+	searchWorkersCount   = kingpin.Flag("search-workers-count", `the number of workers that will be process factions`).Default("128").Int()
+	bulkShardTimeout     = kingpin.Flag("bulk-shard-timeout", `timeout for a shard to process bulk`).Default("10s").Duration()
+	bulkErrPercentage    = kingpin.Flag("bulk-err-percentage", "check circuitbreaker/README.md for more details").Default("50").Int64()
+	bulkBucketWidth      = kingpin.Flag("bulk-bucket-width", "check circuitbreaker/README.md for more details").Default("1s").Duration()
+	bulkBucketsCount     = kingpin.Flag("bulk-err-count", "check circuitbreaker/README.md for more details").Default("10").Int()
+	bulkSleepWindow      = kingpin.Flag("bulk-sleep-window", "check circuitbreaker/README.md for more details").Default("5s").Duration()
+	bulkVolumeThreshold  = kingpin.Flag("bulk-request-volume-threshold", "check circuitbreaker/README.md for more details").Default("5").Int64()
+	readerWorkers        = kingpin.Flag("reader-workers", "size of readers pool").Default(strconv.Itoa(consts.ReaderWorkers)).Uint64()
+	caseSensitive        = kingpin.Flag("case-sensitive", "case insensitive to tokens").Default("false").Bool()
+	skipFsync            = kingpin.Flag("skip-fsync", "skip fsyncs for active fraction").Default("false").Bool()
+	maxSearchDocs        = kingpin.Flag("max-search-docs", `maximum number of documents returned by search query`).Default(strconv.Itoa(consts.DefaultMaxRequestedDocuments)).Uint64()
+	partialFieldIndexing = kingpin.Flag("partial-indexing", `index only the first part of long fields`).Default("false").Bool()
+	esVersion            = kingpin.Flag("es-version", "ES version to return in the `/` handler").Default("8.9.0").String()
 
 	aggMaxGroupTokens     = kingpin.Flag("agg-max-group-tokens", `the maximum group tokens per aggregation, set 0 to disable limit`).Default(strconv.Itoa(consts.DefaultMaxGroupsPerAggregation)).Int()
 	aggMaxFieldTokens     = kingpin.Flag("agg-max-field-tokens", `the maximum field tokens per aggregation, set 0 to disable limit`).Default(strconv.Itoa(consts.DefaultMaxFieldTokensPerAggregation)).Int()
@@ -135,7 +138,7 @@ func main() {
 	kingpin.Parse()
 
 	kingpin.Version(buildinfo.Version)
-	mapping, err := query.LoadMapping(*mappingPath)
+	mapping, err := seq.LoadMapping(*mappingPath)
 	if err != nil {
 		logger.Fatal("load mapping error", zap.Error(err))
 	}
@@ -276,8 +279,6 @@ func main() {
 						ErrorThresholdPercentage: *bulkErrPercentage,
 						SleepWindow:              *bulkSleepWindow,
 					},
-					MaxBufferCap:           *maxBufferCap,
-					MaxPoolSize:            *maxPoolSize,
 					MaxInflightBulks:       *maxInflightBulks,
 					AllowedTimeDrift:       *allowedTimeDrift,
 					FutureAllowedTimeDrift: *futureAllowedTimeDrift,

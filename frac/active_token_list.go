@@ -5,10 +5,11 @@ import (
 	"hash/crc32"
 	"sync"
 
+	"github.com/ozontech/seq-db/seq"
+
 	"github.com/ozontech/seq-db/metric/tracer"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pattern"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -107,8 +108,8 @@ func copyAndSplit(token []byte, fLen int, dest []byte) (string, string, []byte, 
 }
 
 func (tl *TokenList) initSystemTokens() {
-	token := []byte(query.TokenAll + ":")
-	tlids := tl.Append([][]byte{token}, []int{len(query.TokenAll)}, []*TokenLIDs{nil})
+	token := []byte(seq.TokenAll + ":")
+	tlids := tl.Append([][]byte{token}, []int{len(seq.TokenAll)}, []*TokenLIDs{nil})
 	tl.allTokenLIDs = tlids[0]
 }
 

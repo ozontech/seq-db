@@ -1,26 +1,19 @@
 package bulk
 
 import (
-	"encoding/binary"
 	"math"
 	"math/rand/v2"
 	"time"
 
+	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	insaneJSON "github.com/vitkovskii/insane-json"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/tokenizer"
 	"github.com/ozontech/seq-db/util"
-)
-
-const (
-	rollingAverageItems   = 200
-	resetBufferThreshold  = 2
-	resetBufferMultiplier = 1.5
 )
 
 var (
@@ -39,50 +32,37 @@ var (
 // processor accumulates meta and docs from a single bulk
 // returns bulk request ready to be sent to store
 type processor struct {
-	indexer *indexer
-
-	decoder  *insaneJSON.Root
-	meta     []byte
-	metasAvg *metric.RollingAverage
-	docs     []byte
-	docsAvg  *metric.RollingAverage
-
 	proxyIndex  uint64
 	drift       time.Duration
 	futureDrift time.Duration
 
-	maxBufCap   int
-	maxPoolSize int
+	indexer *indexer
+	decoder *insaneJSON.Root
 }
 
-func newBulkProcessor(indexer *indexer, drift, futureDrift time.Duration, index uint64, maxBufCap, maxPoolSize int) *processor {
+func init() {
+	// Disable cache for the Dig() method.
+	insaneJSON.MapUseThreshold = math.MaxInt32
+}
+
+func newBulkProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, drift, futureDrift time.Duration, index uint64) *processor {
 	return &processor{
-		indexer:     indexer,
-		decoder:     insaneJSON.Spawn(),
-		meta:        []byte{},
-		metasAvg:    metric.NewRollingAverage(rollingAverageItems),
-		docs:        []byte{},
-		docsAvg:     metric.NewRollingAverage(rollingAverageItems),
 		proxyIndex:  index,
 		drift:       drift,
 		futureDrift: futureDrift,
-		maxBufCap:   maxBufCap,
-		maxPoolSize: maxPoolSize,
+		indexer: &indexer{
+			tokenizers: tokenizers,
+			mapping:    mapping,
+			metas:      []frac.MetaData{},
+		},
+		decoder: insaneJSON.Spawn(),
 	}
 }
 
-func (p *processor) Process(doc []byte, requestTime time.Time) error {
-	defer func() {
-		if p.decoder.PoolSize() > p.maxPoolSize {
-			p.decoder.ReleasePoolMem()
-		}
-		if p.decoder.BuffCap() > p.maxBufCap {
-			p.decoder.ReleaseBufMem()
-		}
-	}()
-
-	if err := p.decoder.DecodeBytes(doc); err != nil {
-		return err
+func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []frac.MetaData, error) {
+	err := p.decoder.DecodeBytes(doc)
+	if err != nil {
+		return nil, nil, err
 	}
 	docTime, timeField := extractDocTime(p.decoder.Node, requestTime)
 	docDelay := requestTime.Sub(docTime)
@@ -95,13 +75,11 @@ func (p *processor) Process(doc []byte, requestTime time.Time) error {
 		doc = p.decoder.Encode(doc[:0])
 	}
 
-	p.appendDoc(doc)
-
 	id := seq.NewID(docTime, (rand.Uint64()<<16)+p.proxyIndex)
 
-	p.indexer.Index(p.decoder.Node, id, uint32(len(doc)), p.marshalAppendMeta)
+	p.indexer.Index(p.decoder.Node, id, uint32(len(doc)))
 
-	return nil
+	return doc, p.indexer.Metas(), nil
 }
 
 func documentDelayed(docDelay, drift, futureDrift time.Duration) bool {
@@ -115,11 +93,6 @@ func documentDelayed(docDelay, drift, futureDrift time.Duration) bool {
 		delayed = true
 	}
 	return delayed
-}
-
-func (p *processor) appendDoc(docs []byte) {
-	p.docs = binary.LittleEndian.AppendUint32(p.docs, uint32(len(docs)))
-	p.docs = append(p.docs, docs...)
 }
 
 func extractDocTime(node *insaneJSON.Node, requestTime time.Time) (time.Time, []string) {
@@ -228,28 +201,4 @@ func setInsaneJSONValue(root *insaneJSON.Root, path []string, v string) {
 	}
 
 	n.MutateToString(v)
-}
-
-func (p *processor) Cleanup() {
-	p.docsAvg.Append(len(p.docs))
-	if avg := p.docsAvg.Get(); p.docsAvg.Filled() && int(avg*resetBufferThreshold) < cap(p.docs) {
-		p.docs = make([]byte, int(avg*resetBufferMultiplier))
-	}
-	p.docs = p.docs[:0]
-
-	p.metasAvg.Append(len(p.meta))
-	if avg := p.metasAvg.Get(); p.metasAvg.Filled() && int(avg*resetBufferThreshold) < cap(p.meta) {
-		p.meta = make([]byte, int(avg*resetBufferMultiplier))
-	}
-	p.meta = p.meta[:0]
-}
-
-func (p *processor) marshalAppendMeta(meta frac.MetaData) {
-	metaLenPosition := len(p.meta)
-	p.meta = append(p.meta, make([]byte, 4)...)
-	p.meta = meta.MarshalBinaryTo(p.meta)
-	// Metadata length = len(slice after append) - len(slice before append).
-	metaLen := uint32(len(p.meta) - metaLenPosition - 4)
-	// Put metadata length before metadata bytes.
-	binary.LittleEndian.PutUint32(p.meta[metaLenPosition:], metaLen)
 }

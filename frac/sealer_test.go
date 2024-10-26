@@ -8,14 +8,12 @@ import (
 	"strconv"
 	"testing"
 
+	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
-	insaneJSON "github.com/vitkovskii/insane-json"
 	"go.uber.org/atomic"
 
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
@@ -26,7 +24,7 @@ func fillActiveFraction(active *Active) error {
 	docRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(docRoot)
 
-	dp := NewDocProvider(query.TestMapping, consts.DefaultMaxTokenSize, false)
+	dp := NewDocProvider()
 
 	file, err := os.Open(filepath.Join(common.TestDataDir, "k8s.logs"))
 	if err != nil {
