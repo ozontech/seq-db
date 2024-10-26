@@ -4,12 +4,13 @@ import (
 	"context"
 	"time"
 
+	"github.com/ozontech/seq-db/seq"
+
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	api "github.com/ozontech/seq-db/pkg/storeapi"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/storeapi"
 )
 
@@ -24,7 +25,7 @@ type bareStoreImpl struct {
 	impl        *storeapi.GrpcV1
 }
 
-func NewBareStore(config *storeapi.StoreConfig, mapping query.Mapping) BareStore {
+func NewBareStore(config *storeapi.StoreConfig, mapping seq.Mapping) BareStore {
 	s := &bareStoreImpl{}
 
 	s.fracManager = fracmanager.NewFracManager(&config.FracManager)

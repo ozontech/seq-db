@@ -36,7 +36,7 @@ func (s *Base) getDataDir(suiteName, testName string) string {
 	if s.Config != nil {
 		name = s.Config.Name
 	}
-	return filepath.Join(common.GetBaseTestTmpDir(), suiteName+"_"+name+"_"+testName)
+	return filepath.Join(common.CreateTempDir(), suiteName+"_"+name+"_"+testName)
 }
 
 func (s *Base) RecreateDataDir() {

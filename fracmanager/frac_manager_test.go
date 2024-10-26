@@ -8,9 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
 
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
@@ -44,14 +42,14 @@ func TestProvideLimit(t *testing.T) {
 
 func addDummyDoc(t *testing.T, fm *FracManager, dp *frac.DocProvider, seqID seq.ID) {
 	doc := []byte("document")
-	dp.Append(doc, nil, seqID, query.Tokens("service:100500", "k8s_pod"))
+	dp.Append(doc, nil, seqID, seq.Tokens("service:100500", "k8s_pod"))
 	docs, metas := dp.Provide()
 	err := fm.Append(context.Background(), docs, metas, atomic.NewUint64(0))
 	assert.NoError(t, err)
 }
 
 func MakeSomeFractions(t *testing.T, fm *FracManager) {
-	dp := frac.NewDocProvider(query.TestMapping, consts.DefaultMaxTokenSize, false)
+	dp := frac.NewDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
 	fm.GetActiveFrac().WaitWriteIdle()
 	fm.seal(fm.rotate())
@@ -136,7 +134,7 @@ func TestMatureMode(t *testing.T) {
 	}
 
 	id := 1
-	dp := frac.NewDocProvider(query.TestMapping, consts.DefaultMaxTokenSize, false)
+	dp := frac.NewDocProvider()
 	makeSealedFrac := func(fm *FracManager, docsPerFrac int) {
 		for i := 0; i < docsPerFrac; i++ {
 			addDummyDoc(t, fm, dp, seq.SimpleID(id))

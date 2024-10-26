@@ -5,11 +5,9 @@ import (
 	"slices"
 	"unsafe"
 
-	insaneJSON "github.com/vitkovskii/insane-json"
+	insaneJSON "github.com/ozontech/insane-json"
 
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"
 )
@@ -18,49 +16,42 @@ import (
 // uses specific tokenizers depending on the key value
 // keeps a list of extracted tokens
 type indexer struct {
-	tokenizers map[query.TokenizerType]tokenizer.Tokenizer
-	mapping    query.DocStructMapping
+	tokenizers map[seq.TokenizerType]tokenizer.Tokenizer
+	mapping    seq.Mapping
 
-	tokensPerMetadata [][]frac.MetaToken
+	metas []frac.MetaData
 }
 
-func newIndexer(mapping query.DocStructMapping, maxTokenSize int, caseSensitive, partialIndexing bool) *indexer {
-	return &indexer{
-		mapping: mapping,
-		tokenizers: map[query.TokenizerType]tokenizer.Tokenizer{
-			query.TokenizerTypeText:        tokenizer.NewTextTokenizer(maxTokenSize, caseSensitive, partialIndexing, consts.MaxTextFieldValueLength),
-			query.TokenizerTypeKeyword:     tokenizer.NewKeywordTokenizer(maxTokenSize, caseSensitive, partialIndexing),
-			query.TokenizerTypeKeywordList: tokenizer.NewKeywordListTokenizer(maxTokenSize, caseSensitive, partialIndexing, consts.MaxKeywordListFieldValueLength),
-			query.TokenizerTypePath:        tokenizer.NewPathTokenizer(maxTokenSize, caseSensitive, partialIndexing),
-		},
+// Index returns a list of metadata of the given json node.
+// Return at least one metadata. May return more if there are nested fields in the mapping.
+// Each metadata has special token _all_, we use to find stored documents.
+// Each indexed field has special token _exists_,
+// we use it to find documents that have this field in search and aggregate requests.
+//
+// Careful: any reference to i.metas will be invalidated after the call.
+func (i *indexer) Index(node *insaneJSON.Node, id seq.ID, size uint32) {
+	// Reset previous state.
+	i.metas = i.metas[:0]
+
+	i.appendMeta(id, size)
+
+	i.decodeInternal(node, id, nil, 0)
+
+	m := i.metas
+	parent := m[0]
+	for j := 1; j < len(m); j++ {
+		// Copy tokens from the parent, except of the _all_ token.
+		m[j].Tokens = append(m[j].Tokens, parent.Tokens[1:]...)
 	}
 }
 
-func (i *indexer) Index(node *insaneJSON.Node, id seq.ID, size uint32, appendMeta func(frac.MetaData)) {
-	i.tokensPerMetadata = i.tokensPerMetadata[:0]
-	i.appendTokensPerMetadata()
-
-	i.decodeInternal(node, nil, 0)
-
-	appendMeta(frac.MetaData{
-		ID:     id,
-		Size:   size,
-		Tokens: i.tokensPerMetadata[0],
-	})
-	// Special case: nested metadata has zero size to handle nested behavior in the storage.
-	const nestedMetadataSize = 0
-	for _, tokens := range i.tokensPerMetadata[1:] {
-		appendMeta(frac.MetaData{
-			ID:     id,
-			Size:   nestedMetadataSize,
-			Tokens: tokens,
-		})
-	}
+func (i *indexer) Metas() []frac.MetaData {
+	return i.metas
 }
 
 var fieldSeparator = []byte(".")
 
-func (i *indexer) decodeInternal(n *insaneJSON.Node, name []byte, metaIndex int) {
+func (i *indexer) decodeInternal(n *insaneJSON.Node, id seq.ID, name []byte, metaIndex int) {
 	for _, field := range n.AsFields() {
 		fieldName := field.AsBytes()
 
@@ -71,37 +62,37 @@ func (i *indexer) decodeInternal(n *insaneJSON.Node, name []byte, metaIndex int)
 		mappingTypes := i.mapping[string(fieldName)]
 		mainType := mappingTypes.Main.TokenizerType
 
-		if mainType == query.TokenizerTypeNoop {
+		if mainType == seq.TokenizerTypeNoop {
 			// Field is not in the mapping.
 			continue
 		}
 
-		if mainType == query.TokenizerTypeObject && field.AsFieldValue().IsObject() {
-			i.decodeInternal(field.AsFieldValue(), fieldName, metaIndex)
+		if mainType == seq.TokenizerTypeObject && field.AsFieldValue().IsObject() {
+			i.decodeInternal(field.AsFieldValue(), id, fieldName, metaIndex)
 			continue
 		}
 
-		if mainType == query.TokenizerTypeTags && field.AsFieldValue().IsArray() {
+		if mainType == seq.TokenizerTypeTags && field.AsFieldValue().IsArray() {
 			i.decodeTags(field.AsFieldValue(), fieldName, metaIndex)
 			continue
 		}
 
-		if mainType == query.TokenizerTypeNested && field.AsFieldValue().IsArray() {
+		if mainType == seq.TokenizerTypeNested && field.AsFieldValue().IsArray() {
 			for _, nested := range field.AsFieldValue().AsArray() {
-				// Each nested value has its own metadata.
-				i.appendTokensPerMetadata()
-				nestedTokensIndex := len(i.tokensPerMetadata) - 1
+				i.appendNestedMeta()
+				nestedMetaIndex := len(i.metas) - 1
 
-				i.decodeInternal(nested, fieldName, nestedTokensIndex)
+				i.decodeInternal(nested, id, fieldName, nestedMetaIndex)
 			}
 			continue
 		}
 
-		i.tokensPerMetadata[metaIndex] = i.index(mappingTypes, i.tokensPerMetadata[metaIndex], fieldName, encodeInsaneNode(field.AsFieldValue()))
+		nodeValue := encodeInsaneNode(field.AsFieldValue())
+		i.metas[metaIndex].Tokens = i.index(mappingTypes, i.metas[metaIndex].Tokens, fieldName, nodeValue)
 	}
 }
 
-func (i *indexer) index(tokenTypes query.MappingTypes, tokens []frac.MetaToken, key, value []byte) []frac.MetaToken {
+func (i *indexer) index(tokenTypes seq.MappingTypes, tokens []frac.MetaToken, key, value []byte) []frac.MetaToken {
 	for _, tokenType := range tokenTypes.All {
 		if _, has := i.tokenizers[tokenType.TokenizerType]; !has {
 			continue
@@ -114,7 +105,7 @@ func (i *indexer) index(tokenTypes query.MappingTypes, tokens []frac.MetaToken, 
 
 		tokens = i.tokenizers[tokenType.TokenizerType].Tokenize(tokens, title, value, tokenType.MaxSize)
 		tokens = append(tokens, frac.MetaToken{
-			Key:   query.ExistsTokenName,
+			Key:   seq.ExistsTokenName,
 			Value: title,
 		})
 	}
@@ -125,22 +116,33 @@ func (i *indexer) decodeTags(n *insaneJSON.Node, name []byte, tokensIndex int) {
 	for _, tag := range n.AsArray() {
 		fieldName := tag.Dig("key").AsBytes()
 		fieldName = bytes.Join([][]byte{name, fieldName}, fieldSeparator)
-		i.tokensPerMetadata[tokensIndex] = i.index(i.mapping[string(fieldName)], i.tokensPerMetadata[tokensIndex], fieldName, encodeInsaneNode(tag.Dig("value")))
+		nodeValue := encodeInsaneNode(tag.Dig("value"))
+		i.metas[tokensIndex].Tokens = i.index(i.mapping[string(fieldName)], i.metas[tokensIndex].Tokens, fieldName, nodeValue)
 	}
 }
 
-// appendTokensPerMetadata increases tokensPerMetadata size by 1 and reuses the underlying slices capacity.
-func (i *indexer) appendTokensPerMetadata() {
-	n := len(i.tokensPerMetadata)
+// appendMeta increases metas size by 1 and reuses the underlying slices capacity.
+func (i *indexer) appendMeta(id seq.ID, size uint32) {
+	n := len(i.metas)
 	// Unlike append(), slices.Grow() copies the underlying slices if any.
-	i.tokensPerMetadata = slices.Grow(i.tokensPerMetadata, 1)[:n+1]
+	i.metas = slices.Grow(i.metas, 1)[:n+1]
 	// Reuse the underlying slice capacity.
-	i.tokensPerMetadata[n] = i.tokensPerMetadata[n][:0]
+	i.metas[n].Tokens = i.metas[n].Tokens[:0]
 
-	i.tokensPerMetadata[n] = append(i.tokensPerMetadata[n], frac.MetaToken{
-		Key:   query.AllTokenName,
+	i.metas[n].ID = id
+	i.metas[n].Size = size
+
+	i.metas[n].Tokens = append(i.metas[n].Tokens, frac.MetaToken{
+		Key:   seq.AllTokenName,
 		Value: []byte{},
 	})
+}
+
+func (i *indexer) appendNestedMeta() {
+	parent := i.metas[0]
+	// Special case: nested metadata has zero size to handle nested behavior in the storage.
+	const nestedMetadataSize = 0
+	i.appendMeta(parent.ID, nestedMetadataSize)
 }
 
 func encodeInsaneNode(field *insaneJSON.Node) []byte {

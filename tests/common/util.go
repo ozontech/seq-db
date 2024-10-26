@@ -3,12 +3,12 @@ package common
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"lukechampine.com/frand"
 
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -51,7 +51,12 @@ func RecreateDir(path string) {
 	CreateDir(path)
 }
 
-func GetBaseTestTmpDir() string {
+var tmpDirMu = sync.Mutex{}
+
+func CreateTempDir() string {
+	tmpDirMu.Lock()
+	defer tmpDirMu.Unlock()
+
 	if baseTmpDir == "" {
 		var err error
 		if baseTmpDir, err = os.MkdirTemp("", "seq-db"); err != nil {
@@ -62,7 +67,7 @@ func GetBaseTestTmpDir() string {
 }
 
 func GetTestTmpDir(t *testing.T) string {
-	return filepath.Join(GetBaseTestTmpDir(), t.Name())
+	return filepath.Join(CreateTempDir(), t.Name())
 }
 
 func IDs(ids ...int) []seq.ID {
@@ -83,8 +88,8 @@ func RandomString(minLen, maxLen int) string {
 	return string(res)
 }
 
-func LoadMapping() query.Mapping {
-	if m, err := query.LoadMapping(TestDataDir + "/mappings/logging.yaml"); err != nil {
+func LoadMapping() seq.Mapping {
+	if m, err := seq.LoadMapping(TestDataDir + "/mappings/logging.yaml"); err != nil {
 		return m
 	}
 

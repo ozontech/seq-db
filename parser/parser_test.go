@@ -3,15 +3,15 @@ package parser
 import (
 	"testing"
 
+	"github.com/ozontech/seq-db/seq"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/ozontech/seq-db/query"
 )
 
 func checkErr(t *testing.T, q string) {
 	t.Run("error", func(t *testing.T) {
-		_, err := ParseQuery(q, query.TestMapping)
+		_, err := ParseQuery(q, seq.TestMapping)
 		assert.Error(t, err)
 	})
 }

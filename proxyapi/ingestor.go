@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ozontech/seq-db/seq"
+
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -23,7 +25,6 @@ import (
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/proxy/search"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/tracing"
 )
 
@@ -105,7 +106,7 @@ func appendClients(ctx context.Context, clients map[string]storeapi.StoreApiClie
 func NewIngestor(config IngestorConfig) (*Ingestor, error) {
 	config.setDefaults()
 
-	mapping := query.NewRawMapping(config.Bulk.TokenMapping)
+	mapping := seq.NewRawMapping(config.Bulk.TokenMapping)
 
 	rateLimiter := ratelimiter.NewRateLimiter(config.API.QueryRateLimit, metric.RateLimiterSize.Set)
 

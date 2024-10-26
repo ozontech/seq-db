@@ -4,23 +4,23 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ozontech/seq-db/query"
+	"github.com/ozontech/seq-db/seq"
 )
 
 type queryParser struct {
 	tokenParser
-	mapping query.Mapping
+	mapping seq.Mapping
 }
 
-var builtinIndexes = map[string]query.TokenizerType{
-	query.TokenAll:    query.TokenizerTypeKeyword,
-	query.TokenExists: query.TokenizerTypeKeyword,
-	query.TokenIndex:  query.TokenizerTypeKeyword,
+var builtinIndexes = map[string]seq.TokenizerType{
+	seq.TokenAll:    seq.TokenizerTypeKeyword,
+	seq.TokenExists: seq.TokenizerTypeKeyword,
+	seq.TokenIndex:  seq.TokenizerTypeKeyword,
 }
 
-func (qp *queryParser) indexType(field string) (query.TokenizerType, error) {
+func (qp *queryParser) indexType(field string) (seq.TokenizerType, error) {
 	if qp.mapping == nil {
-		return query.TokenizerTypeKeyword, nil
+		return seq.TokenizerTypeKeyword, nil
 	}
 	tokKinds, has := qp.mapping[field]
 	if has {
@@ -30,7 +30,7 @@ func (qp *queryParser) indexType(field string) (query.TokenizerType, error) {
 	if has {
 		return tokKind, nil
 	}
-	return query.TokenizerTypeNoop, fmt.Errorf(`unindexed field "%s"`, field)
+	return seq.TokenizerTypeNoop, fmt.Errorf(`unindexed field "%s"`, field)
 }
 
 // parseSubexpr parses subexpression, delimited by AND, OR, NOT or enclosing round bracket
@@ -134,7 +134,7 @@ func (qp *queryParser) parseExpr(depth int) (*ASTNode, error) {
 	}
 }
 
-func buildAst(data string, mapping query.Mapping) (*ASTNode, error) {
+func buildAst(data string, mapping seq.Mapping) (*ASTNode, error) {
 	p := queryParser{
 		tokenParser: tokenParser{
 			data: []rune(data),
@@ -145,7 +145,7 @@ func buildAst(data string, mapping query.Mapping) (*ASTNode, error) {
 	return p.parseExpr(0)
 }
 
-func ParseQuery(data string, mapping query.Mapping) (*ASTNode, error) {
+func ParseQuery(data string, mapping seq.Mapping) (*ASTNode, error) {
 	root, err := buildAst(data, mapping)
 	if err != nil {
 		return nil, err
@@ -165,7 +165,7 @@ func ParseSingleTokenForTests(name, data string) (Token, error) {
 	if p.eof() {
 		return nil, p.errorEOF("need literal")
 	}
-	tokens, err := p.parseLiteral(name, query.TokenizerTypeKeyword)
+	tokens, err := p.parseLiteral(name, seq.TokenizerTypeKeyword)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func ParseAggregationFilter(data string) (*Literal, error) {
 	if fieldName == "" {
 		return nil, p.errorUnexpectedSymbol("in place of field name")
 	}
-	tokens, err := p.parseTokenQuery(fieldName, query.TokenizerTypeKeyword)
+	tokens, err := p.parseTokenQuery(fieldName, seq.TokenizerTypeKeyword)
 	if err != nil {
 		return nil, err
 	}

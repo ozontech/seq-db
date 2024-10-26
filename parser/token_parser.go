@@ -5,8 +5,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/ozontech/seq-db/seq"
+
 	"github.com/ozontech/seq-db/conf"
-	"github.com/ozontech/seq-db/query"
 )
 
 type tokenParser struct {
@@ -212,9 +213,9 @@ func (tp *tokenParser) parseRange(r *Range) error {
 	return nil
 }
 
-func (tp *tokenParser) parseLiteral(fieldName string, indexType query.TokenizerType) ([]Token, error) {
+func (tp *tokenParser) parseLiteral(fieldName string, indexType seq.TokenizerType) ([]Token, error) {
 	caseSensitive := conf.CaseSensitive
-	if fieldName == query.TokenExists {
+	if fieldName == seq.TokenExists {
 		caseSensitive = true
 	}
 
@@ -234,17 +235,20 @@ func (tp *tokenParser) parseLiteral(fieldName string, indexType query.TokenizerT
 		caseSensitive: caseSensitive,
 	}
 	switch indexType {
-	case query.TokenizerTypeText:
+	case seq.TokenizerTypeText:
 		lb = &textTokenBuilder{
 			baseTokenBuilder: baseBuilder,
-			isIndexed:        query.TextTypeIsSameTokenFunc,
+			isIndexed: func(c rune) bool {
+				if unicode.IsLetter(c) || unicode.IsNumber(c) {
+					return true
+				}
+				if c == '_' || c == '*' {
+					return true
+				}
+				return false
+			},
 		}
-	case query.TokenizerTypeKeywordList:
-		lb = &textTokenBuilder{
-			baseTokenBuilder: baseBuilder,
-			isIndexed:        query.KeywordListTypeIsSameTokenFunc,
-		}
-	case query.TokenizerTypeKeyword, query.TokenizerTypePath:
+	case seq.TokenizerTypeKeyword, seq.TokenizerTypePath:
 		lb = &keywordTokenBuilder{
 			baseTokenBuilder: baseBuilder,
 		}
@@ -281,7 +285,7 @@ func (tp *tokenParser) parseLiteral(fieldName string, indexType query.TokenizerT
 	return tokens, nil
 }
 
-func (tp *tokenParser) parseTokenQuery(fieldName string, indexType query.TokenizerType) ([]Token, error) {
+func (tp *tokenParser) parseTokenQuery(fieldName string, indexType seq.TokenizerType) ([]Token, error) {
 	if tp.eof() {
 		return nil, tp.errorEOF(`field name separator ':'`)
 	}

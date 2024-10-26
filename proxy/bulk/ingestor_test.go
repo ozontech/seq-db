@@ -15,7 +15,6 @@ import (
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/packer"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -24,54 +23,52 @@ func TestProcessDocuments(t *testing.T) {
 
 	ctx := context.Background()
 	cfg := IngestorConfig{
-		MaxBufferCap:           consts.KB,
-		MaxPoolSize:            1024,
 		MaxInflightBulks:       1,
 		AllowedTimeDrift:       time.Hour,
 		FutureAllowedTimeDrift: time.Hour,
-		TokenMapping: map[string]query.MappingTypes{
-			"path":                                  newMapping(query.TokenizerTypePath),
-			"level":                                 newMapping(query.TokenizerTypeKeyword),
-			"message":                               newMapping(query.TokenizerTypeText),
-			"error":                                 newMapping(query.TokenizerTypeText),
-			"shard":                                 newMapping(query.TokenizerTypeKeyword),
-			"trace_id":                              newMapping(query.TokenizerTypeKeyword),
-			"trace_duration":                        newMapping(query.TokenizerTypeKeyword),
-			"service":                               newMapping(query.TokenizerTypeKeyword),
-			"tags":                                  newMapping(query.TokenizerTypeTags),
-			"tags.level":                            newMapping(query.TokenizerTypeKeyword),
-			"tags.message":                          newMapping(query.TokenizerTypeText),
-			"tags.path":                             newMapping(query.TokenizerTypePath),
-			"spans":                                 newMapping(query.TokenizerTypeNested),
-			"spans.trace_id":                        newMapping(query.TokenizerTypeKeyword),
-			"spans.span_id":                         newMapping(query.TokenizerTypeKeyword),
-			"spans.duration":                        newMapping(query.TokenizerTypeKeyword),
-			"spans.tags":                            newMapping(query.TokenizerTypeTags),
-			"spans.tags.zone":                       newMapping(query.TokenizerTypeKeyword),
-			"spans.tags.otel.status_code":           newMapping(query.TokenizerTypeKeyword),
-			"spans.error_tag":                       newMapping(query.TokenizerTypeKeyword),
-			"spans.process":                         newMapping(query.TokenizerTypeObject),
-			"spans.process.service_name":            newMapping(query.TokenizerTypeKeyword),
-			"spans.process.tags":                    newMapping(query.TokenizerTypeTags),
-			"spans.process.tags.app.version":        newMapping(query.TokenizerTypeKeyword),
-			"spans.process.tags.k8s.namespace.name": newMapping(query.TokenizerTypeKeyword),
-			"spans.process.tags.k8s.label.app":      newMapping(query.TokenizerTypeKeyword),
-			"spans.process.tags.k8s.service.name":   newMapping(query.TokenizerTypeKeyword),
-			"spans.process.tags.k8s.pod.name":       newMapping(query.TokenizerTypeKeyword),
-			"spans.process.tags.k8s.node.name":      newMapping(query.TokenizerTypeKeyword),
-			"spans.process.tags.k8s.host.name":      newMapping(query.TokenizerTypeKeyword),
-			"spans.operation_name":                  newMapping(query.TokenizerTypeKeyword),
-			"spans.tagsMap":                         newMapping(query.TokenizerTypeObject),
-			"spans.tagsMap.error":                   newMapping(query.TokenizerTypeKeyword),
-			"spans.tagsMap.ip":                      newMapping(query.TokenizerTypeKeyword),
-			"spans.tagsMap.span.kind":               newMapping(query.TokenizerTypeKeyword),
-			"spans.tagsMap.page.type":               newMapping(query.TokenizerTypeKeyword),
-			"spans.tagsMap.slo.violated":            newMapping(query.TokenizerTypeKeyword),
-			"spans.tagsMap.http.url":                newMapping(query.TokenizerTypeKeyword),
-			"spans.tagsMap.http.method":             newMapping(query.TokenizerTypeKeyword),
-			"spans2":                                newMapping(query.TokenizerTypeNested),
-			"spans2.span_id":                        newMapping(query.TokenizerTypeKeyword),
-			"spans2.operation_name":                 newMapping(query.TokenizerTypeKeyword)},
+		TokenMapping: map[string]seq.MappingTypes{
+			"path":                                  newMapping(seq.TokenizerTypePath),
+			"level":                                 newMapping(seq.TokenizerTypeKeyword),
+			"message":                               newMapping(seq.TokenizerTypeText),
+			"error":                                 newMapping(seq.TokenizerTypeText),
+			"shard":                                 newMapping(seq.TokenizerTypeKeyword),
+			"trace_id":                              newMapping(seq.TokenizerTypeKeyword),
+			"trace_duration":                        newMapping(seq.TokenizerTypeKeyword),
+			"service":                               newMapping(seq.TokenizerTypeKeyword),
+			"tags":                                  newMapping(seq.TokenizerTypeTags),
+			"tags.level":                            newMapping(seq.TokenizerTypeKeyword),
+			"tags.message":                          newMapping(seq.TokenizerTypeText),
+			"tags.path":                             newMapping(seq.TokenizerTypePath),
+			"spans":                                 newMapping(seq.TokenizerTypeNested),
+			"spans.trace_id":                        newMapping(seq.TokenizerTypeKeyword),
+			"spans.span_id":                         newMapping(seq.TokenizerTypeKeyword),
+			"spans.duration":                        newMapping(seq.TokenizerTypeKeyword),
+			"spans.tags":                            newMapping(seq.TokenizerTypeTags),
+			"spans.tags.zone":                       newMapping(seq.TokenizerTypeKeyword),
+			"spans.tags.otel.status_code":           newMapping(seq.TokenizerTypeKeyword),
+			"spans.error_tag":                       newMapping(seq.TokenizerTypeKeyword),
+			"spans.process":                         newMapping(seq.TokenizerTypeObject),
+			"spans.process.service_name":            newMapping(seq.TokenizerTypeKeyword),
+			"spans.process.tags":                    newMapping(seq.TokenizerTypeTags),
+			"spans.process.tags.app.version":        newMapping(seq.TokenizerTypeKeyword),
+			"spans.process.tags.k8s.namespace.name": newMapping(seq.TokenizerTypeKeyword),
+			"spans.process.tags.k8s.label.app":      newMapping(seq.TokenizerTypeKeyword),
+			"spans.process.tags.k8s.service.name":   newMapping(seq.TokenizerTypeKeyword),
+			"spans.process.tags.k8s.pod.name":       newMapping(seq.TokenizerTypeKeyword),
+			"spans.process.tags.k8s.node.name":      newMapping(seq.TokenizerTypeKeyword),
+			"spans.process.tags.k8s.host.name":      newMapping(seq.TokenizerTypeKeyword),
+			"spans.operation_name":                  newMapping(seq.TokenizerTypeKeyword),
+			"spans.tagsMap":                         newMapping(seq.TokenizerTypeObject),
+			"spans.tagsMap.error":                   newMapping(seq.TokenizerTypeKeyword),
+			"spans.tagsMap.ip":                      newMapping(seq.TokenizerTypeKeyword),
+			"spans.tagsMap.span.kind":               newMapping(seq.TokenizerTypeKeyword),
+			"spans.tagsMap.page.type":               newMapping(seq.TokenizerTypeKeyword),
+			"spans.tagsMap.slo.violated":            newMapping(seq.TokenizerTypeKeyword),
+			"spans.tagsMap.http.url":                newMapping(seq.TokenizerTypeKeyword),
+			"spans.tagsMap.http.method":             newMapping(seq.TokenizerTypeKeyword),
+			"spans2":                                newMapping(seq.TokenizerTypeNested),
+			"spans2.span_id":                        newMapping(seq.TokenizerTypeKeyword),
+			"spans2.operation_name":                 newMapping(seq.TokenizerTypeKeyword)},
 		MaxTokenSize:           consts.KB,
 		CaseSensitive:          false,
 		PartialFieldIndexing:   false,
@@ -104,7 +101,7 @@ func TestProcessDocuments(t *testing.T) {
 					ExpMeta: []frac.MetaData{{
 						ID:     id,
 						Size:   2,
-						Tokens: []frac.MetaToken{newToken(query.TokenAll, "")},
+						Tokens: []frac.MetaToken{newToken(seq.TokenAll, "")},
 					}},
 				}
 			},
@@ -118,7 +115,7 @@ func TestProcessDocuments(t *testing.T) {
 					ExpDocs: []string{doc},
 					ExpMeta: []frac.MetaData{
 						{ID: id, Size: uint32(len(doc)), Tokens: []frac.MetaToken{
-							newToken(query.TokenAll, ""),
+							newToken(seq.TokenAll, ""),
 							newToken("tags.level", ""), // TODO: this token shouldn't be appear.
 							newToken("_exists_", "tags.level"),
 							newToken("tags.message", ""), // TODO: this token shouldn't be appear.
@@ -140,9 +137,9 @@ func TestProcessDocuments(t *testing.T) {
 					InDocs:  []string{doc1, doc2, doc3},
 					ExpDocs: nil,
 					ExpMeta: []frac.MetaData{
-						{ID: id, Size: uint32(len(doc1)), Tokens: []frac.MetaToken{newToken(query.TokenAll, ""), newToken(query.TokenExists, "level")}},
-						{ID: id, Size: uint32(len(doc2)), Tokens: []frac.MetaToken{newToken(query.TokenAll, ""), newToken(query.TokenExists, "message")}},
-						{ID: id, Size: uint32(len(doc3)), Tokens: []frac.MetaToken{newToken(query.TokenAll, ""), newToken(query.TokenExists, "path")}},
+						{ID: id, Size: uint32(len(doc1)), Tokens: []frac.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "level")}},
+						{ID: id, Size: uint32(len(doc2)), Tokens: []frac.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "message")}},
+						{ID: id, Size: uint32(len(doc3)), Tokens: []frac.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "path")}},
 					},
 				}
 			},
@@ -152,22 +149,22 @@ func TestProcessDocuments(t *testing.T) {
 			Payload: func() TestPayload {
 				const doc = `{"level":"error", "message":" request 🫦 failed! ", "error": "context cancelled", "shard": "1", "path":"http://localhost:8080/example"}`
 				meta := frac.MetaData{ID: id, Size: uint32(len(doc)), Tokens: []frac.MetaToken{
-					newToken(query.TokenAll, ""),
+					newToken(seq.TokenAll, ""),
 					newToken("level", "error"),
-					newToken(query.TokenExists, "level"),
+					newToken(seq.TokenExists, "level"),
 					newToken("message", "request"),
 					newToken("message", "failed"),
-					newToken(query.TokenExists, "message"),
+					newToken(seq.TokenExists, "message"),
 					newToken("error", "context"),
 					newToken("error", "cancelled"),
-					newToken(query.TokenExists, "error"),
+					newToken(seq.TokenExists, "error"),
 					newToken("shard", "1"),
-					newToken(query.TokenExists, "shard"),
+					newToken(seq.TokenExists, "shard"),
 					newToken("path", "http:"),
 					newToken("path", "http:/"),
 					newToken("path", "http://localhost:8080"),
 					newToken("path", "http://localhost:8080/example"),
-					newToken(query.TokenExists, "path"),
+					newToken(seq.TokenExists, "path"),
 				}}
 
 				return TestPayload{
@@ -293,7 +290,10 @@ func TestProcessDocuments(t *testing.T) {
 							"spans.process.tags.k8s.label.app", "seq-ui-server",
 							"spans.process.tags.k8s.service.name", "seq-ui-server-34405",
 							"spans.process.tags.k8s.pod.name", "seq-ui-server-34405-z504-65f977fc86-wml9z",
-							"spans.process.tags.k8s.node.name", "10.139.224.142")},
+							"spans.process.tags.k8s.node.name", "10.139.224.142",
+							"trace_id", "aaaaaaaaaaabcmadwewubq==",
+							"trace_duration", "137252000",
+							"service", "seq-ui")},
 					},
 				}
 			},
@@ -347,6 +347,7 @@ func TestProcessDocuments(t *testing.T) {
 			r := require.New(t)
 			c := &FakeClient{}
 			ingestor := NewIngestor(cfg, c)
+			defer ingestor.Stop()
 
 			inDocs := payload.InDocs
 
@@ -415,19 +416,18 @@ func BenchmarkProcessDocuments(b *testing.B) {
 		MaxInflightBulks:       1,
 		AllowedTimeDrift:       time.Hour * 100,
 		FutureAllowedTimeDrift: time.Hour * 100,
-		MaxBufferCap:           32768,
-		MaxPoolSize:            1024,
-		TokenMapping: map[string]query.MappingTypes{
-			"level":   query.NewSingleType(query.TokenizerTypeKeyword, "level", consts.KB),
-			"message": query.NewSingleType(query.TokenizerTypeText, "message", consts.KB),
-			"error":   query.NewSingleType(query.TokenizerTypeText, "error", consts.KB),
-			"shard":   query.NewSingleType(query.TokenizerTypeKeyword, "shard", consts.KB),
+		TokenMapping: map[string]seq.MappingTypes{
+			"level":   seq.NewSingleType(seq.TokenizerTypeKeyword, "level", consts.KB),
+			"message": seq.NewSingleType(seq.TokenizerTypeText, "message", consts.KB),
+			"error":   seq.NewSingleType(seq.TokenizerTypeText, "error", consts.KB),
+			"shard":   seq.NewSingleType(seq.TokenizerTypeKeyword, "shard", consts.KB),
 		},
 		CaseSensitive: false,
 		MaxTokenSize:  consts.KB,
 	}
 
 	ingestor := NewIngestor(cfg, &FakeClient{})
+	defer ingestor.Stop()
 	doc := []byte(fmt.Sprintf(`{
 		"level":"error",
 		"timestamp":%q,
@@ -461,8 +461,8 @@ func BenchmarkProcessDocuments(b *testing.B) {
 	}
 }
 
-func newMapping(mappingType query.TokenizerType) query.MappingTypes {
-	return query.NewSingleType(mappingType, "", consts.KB)
+func newMapping(mappingType seq.TokenizerType) seq.MappingTypes {
+	return seq.NewSingleType(mappingType, "", consts.KB)
 }
 
 func newToken(k, v string) frac.MetaToken {
@@ -480,7 +480,7 @@ func buildKeywordTokens(kvs ...string) []frac.MetaToken {
 	for i := 0; i < len(kvs); i += 2 {
 		k := kvs[i]
 		v := kvs[i+1]
-		tokens = append(tokens, newToken(k, v), newToken(query.TokenExists, k))
+		tokens = append(tokens, newToken(k, v), newToken(seq.TokenExists, k))
 	}
 	return tokens
 }

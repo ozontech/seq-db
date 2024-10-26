@@ -23,7 +23,6 @@ import (
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storeapi"
 	"github.com/ozontech/seq-db/tests/common"
@@ -40,7 +39,7 @@ type TestingEnvConfig struct {
 	HotModeEnabled    bool
 	QueryRateLimit    *float64
 	FracManagerConfig *fracmanager.Config
-	Mapping           query.Mapping
+	Mapping           seq.Mapping
 
 	StartStorePort    int
 	StartIngestorPort int
@@ -129,7 +128,7 @@ func NewTestingEnv(cfg *TestingEnvConfig) *TestingEnv {
 	}
 
 	if len(cfg.Mapping) == 0 {
-		cfg.Mapping = query.TestMapping
+		cfg.Mapping = seq.TestMapping
 	}
 
 	hotStores, hotStoresList := MakeStores(cfg, cfg.GetHotFactor(), false)
@@ -277,8 +276,6 @@ func MakeIngestors(cfg *TestingEnvConfig, hot, cold [][]string) []*Ingestor {
 						RequestVolumeThreshold: 101, // disable circuit breaker
 						Timeout:                time.Hour,
 					},
-					MaxBufferCap:           0,
-					MaxPoolSize:            0,
 					MaxInflightBulks:       0,
 					AllowedTimeDrift:       24 * time.Hour,
 					FutureAllowedTimeDrift: 24 * time.Hour,

@@ -3,11 +3,12 @@ package parser
 import (
 	"testing"
 
+	"github.com/ozontech/seq-db/seq"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/conf"
-	"github.com/ozontech/seq-db/query"
 )
 
 type testCase struct {
@@ -42,26 +43,6 @@ func TestAll(t *testing.T) {
 			name:   `simple_4`,
 			query:  `text:"a b" AND text:"c d f" OR text:"e f"`,
 			expect: `(((text:a AND text:b) AND ((text:c AND text:d) AND text:f)) OR (text:e AND text:f))`,
-		},
-		{
-			name:   `simple_5`,
-			query:  `operation_name:"some text"`,
-			expect: `(operation_name:some AND operation_name:text)`,
-		},
-		{
-			name:   `simple_6`,
-			query:  `operation_name:"some very long text"`,
-			expect: `(((operation_name:some AND operation_name:very) AND operation_name:long) AND operation_name:text)`,
-		},
-		{
-			name:   `simple_7`,
-			query:  `operation_name:"s-o-m-e very long text-with-dashes"`,
-			expect: `(((operation_name:s-o-m-e AND operation_name:very) AND operation_name:long) AND operation_name:text-with-dashes)`,
-		},
-		{
-			name:   `simple_8`,
-			query:  `operation_name:"a-a-a b" AND operation_name:"c d-a-b f" OR operation_name:"e f"`,
-			expect: `(((operation_name:a-a-a AND operation_name:b) AND ((operation_name:c AND operation_name:d-a-b) AND operation_name:f)) OR (operation_name:e AND operation_name:f))`,
 		},
 		{
 			name:   `wildcard_0`,
@@ -126,7 +107,7 @@ func TestAll(t *testing.T) {
 	}
 	for _, tst := range tests {
 		t.Run(tst.name, func(t *testing.T) {
-			expr, err := ParseQuery(tst.query, query.TestMapping)
+			expr, err := ParseQuery(tst.query, seq.TestMapping)
 			require.NoError(t, err)
 			assert.Equal(t, tst.expect, expr.String())
 		})
@@ -324,7 +305,7 @@ func TestExistsCaseSensitive(t *testing.T) {
 }
 
 func TestParseRange(t *testing.T) {
-	expr, err := ParseQuery(`level:{1 TO *]`, query.TestMapping)
+	expr, err := ParseQuery(`level:{1 TO *]`, seq.TestMapping)
 	require.NoError(t, err)
 	_, is := expr.Value.(*Range)
 	require.True(t, is)
@@ -429,7 +410,7 @@ func TestWildcardText(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run("wildcard", func(t *testing.T) {
-			ast, err := ParseQuery(test.query, query.TestMapping)
+			ast, err := ParseQuery(test.query, seq.TestMapping)
 			require.NoError(t, err)
 			assert.Equal(t, test.expect, ast.String())
 		})

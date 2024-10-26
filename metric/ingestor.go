@@ -53,13 +53,6 @@ var (
 		Help:      "",
 		Buckets:   SecondsBuckets,
 	})
-	IngestorBulkParseDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_ingestor",
-		Subsystem: "bulk",
-		Name:      "parse_duration_seconds",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	})
 	IngestorBulkDocProvideDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",

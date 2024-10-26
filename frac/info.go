@@ -17,14 +17,24 @@ const DistributionMaxInterval = 24 * time.Hour
 const DistributionBucket = time.Minute
 const DistributionSpreadThreshold = 10 * time.Minute
 
+type BinaryDataVersion uint16
+
+const (
+	// BinaryDataV0 - initial version
+	BinaryDataV0 BinaryDataVersion = iota
+	// BinaryDataV1 - support RIDs encoded without varint
+	BinaryDataV1
+)
+
 type Info struct {
-	Path        string `json:"name"`
-	Ver         string `json:"ver"`
-	DocsTotal   uint32 `json:"docs_total"`
-	DocsOnDisk  uint64 `json:"docs_on_disk"`  // how much compressed docs data is stored on disk
-	DocsRaw     uint64 `json:"docs_raw"`      // how much raw docs data is appended
-	MetaOnDisk  uint64 `json:"meta_on_disk"`  // how much compressed metadata is stored on disk
-	IndexOnDisk uint64 `json:"index_on_disk"` // how much compressed index data is stored on disk
+	Path          string            `json:"name"`
+	Ver           string            `json:"ver"`
+	BinaryDataVer BinaryDataVersion `json:"binary_data_ver"`
+	DocsTotal     uint32            `json:"docs_total"`
+	DocsOnDisk    uint64            `json:"docs_on_disk"`  // how much compressed docs data is stored on disk
+	DocsRaw       uint64            `json:"docs_raw"`      // how much raw docs data is appended
+	MetaOnDisk    uint64            `json:"meta_on_disk"`  // how much compressed metadata is stored on disk
+	IndexOnDisk   uint64            `json:"index_on_disk"` // how much compressed index data is stored on disk
 
 	ConstRegularBlockSize uint64 `json:"const_regular_block_size"`
 	ConstIDsPerBlock      uint64 `json:"const_ids_per_block"`

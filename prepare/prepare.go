@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	insaneJSON "github.com/vitkovskii/insane-json"
+	insaneJSON "github.com/ozontech/insane-json"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/logger"

@@ -1,12 +1,13 @@
 package integration_tests
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"math/rand"
 	"net/http"
@@ -27,7 +28,6 @@ import (
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tests/setup"
@@ -660,10 +660,10 @@ func (s *IntegrationTestSuite) TestAggStat() {
 	t := s.T()
 
 	cfg := *s.Config
-	cfg.Mapping = map[string]query.MappingTypes{
-		"service": query.NewSingleType(query.TokenizerTypeKeyword, "", 0),
-		"v":       query.NewSingleType(query.TokenizerTypeKeyword, "", 0),
-		"level":   query.NewSingleType(query.TokenizerTypeKeyword, "", 0),
+	cfg.Mapping = map[string]seq.MappingTypes{
+		"service": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"v":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"level":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 	}
 
 	type Expected struct {
@@ -1034,21 +1034,36 @@ func (s *IntegrationTestSuite) TestSeal() {
 	iterations := bulksNum
 	result := 51639 * iterations
 	for i := 0; i < iterations; i++ {
-		file, _ := os.Open(common.TestDataDir + "/k8s.logs")
-		logs, _ := ioutil.ReadAll(file)
+		file, err := os.Open(common.TestDataDir + "/k8s.logs")
+		require.NoError(s.T(), err)
+		reader := bufio.NewScanner(file)
 
-		r := bytes.NewBuffer(nil)
-		for len(logs) != 0 {
-			x := bytes.IndexByte(logs, '\n')
-			log := logs[:x+1]
-			logs = logs[x+1:]
-			_, _ = r.WriteString(`{"index":true}` + "\n")
-			_, _ = r.Write(log)
+		var payload []byte
+		lines := 0
+		for reader.Scan() {
+			line := reader.Bytes()
+			lines++
+			payload = append(payload, `{"index":true}`...)
+			payload = append(payload, '\n')
+			payload = append(payload, line...)
+			payload = append(payload, '\n')
 		}
+		require.NoError(s.T(), file.Close())
+		require.True(s.T(), lines > 1024)
 
-		resp, err := http.Post(env.IngestorBulkAddr(), "", r)
+		resp, err := http.Post(env.IngestorBulkAddr(), "", bytes.NewReader(payload))
 		assert.NoError(s.T(), err, "should be no errors")
-		assert.Equal(s.T(), 200, resp.StatusCode, "wrong http status")
+		if resp.StatusCode != http.StatusOK {
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(s.T(), err)
+			s.T().Fatalf("wrong http status: %d: %s", resp.StatusCode, body)
+		}
+		esResp := struct {
+			Items []json.RawMessage `json:"items"`
+		}{}
+		require.NoError(s.T(), json.NewDecoder(resp.Body).Decode(&esResp))
+		require.Equal(s.T(), lines, len(esResp.Items))
+		require.NoError(s.T(), resp.Body.Close())
 	}
 
 	env.WaitIdle()

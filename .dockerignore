@@ -1,0 +1,9 @@
+/.git
+/.idea
+/.vscode
+/analyzer
+/seqdb
+/distribution
+/tests/data
+!/tests/data/mappings
+/data

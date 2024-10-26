@@ -45,7 +45,7 @@ func PutDocMetasCompressor(c *DocsMetasCompressor) {
 }
 
 // CompressDocsAndMetas prepare docs and meta blocks for bulk insert.
-func (c *DocsMetasCompressor) CompressDocsAndMetas(docs, meta []byte) ([]byte, []byte) {
+func (c *DocsMetasCompressor) CompressDocsAndMetas(docs, meta []byte) {
 	c.docsBuf = initBuf(c.docsBuf, len(docs))
 	c.metaBuf = initBuf(c.metaBuf, len(meta))
 
@@ -57,6 +57,9 @@ func (c *DocsMetasCompressor) CompressDocsAndMetas(docs, meta []byte) ([]byte, [
 	c.metaBuf.SetExt1(uint64(len(c.docsBuf)))
 
 	bulkSizeAfterCompression.Observe(float64(len(c.docsBuf) + len(c.metaBuf)))
+}
+
+func (c *DocsMetasCompressor) DocsMetas() ([]byte, []byte) {
 	return c.docsBuf, c.metaBuf
 }
 

@@ -70,14 +70,27 @@ func (c *UnpackCache) GetValByLID(lid uint64) uint64 {
 	return c.readVals[lid-c.StartLID]
 }
 
-func (c *UnpackCache) unpack(index int64, data []byte) {
+func (c *UnpackCache) unpackMIDs(index int64, data []byte) {
 	c.LastBlock = index
 	c.StartLID = uint64(index) * consts.IDsPerBlock
-	c.valsBuffer = unpackRawIDs(data, c.valsBuffer)
+	c.valsBuffer = unpackRawIDsVarint(data, c.valsBuffer)
 	c.readVals = c.valsBuffer
 }
 
-func unpackRawIDs(src []byte, dst []uint64) []uint64 {
+func (c *UnpackCache) unpackRIDs(index int64, data []byte, fracVersion BinaryDataVersion) {
+	c.LastBlock = index
+	c.StartLID = uint64(index) * consts.IDsPerBlock
+
+	if fracVersion < BinaryDataV1 {
+		c.valsBuffer = unpackRawIDsVarint(data, c.valsBuffer)
+	} else {
+		c.valsBuffer = unpackRawIDsNoVarint(data, c.valsBuffer)
+	}
+
+	c.readVals = c.valsBuffer
+}
+
+func unpackRawIDsVarint(src []byte, dst []uint64) []uint64 {
 	dst = dst[:0]
 	id := uint64(0)
 	for len(src) != 0 {
@@ -88,6 +101,15 @@ func unpackRawIDs(src []byte, dst []uint64) []uint64 {
 		src = src[n:]
 		id += uint64(delta)
 		dst = append(dst, id)
+	}
+	return dst
+}
+
+func unpackRawIDsNoVarint(src []byte, dst []uint64) []uint64 {
+	dst = dst[:0]
+	for len(src) != 0 {
+		dst = append(dst, binary.LittleEndian.Uint64(src))
+		src = src[8:]
 	}
 	return dst
 }
@@ -122,10 +144,10 @@ func (si *SealedIDs) GetMIDsBlock(searchSB *SearchCell, lid seq.LID, unpackCache
 		)
 	}
 
-	unpackCache.unpack(index, data)
+	unpackCache.unpackMIDs(index, data)
 }
 
-func (si *SealedIDs) GetRIDsBlock(searchSB *SearchCell, lid seq.LID, unpackCache *UnpackCache) {
+func (si *SealedIDs) GetRIDsBlock(searchSB *SearchCell, lid seq.LID, unpackCache *UnpackCache, fracVersion BinaryDataVersion) {
 	if unpackCache.uses.Load() == 0 {
 		logger.Panic("unpack cache isn't started for rid")
 	}
@@ -147,7 +169,7 @@ func (si *SealedIDs) GetRIDsBlock(searchSB *SearchCell, lid seq.LID, unpackCache
 		)
 	}
 
-	unpackCache.unpack(index, data)
+	unpackCache.unpackRIDs(index, data, fracVersion)
 }
 
 func (si *SealedIDs) GetParamsBlock(index uint32) []uint64 {
@@ -216,7 +238,7 @@ func (si *SealedIDs) loadParamsBlock(index uint32) []uint64 {
 	if util.IsRecoveredPanicError(readTask.Err) {
 		logger.Panic("todo: handle read err", zap.Error(readTask.Err))
 	}
-	return unpackRawIDs(readTask.Buf, make([]uint64, 0, consts.IDsPerBlock))
+	return unpackRawIDsVarint(readTask.Buf, make([]uint64, 0, consts.IDsPerBlock))
 }
 
 func (si *SealedIDs) getIDBlockIndexByLID(lid seq.LID) int64 {

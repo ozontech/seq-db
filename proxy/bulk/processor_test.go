@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
+	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	insaneJSON "github.com/vitkovskii/insane-json"
 
 	"github.com/ozontech/seq-db/consts"
 )

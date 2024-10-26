@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ozontech/seq-db/seq"
+
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -14,7 +16,6 @@ import (
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/storeapi"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/search"
 	"github.com/ozontech/seq-db/util"
 )
@@ -90,14 +91,14 @@ type GrpcV1 struct {
 	config APIConfig
 
 	fracManager *fracmanager.FracManager
-	mapping     query.Mapping
+	mapping     seq.Mapping
 
 	bulkData   bulkData
 	searchData searchData
 	fetchData  fetchData
 }
 
-func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mapping query.Mapping) *GrpcV1 {
+func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mapping seq.Mapping) *GrpcV1 {
 	g := &GrpcV1{
 		config:      config,
 		fracManager: fracManager,

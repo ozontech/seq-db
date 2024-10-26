@@ -7,13 +7,12 @@ import (
 	"testing"
 	"time"
 
-	insaneJSON "github.com/vitkovskii/insane-json"
+	insaneJSON "github.com/ozontech/insane-json"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	api "github.com/ozontech/seq-db/pkg/storeapi"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storeapi"
 	"github.com/ozontech/seq-db/tests/prec_bench/bare_store"
@@ -217,7 +216,7 @@ func SimpleLoad(cleaner *bench.Cleaner, bigLength int, bigShare float32) func() 
 
 // doesn't put timestamp to the document
 func SimpleBulkGenerator(cleaner *bench.Cleaner, size int, maxLag time.Duration, docs [][]byte) func() *api.BulkRequest {
-	dp := frac.NewDocProvider(query.TestMapping, consts.DefaultMaxTokenSize, false)
+	dp := frac.NewDocProvider()
 	docRoots := make([]*insaneJSON.Root, len(docs))
 	for i, d := range docs {
 		docRoots[i] = insaneJSON.Spawn()
@@ -266,7 +265,7 @@ func SetupStoreSearchBench(
 		int32(payloadConfig.SearchParallel*4),
 		100*time.Millisecond,
 	)
-	store := bare_store.NewBareStore(storeConfig, query.TestMapping)
+	store := bare_store.NewBareStore(storeConfig, seq.TestMapping)
 	storeBench := bare_store.NewBench(payloadConfig, store, nil, meter)
 	return storeBench, meter, cleaner
 }

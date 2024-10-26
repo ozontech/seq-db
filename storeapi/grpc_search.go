@@ -21,7 +21,6 @@ import (
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/storeapi"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/search"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tracing"
@@ -95,7 +94,7 @@ func (g *GrpcV1) doSearch(ctx context.Context, req *storeapi.SearchRequest) (*st
 
 	t := time.Now()
 	if req.Query == "" {
-		req.Query = query.TokenAll + ":*"
+		req.Query = seq.TokenAll + ":*"
 	}
 	ast, err := parser.ParseQuery(req.Query, g.mapping)
 	searchCell.AddParseTime(time.Since(t))

@@ -29,10 +29,11 @@ import (
 const seqDBMagic = "SEQM"
 
 type SealedIDsProvider struct {
-	ids      *SealedIDs
-	midCache *UnpackCache
-	ridCache *UnpackCache
-	searchSB *SearchCell
+	ids         *SealedIDs
+	midCache    *UnpackCache
+	ridCache    *UnpackCache
+	searchSB    *SearchCell
+	fracVersion BinaryDataVersion
 }
 
 func (p *SealedIDsProvider) GetMID(lid seq.LID) seq.MID {
@@ -41,7 +42,7 @@ func (p *SealedIDsProvider) GetMID(lid seq.LID) seq.MID {
 }
 
 func (p *SealedIDsProvider) GetRID(lid seq.LID) seq.RID {
-	p.ids.GetRIDsBlock(p.searchSB, seq.LID(lid), p.ridCache)
+	p.ids.GetRIDsBlock(p.searchSB, seq.LID(lid), p.ridCache, p.fracVersion)
 	return seq.RID(p.ridCache.GetValByLID(uint64(lid)))
 }
 
@@ -82,8 +83,9 @@ func (p *SealedIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
 
 type SealedDataProvider struct {
 	*Sealed
-	sc     *SearchCell
-	tracer *tracer.Tracer
+	sc          *SearchCell
+	tracer      *tracer.Tracer
+	fracVersion BinaryDataVersion
 }
 
 func (dp *SealedDataProvider) Tracer() *tracer.Tracer {
@@ -92,10 +94,11 @@ func (dp *SealedDataProvider) Tracer() *tracer.Tracer {
 
 func (dp *SealedDataProvider) IDsProvider(midCache, ridCache *UnpackCache) IDsProvider {
 	return &SealedIDsProvider{
-		ids:      dp.ids,
-		midCache: midCache,
-		ridCache: ridCache,
-		searchSB: dp.sc,
+		ids:         dp.ids,
+		midCache:    midCache,
+		ridCache:    ridCache,
+		searchSB:    dp.sc,
+		fracVersion: dp.fracVersion,
 	}
 }
 
@@ -531,9 +534,10 @@ func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 	f.loadAndRLock()
 
 	dp := SealedDataProvider{
-		Sealed: f,
-		sc:     NewSearchCell(ctx),
-		tracer: tracer.New(),
+		Sealed:      f,
+		sc:          NewSearchCell(ctx),
+		tracer:      tracer.New(),
+		fracVersion: f.info.BinaryDataVer,
 	}
 
 	return &dp, func() {
