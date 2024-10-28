@@ -76,7 +76,10 @@ func getSlice(size int) []int {
 		return result
 	}
 	logger.Info("recreate Inverser slice", zap.Int("size", size))
-	return make([]int, size)
+	if size > maxReusableInverserSliceSize {
+		return make([]int, size)
+	}
+	return make([]int, size, maxReusableInverserSliceSize)
 }
 
 func reuseSlice(size int) []int {
@@ -100,8 +103,12 @@ func reuseSlice(size int) []int {
 		return nil
 	}
 
-	*slice = (*slice)[:size]
-	clear(*slice)
+	return cleanSlice((*slice)[:size])
+}
 
-	return *slice
+func cleanSlice(slice []int) []int {
+	for i := range slice {
+		slice[i] = 0
+	}
+	return slice
 }
