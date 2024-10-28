@@ -16,7 +16,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.21
 	github.com/planetscale/vtprotobuf v0.6.0
 	github.com/prometheus/client_golang v1.19.1
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/valyala/fastrand v1.1.0
 	go.opencensus.io v0.23.0
 	go.uber.org/atomic v1.8.0
