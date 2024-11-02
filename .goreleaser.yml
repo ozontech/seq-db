@@ -1,0 +1,24 @@
+before:
+  hooks:
+    - go mod download
+env:
+  - CGO_ENABLED=0
+checksum:
+  name_template: '{{ .ProjectName }}_checksums.txt'
+release:
+  prerelease: auto
+
+builds:
+  - main: ./cmd/seq-db
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags:
+      - -trimpath
+      - -pgo=default.pgo
+    ldflags:
+      - -X github.com/ozontech/seqdb/buildinfo.Version={{.Version}}
