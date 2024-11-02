@@ -7,7 +7,7 @@ ARG VERSION
 ARG BUILD_TIME
 ARG TARGETARCH
 
-WORKDIR /file.d
+WORKDIR /seq-db
 
 COPY go.mod go.sum ./
 
