@@ -73,6 +73,14 @@ func BenchmarkSealing(b *testing.B) {
 	indexWorkers.Start()
 	defer indexWorkers.Stop()
 
+	const minZstdLevel = -5
+	defaultSealParams := SealParams{
+		IDsZstdLevel:           minZstdLevel,
+		LIDsZstdLevel:          minZstdLevel,
+		TokenListZstdLevel:     minZstdLevel,
+		DocsPositionsZstdLevel: minZstdLevel,
+		TokenTableZstdLevel:    minZstdLevel,
+	}
 	for i := 0; i < b.N; i++ {
 		active := NewActive(filepath.Join(dataDir, "test_"+strconv.Itoa(i)), true, indexWorkers, dr, nil)
 		err := fillActiveFraction(active)
@@ -82,7 +90,7 @@ func BenchmarkSealing(b *testing.B) {
 		active.GetAllDocuments() // emulate search-pre-sorted LIDs
 
 		b.StartTimer()
-		err = active.Seal()
+		err = active.Seal(defaultSealParams)
 		assert.NoError(b, err)
 
 		b.StopTimer()

@@ -3,23 +3,24 @@ package cache
 import (
 	"sync"
 	"time"
+	"unsafe"
 
 	"go.uber.org/atomic"
 )
 
 const (
-	clearBias           = 0.25
-	excessiveSizeFactor = 8
+	recreateThreshold   = 200
+	excessiveSizeFactor = 10
 )
 
-type generation struct {
-	entryCount   int
+type Generation struct {
+	size         atomic.Uint64
 	creationTime int64
 	stale        bool
 }
 
-func newGeneration() *generation {
-	return &generation{
+func NewGeneration() *Generation {
+	return &Generation{
 		creationTime: time.Now().UnixNano(),
 	}
 }
@@ -40,106 +41,71 @@ type entry[V any] struct {
 	// if wg is nil, everything is good, value can be used
 	wg *sync.WaitGroup
 	// gen is written and read only under Cache.mu lock
-	gen *generation
+	gen *Generation
 	// size is written under Cache.mu lock
 	// can be read without lock if wg is nil or waited on
-	size int
+	size uint64
 }
 
-func (e *entry[V]) updateGeneration(ng *generation) {
-	if og := e.gen; og != nil {
-		og.entryCount--
-		ng.entryCount++
+func (e *entry[V]) updateGeneration(ng *Generation) {
+	if ng != e.gen {
+		e.gen.size.Sub(e.size)
+		ng.size.Add(e.size)
 		e.gen = ng
 	}
 }
 
 type Cache[V any] struct {
-	payload map[uint32]*entry[V]
-	// max len payload map had
-	maxPayloadSize    int
-	currentGeneration *generation
-	generations       []*generation
-	// newEntries are the entries that don't have value yet, but are present in payload
-	newEntries int
-	// creation time of the oldest not-yet-collected generation (possibly stale though)
-	oldestCreationTime int64
-	totalSize          *atomic.Uint64
-	// covers all Cache operations
-	mu      sync.Mutex
-	metrics *Metrics
+	mu                sync.Mutex // covers all Cache operations
+	maxPayloadSize    int        // max len payload map had
+	payload           map[uint32]*entry[V]
+	currentGeneration *Generation
+	entrySize         uint64
+	metrics           *Metrics
+	released          bool
 }
 
-func NewCache[V any](
-	totalSize *atomic.Uint64,
-	metrics *Metrics,
-) *Cache[V] {
-	firstGeneration := newGeneration()
-	l := &Cache[V]{
-		payload:            make(map[uint32]*entry[V]),
-		currentGeneration:  firstGeneration,
-		generations:        []*generation{firstGeneration},
-		oldestCreationTime: firstGeneration.creationTime,
-		totalSize:          totalSize,
-		metrics:            metrics,
+func NewCache[V any](cleaner *Cleaner, metrics *Metrics) *Cache[V] {
+	keySize := unsafe.Sizeof(uint32(0))
+	entrySize := unsafe.Sizeof(entry[V]{}) + unsafe.Sizeof(&entry[V]{})
+
+	res := &Cache[V]{
+		payload:   make(map[uint32]*entry[V]),
+		metrics:   metrics,
+		entrySize: uint64(keySize + entrySize),
+	}
+	if cleaner != nil {
+		cleaner.AddBucket(res)
+	} else {
+		res.SetGeneration(NewGeneration())
 	}
 
-	return l
+	return res
 }
 
 // Reset is used in tests only
-func (c *Cache[V]) Reset() {
+func (c *Cache[V]) Reset(generation *Generation) {
 	newPayload := make(map[uint32]*entry[V])
-	firstGeneration := newGeneration()
-	generations := []*generation{firstGeneration}
+
 	c.mu.Lock()
 	c.payload = newPayload
 	c.maxPayloadSize = 0
-	c.currentGeneration = firstGeneration
-	c.generations = generations
-	c.newEntries = 0
-	c.oldestCreationTime = firstGeneration.creationTime
+	c.currentGeneration = generation
 	c.mu.Unlock()
 }
 
-func (c *Cache[V]) setGeneration(newGeneration *generation) {
-	c.currentGeneration = newGeneration
-	c.generations = append(c.generations, newGeneration)
-}
-
-func (c *Cache[V]) StartNewGeneration() {
-	gen := newGeneration()
+func (c *Cache[V]) SetGeneration(generation *Generation) {
 	c.mu.Lock()
-	c.setGeneration(gen)
+	c.currentGeneration = generation
 	c.mu.Unlock()
 }
 
-func (c *Cache[V]) RetireOldGenerations(desiredGenerations int) int {
+func (c *Cache[V]) Cleanup() uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// mark stale
-	for len(c.generations) > desiredGenerations {
-		c.generations[0].stale = true
-		c.generations = c.generations[1:]
-	}
-
-	if len(c.generations) == 0 {
-		// have at least one current generation
-		c.setGeneration(newGeneration())
-	}
-
-	// check if we can collect enough garbage
-	staleEntries := len(c.payload) - c.newEntries
-	for _, g := range c.generations {
-		staleEntries -= g.entryCount
-	}
-	if float64(staleEntries) < float64(len(c.payload))*clearBias {
-		return 0
-	}
-
 	// collect old data
-	totalFreed := 0
+	var totalFreed uint64
 	if len(c.payload) > c.maxPayloadSize {
 		c.maxPayloadSize = len(c.payload)
 	}
@@ -150,37 +116,38 @@ func (c *Cache[V]) RetireOldGenerations(desiredGenerations int) int {
 		delete(c.payload, k)
 		totalFreed += e.size
 	}
-	if c.totalSize != nil {
-		c.totalSize.Sub(uint64(totalFreed))
-	}
 
-	// recreate payload map if len is too small
-	// probably fraction is old and useless
-	if len(c.payload)*excessiveSizeFactor < c.maxPayloadSize {
-		newPayload := make(map[uint32]*entry[V], len(c.payload)*2)
-		for k, v := range c.payload {
-			newPayload[k] = v
-		}
-		c.payload = newPayload
-		c.maxPayloadSize = len(c.payload)
-	}
+	c.recreatePayload()
+	c.metrics.reportReleased(totalFreed)
 
-	c.oldestCreationTime = c.generations[0].creationTime
-
-	if c.metrics != nil {
-		c.metrics.SizeReleasedTotal.Add(float64(totalFreed))
-	}
 	return totalFreed
+}
+
+// Recreates the payload map. If len is too small, fraction is probably out of date and useless
+func (c *Cache[V]) recreatePayload() {
+	if c.maxPayloadSize < recreateThreshold { // not large enough
+		return
+	}
+	if len(c.payload)*excessiveSizeFactor > c.maxPayloadSize { // not small enough
+		return
+	}
+
+	newPayload := make(map[uint32]*entry[V], len(c.payload)*2)
+	for k, v := range c.payload {
+		newPayload[k] = v
+	}
+	c.payload = newPayload
+	c.maxPayloadSize = len(c.payload)
+
+	c.metrics.reportMapsRecreated()
 }
 
 // getOrCreate attempts to get value from cache
 // in case of failure it creates new entry, puts it into cache and returns
 func (c *Cache[V]) getOrCreate(key uint32) (*entry[V], *sync.WaitGroup, bool) {
-	c.reportTouch()
-
 	if !c.mu.TryLock() {
 		// we only need this for metrics
-		c.reportLockWait()
+		c.metrics.reportLockWait()
 		c.mu.Lock()
 	}
 	// first try to retrieve value from cache
@@ -192,63 +159,58 @@ func (c *Cache[V]) getOrCreate(key uint32) (*entry[V], *sync.WaitGroup, bool) {
 		if wg != nil {
 			// value is being added by someone else
 			// we need to wait
-			c.reportWait()
+			c.metrics.reportWait()
 			wg.Wait()
 		}
 		// when wg is done or nil, wg, size and value no longer change
 		// there's no need for locks
 		if e.wg == nil {
 			// entry is valid, value is in cache
-			c.reportHit()
-			c.reportHitsSize(e.size)
+			c.metrics.reportHits(e.size)
 			return e, nil, true
 		}
 		// someone messed it up, we need to reattempt
 		// this should happen rarely and only due to fn panics
-		c.reportReattempt()
+		c.metrics.reportReattempt()
 		c.mu.Lock()
 		e, ok = c.payload[key]
 	}
 	// we are to put the value into cache ourselves
-	e = &entry[V]{}
+	e = &entry[V]{gen: c.currentGeneration}
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	e.wg = wg
 	c.payload[key] = e
-	c.newEntries++
 	c.mu.Unlock()
 
 	return e, wg, false
 }
 
 // save is called when everything went well, and we want to save the value in cache
-func (c *Cache[V]) save(e *entry[V], wg *sync.WaitGroup, value V, size int) {
+// refMemSize - this is the size of the memory that the entry refers to
+func (c *Cache[V]) save(e *entry[V], wg *sync.WaitGroup, value V, refMemSize int, latency float64) {
+	size := c.entrySize + uint64(refMemSize)
+
 	c.mu.Lock()
-	g := c.currentGeneration
-	g.entryCount++
+
 	e.value = value
 	e.size = size
-	e.gen = g
+	e.gen.size.Add(size)
+
 	// from now on entry is valid
 	e.wg = nil
-	c.newEntries--
 	c.mu.Unlock()
-	if c.totalSize != nil {
-		c.totalSize.Add(uint64(size))
-	}
 
 	// inform all waiters that the value is ready
 	wg.Done()
 
-	c.reportMiss()
-	c.reportMissSize(uint64(size))
+	c.metrics.reportMiss(size, latency)
 }
 
 // recover is called when something went wrong, and we need to recover from unsuccessful attempt
 func (c *Cache[V]) recover(key uint32, wg *sync.WaitGroup) {
 	c.mu.Lock()
 	delete(c.payload, key)
-	c.newEntries--
 	c.mu.Unlock()
 	// let everyone learn we messed it up
 	wg.Done()
@@ -262,7 +224,7 @@ func (c *Cache[V]) handlePanic(key uint32, wg *sync.WaitGroup) {
 	}
 	// we need to remove invalid entry from cache
 	c.recover(key, wg)
-	c.reportPanic()
+	c.metrics.reportPanic()
 	panic(err)
 }
 
@@ -276,10 +238,12 @@ func (c *Cache[V]) Get(key uint32, fn func() (V, int)) V {
 
 	defer c.handlePanic(key, wg)
 	// long operation
-	value, size := fn()
+	t := time.Now()
+	value, refMemSize := fn()
+	latency := time.Since(t).Seconds()
 
 	// all good, just update the cache
-	c.save(e, wg, value, size)
+	c.save(e, wg, value, refMemSize, latency)
 
 	return value
 }
@@ -291,72 +255,39 @@ func (c *Cache[V]) GetWithError(key uint32, fn func() (V, int, error)) (V, error
 	}
 
 	defer c.handlePanic(key, wg)
-	value, size, err := fn()
+	t := time.Now()
+	value, refMemSize, err := fn()
+	latency := time.Since(t).Seconds()
 
 	if err != nil {
 		c.recover(key, wg)
 		return value, err
 	}
 
-	c.save(e, wg, value, size)
+	c.save(e, wg, value, refMemSize, latency)
 
 	return value, nil
 }
 
-func (c *Cache[V]) GetCreationTime() int64 {
-	return c.oldestCreationTime
+func (c *Cache[V]) Release() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var totalFreed uint64
+	for _, e := range c.payload {
+		totalFreed += e.size
+		e.gen.size.Sub(e.size)
+	}
+
+	c.metrics.reportReleased(totalFreed)
+
+	c.payload = nil
+	c.released = true
 }
 
-func (c *Cache[V]) reportTouch() {
-	if c.metrics != nil {
-		c.metrics.TouchTotal.Inc()
-	}
-}
+func (c *Cache[V]) Released() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-func (c *Cache[V]) reportHit() {
-	if c.metrics != nil {
-		c.metrics.HitsTotal.Inc()
-	}
-}
-
-func (c *Cache[V]) reportMiss() {
-	if c.metrics != nil {
-		c.metrics.MissTotal.Inc()
-	}
-}
-
-func (c *Cache[V]) reportPanic() {
-	if c.metrics != nil {
-		c.metrics.PanicsTotal.Inc()
-	}
-}
-
-func (c *Cache[V]) reportLockWait() {
-	if c.metrics != nil {
-		c.metrics.LockWaitsTotal.Inc()
-	}
-}
-
-func (c *Cache[V]) reportWait() {
-	if c.metrics != nil {
-		c.metrics.WaitsTotal.Inc()
-	}
-}
-
-func (c *Cache[V]) reportReattempt() {
-	if c.metrics != nil {
-		c.metrics.ReattemptsTotal.Inc()
-	}
-}
-
-func (c *Cache[V]) reportHitsSize(size int) {
-	if c.metrics != nil {
-		c.metrics.HitsSizeTotal.Add(float64(size))
-	}
-}
-
-func (c *Cache[V]) reportMissSize(size uint64) {
-	if c.metrics != nil {
-		c.metrics.MissSizeTotal.Add(float64(size))
-	}
+	return c.released
 }

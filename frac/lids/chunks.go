@@ -45,7 +45,7 @@ func (c *Chunks) GetSizeBytes() int {
 		uint32Size = int(unsafe.Sizeof(uint32(0)))
 		chunksSize = int(unsafe.Sizeof(*c))
 	)
-	return chunksSize + uint32Size*len(c.LIDs) + uint32Size*len(c.Offsets)
+	return chunksSize + uint32Size*cap(c.LIDs) + uint32Size*cap(c.Offsets)
 }
 
 func (c *Chunks) unpack(data *packer.BytesUnpacker, buf *unpackBuffer) error {

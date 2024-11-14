@@ -68,7 +68,9 @@ func TestProcessDocuments(t *testing.T) {
 			"spans.tagsMap.http.method":             newMapping(seq.TokenizerTypeKeyword),
 			"spans2":                                newMapping(seq.TokenizerTypeNested),
 			"spans2.span_id":                        newMapping(seq.TokenizerTypeKeyword),
-			"spans2.operation_name":                 newMapping(seq.TokenizerTypeKeyword)},
+			"spans2.operation_name":                 newMapping(seq.TokenizerTypeKeyword),
+			"exists_only":                           newMapping(seq.TokenizerTypeExists),
+		},
 		MaxTokenSize:           consts.KB,
 		CaseSensitive:          false,
 		PartialFieldIndexing:   false,
@@ -102,6 +104,24 @@ func TestProcessDocuments(t *testing.T) {
 						ID:     id,
 						Size:   2,
 						Tokens: []frac.MetaToken{newToken(seq.TokenAll, "")},
+					}},
+				}
+			},
+		},
+		{
+			Name: "exists_field",
+			Payload: func() TestPayload {
+				doc := []string{`{"exists_only": "123"}`}
+				return TestPayload{
+					InDocs:  doc,
+					ExpDocs: doc,
+					ExpMeta: []frac.MetaData{{
+						ID:   id,
+						Size: 22,
+						Tokens: []frac.MetaToken{
+							newToken(seq.TokenAll, ""),
+							newToken(seq.TokenExists, "exists_only"),
+						},
 					}},
 				}
 			},

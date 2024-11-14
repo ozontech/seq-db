@@ -13,7 +13,15 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-func seal(f *Active) {
+type SealParams struct {
+	IDsZstdLevel           int
+	LIDsZstdLevel          int
+	TokenListZstdLevel     int
+	DocsPositionsZstdLevel int
+	TokenTableZstdLevel    int
+}
+
+func seal(f *Active, params SealParams) {
 	logger.Info("sealing fraction", zap.String("fraction", f.BaseFileName))
 
 	start := time.Now()
@@ -35,7 +43,7 @@ func seal(f *Active) {
 		logger.Fatal("can't seek file", zap.String("file", file.Name()), zap.Error(err))
 	}
 
-	if err = writeAllBlocks(f, file); err != nil {
+	if err = writeAllBlocks(f, file, params); err != nil {
 		logger.Fatal("can't seek file", zap.String("file", file.Name()), zap.Error(err))
 	}
 
@@ -76,7 +84,7 @@ func seal(f *Active) {
 	)
 }
 
-func writeAllBlocks(f *Active, ws io.WriteSeeker) error {
+func writeAllBlocks(f *Active, ws io.WriteSeeker, params SealParams) error {
 	var err error
 
 	writer := NewSealedBlockWriter(ws)
@@ -89,33 +97,33 @@ func writeAllBlocks(f *Active, ws io.WriteSeeker) error {
 	}
 
 	logger.Info("sealing tokens...")
-	tokenTable, err := writer.writeTokensBlocks(producer.getTokensBlocksGenerator())
+	tokenTable, err := writer.writeTokensBlocks(params.TokenListZstdLevel, producer.getTokensBlocksGenerator())
 	if err != nil {
 		logger.Error("sealing tokens error", zap.Error(err))
 		return err
 	}
 
 	logger.Info("sealing tokens table...")
-	if err = writer.writeTokenTableBlocks(producer.getTokenTableBlocksGenerator(tokenTable)); err != nil {
+	if err = writer.writeTokenTableBlocks(params.TokenTableZstdLevel, producer.getTokenTableBlocksGenerator(tokenTable)); err != nil {
 		logger.Error("sealing tokens table error", zap.Error(err))
 		return err
 	}
 
 	logger.Info("writing document positions block...")
-	if err = writer.writePositionsBlock(producer.getPositionBlock()); err != nil {
+	if err = writer.writePositionsBlock(params.DocsPositionsZstdLevel, producer.getPositionBlock()); err != nil {
 		logger.Error("document positions block error", zap.Error(err))
 		return err
 	}
 
 	logger.Info("sealing ids...")
-	minBlockIDs, err := writer.writeIDsBlocks(producer.getIDsBlocksGenerator(consts.IDsBlockSize))
+	minBlockIDs, err := writer.writeIDsBlocks(params.IDsZstdLevel, producer.getIDsBlocksGenerator(consts.IDsBlockSize))
 	if err != nil {
 		logger.Error("seal ids error", zap.Error(err))
 		return err
 	}
 
 	logger.Info("sealing lids...")
-	lidsTable, err := writer.writeLIDsBlocks(producer.getLIDsBlockGenerator(consts.LIDBlockCap))
+	lidsTable, err := writer.writeLIDsBlocks(params.LIDsZstdLevel, producer.getLIDsBlockGenerator(consts.LIDBlockCap))
 	if err != nil {
 		logger.Error("seal lids error", zap.Error(err))
 		return err

@@ -3,13 +3,13 @@ package disk
 import (
 	"io"
 
-	"github.com/pierrec/lz4/v4"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/packer"
+	"github.com/ozontech/seq-db/zstd"
 )
 
 type BlocksWriter struct {
@@ -38,26 +38,18 @@ func (w *BlocksWriter) WriteEmptyBlock() {
 	w.appendBlocksRegistry(header)
 }
 
-func (w *BlocksWriter) WriteBlock(blockType string, data []byte, compress bool, ext1, ext2 uint64) (uint32, error) {
-	codec := CodecLZ4
-
-	var err error
-	var finalData []byte
-
+func (w *BlocksWriter) WriteBlock(blockType string, data []byte, compress bool, zstdLevel int, ext1, ext2 uint64) (uint32, error) {
+	codec := CodecNo
+	finalData := data
 	if compress {
-		compressed := bytespool.Acquire(len(data) + consts.RegularBlockSize)
+		codec = CodecZSTD
+		compressed := bytespool.AcquireReset(len(data) + consts.RegularBlockSize)
 		defer bytespool.Release(compressed)
-
-		n, err := lz4.CompressBlock(data, compressed.B, nil)
-		if err != nil {
-			return 0, err
+		finalData = zstd.CompressLevel(data, compressed.B, zstdLevel)
+		if len(finalData) >= len(data) {
+			codec = CodecNo
+			finalData = data
 		}
-		finalData = compressed.B[:n]
-	}
-
-	if len(finalData) == 0 {
-		finalData = data
-		codec = CodecNo
 	}
 
 	pos, err := w.writeSeeker.Seek(0, io.SeekCurrent)

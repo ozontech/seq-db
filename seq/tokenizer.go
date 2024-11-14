@@ -20,25 +20,25 @@ var (
 type TokenizerType int
 
 const (
-	TokenizerTypeNoop        TokenizerType = 0
-	TokenizerTypeKeyword     TokenizerType = 1
-	TokenizerTypeText        TokenizerType = 2
-	TokenizerTypeObject      TokenizerType = 3
-	TokenizerTypeTags        TokenizerType = 4
-	TokenizerTypeKeywordList TokenizerType = 5
-	TokenizerTypePath        TokenizerType = 6
-	TokenizerTypeNested      TokenizerType = 7
+	TokenizerTypeNoop    TokenizerType = 0
+	TokenizerTypeKeyword TokenizerType = 1
+	TokenizerTypeText    TokenizerType = 2
+	TokenizerTypeObject  TokenizerType = 3
+	TokenizerTypeTags    TokenizerType = 4
+	TokenizerTypePath    TokenizerType = 6
+	TokenizerTypeNested  TokenizerType = 7
+	TokenizerTypeExists  TokenizerType = 8
 )
 
 var TokenTypesToNames = map[TokenizerType]string{
-	TokenizerTypeNoop:        "noop",
-	TokenizerTypeKeyword:     "keyword",
-	TokenizerTypeText:        "text",
-	TokenizerTypeObject:      "object",
-	TokenizerTypeTags:        "tags",
-	TokenizerTypeKeywordList: "keyword-list",
-	TokenizerTypePath:        "path",
-	TokenizerTypeNested:      "nested",
+	TokenizerTypeNoop:    "noop",
+	TokenizerTypeKeyword: "keyword",
+	TokenizerTypeText:    "text",
+	TokenizerTypeObject:  "object",
+	TokenizerTypeTags:    "tags",
+	TokenizerTypePath:    "path",
+	TokenizerTypeNested:  "nested",
+	TokenizerTypeExists:  "exists",
 }
 
 var NamesToTokenTypes = map[string]TokenizerType{}

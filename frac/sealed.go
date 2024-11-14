@@ -429,6 +429,9 @@ func (f *Sealed) Suicide() {
 
 	f.close("suicide")
 
+	f.cache.Release()
+	f.docBlockCache.Release()
+
 	// make some atomic magic, to be more stable on removing fractions
 	oldPath := f.BaseFileName + consts.DocsFileSuffix
 	newPath := f.BaseFileName + consts.DocsDelFileSuffix

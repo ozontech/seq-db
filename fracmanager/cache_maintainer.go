@@ -1,12 +1,11 @@
 package fracmanager
 
 import (
-	"math"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
@@ -17,238 +16,245 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-type layerInfo struct {
-	size    *atomic.Uint64
-	metrics *cache.Metrics
+const (
+	docsName   = "docblock"
+	midsName   = "mids"
+	tokensName = "tokens"
+	lidsName   = "lids"
+	paramsName = "params"
+	ridsName   = "rids"
+	indexName  = "index"
+)
+
+type cleanerConf struct {
+	layers    []string
+	sizeLimit uint64 // either fixed size
+	weight    uint64 // or relative size
+}
+
+var config = []cleanerConf{
+	{
+		layers: []string{indexName},
+		weight: 3,
+	},
+	{
+		layers: []string{midsName, ridsName, paramsName},
+		weight: 9,
+	},
+	{
+		layers: []string{lidsName},
+		weight: 40,
+	},
+	{
+		layers: []string{tokensName},
+		weight: 40,
+	},
+	{
+		layers: []string{docsName},
+		weight: 8,
+	},
 }
 
 type CacheMaintainer struct {
-	info                   map[string]layerInfo
-	lidsCleaner            *cache.Cleaner // long slices, big total size in bytes
-	tokensCleaner          *cache.Cleaner // lots of entries, often accessed
-	otherCleaner           *cache.Cleaner // params, index, mids, rids: not too much in total
-	lidsSizeLimit          uint64
-	tokensSizeLimit        uint64
-	lidsAndTokensSizeLimit uint64
-	otherSizeLimit         uint64
-	totalSizeLimit         uint64
-	docBlockSizeLimit      uint64
-	docBlockCleaner        *cache.Cleaner
-	metrics                *SealedIndexCacheMetrics
+	layers        map[string]layer
+	cleaners      []*cache.Cleaner
+	cleanerLabels []string
 }
 
-const (
-	docBlockName = "docblock"
-	midsName     = "mids"
-	tokensName   = "tokens"
-	lidsName     = "lids"
-	paramsName   = "params"
-	ridsName     = "rids"
-	indexName    = "index"
-)
+type layer struct {
+	metrics *cache.Metrics
+	cleaner *cache.Cleaner
+}
 
-var cacheLayerNames = []string{midsName, tokensName, lidsName, paramsName, ridsName, indexName, docBlockName}
+func createCleaners(cfg []cleanerConf, totalSize uint64, metrics *CacheMaintainerMetrics) ([]*cache.Cleaner, []string) {
+	labels := make([]string, len(cfg))
+	cleaners := make([]*cache.Cleaner, len(cfg))
 
-func NewCacheMaintainer(sealedIndexCacheSize, docBlockCacheSize uint64, metrics *SealedIndexCacheMetrics) *CacheMaintainer {
-	info := make(map[string]layerInfo)
-	for _, name := range cacheLayerNames {
-		s := &atomic.Uint64{}
-		i := layerInfo{size: s}
-		if metrics != nil {
-			i.metrics = metrics.GetLayerMetrics(name)
-		}
-		info[name] = i
+	s := float64(totalSize) * 0.9 // reserve 10% for spikes
+
+	totalWeights := 0
+	for i := range cfg {
+		s -= float64(cfg[i].sizeLimit)
+		totalWeights += int(cfg[i].weight)
 	}
-	// legacy: as cache doesn't block on data insertion, and doesn't control
-	// data before entering cache, and data still in-use after being evicted from cache
-	// we need some margin. It was always 20%. May be reduced depending on performance
-	// or removed if we manage allocations through cache
-	s := float64(sealedIndexCacheSize) * 0.8
+
+	for i, cfgItem := range cfg {
+		sizeLimit := cfgItem.sizeLimit
+		if sizeLimit == 0 {
+			sizeLimit = uint64(s * float64(cfgItem.weight) / float64(totalWeights))
+		}
+		labels[i] = strings.Join(cfgItem.layers, "-")
+		cleaners[i] = cache.NewCleaner(sizeLimit, metrics.GetCleanerMetrics(labels[i]))
+	}
+
+	return cleaners, labels
+}
+
+func cleanersToLayers(cfg []cleanerConf, cleaners []*cache.Cleaner, metrics *CacheMaintainerMetrics) map[string]layer {
+	res := map[string]layer{}
+	for i, c := range cfg {
+		for _, l := range c.layers {
+			var m *cache.Metrics
+			if metrics != nil {
+				m = metrics.GetLayerMetrics(l)
+			}
+			res[l] = layer{
+				metrics: m,
+				cleaner: cleaners[i],
+			}
+		}
+	}
+	return res
+}
+
+func NewCacheMaintainer(totalCacheSize uint64, metrics *CacheMaintainerMetrics) *CacheMaintainer {
+	cleaners, labels := createCleaners(config, totalCacheSize, metrics)
 	return &CacheMaintainer{
-		info: info,
-		// index cache settings
-		lidsCleaner:   cache.NewCleaner([]*atomic.Uint64{info[lidsName].size}),
-		tokensCleaner: cache.NewCleaner([]*atomic.Uint64{info[tokensName].size}),
-		otherCleaner: cache.NewCleaner([]*atomic.Uint64{
-			info[midsName].size,
-			info[paramsName].size,
-			info[ridsName].size,
-			info[indexName].size,
-		}),
-		// none two of three can completely purge the third cache
-		// these limitations fix ranges of sizes they may take
-		// lids will have from 0.4 to 0.7 of total size (1.0 - 0.4 - 0.2 = 0.4)
-		// tokens will have from 0.1 to 0.4 (1.0 - 0.7 - 0.2 = 0.1)
-		// other will be between 0.1 and 0.2 (1.0 - 0.9 = 0.1)
-		// thus, each cache is protected from complete purge by others
-		// and still there's some room for self-balancing
-		lidsSizeLimit:          uint64(s * 0.7),
-		tokensSizeLimit:        uint64(s * 0.4),
-		lidsAndTokensSizeLimit: uint64(s * 0.9),
-		otherSizeLimit:         uint64(s * 0.2),
-		totalSizeLimit:         uint64(s),
-
-		// doc block cache settings
-		docBlockCleaner:   cache.NewCleaner([]*atomic.Uint64{info[docBlockName].size}),
-		docBlockSizeLimit: docBlockCacheSize,
-
-		metrics: metrics,
+		cleanerLabels: labels,
+		cleaners:      cleaners,
+		layers:        cleanersToLayers(config, cleaners, metrics),
 	}
 }
 
 func newCache[V any](cm *CacheMaintainer, layerName string) *cache.Cache[V] {
-	info := cm.info[layerName]
-	return cache.NewCache[V](info.size, info.metrics)
+	c := cm.layers[layerName]
+	return cache.NewCache[V](c.cleaner, c.metrics)
 }
 
 func (cm *CacheMaintainer) CreateDocBlockCache() *cache.Cache[[]byte] {
-	newDocCache := newCache[[]byte](cm, docBlockName)
-
-	cm.docBlockCleaner.AddBuckets(newDocCache)
-	return newDocCache
+	return newCache[[]byte](cm, docsName)
 }
 
 func (cm *CacheMaintainer) CreateSealedIndexCache() *frac.SealedIndexCache {
-	b := &frac.SealedIndexCache{
+	return &frac.SealedIndexCache{
 		MIDs:     newCache[[]byte](cm, midsName),
-		Tokens:   newCache[*token.CacheEntry](cm, tokensName),
-		LIDs:     newCache[*lids.Chunks](cm, lidsName),
-		Params:   newCache[[]uint64](cm, paramsName),
 		RIDs:     newCache[[]byte](cm, ridsName),
+		Params:   newCache[[]uint64](cm, paramsName),
+		LIDs:     newCache[*lids.Chunks](cm, lidsName),
+		Tokens:   newCache[*token.CacheEntry](cm, tokensName),
 		Registry: newCache[[]byte](cm, indexName),
 	}
-	cm.lidsCleaner.AddBuckets(b.LIDs)
-	cm.tokensCleaner.AddBuckets(b.Tokens)
-	cm.otherCleaner.AddBuckets(b.MIDs, b.Params, b.RIDs, b.Registry)
-	return b
 }
 
-func (cm *CacheMaintainer) GetSize() uint64 {
-	size := uint64(0)
-	for _, info := range cm.info {
-		size += info.size.Load()
-	}
-	return size
-}
-
-func (cm *CacheMaintainer) RunCleanLoop(done <-chan struct{}, interval time.Duration) *sync.WaitGroup {
+func (cm *CacheMaintainer) RunCleanLoop(done <-chan struct{}, cleanupInterval, gcInterval time.Duration) *sync.WaitGroup {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 
-		util.RunEvery(done, interval, func() {
-			cm.CleanUp()
+		runs := 0
+		gcRunsCount := int(gcInterval / cleanupInterval)
+
+		util.RunEvery(done, cleanupInterval, func() {
+			runs++
+			cm.rotate()
+			cm.cleanup()
+
+			if runs >= gcRunsCount {
+				runs = 0
+				cm.garbageCollection()
+			}
 		})
 	}()
 	return wg
 }
 
-func clean(toSize uint64, stat *cache.CleanStat, cleaners ...*cache.Cleaner) {
-	var sizes []uint64
-	var totalSize uint64
-	for _, c := range cleaners {
-		s := c.GetSize()
-		sizes = append(sizes, s)
-		totalSize += s
-	}
-	if totalSize <= toSize {
-		return
-	}
-	ratio := float64(totalSize) / float64(toSize)
-	for i, c := range cleaners {
-		c.CleanUp(uint64(float64(sizes[i])/ratio), stat)
+func (cm *CacheMaintainer) rotate() {
+	for _, cleaner := range cm.cleaners {
+		cleaner.Rotate()
 	}
 }
 
-func (cm *CacheMaintainer) CleanUp() {
-	t1 := time.Now()
-	fromSize := cm.GetSize()
-	stat := &cache.CleanStat{}
+func (cm *CacheMaintainer) cleanup() {
+	for i, cleaner := range cm.cleaners {
+		start := time.Now()
+		stat := &cache.CleanStat{}
+		if cleaner.Cleanup(stat) {
+			stop := time.Now()
+			logger.Info("cache cleaner old generations cleaned up",
+				zap.String("name", cm.cleanerLabels[i]),
+				util.ZapUint64AsSizeStr("from_size", stat.TotalSize),
+				util.ZapUint64AsSizeStr("to_size", cleaner.SizeLimit()),
+				util.ZapUint64AsSizeStr("size_to_clean", stat.SizeToClean),
+				util.ZapUint64AsSizeStr("released", stat.BytesReleased),
+				zap.Int("buckets_cleaned", stat.BucketsCleaned),
+				zap.Int("buckets_total", stat.BucketsTotal),
+				zap.Int("gen_cleaned", stat.GensCleaned),
+				zap.Int("gen_total", stat.GensTotal),
+				util.ZapDurationWithPrec("age_s", time.Duration(stop.UnixNano()-stat.OldestGenTime), "s", 2),
+				util.ZapDurationWithPrec("took_ms", stop.Sub(start), "ms", 2),
+			)
+		}
+	}
+}
 
-	clean(cm.lidsSizeLimit, stat, cm.lidsCleaner)
-	clean(cm.tokensSizeLimit, stat, cm.tokensCleaner)
-	clean(cm.otherSizeLimit, stat, cm.otherCleaner)
-	clean(cm.lidsAndTokensSizeLimit, stat, cm.lidsCleaner, cm.tokensCleaner)
-	clean(cm.totalSizeLimit, stat, cm.lidsCleaner, cm.tokensCleaner, cm.otherCleaner)
+func (cm *CacheMaintainer) garbageCollection() {
+	for i, cleaner := range cm.cleaners {
+		if cleaned := cleaner.CleanEmptyGenerations(); cleaned > 0 {
+			logger.Info("cache cleaner empty generations cleaned",
+				zap.String("name", cm.cleanerLabels[i]),
+				zap.Int("generations_deleted", cleaned),
+			)
+		}
 
-	clean(cm.docBlockSizeLimit, stat, cm.docBlockCleaner)
-
-	if stat.Bytes != 0 {
-		newestCreationTime := int64(0)
-		oldestCreationTime := int64(math.MaxInt64)
-		newestCreationTime, oldestCreationTime = cm.lidsCleaner.GetCreationTimes(newestCreationTime, oldestCreationTime)
-		newestCreationTime, oldestCreationTime = cm.tokensCleaner.GetCreationTimes(newestCreationTime, oldestCreationTime)
-		newestCreationTime, oldestCreationTime = cm.otherCleaner.GetCreationTimes(newestCreationTime, oldestCreationTime)
-
-		t2 := time.Now()
-		logger.Info("cache cleaned up",
-			util.ZapUint64AsSizeStr("from", fromSize),
-			util.ZapUint64AsSizeStr("released", stat.Bytes),
-			zap.Uint64("buckets", stat.Buckets),
-			zap.Int("generations", stat.Generations),
-			util.ZapDurationWithPrec("min_age_s", time.Duration(t2.UnixNano()-newestCreationTime), "s", 3),
-			util.ZapDurationWithPrec("max_age_s", time.Duration(t2.UnixNano()-oldestCreationTime), "s", 3),
-			util.ZapDurationWithPrec("took_ms", t2.Sub(t1), "ms", 2),
-		)
+		if released := cleaner.ReleaseBuckets(); released > 0 {
+			logger.Info("cache cleaner buckets released",
+				zap.String("name", cm.cleanerLabels[i]),
+				zap.Int("buckets_deleted", released),
+			)
+		}
 	}
 }
 
 // Reset is used in tests only
 func (cm *CacheMaintainer) Reset() {
-	cm.lidsCleaner.Reset()
-	cm.tokensCleaner.Reset()
-	cm.otherCleaner.Reset()
-}
-
-func (cm *CacheMaintainer) ReportStats() {
-	totalSize := cm.GetSize()
-	overcommitted := uint64(0)
-	if totalSize > cm.totalSizeLimit {
-		overcommitted = cm.totalSizeLimit - totalSize
-	}
-
-	logger.Info("cache stats",
-		util.ZapUint64AsSizeStr("total_size", totalSize),
-		util.ZapUint64AsSizeStr("overcommitted", overcommitted),
-	)
-
-	for _, name := range cacheLayerNames {
-		size := cm.info[name].size.Load()
-		cm.metrics.SizeTotal.WithLabelValues(name).Set(float64(size))
-		logger.Info("layer info",
-			zap.String("name", name),
-			util.ZapUint64AsSizeStr("size", size),
-		)
+	for _, cleaner := range cm.cleaners {
+		cleaner.Reset()
 	}
 }
 
-type SealedIndexCacheMetrics struct {
-	TouchTotal        *prometheus.CounterVec
-	HitsTotal         *prometheus.CounterVec
-	MissTotal         *prometheus.CounterVec
-	PanicsTotal       *prometheus.CounterVec
-	LockWaitsTotal    *prometheus.CounterVec
-	WaitsTotal        *prometheus.CounterVec
-	ReattemptsTotal   *prometheus.CounterVec
-	HitsSizeTotal     *prometheus.CounterVec
-	MissSizeTotal     *prometheus.CounterVec
-	SizeReleasedTotal *prometheus.CounterVec
+type CacheMaintainerMetrics struct {
+	HitsTotal       *prometheus.CounterVec
+	MissTotal       *prometheus.CounterVec
+	PanicsTotal     *prometheus.CounterVec
+	LockWaitsTotal  *prometheus.CounterVec
+	WaitsTotal      *prometheus.CounterVec
+	ReattemptsTotal *prometheus.CounterVec
+	SizeRead        *prometheus.CounterVec
+	SizeOccupied    *prometheus.CounterVec
+	SizeReleased    *prometheus.CounterVec
+	MapsRecreated   *prometheus.CounterVec
+	MissLatency     *prometheus.CounterVec
 
-	SizeTotal *prometheus.GaugeVec
+	Oldest            *prometheus.GaugeVec
+	AddBuckets        *prometheus.CounterVec
+	DelBuckets        *prometheus.CounterVec
+	CleanGenerations  *prometheus.CounterVec
+	ChangeGenerations *prometheus.CounterVec
 }
 
-func (m *SealedIndexCacheMetrics) GetLayerMetrics(layerName string) *cache.Metrics {
+func (m *CacheMaintainerMetrics) GetLayerMetrics(layerName string) *cache.Metrics {
 	return &cache.Metrics{
-		TouchTotal:        m.TouchTotal.WithLabelValues(layerName),
-		HitsTotal:         m.HitsTotal.WithLabelValues(layerName),
-		MissTotal:         m.MissTotal.WithLabelValues(layerName),
-		PanicsTotal:       m.PanicsTotal.WithLabelValues(layerName),
-		LockWaitsTotal:    m.LockWaitsTotal.WithLabelValues(layerName),
-		WaitsTotal:        m.WaitsTotal.WithLabelValues(layerName),
-		ReattemptsTotal:   m.ReattemptsTotal.WithLabelValues(layerName),
-		HitsSizeTotal:     m.HitsSizeTotal.WithLabelValues(layerName),
-		MissSizeTotal:     m.MissSizeTotal.WithLabelValues(layerName),
-		SizeReleasedTotal: m.SizeReleasedTotal.WithLabelValues(layerName),
+		HitsTotal:       m.HitsTotal.WithLabelValues(layerName),
+		MissTotal:       m.MissTotal.WithLabelValues(layerName),
+		PanicsTotal:     m.PanicsTotal.WithLabelValues(layerName),
+		LockWaitsTotal:  m.LockWaitsTotal.WithLabelValues(layerName),
+		WaitsTotal:      m.WaitsTotal.WithLabelValues(layerName),
+		ReattemptsTotal: m.ReattemptsTotal.WithLabelValues(layerName),
+		SizeRead:        m.SizeRead.WithLabelValues(layerName),
+		SizeOccupied:    m.SizeOccupied.WithLabelValues(layerName),
+		SizeReleased:    m.SizeReleased.WithLabelValues(layerName),
+		MapsRecreated:   m.MapsRecreated.WithLabelValues(layerName),
+		MissLatency:     m.MissLatency.WithLabelValues(layerName),
+	}
+}
+
+func (m *CacheMaintainerMetrics) GetCleanerMetrics(cleanerLabel string) *cache.CleanerMetrics {
+	return &cache.CleanerMetrics{
+		Oldest:            m.Oldest.WithLabelValues(cleanerLabel),
+		AddBuckets:        m.AddBuckets.WithLabelValues(cleanerLabel),
+		DelBuckets:        m.DelBuckets.WithLabelValues(cleanerLabel),
+		CleanGenerations:  m.CleanGenerations.WithLabelValues(cleanerLabel),
+		ChangeGenerations: m.ChangeGenerations.WithLabelValues(cleanerLabel),
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	insaneJSON "github.com/ozontech/insane-json"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
@@ -528,22 +527,98 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 	return data, si.sourceByClient[host], nil
 }
 
-func (si *Ingestor) GetHealthJSON(root *insaneJSON.Root) {
-	numberOfNodes := len(si.config.HotStores.Shards) + len(si.config.HotReadStores.Shards) + len(si.config.ReadStores.Shards) + len(si.config.WriteStores.Shards)
+type IngestorStatus struct {
+	NumberOfStores    int
+	OldestStorageTime *time.Time
+	Stores            []StoreStatus
+}
 
-	root.AddField("cluster_name").MutateToString("traces")
-	root.AddField("status").MutateToString("green")
-	root.AddField("timed_out").MutateToBool(false)
-	root.AddField("number_of_nodes").MutateToInt(numberOfNodes)
-	root.AddField("number_of_data_nodes").MutateToInt(numberOfNodes)
-	root.AddField("active_primary_shards").MutateToInt(1)
-	root.AddField("active_shards").MutateToInt(1)
-	root.AddField("relocating_shards").MutateToInt(0)
-	root.AddField("initializing_shards").MutateToInt(0)
-	root.AddField("unassigned_shards").MutateToInt(0)
-	root.AddField("delayed_unassigned_shards").MutateToInt(0)
-	root.AddField("number_of_pending_tasks").MutateToInt(0)
-	root.AddField("number_of_in_flight_fetch").MutateToInt(0)
-	root.AddField("task_max_waiting_in_queue_millis").MutateToInt(0)
-	root.AddField("active_shards_percent_as_number").MutateToInt(100.0)
+type StoreStatus struct {
+	Host       string
+	OldestTime time.Time
+	Error      string
+}
+
+func (si *Ingestor) Status(ctx context.Context) *IngestorStatus {
+	storesHosts := si.getStoresHosts()
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(storesHosts))
+	respChan := make(chan StoreStatus, len(storesHosts))
+
+	for _, host := range storesHosts {
+		go func(host string) {
+			defer wg.Done()
+
+			client, has := si.clients[host]
+			if !has {
+				respChan <- StoreStatus{Host: host, Error: fmt.Sprintf("no client for host: %s", host)}
+				return
+			}
+			resp, err := client.Status(ctx, &storeapi.StatusRequest{})
+			if err != nil {
+				respChan <- StoreStatus{Host: host, Error: err.Error()}
+				return
+			}
+			respChan <- StoreStatus{Host: host, OldestTime: resp.OldestTime.AsTime()}
+		}(host)
+	}
+
+	go func() {
+		wg.Wait()
+		close(respChan)
+	}()
+
+	var oldestTime *time.Time
+
+	storesStatuses := make([]StoreStatus, 0, len(storesHosts))
+	for resp := range respChan {
+		if resp.Error != "" {
+			storesStatuses = append(storesStatuses, StoreStatus{
+				Host:  resp.Host,
+				Error: resp.Error,
+			})
+			continue
+		}
+		ot := resp.OldestTime
+		storesStatuses = append(storesStatuses, StoreStatus{
+			Host:       resp.Host,
+			OldestTime: ot,
+		})
+		if oldestTime == nil || ot.Before(*oldestTime) {
+			oldestTime = &ot
+		}
+	}
+
+	return &IngestorStatus{
+		NumberOfStores:    len(storesHosts),
+		OldestStorageTime: oldestTime,
+		Stores:            storesStatuses,
+	}
+}
+
+func (si *Ingestor) getStoresHosts() []string {
+	numberOfStores := len(si.config.HotStores.Shards) + len(si.config.HotReadStores.Shards) +
+		len(si.config.ReadStores.Shards) + len(si.config.WriteStores.Shards)
+
+	hosts := make([]string, 0, numberOfStores)
+	seen := make(map[string]struct{}, numberOfStores)
+
+	shards := make([][]string, 0, numberOfStores)
+	shards = append(shards, si.config.HotStores.Shards...)
+	shards = append(shards, si.config.HotReadStores.Shards...)
+	shards = append(shards, si.config.ReadStores.Shards...)
+	shards = append(shards, si.config.WriteStores.Shards...)
+
+	for _, shard := range shards {
+		for _, host := range shard {
+			if _, ok := seen[host]; ok {
+				continue
+			}
+			hosts = append(hosts, host)
+			seen[host] = struct{}{}
+		}
+	}
+
+	return hosts
 }

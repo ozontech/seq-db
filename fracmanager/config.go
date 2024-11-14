@@ -4,40 +4,55 @@ import (
 	"time"
 
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac"
 )
 
 type Config struct {
 	DataDir string
 
-	FracSize          uint64
-	TotalSize         uint64
-	CacheSize         uint64
-	DocBlockCacheSize uint64
-
-	ComputeN int
+	FracSize  uint64
+	TotalSize uint64
+	CacheSize uint64
 
 	MaxFractionHits uint64 // the maximum number of fractions used in the search
 
-	FracLoadLimit    uint64 // how many sealed fractions should fracmanager load, if 0 then loads all
-	ShouldReplay     bool
-	ShouldRemoveMeta bool
-	EvalDelay        time.Duration
-	FieldCacheDelay  time.Duration
-	MaintenanceDelay time.Duration
-	CacheDelay       time.Duration
+	FracLoadLimit     uint64 // how many sealed fractions should fracmanager load, if 0 then loads all
+	ShouldReplay      bool
+	ShouldRemoveMeta  bool
+	MaintenanceDelay  time.Duration
+	CacheCleanupDelay time.Duration
+	CacheGCDelay      time.Duration
+	SealParams        frac.SealParams
 }
 
 func FillConfigWithDefault(config *Config) *Config {
-	if config.ComputeN == 0 {
-		config.ComputeN = consts.DefaultComputeN
-	}
-
 	if config.MaintenanceDelay == 0 {
 		config.MaintenanceDelay = consts.DefaultMaintenanceDelay
 	}
 
-	if config.CacheDelay == 0 {
-		config.CacheDelay = consts.DefaultCacheDelay
+	if config.CacheCleanupDelay == 0 {
+		config.CacheCleanupDelay = consts.DefaultCacheCleanupDelay
+	}
+	if config.CacheGCDelay == 0 {
+		config.CacheGCDelay = consts.DefaultCacheGCDelay
+	}
+
+	// Default zstd compression level, see: https://facebook.github.io/zstd/zstd_manual.html
+	const zstdDefaultLevel = 3
+	if config.SealParams.IDsZstdLevel == 0 {
+		config.SealParams.IDsZstdLevel = zstdDefaultLevel
+	}
+	if config.SealParams.LIDsZstdLevel == 0 {
+		config.SealParams.LIDsZstdLevel = zstdDefaultLevel
+	}
+	if config.SealParams.TokenListZstdLevel == 0 {
+		config.SealParams.TokenListZstdLevel = zstdDefaultLevel
+	}
+	if config.SealParams.DocsPositionsZstdLevel == 0 {
+		config.SealParams.DocsPositionsZstdLevel = zstdDefaultLevel
+	}
+	if config.SealParams.TokenTableZstdLevel == 0 {
+		config.SealParams.TokenTableZstdLevel = zstdDefaultLevel
 	}
 
 	return config

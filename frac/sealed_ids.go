@@ -134,7 +134,7 @@ func (si *SealedIDs) GetMIDsBlock(searchSB *SearchCell, lid seq.LID, unpackCache
 
 	data := si.cache.MIDs.Get(uint32(index+1), func() ([]byte, int) {
 		block := si.loadMIDBlock(searchSB, uint32(index))
-		return block, len(block)
+		return block, cap(block)
 	})
 
 	if len(data) == 0 {
@@ -159,7 +159,7 @@ func (si *SealedIDs) GetRIDsBlock(searchSB *SearchCell, lid seq.LID, unpackCache
 
 	data := si.cache.RIDs.Get(uint32(index)+1, func() ([]byte, int) {
 		block := si.loadRIDBlock(searchSB, uint32(index))
-		return block, len(block)
+		return block, cap(block)
 	})
 
 	if len(data) == 0 {
@@ -175,7 +175,7 @@ func (si *SealedIDs) GetRIDsBlock(searchSB *SearchCell, lid seq.LID, unpackCache
 func (si *SealedIDs) GetParamsBlock(index uint32) []uint64 {
 	params := si.cache.Params.Get(index+1, func() ([]uint64, int) {
 		block := si.loadParamsBlock(index)
-		return block, len(block) * 8
+		return block, cap(block) * 8
 	})
 
 	if len(params) == 0 {

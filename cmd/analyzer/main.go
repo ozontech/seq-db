@@ -27,8 +27,8 @@ func main() {
 
 	fracPath := os.Args[1]
 
-	maintainer := fracmanager.NewCacheMaintainer(consts.GB, 128*consts.MB, nil)
-	maintainer.RunCleanLoop(nil, time.Second)
+	maintainer := fracmanager.NewCacheMaintainer(consts.GB, nil)
+	maintainer.RunCleanLoop(nil, time.Second, time.Second)
 	cache := maintainer.CreateSealedIndexCache()
 
 	reader := disk.NewReader(metric.StoreBytesRead)

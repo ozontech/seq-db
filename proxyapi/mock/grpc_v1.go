@@ -71,6 +71,20 @@ func (mr *MockSearchIngestorMockRecorder) Search(ctx, sr interface{}) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Search", reflect.TypeOf((*MockSearchIngestor)(nil).Search), ctx, sr)
 }
 
+// Status mocks base method.
+func (m *MockSearchIngestor) Status(ctx context.Context) *search.IngestorStatus {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Status", ctx)
+	ret0, _ := ret[0].(*search.IngestorStatus)
+	return ret0
+}
+
+// Status indicates an expected call of Status.
+func (mr *MockSearchIngestorMockRecorder) Status(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockSearchIngestor)(nil).Status), ctx)
+}
+
 // MockMapping is a mock of Mapping interface.
 type MockMapping struct {
 	ctrl     *gomock.Controller

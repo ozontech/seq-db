@@ -26,6 +26,7 @@ import (
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/network/circuitbreaker"
@@ -54,7 +55,6 @@ var (
 	fracSize               = kingpin.Flag("frac-size", `size of one fraction`).Default("128MB").Bytes()
 	totalSize              = kingpin.Flag("total-size", `max size of all data`).Default("1GB").Bytes()
 	cacheSize              = kingpin.Flag("cache-size", `max size of the cache`).Default("8GB").Bytes()
-	docBlockCacheSize      = kingpin.Flag("doc-block-cache-size", `max size of the doc block cache`).Default("1GB").Bytes()
 	mappingPath            = kingpin.Flag("mapping", `path to mapping file`).Required().ExistingFile()
 	storeMode              = kingpin.Flag("store-mode", `store operation mode`).Default("").HintOptions("", storeapi.StoreModeCold, storeapi.StoreModeHot).String()
 	queryRateLimit         = kingpin.Flag("query-rate-limit", `max requests per second`).Default("2.0").Float()
@@ -96,6 +96,7 @@ var (
 
 	docsZSTDCompressLevel  = kingpin.Flag("docs-zstd-compress-level", `ZSTD compress level for docs, check the doc for more details: https://facebook.github.io/zstd/zstd_manual.html`).Default("3").Int()
 	metasZSTDCompressLevel = kingpin.Flag("metas-zstd-compress-level", `ZSTD compress level for metas, check the doc for more details: https://facebook.github.io/zstd/zstd_manual.html`).Default("3").Int()
+	sealCompressLevel      = kingpin.Flag("seal-zstd-compress-level", "ZSTD compress level that will be used to seal the active fraction: https://facebook.github.io/zstd/zstd_manual.html").Default("3").Int()
 
 	maxDocSize = kingpin.Flag("max-document-size", "the maximum document size, documents larger than this will be skipped").Default("128KiB").Bytes()
 )
@@ -180,15 +181,24 @@ func main() {
 		}
 		config := storeapi.StoreConfig{
 			FracManager: fracmanager.Config{
+				DataDir:           *dataDir,
 				FracSize:          uint64(*fracSize),
-				FracLoadLimit:     0,
 				TotalSize:         uint64(*totalSize),
 				CacheSize:         uint64(*cacheSize),
-				DocBlockCacheSize: uint64(*docBlockCacheSize),
+				MaxFractionHits:   *maxFractionHits,
+				FracLoadLimit:     0,
 				ShouldReplay:      true,
 				ShouldRemoveMeta:  true,
-				DataDir:           *dataDir,
-				MaxFractionHits:   *maxFractionHits,
+				MaintenanceDelay:  0,
+				CacheGCDelay:      0,
+				CacheCleanupDelay: 0,
+				SealParams: frac.SealParams{
+					IDsZstdLevel:           *sealCompressLevel,
+					LIDsZstdLevel:          *sealCompressLevel,
+					TokenListZstdLevel:     *sealCompressLevel,
+					DocsPositionsZstdLevel: *sealCompressLevel,
+					TokenTableZstdLevel:    *sealCompressLevel,
+				},
 			},
 			API: storeapi.APIConfig{
 				StoreMode: configMode,

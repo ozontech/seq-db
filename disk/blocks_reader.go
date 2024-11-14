@@ -61,7 +61,7 @@ func (r *BlocksReader) GetBlockHeader(index uint32) BlocksRegistryEntry {
 func (r *BlocksReader) getRegistry() []byte {
 	data, err := r.cache.GetWithError(1, func() ([]byte, int, error) {
 		data, err := r.readRegistry()
-		return data, len(data), err
+		return data, cap(data), err
 	})
 	if err != nil {
 		logger.Panic("failed to read registry", zap.Error(err))

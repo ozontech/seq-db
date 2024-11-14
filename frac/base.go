@@ -51,7 +51,7 @@ func (f *frac) readDoc(blockPos, blockLen, docPos uint64, outBuf []byte) ([]byte
 		if readTask.Err != nil {
 			return nil, 0, fmt.Errorf("can't fetch doc at pos %d: %s", blockPos, readTask.Err.Error())
 		}
-		return readTask.Buf, len(readTask.Buf), nil
+		return readTask.Buf, cap(readTask.Buf), nil
 	})
 
 	if err != nil {

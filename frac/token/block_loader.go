@@ -33,7 +33,7 @@ type CacheEntry struct {
 
 func (t *CacheEntry) GetSize() int {
 	const selfSize = int(unsafe.Sizeof(CacheEntry{}))
-	return selfSize + len(t.Block) + len(t.Offset)
+	return selfSize + cap(t.Block) + cap(t.Offset)
 }
 
 type Block struct {

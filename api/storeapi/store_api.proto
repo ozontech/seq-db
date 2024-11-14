@@ -5,6 +5,7 @@ option go_package = "github.com/ozontech/seq-db/pkg/storeapi;storeapi";
 package api;
 
 import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
 
 service StoreApi {
   rpc Bulk(BulkRequest) returns (google.protobuf.Empty) {}
@@ -12,6 +13,8 @@ service StoreApi {
   rpc Search(SearchRequest) returns (SearchResponse) {}
 
   rpc Fetch(FetchRequest) returns (stream BinaryData) {}
+
+  rpc Status(StatusRequest) returns (StatusResponse) {}
 }
 
 message BulkRequest {
@@ -110,4 +113,10 @@ message FetchRequest {
   repeated string ids = 1;
   bool explain = 3;
   repeated IdWithHint ids_with_hints = 4;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  google.protobuf.Timestamp oldest_time = 1;
 }

@@ -18,16 +18,17 @@ type BlockFormer struct {
 }
 
 type FlushOptions struct {
-	ext1     uint64
-	ext2     uint64
-	compress bool
+	ext1              uint64
+	ext2              uint64
+	zstdCompressLevel int
 }
 
 func NewDefaultFlushOptions() *FlushOptions {
+	const zstdFastestLevel = -5
 	return &FlushOptions{
-		ext1:     0,
-		ext2:     0,
-		compress: true,
+		ext1:              0,
+		ext2:              0,
+		zstdCompressLevel: zstdFastestLevel,
 	}
 }
 
@@ -40,9 +41,9 @@ func WithExt(ext1, ext2 uint64) FlushOption {
 	}
 }
 
-func WithCompress(compress bool) FlushOption {
+func WithZstdCompressLevel(level int) FlushOption {
 	return func(o *FlushOptions) {
-		o.compress = compress
+		o.zstdCompressLevel = level
 	}
 }
 
@@ -77,7 +78,7 @@ func (b *BlockFormer) FlushForced(options ...FlushOption) error {
 		applyFn(o)
 	}
 
-	n, err := b.writer.WriteBlock(b.stats.Name, b.packer.Data, o.compress, o.ext1, o.ext2)
+	n, err := b.writer.WriteBlock(b.stats.Name, b.packer.Data, true, o.zstdCompressLevel, o.ext1, o.ext2)
 	if err != nil {
 		return err
 	}

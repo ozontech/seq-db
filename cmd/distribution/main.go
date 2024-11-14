@@ -43,7 +43,8 @@ func getAllFracs(dataDir string) []string {
 }
 
 func getReader(path string) *disk.BlocksReader {
-	return disk.NewBlocksReader(cache.NewCache[[]byte](nil, nil), path, nil)
+	c := cache.NewCache[[]byte](nil, nil)
+	return disk.NewBlocksReader(c, path, nil)
 }
 
 func readBlock(blocksReader *disk.BlocksReader, blockIndex uint32) []byte {

@@ -14,15 +14,13 @@ import (
 
 func TestCacheSize(t *testing.T) {
 	const SIZE = 10 * consts.MB
-	size := &atomic.Uint64{}
-	cleaner := NewCleaner([]*atomic.Uint64{size})
-	c := NewCache[[]byte](size, nil)
-	cleaner.AddBuckets(c)
+	cleaner := NewCleaner(0, nil)
+	c := NewCache[[]byte](cleaner, nil)
 
 	c.Get(1, func() ([]byte, int) { return make([]byte, SIZE), SIZE })
 
-	total := cleaner.GetSize()
-	assert.Equal(t, uint64(SIZE), total, "wrong cache size")
+	total := cleaner.getSize()
+	assert.Equal(t, uint64(SIZE)+c.entrySize, total, "wrong cache size")
 }
 
 func TestClean(t *testing.T) {
@@ -32,38 +30,34 @@ func TestClean(t *testing.T) {
 	const Size3 = 4 * consts.MB
 	const Size4 = 2 * consts.MB
 
-	size := &atomic.Uint64{}
-	cleaner := NewCleaner([]*atomic.Uint64{size})
-	c1 := NewCache[[]byte](size, nil)
-	c2 := NewCache[[]byte](size, nil)
-	c3 := NewCache[[]byte](size, nil)
-	cleaner.AddBuckets(c1, c2, c3)
-	stat := &CleanStat{}
+	cleaner := NewCleaner(SizeTotal, nil)
 
+	c1 := NewCache[[]byte](cleaner, nil)
+	c2 := NewCache[[]byte](cleaner, nil)
+	c3 := NewCache[[]byte](cleaner, nil)
+
+	stat := &CleanStat{}
 	c1.Get(0, func() ([]byte, int) { return make([]byte, Size1), Size1 })
-	cleaner.CleanUp(SizeTotal, stat)
+
+	cleaner.Rotate()
+	cleaner.Cleanup(stat)
 
 	c1.Get(1, func() ([]byte, int) { return make([]byte, Size2), Size2 })
 	c2.Get(1, func() ([]byte, int) { return make([]byte, Size3), Size3 })
 	c3.Get(1, func() ([]byte, int) { return make([]byte, Size4), Size4 })
 
-	success := cleaner.CleanUp(SizeTotal, stat)
-	assert.Truef(t, success, "cache doesn't clean")
+	bytesTotal := cleaner.getSize()
 
-	bytesTotal := cleaner.GetSize()
+	assert.Equal(t, int(c1.entrySize+Size1), int(stat.BytesReleased), "wrong free buckets")
+	assert.Equal(t, 1, int(stat.BucketsCleaned), "wrong cleaned buckets")
 
-	assert.Equal(t, Size1, int(stat.Bytes), "wrong free buckets")
-	assert.Equal(t, 1, int(stat.Buckets), "wrong cleaned buckets")
-
-	assert.Equal(t, Size2+Size3+Size4, int(bytesTotal), "wrong cache size")
+	actual := c1.entrySize + Size2 + c2.entrySize + Size3 + c3.entrySize + Size4
+	assert.Equal(t, int(actual), int(bytesTotal), "wrong cache size")
 }
 
 func testStress(size, workers, records int, get func(*Cache[[]uint64], int)) {
-	s := &atomic.Uint64{}
-	cleaner := NewCleaner([]*atomic.Uint64{s})
-	c := NewCache[[]uint64](s, nil)
-	cleaner.AddBuckets(c)
-	stat := &CleanStat{}
+	cleaner := NewCleaner(uint64(size), nil)
+	c := NewCache[[]uint64](cleaner, nil)
 
 	done := atomic.Bool{}
 	wgClean := sync.WaitGroup{}
@@ -71,7 +65,8 @@ func testStress(size, workers, records int, get func(*Cache[[]uint64], int)) {
 	go func() {
 		defer wgClean.Done()
 		for !done.Load() {
-			cleaner.CleanUp(uint64(size), stat)
+			stat := &CleanStat{}
+			cleaner.Cleanup(stat)
 		}
 	}()
 	defer func() {
@@ -133,15 +128,19 @@ func TestStress(t *testing.T) {
 
 func BenchmarkBucketClean(b *testing.B) {
 	b.StopTimer()
-	c := NewCache[int](nil, nil)
-	for r := 0; r < 1000; r++ {
-		for i := 0; i < b.N; i++ {
+
+	cleaner := NewCleaner(0, nil)
+	c := NewCache[int](cleaner, nil)
+
+	for r := 0; r < b.N; r++ {
+		for i := 0; i < 1000; i++ {
 			c.Get(uint32(i), func() (int, int) { return i, 4 })
 		}
+		cleaner.markStale(cleaner.getSize())
 		b.StartTimer()
-		size := c.RetireOldGenerations(0)
+		size := c.Cleanup()
 		b.StopTimer()
-		if size == 0 || size != b.N*4 {
+		if size == 0 {
 			b.FailNow()
 		}
 	}

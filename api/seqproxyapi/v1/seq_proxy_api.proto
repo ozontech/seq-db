@@ -49,6 +49,12 @@ service SeqProxyApi {
     };
   }
 
+  rpc Status(StatusRequest) returns (StatusResponse) {
+    option (google.api.http) = {
+      get: "/status"
+    };
+  }
+
   rpc Export(ExportRequest) returns (stream ExportResponse) {
     option (google.api.http) = {
       post: "/export"
@@ -195,6 +201,24 @@ message MappingRequest {}
 
 message MappingResponse {
   bytes data = 1;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  int32 number_of_stores = 1;
+  optional google.protobuf.Timestamp oldest_storage_time = 2;
+  repeated StoreStatus stores = 4;
+}
+
+message StoreStatus {
+  string host = 1;
+  optional StoreStatusValues values = 2;
+  optional string error = 3;
+}
+
+message StoreStatusValues {
+  google.protobuf.Timestamp oldest_time = 1;
 }
 
 message ExportRequest {

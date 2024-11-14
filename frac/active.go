@@ -103,7 +103,8 @@ type Active struct {
 	MIDs *UInt64s
 	RIDs *UInt64s
 
-	TokenList     *TokenList
+	TokenList *TokenList
+
 	DocsPositions *DocsPositions
 
 	metasFile *os.File
@@ -338,7 +339,7 @@ func (f *Active) setSealed() error {
 	return nil
 }
 
-func (f *Active) Seal() error {
+func (f *Active) Seal(params SealParams) error {
 	if err := f.setSealed(); err != nil {
 		return err
 	}
@@ -348,7 +349,7 @@ func (f *Active) Seal() error {
 	f.WaitWriteIdle()
 	logger.Info("write is stopped", zap.Float64("time_wait_s", util.DurationToUnit(time.Since(start), "s")))
 
-	seal(f)
+	seal(f, params)
 	return nil
 }
 

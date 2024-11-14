@@ -16,6 +16,7 @@ import (
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/network/circuitbreaker"
@@ -78,10 +79,19 @@ func (cfg *TestingEnvConfig) GetHotFactor() int {
 func (cfg *TestingEnvConfig) GetFracManagerConfig(port int) fracmanager.Config {
 	config := cfg.FracManagerConfig
 	if config == nil {
+		// Fastest zstd compression, see: https://github.com/facebook/zstd/releases/tag/v1.3.4.
+		const fastestZstdLevel = -5
 		config = fracmanager.FillConfigWithDefault(&fracmanager.Config{
 			FracSize:         256 * consts.MB,
 			TotalSize:        1 * consts.GB,
 			ShouldRemoveMeta: true,
+			SealParams: frac.SealParams{
+				IDsZstdLevel:           fastestZstdLevel,
+				LIDsZstdLevel:          fastestZstdLevel,
+				TokenListZstdLevel:     fastestZstdLevel,
+				DocsPositionsZstdLevel: fastestZstdLevel,
+				TokenTableZstdLevel:    fastestZstdLevel,
+			},
 		})
 	}
 	config.DataDir = filepath.Join(cfg.DataDir, strconv.Itoa(port))

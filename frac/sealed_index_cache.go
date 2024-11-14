@@ -14,3 +14,12 @@ type SealedIndexCache struct {
 	Tokens   *cache.Cache[*token.CacheEntry]
 	LIDs     *cache.Cache[*lids.Chunks]
 }
+
+func (s *SealedIndexCache) Release() {
+	s.LIDs.Release()
+	s.MIDs.Release()
+	s.RIDs.Release()
+	s.Params.Release()
+	s.Registry.Release()
+	s.Tokens.Release()
+}

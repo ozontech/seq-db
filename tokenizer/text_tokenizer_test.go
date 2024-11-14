@@ -142,46 +142,6 @@ func TestTokenizeLastTokenLength(t *testing.T) {
 	assert.Equal(t, newFracToken("message", "1"), tokens[0])
 }
 
-func TestKeywordListTokenizerEmptyValue(t *testing.T) {
-	tokenizer := NewKeywordListTokenizer(10, true, true, 1024)
-
-	value := ""
-	expected := []frac.MetaToken{newFracToken("message", "")}
-	tokens := tokenizer.Tokenize(nil, []byte("message"), []byte(value), maxTokenSizeDummy)
-
-	assert.Equal(t, expected, tokens)
-}
-
-func TestKeywordListTokenizerSimple1(t *testing.T) {
-	tokenizer := NewKeywordListTokenizer(10, true, true, 1024)
-
-	value := "hello world"
-	expected := []frac.MetaToken{newFracToken("message", "hello"), newFracToken("message", "world")}
-	tokens := tokenizer.Tokenize(nil, []byte("message"), []byte(value), maxTokenSizeDummy)
-
-	assert.Equal(t, expected, tokens)
-}
-
-func TestKeywordListTokenizerSimple2(t *testing.T) {
-	tokenizer := NewKeywordListTokenizer(10, true, true, 1024)
-
-	value := "hello woRLd this-is-a-long-token _okay_"
-	expected := []frac.MetaToken{newFracToken("message", "hello"), newFracToken("message", "woRLd"), newFracToken("message", "_okay_")}
-	tokens := tokenizer.Tokenize(nil, []byte("message"), []byte(value), maxTokenSizeDummy)
-
-	assert.Equal(t, expected, tokens)
-}
-
-func TestKeywordListTokenizerCaseInsensitive(t *testing.T) {
-	tokenizer := NewKeywordListTokenizer(10, false, true, 1024)
-
-	value := "hello woRLd this-is-a-long-token _okay_"
-	expected := []frac.MetaToken{newFracToken("message", "hello"), newFracToken("message", "world"), newFracToken("message", "_okay_")}
-	tokens := tokenizer.Tokenize(nil, []byte("message"), []byte(value), maxTokenSizeDummy)
-
-	assert.Equal(t, expected, tokens)
-}
-
 func TestTextTokenizerUTF8(t *testing.T) {
 	test := func(s string, out []string) {
 		t.Helper()

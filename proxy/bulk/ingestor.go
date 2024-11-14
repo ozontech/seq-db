@@ -88,10 +88,10 @@ type Ingestor struct {
 
 func NewIngestor(c IngestorConfig, client StorageClient) *Ingestor {
 	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
-		seq.TokenizerTypeText:        tokenizer.NewTextTokenizer(c.MaxTokenSize, c.CaseSensitive, c.PartialFieldIndexing, consts.MaxTextFieldValueLength),
-		seq.TokenizerTypeKeyword:     tokenizer.NewKeywordTokenizer(c.MaxTokenSize, c.CaseSensitive, c.PartialFieldIndexing),
-		seq.TokenizerTypeKeywordList: tokenizer.NewKeywordListTokenizer(c.MaxTokenSize, c.CaseSensitive, c.PartialFieldIndexing, consts.MaxKeywordListFieldValueLength),
-		seq.TokenizerTypePath:        tokenizer.NewPathTokenizer(c.MaxTokenSize, c.CaseSensitive, c.PartialFieldIndexing),
+		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(c.MaxTokenSize, c.CaseSensitive, c.PartialFieldIndexing, consts.MaxTextFieldValueLength),
+		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(c.MaxTokenSize, c.CaseSensitive, c.PartialFieldIndexing),
+		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(c.MaxTokenSize, c.CaseSensitive, c.PartialFieldIndexing),
+		seq.TokenizerTypeExists:  tokenizer.NewExistsTokenizer(),
 	}
 
 	rateLimit := make(chan struct{}, c.MaxInflightBulks)

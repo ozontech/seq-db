@@ -64,21 +64,36 @@ func NewBulkHandler(proc DocumentsProcessor, maxDocumentSize int) *BulkHandler {
 }
 
 type measuredReader struct {
-	metric prometheus.Histogram
-	reader io.Reader
+	metric   prometheus.Histogram
+	reader   io.Reader
+	total    time.Duration
+	reported bool
 }
 
 func newMeasuredReader(reader io.Reader, histogram prometheus.Histogram) *measuredReader {
 	return &measuredReader{
-		reader: reader,
-		metric: histogram,
+		reader:   reader,
+		metric:   histogram,
+		reported: false,
+		total:    0,
 	}
 }
 
 func (mr *measuredReader) Read(p []byte) (int, error) {
 	t := time.Now()
-	defer func() { mr.metric.Observe(time.Since(t).Seconds()) }()
-	return mr.reader.Read(p)
+	n, err := mr.reader.Read(p)
+	mr.total += time.Since(t)
+	if err != nil {
+		if errors.Is(err, io.EOF) && !mr.reported {
+			// End of the stream, report the metric.
+			mr.metric.Observe(mr.total.Seconds())
+			// Do not report the metric again.
+			// It may be reported in the next call to Read.
+			mr.reported = true
+		}
+		return n, err
+	}
+	return n, nil
 }
 
 func (h *BulkHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

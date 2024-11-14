@@ -86,19 +86,24 @@ func NewFracManager(config *Config) *FracManager {
 		indexWorkers: indexWorkers,
 		reader:       disk.NewReader(metric.StoreBytesRead),
 		ulidEntropy:  ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
-		cacheMaintainer: NewCacheMaintainer(config.CacheSize, config.DocBlockCacheSize, &SealedIndexCacheMetrics{
-			TouchTotal:        metric.CacheTouchTotal,
-			HitsTotal:         metric.CacheHitsTotal,
-			MissTotal:         metric.CacheMissTotal,
-			PanicsTotal:       metric.CachePanicsTotal,
-			LockWaitsTotal:    metric.CacheLockWaitsTotal,
-			WaitsTotal:        metric.CacheWaitsTotal,
-			ReattemptsTotal:   metric.CacheReattemptsTotal,
-			HitsSizeTotal:     metric.CacheHitsSizeTotal,
-			MissSizeTotal:     metric.CacheMissSizeTotal,
-			SizeReleasedTotal: metric.CacheSizeReleasedTotal,
+		cacheMaintainer: NewCacheMaintainer(config.CacheSize, &CacheMaintainerMetrics{
+			HitsTotal:       metric.CacheHitsTotal,
+			MissTotal:       metric.CacheMissTotal,
+			PanicsTotal:     metric.CachePanicsTotal,
+			LockWaitsTotal:  metric.CacheLockWaitsTotal,
+			WaitsTotal:      metric.CacheWaitsTotal,
+			ReattemptsTotal: metric.CacheReattemptsTotal,
+			SizeRead:        metric.CacheSizeRead,
+			SizeOccupied:    metric.CacheSizeOccupied,
+			SizeReleased:    metric.CacheSizeReleased,
+			MapsRecreated:   metric.CacheMapsRecreated,
+			MissLatency:     metric.CacheMissLatencySec,
 
-			SizeTotal: metric.CacheSizeTotal,
+			Oldest:            metric.CacheOldest,
+			AddBuckets:        metric.CacheAddBuckets,
+			DelBuckets:        metric.CacheDelBuckets,
+			CleanGenerations:  metric.CacheCleanGenerations,
+			ChangeGenerations: metric.CacheChangeGenerations,
 		}),
 		fracCache: NewSealedFracCache(filepath.Join(config.DataDir, consts.FracCacheFileSuffix)),
 	}
@@ -273,7 +278,6 @@ func (fm *FracManager) runStatsLoop(ctx context.Context) {
 
 		util.RunEvery(ctx.Done(), time.Second*10, func() {
 			fm.processFracsStats()
-			fm.cacheMaintainer.ReportStats()
 		})
 	}()
 }
@@ -284,7 +288,7 @@ func (fm *FracManager) Start() {
 
 	fm.runStatsLoop(ctx)
 	fm.runMaintenanceLoop(ctx)
-	fm.cacheWG = fm.cacheMaintainer.RunCleanLoop(ctx.Done(), fm.config.CacheDelay)
+	fm.cacheWG = fm.cacheMaintainer.RunCleanLoop(ctx.Done(), fm.config.CacheCleanupDelay, fm.config.CacheGCDelay)
 }
 
 func (fm *FracManager) Load(ctx context.Context) error {
@@ -362,7 +366,7 @@ func (fm *FracManager) Append(ctx context.Context, docs, metas disk.DocBlock, wr
 }
 
 func (fm *FracManager) seal(active activeRef) {
-	if err := active.frac.Seal(); err != nil {
+	if err := active.frac.Seal(fm.config.SealParams); err != nil {
 		logger.Panic("sealing error", zap.Error(err))
 	}
 	sealed := frac.NewSealedFromActive(active.frac, fm.reader, fm.cacheMaintainer.CreateSealedIndexCache())

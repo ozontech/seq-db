@@ -61,7 +61,6 @@ func TestReadMapping(t *testing.T) {
 				},
 				"message.keyword": NewSingleType(TokenizerTypeKeyword, titleKeyword, 255),
 				"message.path":    NewSingleType(TokenizerTypePath, titlePath, 255),
-				"operation_name":  NewSingleType(TokenizerTypeKeywordList, "", 0),
 			},
 			yamlMapping: &mappingYAML{
 				Mapping: []mappingItem{
@@ -76,10 +75,6 @@ func TestReadMapping(t *testing.T) {
 					{
 						FieldType: FieldTypeKeyword,
 						FieldName: "service",
-					},
-					{
-						FieldType: FieldTypeKeywordList,
-						FieldName: "operation_name",
 					},
 				},
 			},

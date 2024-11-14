@@ -34,20 +34,22 @@ our layers, limits and workflow.
 
 See [Index File Format](./format-index-file.md).
 
-There are six cache layers:
+There are 7 cache layers:
 - `index`: also called `Registry`, contains information on the fraction index
   file layout;
 - `tokens`: all the tokens from all the indexed fields in docs in fraction;
 - `lids`: for every token list of lids that match it;
+- `docsdocblock`: for docblocks read during Fetch;
 - `mids`, `rids`, `params`: mid, rid and position (docs block index, doc offset)
   of every lid, allowing to identify and locate corresponding doc.
 
 `Cache` instances related to same layer are maintained by the same `Cleaner`.
-There are currently three of them in `CacheMaintainer`:
-- `lidsCleaner`: this one is responsible for instances related to `lids` layer;
-- `tokensCleaner`: same for `tokens` layer;
-- `otherCleaner`: this one takes care of other layers, i.e.
-  `index`, `mids`, `rids` and `params`.
+There are currently 5 of them in `CacheMaintainer`:
+- `lids` cleaner: this one is responsible for instances related to `lids` layer;
+- `tokens` cleaner: same for `tokens` layer;
+- `index` cleaner: same for `index` layer;
+- `docblock` cleaner: same for `docblock` layer
+- `mids-rids-params` cleaner: this one takes care of other layers, i.e. `mids`, `rids` and `params`.
 
 They are separated this way due to their relative loads. `lids` have very big
 values and are accessed often. `tokens` instead have very big amount of small
@@ -58,21 +60,12 @@ combined as to provide some basic level of protection against being purged by
 ### Layer sizes
 
 Layers don't have prefixed sizes. Instead, each `Cleaner` is associated with
-size restriction. Also, `lids` and `tokens` `Cleaner`s have additional combined
-restriction, as to ensure they will not purge other layers when both are under
-heavy load. Within given limits `Cleaner`s are supposed to self-balance
-according to their use and current load.
-
-Restrictions are measured in fraction of total cache size:
-- `lids`: 0.7
-- `tokens`: 0.4
-- `lids` and `tokens` combined: 0.9
-- other layers combined: 0.2
-
-Thus, it is easy to calculate minimal guaranteed size for each `Cleaner`:
-- `lids`: 1.0 - 0.4 - 0.2 = 0.4
-- `tokens`: 1.0 - 0.7 - 0.2 = 0.1
-- other layers: 1.0 - 0.9 = 0.1
+size restriction. Restrictions are measured in fraction of total cache size:
+- `lids`: 40%
+- `tokens`: 40%
+- `docblock`: 8%
+- `index`: 3%
+- `mids-rids-params`: 9%
 
 # Interface
 
@@ -106,8 +99,8 @@ it can take more lock/unlock cycles.
 
 Data is stored in `entry` objects, which are referenced from
 `payload map[uint32]*entry[V]`. Entries are organized into generations as to
-facilitate cache cleaning process. `generations []*generation` are thus
-stored in `Cache` instances for this purpose.
+facilitate cache cleaning process. `generations []*Generation` are thus
+stored in `Cleaner` instances for this purpose.
 
 ### Entries
 
@@ -130,7 +123,6 @@ each entry can be in one of the following states:
    and the value for it is being created right now.
    There may be some pending accesses that wait on `wg`.
    `gen` and `size` are not initialized.
-   `Cache.newEntries` counts such entries.
 3. Entry is present, `wg` is `nil`.
    This means the entry is valid, and `value` can be returned.
    `gen` and `size` have correct values.
@@ -149,9 +141,7 @@ each entry can be in one of the following states:
 For the cleaning purposes, all entries are linked to some generation,
 which was stored in `Cache.currentGeneration` at the moment of such `entry`
 becoming valid or last accessed, whichever happens later.
-Entries that are not yet valid don't have generation. Each `Cache` instance has
-independent set of generations, though their creation and cleaning is managed
-by `Cleaner` object.
+Entries that are not yet valid don't have generation.
 
 All generation-related operations are performed under `Cache.mu` lock.
 Between locks, all `generation` objects are in one of the three states:
@@ -169,42 +159,41 @@ Cleaning consists of two independent process. First one is periodical creation
 of new generations, and the second one is periodical marking generations
 as stale and consequent cleaning of them.
 
-New generations are created `Cleaner`-wide when some known amount
-(say, 10% of the limit) of new data was stored. At this moment every `Cache`
-instance is instructed to start new generation, thus sealing the last one.
+Each `Cleaner` instance has set of generations. New generations are created
+`Cleaner`-wide when some known amount (say, 10% of the limit) of new data was stored.
+At this moment every `Cache` instance is instructed to use new generation as current,
+thus sealing the last one.
 
-When `Cleaner` decides it started to exceed allowed memory, it tries to clean
-some data. This is achieved by pruning one generation from each `Cache`
-instance. Ones that have fewer generations than others (i.e. are relatively new)
-are ignored. Then affected `Cache` instances clean data if consider that effort
-is worth of memory gain. If the process didn't provide enough free memory,
-it is repeated.
+When the `Cleaner` decides that it has started to exceed its memory limit, it marks the
+oldest few generations, which together are large enough to free up memory, as stale.
+It then initiates the removal of all stale generations entries from each `Cache`.
 
-Both processes are governed by `CacheMaintainer`, which is triggered from cache
-maintenance loop, and the checks needed are considered to be very fast,
-so the maintenance is called often.
+Also time to time `Cleaner` finds released `Cache`s and removes it from list as well
+as empty generations.
 
 # Metrics
 
 There are several metrics collected as to check cache health.
 Each metric is collected separately for each layer.
-- TouchTotal - access counter
 - HitsTotal - access counter, when value was present
 - MissTotal - access counter, when value was inserted by accessor
+- MissLatency - counter of seconds me spend getting data when we miss cache
 - PanicsTotal - access counter, when value wasn't inserted by accessor
-  due to factory function panic (or returned error)
 - LockWaitsTotal - number of times initial lock for simple access
   wasn't acquired immediately, thus forcing rescheduling
 - WaitTotal - number of times access method had to wait for someone else to
   put value into cache
 - ReattemptsTotal - number of times access method had to reattempt due to entry
   invalidation
-- MissSizeTotal - size of the values added to cache on miss
-- HitsSizeTotal - size of the values retrieved on hit
+- SizeOccupied - counter of size of the values added to cache on miss
+- SizeRead - counter of size of the values retrieved on hit
+-	SizeReleased - counter of size of data we released
+- MapsRecreated - counter of events we recreate cache maps
 
 As a rule, `TouchTotal = HitsTotal + MissTotal + PanicsTotal`.
-MissTotal and MissSizeTotal are the metrics to optimize cache.
-HitsTotal and HitsSizeTotal are the metrics to optimize cache use.
+Also `TotalSize = SizeOccupied - SizeReleased`.
+MissTotal and SizeOccupied are the metrics to optimize cache.
+HitsTotal and SizeRead are the metrics to optimize cache use.
 Rising WaitTotal means concurrent access to the same not-yet-cached value.
 
 LockWaitsTotal ideally should be near-zero at all times and

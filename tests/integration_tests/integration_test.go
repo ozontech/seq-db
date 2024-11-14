@@ -895,6 +895,7 @@ func (s *IntegrationTestSuite) TestAggStat() {
 			defer env.StopAll()
 
 			setup.Bulk(t, env.IngestorBulkAddr(), tc.ToBulk)
+			env.WaitIdle()
 
 			qpr, _, _, err := env.Search(tc.SearchQuery, math.MaxInt32, setup.WithAggQuery(tc.AggQuery))
 			r.NoError(err)
@@ -1028,8 +1029,6 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 }
 
 func (s *IntegrationTestSuite) TestSeal() {
-	s.T().Skip("test disabled because it uses a lot of memory")
-
 	env := setup.NewTestingEnv(s.Config)
 
 	bulksNum := getBulkIterationsNum(env)

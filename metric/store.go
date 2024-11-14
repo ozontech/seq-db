@@ -13,13 +13,39 @@ var (
 		Help:      "",
 		Buckets:   prometheus.LinearBuckets(1, 16, 16),
 	})
-	CacheSizeTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
+
+	CacheOldest = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "cache",
-		Name:      "size_total",
+		Name:      "oldest",
 		Help:      "",
-	}, []string{"layer"})
-	CacheSizeReleasedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	}, []string{"cleaner"})
+	CacheAddBuckets = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "cache",
+		Name:      "add_buckets",
+		Help:      "",
+	}, []string{"cleaner"})
+	CacheDelBuckets = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "cache",
+		Name:      "del_buckets",
+		Help:      "",
+	}, []string{"cleaner"})
+	CacheCleanGenerations = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "cache",
+		Name:      "clean_generations",
+		Help:      "",
+	}, []string{"cleaner"})
+	CacheChangeGenerations = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "cache",
+		Name:      "change_generations",
+		Help:      "",
+	}, []string{"cleaner"})
+
+	CacheSizeReleased = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "cache",
 		Name:      "size_released_total",
@@ -29,12 +55,6 @@ var (
 		Namespace: "seq_db_store",
 		Subsystem: "cache",
 		Name:      "hits_total",
-		Help:      "",
-	}, []string{"layer"})
-	CacheTouchTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "touch_total",
 		Help:      "",
 	}, []string{"layer"})
 	CacheMissTotal = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -67,16 +87,28 @@ var (
 		Name:      "reattempts_total",
 		Help:      "",
 	}, []string{"layer"})
-	CacheHitsSizeTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	CacheSizeRead = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "cache",
 		Name:      "hits_size_total",
 		Help:      "",
 	}, []string{"layer"})
-	CacheMissSizeTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	CacheSizeOccupied = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "cache",
 		Name:      "miss_size_total",
+		Help:      "",
+	}, []string{"layer"})
+	CacheMapsRecreated = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "cache",
+		Name:      "maps_recreated",
+		Help:      "",
+	}, []string{"layer"})
+	CacheMissLatencySec = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "cache",
+		Name:      "miss_latency_sec",
 		Help:      "",
 	}, []string{"layer"})
 
