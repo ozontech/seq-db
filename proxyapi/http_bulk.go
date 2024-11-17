@@ -235,7 +235,7 @@ func (r *esBulkDocReader) skipActionLine() error {
 	return nil
 }
 
-func (r *esBulkDocReader) readDoc() ([]byte, bool, error) {
+func (r *esBulkDocReader) readDoc() (doc []byte, sizeExceeded bool, _ error) {
 	doc, isPrefix, err := r.r.ReadLine()
 	if err != nil {
 		return nil, false, err
@@ -244,16 +244,21 @@ func (r *esBulkDocReader) readDoc() ([]byte, bool, error) {
 		return doc, false, nil
 	}
 
-	logger.Error("skipping document due to max document size exceeded, check --max-document-size flag for more details",
-		zap.String("prefix", string(doc[:min(128, len(doc))])))
+	// Clone first part of the document.
+	docStr := string(doc[:min(256, len(doc))])
 
 	// If this is a line that exceeds maxDocumentSize, skip it.
+	docLen := len(doc)
 	for isPrefix {
 		doc, isPrefix, err = r.r.ReadLine()
 		if err != nil {
 			return nil, true, err
 		}
+		docLen += len(doc)
 	}
+
+	logger.Error("skipping document due to max document size exceeded, check --max-document-size flag for more details",
+		zap.String("prefix", docStr), zap.Int("doc_len", docLen))
 
 	return nil, true, nil
 }
