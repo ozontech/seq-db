@@ -32,7 +32,6 @@ var (
 // processor accumulates meta and docs from a single bulk
 // returns bulk request ready to be sent to store
 type processor struct {
-	proxyIndex  uint64
 	drift       time.Duration
 	futureDrift time.Duration
 
@@ -45,9 +44,8 @@ func init() {
 	insaneJSON.MapUseThreshold = math.MaxInt32
 }
 
-func newBulkProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, drift, futureDrift time.Duration, index uint64) *processor {
+func newBulkProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, drift, futureDrift time.Duration) *processor {
 	return &processor{
-		proxyIndex:  index,
 		drift:       drift,
 		futureDrift: futureDrift,
 		indexer: &indexer{
@@ -75,7 +73,7 @@ func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []frac.M
 		doc = p.decoder.Encode(doc[:0])
 	}
 
-	id := seq.NewID(docTime, (rand.Uint64()<<16)+p.proxyIndex)
+	id := seq.NewID(docTime, rand.Uint64())
 
 	p.indexer.Index(p.decoder.Node, id, uint32(len(doc)))
 

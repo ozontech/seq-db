@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -295,8 +294,7 @@ func (i *Ingestor) getProcessor() *processor {
 		// The proc already initialized with current ingestor config, so we don't need to reinit it.
 		return procEface.(*processor)
 	}
-	index := rand.Uint64() % consts.IngestorMaxInstances
-	return newBulkProcessor(i.config.TokenMapping, i.tokenizers, i.config.AllowedTimeDrift, i.config.FutureAllowedTimeDrift, index)
+	return newBulkProcessor(i.config.TokenMapping, i.tokenizers, i.config.AllowedTimeDrift, i.config.FutureAllowedTimeDrift)
 }
 
 func (i *Ingestor) putProcessor(proc *processor) {
