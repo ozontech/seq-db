@@ -1,6 +1,7 @@
 package bulk
 
 import (
+	"fmt"
 	"math"
 	"math/rand/v2"
 	"time"
@@ -60,6 +61,7 @@ func newBulkProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]toke
 }
 
 func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []frac.MetaData, error) {
+	fmt.Println("RCVD DOC IS", string(doc))
 	err := p.decoder.DecodeBytes(doc)
 	if err != nil {
 		return nil, nil, err
