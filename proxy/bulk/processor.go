@@ -61,7 +61,6 @@ func newBulkProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]toke
 }
 
 func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []frac.MetaData, error) {
-	fmt.Println("RCVD DOC IS", string(doc))
 	err := p.decoder.DecodeBytes(doc)
 	if err != nil {
 		return nil, nil, err
@@ -72,6 +71,7 @@ func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []frac.M
 		// couldn't parse given event time
 		parseErrors.Inc()
 	} else if documentDelayed(docDelay, p.drift, p.futureDrift) {
+		fmt.Println("REQUEST TIME", requestTime.String(), " DRIFT", p.drift.String())
 		updateDocTime(p.decoder, timeField, requestTime.UTC(), docTime)
 		docTime = requestTime
 		doc = p.decoder.Encode(doc[:0])
