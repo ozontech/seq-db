@@ -8,6 +8,7 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
@@ -130,9 +131,6 @@ func (w *IndexWorkers) appendWorker(index int) {
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
-	// just a reusable buffer for unpacking
-	var metasPayload []byte
-
 	// collector of bulk meta data
 	collector := newMetaDataCollector()
 
@@ -142,9 +140,12 @@ func (w *IndexWorkers) appendWorker(index int) {
 		tr := tracer.New()
 		total := tr.Start("total_indexing")
 
-		if metasPayload, err = disk.DocBlock(task.Metas).DecompressTo(metasPayload); err != nil {
+		unpackBuffer := bytespool.NewReleasableBytes(disk.DocBlock(task.Metas).RawLen())
+		if unpackBuffer.Buf.B, err = disk.DocBlock(task.Metas).DecompressTo(unpackBuffer.Buf.B); err != nil {
 			logger.Panic("error decompressing meta", zap.Error(err)) // TODO: error handling
 		}
+
+		metasPayload := unpackBuffer.Value()
 
 		active := task.Frac
 		blockIndex := active.DocBlocks.Append(task.Pos)
@@ -210,6 +211,8 @@ func (w *IndexWorkers) appendWorker(index int) {
 		m.Stop()
 
 		task.AppendQueue.Dec()
+
+		unpackBuffer.Release()
 
 		total.Stop()
 		tr.UpdateMetric(metric.BulkStagesSeconds)

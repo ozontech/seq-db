@@ -1,6 +1,7 @@
 package token
 
 import (
+	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
@@ -16,7 +17,6 @@ type TableLoader struct {
 	reader   *disk.Reader
 	br       *disk.BlocksReader
 	i        uint32
-	buf      []byte
 }
 
 func NewTableLoader(fracName string, reader *disk.Reader, br *disk.BlocksReader, c *cache.Cache[Table]) *TableLoader {
@@ -47,9 +47,8 @@ func (l *TableLoader) readHeader() disk.BlocksRegistryEntry {
 	return h
 }
 
-func (l *TableLoader) readBlock() ([]byte, error) {
-	block, _, err := l.reader.ReadIndexBlock(l.br, l.i, l.buf)
-	l.buf = block
+func (l *TableLoader) readBlock() (bytespool.ReleasableBytes, error) {
+	block, _, err := l.reader.ReadIndexBlock(l.br, l.i)
 	l.i++
 	return block, err
 }
@@ -64,12 +63,18 @@ func (l *TableLoader) load() (Table, int, error) {
 
 	size := 0
 	tokenTable := make(map[string]*FieldData)
-	for block, err := l.readBlock(); len(block) > 0; block, err = l.readBlock() {
+	for {
+		block, err := l.readBlock()
 		if err != nil {
 			return nil, 0, err
 		}
 
-		unpacker := packer.NewBytesUnpacker(block)
+		data := block.Value()
+		if len(data) == 0 {
+			break
+		}
+
+		unpacker := packer.NewBytesUnpacker(data)
 		for unpacker.Len() > 0 {
 			fieldName := string(unpacker.GetBinary())
 			field := FieldData{Entries: make([]*TableEntry, unpacker.GetUint32())}
@@ -91,6 +96,7 @@ func (l *TableLoader) load() (Table, int, error) {
 			tokenTable[fieldName] = &field
 			size += len(fieldName) + len(entries)*int(TableEntrySize) + len(field.MinVal)
 		}
+		block.Release()
 	}
 	size += len(tokenTable) * int(FieldDataSize)
 

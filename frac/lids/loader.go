@@ -29,7 +29,6 @@ type Loader struct {
 	diskBlocksReader *disk.BlocksReader
 	stats            Stats
 	unpackBuf        *unpackBuffer
-	blockBuf         []byte
 }
 
 func NewLoader(
@@ -64,7 +63,8 @@ func (l *Loader) readLIDsChunks(blockIndex uint32) (*Chunks, error) {
 		err error
 	)
 	ts := time.Now()
-	l.blockBuf, n, err = l.diskReader.ReadIndexBlock(l.diskBlocksReader, blockIndex, l.blockBuf)
+	block, n, err := l.diskReader.ReadIndexBlock(l.diskBlocksReader, blockIndex)
+	defer block.Release()
 
 	if err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func (l *Loader) readLIDsChunks(blockIndex uint32) (*Chunks, error) {
 
 	ts = time.Now()
 	chunks := &Chunks{}
-	err = chunks.unpack(packer.NewBytesUnpacker(l.blockBuf), l.unpackBuf)
+	err = chunks.unpack(packer.NewBytesUnpacker(block.Value()), l.unpackBuf)
 	if err != nil {
 		return nil, err
 	}

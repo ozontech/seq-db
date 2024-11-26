@@ -6,6 +6,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/logger"
@@ -18,7 +19,7 @@ type Loader struct {
 	reader       *disk.Reader
 	blocksReader *disk.BlocksReader
 	blockIndex   uint32
-	blockBuf     []byte
+	prevBock     bytespool.ReleasableBytes
 }
 
 func (l *Loader) Load(frac *Sealed) {
@@ -58,10 +59,13 @@ func (l *Loader) Load(frac *Sealed) {
 }
 
 func (l *Loader) nextIndexBlock() ([]byte, error) {
-	data, _, err := l.reader.ReadIndexBlock(l.blocksReader, l.blockIndex, l.blockBuf)
-	l.blockBuf = data
+	l.prevBock.Release()
+	block, _, err := l.reader.ReadIndexBlock(l.blocksReader, l.blockIndex)
+
 	l.blockIndex++
-	return data, err
+	l.prevBock = block
+
+	return block.Value(), err
 }
 
 func (l *Loader) skipBlock() disk.BlocksRegistryEntry {

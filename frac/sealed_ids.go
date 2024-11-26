@@ -7,6 +7,7 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
@@ -132,11 +133,14 @@ func (si *SealedIDs) GetMIDsBlock(searchSB *SearchCell, lid seq.LID, unpackCache
 		return
 	}
 
-	data := si.cache.MIDs.Get(uint32(index+1), func() ([]byte, int) {
+	block := si.cache.MIDs.GetReleasable(uint32(index+1), func() (bytespool.Releasable[[]byte], int) {
 		block := si.loadMIDBlock(searchSB, uint32(index))
-		return block, cap(block)
+		return block, cap(block.Buf.B)
 	})
 
+	defer block.Release()
+
+	data := block.Value()
 	if len(data) == 0 {
 		logger.Panic("empty mids block returned from cache",
 			zap.Uint32("lid", uint32(lid)),
@@ -157,11 +161,13 @@ func (si *SealedIDs) GetRIDsBlock(searchSB *SearchCell, lid seq.LID, unpackCache
 		return
 	}
 
-	data := si.cache.RIDs.Get(uint32(index)+1, func() ([]byte, int) {
+	block := si.cache.RIDs.GetReleasable(uint32(index)+1, func() (bytespool.Releasable[[]byte], int) {
 		block := si.loadRIDBlock(searchSB, uint32(index))
-		return block, cap(block)
+		return block, cap(block.Buf.B)
 	})
+	defer block.Release()
 
+	data := block.Value()
 	if len(data) == 0 {
 		logger.Panic("empty rids block returned from cache",
 			zap.Uint32("lid", uint32(lid)),
@@ -198,16 +204,16 @@ func (si *SealedIDs) paramsBlockIndex(index uint32) uint32 {
 	return si.DiskStartBlockIndex + index*3 + 2
 }
 
-func (si *SealedIDs) loadMIDBlock(searchSB *SearchCell, index uint32) []byte {
+func (si *SealedIDs) loadMIDBlock(searchSB *SearchCell, index uint32) bytespool.ReleasableBytes {
 	t := time.Now()
-	data, _, err := si.Reader.ReadIndexBlock(si.BlocksReader, si.midBlockIndex(index), nil)
+	block, _, err := si.Reader.ReadIndexBlock(si.BlocksReader, si.midBlockIndex(index))
 	searchSB.AddReadIDTimeNS(time.Since(t))
 
 	if util.IsRecoveredPanicError(err) {
 		logger.Panic("todo: handle read err", zap.Error(err))
 	}
 
-	if len(data) == 0 {
+	if len(block.Value()) == 0 {
 		logger.Panic("wrong mid block",
 			zap.String("file", si.BlocksReader.GetFileName()),
 			zap.Uint32("index", index),
@@ -218,28 +224,29 @@ func (si *SealedIDs) loadMIDBlock(searchSB *SearchCell, index uint32) []byte {
 		)
 	}
 
-	return data
+	return block
 }
 
-func (si *SealedIDs) loadRIDBlock(searchCell *SearchCell, index uint32) []byte {
+func (si *SealedIDs) loadRIDBlock(searchCell *SearchCell, index uint32) bytespool.ReleasableBytes {
 	t := time.Now()
-	data, _, err := si.Reader.ReadIndexBlock(si.BlocksReader, si.ridBlockIndex(index), nil)
+	block, _, err := si.Reader.ReadIndexBlock(si.BlocksReader, si.ridBlockIndex(index))
 	searchCell.AddReadIDTimeNS(time.Since(t))
 
 	if util.IsRecoveredPanicError(err) {
 		logger.Panic("todo: handle read err", zap.Error(err))
 	}
 
-	return data
+	return block
 }
 
 func (si *SealedIDs) loadParamsBlock(index uint32) []uint64 {
-	data, _, err := si.Reader.ReadIndexBlock(si.BlocksReader, si.paramsBlockIndex(index), nil)
+	block, _, err := si.Reader.ReadIndexBlock(si.BlocksReader, si.paramsBlockIndex(index))
+	defer block.Release()
 
 	if util.IsRecoveredPanicError(err) {
 		logger.Panic("todo: handle read err", zap.Error(err))
 	}
-	return unpackRawIDsVarint(data, make([]uint64, 0, consts.IDsPerBlock))
+	return unpackRawIDsVarint(block.Value(), make([]uint64, 0, consts.IDsPerBlock))
 }
 
 func (si *SealedIDs) getIDBlockIndexByLID(lid seq.LID) int64 {

@@ -209,7 +209,9 @@ func (t *loader) noValidDoc(info *fracInfo) (invalid bool) {
 			invalid = true
 		}
 	}()
-	_, _, err = t.reader.ReadDocBlock(docFile, 0)
+
+	block, _, err := t.reader.ReadDocBlock(docFile, 0)
+	block.Release()
 	return err != nil
 }
 

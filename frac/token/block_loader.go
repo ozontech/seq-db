@@ -136,9 +136,9 @@ func (l *BlockLoader) Load(entry *TableEntry) *Block {
 	return newBlock(entry, cacheEntry.Block, cacheEntry.Offset)
 }
 
-func (l *BlockLoader) readBinary(stats StatsCollector, blockIndex uint32) []byte {
+func (l *BlockLoader) readBinary(stats StatsCollector, blockIndex uint32) bytespool.ReleasableBytes {
 	t := time.Now()
-	data, n, err := l.reader.ReadIndexBlock(l.blocksReader, blockIndex, nil)
+	block, n, err := l.reader.ReadIndexBlock(l.blocksReader, blockIndex)
 	if util.IsRecoveredPanicError(err) {
 		logger.Panic("todo: handle read err", zap.Error(err))
 	}
@@ -149,16 +149,17 @@ func (l *BlockLoader) readBinary(stats StatsCollector, blockIndex uint32) []byte
 		stats.AddFieldBlocksRead(1)
 	}
 
-	return data
+	return block
 }
 
 func (l *BlockLoader) read(entry *TableEntry) *Block {
-	data := l.readBinary(l.stats, entry.BlockIndex)
+	block := l.readBinary(l.stats, entry.BlockIndex)
+	defer block.Release()
 
 	t := time.Now()
 	var err error
 	tokensBlock := newBlock(entry, nil, nil)
-	if err = tokensBlock.unpack(data); err != nil {
+	if err = tokensBlock.unpack(block.Copy()); err != nil {
 		logger.Panic("error reading tokens block",
 			zap.Error(err),
 			zap.Any("entry", entry),

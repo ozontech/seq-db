@@ -229,7 +229,8 @@ out:
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			result, n, err := reader.ReadDocBlock(f.metasFile, int64(metaPos))
+			block, n, err := reader.ReadDocBlock(f.metasFile, int64(metaPos))
+
 			if err == io.EOF {
 				if n != 0 {
 					logger.Warn("last meta block is partially written, skipping it")
@@ -239,6 +240,9 @@ out:
 			if err != nil && err != io.EOF {
 				return err
 			}
+
+			result := block.Copy()
+			block.Release()
 
 			if metaPos > next {
 				next += step

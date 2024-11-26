@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
@@ -47,17 +48,21 @@ func getReader(path string) *disk.BlocksReader {
 	return disk.NewBlocksReader(c, path, nil)
 }
 
-func readBlock(blocksReader *disk.BlocksReader, blockIndex uint32) []byte {
-	data, _, err := reader.ReadIndexBlock(blocksReader, blockIndex, nil)
+func readBlock(blocksReader *disk.BlocksReader, blockIndex uint32) bytespool.ReleasableBytes {
+	block, _, err := reader.ReadIndexBlock(blocksReader, blockIndex)
 	if err != nil {
 		logger.Fatal("error reading block", zap.String("file", blocksReader.GetFileName()), zap.Error(err))
 	}
-	return data
+	return block
 }
 
 func loadInfo(path string) *frac.Info {
 	blocksReader := getReader(path)
-	result := readBlock(blocksReader, 0)
+
+	block := readBlock(blocksReader, 0)
+	defer block.Release()
+
+	result := block.Value()
 	if len(result) < 4 {
 		logger.Fatal("seq-db index file header corrupted", zap.String("file", blocksReader.GetFileName()))
 	}
@@ -106,8 +111,11 @@ func buildDist(dist *seq.MIDsDistribution, path string, _ *frac.Info) {
 
 	cnt := 0
 	for {
-		bytes := readBlock(blocksReader, blockIndex)
+		block := readBlock(blocksReader, blockIndex)
+
+		bytes := block.Value()
 		if len(bytes) == 0 { // empty
+			block.Release()
 			break
 		}
 
@@ -123,6 +131,7 @@ func buildDist(dist *seq.MIDsDistribution, path string, _ *frac.Info) {
 			cnt++
 		}
 		blockIndex += 3
+		block.Release()
 	}
 
 	logger.Info("read IDs", zap.Int("count", cnt))

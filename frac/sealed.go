@@ -308,15 +308,19 @@ func NewSealedFromActive(active *Active, reader *disk.Reader, sealedIndexCache *
 }
 
 func (f *Sealed) readHeader() *Info {
-	block, _, err := f.reader.ReadIndexBlock(f.blocksReader, 0, nil)
+	block, _, err := f.reader.ReadIndexBlock(f.blocksReader, 0)
+	defer block.Release()
+
 	if err != nil {
 		logger.Panic("todo")
 	}
-	if len(block) < 4 || string(block[:4]) != seqDBMagic {
+
+	data := block.Value()
+	if len(data) < 4 || string(data[:4]) != seqDBMagic {
 		logger.Fatal("seq-db index file header corrupted", zap.String("file", f.blocksReader.GetFileName()))
 	}
 	info := &Info{}
-	info.Load(block[4:])
+	info.Load(data[4:])
 	return info
 }
 

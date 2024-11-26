@@ -76,11 +76,15 @@ func analyzeIndex(
 	br := disk.NewBlocksReader(cache.Registry, path, nil)
 
 	readBlock := func() []byte {
-		data, _, err := reader.ReadIndexBlock(br, blockIndex, nil)
-		blockIndex++
+		block, _, err := reader.ReadIndexBlock(br, blockIndex)
 		if err != nil {
 			logger.Fatal("error reading block", zap.String("file", br.GetFileName()), zap.Error(err))
 		}
+
+		data := block.Value()
+		block.Release()
+		blockIndex++
+
 		return data
 	}
 

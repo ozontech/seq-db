@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
@@ -40,20 +41,21 @@ func (f *frac) Contains(id seq.MID) bool {
 }
 
 func (f *frac) readDocs(blockPos uint64, docPos []uint64) ([][]byte, error) {
-	block, err := f.docBlockCache.GetWithError(uint32(blockPos), func() ([]byte, int, error) {
+	block, err := f.docBlockCache.GetReleasableWithError(uint32(blockPos), func() (bytespool.Releasable[[]byte], int, error) {
 		f.tryOpenDocsFile()
 		block, _, err := f.reader.ReadDocBlockPayload(f.docsFile, int64(blockPos))
 		if err != nil {
 			return nil, 0, fmt.Errorf("can't fetch doc at pos %d: %w", blockPos, err)
 		}
-		return block, cap(block), nil
+		return block, cap(block.Buf.B), nil
 	})
+	defer block.Release()
 
 	if err != nil {
 		return nil, err
 	}
 
-	return extractDocsFromBlock(block, docPos), nil
+	return extractDocsFromBlock(block.Value(), docPos), nil
 }
 
 func extractDocsFromBlock(block []byte, docPos []uint64) [][]byte {

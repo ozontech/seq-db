@@ -8,7 +8,6 @@ import (
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/conf"
-	"github.com/ozontech/seq-db/util"
 )
 
 type readTask struct {
@@ -48,47 +47,44 @@ func (r *Reader) process(task *readTask) {
 	task.wg.Wait()
 }
 
-func (r *Reader) ReadDocBlock(f *os.File, offset int64) ([]byte, uint64, error) {
+func (r *Reader) ReadDocBlock(f *os.File, offset int64) (bytespool.ReleasableBytes, uint64, error) {
 	l, err := r.GetDocBlockLen(f, offset)
 	if err != nil {
-		return nil, 0, err
+		return bytespool.ReleasableBytes{}, 0, err
 	}
-	return r.readDocBlockInBuf(f, offset, make([]byte, l))
+
+	block := bytespool.NewReleasableBytes(l)
+	n, err := r.readDocBlockInBuf(f, offset, block.Buf.B)
+	return block, n, err
 }
 
-func (r *Reader) ReadDocBlockPayload(f *os.File, offset int64) ([]byte, uint64, error) {
-	l, err := r.GetDocBlockLen(f, offset)
-	if err != nil {
-		return nil, 0, err
-	}
+func (r *Reader) ReadDocBlockPayload(f *os.File, offset int64) (bytespool.ReleasableBytes, uint64, error) {
+	block, n, err := r.ReadDocBlock(f, offset)
+	defer block.Release()
 
-	buf := bytespool.Acquire(int(l))
-	defer bytespool.Release(buf)
-
-	var n uint64
-	buf.B, n, err = r.readDocBlockInBuf(f, offset, buf.B)
 	if err != nil {
-		return nil, 0, err
+		return bytespool.ReleasableBytes{}, 0, err
 	}
 
 	// decompress
-	docBlock := DocBlock(buf.B)
-	dst, err := docBlock.DecompressTo(make([]byte, docBlock.RawLen()))
+	docBlock := DocBlock(block.Value())
+	dst := bytespool.NewReleasableBytes(docBlock.RawLen())
+	dst.Buf.B, err = docBlock.DecompressTo(dst.Buf.B)
 	if err != nil {
-		return nil, 0, err
+		return bytespool.ReleasableBytes{}, 0, err
 	}
 
 	return dst, n, nil
 }
 
-func (r *Reader) readDocBlockInBuf(f *os.File, offset int64, buf []byte) ([]byte, uint64, error) {
+func (r *Reader) readDocBlockInBuf(f *os.File, offset int64, buf []byte) (uint64, error) {
 	task := &ReadDocTask{
 		f:      f,
 		offset: offset,
 		Buf:    buf,
 	}
 	r.process((*readTask)(task))
-	return task.Buf, task.N, task.Err
+	return task.N, task.Err
 }
 
 func (r *Reader) GetDocBlockLen(f *os.File, offset int64) (uint64, error) {
@@ -109,10 +105,10 @@ func (r *Reader) GetDocBlockLen(f *os.File, offset int64) (uint64, error) {
 	return DocBlock(task.Buf).FullLen(), nil
 }
 
-func (r *Reader) ReadIndexBlock(blocksReader *BlocksReader, blockIndex uint32, dst []byte) (_ []byte, _ uint64, err error) {
+func (r *Reader) ReadIndexBlock(blocksReader *BlocksReader, blockIndex uint32) (_ bytespool.ReleasableBytes, _ uint64, err error) {
 	header, err := blocksReader.GetBlockHeader(blockIndex)
 	if err != nil {
-		return nil, 0, err
+		return bytespool.ReleasableBytes{}, 0, err
 	}
 
 	task := &ReadIndexTask{
@@ -121,8 +117,8 @@ func (r *Reader) ReadIndexBlock(blocksReader *BlocksReader, blockIndex uint32, d
 	}
 
 	if header.Codec() == CodecNo {
-		dst := make([]byte, header.Len())
-		task.Buf = dst
+		dst := bytespool.NewReleasableBytes(uint64(header.Len()))
+		task.Buf = dst.Buf.B
 		r.process((*readTask)(task))
 		return dst, task.N, task.Err
 	}
@@ -134,11 +130,11 @@ func (r *Reader) ReadIndexBlock(blocksReader *BlocksReader, blockIndex uint32, d
 	r.process((*readTask)(task))
 
 	if task.Err != nil {
-		return nil, task.N, task.Err
+		return bytespool.ReleasableBytes{}, task.N, task.Err
 	}
 
-	dst = util.EnsureSliceSize(dst, int(header.RawLen()))
-	dst, err = header.Codec().decompressBlock(int(header.RawLen()), task.Buf, dst)
+	dst := bytespool.NewReleasableBytes(uint64(header.RawLen()))
+	dst.Buf.B, err = header.Codec().decompressBlock(int(header.RawLen()), task.Buf, dst.Buf.B)
 
 	return dst, task.N, err
 }

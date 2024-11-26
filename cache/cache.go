@@ -5,6 +5,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/ozontech/seq-db/bytespool"
 	"go.uber.org/atomic"
 )
 
@@ -26,34 +27,6 @@ func NewGeneration() *Generation {
 }
 
 // check docs/cache.md first
-type entry[V any] struct {
-	// value is written under Cache.mu lock
-	// can be read without lock if wg is nil or waited on
-	value V
-	// wg is written under Cache.mu lock
-	// can be read without lock if was waited on
-	// (after previous read under lock)
-	// wg allows to wait for value to be ready
-	// and indicates entry current state
-	// if not nil, wait on it
-	// if after waiting it's still here,
-	// value wasn't initialized and entry is abandoned, retry
-	// if wg is nil, everything is good, value can be used
-	wg *sync.WaitGroup
-	// gen is written and read only under Cache.mu lock
-	gen *Generation
-	// size is written under Cache.mu lock
-	// can be read without lock if wg is nil or waited on
-	size uint64
-}
-
-func (e *entry[V]) updateGeneration(ng *Generation) {
-	if ng != e.gen {
-		e.gen.size.Sub(e.size)
-		ng.size.Add(e.size)
-		e.gen = ng
-	}
-}
 
 type Cache[V any] struct {
 	mu                sync.Mutex // covers all Cache operations
@@ -115,6 +88,9 @@ func (c *Cache[V]) Cleanup() uint64 {
 		}
 		delete(c.payload, k)
 		totalFreed += e.size
+		if e.data != nil {
+			e.data.Release()
+		}
 	}
 
 	c.recreatePayload()
@@ -188,12 +164,12 @@ func (c *Cache[V]) getOrCreate(key uint32) (*entry[V], *sync.WaitGroup, bool) {
 
 // save is called when everything went well, and we want to save the value in cache
 // refMemSize - this is the size of the memory that the entry refers to
-func (c *Cache[V]) save(e *entry[V], wg *sync.WaitGroup, value V, refMemSize int, latency float64) {
+func (c *Cache[V]) save(e *entry[V], wg *sync.WaitGroup, data bytespool.Releasable[V], refMemSize int, latency float64) {
 	size := c.entrySize + uint64(refMemSize)
 
 	c.mu.Lock()
 
-	e.value = value
+	e.data = data
 	e.size = size
 	e.gen.size.Add(size)
 
@@ -233,7 +209,7 @@ func (c *Cache[V]) Get(key uint32, fn func() (V, int)) V {
 	// or create an entry for a new one
 	e, wg, success := c.getOrCreate(key)
 	if success {
-		return e.value
+		return e.data.Value()
 	}
 
 	defer c.handlePanic(key, wg)
@@ -243,7 +219,7 @@ func (c *Cache[V]) Get(key uint32, fn func() (V, int)) V {
 	latency := time.Since(t).Seconds()
 
 	// all good, just update the cache
-	c.save(e, wg, value, refMemSize, latency)
+	c.save(e, wg, newFakeReleasable[V](value), refMemSize, latency)
 
 	return value
 }
@@ -251,7 +227,7 @@ func (c *Cache[V]) Get(key uint32, fn func() (V, int)) V {
 func (c *Cache[V]) GetWithError(key uint32, fn func() (V, int, error)) (V, error) {
 	e, wg, success := c.getOrCreate(key)
 	if success {
-		return e.value, nil
+		return e.data.Value(), nil
 	}
 
 	defer c.handlePanic(key, wg)
@@ -264,9 +240,53 @@ func (c *Cache[V]) GetWithError(key uint32, fn func() (V, int, error)) (V, error
 		return value, err
 	}
 
-	c.save(e, wg, value, refMemSize, latency)
+	c.save(e, wg, newFakeReleasable[V](value), refMemSize, latency)
 
 	return value, nil
+}
+
+func (c *Cache[V]) GetReleasableWithError(key uint32, fn func() (bytespool.Releasable[V], int, error)) (bytespool.Releasable[V], error) {
+	e, wg, success := c.getOrCreate(key)
+	if success {
+		return e.data.CopyForRead(), nil
+	}
+
+	defer c.handlePanic(key, wg)
+	t := time.Now()
+
+	data, refMemSize, err := fn()
+	latency := time.Since(t).Seconds()
+
+	if err != nil {
+		c.recover(key, wg)
+		return nil, err
+	}
+
+	c.save(e, wg, data, refMemSize, latency)
+
+	return data.CopyForRead(), nil
+}
+
+func (c *Cache[V]) GetReleasable(key uint32, fn func() (bytespool.Releasable[V], int)) bytespool.Releasable[V] {
+	// attempt to obtain cached value
+	// or create an entry for a new one
+	e, wg, success := c.getOrCreate(key)
+	if success {
+		return e.data.CopyForRead()
+	}
+
+	defer c.handlePanic(key, wg)
+	// long operation
+	t := time.Now()
+
+	data, refMemSize := fn()
+	latency := time.Since(t).Seconds()
+
+	// all good, just update the cache
+
+	c.save(e, wg, data, refMemSize, latency)
+
+	return data.CopyForRead()
 }
 
 func (c *Cache[V]) Release() {
@@ -277,6 +297,9 @@ func (c *Cache[V]) Release() {
 	for _, e := range c.payload {
 		totalFreed += e.size
 		e.gen.size.Sub(e.size)
+		if e.data != nil {
+			e.data.Release()
+		}
 	}
 
 	c.metrics.reportReleased(totalFreed)

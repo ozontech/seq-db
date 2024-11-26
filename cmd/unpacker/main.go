@@ -55,7 +55,7 @@ func main() {
 	logger.Info("unpacking", zap.String("filename", unpackFileName))
 	docsBatch := make([]byte, 0)
 	for {
-		result, n, err := reader.ReadDocBlockPayload(inFile, offset)
+		block, n, err := reader.ReadDocBlockPayload(inFile, offset)
 		if err == io.EOF {
 			logger.Info("unpack completed")
 			return
@@ -64,6 +64,7 @@ func main() {
 			logger.Fatal("error reading doc block", zap.Error(err))
 		}
 		offset += int64(n)
+		result := block.Value()
 		docsBatch = docsBatch[:0]
 		for len(result) != 0 {
 			docsLen := binary.LittleEndian.Uint32(result[:4])
@@ -71,6 +72,8 @@ func main() {
 			docsBatch = append(docsBatch, '\n')
 			result = result[docsLen+4:]
 		}
+		block.Release()
+
 		_, err = outFile.Write(docsBatch)
 		if err != nil {
 			logger.Fatal("error writing to unpacked file", zap.Error(err))
