@@ -82,7 +82,7 @@ type searchData struct {
 }
 
 type fetchData struct {
-	docFetcher *fetch.Fetcher
+	docFetcher fetch.Fetcher
 }
 
 type GrpcV1 struct {
@@ -112,7 +112,7 @@ func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mapping s
 			workerPool: search.NewWorkerPool(config.Search.WorkersCount),
 		},
 		fetchData: fetchData{
-			docFetcher: fetch.New(conf.FetchWorkers),
+			docFetcher: fetch.NewDocumentFetcherOld(conf.FetchWorkers),
 		},
 	}
 
