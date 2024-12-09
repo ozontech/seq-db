@@ -3,37 +3,36 @@ package fetch
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/tracer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
 
 type Fetcher struct {
-	fetchCh chan *Task
+	fetchCh chan *task
 }
 
-type Task struct {
-	Docs    [][]byte
-	Err     error
-	IDs     []seq.IDSource
-	Out     chan *Task
-	Fracs   fracmanager.FracsList
-	wg      *sync.WaitGroup
-	Context context.Context
+type task struct {
+	docs [][]byte
+	err  error
+	ids  []seq.ID
+	out  chan *task
+	frac frac.Fraction
+	wg   *sync.WaitGroup
+	ctx  context.Context
 }
 
 func New(fetchWorkers int) *Fetcher {
 	f := &Fetcher{
-		fetchCh: make(chan *Task, fetchWorkers*2),
+		fetchCh: make(chan *task, fetchWorkers*2),
 	}
 
 	for i := 0; i < fetchWorkers; i++ {
@@ -44,61 +43,115 @@ func New(fetchWorkers int) *Fetcher {
 }
 
 func (df *Fetcher) launchWorker() {
-	midCache := frac.NewUnpackCache()
-	ridCache := frac.NewUnpackCache()
 	for fetchTask := range df.fetchCh {
-		metric.FetchWorkerIDsPerTask.Observe(float64(len(fetchTask.IDs)))
-		if fetchTask.Context.Err() == nil {
-			fetchTask.Docs, fetchTask.Err = df.fetchMany(fetchTask, midCache, ridCache)
+		metric.FetchWorkerIDsPerTask.Observe(float64(len(fetchTask.ids)))
+		if fetchTask.ctx.Err() == nil {
+			fetchTask.docs, fetchTask.err = fetchMultiWithRecover(fetchTask.ctx, fetchTask.frac, fetchTask.ids)
 		}
 
-		fetchTask.Out <- fetchTask
+		fetchTask.out <- fetchTask
 		fetchTask.wg.Done()
 	}
 }
 
-func fetchWithRecover(f frac.Fraction, id seq.ID, midCache, ridCache *frac.UnpackCache) (_ []byte, err error) {
+func fetchMultiWithRecover(ctx context.Context, f frac.Fraction, ids []seq.ID) (_ [][]byte, err error) {
 	defer func() {
 		if panicData := recover(); panicData != nil {
-			// prevent to return nil instead buf after panic
 			err = fmt.Errorf("internal error: fetch panicked on fraction %s: %s", f.Info().Name(), panicData)
 			util.Recover(metric.StorePanics, err)
 		}
 	}()
 
-	dp, release, ok := f.DataProvider(context.Background())
+	dp, release, ok := f.DataProvider(ctx)
 	if !ok {
 		return nil, nil
 	}
 	defer release()
-	return dp.Fetch(id, midCache, ridCache)
+
+	return dp.Fetch(ids)
 }
 
-func (df *Fetcher) submitFetch(ctx context.Context, fracs fracmanager.FracsList, ids []seq.IDSource) chan *Task {
-	ch := make(chan *Task, len(ids))
-	go func() {
-		parts := make([][]seq.IDSource, 0, conf.FetchWorkers*4)
-		if len(ids) < conf.FetchWorkers*4 {
-			parts = append(parts, ids)
-		} else {
-			partLen := len(ids) / conf.FetchWorkers
-			x := 0
-			for x+partLen < len(ids) {
-				parts = append(parts, ids[x:x+partLen])
-				x += partLen
-			}
-			parts = append(parts, ids[x:])
+func filterFracs(fracs fracmanager.FracsList, minMID, maxMID seq.MID) fracmanager.FracsList {
+	subset := make(fracmanager.FracsList, 0, len(fracs))
+	for _, f := range fracs {
+		if f.IsIntersecting(minMID, maxMID) {
+			subset = append(subset, f)
 		}
+	}
+	return subset
+}
 
+func groupIDsByFraction(idsOrig seq.IDSources, fracs fracmanager.FracsList) map[frac.Fraction][]seq.ID {
+	// sort idsOrig to get sorted ids for each fraction due to optimize loading of ids-blocks
+	ids := append(seq.IDSources{}, idsOrig...)
+	sort.Sort(ids)
+
+	// reduce candidate fractions
+	fracSubset := filterFracs(fracs, ids[0].ID.MID, ids[len(ids)-1].ID.MID)
+
+	// group by fraction
+	fracIDs := []seq.ID{}
+	groups := map[frac.Fraction][]seq.ID{}
+
+	for _, f := range fracSubset {
+		i := 0
+		fracIDs := fracIDs[:0]
+		fracName := f.Info().Name()
+
+		for _, id := range ids {
+			if id.Hint == "" {
+				ids[i], i = id, i+1 // always check ids with empty hint for all fractions
+				if f.Contains(id.ID.MID) {
+					fracIDs = append(fracIDs, id.ID)
+				}
+				continue
+			}
+
+			if id.Hint != fracName {
+				ids[i], i = id, i+1 // check this id for others fraction next time
+				continue
+			}
+
+			if !f.Contains(id.ID.MID) {
+				logger.Error("fraction from hint does not contain MID",
+					zap.String("hint", id.Hint),
+					zap.Uint64("mid", uint64(id.ID.MID)))
+				metric.FetchHintMisses.Inc()
+				continue
+			}
+			fracIDs = append(fracIDs, id.ID)
+		}
+		groups[f] = append([]seq.ID{}, fracIDs...)
+		ids = ids[:i]
+	}
+
+	for _, id := range ids {
+		if id.Hint == "" {
+			continue
+		}
+		logger.Error("fraction not found by hint", zap.String("hint", id.Hint))
+		metric.FetchHintMisses.Inc()
+	}
+
+	return groups
+}
+
+func (df *Fetcher) submitFetch(ctx context.Context, fracs fracmanager.FracsList, ids []seq.IDSource) chan *task {
+	ch := make(chan *task, len(fracs))
+
+	idsGroups := groupIDsByFraction(ids, fracs)
+
+	go func() {
 		wg := &sync.WaitGroup{}
-		wg.Add(len(parts))
-		for _, part := range parts {
-			df.fetchCh <- &Task{
-				IDs:     part,
-				Out:     ch,
-				Fracs:   fracs,
-				wg:      wg,
-				Context: ctx,
+		wg.Add(len(idsGroups))
+
+		for frac, fracIDs := range idsGroups {
+			df.fetchCh <- &task{
+				ids:  fracIDs,
+				out:  ch,
+				frac: frac,
+				wg:   wg,
+				ctx:  ctx,
 			}
 		}
 		wg.Wait()
@@ -108,132 +161,27 @@ func (df *Fetcher) submitFetch(ctx context.Context, fracs fracmanager.FracsList,
 	return ch
 }
 
-func (df *Fetcher) FetchDocs(ctx context.Context, fracs fracmanager.FracsList, ids []seq.IDSource) (map[string][]byte, error) {
-	docs := make(map[string][]byte, len(ids))
+func (df *Fetcher) FetchDocs(ctx context.Context, fracs fracmanager.FracsList, ids []seq.IDSource) ([][]byte, error) {
+	reversPos := map[seq.ID]int{}
+	for i, id := range ids {
+		reversPos[id.ID] = i
+	}
+
 	ch := df.submitFetch(ctx, fracs, ids)
 
 	var errors []error
+	docs := make([][]byte, len(ids))
 	for task := range ch {
-		if task.Err != nil {
-			errors = append(errors, task.Err)
+		if task.err != nil {
+			errors = append(errors, task.err)
 			continue
 		}
-		for i, id := range task.IDs {
-			if i >= len(task.Docs) {
-				err := fmt.Errorf("more task ids than docs, docs_len=%d, task_ids_len=%d", len(task.Docs), len(task.IDs))
-				logger.Error("something went wrong while fetching", zap.Error(err))
-				errors = append(errors, err)
-				break
+		for i, id := range task.ids {
+			if task.docs[i] != nil {
+				docs[reversPos[id]] = task.docs[i]
 			}
-			docs[id.ID.String()] = task.Docs[i]
 		}
 	}
 
 	return docs, util.CollapseErrors(errors)
-}
-
-func (df *Fetcher) fetchMany(fetchTask *Task, midCache, ridCache *frac.UnpackCache) ([][]byte, error) {
-	docs := make([][]byte, 0, len(fetchTask.IDs))
-	for _, id := range fetchTask.IDs {
-		var err error
-		var doc []byte
-
-		fetchFunc := df.fetchOne
-		if id.Hint != "" {
-			fetchFunc = df.fetchOneWithHint
-		}
-
-		doc, err = fetchFunc(id, fetchTask.Fracs, midCache, ridCache)
-		if err != nil {
-			return docs, err
-		}
-		docs = append(docs, doc)
-	}
-
-	return docs, nil
-}
-
-func (df *Fetcher) fetchOneWithHint(
-	id seq.IDSource,
-	fracs fracmanager.FracsList,
-	midCache, ridCache *frac.UnpackCache,
-) ([]byte, error) {
-	metric.FetchWithHints.Inc()
-	idTime := seq.ExtractMID(id.ID)
-
-	t := tracer.New()
-	m1 := t.Start("fetch_worker")
-	defer func() {
-		m1.Stop()
-		t.UpdateMetric(metric.FetchWorkerStagesSeconds)
-	}()
-
-	// has hint
-	fracInstance := fracs.FindByName(id.Hint)
-	if fracInstance == nil {
-		logger.Error("fraction not found by hint",
-			zap.String("hint", id.Hint))
-		metric.FetchHintMisses.Inc()
-		return nil, nil
-	}
-	if !fracInstance.Contains(idTime) {
-		logger.Error("fraction from hint does not contain MID",
-			zap.String("hint", id.Hint),
-			zap.Uint64("mid", uint64(idTime)))
-		metric.FetchHintMisses.Inc()
-
-		return nil, nil
-	}
-
-	var err error
-	var doc []byte
-	m2 := t.Start("fetch_fraction")
-	doc, err = fetchWithRecover(fracInstance, id.ID, midCache, ridCache)
-	if err != nil {
-		return doc, err
-	}
-	m2.Stop()
-	if doc != nil {
-		metric.FetchWorkerFracsPerTask.Observe(float64(1))
-		return doc, nil
-	}
-
-	return nil, nil
-}
-
-func (df *Fetcher) fetchOne(
-	id seq.IDSource,
-	fracs fracmanager.FracsList,
-	midCache, ridCache *frac.UnpackCache,
-) ([]byte, error) {
-	metric.FetchWithoutHint.Inc()
-	idTime := seq.ExtractMID(id.ID)
-
-	t := tracer.New()
-	m1 := t.Start("fetch_worker")
-	fracsTouched := 0
-	defer func() {
-		m1.Stop()
-		metric.FetchWorkerFracsPerTask.Observe(float64(fracsTouched))
-		t.UpdateMetric(metric.FetchWorkerStagesSeconds)
-	}()
-
-	for i := len(fracs) - 1; i >= 0; i-- {
-		if !fracs[i].Contains(idTime) {
-			continue
-		}
-		fracsTouched++
-		var err error
-		var doc []byte
-		m2 := t.Start("fetch_fraction")
-		if doc, err = fetchWithRecover(fracs[i], id.ID, midCache, ridCache); err != nil {
-			return doc, err
-		}
-		m2.Stop()
-		if doc != nil {
-			return doc, nil
-		}
-	}
-
-	return nil, nil
 }

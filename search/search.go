@@ -85,7 +85,7 @@ func NewWorkerPool(workers int) *WorkerPool {
 	}
 
 	for i := 0; i < workers; i++ {
-		go newWorker().work(s.workerTasks)
+		go work(s.workerTasks)
 	}
 
 	return s
@@ -135,24 +135,13 @@ func (wp *WorkerPool) Search(ctx context.Context, fracs []frac.Fraction, params 
 	return qprs, stats, util.CollapseErrors(errs)
 }
 
-type worker struct {
-	midCache, ridCache *frac.UnpackCache
-}
-
-func newWorker() worker {
-	return worker{
-		midCache: frac.NewUnpackCache(),
-		ridCache: frac.NewUnpackCache(),
-	}
-}
-
-func (w worker) work(workerTasks chan Task) {
+func work(workerTasks chan Task) {
 	for task := range workerTasks {
-		task.Resp <- w.searchFrac(task)
+		task.Resp <- searchFrac(task)
 	}
 }
 
-func (w worker) searchFrac(task Task) (resp fracResponse) {
+func searchFrac(task Task) (resp fracResponse) {
 	defer func() {
 		resp.frac = task.Frac // link resp with task.Frac (for proper error handling)
 
@@ -178,7 +167,7 @@ func (w worker) searchFrac(task Task) (resp fracResponse) {
 	}
 
 	// done preparing, call actual search
-	return w.searchFracImpl(dataProvider, task)
+	return searchFracImpl(dataProvider, task)
 }
 
 func getLIDsBorders(minMID, maxMID seq.MID, ids frac.IDsProvider) (uint32, uint32) {
@@ -204,14 +193,8 @@ func getLIDsBorders(minMID, maxMID seq.MID, ids frac.IDsProvider) (uint32, uint3
 	return uint32(minLID), uint32(maxLID)
 }
 
-func (w worker) searchFracImpl(dataProvider frac.DataProvider, task Task) fracResponse {
+func searchFracImpl(dataProvider frac.DataProvider, task Task) fracResponse {
 	stats := NewStats(dataProvider.Type())
-
-	w.midCache.Start()
-	defer w.midCache.Finish()
-
-	w.ridCache.Start()
-	defer w.ridCache.Finish()
 
 	tr := dataProvider.Tracer()
 
@@ -224,7 +207,7 @@ func (w worker) searchFracImpl(dataProvider frac.DataProvider, task Task) fracRe
 	defer totalMetric.Stop()
 
 	m := tr.Start("get_lids_borders")
-	idsProvider := dataProvider.IDsProvider(w.midCache, w.ridCache)
+	idsProvider := dataProvider.IDsProvider()
 	minLID, maxLID := getLIDsBorders(task.Params.From, task.Params.To, idsProvider)
 	m.Stop()
 
@@ -262,7 +245,7 @@ func (w worker) searchFracImpl(dataProvider frac.DataProvider, task Task) fracRe
 	}
 
 	m = tr.Start("iterate_eval_tree")
-	total, ids, histogram, err := w.iterateEvalTree(task, evalTree, aggs, idsProvider, tr)
+	total, ids, histogram, err := iterateEvalTree(task, evalTree, aggs, idsProvider, tr)
 	m.Stop()
 
 	if err != nil {
@@ -322,7 +305,7 @@ func chooseMetric(fracType string, hasAgg, hasHist bool) *prometheus.HistogramVe
 	return metric.SealedRegSearchSec
 }
 
-func (w worker) iterateEvalTree(
+func iterateEvalTree(
 	task Task,
 	evalTree node.Node,
 	aggs []Aggregator,

@@ -7,19 +7,7 @@ import (
 	"time"
 
 	"github.com/ozontech/seq-db/util"
-
-	"github.com/ozontech/seq-db/consts"
 )
-
-const (
-	NetN = 256 * 1024
-)
-
-type LID32Slice []uint32
-
-func (p LID32Slice) Len() int           { return len(p) }
-func (p LID32Slice) Less(i, j int) bool { return p[i] < p[j] }
-func (p LID32Slice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 type ID struct {
 	MID MID
@@ -101,49 +89,6 @@ func FromString(x string) (ID, error) {
 	return id, nil
 }
 
-type Multi interface {
-	NextMono(n int) []LID
-	Next(n int) ([]LID, []uint32)
-	IsClosed() bool
-	Close()
-}
-
-type Agg interface {
-	Next(n int) ([]LID, []uint32)
-	IsClosed() bool
-	Close()
-}
-
-type MultiState struct {
-	OpIndex uint32
-	TID     uint32
-
-	Pointer int32
-	LIDs    []uint32
-}
-
-func (ms *MultiState) IsOver() bool {
-	return ms.Pointer == -1
-}
-
-func (ms *MultiState) SetOver() {
-	ms.Pointer = -1
-}
-
-func All(seq Multi) []LID {
-	return AllWithN(seq, consts.DefaultComputeN)
-}
-
-func AllWithN(seq Multi, n int) []LID {
-	buf := make([]LID, 0)
-	for !seq.IsClosed() {
-		l, _ := seq.Next(n)
-		buf = append(buf, l...)
-	}
-
-	return buf
-}
-
 func SimpleID(i int) ID {
 	return ID{
 		MID: MID(i),
@@ -165,10 +110,6 @@ func MIDToTime(t MID) time.Time {
 
 func MIDToDuration(t MID) time.Duration {
 	return time.Duration(t) * time.Millisecond
-}
-
-func ExtractMID(id ID) MID {
-	return id.MID
 }
 
 func NewID(t time.Time, randomness uint64) ID {

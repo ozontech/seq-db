@@ -31,11 +31,11 @@ type DataProvider interface {
 	Type() string
 
 	Tracer() *tracer.Tracer
-	IDsProvider(midCache, ridCache *UnpackCache) IDsProvider
+	IDsProvider() IDsProvider
 	GetValByTID(tid uint32) []byte
 	GetTIDsByTokenExpr(token parser.Token, tids []uint32) ([]uint32, error)
 	GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node
-	Fetch(id seq.ID, midCache, ridCache *UnpackCache) ([]byte, error)
+	Fetch(ids []seq.ID) ([][]byte, error)
 }
 
 type Fraction interface {

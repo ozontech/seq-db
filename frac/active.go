@@ -77,7 +77,7 @@ func (dp *ActiveDataProvider) Tracer() *tracer.Tracer {
 	return dp.tracer
 }
 
-func (dp *ActiveDataProvider) IDsProvider(_, _ *UnpackCache) IDsProvider {
+func (dp *ActiveDataProvider) IDsProvider() IDsProvider {
 	return &ActiveIDsProvider{
 		mids:     dp.MIDs.GetVals(),
 		rids:     dp.RIDs.GetVals(),
@@ -93,8 +93,16 @@ func (dp *ActiveDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter,
 	return dp.Active.GetLIDsFromTIDs(tids, dp.getInverser(), stats, minLID, maxLID, dp.tracer, order)
 }
 
-func (dp *ActiveDataProvider) Fetch(id seq.ID, _, _ *UnpackCache) ([]byte, error) {
-	return dp.Active.Fetch(id)
+func (dp *ActiveDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
+	docs := make([][]byte, len(ids))
+	for i, id := range ids {
+		doc, err := dp.Active.Fetch(id)
+		if err != nil {
+			return nil, err
+		}
+		docs[i] = doc
+	}
+	return docs, nil
 }
 
 type Active struct {

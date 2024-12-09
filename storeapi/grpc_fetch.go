@@ -135,11 +135,7 @@ func (g *GrpcV1) doFetch(ctx context.Context, req *storeapi.FetchRequest, stream
 }
 
 func (g *GrpcV1) docsStream(ctx context.Context, ids []seq.IDSource, initChunkLen int) func() ([]byte, error) {
-	var (
-		err   error
-		chunk []seq.IDSource
-		docs  map[string][]byte
-	)
+	var docs [][]byte
 
 	fetchSize := 0
 	chunkLen := initChunkLen
@@ -148,7 +144,7 @@ func (g *GrpcV1) docsStream(ctx context.Context, ids []seq.IDSource, initChunkLe
 	total := len(ids)
 
 	return func() ([]byte, error) {
-		if len(chunk) == 0 {
+		if len(docs) == 0 {
 			if len(ids) == 0 {
 				return nil, errors.New("no more ids for fetch")
 			}
@@ -165,6 +161,10 @@ func (g *GrpcV1) docsStream(ctx context.Context, ids []seq.IDSource, initChunkLe
 				fetchSize = 0
 			}
 
+			var (
+				err   error
+				chunk []seq.IDSource
+			)
 			l := min(len(ids), chunkLen)
 			chunk, ids = ids[:l], ids[l:]
 			if docs, err = g.fetchData.docFetcher.FetchDocs(ctx, fracs, chunk); err != nil {
@@ -172,10 +172,8 @@ func (g *GrpcV1) docsStream(ctx context.Context, ids []seq.IDSource, initChunkLe
 			}
 		}
 
-		var id seq.IDSource
-		id, chunk = chunk[0], chunk[1:]
-
-		doc := docs[id.ID.String()]
+		var doc []byte
+		doc, docs = docs[0], docs[1:]
 		fetchSize += len(doc)
 
 		return doc, nil

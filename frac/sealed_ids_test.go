@@ -11,16 +11,7 @@ import (
 
 func TestUnpackCache_ValsCapacity(t *testing.T) {
 	cache := NewUnpackCache()
-	require.Equal(t, defaultValsCapacity, cap(cache.valsBuffer))
-	require.Equal(t, 0, cap(cache.readVals))
-
-	cache.Start()
-	require.Equal(t, defaultValsCapacity, cap(cache.valsBuffer))
-	require.Equal(t, 0, cap(cache.readVals))
-	cache.Finish()
-
-	require.Equal(t, defaultValsCapacity, cap(cache.valsBuffer))
-	require.Equal(t, 0, cap(cache.readVals))
+	require.Equal(t, defaultValsCapacity, cap(cache.values))
 }
 
 func TestUnpackRIDs(t *testing.T) {
@@ -45,12 +36,12 @@ func TestUnpackRIDs(t *testing.T) {
 	// varint case
 	cache := NewUnpackCache()
 	cache.unpackRIDs(0, varintPacker.Data, BinaryDataV0)
-	assert.Equal(t, rids, cache.readVals)
+	assert.Equal(t, rids, cache.values)
 
 	// no varint case
 	cache = NewUnpackCache()
 	cache.unpackRIDs(0, noVarintPacker.Data, BinaryDataV1)
-	assert.Equal(t, rids, cache.readVals)
+	assert.Equal(t, rids, cache.values)
 
 	// wrong format
 	assert.Panics(t, func() {

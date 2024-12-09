@@ -244,7 +244,8 @@ func (s *IntegrationTestSuite) TestSearchSequence() {
 }
 
 func (s *IntegrationTestSuite) TestSearchMany() {
-	n := int(math.Floor(float64(seq.NetN) * 1.2))
+	const NetN = 256 * 1024
+	n := int(math.Floor(NetN * 1.2))
 
 	env := setup.NewTestingEnv(s.Config)
 	defer env.StopAll()

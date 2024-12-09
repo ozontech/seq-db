@@ -86,6 +86,8 @@ type SealedDataProvider struct {
 	sc               *SearchCell
 	tracer           *tracer.Tracer
 	fracVersion      BinaryDataVersion
+	midCache         *UnpackCache
+	ridCache         *UnpackCache
 	tokenBlockLoader *token.BlockLoader
 	tokenTableLoader *token.TableLoader
 }
@@ -94,11 +96,11 @@ func (dp *SealedDataProvider) Tracer() *tracer.Tracer {
 	return dp.tracer
 }
 
-func (dp *SealedDataProvider) IDsProvider(midCache, ridCache *UnpackCache) IDsProvider {
+func (dp *SealedDataProvider) IDsProvider() IDsProvider {
 	return &SealedIDsProvider{
 		ids:         dp.ids,
-		midCache:    midCache,
-		ridCache:    ridCache,
+		midCache:    dp.midCache,
+		ridCache:    dp.ridCache,
 		searchSB:    dp.sc,
 		fracVersion: dp.fracVersion,
 	}
@@ -167,18 +169,24 @@ func (dp *SealedDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter,
 	return dp.Sealed.GetLIDsFromTIDs(dp.sc, tids, stats, minLID, maxLID, dp.tracer, order)
 }
 
-func (dp *SealedDataProvider) Fetch(id seq.ID, midCache, ridCache *UnpackCache) ([]byte, error) {
+func (dp *SealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
+	docs := make([][]byte, len(ids))
+	for i, id := range ids {
+		doc, err := dp.FetchOne(id)
+		if err != nil {
+			return nil, err
+		}
+		docs[i] = doc
+	}
+	return docs, nil
+}
+
+func (dp *SealedDataProvider) FetchOne(id seq.ID) ([]byte, error) {
 	defer dp.tracer.UpdateMetric(metric.FetchSealedStagesSeconds)
-
-	midCache.Start()
-	ridCache.Start()
-
-	defer midCache.Finish()
-	defer ridCache.Finish()
 
 	// bin search of LID by ID
 	m := dp.tracer.Start("get_lid_by_mid")
-	ids := dp.IDsProvider(midCache, ridCache)
+	ids := dp.IDsProvider()
 	f := func(lid int) bool { return ids.LessOrEqual(seq.LID(lid), id) }
 	lid := seq.LID(util.BinSearchInRange(1, ids.Len()-1, f))
 	if id.MID != ids.GetMID(lid) || id.RID != ids.GetRID(lid) {
@@ -533,11 +541,16 @@ func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 		sc:               sc,
 		tracer:           tracer.New(),
 		fracVersion:      f.info.BinaryDataVer,
+		midCache:         NewUnpackCache(),
+		ridCache:         NewUnpackCache(),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.reader, f.blocksReader, f.cache.Tokens, sc),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.reader, f.blocksReader, f.cache.TokenTable),
 	}
 
 	return &dp, func() {
+		dp.midCache.Release()
+		dp.ridCache.Release()
+
 		f.loadMu.RUnlock()
 		f.useLock.RUnlock()
 	}, true
