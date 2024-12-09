@@ -82,8 +82,9 @@ func filterFracs(fracs fracmanager.FracsList, minMID, maxMID seq.MID) fracmanage
 }
 
 func sortIDs(idsOrig seq.IDSources) (seq.IDSources, seq.MID, seq.MID) {
-	// we expect that idsOrig may already be sorted asc or desc.
-	// both options suit us, so we try to guess the sort order to minimize permutations
+	// we expect that idsOrig may already be sorted.
+	// both direction either asc or desc suit us.
+	// so we try to guess the sort order to minimize permutations.
 	last := len(idsOrig) - 1
 	ids := append(seq.IDSources{}, idsOrig...)
 
