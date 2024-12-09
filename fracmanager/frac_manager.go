@@ -338,8 +338,7 @@ func (fm *FracManager) SelectFracsInRange(from, to seq.MID) (FracsList, error) {
 	if fm.config.MaxFractionHits > 0 && len(fracs) > int(fm.config.MaxFractionHits) {
 		metric.RejectedRequests.WithLabelValues("search", "fracs_exceeding").Inc()
 		return nil, fmt.Errorf(
-			"%w (%d > %d), try decreasing query time range",
-			consts.ErrTooManyFractionsHit,
+			"too many fractions hit (%d > %d), try decreasing query time range",
 			len(fracs),
 			fm.config.MaxFractionHits,
 		)

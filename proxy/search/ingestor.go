@@ -498,8 +498,6 @@ func (si *Ingestor) searchShard(ctx context.Context, hosts []string, request *st
 			return nil, source, fmt.Errorf("hot store refuses: %w", consts.ErrIngestorQueryWantsOldData)
 		case storeapi.SearchErrorCode_TOO_MANY_UNIQ_VALUES:
 			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyUniqValues)
-		case storeapi.SearchErrorCode_TOO_MANY_FRACTIONS_HIT:
-			return nil, source, fmt.Errorf("store forbids request: %w", consts.ErrTooManyFractionsHit)
 		}
 
 		return resp, source, nil

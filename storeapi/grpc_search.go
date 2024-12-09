@@ -2,6 +2,7 @@ package storeapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -135,8 +136,8 @@ func (g *GrpcV1) doSearch(ctx context.Context, req *storeapi.SearchRequest) (*st
 
 	qpr, stats, evalDuration, err := g.searchIteratively(searchCell, searchParams, g.config.Search.FractionsPerIteration)
 	if err != nil {
-		if code, ok := parseStoreError(err); ok {
-			return &storeapi.SearchResponse{Code: code}, nil
+		if errors.Is(err, consts.ErrTooManyUniqValues) {
+			return &storeapi.SearchResponse{Code: storeapi.SearchErrorCode_TOO_MANY_UNIQ_VALUES}, nil
 		}
 
 		return nil, err

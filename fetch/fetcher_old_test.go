@@ -20,7 +20,7 @@ func addDummyDoc(t *testing.T, fm *fracmanager.FracManager, dp *frac.DocProvider
 	assert.NoError(t, fm.Append(context.Background(), docs, metas, atomic.NewUint64(0)))
 }
 
-func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
+func testFetcher(t *testing.T, fetcher Fetcher, hasHint bool) {
 	dataDir := common.GetTestTmpDir(t)
 	common.RecreateDir(dataDir)
 	defer common.RemoveDir(dataDir)
@@ -80,9 +80,9 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 }
 
 func TestOldFetchWithHint(t *testing.T) {
-	testFetcher(t, New(1), true)
+	testFetcher(t, NewDocumentFetcherOld(1), true)
 }
 
 func TestOldFetchWithoutHint(t *testing.T) {
-	testFetcher(t, New(1), false)
+	testFetcher(t, NewDocumentFetcherOld(1), false)
 }
