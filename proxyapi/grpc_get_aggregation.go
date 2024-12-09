@@ -27,6 +27,9 @@ func (g *grpcV1) GetAggregation(
 	if err != nil {
 		return nil, err
 	}
+	if sResp.err != nil && !shouldHaveResponse(sResp.err.Code) {
+		return &seqproxyapi.GetAggregationResponse{Error: sResp.err}, nil
+	}
 
 	allAggregations := sResp.qpr.Aggregate(aggregationArgsFromProto(req.Aggs))
 	resp := &seqproxyapi.GetAggregationResponse{

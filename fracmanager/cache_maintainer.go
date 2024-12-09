@@ -250,6 +250,9 @@ func (m *CacheMaintainerMetrics) GetLayerMetrics(layerName string) *cache.Metric
 }
 
 func (m *CacheMaintainerMetrics) GetCleanerMetrics(cleanerLabel string) *cache.CleanerMetrics {
+	if m == nil {
+		return nil
+	}
 	return &cache.CleanerMetrics{
 		Oldest:            m.Oldest.WithLabelValues(cleanerLabel),
 		AddBuckets:        m.AddBuckets.WithLabelValues(cleanerLabel),

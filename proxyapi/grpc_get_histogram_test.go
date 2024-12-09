@@ -122,6 +122,13 @@ func prepareGetHistogramTestData(t *testing.T, cData getHistogramTestCaseData) g
 		}
 	}
 
+	respErr := cData.respErr
+	if resp == nil || respErr != nil && !shouldHaveResponse(respErr.Code) {
+		resp = &seqproxyapi.GetHistogramResponse{
+			Error: cData.respErr,
+		}
+	}
+
 	return getHistogramTestData{
 		req:  req,
 		want: resp,
@@ -290,6 +297,25 @@ func TestGrpcV1_GetHistogram(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "too_many_fractions_hit",
+			data: getHistogramTestCaseData{
+				searchQ: &testSearchQuery{
+					query: "message:too-many-fractions-hit",
+					from:  now,
+					to:    now.Add(time.Second),
+				},
+				histQ: &testHistQuery{
+					interval: "10m",
+				},
+				noResp: true,
+				siErr:  consts.ErrTooManyFractionsHit,
+				respErr: &seqproxyapi.Error{
+					Code:    seqproxyapi.ErrorCode_ERROR_CODE_TOO_MANY_FRACTIONS_HIT,
+					Message: "too many fractions hit",
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -314,7 +340,7 @@ func TestGrpcV1_GetHistogram(t *testing.T) {
 			r.Equal(testData.want.Error, got.Error)
 			r.Equal(testData.want.Total, got.Total)
 			if testData.want.Hist == nil {
-				r.NotNil(got.Hist)
+				r.Nil(got.Hist)
 				return
 			}
 			wantBuckets := testData.want.Hist.Buckets

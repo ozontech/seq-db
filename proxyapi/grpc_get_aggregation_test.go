@@ -124,6 +124,13 @@ func prepareGetAggregationTestData(t *testing.T, cData getAggregationTestCaseDat
 		}
 	}
 
+	respErr := cData.respErr
+	if respErr != nil && !shouldHaveResponse(respErr.Code) {
+		resp = &seqproxyapi.GetAggregationResponse{
+			Error: cData.respErr,
+		}
+	}
+
 	return getAggregationTestData{
 		req:  req,
 		want: resp,
@@ -318,6 +325,26 @@ func TestGrpcV1_GetAggregation(t *testing.T) {
 				noSiMock: true,
 			},
 			wantErr: true,
+		},
+		{
+			name: "too_many_fractions_hit",
+			data: getAggregationTestCaseData{
+				searchQ: &testSearchQuery{
+					query: "message:too-many-fractions-hit",
+					from:  now,
+					to:    now.Add(time.Second),
+				},
+				aggQ: []*testAggQuery{{
+					aggField:   "test",
+					bucketsCnt: 10,
+				}},
+				noResp: true,
+				siErr:  consts.ErrTooManyFractionsHit,
+				respErr: &seqproxyapi.Error{
+					Code:    seqproxyapi.ErrorCode_ERROR_CODE_TOO_MANY_FRACTIONS_HIT,
+					Message: "too many fractions hit",
+				},
+			},
 		},
 	}
 

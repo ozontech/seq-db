@@ -101,6 +101,7 @@ var (
 	ErrInvalidAggQuery           = errors.New("invalid agg query")
 	ErrInvalidArgument           = errors.New("invalid argument")
 	ErrTooManyUniqValues         = errors.New("aggregation has too many unique values")
+	ErrTooManyFractionsHit       = errors.New("too many fractions hit")
 )
 
 const (

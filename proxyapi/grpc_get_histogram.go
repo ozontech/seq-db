@@ -3,9 +3,10 @@ package proxyapi
 import (
 	"context"
 
-	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 )
 
 func (g *grpcV1) GetHistogram(
@@ -25,6 +26,9 @@ func (g *grpcV1) GetHistogram(
 	sResp, err := g.doSearch(ctx, proxyReq, false)
 	if err != nil {
 		return nil, err
+	}
+	if sResp.err != nil && !shouldHaveResponse(sResp.err.Code) {
+		return &seqproxyapi.GetHistogramResponse{Error: sResp.err}, nil
 	}
 
 	resp := &seqproxyapi.GetHistogramResponse{

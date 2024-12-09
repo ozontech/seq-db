@@ -7,7 +7,13 @@ import (
 	"strconv"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+var (
+	pbMarshaller  = protojson.MarshalOptions{EmitDefaultValues: true}
+	pbUnmarshaler = protojson.UnmarshalOptions{}
 )
 
 // TestDoc is Document wrapper that is used to omit methods like MarshalJSON.
@@ -168,4 +174,13 @@ func unmarshalTime(val json.RawMessage) (*timestamppb.Timestamp, error) {
 		return nil, err
 	}
 	return timestamppb.New(parsed), nil
+}
+
+func (e *Error) MarshalJSON() ([]byte, error) {
+	b, err := pbMarshaller.Marshal(e)
+	return b, err
+}
+
+func (e *Error) UnmarshalJSON(data []byte) error {
+	return pbUnmarshaler.Unmarshal(data, e)
 }

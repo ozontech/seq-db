@@ -102,6 +102,7 @@ enum SearchErrorCode {
   NO_ERROR = 0;
   INGESTOR_QUERY_WANTS_OLD_DATA = 1;
   TOO_MANY_UNIQ_VALUES = 2;
+  TOO_MANY_FRACTIONS_HIT = 3;
 }
 
 message IdWithHint {

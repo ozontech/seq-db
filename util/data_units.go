@@ -8,7 +8,7 @@ import (
 
 func ParseDuration(esDuration string) (time.Duration, error) {
 	if len(esDuration) < 2 {
-		return 0, fmt.Errorf(`error parse inteval "%s"`, esDuration)
+		return 0, fmt.Errorf(`error parse interval "%s"`, esDuration)
 	}
 
 	x := time.Duration(0)
@@ -17,7 +17,7 @@ func ParseDuration(esDuration string) (time.Duration, error) {
 		if esDuration[len(esDuration)-1] == 's' {
 			x = time.Millisecond
 		} else {
-			return 0, fmt.Errorf(`error parse inteval "%s"`, esDuration)
+			return 0, fmt.Errorf(`error parse interval "%s"`, esDuration)
 		}
 		numStr = esDuration[:len(esDuration)-2]
 	} else {
@@ -39,7 +39,7 @@ func ParseDuration(esDuration string) (time.Duration, error) {
 		case 'y':
 			x = time.Hour * 24 * 365
 		default:
-			return 0, fmt.Errorf(`error parse inteval "%s"`, esDuration)
+			return 0, fmt.Errorf(`error parse interval "%s"`, esDuration)
 		}
 	}
 
