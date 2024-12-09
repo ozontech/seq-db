@@ -1,7 +1,6 @@
 package storeapi
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -159,16 +158,4 @@ func (g *GrpcV1) bulkStats() {
 			logger.Info("bulk api stats for 5s: no batches have been written")
 		}
 	}
-}
-
-func parseStoreError(e error) (storeapi.SearchErrorCode, bool) {
-	if errors.Is(e, consts.ErrTooManyUniqValues) {
-		return storeapi.SearchErrorCode_TOO_MANY_UNIQ_VALUES, true
-	}
-
-	if errors.Is(e, consts.ErrTooManyFractionsHit) {
-		return storeapi.SearchErrorCode_TOO_MANY_FRACTIONS_HIT, true
-	}
-
-	return 0, false
 }

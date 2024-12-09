@@ -112,13 +112,6 @@ func prepareSearchTestData(t *testing.T, cData searchTestCaseData) searchTestDat
 		}
 	}
 
-	respErr := cData.respErr
-	if respErr != nil && !shouldHaveResponse(respErr.Code) {
-		resp = &seqproxyapi.SearchResponse{
-			Error: cData.respErr,
-		}
-	}
-
 	return searchTestData{
 		req:  req,
 		want: resp,
@@ -245,24 +238,6 @@ func TestGrpcV1_Search(t *testing.T) {
 				noRlMock: true,
 			},
 			wantErr: true,
-		},
-		{
-			name: "too_many_fractions_hit",
-			data: searchTestCaseData{
-				searchQ: &testSearchQuery{
-					query: "message:too-many-fractions-hit",
-					from:  now,
-					to:    now.Add(time.Second),
-				},
-				size:   10,
-				offset: 0,
-				noResp: true,
-				siErr:  consts.ErrTooManyFractionsHit,
-				respErr: &seqproxyapi.Error{
-					Code:    seqproxyapi.ErrorCode_ERROR_CODE_TOO_MANY_FRACTIONS_HIT,
-					Message: "too many fractions hit",
-				},
-			},
 		},
 	}
 

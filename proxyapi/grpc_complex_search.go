@@ -18,10 +18,6 @@ func (g *grpcV1) ComplexSearch(
 		return nil, err
 	}
 
-	if sResp.err != nil && !shouldHaveResponse(sResp.err.Code) {
-		return &seqproxyapi.ComplexSearchResponse{Error: sResp.err}, nil
-	}
-
 	resp := &seqproxyapi.ComplexSearchResponse{
 		Docs:  makeProtoDocs(sResp.qpr, sResp.docsStream),
 		Total: int64(sResp.qpr.Total),
