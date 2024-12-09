@@ -81,13 +81,27 @@ func filterFracs(fracs fracmanager.FracsList, minMID, maxMID seq.MID) fracmanage
 	return subset
 }
 
-func groupIDsByFraction(idsOrig seq.IDSources, fracs fracmanager.FracsList) map[frac.Fraction][]seq.ID {
-	// sort idsOrig to get sorted ids for each fraction due to optimize loading of ids-blocks
+func sortIDs(idsOrig seq.IDSources) (seq.IDSources, seq.MID, seq.MID) {
+	// we expect that idsOrig may already be sorted asc or desc.
+	// both options suit us, so we try to guess the sort order to minimize permutations
+	last := len(idsOrig) - 1
 	ids := append(seq.IDSources{}, idsOrig...)
-	sort.Sort(ids)
+
+	if seq.Less(ids[0].ID, ids[last].ID) {
+		sort.Sort(ids)
+		return ids, ids[0].ID.MID, ids[last].ID.MID
+	}
+
+	sort.Sort(sort.Reverse(ids))
+	return ids, ids[last].ID.MID, ids[0].ID.MID
+}
+
+func groupIDsByFraction(idsOrig seq.IDSources, fracs fracmanager.FracsList) map[frac.Fraction][]seq.ID {
+	// sort idsOrig to get sorted ids for each faction to optimize loading of ids-blocks
+	ids, minMID, maxMID := sortIDs(idsOrig)
 
 	// reduce candidate fractions
-	fracSubset := filterFracs(fracs, ids[0].ID.MID, ids[len(ids)-1].ID.MID)
+	fracSubset := filterFracs(fracs, minMID, maxMID)
 
 	// group by fraction
 	fracIDs := []seq.ID{}
