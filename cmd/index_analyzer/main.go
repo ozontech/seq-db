@@ -81,7 +81,7 @@ func analyzeIndex(
 			logger.Fatal("error reading block", zap.String("file", br.GetFileName()), zap.Error(err))
 		}
 
-		data := block.Value()
+		data := block.Copy()
 		block.Release()
 		blockIndex++
 
