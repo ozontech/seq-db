@@ -87,16 +87,16 @@ func (l *Loader) loadIDs() error {
 	ids.IDsTotal = binary.LittleEndian.Uint32(result)
 	result = result[4:]
 
-	docBlock := uint64(0)
+	offset := uint64(0)
 	for len(result) != 0 {
 		delta, n := binary.Varint(result)
 		if n == 0 {
 			panic("varint returned 0")
 		}
 		result = result[n:]
-		docBlock += uint64(delta)
+		offset += uint64(delta)
 
-		frac.DocBlocks.Append(docBlock)
+		frac.BlocksOffsets = append(frac.BlocksOffsets, offset)
 	}
 
 	ids.DiskStartBlockIndex = l.blockIndex

@@ -299,6 +299,13 @@ var (
 		Help:      "",
 		Buckets:   SecondsBuckets,
 	}, []string{"stage"})
+	FetchActiveStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetch",
+		Name:      "active_stages_seconds",
+		Help:      "",
+		Buckets:   SecondsBuckets,
+	}, []string{"stage"})
 	FetchSealedStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "fetch",

@@ -1,12 +1,15 @@
 package frac
 
 import (
+	"math"
 	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+const maxBlockIndex = math.MaxUint32
 
 func TestPackDocPos(t *testing.T) {
 	// min

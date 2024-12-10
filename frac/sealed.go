@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
@@ -169,46 +168,65 @@ func (dp *SealedDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter,
 	return dp.Sealed.GetLIDsFromTIDs(dp.sc, tids, stats, minLID, maxLID, dp.tracer, order)
 }
 
-func (dp *SealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
-	docs := make([][]byte, len(ids))
+// findLIDs returns a slice of LIDs. If seq.ID is not found, LID has the value 0 at the corresponding position
+func findLIDs(p IDsProvider, ids []seq.ID) []seq.LID {
+	res := make([]seq.LID, len(ids))
+
+	// left and right it is search range
+	left := 1            // first
+	right := p.Len() - 1 // last
+
 	for i, id := range ids {
-		doc, err := dp.FetchOne(id)
-		if err != nil {
-			return nil, err
+
+		if i == 0 || !seq.Less(id, ids[i-1]) {
+			// reset search range (it is not DESC sorted IDs)
+			left = 1
 		}
-		docs[i] = doc
+
+		lid := seq.LID(util.BinSearchInRange(left, right, func(lid int) bool {
+			return p.LessOrEqual(seq.LID(lid), id)
+		}))
+
+		if id.MID == p.GetMID(lid) && id.RID == p.GetRID(lid) {
+			res[i] = lid
+		}
+
+		// try to refine the search range, but this optimization works for DESC sorted IDs only
+		left = int(lid)
 	}
-	return docs, nil
+
+	return res
 }
 
-func (dp *SealedDataProvider) FetchOne(id seq.ID) ([]byte, error) {
+func (dp *SealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	defer dp.tracer.UpdateMetric(metric.FetchSealedStagesSeconds)
 
-	// bin search of LID by ID
 	m := dp.tracer.Start("get_lid_by_mid")
-	ids := dp.IDsProvider()
-	f := func(lid int) bool { return ids.LessOrEqual(seq.LID(lid), id) }
-	lid := seq.LID(util.BinSearchInRange(1, ids.Len()-1, f))
-	if id.MID != ids.GetMID(lid) || id.RID != ids.GetRID(lid) {
-		m.Stop()
-		return nil, nil
-	}
+	l := findLIDs(dp.IDsProvider(), ids)
 	m.Stop()
 
 	m = dp.tracer.Start("get_doc_params_by_lid")
-	docPos := dp.ids.GetDocPosByLID(lid)
+	docsPos := dp.ids.GetDocPosByLIDs(l)
 	m.Stop()
 
 	m = dp.tracer.Start("get_doc_pos")
-	blockPos, docOffset := dp.extractPosition(docPos)
+	blocks, offsets, index := GroupDocsOffsets(docsPos)
 	m.Stop()
 
 	m = dp.tracer.Start("read_doc")
-	dp.lastFetchTime.Store(time.Now().UnixNano())
-	docs, err := dp.readDocs(blockPos, []uint64{docOffset})
+	res := make([][]byte, len(ids))
+	for i, docOffsets := range offsets {
+		docs, err := dp.readDocs(dp.BlocksOffsets[blocks[i]], docOffsets)
+		if err != nil {
+			return nil, err
+		}
+		for i, j := range index[i] {
+			res[j] = docs[i]
+		}
+	}
 	m.Stop()
 
-	return docs[0], err
+	return res, nil
 }
 
 type Sealed struct {
@@ -219,7 +237,7 @@ type Sealed struct {
 	lidsTable *lids.Table
 	ids       *SealedIDs
 
-	lastFetchTime atomic.Int64
+	BlocksOffsets []uint64
 
 	isLoaded bool
 	loadMu   *sync.RWMutex
@@ -251,7 +269,6 @@ func NewSealed(baseFile string, reader *disk.Reader, sealedIndexCache *SealedInd
 		frac: frac{
 			docBlockCache: docBlockCache,
 			reader:        reader,
-			DocBlocks:     NewIDs(),
 			info:          fracInfoCache,
 			BaseFileName:  baseFile,
 		},
@@ -287,7 +304,6 @@ func NewSealedFromActive(active *Active, reader *disk.Reader, sealedIndexCache *
 			reader:        reader,
 			docsFile:      active.docsFile,
 			info:          &infoCopy,
-			DocBlocks:     active.DocBlocks,
 			BaseFileName:  active.BaseFileName,
 		},
 	}
@@ -406,18 +422,6 @@ func (f *Sealed) GetLIDsFromTIDs(sc *SearchCell, tids []uint32, counter lids.Cou
 	}
 
 	return nodes
-}
-
-func (f *Sealed) extractPosition(docPos DocPos) (uint64, uint64) {
-	docBlockIndex, docOffset := docPos.Unpack()
-	blockPoses := f.DocBlocks.GetVals()
-	if docBlockIndex >= uint32(len(blockPoses)) {
-		logger.Panic("can't get block pos",
-			zap.Uint32("block_index", docBlockIndex),
-			zap.Int("len", len(blockPoses)),
-		)
-	}
-	return blockPoses[docBlockIndex], docOffset
 }
 
 func (f *Sealed) Suicide() {

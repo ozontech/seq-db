@@ -94,15 +94,34 @@ func (dp *ActiveDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter,
 }
 
 func (dp *ActiveDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
-	docs := make([][]byte, len(ids))
+	defer dp.tracer.UpdateMetric(metric.FetchActiveStagesSeconds)
+
+	m := dp.tracer.Start("get_doc_params_by_id")
+	docsPos := make([]DocPos, len(ids))
 	for i, id := range ids {
-		doc, err := dp.Active.Fetch(id)
+		docsPos[i] = dp.Active.DocsPositions.GetSync(id)
+	}
+	m.Stop()
+
+	m = dp.tracer.Start("unpack_offsets")
+	blocks, offsets, index := GroupDocsOffsets(docsPos)
+	blocksOffsets := dp.Active.DocBlocks.GetVals()
+	m.Stop()
+
+	m = dp.tracer.Start("read_doc")
+	res := make([][]byte, len(ids))
+	for i, docOffsets := range offsets {
+		docs, err := dp.readDocs(blocksOffsets[blocks[i]], docOffsets)
 		if err != nil {
 			return nil, err
 		}
-		docs[i] = doc
+		for i, j := range index[i] {
+			res[j] = docs[i]
+		}
 	}
-	return docs, nil
+	m.Stop()
+
+	return res, nil
 }
 
 type Active struct {
@@ -110,6 +129,8 @@ type Active struct {
 
 	MIDs *UInt64s
 	RIDs *UInt64s
+
+	DocBlocks *UInt64s
 
 	TokenList *TokenList
 
@@ -145,10 +166,10 @@ func NewActive(baseFileName string, metaRemove bool, indexWorkers *IndexWorkers,
 		DocsPositions:    NewSyncDocsPositions(),
 		MIDs:             mids,
 		RIDs:             rids,
+		DocBlocks:        NewIDs(),
 		frac: frac{
 			docBlockCache: docBlockCache,
 			BaseFileName:  baseFileName,
-			DocBlocks:     NewIDs(),
 			reader:        reader,
 			info: &Info{
 				Ver:                   buildinfo.Version,
@@ -356,22 +377,6 @@ func (f *Active) Seal(params SealParams) error {
 
 	seal(f, params)
 	return nil
-}
-
-func (f *Active) Fetch(id seq.ID) ([]byte, error) {
-	docPos := f.DocsPositions.GetSync(id)
-
-	if docPos == DocPosNotFound {
-		return nil, nil
-	}
-
-	docBlockIndex, docOffset := docPos.Unpack()
-
-	vals := f.DocBlocks.GetVals()
-	pos := vals[docBlockIndex]
-
-	docs, err := f.readDocs(pos, []uint64{docOffset})
-	return docs[0], err
 }
 
 func (f *Active) GetAllDocuments() []uint32 {

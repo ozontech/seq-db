@@ -19,8 +19,6 @@ import (
 type frac struct {
 	statsMu sync.Mutex
 
-	DocBlocks *UInt64s
-
 	docsFile   *os.File
 	docsFileMu sync.RWMutex
 
