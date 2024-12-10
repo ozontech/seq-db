@@ -105,11 +105,11 @@ func (dp *ActiveDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 
 	m = dp.tracer.Start("unpack_offsets")
 	blocks, offsets, index := GroupDocsOffsets(docsPos)
-	blocksOffsets := dp.Active.DocBlocks.GetVals()
 	m.Stop()
 
 	m = dp.tracer.Start("read_doc")
 	res := make([][]byte, len(ids))
+	blocksOffsets := dp.Active.DocBlocks.GetVals()
 	for i, docOffsets := range offsets {
 		docs, err := dp.readDocs(blocksOffsets[blocks[i]], docOffsets)
 		if err != nil {
