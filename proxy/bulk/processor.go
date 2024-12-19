@@ -10,7 +10,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"
 	"github.com/ozontech/seq-db/util"
@@ -53,13 +52,13 @@ func newBulkProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]toke
 		indexer: &indexer{
 			tokenizers: tokenizers,
 			mapping:    mapping,
-			metas:      []frac.MetaData{},
+			metas:      []MetaData{},
 		},
 		decoder: insaneJSON.Spawn(),
 	}
 }
 
-func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []frac.MetaData, error) {
+func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []MetaData, error) {
 	err := p.decoder.DecodeBytes(doc)
 	if err != nil {
 		return nil, nil, err

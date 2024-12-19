@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/ozontech/seq-db/frac"
 )
 
 const maxTokenSizeDummy = 0
@@ -18,8 +16,8 @@ func TestTokenizeEmptyValue(t *testing.T) {
 	testCase := []byte("")
 	tokenizer := NewTextTokenizer(1000, false, true, 1024)
 
-	tokens := tokenizer.Tokenize([]frac.MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
-	expected := []frac.MetaToken{newFracToken("message", "")}
+	tokens := tokenizer.Tokenize([]MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
+	expected := []MetaToken{newFracToken("message", "")}
 
 	assert.Equal(t, expected, tokens)
 }
@@ -53,9 +51,9 @@ func TestTokenizePartialDefault(t *testing.T) {
 	tokenizer := NewTextTokenizer(maxSize, false, true, maxSize)
 	testCase := []byte(strings.Repeat("1", maxSize+1))
 
-	tokens := tokenizer.Tokenize([]frac.MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
+	tokens := tokenizer.Tokenize([]MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
 
-	expected := []frac.MetaToken{newFracToken("message", strings.Repeat("1", maxSize))}
+	expected := []MetaToken{newFracToken("message", strings.Repeat("1", maxSize))}
 
 	assert.Equal(t, expected, tokens)
 }
@@ -67,7 +65,7 @@ func TestTokenizePartial(t *testing.T) {
 
 	tokens := tokenizer.Tokenize(nil, []byte("message"), testCase, maxSize)
 
-	expected := []frac.MetaToken{newFracToken("message", strings.Repeat("1", maxSize))}
+	expected := []MetaToken{newFracToken("message", strings.Repeat("1", maxSize))}
 
 	assert.Equal(t, expected, tokens)
 }
@@ -77,9 +75,9 @@ func TestTokenizePartialSkipDefault(t *testing.T) {
 	tokenizer := NewTextTokenizer(maxSize, false, false, maxSize)
 	testCase := []byte(strings.Repeat("1", maxSize+1))
 
-	tokens := tokenizer.Tokenize([]frac.MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
+	tokens := tokenizer.Tokenize([]MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
 
-	assert.Equal(t, []frac.MetaToken{}, tokens)
+	assert.Equal(t, []MetaToken{}, tokens)
 }
 
 func TestTokenizePartialSkip(t *testing.T) {
@@ -87,9 +85,9 @@ func TestTokenizePartialSkip(t *testing.T) {
 	tokenizer := NewTextTokenizer(maxSize, false, false, 0)
 	testCase := []byte(strings.Repeat("1", maxSize+1))
 
-	tokens := tokenizer.Tokenize([]frac.MetaToken{}, []byte("message"), testCase, maxSize)
+	tokens := tokenizer.Tokenize([]MetaToken{}, []byte("message"), testCase, maxSize)
 
-	assert.Equal(t, []frac.MetaToken{}, tokens)
+	assert.Equal(t, []MetaToken{}, tokens)
 }
 
 func TestTokenizeDefaultMaxTokenSize(t *testing.T) {
@@ -155,9 +153,9 @@ func TestTextTokenizerUTF8(t *testing.T) {
 
 			tokenizer := NewTextTokenizer(100, true, true, 1024)
 
-			tokens := tokenizer.Tokenize([]frac.MetaToken{}, []byte("message"), []byte(in), maxTokenSizeDummy)
+			tokens := tokenizer.Tokenize([]MetaToken{}, []byte("message"), []byte(in), maxTokenSizeDummy)
 
-			expected := []frac.MetaToken{}
+			expected := []MetaToken{}
 			for _, token := range out {
 				if lowercase {
 					token = strings.ToLower(token)

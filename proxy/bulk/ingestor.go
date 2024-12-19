@@ -18,7 +18,6 @@ import (
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/network/circuitbreaker"
@@ -180,8 +179,8 @@ func (i *Ingestor) ProcessDocuments(ctx context.Context, requestTime time.Time, 
 
 	t := time.Now()
 
-	compressor := frac.GetDocsMetasCompressor(i.config.DocsZSTDCompressLevel, i.config.MetasZSTDCompressLevel)
-	defer frac.PutDocMetasCompressor(compressor)
+	compressor := GetDocsMetasCompressor(i.config.DocsZSTDCompressLevel, i.config.MetasZSTDCompressLevel)
+	defer PutDocMetasCompressor(compressor)
 
 	total, err := i.processDocsToCompressor(ctx, compressor, requestTime, readNext)
 	if err != nil {
@@ -221,7 +220,7 @@ var (
 	}
 )
 
-func (i *Ingestor) processDocsToCompressor(ctx context.Context, compressor *frac.DocsMetasCompressor, requestTime time.Time, readNext func() ([]byte, error)) (int, error) {
+func (i *Ingestor) processDocsToCompressor(ctx context.Context, compressor *DocsMetasCompressor, requestTime time.Time, readNext func() ([]byte, error)) (int, error) {
 	t := time.Now()
 	select {
 	case ticket, has := <-i.rateLimit:
@@ -278,7 +277,7 @@ func (i *Ingestor) processDocsToCompressor(ctx context.Context, compressor *frac
 	return total, nil
 }
 
-func marshalAppendMeta(dst []byte, meta frac.MetaData) []byte {
+func marshalAppendMeta(dst []byte, meta MetaData) []byte {
 	metaLenPosition := len(dst)
 	dst = append(dst, make([]byte, 4)...)
 	dst = meta.MarshalBinaryTo(dst)

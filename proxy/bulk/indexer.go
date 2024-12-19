@@ -7,7 +7,6 @@ import (
 
 	insaneJSON "github.com/ozontech/insane-json"
 
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"
 )
@@ -19,7 +18,7 @@ type indexer struct {
 	tokenizers map[seq.TokenizerType]tokenizer.Tokenizer
 	mapping    seq.Mapping
 
-	metas []frac.MetaData
+	metas []MetaData
 }
 
 // Index returns a list of metadata of the given json node.
@@ -45,7 +44,7 @@ func (i *indexer) Index(node *insaneJSON.Node, id seq.ID, size uint32) {
 	}
 }
 
-func (i *indexer) Metas() []frac.MetaData {
+func (i *indexer) Metas() []MetaData {
 	return i.metas
 }
 
@@ -92,7 +91,7 @@ func (i *indexer) decodeInternal(n *insaneJSON.Node, id seq.ID, name []byte, met
 	}
 }
 
-func (i *indexer) index(tokenTypes seq.MappingTypes, tokens []frac.MetaToken, key, value []byte) []frac.MetaToken {
+func (i *indexer) index(tokenTypes seq.MappingTypes, tokens []tokenizer.MetaToken, key, value []byte) []tokenizer.MetaToken {
 	for _, tokenType := range tokenTypes.All {
 		if _, has := i.tokenizers[tokenType.TokenizerType]; !has {
 			continue
@@ -104,7 +103,7 @@ func (i *indexer) index(tokenTypes seq.MappingTypes, tokens []frac.MetaToken, ke
 		}
 
 		tokens = i.tokenizers[tokenType.TokenizerType].Tokenize(tokens, title, value, tokenType.MaxSize)
-		tokens = append(tokens, frac.MetaToken{
+		tokens = append(tokens, tokenizer.MetaToken{
 			Key:   seq.ExistsTokenName,
 			Value: title,
 		})
@@ -132,7 +131,7 @@ func (i *indexer) appendMeta(id seq.ID, size uint32) {
 	i.metas[n].ID = id
 	i.metas[n].Size = size
 
-	i.metas[n].Tokens = append(i.metas[n].Tokens, frac.MetaToken{
+	i.metas[n].Tokens = append(i.metas[n].Tokens, tokenizer.MetaToken{
 		Key:   seq.AllTokenName,
 		Value: []byte{},
 	})

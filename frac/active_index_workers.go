@@ -13,7 +13,7 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/tracer"
-	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/proxy/bulk"
 )
 
 type IndexWorkers struct {
@@ -99,33 +99,6 @@ func (w *IndexWorkers) In(t *IndexTask) {
 	w.ch <- t
 }
 
-func extractMetaData(jsonRoot *insaneJSON.Root, payload []byte) MetaData {
-	if err := jsonRoot.DecodeBytes(payload); err != nil {
-		logger.Panic("can't decode meta", zap.Error(err))
-	}
-
-	var tokens []MetaToken
-	for _, node := range jsonRoot.Dig("t").AsArray() {
-		tokenPair := node.AsArray()
-		key, value := tokenPair[0].AsBytes(), tokenPair[1].AsBytes()
-		tokens = append(tokens, MetaToken{
-			Key:   key,
-			Value: value,
-		})
-	}
-
-	md := MetaData{
-		ID: seq.ID{
-			MID: seq.MID(jsonRoot.Dig("mid").AsUint64()),
-			RID: seq.RID(jsonRoot.Dig("rid").AsUint64()),
-		},
-		Size:   uint32(jsonRoot.Dig("s").AsUint64()),
-		Tokens: tokens,
-	}
-
-	return md
-}
-
 func (w *IndexWorkers) appendWorker(index int) {
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
@@ -157,13 +130,9 @@ func (w *IndexWorkers) appendWorker(index int) {
 			documentMetadata := metasPayload[:n]
 			metasPayload = metasPayload[n:]
 
-			var meta MetaData
-			if IsItBinaryEncodedMetaData(documentMetadata) {
-				if err := meta.UnmarshalBinary(documentMetadata); err != nil {
-					logger.Panic("BUG: can't unmarshal meta", zap.Error(err))
-				}
-			} else {
-				meta = extractMetaData(metaRoot, documentMetadata)
+			var meta bulk.MetaData
+			if err := meta.UnmarshalBinary(documentMetadata); err != nil {
+				logger.Panic("BUG: can't unmarshal meta", zap.Error(err))
 			}
 
 			collector.AppendMeta(meta)

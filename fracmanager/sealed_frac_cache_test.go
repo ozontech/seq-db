@@ -13,6 +13,7 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
@@ -280,7 +281,7 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	dp := frac.NewDocProvider()
+	dp := bulk.NewTestDocProvider()
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
@@ -295,7 +296,7 @@ func TestFracInfoSavedToCache(t *testing.T) {
 		totalSize += fracInstance.FullSize()
 		info := fracInstance.Info()
 		infos[info.Name()] = info
-		dp.TryReset()
+		dp.Reset()
 	}
 
 	err = fm.fracCache.SyncWithDisk()
@@ -367,7 +368,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	dp := frac.NewDocProvider()
+	dp := bulk.NewTestDocProvider()
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
@@ -383,7 +384,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 			size:  int(fracInstance.FullSize()),
 		})
 		infos[info.Name()] = info
-		dp.TryReset()
+		dp.Reset()
 	}
 
 	expectedFracs := []string{}
@@ -428,7 +429,7 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	dp := frac.NewDocProvider()
+	dp := bulk.NewTestDocProvider()
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
@@ -436,7 +437,7 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 		addDummyDoc(t, fm, dp, seq.SimpleID(i))
 		fm.GetActiveFrac().WaitWriteIdle()
 		rotateAndSeal(fm)
-		dp.TryReset()
+		dp.Reset()
 	}
 
 	// make sure the disk is in sync with the in-memory fraction cache

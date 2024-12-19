@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/pkg/storeapi"
+	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
@@ -49,7 +49,7 @@ func makeBulkRequest(cnt int) *storeapi.BulkRequest {
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
-	dp := frac.NewDocProvider()
+	dp := bulk.NewTestDocProvider()
 	for i := 0; i < cnt; i++ {
 		id := seq.SimpleID(i + 1)
 		doc := []byte("document")

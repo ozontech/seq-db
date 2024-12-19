@@ -1,4 +1,4 @@
-package frac
+package bulk
 
 import (
 	"sync"
