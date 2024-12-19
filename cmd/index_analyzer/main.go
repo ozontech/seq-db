@@ -11,7 +11,7 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -73,13 +73,14 @@ func analyzeIndex(
 ) Stats {
 	var blockIndex uint32
 	cache := cm.CreateSealedIndexCache()
-	br := disk.NewBlocksReader(cache.Registry, path, nil)
+	f, _ := os.Open(path)
+	br := disk.NewBlocksReader(cache.Registry, f, nil)
 
 	readBlock := func() []byte {
 		data, _, err := reader.ReadIndexBlock(br, blockIndex, nil)
 		blockIndex++
 		if err != nil {
-			logger.Fatal("error reading block", zap.String("file", br.GetFileName()), zap.Error(err))
+			logger.Fatal("error reading block", zap.String("file", f.Name()), zap.Error(err))
 		}
 		return data
 	}

@@ -116,7 +116,7 @@ func (r *Reader) ReadIndexBlock(blocksReader *BlocksReader, blockIndex uint32, d
 	}
 
 	task := &ReadIndexTask{
-		f:      blocksReader.tryOpenFile(),
+		f:      blocksReader.File(),
 		offset: int64(header.GetPos()),
 	}
 

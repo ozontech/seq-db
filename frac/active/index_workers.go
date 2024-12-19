@@ -1,4 +1,4 @@
-package frac
+package active
 
 import (
 	"encoding/binary"
@@ -85,7 +85,7 @@ func (w *IndexWorkers) Start() {
 
 func (w *IndexWorkers) mergeWorker() {
 	for task := range w.chMerge {
-		task.tokenLIDs.GetLIDs(task.frac.MIDs, task.frac.RIDs) // GetLIDs cause sort and merge LIDs from queue
+		task.tokenLIDs.GetLIDs(task.frac.mids, task.frac.rids) // GetLIDs cause sort and merge LIDs from queue
 	}
 }
 
@@ -120,7 +120,7 @@ func (w *IndexWorkers) appendWorker(index int) {
 		}
 
 		active := task.Frac
-		blockIndex := active.DocBlocks.Append(task.Pos)
+		blockIndex := active.docBlocks.Append(task.Pos)
 		collector.Init(blockIndex)
 
 		parsingMetric := tr.Start("metas_parsing")
@@ -140,7 +140,7 @@ func (w *IndexWorkers) appendWorker(index int) {
 		parsingMetric.Stop()
 
 		m := tr.Start("doc_params_set")
-		appendedIDs := active.DocsPositions.SetMultiple(collector.IDs, collector.Positions)
+		appendedIDs := active.docsPositions.SetMultiple(collector.IDs, collector.Positions)
 		if len(appendedIDs) != len(collector.IDs) {
 			// There are duplicates in the active fraction.
 			// It is possible in case we retry same bulk requests.
@@ -166,7 +166,7 @@ func (w *IndexWorkers) appendWorker(index int) {
 
 		m = tr.Start("token_list_append")
 		tokenLIDsPlaces := collector.PrepareTokenLIDsPlaces()
-		active.TokenList.Append(collector.TokensValues, collector.FieldsLengths, tokenLIDsPlaces)
+		active.tokenList.Append(collector.TokensValues, collector.FieldsLengths, tokenLIDsPlaces)
 		m.Stop()
 
 		m = tr.Start("group_lids")

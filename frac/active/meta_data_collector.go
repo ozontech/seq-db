@@ -1,8 +1,9 @@
-package frac
+package active
 
 import (
 	"math"
 
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"
@@ -31,10 +32,10 @@ type metaDataCollector struct {
 	tokenLIDsPlaces []*TokenLIDs
 
 	// ids
-	IDs          []seq.ID // seq.IDs from bulk request
-	tokensInDocs []uint32 // number of tokens in each document in IDs order
-	tokensIndex  []int    // positions in TokensValues for each token of each document in IDs order
-	Positions    []DocPos // positions in doc-file  of each doc in IDs order
+	IDs          []seq.ID      // seq.IDs from bulk request
+	tokensInDocs []uint32      // number of tokens in each document in IDs order
+	tokensIndex  []int         // positions in TokensValues for each token of each document in IDs order
+	Positions    []frac.DocPos // positions in doc-file  of each doc in IDs order
 	lids         []uint32
 
 	solvers struct {
@@ -57,12 +58,12 @@ func newMetaDataCollector() *metaDataCollector {
 }
 
 func (c *metaDataCollector) AppendMeta(m bulk.MetaData) {
-	var pos DocPos
+	var pos frac.DocPos
 	if m.Size == 0 {
 		// This is a nested document that must point to the parent.
 		pos = c.Positions[len(c.Positions)-1]
 	} else {
-		pos = PackDocPos(c.blockIndex, c.nextDocOffset)
+		pos = frac.PackDocPos(c.blockIndex, c.nextDocOffset)
 		const sizeFieldLen = 4 // len of uint32 field storing size of document; see docs/meta.png
 		c.nextDocOffset += uint64(m.Size) + sizeFieldLen
 	}
@@ -108,7 +109,7 @@ func (c *metaDataCollector) Filter(appended []seq.ID) {
 
 	// prepare new slices
 	ids := make([]seq.ID, 0, cap(c.IDs))
-	positions := make([]DocPos, 0, cap(c.Positions))
+	positions := make([]frac.DocPos, 0, cap(c.Positions))
 	tokensIndex := make([]int, 0, cap(c.tokensIndex))
 	tokensInDocs := make([]uint32, 0, cap(c.tokensInDocs))
 
@@ -177,7 +178,7 @@ func (c *metaDataCollector) Init(blockIndex uint32) {
 	if size, need := c.solvers.ids.ReallocParams(len(c.IDs), cap(c.IDs)); need {
 		c.IDs = make([]seq.ID, 0, size)
 		c.tokensInDocs = make([]uint32, 0, size)
-		c.Positions = make([]DocPos, 0, size)
+		c.Positions = make([]frac.DocPos, 0, size)
 	} else {
 		c.IDs = c.IDs[:0]
 		c.tokensInDocs = c.tokensInDocs[:0]

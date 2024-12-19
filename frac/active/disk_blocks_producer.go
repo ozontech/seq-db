@@ -1,4 +1,4 @@
-package frac
+package active
 
 import (
 	"bytes"
@@ -8,8 +8,9 @@ import (
 	"github.com/gogo/protobuf/sortkeys"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac/sealed"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
@@ -32,25 +33,25 @@ func NewDiskBlocksProducer(frac *Active) *DiskBlocksProducer {
 	}
 }
 
-func (g *DiskBlocksProducer) getInfoBlock() *DiskInfoBlock {
+func (g *DiskBlocksProducer) getInfoBlock() *sealed.DiskInfoBlock {
 	g.frac.BuildInfoDistribution(g.getSortedSeqIDs())
-	return &DiskInfoBlock{info: g.frac.Info()}
+	return &sealed.DiskInfoBlock{Info: g.frac.Info()}
 }
 
-func (g *DiskBlocksProducer) getPositionBlock() *DiskPositionsBlock {
-	return &DiskPositionsBlock{
-		totalIDs: g.frac.MIDs.Len(),
-		blocks:   g.frac.DocBlocks.GetVals(),
+func (g *DiskBlocksProducer) getPositionBlock() *sealed.DiskPositionsBlock {
+	return &sealed.DiskPositionsBlock{
+		TotalIDs: g.frac.mids.Len(),
+		Blocks:   g.frac.docBlocks.GetVals(),
 	}
 }
 
-func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenTable token.Table) func(func(*DiskTokenTableBlock) error) error {
-	return func(push func(*DiskTokenTableBlock) error) error {
+func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenTable token.Table) func(func(*sealed.DiskTokenTableBlock) error) error {
+	return func(push func(*sealed.DiskTokenTableBlock) error) error {
 		for _, field := range g.getFracSortedFields() {
 			if fieldData, ok := tokenTable[field]; ok {
-				block := DiskTokenTableBlock{
-					field:   field,
-					entries: fieldData.Entries,
+				block := sealed.DiskTokenTableBlock{
+					Field:   field,
+					Entries: fieldData.Entries,
 				}
 				if err := push(&block); err != nil {
 					return err
@@ -61,8 +62,8 @@ func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenTable token.Table
 	}
 }
 
-func (g *DiskBlocksProducer) getIDsBlocksGenerator(size int) func(func(*DiskIDsBlock) error) error {
-	return func(push func(*DiskIDsBlock) error) error {
+func (g *DiskBlocksProducer) getIDsBlocksGenerator(size int) func(func(*sealed.DiskIDsBlock) error) error {
+	return func(push func(*sealed.DiskIDsBlock) error) error {
 		pos := make([]uint64, 0, size)
 		sortedSeqIDs := g.getSortedSeqIDs()
 
@@ -71,9 +72,9 @@ func (g *DiskBlocksProducer) getIDsBlocksGenerator(size int) func(func(*DiskIDsB
 			ids := sortedSeqIDs[:right]
 			sortedSeqIDs = sortedSeqIDs[right:]
 			pos = g.fillPos(ids, pos)
-			block := DiskIDsBlock{
-				ids: ids,
-				pos: pos,
+			block := sealed.DiskIDsBlock{
+				IDs: ids,
+				Pos: pos,
 			}
 			if err := push(&block); err != nil {
 				return nil
@@ -87,15 +88,15 @@ func (g *DiskBlocksProducer) getIDsBlocksGenerator(size int) func(func(*DiskIDsB
 func (g *DiskBlocksProducer) fillPos(ids []seq.ID, pos []uint64) []uint64 {
 	pos = pos[:len(ids)] // we assume that pos has enough capacity
 	for i, id := range ids {
-		pos[i] = uint64(g.frac.DocsPositions.Get(id))
+		pos[i] = uint64(g.frac.docsPositions.Get(id))
 	}
 	return pos
 }
 
 func (g *DiskBlocksProducer) getFracSortedFields() []string {
 	if g.fields == nil {
-		g.fields = make([]string, 0, len(g.frac.TokenList.FieldTIDs))
-		for field := range g.frac.TokenList.FieldTIDs {
+		g.fields = make([]string, 0, len(g.frac.tokenList.FieldTIDs))
+		for field := range g.frac.tokenList.FieldTIDs {
 			g.fields = append(g.fields, field)
 		}
 		sortkeys.Strings(g.fields)
@@ -120,15 +121,15 @@ func (g *DiskBlocksProducer) getTIDsSortedByToken(field string) []uint32 {
 		return tids
 	}
 
-	srcTIDs := g.frac.TokenList.FieldTIDs[field]
+	srcTIDs := g.frac.tokenList.FieldTIDs[field]
 	tids := append(make([]uint32, 0, len(srcTIDs)), srcTIDs...)
 
 	sort.Sort(
 		&valSort{
 			val: tids,
 			lessFn: func(i int, j int) bool {
-				a := g.frac.TokenList.tidToVal[tids[i]]
-				b := g.frac.TokenList.tidToVal[tids[j]]
+				a := g.frac.tokenList.tidToVal[tids[i]]
+				b := g.frac.tokenList.tidToVal[tids[j]]
 				return bytes.Compare(a, b) < 0
 			},
 		},
@@ -138,12 +139,12 @@ func (g *DiskBlocksProducer) getTIDsSortedByToken(field string) []uint32 {
 	return tids
 }
 
-func (g *DiskBlocksProducer) getTokensBlocksGenerator() func(func(*DiskTokensBlock) error) error {
-	return func(push func(*DiskTokensBlock) error) error {
+func (g *DiskBlocksProducer) getTokensBlocksGenerator() func(func(*sealed.DiskTokensBlock) error) error {
+	return func(push func(*sealed.DiskTokensBlock) error) error {
 		var cur uint32 = 1
 		var tokens [][]byte
 
-		fieldSizes := g.frac.TokenList.GetFieldSizes()
+		fieldSizes := g.frac.tokenList.GetFieldSizes()
 
 		for _, field := range g.getFracSortedFields() {
 			first := true
@@ -158,12 +159,12 @@ func (g *DiskBlocksProducer) getTokensBlocksGenerator() func(func(*DiskTokensBlo
 				tokens = g.fillTokens(tids[:right], tokens)
 				tids = tids[right:]
 
-				block := DiskTokensBlock{
-					field:            field,
-					isStartOfField:   first,
-					totalSizeOfField: fieldSize,
-					startTID:         cur,
-					tokens:           tokens,
+				block := sealed.DiskTokensBlock{
+					Field:            field,
+					IsStartOfField:   first,
+					TotalSizeOfField: fieldSize,
+					StartTID:         cur,
+					Tokens:           tokens,
 				}
 
 				if err := push(&block); err != nil {
@@ -181,7 +182,7 @@ func (g *DiskBlocksProducer) getTokensBlocksGenerator() func(func(*DiskTokensBlo
 func (g *DiskBlocksProducer) fillTokens(tids []uint32, tokens [][]byte) [][]byte {
 	tokens = util.EnsureSliceSize(tokens, len(tids))
 	for i, tid := range tids {
-		tokens[i] = g.frac.TokenList.tidToVal[tid]
+		tokens[i] = g.frac.tokenList.tidToVal[tid]
 	}
 	return tokens
 }
@@ -222,7 +223,7 @@ func (g *DiskBlocksProducer) getLIDsBlockGenerator(maxBlockSize int) func(func(*
 		for _, field := range g.getFracSortedFields() {
 			for _, tid := range g.getTIDsSortedByToken(field) {
 				maxTID++
-				tokenLIDs := g.frac.TokenList.Provide(tid).GetLIDs(g.frac.MIDs, g.frac.RIDs)
+				tokenLIDs := g.frac.tokenList.Provide(tid).GetLIDs(g.frac.mids, g.frac.rids)
 
 				for len(tokenLIDs) > 0 {
 					right := min(maxBlockSize-len(blockLIDs), len(tokenLIDs))
@@ -270,8 +271,8 @@ func (g *DiskBlocksProducer) getOldToNewLIDsIndex() []uint32 {
 }
 
 func (g *DiskBlocksProducer) sortSeqIDs() ([]seq.ID, []uint32) {
-	mids := g.frac.MIDs.GetVals()
-	rids := g.frac.RIDs.GetVals()
+	mids := g.frac.mids.GetVals()
+	rids := g.frac.rids.GetVals()
 
 	seqIDs := make([]seq.ID, len(mids))
 	index := make([]uint32, len(mids))

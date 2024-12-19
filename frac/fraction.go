@@ -3,7 +3,7 @@ package frac
 import (
 	"context"
 
-	"github.com/ozontech/seq-db/frac/lids"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/metric/tracer"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
@@ -39,7 +39,7 @@ type DataProvider interface {
 }
 
 type Fraction interface {
-	Info() *Info
+	Info() Info
 
 	IsIntersecting(from seq.MID, to seq.MID) bool
 	Contains(mid seq.MID) bool

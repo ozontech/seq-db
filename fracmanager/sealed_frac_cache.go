@@ -23,7 +23,7 @@ type sealedFracCache struct {
 	fileName string
 
 	fracCacheMu sync.RWMutex
-	fracCache   map[string]*frac.Info
+	fracCache   map[string]frac.Info
 	version     uint64 // if we increment the counter every second it will take 31 billion years (quite enough)
 
 	saveMu       sync.Mutex
@@ -32,7 +32,7 @@ type sealedFracCache struct {
 
 func NewSealedFracCache(filePath string) *sealedFracCache {
 	fc := &sealedFracCache{
-		fracCache:   make(map[string]*frac.Info),
+		fracCache:   make(map[string]frac.Info),
 		fracCacheMu: sync.RWMutex{},
 		fullPath:    filePath,
 		fileName:    filepath.Base(filePath),
@@ -76,7 +76,7 @@ func (fc *sealedFracCache) LoadFromDisk(fileName string) {
 }
 
 // AddFraction adds a new entry to the in-memory FracCache
-func (fc *sealedFracCache) AddFraction(name string, info *frac.Info) {
+func (fc *sealedFracCache) AddFraction(name string, info frac.Info) {
 	fc.fracCacheMu.Lock()
 	defer fc.fracCacheMu.Unlock()
 
@@ -96,7 +96,7 @@ func (fc *sealedFracCache) RemoveFraction(name string) {
 
 // GetFracInfo returns fraction info and a flag that indicates
 // whether the data is present in the map
-func (fc *sealedFracCache) GetFracInfo(name string) (*frac.Info, bool) {
+func (fc *sealedFracCache) GetFracInfo(name string) (frac.Info, bool) {
 	fc.fracCacheMu.RLock()
 	defer fc.fracCacheMu.RUnlock()
 

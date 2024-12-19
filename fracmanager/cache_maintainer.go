@@ -9,9 +9,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac/sealed"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/util"
 )
@@ -130,8 +130,8 @@ func (cm *CacheMaintainer) CreateDocBlockCache() *cache.Cache[[]byte] {
 	return newCache[[]byte](cm, docsName)
 }
 
-func (cm *CacheMaintainer) CreateSealedIndexCache() *frac.SealedIndexCache {
-	return &frac.SealedIndexCache{
+func (cm *CacheMaintainer) CreateSealedIndexCache() *sealed.IndexCache {
+	return &sealed.IndexCache{
 		MIDs:       newCache[[]byte](cm, midsName),
 		RIDs:       newCache[[]byte](cm, ridsName),
 		Params:     newCache[[]uint64](cm, paramsName),

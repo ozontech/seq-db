@@ -12,7 +12,8 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 )
@@ -30,7 +31,7 @@ type loader struct {
 	config          *Config
 	reader          *disk.Reader
 	cacheMaintainer *CacheMaintainer
-	indexWorkers    *frac.IndexWorkers
+	indexWorkers    *active.IndexWorkers
 	fracCache       *sealedFracCache
 }
 
@@ -38,7 +39,7 @@ func NewLoader(
 	config *Config,
 	reader *disk.Reader,
 	cacheMaintainer *CacheMaintainer,
-	indexWorkers *frac.IndexWorkers,
+	indexWorkers *active.IndexWorkers,
 	fracCache *sealedFracCache,
 ) *loader {
 	return &loader{
@@ -67,14 +68,14 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 	cachedFracs := 0
 	uncachedFracs := 0
 	fracs := make([]*fracRef, 0, cnt)
-	actives := make([]*frac.Active, 0)
+	actives := make([]*active.Active, 0)
 
 	diskFracCache := NewFracCacheFromDisk(filepath.Join(t.config.DataDir, consts.FracCacheFileSuffix))
 	ts := time.Now()
 
 	for i, info := range infosList {
 		if info.hasMeta {
-			actives = append(actives, frac.NewActive(info.base, t.config.ShouldRemoveMeta, t.indexWorkers, t.reader, t.cacheMaintainer.CreateDocBlockCache()))
+			actives = append(actives, active.NewActive(info.base, t.config.ShouldRemoveMeta, t.indexWorkers, t.reader, t.cacheMaintainer.CreateDocBlockCache()))
 		} else {
 			cachedFracInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
 			if ok {
@@ -83,7 +84,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 				uncachedFracs++
 			}
 
-			sealed := frac.NewSealed(info.base, t.reader, t.cacheMaintainer.CreateSealedIndexCache(), t.cacheMaintainer.CreateDocBlockCache(), cachedFracInfo)
+			sealed := sealed.NewSealed(info.base, t.reader, t.cacheMaintainer.CreateSealedIndexCache(), t.cacheMaintainer.CreateDocBlockCache(), cachedFracInfo)
 			fracs = append(fracs, &fracRef{instance: sealed})
 
 			stats := sealed.Info()

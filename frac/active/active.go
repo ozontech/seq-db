@@ -1,4 +1,4 @@
-package frac
+package active
 
 import (
 	"context"
@@ -13,13 +13,14 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
-	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/tracer"
@@ -59,7 +60,7 @@ func (p *ActiveIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
 
 type ActiveDataProvider struct {
 	*Active
-	sc       *SearchCell
+	sc       *frac.SearchCell
 	tracer   *tracer.Tracer
 	inverser *inverser
 }
@@ -77,10 +78,10 @@ func (dp *ActiveDataProvider) Tracer() *tracer.Tracer {
 	return dp.tracer
 }
 
-func (dp *ActiveDataProvider) IDsProvider() IDsProvider {
+func (dp *ActiveDataProvider) IDsProvider() frac.IDsProvider {
 	return &ActiveIDsProvider{
-		mids:     dp.MIDs.GetVals(),
-		rids:     dp.RIDs.GetVals(),
+		mids:     dp.mids.GetVals(),
+		rids:     dp.rids.GetVals(),
 		inverser: dp.getInverser(),
 	}
 }
@@ -97,21 +98,21 @@ func (dp *ActiveDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	defer dp.tracer.UpdateMetric(metric.FetchActiveStagesSeconds)
 
 	m := dp.tracer.Start("get_doc_params_by_id")
-	docsPos := make([]DocPos, len(ids))
+	docsPos := make([]frac.DocPos, len(ids))
 	for i, id := range ids {
-		docsPos[i] = dp.Active.DocsPositions.GetSync(id)
+		docsPos[i] = dp.Active.docsPositions.GetSync(id)
 	}
 	m.Stop()
 
 	m = dp.tracer.Start("unpack_offsets")
-	blocks, offsets, index := GroupDocsOffsets(docsPos)
+	blocks, offsets, index := frac.GroupDocsOffsets(docsPos)
 	m.Stop()
 
 	m = dp.tracer.Start("read_doc")
 	res := make([][]byte, len(ids))
-	blocksOffsets := dp.Active.DocBlocks.GetVals()
+	blocksOffsets := dp.Active.docBlocks.GetVals()
 	for i, docOffsets := range offsets {
-		docs, err := dp.readDocs(blocksOffsets[blocks[i]], docOffsets)
+		docs, err := dp.Base.DocsReader.Read(blocksOffsets[blocks[i]], docOffsets)
 		if err != nil {
 			return nil, err
 		}
@@ -125,21 +126,24 @@ func (dp *ActiveDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 }
 
 type Active struct {
-	frac
+	frac.Base
 
-	MIDs *UInt64s
-	RIDs *UInt64s
+	infoMu sync.Mutex
 
-	DocBlocks *UInt64s
+	mids *UInt64s
+	rids *UInt64s
 
-	TokenList *TokenList
+	docBlocks *UInt64s
 
-	DocsPositions *DocsPositions
+	tokenList *TokenList
 
-	metasFile *os.File
+	docsPositions *DocsPositions
+
+	docsFile *os.File
+	metaFile *os.File
 
 	appendQueueSize atomic.Uint32
-	appender        ActiveAppender
+	appender        Appender
 
 	sealingMu        sync.RWMutex
 	isSealed         bool
@@ -148,86 +152,89 @@ type Active struct {
 	// to transfer data to sealed frac
 	lidsTable  *lids.Table
 	tokenTable token.Table
-	sealedIDs  *SealedIDs
+	sealedIDs  *sealed.IDs
 
 	// derivative fraction
-	sealed Fraction
+	sealed frac.Fraction
+}
+
+func openFile(f string) (*os.File, int64) {
+	file, err := os.OpenFile(f, os.O_CREATE|os.O_RDWR, 0o776)
+	if err != nil {
+		logger.Fatal("can't create file", zap.Error(err))
+	}
+
+	stat, err := file.Stat()
+	if err != nil {
+		logger.Fatal("can't stat file", zap.String("file", file.Name()), zap.Error(err))
+	}
+
+	return file, stat.Size()
 }
 
 func NewActive(baseFileName string, metaRemove bool, indexWorkers *IndexWorkers, reader *disk.Reader, docBlockCache *cache.Cache[[]byte]) *Active {
-	mids := NewIDs()
-	rids := NewIDs()
+	docsFile, docsOnDisk := openFile(baseFileName + consts.DocsFileSuffix)
+	metaFile, metaOnDisk := openFile(baseFileName + consts.MetaFileSuffix)
 
-	creationTime := uint64(time.Now().UnixMilli())
-
-	f := &Active{
+	active := &Active{
 		shouldRemoveMeta: metaRemove,
-		TokenList:        NewActiveTokenList(conf.IndexWorkers),
-		DocsPositions:    NewSyncDocsPositions(),
-		MIDs:             mids,
-		RIDs:             rids,
-		DocBlocks:        NewIDs(),
-		frac: frac{
-			docBlockCache: docBlockCache,
-			BaseFileName:  baseFileName,
-			reader:        reader,
-			info: &Info{
-				Ver:                   buildinfo.Version,
-				BinaryDataVer:         BinaryDataV1,
-				Path:                  baseFileName,
-				From:                  math.MaxUint64,
-				To:                    0,
-				CreationTime:          creationTime,
-				ConstIDsPerBlock:      consts.IDsPerBlock,
-				ConstRegularBlockSize: consts.RegularBlockSize,
-				ConstLIDBlockCap:      consts.LIDBlockCap,
-			},
+		tokenList:        NewActiveTokenList(conf.IndexWorkers),
+		docsPositions:    NewSyncDocsPositions(),
+		mids:             NewIDs(),
+		rids:             NewIDs(),
+		docBlocks:        NewIDs(),
+
+		docsFile: docsFile,
+		metaFile: metaFile,
+
+		Base: frac.Base{
+			Info:         frac.NewInfo(time.Now(), baseFileName),
+			DocsReader:   frac.NewDocsReader(docsFile, reader, docBlockCache),
+			BaseFileName: baseFileName,
 		},
 	}
 
+	active.Base.Info.DocsOnDisk = uint64(docsOnDisk)
+	active.Base.Info.MetaOnDisk = uint64(metaOnDisk)
+
 	// use of 0 as keys in maps is prohibited – it's system key, so add first element
-	f.MIDs.Append(math.MaxUint64)
-	f.RIDs.Append(math.MaxUint64)
+	active.mids.Append(math.MaxUint64)
+	active.rids.Append(math.MaxUint64)
+
+	active.appender = StartAppender(active.docsFile, active.metaFile, conf.IndexWorkers, conf.SkipFsync, indexWorkers)
 
 	logger.Info("active fraction created", zap.String("fraction", baseFileName))
 
-	file, err := os.OpenFile(f.BaseFileName+consts.DocsFileSuffix, os.O_CREATE|os.O_RDWR, 0o776)
-	if err != nil {
-		logger.Fatal("can't create docs file", zap.Error(err))
-		panic("_")
-	}
-	f.docsFile = file
+	return active
+}
 
-	file, err = os.OpenFile(f.BaseFileName+consts.MetaFileSuffix, os.O_CREATE|os.O_RDWR, 0o776)
-	if err != nil {
-		logger.Fatal("can't create meta file", zap.Error(err))
-		panic("_")
-	}
-	f.metasFile = file
+func (f *Active) Info() frac.Info {
+	f.infoMu.Lock()
+	defer f.infoMu.Unlock()
 
-	stat, err := f.docsFile.Stat()
-	if err != nil {
-		logger.Fatal("can't stat docs file",
-			zap.String("file", f.docsFile.Name()),
-			zap.Error(err),
-		)
-		panic("_")
-	}
-	f.info.DocsOnDisk = uint64(stat.Size())
+	return f.Base.Info
+}
 
-	stat, err = f.metasFile.Stat()
-	if err != nil {
-		logger.Fatal("can't stat metas file",
-			zap.String("file", f.metasFile.Name()),
-			zap.Error(err),
-		)
-		panic("_")
-	}
-	f.info.MetaOnDisk = uint64(stat.Size())
+func (f *Active) setInfoSealingTime(newTime uint64) {
+	f.infoMu.Lock()
+	defer f.infoMu.Unlock()
 
-	f.appender = StartAppender(f.docsFile, f.metasFile, conf.IndexWorkers, conf.SkipFsync, indexWorkers)
+	f.Base.Info.SealingTime = newTime
+}
 
-	return f
+func (f *Active) setInfoIndexOnDisk(newSize uint64) {
+	f.infoMu.Lock()
+	defer f.infoMu.Unlock()
+
+	f.Base.Info.IndexOnDisk = newSize
+}
+
+func (f *Active) Contains(id seq.MID) bool {
+	return f.IsIntersecting(id, id)
+}
+
+func (f *Active) IsIntersecting(from, to seq.MID) bool {
+	return f.Info().IsIntersecting(from, to)
 }
 
 func (f *Active) ReplayBlocks(ctx context.Context) error {
@@ -236,18 +243,18 @@ func (f *Active) ReplayBlocks(ctx context.Context) error {
 	if _, err := f.docsFile.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("can't seek docs file: filename=%s, err=%w", f.docsFile.Name(), err)
 	}
-	if _, err := f.metasFile.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("can't seek metas file: filename=%s, err=%w", f.metasFile.Name(), err)
+	if _, err := f.metaFile.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("can't seek metas file: filename=%s, err=%w", f.metaFile.Name(), err)
 	}
 
-	targetSize := f.info.MetaOnDisk
+	targetSize := f.Base.Info.MetaOnDisk
 	t := time.Now()
 
 	reader := disk.NewReader(metric.StoreBytesRead)
 	defer reader.Stop()
 
-	f.info.DocsOnDisk = 0
-	f.info.MetaOnDisk = 0
+	f.Base.Info.DocsOnDisk = 0
+	f.Base.Info.MetaOnDisk = 0
 	docsPos := uint64(0)
 	metaPos := uint64(0)
 	step := targetSize / 10
@@ -258,7 +265,7 @@ out:
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			result, n, err := reader.ReadDocBlock(f.metasFile, int64(metaPos))
+			result, n, err := reader.ReadDocBlock(f.metaFile, int64(metaPos))
 			if err == io.EOF {
 				if n != 0 {
 					logger.Warn("last meta block is partially written, skipping it")
@@ -295,16 +302,16 @@ out:
 	if _, err := f.docsFile.Seek(int64(docsPos), io.SeekStart); err != nil {
 		return fmt.Errorf("can't seek docs file: file=%s, err=%w", f.docsFile.Name(), err)
 	}
-	if _, err := f.metasFile.Seek(int64(metaPos), io.SeekStart); err != nil {
-		return fmt.Errorf("can't seek meta file: file=%s, err=%w", f.metasFile.Name(), err)
+	if _, err := f.metaFile.Seek(int64(metaPos), io.SeekStart); err != nil {
+		return fmt.Errorf("can't seek meta file: file=%s, err=%w", f.metaFile.Name(), err)
 	}
 
 	tookSeconds := util.DurationToUnit(time.Since(t), "s")
-	throughputRaw := util.SizeToUnit(f.info.DocsRaw, "mb") / tookSeconds
-	throughputMeta := util.SizeToUnit(f.info.MetaOnDisk, "mb") / tookSeconds
+	throughputRaw := util.SizeToUnit(f.Base.Info.DocsRaw, "mb") / tookSeconds
+	throughputMeta := util.SizeToUnit(f.Base.Info.MetaOnDisk, "mb") / tookSeconds
 	logger.Info("active fraction replayed",
-		zap.String("name", f.info.Name()),
-		zap.Uint32("docs_total", f.info.DocsTotal),
+		zap.String("name", f.Base.Info.Name()),
+		zap.Uint32("docs_total", f.Base.Info.DocsTotal),
 		util.ZapUint64AsSizeStr("docs_size", docsPos),
 		util.ZapFloat64WithPrec("took_s", tookSeconds, 1),
 		util.ZapFloat64WithPrec("throughput_raw_mb_sec", throughputRaw, 1),
@@ -380,11 +387,11 @@ func (f *Active) Seal(params SealParams) error {
 }
 
 func (f *Active) GetAllDocuments() []uint32 {
-	return f.TokenList.GetAllTokenLIDs().GetLIDs(f.MIDs, f.RIDs)
+	return f.tokenList.GetAllTokenLIDs().GetLIDs(f.mids, f.rids)
 }
 
-func (f *Active) GetTIDsByTokenExpr(sc *SearchCell, tk parser.Token, tids []uint32, tr *tracer.Tracer) ([]uint32, error) {
-	res, err := f.TokenList.FindPattern(sc.Context, tk, tids, tr)
+func (f *Active) GetTIDsByTokenExpr(sc *frac.SearchCell, tk parser.Token, tids []uint32, tr *tracer.Tracer) ([]uint32, error) {
+	res, err := f.tokenList.FindPattern(sc.Context, tk, tids, tr)
 	return res, err
 }
 
@@ -392,11 +399,11 @@ func (f *Active) GetLIDsFromTIDs(tids []uint32, inv *inverser, _ lids.Counter, m
 	nodes := make([]node.Node, 0, len(tids))
 	for _, tid := range tids {
 		m := tr.Start("provide")
-		tlids := f.TokenList.Provide(tid)
+		tlids := f.tokenList.Provide(tid)
 		m.Stop()
 
 		m = tr.Start("LIDs")
-		unmapped := tlids.GetLIDs(f.MIDs, f.RIDs)
+		unmapped := tlids.GetLIDs(f.mids, f.rids)
 		m.Stop()
 
 		m = tr.Start("inverse")
@@ -437,33 +444,35 @@ func (f *Active) inverser(tr *tracer.Tracer) *inverser {
 }
 
 func (f *Active) GetValByTID(tid uint32) []byte {
-	return f.TokenList.GetValByTID(tid)
+	return f.tokenList.GetValByTID(tid)
 }
 
 func (f *Active) Type() string {
-	return TypeActive
+	return frac.TypeActive
 }
 
-func (f *Active) Release(sealed Fraction) {
-	f.useLock.Lock()
-	defer f.useLock.Unlock()
+func (f *Active) Release(sealed frac.Fraction) {
+	f.UseMu.Lock()
+	defer f.UseMu.Unlock()
 
 	f.sealed = sealed
 
-	f.TokenList.Stop()
+	f.tokenList.Stop()
 
-	f.RIDs = nil
-	f.MIDs = nil
-	f.TokenList = nil
-	f.DocsPositions = nil
+	f.rids = nil
+	f.mids = nil
+	f.tokenList = nil
+	f.docsPositions = nil
 }
 
 func (f *Active) UpdateDiskStats(docsLen, metaLen uint64) uint64 {
-	f.statsMu.Lock()
-	pos := f.info.DocsOnDisk
-	f.info.DocsOnDisk += docsLen
-	f.info.MetaOnDisk += metaLen
-	f.statsMu.Unlock()
+	f.infoMu.Lock()
+	defer f.infoMu.Unlock()
+
+	pos := f.Base.Info.DocsOnDisk
+	f.Base.Info.DocsOnDisk += docsLen
+	f.Base.Info.MetaOnDisk += metaLen
+
 	return pos
 }
 
@@ -473,16 +482,20 @@ func (f *Active) close(closeDocs bool, hint string) {
 		err := f.docsFile.Close()
 		if err != nil {
 			logger.Error("can't close docs file",
-				f.closeLogArgs("active", hint, err)...,
-			)
+				zap.String("frac", f.BaseFileName),
+				zap.String("type", "active"),
+				zap.String("hint", hint),
+				zap.Error(err))
 		}
 	}
 
-	err := f.metasFile.Close()
+	err := f.metaFile.Close()
 	if err != nil {
 		logger.Error("can't close meta file",
-			f.closeLogArgs("active", hint, err)...,
-		)
+			zap.String("frac", f.BaseFileName),
+			zap.String("type", "active"),
+			zap.String("hint", hint),
+			zap.Error(err))
 	}
 }
 
@@ -491,14 +504,14 @@ func (f *Active) AppendIDs(ids []seq.ID) []uint32 {
 	// i.e. so one thread wouldn't append between other thread appends
 
 	lidsList := make([]uint32, 0, len(ids))
-	f.MIDs.mu.Lock()
-	f.RIDs.mu.Lock()
-	defer f.RIDs.mu.Unlock()
-	defer f.MIDs.mu.Unlock()
+	f.mids.mu.Lock()
+	f.rids.mu.Lock()
+	defer f.rids.mu.Unlock()
+	defer f.mids.mu.Unlock()
 
 	for _, id := range ids {
-		lidsList = append(lidsList, f.MIDs.append(uint64(id.MID)))
-		f.RIDs.append(uint64(id.RID))
+		lidsList = append(lidsList, f.mids.append(uint64(id.MID)))
+		f.rids.append(uint64(id.RID))
 	}
 
 	return lidsList
@@ -509,33 +522,33 @@ func (f *Active) AppendID(id seq.ID) uint32 {
 }
 
 func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount uint64) {
-	f.statsMu.Lock()
-	defer f.statsMu.Unlock()
+	f.infoMu.Lock()
+	defer f.infoMu.Unlock()
 
-	if f.info.From > minMID {
-		f.info.From = minMID
+	if f.Base.Info.From > minMID {
+		f.Base.Info.From = minMID
 	}
-	if f.info.To < maxMID {
-		f.info.To = maxMID
+	if f.Base.Info.To < maxMID {
+		f.Base.Info.To = maxMID
 	}
-	f.info.DocsTotal += docCount
-	f.info.DocsRaw += sizeCount
+	f.Base.Info.DocsTotal += docCount
+	f.Base.Info.DocsRaw += sizeCount
 }
 
 func (f *Active) BuildInfoDistribution(ids []seq.ID) {
 	info := f.Info()
 	info.BuildDistribution(ids)
 
-	f.statsMu.Lock()
-	f.info = info
-	f.statsMu.Unlock()
+	f.infoMu.Lock()
+	f.Base.Info = info
+	f.infoMu.Unlock()
 }
 
 func (f *Active) Suicide() {
-	f.useLock.Lock()
-	defer f.useLock.Unlock()
+	f.UseMu.Lock()
+	defer f.UseMu.Unlock()
 
-	f.suicided = true
+	f.Suicided = true
 
 	if !f.isSealed {
 		f.close(true, "suicide")
@@ -578,26 +591,26 @@ func (f *Active) ExplainDoc(_ seq.ID) {
 }
 
 func (f *Active) String() string {
-	return f.toString("active")
+	return frac.InfoToString(f.Info(), "active")
 }
 
-func (f *Active) DataProvider(ctx context.Context) (DataProvider, func(), bool) {
-	f.useLock.RLock()
+func (f *Active) DataProvider(ctx context.Context) (frac.DataProvider, func(), bool) {
+	f.UseMu.RLock()
 	if f.sealed != nil {
-		defer f.useLock.RUnlock()
+		defer f.UseMu.RUnlock()
 		dp, releaseSealed, ok := f.sealed.DataProvider(ctx)
 		metric.CountersTotal.WithLabelValues("use_sealed_from_active").Inc()
 		return dp, releaseSealed, ok
 	}
 
-	if f.MIDs.Len() == 0 {
-		f.useLock.RUnlock()
+	if f.mids.Len() == 0 {
+		f.UseMu.RUnlock()
 		return nil, nil, false
 	}
 
 	dp := ActiveDataProvider{
 		Active: f,
-		sc:     NewSearchCell(ctx),
+		sc:     frac.NewSearchCell(ctx),
 		tracer: tracer.New(),
 	}
 
@@ -605,6 +618,6 @@ func (f *Active) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 		if dp.inverser != nil {
 			dp.inverser.Release()
 		}
-		f.useLock.RUnlock()
+		f.UseMu.RUnlock()
 	}, true
 }

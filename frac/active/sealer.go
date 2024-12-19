@@ -1,4 +1,4 @@
-package frac
+package active
 
 import (
 	"io"
@@ -8,6 +8,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac/sealed"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
@@ -147,11 +149,45 @@ func writeAllBlocks(f *Active, ws io.WriteSeeker, params SealParams) error {
 	return nil
 }
 
-func createSealedIDs(f *Active, startOfIDsBlockIndex uint32, minBlockIDs []seq.ID) *SealedIDs {
-	sealedIDs := NewSealedIDs(nil, nil, nil)
+func createSealedIDs(f *Active, startOfIDsBlockIndex uint32, minBlockIDs []seq.ID) *sealed.IDs {
+	sealedIDs := sealed.NewSealedIDs(nil, nil, nil)
 	sealedIDs.DiskStartBlockIndex = startOfIDsBlockIndex
-	sealedIDs.IDBlocksTotal = f.DocBlocks.Len()
-	sealedIDs.IDsTotal = f.MIDs.Len()
+	sealedIDs.IDBlocksTotal = f.docBlocks.Len()
+	sealedIDs.IDsTotal = f.mids.Len()
 	sealedIDs.MinBlockIDs = minBlockIDs
 	return sealedIDs
+}
+
+func NewSealedFromActive(active *Active, indexCache *sealed.IndexCache) *sealed.Sealed {
+	f := sealed.NewSealed(active.Base.BaseFileName,
+		active.DocsReader.Reader,
+		indexCache,
+		active.Base.DocsReader.Cache,
+		active.Base.Info)
+
+	// TODO: add via cache
+	f.Preload(
+		active.Base.DocsReader,
+		active.lidsTable,
+		active.docBlocks.GetVals(),
+		active.sealedIDs,
+	)
+
+	// put the token table built during sealing into the cache of the sealed faction
+	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
+		return active.tokenTable, active.tokenTable.Size()
+	})
+
+	docsCountK := float64(f.Base.Info.DocsTotal) / 1000
+	logger.Info("sealed fraction created from active",
+		zap.String("frac", f.Base.Info.Name()),
+		util.ZapMsTsAsESTimeStr("creation_time", f.Base.Info.CreationTime),
+		zap.String("from", f.Base.Info.From.String()),
+		zap.String("to", f.Base.Info.To.String()),
+		util.ZapFloat64WithPrec("docs_k", docsCountK, 1),
+	)
+
+	f.Base.Info.MetaOnDisk = 0
+
+	return f
 }

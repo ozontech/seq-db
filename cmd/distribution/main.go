@@ -42,40 +42,42 @@ func getAllFracs(dataDir string) []string {
 	return files
 }
 
-func getReader(path string) *disk.BlocksReader {
+func getReader(path string, f *os.File) *disk.BlocksReader {
 	c := cache.NewCache[[]byte](nil, nil)
-	return disk.NewBlocksReader(c, path, nil)
+	return disk.NewBlocksReader(c, f, nil)
 }
 
 func readBlock(blocksReader *disk.BlocksReader, blockIndex uint32) []byte {
 	data, _, err := reader.ReadIndexBlock(blocksReader, blockIndex, nil)
 	if err != nil {
-		logger.Fatal("error reading block", zap.String("file", blocksReader.GetFileName()), zap.Error(err))
+		logger.Fatal("error reading block", zap.Error(err))
 	}
 	return data
 }
 
-func loadInfo(path string) *frac.Info {
-	blocksReader := getReader(path)
+func loadInfo(path string) frac.Info {
+	f, _ := os.Open(path)
+	blocksReader := getReader(path, f)
 	result := readBlock(blocksReader, 0)
 	if len(result) < 4 {
-		logger.Fatal("seq-db index file header corrupted", zap.String("file", blocksReader.GetFileName()))
+		logger.Fatal("seq-db index file header corrupted", zap.String("file", f.Name()))
 	}
 
-	info := &frac.Info{}
+	info := frac.Info{}
 	info.Load(result[4:])
 	info.MetaOnDisk = 0
-	stat, err := blocksReader.GetFileStat()
+	stat, err := f.Stat()
 	if err != nil {
-		logger.Fatal("can't stat index file", zap.String("file", blocksReader.GetFileName()), zap.Error(err))
+		logger.Fatal("can't stat index file", zap.String("file", f.Name()), zap.Error(err))
 	}
 	info.IndexOnDisk = uint64(stat.Size())
 
 	return info
 }
 
-func buildDist(dist *seq.MIDsDistribution, path string, _ *frac.Info) {
-	blocksReader := getReader(path)
+func buildDist(dist *seq.MIDsDistribution, path string, _ frac.Info) {
+	f, _ := os.Open(path)
+	blocksReader := getReader(path, f)
 
 	// skip tokens
 	blockIndex := uint32(1)

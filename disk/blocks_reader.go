@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
@@ -17,26 +16,19 @@ import (
 type BlocksReader struct {
 	file       *os.File
 	cache      *cache.Cache[[]byte]
-	fileName   string
-	fileMu     sync.Mutex
 	readMetric prometheus.Counter
 }
 
-func NewBlocksReader(c *cache.Cache[[]byte], fileName string, readMetric prometheus.Counter) *BlocksReader {
+func NewBlocksReader(cache *cache.Cache[[]byte], file *os.File, readMetric prometheus.Counter) *BlocksReader {
 	return &BlocksReader{
-		cache:      c,
-		fileName:   fileName,
+		cache:      cache,
+		file:       file,
 		readMetric: readMetric,
 	}
 }
 
-func (r *BlocksReader) GetFileName() string {
-	return r.fileName
-}
-
-// GetFileStat only used during loading
-func (r *BlocksReader) GetFileStat() (os.FileInfo, error) {
-	return r.file.Stat()
+func (r *BlocksReader) File() *os.File {
+	return r.file
 }
 
 func (r *BlocksReader) TryGetBlockHeader(index uint32) (BlocksRegistryEntry, error) {
@@ -45,7 +37,7 @@ func (r *BlocksReader) TryGetBlockHeader(index uint32) (BlocksRegistryEntry, err
 	if (uint64(index)+1)*BlocksRegistryEntrySize > uint64(len(data)) {
 		return nil, fmt.Errorf(
 			"too large index block in file %s, with index %d, registry size %d",
-			r.fileName,
+			r.file.Name(),
 			index,
 			len(data),
 		)
@@ -75,30 +67,6 @@ func (r *BlocksReader) getRegistry() []byte {
 	return data
 }
 
-func (r *BlocksReader) tryOpenFile() *os.File {
-	r.fileMu.Lock()
-	defer r.fileMu.Unlock()
-
-	if r.file != nil {
-		return r.file
-	}
-
-	file, err := os.Open(r.fileName)
-	if err != nil {
-		// give hdd a second chance
-		file, err = os.Open(r.fileName)
-		if err != nil {
-			logger.Panic("can't open file by blocks reader",
-				zap.String("file", r.fileName),
-				zap.Error(err),
-			)
-		}
-	}
-
-	r.file = file
-	return file
-}
-
 func (r *BlocksReader) reportReadBytes(n int) {
 	if r.readMetric != nil {
 		r.readMetric.Add(float64(n))
@@ -106,10 +74,8 @@ func (r *BlocksReader) reportReadBytes(n int) {
 }
 
 func (r *BlocksReader) readRegistry() ([]byte, error) {
-	file := r.tryOpenFile()
-
 	numBuf := make([]byte, 16)
-	n, err := file.ReadAt(numBuf, 0)
+	n, err := r.file.ReadAt(numBuf, 0)
 	r.reportReadBytes(n)
 
 	if err != nil {
@@ -123,7 +89,7 @@ func (r *BlocksReader) readRegistry() ([]byte, error) {
 	l := binary.LittleEndian.Uint64(numBuf[8:])
 	buf := make([]byte, l)
 
-	n, err = file.ReadAt(buf, int64(pos))
+	n, err = r.file.ReadAt(buf, int64(pos))
 	r.reportReadBytes(n)
 
 	if err != nil && err != io.EOF {
@@ -139,14 +105,4 @@ func (r *BlocksReader) readRegistry() ([]byte, error) {
 	}
 
 	return buf, nil
-}
-
-// Close only used in frac.Sealed.Suicide under frac.Sealed.loadMu
-func (r *BlocksReader) Close() error {
-	r.fileMu.Lock()
-	defer r.fileMu.Unlock()
-
-	file := r.file
-	r.file = nil
-	return file.Close()
 }

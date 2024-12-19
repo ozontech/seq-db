@@ -1,4 +1,4 @@
-package frac
+package sealed
 
 import (
 	"time"
@@ -7,12 +7,13 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
 
-type SealedIDs struct {
+type IDs struct {
 	Reader       *disk.Reader
 	BlocksReader *disk.BlocksReader
 
@@ -22,18 +23,25 @@ type SealedIDs struct {
 
 	MinBlockIDs []seq.ID // from max to min
 
-	cache *SealedIndexCache
+	cache *IndexCache
 }
 
-func NewSealedIDs(reader *disk.Reader, blocksReader *disk.BlocksReader, cache *SealedIndexCache) *SealedIDs {
-	return &SealedIDs{
+func NewSealedIDs(reader *disk.Reader, blocksReader *disk.BlocksReader, cache *IndexCache) *IDs {
+	return &IDs{
 		Reader:       reader,
 		BlocksReader: blocksReader,
 		cache:        cache,
 	}
 }
 
-func (si *SealedIDs) GetMIDsBlock(searchSB *SearchCell, lid seq.LID, dst *UnpackCache) {
+func (si *IDs) LoadFrom(src *IDs) {
+	si.IDBlocksTotal = src.IDBlocksTotal
+	si.IDsTotal = src.IDsTotal
+	si.DiskStartBlockIndex = src.DiskStartBlockIndex
+	si.MinBlockIDs = src.MinBlockIDs
+}
+
+func (si *IDs) GetMIDsBlock(searchSB *frac.SearchCell, lid seq.LID, dst *UnpackCache) {
 	index := si.getIDBlockIndexByLID(lid)
 	if index == dst.lastBlock { // fast path, already unpacked
 		return
@@ -54,7 +62,7 @@ func (si *SealedIDs) GetMIDsBlock(searchSB *SearchCell, lid seq.LID, dst *Unpack
 	dst.unpackMIDs(index, data)
 }
 
-func (si *SealedIDs) GetRIDsBlock(searchSB *SearchCell, lid seq.LID, dst *UnpackCache, fracVersion BinaryDataVersion) {
+func (si *IDs) GetRIDsBlock(searchSB *frac.SearchCell, lid seq.LID, dst *UnpackCache, fracVersion frac.BinaryDataVersion) {
 	index := si.getIDBlockIndexByLID(lid)
 	if index == dst.lastBlock { // fast path, already unpacked
 		return
@@ -75,7 +83,7 @@ func (si *SealedIDs) GetRIDsBlock(searchSB *SearchCell, lid seq.LID, dst *Unpack
 	dst.unpackRIDs(index, data, fracVersion)
 }
 
-func (si *SealedIDs) GetParamsBlock(index uint32) []uint64 {
+func (si *IDs) GetParamsBlock(index uint32) []uint64 {
 	params := si.cache.Params.Get(index+1, func() ([]uint64, int) {
 		block := si.loadParamsBlock(index)
 		return block, cap(block) * 8
@@ -89,19 +97,19 @@ func (si *SealedIDs) GetParamsBlock(index uint32) []uint64 {
 }
 
 // blocks are stored as triplets on disk, (MID + RID + Pos), check docs/format-index-file.go
-func (si *SealedIDs) midBlockIndex(index uint32) uint32 {
+func (si *IDs) midBlockIndex(index uint32) uint32 {
 	return si.DiskStartBlockIndex + index*3
 }
 
-func (si *SealedIDs) ridBlockIndex(index uint32) uint32 {
+func (si *IDs) ridBlockIndex(index uint32) uint32 {
 	return si.DiskStartBlockIndex + index*3 + 1
 }
 
-func (si *SealedIDs) paramsBlockIndex(index uint32) uint32 {
+func (si *IDs) paramsBlockIndex(index uint32) uint32 {
 	return si.DiskStartBlockIndex + index*3 + 2
 }
 
-func (si *SealedIDs) loadMIDBlock(searchSB *SearchCell, index uint32) []byte {
+func (si *IDs) loadMIDBlock(searchSB *frac.SearchCell, index uint32) []byte {
 	t := time.Now()
 	data, _, err := si.Reader.ReadIndexBlock(si.BlocksReader, si.midBlockIndex(index), nil)
 	searchSB.AddReadIDTimeNS(time.Since(t))
@@ -112,7 +120,7 @@ func (si *SealedIDs) loadMIDBlock(searchSB *SearchCell, index uint32) []byte {
 
 	if len(data) == 0 {
 		logger.Panic("wrong mid block",
-			zap.String("file", si.BlocksReader.GetFileName()),
+			zap.String("file", si.BlocksReader.File().Name()),
 			zap.Uint32("index", index),
 			zap.Uint32("disk_index", si.midBlockIndex(index)),
 			zap.Uint32("blocks_total", si.IDBlocksTotal),
@@ -124,7 +132,7 @@ func (si *SealedIDs) loadMIDBlock(searchSB *SearchCell, index uint32) []byte {
 	return data
 }
 
-func (si *SealedIDs) loadRIDBlock(searchCell *SearchCell, index uint32) []byte {
+func (si *IDs) loadRIDBlock(searchCell *frac.SearchCell, index uint32) []byte {
 	t := time.Now()
 	data, _, err := si.Reader.ReadIndexBlock(si.BlocksReader, si.ridBlockIndex(index), nil)
 	searchCell.AddReadIDTimeNS(time.Since(t))
@@ -136,7 +144,7 @@ func (si *SealedIDs) loadRIDBlock(searchCell *SearchCell, index uint32) []byte {
 	return data
 }
 
-func (si *SealedIDs) loadParamsBlock(index uint32) []uint64 {
+func (si *IDs) loadParamsBlock(index uint32) []uint64 {
 	data, _, err := si.Reader.ReadIndexBlock(si.BlocksReader, si.paramsBlockIndex(index), nil)
 
 	if util.IsRecoveredPanicError(err) {
@@ -145,32 +153,32 @@ func (si *SealedIDs) loadParamsBlock(index uint32) []uint64 {
 	return unpackRawIDsVarint(data, make([]uint64, 0, consts.IDsPerBlock))
 }
 
-func (si *SealedIDs) getIDBlockIndexByLID(lid seq.LID) int64 {
+func (si *IDs) getIDBlockIndexByLID(lid seq.LID) int64 {
 	return int64(lid) / consts.IDsPerBlock
 }
 
-func (si *SealedIDs) GetDocPosByLID(lid seq.LID) DocPos {
+func (si *IDs) GetDocPosByLID(lid seq.LID) frac.DocPos {
 	index := si.getIDBlockIndexByLID(lid)
 	positions := si.GetParamsBlock(uint32(index))
 	startLID := index * consts.IDsPerBlock
 	i := lid - seq.LID(startLID)
-	return DocPos(positions[i])
+	return frac.DocPos(positions[i])
 }
 
 // GetDocPosByLIDs returns a slice of DocPos for the corresponding LIDs.
 // Passing sorted LIDs (asc or desc) will improve the performance of this method.
 // For LID with zero value will return DocPos with `DocPosNotFound` value
-func (si *SealedIDs) GetDocPosByLIDs(lids []seq.LID) []DocPos {
+func (si *IDs) GetDocPosByLIDs(lids []seq.LID) []frac.DocPos {
 	var (
 		prevIndex int64
 		positions []uint64
 		startLID  seq.LID
 	)
 
-	res := make([]DocPos, len(lids))
+	res := make([]frac.DocPos, len(lids))
 	for i, lid := range lids {
 		if lid == 0 {
-			res[i] = DocPosNotFound
+			res[i] = frac.DocPosNotFound
 			continue
 		}
 
@@ -180,7 +188,7 @@ func (si *SealedIDs) GetDocPosByLIDs(lids []seq.LID) []DocPos {
 			startLID = seq.LID(index * consts.IDsPerBlock)
 		}
 
-		res[i] = DocPos(positions[lid-startLID])
+		res[i] = frac.DocPos(positions[lid-startLID])
 	}
 
 	return res

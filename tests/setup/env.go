@@ -16,7 +16,7 @@ import (
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/network/circuitbreaker"
@@ -85,7 +85,7 @@ func (cfg *TestingEnvConfig) GetFracManagerConfig(port int) fracmanager.Config {
 			FracSize:         256 * consts.MB,
 			TotalSize:        1 * consts.GB,
 			ShouldRemoveMeta: true,
-			SealParams: frac.SealParams{
+			SealParams: active.SealParams{
 				IDsZstdLevel:           fastestZstdLevel,
 				LIDsZstdLevel:          fastestZstdLevel,
 				TokenListZstdLevel:     fastestZstdLevel,

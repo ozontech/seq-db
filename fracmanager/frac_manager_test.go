@@ -9,6 +9,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
@@ -84,12 +85,12 @@ func TestCleanUp(t *testing.T) {
 
 	MakeSomeFractions(t, fm)
 
-	first := fm.fracs[0].instance.(*frac.Sealed)
-	first.PartialSuicideMode = frac.HalfRename
+	first := fm.fracs[0].instance.(*sealed.Sealed)
+	first.PartialSuicideMode = sealed.HalfRename
 	first.Suicide()
 
-	second := fm.fracs[1].instance.(*frac.Sealed)
-	second.PartialSuicideMode = frac.HalfRemove
+	second := fm.fracs[1].instance.(*sealed.Sealed)
+	second.PartialSuicideMode = sealed.HalfRemove
 	second.Suicide()
 
 	shouldSealOnExit := fm.shouldSealOnExit(fm.active.frac)

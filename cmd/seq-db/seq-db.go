@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/seq"
 
 	"github.com/mailru/easyjson/buffer"
@@ -26,7 +27,6 @@ import (
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/network/circuitbreaker"
@@ -192,7 +192,7 @@ func main() {
 				MaintenanceDelay:  0,
 				CacheGCDelay:      0,
 				CacheCleanupDelay: 0,
-				SealParams: frac.SealParams{
+				SealParams: active.SealParams{
 					IDsZstdLevel:           *sealCompressLevel,
 					LIDsZstdLevel:          *sealCompressLevel,
 					TokenListZstdLevel:     *sealCompressLevel,

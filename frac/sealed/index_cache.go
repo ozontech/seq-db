@@ -1,12 +1,12 @@
-package frac
+package sealed
 
 import (
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 )
 
-type SealedIndexCache struct {
+type IndexCache struct {
 	Registry   *cache.Cache[[]byte]
 	MIDs       *cache.Cache[[]byte]
 	RIDs       *cache.Cache[[]byte]
@@ -16,7 +16,7 @@ type SealedIndexCache struct {
 	LIDs       *cache.Cache[*lids.Chunks]
 }
 
-func (s *SealedIndexCache) Release() {
+func (s *IndexCache) Release() {
 	s.LIDs.Release()
 	s.MIDs.Release()
 	s.RIDs.Release()

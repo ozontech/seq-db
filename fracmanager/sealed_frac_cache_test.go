@@ -26,13 +26,13 @@ func loadFracCacheContent(dataDir string) ([]byte, error) {
 	return content, err
 }
 
-func loadFracCache(dataDir string) (map[string]*frac.Info, error) {
+func loadFracCache(dataDir string) (map[string]frac.Info, error) {
 	content, err := loadFracCacheContent(dataDir)
 	if err != nil {
 		return nil, err
 	}
 
-	fracCache := make(map[string]*frac.Info)
+	fracCache := make(map[string]frac.Info)
 	err = json.Unmarshal(content, &fracCache)
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func TestEmpty(t *testing.T) {
 	assert.Equal(t, []byte("{}"), content)
 
 	currentFracInfo, ok := f.GetFracInfo("a")
-	assert.Nil(t, currentFracInfo)
+	assert.Zero(t, currentFracInfo)
 	assert.Equal(t, false, ok)
 
 	err = f.SyncWithDisk()
@@ -98,7 +98,7 @@ func TestLoadFromDisk(t *testing.T) {
 
 	el, has = f.GetFracInfo("c")
 	assert.False(t, has)
-	assert.Nil(t, el)
+	assert.Zero(t, el)
 }
 
 func TestRemoveFraction(t *testing.T) {
@@ -122,7 +122,7 @@ func TestRemoveFraction(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, contents, []byte("{}"))
 
-	newInfo := &frac.Info{
+	newInfo := frac.Info{
 		Path:                  "/data/c",
 		Ver:                   "1.3",
 		DocsTotal:             0,
@@ -143,7 +143,7 @@ func TestRemoveFraction(t *testing.T) {
 
 	m, err := loadFracCache(dataDir)
 	assert.NoError(t, err)
-	expected := map[string]*frac.Info{"c": newInfo}
+	expected := map[string]frac.Info{"c": newInfo}
 
 	assert.Equal(t, expected, m)
 	f.RemoveFraction("c")
@@ -167,7 +167,7 @@ func TestWriteToDisk(t *testing.T) {
 	f := NewSealedFracCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 	f.LoadFromDisk(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 
-	newInfo := &frac.Info{
+	newInfo := frac.Info{
 		Path:                  "/data/c",
 		Ver:                   "1.3",
 		DocsTotal:             0,
@@ -234,7 +234,7 @@ func TestUnusedFractionsCleanup(t *testing.T) {
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
 
-	expected := map[string]*frac.Info{}
+	expected := map[string]frac.Info{}
 
 	cacheFile := filepath.Join(dataDir, consts.FracCacheFileSuffix)
 	diskFracCache := NewFracCacheFromDisk(cacheFile)
@@ -285,7 +285,7 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
-	infos := map[string]*frac.Info{}
+	infos := map[string]frac.Info{}
 	totalSize := uint64(0)
 	cnt := 1
 	for totalSize < maxSize {
@@ -372,7 +372,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
-	infos := map[string]*frac.Info{}
+	infos := map[string]frac.Info{}
 
 	for i := 1; i < times+1; i++ {
 		addDummyDoc(t, fm, dp, seq.SimpleID(i))

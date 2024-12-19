@@ -1,4 +1,4 @@
-package frac
+package active
 
 import (
 	"os"
@@ -11,7 +11,7 @@ import (
 	"github.com/ozontech/seq-db/metric/tracer"
 )
 
-type ActiveAppender struct {
+type Appender struct {
 	inCh          chan<- writeTask
 	docsToMetasCh chan<- writeTask
 	iw            *IndexWorkers
@@ -52,7 +52,7 @@ func setPos(t *IndexTask) {
 	t.Pos = t.Frac.UpdateDiskStats(t.GetDocsLen(), t.GetMetaLen())
 }
 
-func StartAppender(docsFile, metasFile *os.File, size int, skipFsync bool, iw *IndexWorkers) ActiveAppender {
+func StartAppender(docsFile, metasFile *os.File, size int, skipFsync bool, iw *IndexWorkers) Appender {
 	inCh := make(chan writeTask, size)          // closed externally by ActiveAppender.Stop
 	docsToMetasCh := make(chan writeTask, size) // closed by us
 	wgDocsWorker := &sync.WaitGroup{}           // to close chan
@@ -72,14 +72,14 @@ func StartAppender(docsFile, metasFile *os.File, size int, skipFsync bool, iw *I
 		close(docsToMetasCh)
 	}()
 
-	return ActiveAppender{
+	return Appender{
 		inCh:          inCh,
 		docsToMetasCh: docsToMetasCh,
 		iw:            iw,
 	}
 }
 
-func (a *ActiveAppender) In(frac *Active, docs, metas []byte, writeQueue *atomic.Uint64, appendQueue *atomic.Uint32) {
+func (a *Appender) In(frac *Active, docs, metas []byte, writeQueue *atomic.Uint64, appendQueue *atomic.Uint32) {
 	task := &IndexTask{
 		DocsLen:     uint64(len(docs)),
 		Metas:       metas,
@@ -119,7 +119,7 @@ func (a *ActiveAppender) In(frac *Active, docs, metas []byte, writeQueue *atomic
 	tr.UpdateMetric(metric.BulkStagesSeconds)
 }
 
-func (a *ActiveAppender) InReplay(frac *Active, docsLen uint64, metas []byte, appendQueue *atomic.Uint32) {
+func (a *Appender) InReplay(frac *Active, docsLen uint64, metas []byte, appendQueue *atomic.Uint32) {
 	task := &IndexTask{
 		DocsLen:     docsLen,
 		Metas:       metas,
@@ -131,7 +131,7 @@ func (a *ActiveAppender) InReplay(frac *Active, docsLen uint64, metas []byte, ap
 	a.iw.In(task)
 }
 
-func (a *ActiveAppender) Stop() {
+func (a *Appender) Stop() {
 	// we only need to close the input chan
 	// all goroutines and intermediate and output channels will be finished and closed sequentially
 	close(a.inCh)

@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
 )
 
 type Config struct {
@@ -22,7 +22,7 @@ type Config struct {
 	MaintenanceDelay  time.Duration
 	CacheCleanupDelay time.Duration
 	CacheGCDelay      time.Duration
-	SealParams        frac.SealParams
+	SealParams        active.SealParams
 }
 
 func FillConfigWithDefault(config *Config) *Config {

@@ -1,4 +1,4 @@
-package frac
+package sealed
 
 import (
 	"encoding/binary"
@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/disk"
-	"github.com/ozontech/seq-db/frac/lids"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
@@ -43,14 +43,14 @@ func (l *Loader) Load(frac *Sealed) {
 
 	took := time.Since(t)
 
-	docsTotalK := float64(frac.info.DocsTotal) / 1000
-	indexOnDiskMb := util.SizeToUnit(frac.info.IndexOnDisk, "mb")
+	docsTotalK := float64(frac.Base.Info.DocsTotal) / 1000
+	indexOnDiskMb := util.SizeToUnit(frac.Base.Info.IndexOnDisk, "mb")
 	throughput := indexOnDiskMb / util.DurationToUnit(took, "s")
 	logger.Info("sealed fraction loaded",
 		zap.String("fraction", frac.BaseFileName),
-		util.ZapMsTsAsESTimeStr("creation_time", frac.info.CreationTime),
-		zap.String("from", frac.info.From.String()),
-		zap.String("to", frac.info.To.String()),
+		util.ZapMsTsAsESTimeStr("creation_time", frac.Base.Info.CreationTime),
+		zap.String("from", frac.Base.Info.From.String()),
+		zap.String("to", frac.Base.Info.To.String()),
 		util.ZapFloat64WithPrec("docs_k", docsTotalK, 1),
 		util.ZapDurationWithPrec("took_ms", took, "ms", 1),
 		util.ZapFloat64WithPrec("throughput_mb_sec", throughput, 1),
@@ -96,7 +96,7 @@ func (l *Loader) loadIDs() error {
 		result = result[n:]
 		offset += uint64(delta)
 
-		frac.BlocksOffsets = append(frac.BlocksOffsets, offset)
+		frac.blocksOffsets = append(frac.blocksOffsets, offset)
 	}
 
 	ids.DiskStartBlockIndex = l.blockIndex

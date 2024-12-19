@@ -19,6 +19,7 @@ import (
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
@@ -42,7 +43,7 @@ type FracManager struct {
 	active activeRef
 
 	reader       *disk.Reader
-	indexWorkers *frac.IndexWorkers
+	indexWorkers *active.IndexWorkers
 
 	OldestCT atomic.Uint64
 	mature   atomic.Bool
@@ -61,7 +62,7 @@ type fracRef struct {
 
 type activeRef struct {
 	ref  *fracRef // ref contains a back reference to the fraction in the slice
-	frac *frac.Active
+	frac *active.Active
 }
 
 // NewFracManagerWithBackgroundStart only used from tests
@@ -78,7 +79,7 @@ func NewFracManagerWithBackgroundStart(config *Config) (*FracManager, error) {
 func NewFracManager(config *Config) *FracManager {
 	FillConfigWithDefault(config)
 
-	indexWorkers := frac.NewIndexWorkers(conf.IndexWorkers, conf.IndexWorkers)
+	indexWorkers := active.NewIndexWorkers(conf.IndexWorkers, conf.IndexWorkers)
 
 	fracManager := &FracManager{
 		config:       config,
@@ -365,20 +366,20 @@ func (fm *FracManager) Append(ctx context.Context, docs, metas disk.DocBlock, wr
 	return nil
 }
 
-func (fm *FracManager) seal(active activeRef) {
-	if err := active.frac.Seal(fm.config.SealParams); err != nil {
+func (fm *FracManager) seal(activeRef activeRef) {
+	if err := activeRef.frac.Seal(fm.config.SealParams); err != nil {
 		logger.Panic("sealing error", zap.Error(err))
 	}
-	sealed := frac.NewSealedFromActive(active.frac, fm.reader, fm.cacheMaintainer.CreateSealedIndexCache())
+	sealed := active.NewSealedFromActive(activeRef.frac, fm.cacheMaintainer.CreateSealedIndexCache())
 
-	stats := sealed.Info()
-	fm.fracCache.AddFraction(stats.Name(), stats)
+	info := sealed.Info()
+	fm.fracCache.AddFraction(info.Name(), info)
 
 	fm.fracMu.Lock()
-	active.ref.instance = sealed
+	activeRef.ref.instance = sealed
 	fm.fracMu.Unlock()
 
-	active.frac.Release(sealed)
+	activeRef.frac.Release(sealed)
 }
 
 func (fm *FracManager) rotate() activeRef {
@@ -391,7 +392,7 @@ func (fm *FracManager) rotate() activeRef {
 
 	prev := fm.active
 
-	active := frac.NewActive(baseFilePath, fm.config.ShouldRemoveMeta, fm.indexWorkers, fm.reader, fm.cacheMaintainer.CreateDocBlockCache())
+	active := active.NewActive(baseFilePath, fm.config.ShouldRemoveMeta, fm.indexWorkers, fm.reader, fm.cacheMaintainer.CreateDocBlockCache())
 	fm.active.frac = active
 	fm.active.ref = &fracRef{instance: active}
 	fm.fracs = append(fm.fracs, fm.active.ref)
@@ -399,7 +400,7 @@ func (fm *FracManager) rotate() activeRef {
 	return prev
 }
 
-func (fm *FracManager) shouldSealOnExit(active *frac.Active) bool {
+func (fm *FracManager) shouldSealOnExit(active *active.Active) bool {
 	minSize := float64(fm.config.FracSize) * consts.SealOnExitFracSizePercent / 100
 	return active.FullSize() > uint64(minSize)
 }
@@ -424,7 +425,7 @@ func (fm *FracManager) Stop() {
 	}
 }
 
-func (fm *FracManager) GetActiveFrac() *frac.Active {
+func (fm *FracManager) GetActiveFrac() *active.Active {
 	fm.fracMu.RLock()
 	defer fm.fracMu.RUnlock()
 

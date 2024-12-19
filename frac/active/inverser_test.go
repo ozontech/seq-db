@@ -1,6 +1,6 @@
 //go:build !race
 
-package frac
+package active
 
 import (
 	"runtime/debug"
