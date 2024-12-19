@@ -7,13 +7,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
 
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
 
-func addDummyDoc(t *testing.T, fm *fracmanager.FracManager, dp *frac.DocProvider, seqID seq.ID) {
+func addDummyDoc(t *testing.T, fm *fracmanager.FracManager, dp *bulk.TestDocProvider, seqID seq.ID) {
 	doc := []byte("document")
 	dp.Append(doc, nil, seqID, seq.Tokens("service:100500", "k8s_pod", "_all_:"))
 	docs, metas := dp.Provide()
@@ -33,7 +33,7 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	}
 	fm, err := fracmanager.NewFracManagerWithBackgroundStart(config)
 	assert.NoError(t, err)
-	dp := frac.NewDocProvider()
+	dp := bulk.NewTestDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
 
 	fm.GetActiveFrac().WaitWriteIdle()
@@ -56,7 +56,7 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 
 	fm.SealForcedForTests()
 	fm.WaitIdle()
-	dp.TryReset()
+	dp.Reset()
 	addDummyDoc(t, fm, dp, seq.SimpleID(2))
 	fm.GetActiveFrac().WaitWriteIdle()
 

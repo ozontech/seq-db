@@ -9,6 +9,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
@@ -40,7 +41,7 @@ func TestProvideLimit(t *testing.T) {
 	}
 }
 
-func addDummyDoc(t *testing.T, fm *FracManager, dp *frac.DocProvider, seqID seq.ID) {
+func addDummyDoc(t *testing.T, fm *FracManager, dp *bulk.TestDocProvider, seqID seq.ID) {
 	doc := []byte("document")
 	dp.Append(doc, nil, seqID, seq.Tokens("service:100500", "k8s_pod"))
 	docs, metas := dp.Provide()
@@ -49,18 +50,18 @@ func addDummyDoc(t *testing.T, fm *FracManager, dp *frac.DocProvider, seqID seq.
 }
 
 func MakeSomeFractions(t *testing.T, fm *FracManager) {
-	dp := frac.NewDocProvider()
+	dp := bulk.NewTestDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
 	fm.GetActiveFrac().WaitWriteIdle()
 	fm.seal(fm.rotate())
 
-	dp.TryReset()
+	dp.Reset()
 
 	addDummyDoc(t, fm, dp, seq.SimpleID(2))
 	fm.GetActiveFrac().WaitWriteIdle()
 	fm.seal(fm.rotate())
 
-	dp.TryReset()
+	dp.Reset()
 	addDummyDoc(t, fm, dp, seq.SimpleID(3))
 	fm.GetActiveFrac().WaitWriteIdle()
 }
@@ -134,7 +135,7 @@ func TestMatureMode(t *testing.T) {
 	}
 
 	id := 1
-	dp := frac.NewDocProvider()
+	dp := bulk.NewTestDocProvider()
 	makeSealedFrac := func(fm *FracManager, docsPerFrac int) {
 		for i := 0; i < docsPerFrac; i++ {
 			addDummyDoc(t, fm, dp, seq.SimpleID(id))
@@ -142,7 +143,7 @@ func TestMatureMode(t *testing.T) {
 		}
 		fm.GetActiveFrac().WaitWriteIdle()
 		fm.seal(fm.rotate())
-		dp.TryReset()
+		dp.Reset()
 	}
 
 	// first run

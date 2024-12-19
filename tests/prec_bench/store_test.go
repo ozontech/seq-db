@@ -10,9 +10,9 @@ import (
 	insaneJSON "github.com/ozontech/insane-json"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	api "github.com/ozontech/seq-db/pkg/storeapi"
+	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storeapi"
 	"github.com/ozontech/seq-db/tests/prec_bench/bare_store"
@@ -216,7 +216,7 @@ func SimpleLoad(cleaner *bench.Cleaner, bigLength int, bigShare float32) func() 
 
 // doesn't put timestamp to the document
 func SimpleBulkGenerator(cleaner *bench.Cleaner, size int, maxLag time.Duration, docs [][]byte) func() *api.BulkRequest {
-	dp := frac.NewDocProvider()
+	dp := bulk.NewTestDocProvider()
 	docRoots := make([]*insaneJSON.Root, len(docs))
 	for i, d := range docs {
 		docRoots[i] = insaneJSON.Spawn()
@@ -231,7 +231,7 @@ func SimpleBulkGenerator(cleaner *bench.Cleaner, size int, maxLag time.Duration,
 		}
 	})
 	return func() *api.BulkRequest {
-		defer dp.TryReset()
+		defer dp.Reset()
 		for i := 0; i < size; i++ {
 			for idx, d := range docs {
 				now := time.Now().Add(-time.Duration(rand.Int63n(int64(maxLag))))

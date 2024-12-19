@@ -4,7 +4,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/metric"
 )
 
@@ -24,7 +23,7 @@ func NewTextTokenizer(maxTokenSize int, caseSensitive, partialIndexing bool, max
 	}
 }
 
-func (t *TextTokenizer) Tokenize(tokens []frac.MetaToken, name, value []byte, maxFieldValueLength int) []frac.MetaToken {
+func (t *TextTokenizer) Tokenize(tokens []MetaToken, name, value []byte, maxFieldValueLength int) []MetaToken {
 	metric.TokenizerIncomingTextLen.Observe(float64(len(value)))
 
 	if maxFieldValueLength == 0 {
@@ -38,7 +37,7 @@ func (t *TextTokenizer) Tokenize(tokens []frac.MetaToken, name, value []byte, ma
 	}
 
 	if len(value) == 0 {
-		tokens = append(tokens, frac.MetaToken{Key: name, Value: value})
+		tokens = append(tokens, MetaToken{Key: name, Value: value})
 		return tokens
 	}
 
@@ -85,7 +84,7 @@ func (t *TextTokenizer) Tokenize(tokens []frac.MetaToken, name, value []byte, ma
 				// We can skip the ToLower call if we are sure that there are only ASCII characters and no uppercase letters.
 				token = toLowerTryInplace(token)
 			}
-			tokens = append(tokens, frac.MetaToken{Key: name, Value: token})
+			tokens = append(tokens, MetaToken{Key: name, Value: token})
 		}
 
 		hasUpper = false
@@ -100,7 +99,7 @@ func (t *TextTokenizer) Tokenize(tokens []frac.MetaToken, name, value []byte, ma
 	if !t.caseSensitive && (asciiOnly && hasUpper || !asciiOnly) {
 		token = toLowerTryInplace(token)
 	}
-	tokens = append(tokens, frac.MetaToken{Key: name, Value: token})
+	tokens = append(tokens, MetaToken{Key: name, Value: token})
 
 	return tokens
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/tracer"
+	"github.com/ozontech/seq-db/proxy/bulk"
 )
 
 type IndexWorkers struct {
@@ -125,7 +126,7 @@ func (w *IndexWorkers) appendWorker(index int) {
 			documentMetadata := metasPayload[:n]
 			metasPayload = metasPayload[n:]
 
-			var meta MetaData
+			var meta bulk.MetaData
 			if err := meta.UnmarshalBinary(documentMetadata); err != nil {
 				logger.Panic("BUG: can't unmarshal meta", zap.Error(err))
 			}

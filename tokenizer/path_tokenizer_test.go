@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/ozontech/seq-db/frac"
 )
 
 func TestPathTokenizer(t *testing.T) {
@@ -15,21 +13,21 @@ func TestPathTokenizer(t *testing.T) {
 		title, value string
 		maxTokenSize int
 		tokenizer    *PathTokenizer
-		expected     []frac.MetaToken
+		expected     []MetaToken
 	}{
 		{
 			title:        "empty value",
 			value:        "",
 			maxTokenSize: 100,
 			tokenizer:    NewPathTokenizer(100, true, true),
-			expected:     []frac.MetaToken{newFracToken(field, "")},
+			expected:     []MetaToken{newFracToken(field, "")},
 		},
 		{
 			title:        "slashes only",
 			value:        "///",
 			maxTokenSize: 100,
 			tokenizer:    NewPathTokenizer(100, true, true),
-			expected: []frac.MetaToken{
+			expected: []MetaToken{
 				newFracToken(field, "/"),
 				newFracToken(field, "//"),
 				newFracToken(field, "///"),
@@ -40,7 +38,7 @@ func TestPathTokenizer(t *testing.T) {
 			value:        "/One/Two/Three",
 			maxTokenSize: 100,
 			tokenizer:    NewPathTokenizer(100, true, true),
-			expected: []frac.MetaToken{
+			expected: []MetaToken{
 				newFracToken(field, "/One"),
 				newFracToken(field, "/One/Two"),
 				newFracToken(field, "/One/Two/Three"),
@@ -51,7 +49,7 @@ func TestPathTokenizer(t *testing.T) {
 			value:        "/One/Two/Three/",
 			maxTokenSize: 100,
 			tokenizer:    NewPathTokenizer(100, true, true),
-			expected: []frac.MetaToken{
+			expected: []MetaToken{
 				newFracToken(field, "/One"),
 				newFracToken(field, "/One/Two"),
 				newFracToken(field, "/One/Two/Three"),
@@ -63,21 +61,21 @@ func TestPathTokenizer(t *testing.T) {
 			value:        "/one/two/three/",
 			maxTokenSize: 10,
 			tokenizer:    NewPathTokenizer(100, true, false),
-			expected:     []frac.MetaToken{},
+			expected:     []MetaToken{},
 		},
 		{
 			title:        "max length default",
 			value:        "/one/two/three/",
 			maxTokenSize: 0,
 			tokenizer:    NewPathTokenizer(10, true, false),
-			expected:     []frac.MetaToken{},
+			expected:     []MetaToken{},
 		},
 		{
 			title:        "partial indexing",
 			value:        "/one/two/three/",
 			maxTokenSize: 10,
 			tokenizer:    NewPathTokenizer(100, true, true),
-			expected: []frac.MetaToken{
+			expected: []MetaToken{
 				newFracToken(field, "/one"),
 				newFracToken(field, "/one/two"),
 				newFracToken(field, "/one/two/t"),
@@ -88,7 +86,7 @@ func TestPathTokenizer(t *testing.T) {
 			value:        "/one/two/three/",
 			maxTokenSize: 0,
 			tokenizer:    NewPathTokenizer(10, true, true),
-			expected: []frac.MetaToken{
+			expected: []MetaToken{
 				newFracToken(field, "/one"),
 				newFracToken(field, "/one/two"),
 				newFracToken(field, "/one/two/t"),
@@ -99,7 +97,7 @@ func TestPathTokenizer(t *testing.T) {
 			value:        "/OnE/tWo",
 			maxTokenSize: 10,
 			tokenizer:    NewPathTokenizer(10, false, true),
-			expected: []frac.MetaToken{
+			expected: []MetaToken{
 				newFracToken(field, "/one"),
 				newFracToken(field, "/one/two"),
 			},
@@ -108,7 +106,7 @@ func TestPathTokenizer(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.title, func(t *testing.T) {
-			tokens := tc.tokenizer.Tokenize([]frac.MetaToken{}, []byte(field), []byte(tc.value), tc.maxTokenSize)
+			tokens := tc.tokenizer.Tokenize([]MetaToken{}, []byte(field), []byte(tc.value), tc.maxTokenSize)
 			assert.Equal(t, tc.expected, tokens)
 		})
 	}

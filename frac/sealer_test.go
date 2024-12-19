@@ -14,6 +14,7 @@ import (
 
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
@@ -24,7 +25,7 @@ func fillActiveFraction(active *Active) error {
 	docRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(docRoot)
 
-	dp := NewDocProvider()
+	dp := bulk.NewTestDocProvider()
 
 	file, err := os.Open(filepath.Join(common.TestDataDir, "k8s.logs"))
 	if err != nil {
@@ -33,7 +34,7 @@ func fillActiveFraction(active *Active) error {
 	defer file.Close()
 
 	for i := 0; i < muliplier; i++ {
-		dp.TryReset()
+		dp.Reset()
 
 		_, err := file.Seek(0, io.SeekStart)
 		if err != nil {
