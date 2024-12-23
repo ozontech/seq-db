@@ -14,12 +14,12 @@ type TableLoader struct {
 	fracName string
 	cache    *cache.Cache[Table]
 	reader   *disk.Reader
-	br       *disk.BlocksReader
+	br       *disk.RegistryReader
 	i        uint32
 	buf      []byte
 }
 
-func NewTableLoader(fracName string, reader *disk.Reader, br *disk.BlocksReader, c *cache.Cache[Table]) *TableLoader {
+func NewTableLoader(fracName string, reader *disk.Reader, br *disk.RegistryReader, c *cache.Cache[Table]) *TableLoader {
 	return &TableLoader{
 		fracName: fracName,
 		cache:    c,
@@ -38,7 +38,7 @@ func (l *TableLoader) Load() Table {
 	return table
 }
 
-func (l *TableLoader) readHeader() disk.BlocksRegistryEntry {
+func (l *TableLoader) readHeader() disk.RegistryEntry {
 	h := l.br.GetBlockHeader(l.i)
 	l.i++
 	return h

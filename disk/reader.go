@@ -109,7 +109,7 @@ func (r *Reader) GetDocBlockLen(f *os.File, offset int64) (uint64, error) {
 	return DocBlock(task.Buf).FullLen(), nil
 }
 
-func (r *Reader) ReadIndexBlock(blocksReader *BlocksReader, blockIndex uint32, dst []byte) (_ []byte, _ uint64, err error) {
+func (r *Reader) ReadIndexBlock(blocksReader *RegistryReader, blockIndex uint32, dst []byte) (_ []byte, _ uint64, err error) {
 	header, err := blocksReader.TryGetBlockHeader(blockIndex)
 	if err != nil {
 		return nil, 0, err

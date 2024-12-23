@@ -232,7 +232,7 @@ type Sealed struct {
 	frac.Base
 
 	reader       *disk.Reader
-	blocksReader *disk.BlocksReader
+	blocksReader *disk.RegistryReader
 
 	lidsTable *lids.Table
 	ids       *IDs
@@ -368,7 +368,7 @@ func (f *Sealed) initIndexReader() {
 	if f.indexFile, err = os.Open(f.BaseFileName + consts.IndexFileSuffix); err != nil {
 		logger.Fatal("can't open index file", zap.String("file", f.BaseFileName), zap.Error(err))
 	}
-	f.blocksReader = disk.NewBlocksReader(f.indexCache.Registry, f.indexFile, metric.StoreBytesRead)
+	f.blocksReader = disk.NewRegistryReader(f.indexCache.Registry, f.indexFile, metric.StoreBytesRead)
 	f.ids = NewSealedIDs(f.reader, f.blocksReader, f.indexCache)
 }
 

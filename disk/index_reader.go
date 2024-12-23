@@ -6,32 +6,32 @@ import (
 	"io"
 	"os"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
-
+	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/util"
+	"go.uber.org/zap"
 )
 
-type BlocksReader struct {
-	file       *os.File
-	cache      *cache.Cache[[]byte]
-	readMetric prometheus.Counter
+type IndexReader struct {
+	file   *os.File
+	cache  *cache.Cache[[]byte]
+	reader *MReader
 }
 
-func NewBlocksReader(cache *cache.Cache[[]byte], file *os.File, readMetric prometheus.Counter) *BlocksReader {
-	return &BlocksReader{
-		cache:      cache,
-		file:       file,
-		readMetric: readMetric,
+func NewIndexReader(cache *cache.Cache[[]byte], file *os.File, reader *MReader) *IndexReader {
+	return &IndexReader{
+		cache:  cache,
+		file:   file,
+		reader: reader,
 	}
 }
 
-func (r *BlocksReader) File() *os.File {
+func (r *IndexReader) File() *os.File {
 	return r.file
 }
 
-func (r *BlocksReader) TryGetBlockHeader(index uint32) (BlocksRegistryEntry, error) {
+func (r *IndexReader) TryGetBlockHeader(index uint32) (RegistryEntry, error) {
 	data := r.getRegistry()
 
 	if (uint64(index)+1)*BlocksRegistryEntrySize > uint64(len(data)) {
@@ -47,7 +47,7 @@ func (r *BlocksReader) TryGetBlockHeader(index uint32) (BlocksRegistryEntry, err
 	return data[pos : pos+BlocksRegistryEntrySize], nil
 }
 
-func (r *BlocksReader) GetBlockHeader(index uint32) BlocksRegistryEntry {
+func (r *IndexReader) GetBlockHeader(index uint32) RegistryEntry {
 	block, err := r.TryGetBlockHeader(index)
 	if err != nil {
 		logger.Panic("error reading block header", zap.Error(err))
@@ -55,7 +55,7 @@ func (r *BlocksReader) GetBlockHeader(index uint32) BlocksRegistryEntry {
 	return block
 }
 
-func (r *BlocksReader) getRegistry() []byte {
+func (r *IndexReader) getRegistry() []byte {
 	data, err := r.cache.GetWithError(1, func() ([]byte, int, error) {
 		data, err := r.readRegistry()
 		return data, cap(data), err
@@ -67,16 +67,9 @@ func (r *BlocksReader) getRegistry() []byte {
 	return data
 }
 
-func (r *BlocksReader) reportReadBytes(n int) {
-	if r.readMetric != nil {
-		r.readMetric.Add(float64(n))
-	}
-}
-
-func (r *BlocksReader) readRegistry() ([]byte, error) {
+func (r *IndexReader) readRegistry() ([]byte, error) {
 	numBuf := make([]byte, 16)
-	n, err := r.file.ReadAt(numBuf, 0)
-	r.reportReadBytes(n)
+	n, err := r.reader.ReadAt(r.file, numBuf, 0)
 
 	if err != nil {
 		return nil, fmt.Errorf("can't read disk registry, %s", err.Error())
@@ -89,8 +82,7 @@ func (r *BlocksReader) readRegistry() ([]byte, error) {
 	l := binary.LittleEndian.Uint64(numBuf[8:])
 	buf := make([]byte, l)
 
-	n, err = r.file.ReadAt(buf, int64(pos))
-	r.reportReadBytes(n)
+	n, err = r.reader.ReadAt(r.file, buf, int64(pos))
 
 	if err != nil && err != io.EOF {
 		return nil, fmt.Errorf("can't read disk registry, %s", err.Error())
@@ -105,4 +97,30 @@ func (r *BlocksReader) readRegistry() ([]byte, error) {
 	}
 
 	return buf, nil
+}
+
+func (r *IndexReader) ReadIndexBlock(blockIndex uint32, dst []byte) ([]byte, uint64, error) {
+	header, err := r.TryGetBlockHeader(blockIndex)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if header.Codec() == CodecNo {
+		dst = util.EnsureSliceSize(dst, int(header.Len()))
+		n, err := r.reader.ReadAt(r.file, dst, int64(header.GetPos()))
+		return dst, uint64(n), err
+	}
+
+	readBuf := bytespool.Acquire(int(header.Len()))
+	defer bytespool.Release(readBuf)
+
+	n, err := r.reader.ReadAt(r.file, readBuf.B, int64(header.GetPos()))
+	if err != nil {
+		return nil, uint64(n), err
+	}
+
+	dst = util.EnsureSliceSize(dst, int(header.RawLen()))
+	dst, err = header.Codec().decompressBlock(int(header.RawLen()), readBuf.B, dst)
+
+	return dst, uint64(n), err
 }

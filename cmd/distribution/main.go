@@ -42,12 +42,12 @@ func getAllFracs(dataDir string) []string {
 	return files
 }
 
-func getReader(path string, f *os.File) *disk.BlocksReader {
+func getReader(path string, f *os.File) *disk.RegistryReader {
 	c := cache.NewCache[[]byte](nil, nil)
-	return disk.NewBlocksReader(c, f, nil)
+	return disk.NewRegistryReader(c, f, nil)
 }
 
-func readBlock(blocksReader *disk.BlocksReader, blockIndex uint32) []byte {
+func readBlock(blocksReader *disk.RegistryReader, blockIndex uint32) []byte {
 	data, _, err := reader.ReadIndexBlock(blocksReader, blockIndex, nil)
 	if err != nil {
 		logger.Fatal("error reading block", zap.Error(err))

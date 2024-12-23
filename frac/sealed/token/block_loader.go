@@ -107,14 +107,14 @@ type BlockLoader struct {
 	fracName     string
 	cache        *cache.Cache[*CacheEntry]
 	reader       *disk.Reader
-	blocksReader *disk.BlocksReader
+	blocksReader *disk.RegistryReader
 	stats        StatsCollector
 }
 
 func NewBlockLoader(
 	fracName string,
 	reader *disk.Reader,
-	blocksReader *disk.BlocksReader,
+	blocksReader *disk.RegistryReader,
 	c *cache.Cache[*CacheEntry],
 	stats StatsCollector,
 ) *BlockLoader {

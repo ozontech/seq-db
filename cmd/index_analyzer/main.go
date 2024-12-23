@@ -74,7 +74,7 @@ func analyzeIndex(
 	var blockIndex uint32
 	cache := cm.CreateSealedIndexCache()
 	f, _ := os.Open(path)
-	br := disk.NewBlocksReader(cache.Registry, f, nil)
+	br := disk.NewRegistryReader(cache.Registry, f, nil)
 
 	readBlock := func() []byte {
 		data, _, err := reader.ReadIndexBlock(br, blockIndex, nil)

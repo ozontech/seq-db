@@ -26,7 +26,7 @@ type unpackBuffer struct {
 type Loader struct {
 	cache            *cache.Cache[*Chunks]
 	diskReader       *disk.Reader
-	diskBlocksReader *disk.BlocksReader
+	diskBlocksReader *disk.RegistryReader
 	stats            Stats
 	unpackBuf        *unpackBuffer
 	blockBuf         []byte
@@ -34,7 +34,7 @@ type Loader struct {
 
 func NewLoader(
 	diskReader *disk.Reader,
-	diskBlocksReader *disk.BlocksReader,
+	diskBlocksReader *disk.RegistryReader,
 	chunkCache *cache.Cache[*Chunks],
 	stats Stats,
 ) *Loader {

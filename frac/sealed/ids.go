@@ -15,7 +15,7 @@ import (
 
 type IDs struct {
 	Reader       *disk.Reader
-	BlocksReader *disk.BlocksReader
+	BlocksReader *disk.RegistryReader
 
 	IDBlocksTotal       uint32
 	IDsTotal            uint32
@@ -26,7 +26,7 @@ type IDs struct {
 	cache *IndexCache
 }
 
-func NewSealedIDs(reader *disk.Reader, blocksReader *disk.BlocksReader, cache *IndexCache) *IDs {
+func NewSealedIDs(reader *disk.Reader, blocksReader *disk.RegistryReader, cache *IndexCache) *IDs {
 	return &IDs{
 		Reader:       reader,
 		BlocksReader: blocksReader,

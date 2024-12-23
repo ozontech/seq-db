@@ -16,7 +16,7 @@ import (
 type Loader struct {
 	frac         *Sealed
 	reader       *disk.Reader
-	blocksReader *disk.BlocksReader
+	blocksReader *disk.RegistryReader
 	blockIndex   uint32
 	blockBuf     []byte
 }
@@ -64,7 +64,7 @@ func (l *Loader) nextIndexBlock() ([]byte, error) {
 	return data, err
 }
 
-func (l *Loader) skipBlock() disk.BlocksRegistryEntry {
+func (l *Loader) skipBlock() disk.RegistryEntry {
 	header := l.blocksReader.GetBlockHeader(l.blockIndex)
 	l.blockIndex++
 	return header
