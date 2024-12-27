@@ -21,7 +21,7 @@ type SealParams struct {
 	TokenTableZstdLevel    int
 }
 
-func seal(f *Active, params SealParams) {
+func seal(f *Active, params SealParams) *os.File {
 	logger.Info("sealing fraction", zap.String("fraction", f.BaseFileName))
 
 	start := time.Now()
@@ -33,29 +33,25 @@ func seal(f *Active, params SealParams) {
 	f.setInfoSealingTime(uint64(time.Now().UnixMilli()))
 
 	tmpFileName := f.BaseFileName + consts.IndexTmpFileSuffix
-	file, err := os.OpenFile(tmpFileName, os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0o776)
+	indexFile, err := os.OpenFile(tmpFileName, os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0o776)
 	if err != nil {
 		logger.Fatal("can't open file", zap.String("file", tmpFileName), zap.Error(err))
 	}
 
-	_, err = file.Seek(16, io.SeekStart) // skip 16 bytes for pos and length of registry
+	_, err = indexFile.Seek(16, io.SeekStart) // skip 16 bytes for pos and length of registry
 	if err != nil {
-		logger.Fatal("can't seek file", zap.String("file", file.Name()), zap.Error(err))
+		logger.Fatal("can't seek file", zap.String("file", indexFile.Name()), zap.Error(err))
 	}
 
-	if err = writeAllBlocks(f, file, params); err != nil {
-		logger.Fatal("can't seek file", zap.String("file", file.Name()), zap.Error(err))
+	if err = writeAllBlocks(f, indexFile, params); err != nil {
+		logger.Fatal("can't seek file", zap.String("file", indexFile.Name()), zap.Error(err))
 	}
 
-	stat, err := file.Stat() // refresh f.info.IndexOnDisk - it will be used later
+	stat, err := indexFile.Stat() // refresh f.info.IndexOnDisk - it will be used later
 	if err != nil {
-		logger.Fatal("can't stat index file", zap.String("file", file.Name()), zap.Error(err))
+		logger.Fatal("can't stat index file", zap.String("file", indexFile.Name()), zap.Error(err))
 	}
 	f.setInfoIndexOnDisk(uint64(stat.Size()))
-
-	if err = file.Close(); err != nil {
-		logger.Fatal("can't close file", zap.String("file", file.Name()), zap.Error(err))
-	}
 
 	f.close(false, "seal")
 
@@ -82,6 +78,7 @@ func seal(f *Active, params SealParams) {
 		zap.String("fraction", newFileName),
 		zap.Float64("time_spent_s", util.DurationToUnit(time.Since(start), "s")),
 	)
+	return indexFile
 }
 
 func writeAllBlocks(f *Active, ws io.WriteSeeker, params SealParams) error {
@@ -135,10 +132,7 @@ func writeAllBlocks(f *Active, ws io.WriteSeeker, params SealParams) error {
 		return err
 	}
 
-	// these fields actually aren't not used as intended: the data of these three fields will actually be read
-	// from disk again in the future on the first attempt to search in fraction (see method Sealed.loadAndRLock())
-	// TODO: we need to either remove this data preparation in active fraction sealing or avoid re-reading the data from disk
-	f.sealedIDs = createSealedIDs(f, writer.startOfIDsBlockIndex, minBlockIDs)
+	f.idsTable = createIDsTable(f, writer.startOfIDsBlockIndex, minBlockIDs)
 	f.lidsTable = lidsTable
 	f.tokenTable = tokenTable
 
@@ -147,11 +141,11 @@ func writeAllBlocks(f *Active, ws io.WriteSeeker, params SealParams) error {
 	return nil
 }
 
-func createSealedIDs(f *Active, startOfIDsBlockIndex uint32, minBlockIDs []seq.ID) *SealedIDs {
-	sealedIDs := NewSealedIDs(nil, nil, nil)
-	sealedIDs.DiskStartBlockIndex = startOfIDsBlockIndex
-	sealedIDs.IDBlocksTotal = f.DocBlocks.Len()
-	sealedIDs.IDsTotal = f.MIDs.Len()
-	sealedIDs.MinBlockIDs = minBlockIDs
-	return sealedIDs
+func createIDsTable(f *Active, startOfIDsBlockIndex uint32, minBlockIDs []seq.ID) IDsTable {
+	return IDsTable{
+		MinBlockIDs:         minBlockIDs,
+		IDsTotal:            f.MIDs.Len(),
+		IDBlocksTotal:       f.DocBlocks.Len(),
+		DiskStartBlockIndex: startOfIDsBlockIndex,
+	}
 }

@@ -2,6 +2,7 @@ package frac
 
 import (
 	"encoding/binary"
+	"errors"
 	"time"
 
 	"go.uber.org/zap"
@@ -14,30 +15,27 @@ import (
 )
 
 type Loader struct {
-	frac         *Sealed
-	reader       *disk.Reader
-	blocksReader *disk.BlocksReader
-	blockIndex   uint32
-	blockBuf     []byte
+	reader     *disk.IndexReader
+	blockIndex uint32
+	blockBuf   []byte
 }
 
 func (l *Loader) Load(frac *Sealed) {
 	t := time.Now()
 
-	l.frac = frac
-	l.reader = l.frac.reader
+	l.reader = frac.indexReader
 
-	l.blocksReader = l.frac.blocksReader
 	l.blockIndex = 1 // skipping info block that's already read
 
 	l.skipTokens()
 
-	err := l.loadIDs()
-	if err != nil {
+	var err error
+
+	if frac.idsTable, frac.BlocksOffsets, err = l.loadIDs(); err != nil {
 		logger.Fatal("load ids error", zap.Error(err))
 	}
 
-	if l.frac.lidsTable, err = l.loadLIDsBlocksTable(); err != nil {
+	if frac.lidsTable, err = l.loadLIDsBlocksTable(); err != nil {
 		logger.Fatal("load lids error", zap.Error(err))
 	}
 
@@ -58,14 +56,14 @@ func (l *Loader) Load(frac *Sealed) {
 }
 
 func (l *Loader) nextIndexBlock() ([]byte, error) {
-	data, _, err := l.reader.ReadIndexBlock(l.blocksReader, l.blockIndex, l.blockBuf)
+	data, _, err := l.reader.ReadIndexBlock(l.blockIndex, l.blockBuf)
 	l.blockBuf = data
 	l.blockIndex++
 	return data, err
 }
 
-func (l *Loader) skipBlock() disk.BlocksRegistryEntry {
-	header, err := l.blocksReader.GetBlockHeader(l.blockIndex)
+func (l *Loader) skipBlock() disk.IndexBlockHeader {
+	header, err := l.reader.GetBlockHeader(l.blockIndex)
 	if err != nil {
 		logger.Panic("error reading block header", zap.Error(err))
 	}
@@ -73,36 +71,34 @@ func (l *Loader) skipBlock() disk.BlocksRegistryEntry {
 	return header
 }
 
-func (l *Loader) loadIDs() error {
-	frac := l.frac
-	ids := frac.ids
+func (l *Loader) loadIDs() (idsTable IDsTable, blocksOffsets []uint64, err error) {
+	var result []byte
 
-	// read positions block
-	result, err := l.nextIndexBlock()
-	if util.IsRecoveredPanicError(err) {
-		logger.Panic("todo: handle read err", zap.Error(err))
+	result, err = l.nextIndexBlock()
+	if err != nil {
+		return idsTable, nil, err
 	}
 
-	ids.IDBlocksTotal = binary.LittleEndian.Uint32(result)
+	idsTable.IDBlocksTotal = binary.LittleEndian.Uint32(result)
 	result = result[4:]
 
 	// total ids
-	ids.IDsTotal = binary.LittleEndian.Uint32(result)
+	idsTable.IDsTotal = binary.LittleEndian.Uint32(result)
 	result = result[4:]
 
 	offset := uint64(0)
 	for len(result) != 0 {
 		delta, n := binary.Varint(result)
 		if n == 0 {
-			panic("varint returned 0")
+			return idsTable, nil, errors.New("blocks offset decoding error: varint returned 0")
 		}
 		result = result[n:]
 		offset += uint64(delta)
 
-		frac.BlocksOffsets = append(frac.BlocksOffsets, offset)
+		blocksOffsets = append(blocksOffsets, offset)
 	}
 
-	ids.DiskStartBlockIndex = l.blockIndex
+	idsTable.DiskStartBlockIndex = l.blockIndex
 
 	for {
 		// get MIDs block header
@@ -110,7 +106,7 @@ func (l *Loader) loadIDs() error {
 		if header.Len() == 0 {
 			break
 		}
-		ids.MinBlockIDs = append(ids.MinBlockIDs, seq.ID{
+		idsTable.MinBlockIDs = append(idsTable.MinBlockIDs, seq.ID{
 			MID: seq.MID(header.GetExt1()),
 			RID: seq.RID(header.GetExt2()),
 		})
@@ -120,7 +116,7 @@ func (l *Loader) loadIDs() error {
 		l.skipBlock()
 	}
 
-	return nil
+	return idsTable, blocksOffsets, nil
 }
 
 func (l *Loader) skipTokens() {

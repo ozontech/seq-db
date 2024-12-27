@@ -104,26 +104,23 @@ func (b *Block) getCacheEntry() *CacheEntry {
 // NOT THREAD SAFE. Do not use concurrently.
 // Use your own Loader instance for each search query
 type BlockLoader struct {
-	fracName     string
-	cache        *cache.Cache[*CacheEntry]
-	reader       *disk.Reader
-	blocksReader *disk.BlocksReader
-	stats        StatsCollector
+	fracName string
+	cache    *cache.Cache[*CacheEntry]
+	reader   *disk.IndexReader
+	stats    StatsCollector
 }
 
 func NewBlockLoader(
 	fracName string,
-	reader *disk.Reader,
-	blocksReader *disk.BlocksReader,
+	reader *disk.IndexReader,
 	c *cache.Cache[*CacheEntry],
 	stats StatsCollector,
 ) *BlockLoader {
 	return &BlockLoader{
-		fracName:     fracName,
-		cache:        c,
-		reader:       reader,
-		blocksReader: blocksReader,
-		stats:        stats,
+		fracName: fracName,
+		cache:    c,
+		reader:   reader,
+		stats:    stats,
 	}
 }
 
@@ -138,7 +135,7 @@ func (l *BlockLoader) Load(entry *TableEntry) *Block {
 
 func (l *BlockLoader) readBinary(stats StatsCollector, blockIndex uint32) []byte {
 	t := time.Now()
-	data, n, err := l.reader.ReadIndexBlock(l.blocksReader, blockIndex, nil)
+	data, n, err := l.reader.ReadIndexBlock(blockIndex, nil)
 	if util.IsRecoveredPanicError(err) {
 		logger.Panic("todo: handle read err", zap.Error(err))
 	}

@@ -3,12 +3,15 @@ package frac
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"path"
 	"time"
 
 	"github.com/c2h5oh/datasize"
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/buildinfo"
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -45,6 +48,22 @@ type Info struct {
 	CreationTime uint64                `json:"creation_time"`
 	SealingTime  uint64                `json:"sealing_time"`
 	Distribution *seq.MIDsDistribution `json:"distribution"`
+}
+
+func NewInfo(filename string, docsOnDisk, metaOnDisk uint64) *Info {
+	return &Info{
+		Ver:                   buildinfo.Version,
+		BinaryDataVer:         BinaryDataV1,
+		Path:                  filename,
+		From:                  math.MaxUint64,
+		To:                    0,
+		CreationTime:          uint64(time.Now().UnixMilli()),
+		ConstIDsPerBlock:      consts.IDsPerBlock,
+		ConstRegularBlockSize: consts.RegularBlockSize,
+		ConstLIDBlockCap:      consts.LIDBlockCap,
+		DocsOnDisk:            docsOnDisk,
+		MetaOnDisk:            metaOnDisk,
+	}
 }
 
 func (s *Info) String() string {

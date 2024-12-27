@@ -15,7 +15,6 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
@@ -25,7 +24,7 @@ const savePeriod = 30 * time.Second
 var reader *disk.Reader
 
 func init() {
-	reader = disk.NewReader(metric.StoreBytesRead)
+	reader = disk.NewReader(1, nil)
 }
 
 func printDistribution(dist *seq.MIDsDistribution) {
@@ -42,32 +41,37 @@ func getAllFracs(dataDir string) []string {
 	return files
 }
 
-func getReader(path string) *disk.BlocksReader {
+func getReader(path string) *disk.IndexReader {
 	c := cache.NewCache[[]byte](nil, nil)
-	return disk.NewBlocksReader(c, path, nil)
+	f, err := os.Open(path)
+	if err != nil {
+		panic(err)
+	}
+	return disk.NewIndexReader(reader, f, c)
 }
 
-func readBlock(blocksReader *disk.BlocksReader, blockIndex uint32) []byte {
-	data, _, err := reader.ReadIndexBlock(blocksReader, blockIndex, nil)
+func readBlock(reader *disk.IndexReader, blockIndex uint32) []byte {
+	data, _, err := reader.ReadIndexBlock(blockIndex, nil)
 	if err != nil {
-		logger.Fatal("error reading block", zap.String("file", blocksReader.GetFileName()), zap.Error(err))
+		logger.Fatal("error reading block", zap.String("file", reader.File.Name()), zap.Error(err))
 	}
 	return data
 }
 
 func loadInfo(path string) *frac.Info {
-	blocksReader := getReader(path)
-	result := readBlock(blocksReader, 0)
+	indexReader := getReader(path)
+	result := readBlock(indexReader, 0)
 	if len(result) < 4 {
-		logger.Fatal("seq-db index file header corrupted", zap.String("file", blocksReader.GetFileName()))
+		logger.Fatal("seq-db index file header corrupted", zap.String("file", indexReader.File.Name()))
 	}
 
 	info := &frac.Info{}
 	info.Load(result[4:])
 	info.MetaOnDisk = 0
-	stat, err := blocksReader.GetFileStat()
+
+	stat, err := indexReader.File.Stat()
 	if err != nil {
-		logger.Fatal("can't stat index file", zap.String("file", blocksReader.GetFileName()), zap.Error(err))
+		logger.Fatal("can't stat index file", zap.String("file", indexReader.File.Name()), zap.Error(err))
 	}
 	info.IndexOnDisk = uint64(stat.Size())
 

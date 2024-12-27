@@ -6,7 +6,7 @@ import (
 	"github.com/ozontech/seq-db/frac/token"
 )
 
-type SealedIndexCache struct {
+type IndexCache struct {
 	Registry   *cache.Cache[[]byte]
 	MIDs       *cache.Cache[[]byte]
 	RIDs       *cache.Cache[[]byte]
@@ -16,7 +16,7 @@ type SealedIndexCache struct {
 	LIDs       *cache.Cache[*lids.Chunks]
 }
 
-func (s *SealedIndexCache) Release() {
+func (s *IndexCache) Release() {
 	s.LIDs.Release()
 	s.MIDs.Release()
 	s.RIDs.Release()

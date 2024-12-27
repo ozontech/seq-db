@@ -24,7 +24,7 @@ func NewBlocksWriter(ws io.WriteSeeker) *BlocksWriter {
 	}
 }
 
-func (w *BlocksWriter) appendBlocksRegistry(entry BlocksRegistryEntry) {
+func (w *BlocksWriter) appendBlocksRegistry(entry IndexBlockHeader) {
 	w.blocksRegistry = append(w.blocksRegistry, entry...)
 	w.curIndex++
 }

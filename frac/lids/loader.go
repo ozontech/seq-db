@@ -24,26 +24,23 @@ type unpackBuffer struct {
 // NOT THREAD SAFE. Do not use concurrently.
 // Use your own Loader instance for each search query
 type Loader struct {
-	cache            *cache.Cache[*Chunks]
-	diskReader       *disk.Reader
-	diskBlocksReader *disk.BlocksReader
-	stats            Stats
-	unpackBuf        *unpackBuffer
-	blockBuf         []byte
+	cache     *cache.Cache[*Chunks]
+	reader    *disk.IndexReader
+	stats     Stats
+	unpackBuf *unpackBuffer
+	blockBuf  []byte
 }
 
 func NewLoader(
-	diskReader *disk.Reader,
-	diskBlocksReader *disk.BlocksReader,
+	reader *disk.IndexReader,
 	chunkCache *cache.Cache[*Chunks],
 	stats Stats,
 ) *Loader {
 	return &Loader{
-		cache:            chunkCache,
-		diskReader:       diskReader,
-		diskBlocksReader: diskBlocksReader,
-		stats:            stats,
-		unpackBuf:        &unpackBuffer{},
+		cache:     chunkCache,
+		reader:    reader,
+		stats:     stats,
+		unpackBuf: &unpackBuffer{},
 	}
 }
 
@@ -64,7 +61,7 @@ func (l *Loader) readLIDsChunks(blockIndex uint32) (*Chunks, error) {
 		err error
 	)
 	ts := time.Now()
-	l.blockBuf, n, err = l.diskReader.ReadIndexBlock(l.diskBlocksReader, blockIndex, l.blockBuf)
+	l.blockBuf, n, err = l.reader.ReadIndexBlock(blockIndex, l.blockBuf)
 
 	if err != nil {
 		return nil, err

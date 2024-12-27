@@ -10,7 +10,6 @@ import (
 
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/metric"
 )
 
 // Unpacks .docs file
@@ -47,15 +46,14 @@ func main() {
 	}
 	total := stat.Size()
 
-	reader := disk.NewReader(metric.StoreBytesRead)
-	defer reader.Stop()
+	reader := disk.NewDocsReader(disk.NewReader(1, nil), inFile, nil)
 
 	offset := int64(0)
 
 	logger.Info("unpacking", zap.String("filename", unpackFileName))
 	docsBatch := make([]byte, 0)
 	for {
-		result, n, err := reader.ReadDocBlockPayload(inFile, offset)
+		result, n, err := reader.ReadDocBlockPayload(offset)
 		if err == io.EOF {
 			logger.Info("unpack completed")
 			return

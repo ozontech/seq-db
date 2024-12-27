@@ -130,7 +130,6 @@ func TestMatureMode(t *testing.T) {
 		checkFn(fm)
 
 		fm.indexWorkers.Stop()
-		fm.reader.Stop()
 	}
 
 	id := 1

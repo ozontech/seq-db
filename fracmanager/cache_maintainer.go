@@ -130,8 +130,8 @@ func (cm *CacheMaintainer) CreateDocBlockCache() *cache.Cache[[]byte] {
 	return newCache[[]byte](cm, docsName)
 }
 
-func (cm *CacheMaintainer) CreateSealedIndexCache() *frac.SealedIndexCache {
-	return &frac.SealedIndexCache{
+func (cm *CacheMaintainer) CreateIndexCache() *frac.IndexCache {
+	return &frac.IndexCache{
 		MIDs:       newCache[[]byte](cm, midsName),
 		RIDs:       newCache[[]byte](cm, ridsName),
 		Params:     newCache[[]uint64](cm, paramsName),

@@ -83,7 +83,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 				uncachedFracs++
 			}
 
-			sealed := frac.NewSealed(info.base, t.reader, t.cacheMaintainer.CreateSealedIndexCache(), t.cacheMaintainer.CreateDocBlockCache(), cachedFracInfo)
+			sealed := frac.NewSealed(info.base, t.reader, t.cacheMaintainer.CreateIndexCache(), t.cacheMaintainer.CreateDocBlockCache(), cachedFracInfo)
 			fracs = append(fracs, &fracRef{instance: sealed})
 
 			stats := sealed.Info()
@@ -107,7 +107,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 	logger.Info("replaying active fractions", zap.Int("count", len(actives)))
 	notSealed := make([]activeRef, 0)
 	for _, a := range actives {
-		if err := a.ReplayBlocks(ctx); err != nil {
+		if err := a.ReplayBlocks(ctx, t.reader); err != nil {
 			return nil, nil, fmt.Errorf("while replaying blocks: %w", err)
 		}
 		if a.Info().DocsTotal == 0 { // skip empty
@@ -180,7 +180,7 @@ func (t *loader) filterInfos(fracIDs []string, infos map[string]*fracInfo) []*fr
 			continue
 		}
 
-		if t.noValidDoc(info) {
+		if t.noValidDoc(info) { // todo do not delete just log and skip
 			metric.FractionLoadErrors.Inc()
 			logger.Error("fraction has .docs file without .meta and could not be read, deleting as invalid",
 				zap.String("fraction_id", id),
@@ -198,18 +198,21 @@ func (t *loader) filterInfos(fracIDs []string, infos map[string]*fracInfo) []*fr
 // this captures cases when doc file size is zero, or doc file header is invalid
 func (t *loader) noValidDoc(info *fracInfo) (invalid bool) {
 	docFile, err := os.Open(info.base + consts.DocsFileSuffix)
-	defer docFile.Close()
-
 	if err != nil {
 		return true
 	}
+
+	defer docFile.Close()
 
 	defer func() {
 		if recover() != nil {
 			invalid = true
 		}
 	}()
-	_, _, err = t.reader.ReadDocBlock(docFile, 0)
+
+	// todo do not check here, check on fraction demand only
+	docsReader := disk.NewDocsReader(t.reader, docFile, nil)
+	_, _, err = docsReader.ReadDocBlockPayload(0)
 	return err != nil
 }
 

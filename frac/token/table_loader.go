@@ -12,19 +12,17 @@ const CacheKeyTable = 1
 
 type TableLoader struct {
 	fracName string
+	reader   *disk.IndexReader
 	cache    *cache.Cache[Table]
-	reader   *disk.Reader
-	br       *disk.BlocksReader
 	i        uint32
 	buf      []byte
 }
 
-func NewTableLoader(fracName string, reader *disk.Reader, br *disk.BlocksReader, c *cache.Cache[Table]) *TableLoader {
+func NewTableLoader(fracName string, reader *disk.IndexReader, c *cache.Cache[Table]) *TableLoader {
 	return &TableLoader{
 		fracName: fracName,
-		cache:    c,
 		reader:   reader,
-		br:       br,
+		cache:    c,
 	}
 }
 
@@ -38,8 +36,8 @@ func (l *TableLoader) Load() Table {
 	return table
 }
 
-func (l *TableLoader) readHeader() disk.BlocksRegistryEntry {
-	h, e := l.br.GetBlockHeader(l.i)
+func (l *TableLoader) readHeader() disk.IndexBlockHeader {
+	h, e := l.reader.GetBlockHeader(l.i)
 	if e != nil {
 		logger.Panic("error reading block header", zap.Error(e))
 	}
@@ -48,7 +46,7 @@ func (l *TableLoader) readHeader() disk.BlocksRegistryEntry {
 }
 
 func (l *TableLoader) readBlock() ([]byte, error) {
-	block, _, err := l.reader.ReadIndexBlock(l.br, l.i, l.buf)
+	block, _, err := l.reader.ReadIndexBlock(l.i, l.buf)
 	l.buf = block
 	l.i++
 	return block, err
