@@ -4,7 +4,6 @@ import (
 	"unsafe"
 
 	"github.com/ozontech/seq-db/bytespool"
-	"github.com/ozontech/seq-db/seq"
 )
 
 type inverser struct {
@@ -13,27 +12,9 @@ type inverser struct {
 	inversion []int
 }
 
-func newInverser(values []uint32, minMID, maxMID seq.MID, mids []uint64) *inverser {
-	// skip greater than maxMID
-	l := 0
-	for l < len(values) && mids[values[l]] > uint64(maxMID) {
-		l++
-	}
-
-	// skip less than minMID
-	r := len(values) - 1
-	for r >= 0 && mids[values[r]] < uint64(minMID) {
-		r--
-	}
-
-	if r < l {
-		// we should never end up here
-		panic("can't search on empty fraction")
-	}
-
+func newInverser(values []uint32, size int) *inverser {
 	// build inverse map
-	values = values[l : r+1]
-	buf, inversion := getSlice(len(mids))
+	buf, inversion := getSlice(size)
 	for i, v := range values {
 		inversion[v] = i + 1
 	}

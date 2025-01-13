@@ -154,6 +154,11 @@ func searchFrac(task Task) (resp fracResponse) {
 		return fracResponse{err: task.Ctx.Err()}
 	}
 
+	// accurate `from` and `to`
+	info := task.Frac.Info()
+	task.Params.From = max(task.Params.From, info.From)
+	task.Params.To = min(task.Params.To, info.To)
+
 	dataProvider, release, ok := task.Frac.DataProvider(task.Ctx)
 	if !ok {
 		metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()

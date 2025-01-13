@@ -75,8 +75,7 @@ func (dp *ActiveDataProvider) getIDsProvider() *ActiveIDsProvider {
 		m.Stop()
 
 		m = dp.tracer.Start("inverse")
-		info := dp.Info()
-		inverser := newInverser(mapping, info.From, info.To, mids)
+		inverser := newInverser(mapping, len(mids))
 		m.Stop()
 
 		dp.idsProvider = &ActiveIDsProvider{
