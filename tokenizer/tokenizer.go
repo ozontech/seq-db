@@ -36,8 +36,29 @@ func toLowerTryInplace(s []byte) []byte {
 }
 
 func toLowerUnicode(s []byte) []byte {
-	// nolint:gocritic // suggested change to use bytes.ToLower is ignored because ToLower logic is rewritten
-	return bytes.Map(unicode.ToLower, s)
+	encoded := make([]byte, 4)
+	for i := 0; i < len(s); {
+		if isASCII[s[i]] {
+			s[i] = toLowerMap[s[i]]
+			i++
+			continue
+		}
+		upper, upperWid := utf8.DecodeRune(s[i:])
+		lower := unicode.To(unicode.LowerCase, upper)
+		lowerWid := utf8.EncodeRune(encoded[0:], lower)
+		if lower >= 0 {
+			// size of original rune is not equal to size of lower rune
+			// should be never the case, but better to check
+			if lowerWid != upperWid {
+				return bytes.Map(unicode.ToLower, s)
+			}
+			for j := range lowerWid {
+				s[i+j] = encoded[j]
+			}
+		}
+		i += lowerWid
+	}
+	return s
 }
 
 var (
