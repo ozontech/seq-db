@@ -50,6 +50,7 @@ func toLowerUnicode(s []byte) []byte {
 			// size of original rune is not equal to size of lower rune
 			// should be never the case, but better to check
 			if lowerWid != upperWid {
+				// nolint:gocritic // suggested change to use bytes.ToLower is ignored because ToLower logic is rewritten
 				return bytes.Map(unicode.ToLower, s)
 			}
 			for j := range lowerWid {
