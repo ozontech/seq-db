@@ -500,7 +500,7 @@ func BenchmarkProcessDocuments(b *testing.B) {
 	doc := []byte(fmt.Sprintf(`{
 		"level":"error",
 		"timestamp":%q,
-		"message":"can't store in the shard",
+		"message":"невозможно сохранить данные в шарде",
 		"error":"circuit breaker execute: can't receive bulk acceptance: 
 			host=***REMOVED***, err=rpc error: code = Unavailable desc = connection error: 
 			desc = \"transport: Error while dialing: dial tcp 10.233.140.20:9002: connect: connection refused\"",
