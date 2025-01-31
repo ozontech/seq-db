@@ -5,7 +5,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/logger"
 )
 
 type Tokenizer interface {
@@ -43,21 +46,24 @@ func toLowerUnicode(s []byte) []byte {
 			i++
 			continue
 		}
+
+		// please, refer to bytes.Map implementation for details
 		upper, upperWid := utf8.DecodeRune(s[i:])
 		lower := unicode.To(unicode.LowerCase, upper)
 		lowerWid := utf8.EncodeRune(encoded[0:], lower)
-		if lower >= 0 {
-			// size of original rune is not equal to size of lower rune
-			// should be never the case, but better to check
-			if lowerWid != upperWid {
-				// nolint:gocritic // suggested change to use bytes.ToLower is ignored because ToLower logic is rewritten
-				return bytes.Map(unicode.ToLower, s)
-			}
-			for j := range lowerWid {
-				s[i+j] = encoded[j]
-			}
+
+		// size of original rune is not equal to size of lower rune
+		// should be never the case, but better to check
+		if lowerWid != upperWid {
+			logger.Warn("rune (0) occupies different amount of bytes after lowering, fallback to bytes.Map", zap.String("rune", string(utf8.AppendRune(nil, upper))))
+			// nolint:gocritic // suggested change to use bytes.ToLower is ignored because ToLower logic is rewritten
+			return bytes.Map(unicode.ToLower, s)
 		}
-		i += lowerWid
+		for j := range lowerWid {
+			s[i+j] = encoded[j]
+		}
+
+		i += upperWid
 	}
 	return s
 }
