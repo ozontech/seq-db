@@ -1,0 +1,8 @@
+FROM gitlab-registry.***REMOVED***/docker/ubuntu-minbase:bionic
+
+RUN apt update
+RUN apt install -y rsync
+COPY tools/backuper/rsync.conf /etc/rsyncd.conf
+COPY tools/backuper/backuper.sh /
+
+ENTRYPOINT ["rsync" , "--daemon", "--port", "8088", "--verbose", "--no-detach"]
