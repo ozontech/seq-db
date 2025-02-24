@@ -1,5 +1,4 @@
-#  Replication
-
+# Sharding and replication
 seq-db comes with replication features out of the box, providing fault tolerance 
 data availability using copies of data across multiple nodes and even datacenters.
 
