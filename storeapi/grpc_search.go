@@ -285,8 +285,9 @@ func (g *GrpcV1) searchIteratively(searchCell *frac.SearchCell, params search.Pa
 		seq.MergeQPRs(total, subQPRs, origLimit, seq.MID(params.HistInterval), params.Order)
 		searchCell.AddMergeTime(time.Since(t))
 
-		// reduce the limit on the number of ensured docs in response
-		params.Limit = origLimit - countIDsAfter(total.IDs, rightmostBorder(remainingFracs))
+		// reduce the limit on the number of ensured ids in response
+		params.Limit = origLimit - calcEnsuredIDsCount(total.IDs, remainingFracs, params.Order)
+
 		allStats = append(allStats, stats...)
 		subQueriesCount++
 	}
@@ -297,6 +298,33 @@ func (g *GrpcV1) searchIteratively(searchCell *frac.SearchCell, params search.Pa
 
 	metric.SearchSubSearches.Observe(subQueriesCount)
 	return total, allStats, totalSearchTime, nil
+}
+
+func splitByCount(fl fracmanager.FracsList, n int) (fracmanager.FracsList, fracmanager.FracsList) {
+	n = min(len(fl), n)
+	return fl[:n], fl[n:]
+}
+
+// calcEnsuredIDsCount calculates the number of IDs that are guaranteed to be included in the response
+// (they will never be displaced and cut off in the next iterations)
+func calcEnsuredIDsCount(ids seq.IDSources, remainingFracs fracmanager.FracsList, order seq.DocsOrder) int {
+	if len(remainingFracs) == 0 {
+		return len(ids)
+	}
+
+	nextFracInfo := remainingFracs[0].Info()
+
+	if order.IsReverse() {
+		// ids here are in ASCENDING ORDER
+		// we will never get new IDs from the remaining fractions that are less than nextFracInfo.From,
+		// so any IDs we have that are less than nextFracInfo.From are guaranteed to be included in the response
+		return sort.Search(len(ids), func(i int) bool { return ids[i].ID.MID >= nextFracInfo.From })
+	}
+
+	// ids here are in DESCENDING ORDER
+	// we will never get new IDs from the remaining fractions that are greater than nextFracInfo.To,
+	// so any IDs we have that are greater than nextFracInfo.To are guaranteed to be included in the response
+	return sort.Search(len(ids), func(i int) bool { return ids[i].ID.MID <= nextFracInfo.To })
 }
 
 func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {
@@ -408,27 +436,6 @@ func aggQueryFromProto(aggQuery *storeapi.AggQuery) (search.AggQuery, error) {
 var searchAll = []parser.Term{{
 	Kind: parser.TermSymbol, Data: aggAsteriskFilter,
 }}
-
-func splitByCount(fl fracmanager.FracsList, n int) (fracmanager.FracsList, fracmanager.FracsList) {
-	if n > len(fl) {
-		n = len(fl)
-	}
-	return fl[:n], fl[n:]
-}
-
-func rightmostBorder(fl fracmanager.FracsList) seq.MID {
-	if len(fl) == 0 {
-		return 0
-	}
-	return fl[0].Info().To
-}
-
-func countIDsAfter(ids seq.IDSources, mid seq.MID) int {
-	if mid == 0 {
-		return len(ids)
-	}
-	return sort.Search(len(ids), func(i int) bool { return ids[i].ID.MID <= mid })
-}
 
 type aggQueryMarshaler storeapi.AggQuery
 
