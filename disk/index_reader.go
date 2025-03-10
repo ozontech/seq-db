@@ -12,16 +12,16 @@ import (
 )
 
 type IndexReader struct {
-	reader *Reader
-	File   *os.File
-	Cache  *cache.Cache[[]byte]
+	limiter *ReadLimiter
+	File    *os.File
+	Cache   *cache.Cache[[]byte]
 }
 
-func NewIndexReader(reader *Reader, file *os.File, registryCache *cache.Cache[[]byte]) *IndexReader {
+func NewIndexReader(reader *ReadLimiter, file *os.File, registryCache *cache.Cache[[]byte]) *IndexReader {
 	return &IndexReader{
-		reader: reader,
-		File:   file,
-		Cache:  registryCache,
+		limiter: reader,
+		File:    file,
+		Cache:   registryCache,
 	}
 }
 
@@ -48,7 +48,7 @@ func (r *IndexReader) GetBlockHeader(index uint32) (IndexBlockHeader, error) {
 func (r *IndexReader) readRegistry() ([]byte, error) {
 	numBuf := make([]byte, 16)
 
-	n, err := r.reader.ReadAt(r.File, numBuf, 0)
+	n, err := r.limiter.ReadAt(r.File, numBuf, 0)
 	if err != nil {
 		return nil, fmt.Errorf("can't read disk registry, %s", err.Error())
 	}
@@ -60,7 +60,7 @@ func (r *IndexReader) readRegistry() ([]byte, error) {
 	l := binary.LittleEndian.Uint64(numBuf[8:])
 	buf := make([]byte, l)
 
-	n, err = r.reader.ReadAt(r.File, buf, int64(pos))
+	n, err = r.limiter.ReadAt(r.File, buf, int64(pos))
 	if err != nil && err != io.EOF {
 		return nil, fmt.Errorf("can't read disk registry, %s", err.Error())
 	}
@@ -84,14 +84,14 @@ func (r *IndexReader) ReadIndexBlock(blockIndex uint32, dst []byte) ([]byte, uin
 
 	if header.Codec() == CodecNo {
 		dst = util.EnsureSliceSize(dst, int(header.Len()))
-		n, err := r.reader.ReadAt(r.File, dst, int64(header.GetPos()))
+		n, err := r.limiter.ReadAt(r.File, dst, int64(header.GetPos()))
 		return dst, uint64(n), err
 	}
 
 	buf := bytespool.Acquire(int(header.Len()))
 	defer bytespool.Release(buf)
 
-	n, err := r.reader.ReadAt(r.File, buf.B, int64(header.GetPos()))
+	n, err := r.limiter.ReadAt(r.File, buf.B, int64(header.GetPos()))
 	if err != nil {
 		return nil, uint64(n), err
 	}

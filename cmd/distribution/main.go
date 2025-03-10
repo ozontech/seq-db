@@ -21,10 +21,10 @@ import (
 
 const savePeriod = 30 * time.Second
 
-var reader *disk.Reader
+var readLimiter *disk.ReadLimiter
 
 func init() {
-	reader = disk.NewReader(1, nil)
+	readLimiter = disk.NewReadLimiter(1, nil)
 }
 
 func printDistribution(dist *seq.MIDsDistribution) {
@@ -47,7 +47,7 @@ func getReader(path string) *disk.IndexReader {
 	if err != nil {
 		panic(err)
 	}
-	return disk.NewIndexReader(reader, f, c)
+	return disk.NewIndexReader(readLimiter, f, c)
 }
 
 func readBlock(reader *disk.IndexReader, blockIndex uint32) []byte {

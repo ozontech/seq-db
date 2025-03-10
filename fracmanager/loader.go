@@ -28,7 +28,7 @@ type fracInfo struct {
 
 type loader struct {
 	config          *Config
-	reader          *disk.Reader
+	readLimiter     *disk.ReadLimiter
 	cacheMaintainer *CacheMaintainer
 	indexWorkers    *frac.IndexWorkers
 	fracCache       *sealedFracCache
@@ -36,14 +36,14 @@ type loader struct {
 
 func NewLoader(
 	config *Config,
-	reader *disk.Reader,
+	readLimiter *disk.ReadLimiter,
 	cacheMaintainer *CacheMaintainer,
 	indexWorkers *frac.IndexWorkers,
 	fracCache *sealedFracCache,
 ) *loader {
 	return &loader{
 		config:          config,
-		reader:          reader,
+		readLimiter:     readLimiter,
 		cacheMaintainer: cacheMaintainer,
 		indexWorkers:    indexWorkers,
 		fracCache:       fracCache,
@@ -74,7 +74,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 
 	for i, info := range infosList {
 		if info.hasMeta {
-			actives = append(actives, frac.NewActive(info.base, t.config.ShouldRemoveMeta, t.indexWorkers, t.reader, t.cacheMaintainer.CreateDocBlockCache()))
+			actives = append(actives, frac.NewActive(info.base, t.config.ShouldRemoveMeta, t.indexWorkers, t.readLimiter, t.cacheMaintainer.CreateDocBlockCache()))
 		} else {
 			cachedFracInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
 			if ok {
@@ -83,7 +83,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 				uncachedFracs++
 			}
 
-			sealed := frac.NewSealed(info.base, t.reader, t.cacheMaintainer.CreateIndexCache(), t.cacheMaintainer.CreateDocBlockCache(), cachedFracInfo)
+			sealed := frac.NewSealed(info.base, t.readLimiter, t.cacheMaintainer.CreateIndexCache(), t.cacheMaintainer.CreateDocBlockCache(), cachedFracInfo)
 			fracs = append(fracs, &fracRef{instance: sealed})
 
 			stats := sealed.Info()
@@ -107,7 +107,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 	logger.Info("replaying active fractions", zap.Int("count", len(actives)))
 	notSealed := make([]activeRef, 0)
 	for _, a := range actives {
-		if err := a.ReplayBlocks(ctx, t.reader); err != nil {
+		if err := a.ReplayBlocks(ctx, t.readLimiter); err != nil {
 			return nil, nil, fmt.Errorf("while replaying blocks: %w", err)
 		}
 		if a.Info().DocsTotal == 0 { // skip empty
@@ -211,7 +211,7 @@ func (t *loader) noValidDoc(info *fracInfo) (invalid bool) {
 	}()
 
 	// todo do not check here, check on fraction demand only
-	docsReader := disk.NewDocsReader(t.reader, docFile, nil)
+	docsReader := disk.NewDocsReader(t.readLimiter, docFile, nil)
 	_, _, err = docsReader.ReadDocBlockPayload(0)
 	return err != nil
 }

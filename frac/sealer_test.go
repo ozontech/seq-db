@@ -66,7 +66,7 @@ func BenchmarkSealing(b *testing.B) {
 	dataDir := filepath.Join(b.TempDir(), "BenchmarkSealing")
 	common.RecreateDir(dataDir)
 
-	reader := disk.NewReader(1, metric.StoreBytesRead)
+	readLimiter := disk.NewReadLimiter(1, metric.StoreBytesRead)
 
 	indexWorkers := NewIndexWorkers(10, 10)
 
@@ -82,7 +82,7 @@ func BenchmarkSealing(b *testing.B) {
 		TokenTableZstdLevel:    minZstdLevel,
 	}
 	for i := 0; i < b.N; i++ {
-		active := NewActive(filepath.Join(dataDir, "test_"+strconv.Itoa(i)), true, indexWorkers, reader, nil)
+		active := NewActive(filepath.Join(dataDir, "test_"+strconv.Itoa(i)), true, indexWorkers, readLimiter, nil)
 		err := fillActiveFraction(active)
 		assert.NoError(b, err)
 

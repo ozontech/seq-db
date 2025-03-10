@@ -166,7 +166,7 @@ type Active struct {
 	sealed Fraction
 }
 
-func NewActive(baseFileName string, metaRemove bool, indexWorkers *IndexWorkers, reader *disk.Reader, docsCache *cache.Cache[[]byte]) *Active {
+func NewActive(baseFileName string, metaRemove bool, indexWorkers *IndexWorkers, readLimiter *disk.ReadLimiter, docsCache *cache.Cache[[]byte]) *Active {
 
 	docsFile, docsStats := openFile(baseFileName + consts.DocsFileSuffix)
 	metaFile, metaStats := openFile(baseFileName + consts.MetaFileSuffix)
@@ -181,7 +181,7 @@ func NewActive(baseFileName string, metaRemove bool, indexWorkers *IndexWorkers,
 
 		docsFile:   docsFile,
 		metaFile:   metaFile,
-		docsReader: disk.NewDocsReader(reader, docsFile, docsCache),
+		docsReader: disk.NewDocsReader(readLimiter, docsFile, docsCache),
 
 		appender: StartAppender(docsFile, metaFile, conf.IndexWorkers, conf.SkipFsync, indexWorkers),
 
@@ -212,7 +212,7 @@ func openFile(name string) (*os.File, os.FileInfo) {
 	return file, stat
 }
 
-func (f *Active) ReplayBlocks(ctx context.Context, reader *disk.Reader) error {
+func (f *Active) ReplayBlocks(ctx context.Context, reader *disk.ReadLimiter) error {
 	logger.Info("start replaying...")
 
 	if _, err := f.docsFile.Seek(0, io.SeekStart); err != nil {

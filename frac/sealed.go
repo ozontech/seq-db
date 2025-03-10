@@ -273,9 +273,9 @@ type Sealed struct {
 	loadMu   *sync.RWMutex
 	isLoaded bool
 
-	reader     *disk.Reader
-	indexCache *IndexCache
-	docsCache  *cache.Cache[[]byte]
+	readLimiter *disk.ReadLimiter
+	indexCache  *IndexCache
+	docsCache   *cache.Cache[[]byte]
 
 	// shit for testing
 	PartialSuicideMode PSD
@@ -289,13 +289,13 @@ const (
 	HalfRemove
 )
 
-func NewSealed(baseFile string, reader *disk.Reader, indexCache *IndexCache, docsCache *cache.Cache[[]byte], fracInfoCache *Info) *Sealed {
+func NewSealed(baseFile string, readLimiter *disk.ReadLimiter, indexCache *IndexCache, docsCache *cache.Cache[[]byte], fracInfoCache *Info) *Sealed {
 	f := &Sealed{
 		loadMu: &sync.RWMutex{},
 
-		reader:     reader,
-		docsCache:  docsCache,
-		indexCache: indexCache,
+		readLimiter: readLimiter,
+		docsCache:   docsCache,
+		indexCache:  indexCache,
 
 		Base: Base{
 			info:         fracInfoCache,
@@ -322,7 +322,7 @@ func (f *Sealed) openIndex() {
 		if err != nil {
 			logger.Fatal("can't open index file", zap.String("file", name), zap.Error(err))
 		}
-		f.indexReader = disk.NewIndexReader(f.reader, indexFile, f.indexCache.Registry)
+		f.indexReader = disk.NewIndexReader(f.readLimiter, indexFile, f.indexCache.Registry)
 	}
 }
 
@@ -333,11 +333,11 @@ func (f *Sealed) openDocs() {
 		if err != nil {
 			logger.Fatal("can't open docs file", zap.String("file", name), zap.Error(err))
 		}
-		f.docsReader = disk.NewDocsReader(f.reader, docsFile, f.docsCache)
+		f.docsReader = disk.NewDocsReader(f.readLimiter, docsFile, f.docsCache)
 	}
 }
 
-func NewSealedFromActive(active *Active, reader *disk.Reader, indexFile *os.File, indexCache *IndexCache) *Sealed {
+func NewSealedFromActive(active *Active, readLimiter *disk.ReadLimiter, indexFile *os.File, indexCache *IndexCache) *Sealed {
 	infoCopy := *active.info
 	f := &Sealed{
 		idsTable:      active.idsTable,
@@ -345,14 +345,14 @@ func NewSealedFromActive(active *Active, reader *disk.Reader, indexFile *os.File
 		BlocksOffsets: active.DocBlocks.GetVals(),
 
 		docsReader:  active.docsReader,
-		indexReader: disk.NewIndexReader(reader, indexFile, indexCache.Registry),
+		indexReader: disk.NewIndexReader(readLimiter, indexFile, indexCache.Registry),
 
 		loadMu:   &sync.RWMutex{},
 		isLoaded: true,
 
-		reader:     reader,
-		indexCache: indexCache,
-		docsCache:  active.docsReader.Cache,
+		readLimiter: readLimiter,
+		indexCache:  indexCache,
+		docsCache:   active.docsReader.Cache,
 
 		Base: Base{
 			info:         &infoCopy,
@@ -395,9 +395,9 @@ func (f *Sealed) loadHeader() *Info {
 		logger.Fatal("can't stat index file", zap.String("file", f.indexReader.File.Name()), zap.Error(err))
 	}
 
-	info.MetaOnDisk = 0                    // fix on sealing
-	info.Path = f.BaseFileName             // fix on sealing
-	info.IndexOnDisk = uint64(stat.Size()) // fix on sealing
+	info.MetaOnDisk = 0        // todo: make this correction on sealing
+	info.Path = f.BaseFileName // todo: make this correction on sealing
+	info.IndexOnDisk = uint64(stat.Size())
 
 	return info
 }

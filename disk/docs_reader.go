@@ -10,16 +10,16 @@ import (
 )
 
 type DocsReader struct {
-	reader *Reader
-	File   *os.File
-	Cache  *cache.Cache[[]byte]
+	limiter *ReadLimiter
+	File    *os.File
+	Cache   *cache.Cache[[]byte]
 }
 
-func NewDocsReader(reader *Reader, file *os.File, docsCache *cache.Cache[[]byte]) *DocsReader {
+func NewDocsReader(reader *ReadLimiter, file *os.File, docsCache *cache.Cache[[]byte]) *DocsReader {
 	return &DocsReader{
-		reader: reader,
-		File:   file,
-		Cache:  docsCache,
+		limiter: reader,
+		File:    file,
+		Cache:   docsCache,
 	}
 }
 
@@ -27,7 +27,7 @@ func (r *DocsReader) getDocBlockLen(offset int64) (uint64, error) {
 	buf := bytespool.Acquire(DocBlockHeaderLen)
 	defer bytespool.Release(buf)
 
-	n, err := r.reader.ReadAt(r.File, buf.B, offset)
+	n, err := r.limiter.ReadAt(r.File, buf.B, offset)
 	if err != nil {
 		return uint64(n), err
 	}
@@ -42,7 +42,7 @@ func (r *DocsReader) ReadDocBlock(offset int64) ([]byte, uint64, error) {
 	}
 
 	buf := make([]byte, l)
-	n, err := r.reader.ReadAt(r.File, buf, offset)
+	n, err := r.limiter.ReadAt(r.File, buf, offset)
 
 	return buf, uint64(n), err
 }
@@ -56,7 +56,7 @@ func (r *DocsReader) ReadDocBlockPayload(offset int64) ([]byte, uint64, error) {
 	buf := bytespool.Acquire(int(l))
 	defer bytespool.Release(buf)
 
-	n, err := r.reader.ReadAt(r.File, buf.B, offset)
+	n, err := r.limiter.ReadAt(r.File, buf.B, offset)
 	if err != nil {
 		return nil, uint64(n), err
 	}

@@ -28,7 +28,7 @@ func main() {
 	cm, stopFn := getCacheMaintainer()
 	defer stopFn()
 
-	reader := disk.NewReader(1, nil)
+	readLimiter := disk.NewReadLimiter(1, nil)
 
 	mergedTokensUniq := map[string]map[string]int{}
 	mergedTokensValuesUniq := map[string]int{}
@@ -36,7 +36,7 @@ func main() {
 	stats := []Stats{}
 	for _, path := range os.Args[1:] {
 		fmt.Println(path)
-		stats = append(stats, analyzeIndex(path, cm, reader, mergedTokensUniq, mergedTokensValuesUniq))
+		stats = append(stats, analyzeIndex(path, cm, readLimiter, mergedTokensUniq, mergedTokensValuesUniq))
 	}
 
 	fmt.Println("\nUniq Tokens Stats")
@@ -65,7 +65,7 @@ func getCacheMaintainer() (*fracmanager.CacheMaintainer, func()) {
 func analyzeIndex(
 	path string,
 	cm *fracmanager.CacheMaintainer,
-	reader *disk.Reader,
+	reader *disk.ReadLimiter,
 	mergedTokensUniq map[string]map[string]int,
 	allTokensValuesUniq map[string]int,
 ) Stats {

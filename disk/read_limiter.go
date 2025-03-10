@@ -6,19 +6,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type Reader struct {
+type ReadLimiter struct {
 	sem    chan struct{}
 	metric prometheus.Counter
 }
 
-func NewReader(maxReadsNum int, counter prometheus.Counter) *Reader {
-	return &Reader{
+func NewReadLimiter(maxReadsNum int, counter prometheus.Counter) *ReadLimiter {
+	return &ReadLimiter{
 		sem:    make(chan struct{}, maxReadsNum),
 		metric: counter,
 	}
 }
 
-func (r *Reader) ReadAt(f *os.File, buf []byte, offset int64) (int, error) {
+func (r *ReadLimiter) ReadAt(f *os.File, buf []byte, offset int64) (int, error) {
 	r.sem <- struct{}{}
 	n, err := f.ReadAt(buf, offset)
 	<-r.sem

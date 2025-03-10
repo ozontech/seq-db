@@ -41,7 +41,7 @@ type FracManager struct {
 	fracs  []*fracRef
 	active activeRef
 
-	reader       *disk.Reader
+	readLimiter  *disk.ReadLimiter
 	indexWorkers *frac.IndexWorkers
 
 	OldestCT atomic.Uint64
@@ -84,7 +84,7 @@ func NewFracManager(config *Config) *FracManager {
 		config:       config,
 		mature:       atomic.Bool{},
 		indexWorkers: indexWorkers,
-		reader:       disk.NewReader(conf.ReaderWorkers, metric.StoreBytesRead),
+		readLimiter:  disk.NewReadLimiter(conf.ReaderWorkers, metric.StoreBytesRead),
 		ulidEntropy:  ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
 		cacheMaintainer: NewCacheMaintainer(config.CacheSize, &CacheMaintainerMetrics{
 			HitsTotal:       metric.CacheHitsTotal,
@@ -297,7 +297,7 @@ func (fm *FracManager) Load(ctx context.Context) error {
 	var err error
 	var notSealed []activeRef
 
-	l := NewLoader(fm.config, fm.reader, fm.cacheMaintainer, fm.indexWorkers, fm.fracCache)
+	l := NewLoader(fm.config, fm.readLimiter, fm.cacheMaintainer, fm.indexWorkers, fm.fracCache)
 	if fm.fracs, notSealed, err = l.load(ctx); err != nil {
 		return err
 	}
@@ -370,7 +370,7 @@ func (fm *FracManager) seal(activeRef activeRef) {
 	if err != nil {
 		logger.Panic("sealing error", zap.Error(err))
 	}
-	sealed := frac.NewSealedFromActive(activeRef.frac, fm.reader, indexFile, fm.cacheMaintainer.CreateIndexCache())
+	sealed := frac.NewSealedFromActive(activeRef.frac, fm.readLimiter, indexFile, fm.cacheMaintainer.CreateIndexCache())
 
 	stats := sealed.Info()
 	fm.fracCache.AddFraction(stats.Name(), stats)
@@ -392,7 +392,7 @@ func (fm *FracManager) rotate() activeRef {
 
 	prev := fm.active
 
-	active := frac.NewActive(baseFilePath, fm.config.ShouldRemoveMeta, fm.indexWorkers, fm.reader, fm.cacheMaintainer.CreateDocBlockCache())
+	active := frac.NewActive(baseFilePath, fm.config.ShouldRemoveMeta, fm.indexWorkers, fm.readLimiter, fm.cacheMaintainer.CreateDocBlockCache())
 	fm.active.frac = active
 	fm.active.ref = &fracRef{instance: active}
 	fm.fracs = append(fm.fracs, fm.active.ref)
