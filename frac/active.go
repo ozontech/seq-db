@@ -21,117 +21,9 @@ import (
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/tracer"
-	"github.com/ozontech/seq-db/node"
-	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
-
-type ActiveIDsProvider struct {
-	mids     []uint64
-	rids     []uint64
-	inverser *inverser
-}
-
-func (p *ActiveIDsProvider) GetMID(lid seq.LID) seq.MID {
-	restoredLID := p.inverser.Revert(uint32(lid))
-	return seq.MID(p.mids[restoredLID])
-}
-
-func (p *ActiveIDsProvider) GetRID(lid seq.LID) seq.RID {
-	restoredLID := p.inverser.Revert(uint32(lid))
-	return seq.RID(p.rids[restoredLID])
-}
-
-func (p *ActiveIDsProvider) Len() int {
-	return p.inverser.Len()
-}
-
-func (p *ActiveIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
-	checkedMID := p.GetMID(lid)
-	if checkedMID == id.MID {
-		return p.GetRID(lid) <= id.RID
-	}
-	return checkedMID < id.MID
-}
-
-type ActiveDataProvider struct {
-	*Active
-	sc          *SearchCell
-	tracer      *tracer.Tracer
-	idsProvider *ActiveIDsProvider
-}
-
-// getIDsProvider creates on demand and returns ActiveIDsProvider.
-// Creation of inverser for ActiveIDsProvider is expensive operation
-func (dp *ActiveDataProvider) getIDsProvider() *ActiveIDsProvider {
-	if dp.idsProvider == nil {
-		m := dp.tracer.Start("get_all_documents")
-		mapping := dp.GetAllDocuments() // creation order is matter
-		mids := dp.MIDs.GetVals()       // mids and rids should be created after mapping to ensure that
-		rids := dp.RIDs.GetVals()       // they contain all the ids that mapping contains.
-		m.Stop()
-
-		m = dp.tracer.Start("inverse")
-		inverser := newInverser(mapping, len(mids))
-		m.Stop()
-
-		dp.idsProvider = &ActiveIDsProvider{
-			inverser: inverser,
-			mids:     mids,
-			rids:     rids,
-		}
-	}
-	return dp.idsProvider
-}
-
-func (dp *ActiveDataProvider) Tracer() *tracer.Tracer {
-	return dp.tracer
-}
-
-func (dp *ActiveDataProvider) IDsProvider() IDsProvider {
-	return dp.getIDsProvider()
-}
-
-func (dp *ActiveDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) ([]uint32, error) {
-	return dp.Active.GetTIDsByTokenExpr(dp.sc, t, tids, dp.tracer)
-}
-
-func (dp *ActiveDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Active.GetLIDsFromTIDs(tids, dp.getIDsProvider().inverser, stats, minLID, maxLID, dp.tracer, order)
-}
-
-func (dp *ActiveDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
-	defer dp.tracer.UpdateMetric(metric.FetchActiveStagesSeconds)
-
-	m := dp.tracer.Start("get_doc_params_by_id")
-	docsPos := make([]DocPos, len(ids))
-	for i, id := range ids {
-		docsPos[i] = dp.Active.DocsPositions.GetSync(id)
-	}
-	m.Stop()
-
-	m = dp.tracer.Start("unpack_offsets")
-	blocks, offsets, index := GroupDocsOffsets(docsPos)
-	m.Stop()
-
-	m = dp.tracer.Start("read_doc")
-	res := make([][]byte, len(ids))
-	blocksOffsets := dp.Active.DocBlocks.GetVals()
-	for i, docOffsets := range offsets {
-		docs, err := dp.docsReader.ReadDocs(blocksOffsets[blocks[i]], docOffsets)
-		if err != nil {
-			return nil, err
-		}
-		for i, j := range index[i] {
-			res[j] = docs[i]
-		}
-	}
-	m.Stop()
-
-	return res, nil
-}
 
 type Active struct {
 	Base
@@ -363,51 +255,6 @@ func (f *Active) GetAllDocuments() []uint32 {
 	return f.TokenList.GetAllTokenLIDs().GetLIDs(f.MIDs, f.RIDs)
 }
 
-func (f *Active) GetTIDsByTokenExpr(sc *SearchCell, tk parser.Token, tids []uint32, tr *tracer.Tracer) ([]uint32, error) {
-	res, err := f.TokenList.FindPattern(sc.Context, tk, tids, tr)
-	return res, err
-}
-
-func (f *Active) GetLIDsFromTIDs(tids []uint32, inv *inverser, _ lids.Counter, minLID, maxLID uint32, tr *tracer.Tracer, order seq.DocsOrder) []node.Node {
-	nodes := make([]node.Node, 0, len(tids))
-	for _, tid := range tids {
-		m := tr.Start("provide")
-		tlids := f.TokenList.Provide(tid)
-		m.Stop()
-
-		m = tr.Start("LIDs")
-		unmapped := tlids.GetLIDs(f.MIDs, f.RIDs)
-		m.Stop()
-
-		m = tr.Start("inverse")
-		inverse := inverseLIDs(unmapped, inv, minLID, maxLID)
-		nodes = append(nodes, node.NewStatic(inverse, order.IsReverse()))
-		m.Stop()
-	}
-	return nodes
-}
-
-func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint32 {
-	result := make([]uint32, 0, len(unmapped))
-	for _, v := range unmapped {
-		// we skip those values that are not in the inverser, because such values appeared after the search query started
-		if val, ok := inv.Inverse(v); ok {
-			if minLID <= uint32(val) && uint32(val) <= maxLID {
-				result = append(result, uint32(val))
-			}
-		}
-	}
-	return result
-}
-
-func (f *Active) GetValByTID(tid uint32) []byte {
-	return f.TokenList.GetValByTID(tid)
-}
-
-func (f *Active) Type() string {
-	return TypeActive
-}
-
 func (f *Active) Release(sealed Fraction) {
 	f.useLock.Lock()
 	f.sealed = sealed
@@ -541,35 +388,38 @@ func (f *Active) String() string {
 	return f.toString("active")
 }
 
-func (f *Active) DataProvider(ctx context.Context) (DataProvider, func(), bool) {
+func (*Active) Type() string {
+	return TypeActive
+}
+
+func (f *Active) TakeIndexes(ctx context.Context) (IndexProvider, func()) {
 	f.useLock.RLock()
 
 	if f.sealed == nil && !f.suicided && f.Info().DocsTotal > 0 { // it is ordinary active fraction state
-		dp := ActiveDataProvider{
-			Active: f,
-			sc:     NewSearchCell(ctx),
-			tracer: tracer.New(),
+		ip := ActiveIndexProvider{
+			f:  f,
+			sc: NewSearchCell(ctx),
 		}
 
-		return &dp, func() {
-			if dp.idsProvider != nil {
-				dp.idsProvider.inverser.Release()
+		return &ip, func() {
+			if ip.idsIndex != nil {
+				ip.idsIndex.inverser.Release()
 			}
 			f.useLock.RUnlock()
-		}, true
+		}
 	}
 
 	defer f.useLock.RUnlock()
 
 	if f.sealed != nil { // move on to the daughter sealed faction
-		dp, releaseSealed, ok := f.sealed.DataProvider(ctx)
+		ip, releaseSealed := f.sealed.TakeIndexes(ctx)
 		metric.CountersTotal.WithLabelValues("use_sealed_from_active").Inc()
-		return dp, releaseSealed, ok
+		return ip, releaseSealed
 	}
 
 	if f.suicided {
 		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
 	}
 
-	return nil, nil, false
+	return EmptyIndexProvider{}, func() {}
 }

@@ -5,20 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strconv"
 	"time"
 
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/querytracer"
-	"github.com/ozontech/seq-db/search"
+	"github.com/ozontech/seq-db/searcher"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tracing"
 	"github.com/ozontech/seq-db/util"
@@ -121,7 +119,7 @@ func (g *GrpcV1) doSearch(
 		return nil, fmt.Errorf("search cancelled before evaluating: reason=%w", searchCell.Context.Err())
 	}
 
-	aggQ := make([]search.AggQuery, 0, len(req.Aggs))
+	aggQ := make([]searcher.AggQuery, 0, len(req.Aggs))
 	for _, aggQuery := range req.Aggs {
 		aggFunc, err := aggQueryFromProto(aggQuery)
 		if err != nil {
@@ -133,14 +131,9 @@ func (g *GrpcV1) doSearch(
 	const millisecondsInSecond = float64(time.Second / time.Millisecond)
 	metric.SearchRangesSeconds.Observe(float64(to-from) / millisecondsInSecond)
 
-	searchParams := search.Params{
-		AST:  ast,
-		AggQ: aggQ,
-		AggLimits: search.AggLimits{
-			MaxFieldTokens:     g.config.Search.Aggregation.MaxFieldTokens,
-			MaxGroupTokens:     g.config.Search.Aggregation.MaxGroupTokens,
-			MaxTIDsPerFraction: g.config.Search.Aggregation.MaxTIDsPerFraction,
-		},
+	searchParams := searcher.Params{
+		AST:          ast,
+		AggQ:         aggQ,
 		HistInterval: uint64(req.Interval),
 		From:         from,
 		To:           to,
@@ -150,7 +143,7 @@ func (g *GrpcV1) doSearch(
 	}
 
 	searchTr := tr.NewChild("search iteratively")
-	qpr, stats, evalDuration, err := g.searchIteratively(searchCell, searchParams, g.config.Search.FractionsPerIteration)
+	qpr, err := g.searchData.searcher.SearchDocs(ctx, searchParams, g.fracManager.GetAllFracs())
 	searchTr.Done()
 	if err != nil {
 		if errors.Is(err, consts.ErrTooManyUniqValues) {
@@ -159,8 +152,6 @@ func (g *GrpcV1) doSearch(
 
 		return nil, err
 	}
-
-	updateSearchStatsMetrics(stats, evalDuration.Seconds())
 
 	searchCell.AddOverallTime(time.Since(start))
 	searchCell.AddFound(qpr.Total)
@@ -238,67 +229,6 @@ func useSeqQL(ctx context.Context) bool {
 	return useSeqQL
 }
 
-func (g *GrpcV1) searchIteratively(searchCell *frac.SearchCell, params search.Params, n int) (*seq.QPR, []*search.Stats, time.Duration, error) {
-	remainingFracs, err := g.fracManager.SelectFracsInRange(params.From, params.To)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
-	if params.Order.IsReverse() {
-		sort.Slice(remainingFracs, func(i, j int) bool { // ascending order by From
-			return remainingFracs[i].Info().From < remainingFracs[j].Info().From
-		})
-	} else {
-		sort.Slice(remainingFracs, func(i, j int) bool { // descending order by To
-			return remainingFracs[i].Info().To > remainingFracs[j].Info().To
-		})
-	}
-
-	origLimit := params.Limit
-	scanAll := params.IsScanAllRequest()
-	allStats := make([]*search.Stats, 0, len(remainingFracs))
-
-	var (
-		total = &seq.QPR{
-			Histogram: make(map[seq.MID]uint64),
-			Aggs:      make([]seq.QPRHistogram, len(params.AggQ)),
-		}
-		subQueriesCount float64
-		totalSearchTime time.Duration
-	)
-
-	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
-		var fracsToSearch fracmanager.FracsList
-		fracsToSearch, remainingFracs = splitByCount(remainingFracs, n)
-
-		t := time.Now()
-		subQPRs, stats, err := g.searchData.workerPool.Search(searchCell.Context, fracsToSearch, params)
-		searchTime := time.Since(t)
-		searchCell.AddEvaluationTime(searchTime)
-
-		totalSearchTime += searchTime
-		if err != nil {
-			return nil, allStats, totalSearchTime, err
-		}
-
-		t = time.Now()
-		seq.MergeQPRs(total, subQPRs, origLimit, seq.MID(params.HistInterval), params.Order)
-		searchCell.AddMergeTime(time.Since(t))
-
-		// reduce the limit on the number of ensured docs in response
-		params.Limit = origLimit - countIDsAfter(total.IDs, rightmostBorder(remainingFracs))
-		allStats = append(allStats, stats...)
-		subQueriesCount++
-	}
-
-	if total == nil {
-		total = &seq.QPR{}
-	}
-
-	metric.SearchSubSearches.Observe(subQueriesCount)
-	return total, allStats, totalSearchTime, nil
-}
-
 func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {
 	oldestCt := g.fracManager.OldestCT.Load()
 	return oldestCt == 0 || oldestCt > from
@@ -362,18 +292,18 @@ func buildSearchResponse(qpr *seq.QPR, searchCell *frac.SearchCell) *storeapi.Se
 	}
 }
 
-func aggQueryFromProto(aggQuery *storeapi.AggQuery) (search.AggQuery, error) {
+func aggQueryFromProto(aggQuery *storeapi.AggQuery) (searcher.AggQuery, error) {
 	// 'groupBy' is required for Count and Unique.
 	if aggQuery.GroupBy == "" && (aggQuery.Func == storeapi.AggFunc_AGG_FUNC_COUNT || aggQuery.Func == storeapi.AggFunc_AGG_FUNC_UNIQUE) {
-		return search.AggQuery{}, fmt.Errorf("%w: groupBy is required for %s func", consts.ErrInvalidAggQuery, aggQuery.Func)
+		return searcher.AggQuery{}, fmt.Errorf("%w: groupBy is required for %s func", consts.ErrInvalidAggQuery, aggQuery.Func)
 	}
 	// 'field' is required for stat functions like sum, avg, max and min.
 	if aggQuery.Field == "" && aggQuery.Func != storeapi.AggFunc_AGG_FUNC_COUNT && aggQuery.Func != storeapi.AggFunc_AGG_FUNC_UNIQUE {
-		return search.AggQuery{}, fmt.Errorf("%w: field is required for %s func", consts.ErrInvalidAggQuery, aggQuery.Func)
+		return searcher.AggQuery{}, fmt.Errorf("%w: field is required for %s func", consts.ErrInvalidAggQuery, aggQuery.Func)
 	}
 	// Check 'quantiles' is not empty for Quantile func.
 	if len(aggQuery.Quantiles) == 0 && aggQuery.Func == storeapi.AggFunc_AGG_FUNC_QUANTILE {
-		return search.AggQuery{}, fmt.Errorf("%w: expect an argument for Quantile func", consts.ErrInvalidAggQuery)
+		return searcher.AggQuery{}, fmt.Errorf("%w: expect an argument for Quantile func", consts.ErrInvalidAggQuery)
 	}
 
 	var field *parser.Literal
@@ -394,10 +324,10 @@ func aggQueryFromProto(aggQuery *storeapi.AggQuery) (search.AggQuery, error) {
 
 	aggFunc, err := aggQuery.Func.ToAggFunc()
 	if err != nil {
-		return search.AggQuery{}, err
+		return searcher.AggQuery{}, err
 	}
 
-	return search.AggQuery{
+	return searcher.AggQuery{
 		Field:     field,
 		GroupBy:   groupBy,
 		Func:      aggFunc,
@@ -408,27 +338,6 @@ func aggQueryFromProto(aggQuery *storeapi.AggQuery) (search.AggQuery, error) {
 var searchAll = []parser.Term{{
 	Kind: parser.TermSymbol, Data: aggAsteriskFilter,
 }}
-
-func splitByCount(fl fracmanager.FracsList, n int) (fracmanager.FracsList, fracmanager.FracsList) {
-	if n > len(fl) {
-		n = len(fl)
-	}
-	return fl[:n], fl[n:]
-}
-
-func rightmostBorder(fl fracmanager.FracsList) seq.MID {
-	if len(fl) == 0 {
-		return 0
-	}
-	return fl[0].Info().To
-}
-
-func countIDsAfter(ids seq.IDSources, mid seq.MID) int {
-	if mid == 0 {
-		return len(ids)
-	}
-	return sort.Search(len(ids), func(i int) bool { return ids[i].ID.MID <= mid })
-}
 
 type aggQueryMarshaler storeapi.AggQuery
 
@@ -467,17 +376,6 @@ func (s *searchRequestMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) err
 	enc.AddBool("with_total", s.WithTotal)
 
 	return nil
-}
-
-func updateSearchStatsMetrics(stats []*search.Stats, evalDuration float64) {
-	for _, stat := range stats {
-		metric.SearchLeavesTotal.Observe(float64(stat.LeavesTotal))
-		metric.SearchNodesTotal.Observe(float64(stat.NodesTotal))
-		metric.SearchSourcesTotal.Observe(float64(stat.SourcesTotal))
-		metric.SearchAggNodesTotal.Observe(float64(stat.AggNodesTotal))
-		metric.SearchHitsTotal.Observe(float64(stat.HitsTotal))
-	}
-	metric.SearchEvalDurationSeconds.Observe(evalDuration)
 }
 
 func updateSearchCellMetrics(sc *frac.SearchCell) {

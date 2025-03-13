@@ -11,12 +11,12 @@ import (
 
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/fetch"
+	"github.com/ozontech/seq-db/fetcher"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/querytracer"
-	"github.com/ozontech/seq-db/search"
+	"github.com/ozontech/seq-db/searcher"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
@@ -33,6 +33,7 @@ type AggregationsConfig struct {
 
 type SearchConfig struct {
 	WorkersCount          int
+	MaxFractionHits       int
 	FractionsPerIteration int
 	RequestsLimit         uint64
 	LogThreshold          time.Duration
@@ -81,12 +82,12 @@ type bulkData struct {
 }
 
 type searchData struct {
-	workerPool *search.WorkerPool
-	inflight   atomic.Int64
+	searcher *searcher.Searcher
+	inflight atomic.Int64
 }
 
 type fetchData struct {
-	docFetcher *fetch.Fetcher
+	fetcher *fetcher.Fetcher
 }
 
 type GrpcV1 struct {
@@ -113,10 +114,18 @@ func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mappingPr
 			writeQueue:  atomic.NewUint64(0),
 		},
 		searchData: searchData{
-			workerPool: search.NewWorkerPool(config.Search.WorkersCount),
+			searcher: searcher.New(config.Search.WorkersCount, searcher.Config{
+				AggLimits: searcher.AggLimits{
+					MaxFieldTokens:     config.Search.Aggregation.MaxFieldTokens,
+					MaxGroupTokens:     config.Search.Aggregation.MaxGroupTokens,
+					MaxTIDsPerFraction: config.Search.Aggregation.MaxTIDsPerFraction,
+				},
+				MaxFractionHits:       config.Search.MaxFractionHits,
+				FractionsPerIteration: config.Search.FractionsPerIteration,
+			}),
 		},
 		fetchData: fetchData{
-			docFetcher: fetch.New(conf.FetchWorkers),
+			fetcher: fetcher.New(conf.FetchWorkers),
 		},
 	}
 

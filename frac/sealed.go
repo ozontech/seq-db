@@ -2,11 +2,8 @@ package frac
 
 import (
 	"context"
-	"fmt"
-	"math"
 	"os"
 	"sync"
-	"time"
 
 	"go.uber.org/zap"
 
@@ -17,248 +14,10 @@ import (
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/tracer"
-	"github.com/ozontech/seq-db/node"
-	"github.com/ozontech/seq-db/parser"
-	"github.com/ozontech/seq-db/pattern"
-	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
 
 const seqDBMagic = "SEQM"
-
-type SealedIDsProvider struct {
-	loader      *IDsLoader
-	midCache    *UnpackCache
-	ridCache    *UnpackCache
-	searchSB    *SearchCell
-	fracVersion BinaryDataVersion
-}
-
-func (p *SealedIDsProvider) GetMID(lid seq.LID) seq.MID {
-	p.loader.GetMIDsBlock(p.searchSB, seq.LID(lid), p.midCache)
-	return seq.MID(p.midCache.GetValByLID(uint64(lid)))
-}
-
-func (p *SealedIDsProvider) GetRID(lid seq.LID) seq.RID {
-	p.loader.GetRIDsBlock(p.searchSB, seq.LID(lid), p.ridCache, p.fracVersion)
-	return seq.RID(p.ridCache.GetValByLID(uint64(lid)))
-}
-
-func (p *SealedIDsProvider) Len() int {
-	return int(p.loader.table.IDsTotal)
-}
-
-func (p *SealedIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
-	if lid >= seq.LID(p.loader.table.IDsTotal) {
-		// out of right border
-		return true
-	}
-
-	blockIndex := p.loader.getIDBlockIndexByLID(lid)
-	if !seq.LessOrEqual(p.loader.table.MinBlockIDs[blockIndex], id) {
-		// the LID's block min ID is greater than the given ID, so any ID of that block is also greater
-		return false
-	}
-
-	if blockIndex > 0 && seq.LessOrEqual(p.loader.table.MinBlockIDs[blockIndex-1], id) {
-		// the min ID of the previous block is also less than or equal to the given ID,
-		// so any ID of this block is definitely less than or equal to the given ID.
-		return true
-	}
-
-	checkedMID := p.GetMID(lid)
-	if checkedMID == id.MID {
-		if id.RID == math.MaxUint64 {
-			// this is a real use case for LessOrEqual
-			// in this case the <= condition always becomes true,
-			// so we don't need to load the RID from the disk
-			return true
-		}
-		return p.GetRID(lid) <= id.RID
-	}
-	return checkedMID < id.MID
-}
-
-type SealedDataProvider struct {
-	*Sealed
-	sc               *SearchCell
-	tracer           *tracer.Tracer
-	fracVersion      BinaryDataVersion
-	midCache         *UnpackCache
-	ridCache         *UnpackCache
-	tokenBlockLoader *token.BlockLoader
-	tokenTableLoader *token.TableLoader
-}
-
-func (dp *SealedDataProvider) Tracer() *tracer.Tracer {
-	return dp.tracer
-}
-
-func (dp *SealedDataProvider) IDsProvider() IDsProvider {
-	return &SealedIDsProvider{
-		loader:      NewIDsLoader(dp.indexReader, dp.indexCache, dp.idsTable),
-		midCache:    dp.midCache,
-		ridCache:    dp.ridCache,
-		searchSB:    dp.sc,
-		fracVersion: dp.fracVersion,
-	}
-}
-
-func (dp *SealedDataProvider) GetValByTID(tid uint32) []byte {
-	tokenTable := dp.tokenTableLoader.Load()
-	if entry := tokenTable.GetEntryByTID(tid); entry != nil {
-		return dp.tokenBlockLoader.Load(entry).GetValByTID(tid)
-	}
-	return nil
-}
-
-func (dp *SealedDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) ([]uint32, error) {
-	field := parser.GetField(t)
-	searchStr := parser.GetHint(t)
-
-	tokenTable := dp.tokenTableLoader.Load()
-	entries := tokenTable.SelectEntries(field, searchStr)
-	if len(entries) == 0 {
-		return tids, nil
-	}
-
-	fetcher := token.NewFetcher(dp.tokenBlockLoader, entries)
-	searcher := pattern.NewSearcher(t, fetcher, fetcher.GetTokensCount())
-
-	begin := searcher.Begin()
-	end := searcher.End()
-	if begin > end {
-		return tids, nil
-	}
-
-	blockIndex := fetcher.GetBlockIndex(begin)
-	lastTID := fetcher.GetTIDFromIndex(end)
-
-	entry := entries[blockIndex]
-	tokensBlock := dp.tokenBlockLoader.Load(entry)
-	entryLastTID := entry.GetLastTID()
-
-	for tid := fetcher.GetTIDFromIndex(begin); tid <= lastTID; tid++ {
-		if tid > entryLastTID {
-			if dp.sc.Exit.Load() {
-				return nil, consts.ErrUnexpectedInterruption
-			}
-			if dp.sc.IsCancelled() {
-				err := fmt.Errorf("search cancelled when matching tokens: reason=%s field=%s, query=%s", dp.sc.Context.Err(), field, searchStr)
-				dp.sc.Cancel(err)
-				return nil, err
-			}
-			blockIndex++
-			entry = entries[blockIndex]
-			tokensBlock = dp.tokenBlockLoader.Load(entry)
-			entryLastTID = entry.GetLastTID()
-		}
-
-		val := tokensBlock.GetValByTID(tid)
-		if searcher.Check(val) {
-			tids = append(tids, tid)
-		}
-	}
-
-	return tids, nil
-}
-
-func (dp *SealedDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Sealed.GetLIDsFromTIDs(dp.sc, tids, stats, minLID, maxLID, dp.tracer, order)
-}
-
-// findLIDs returns a slice of LIDs. If seq.ID is not found, LID has the value 0 at the corresponding position
-func findLIDs(p IDsProvider, ids []seq.ID) []seq.LID {
-	res := make([]seq.LID, len(ids))
-
-	// left and right it is search range
-	left := 1            // first
-	right := p.Len() - 1 // last
-
-	for i, id := range ids {
-
-		if i == 0 || !seq.Less(id, ids[i-1]) {
-			// reset search range (it is not DESC sorted IDs)
-			left = 1
-		}
-
-		lid := seq.LID(util.BinSearchInRange(left, right, func(lid int) bool {
-			return p.LessOrEqual(seq.LID(lid), id)
-		}))
-
-		if id.MID == p.GetMID(lid) && id.RID == p.GetRID(lid) {
-			res[i] = lid
-		}
-
-		// try to refine the search range, but this optimization works for DESC sorted IDs only
-		left = int(lid)
-	}
-
-	return res
-}
-
-func (dp *SealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
-	defer dp.tracer.UpdateMetric(metric.FetchSealedStagesSeconds)
-
-	m := dp.tracer.Start("get_lid_by_mid")
-	l := findLIDs(dp.IDsProvider(), ids)
-	m.Stop()
-
-	m = dp.tracer.Start("get_doc_params_by_lid")
-	docsPos := dp.getDocPosByLIDs(l)
-	m.Stop()
-
-	m = dp.tracer.Start("get_doc_pos")
-	blocks, offsets, index := GroupDocsOffsets(docsPos)
-	m.Stop()
-
-	m = dp.tracer.Start("read_doc")
-	res := make([][]byte, len(ids))
-	for i, docOffsets := range offsets {
-		docs, err := dp.docsReader.ReadDocs(dp.BlocksOffsets[blocks[i]], docOffsets)
-		if err != nil {
-			return nil, err
-		}
-		for i, j := range index[i] {
-			res[j] = docs[i]
-		}
-	}
-	m.Stop()
-
-	return res, nil
-}
-
-// GetDocPosByLIDs returns a slice of DocPos for the corresponding LIDs.
-// Passing sorted LIDs (asc or desc) will improve the performance of this method.
-// For LID with zero value will return DocPos with `DocPosNotFound` value
-func (dp *SealedDataProvider) getDocPosByLIDs(localIDs []seq.LID) []DocPos {
-	var (
-		prevIndex int64
-		positions []uint64
-		startLID  seq.LID
-	)
-
-	idsLoader := NewIDsLoader(dp.indexReader, dp.indexCache, dp.idsTable)
-
-	res := make([]DocPos, len(localIDs))
-	for i, lid := range localIDs {
-		if lid == 0 {
-			res[i] = DocPosNotFound
-			continue
-		}
-
-		index := idsLoader.getIDBlockIndexByLID(lid)
-		if positions == nil || prevIndex != index {
-			positions = idsLoader.GetParamsBlock(uint32(index))
-			startLID = seq.LID(index * consts.IDsPerBlock)
-		}
-
-		res[i] = DocPos(positions[lid-startLID])
-	}
-
-	return res
-}
 
 type Sealed struct {
 	Base
@@ -402,7 +161,7 @@ func (f *Sealed) loadHeader() *Info {
 	return info
 }
 
-func (f *Sealed) Type() string {
+func (*Sealed) Type() string {
 	return TypeSealed
 }
 
@@ -418,44 +177,6 @@ func (f *Sealed) load() {
 		(&Loader{}).Load(f)
 		f.isLoaded = true
 	}
-}
-
-func (f *Sealed) GetLIDsFromTIDs(sc *SearchCell, tids []uint32, counter lids.Counter, minLID, maxLID uint32, tr *tracer.Tracer, order seq.DocsOrder) []node.Node {
-	m := tr.Start("GetOpTIDLIDs")
-	defer m.Stop()
-
-	var (
-		getBlockIndex   func(tid uint32) uint32
-		getLIDsIterator func(uint32, uint32) node.Node
-	)
-
-	loader := lids.NewLoader(f.indexReader, f.indexCache.LIDs, sc)
-
-	if order.IsReverse() {
-		getBlockIndex = func(tid uint32) uint32 { return f.lidsTable.GetLastBlockIndexForTID(tid) }
-		getLIDsIterator = func(startIndex uint32, tid uint32) node.Node {
-			return (*lids.IteratorAsc)(lids.NewLIDsCursor(f.lidsTable, loader, startIndex, tid, counter, minLID, maxLID))
-		}
-	} else {
-		getBlockIndex = func(tid uint32) uint32 { return f.lidsTable.GetFirstBlockIndexForTID(tid) }
-		getLIDsIterator = func(startIndex uint32, tid uint32) node.Node {
-			return (*lids.IteratorDesc)(lids.NewLIDsCursor(f.lidsTable, loader, startIndex, tid, counter, minLID, maxLID))
-		}
-	}
-
-	t := time.Now()
-	startIndexes := make([]uint32, len(tids))
-	for i, tid := range tids {
-		startIndexes[i] = getBlockIndex(tid)
-	}
-	sc.AddLIDBlocksSearchTimeNS(time.Since(t))
-
-	nodes := make([]node.Node, len(tids))
-	for i, tid := range tids {
-		nodes[i] = getLIDsIterator(startIndexes[i], tid)
-	}
-
-	return nodes
 }
 
 func (f *Sealed) Suicide() {
@@ -547,13 +268,13 @@ func (f *Sealed) String() string {
 	return f.toString("sealed")
 }
 
-func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func(), bool) {
+func (f *Sealed) TakeIndexes(ctx context.Context) (IndexProvider, func()) {
 	f.useLock.RLock()
 
 	if f.suicided {
 		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
 		f.useLock.RUnlock()
-		return nil, nil, false
+		return EmptyIndexProvider{}, func() {}
 	}
 
 	defer func() {
@@ -566,20 +287,17 @@ func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 	f.load()
 
 	sc := NewSearchCell(ctx)
-	dp := SealedDataProvider{
-		Sealed:           f,
-		sc:               sc,
-		tracer:           tracer.New(),
-		fracVersion:      f.info.BinaryDataVer,
-		midCache:         NewUnpackCache(),
-		ridCache:         NewUnpackCache(),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.indexReader, f.indexCache.Tokens, sc),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.indexReader, f.indexCache.TokenTable),
+	ip := SealedIndexProvider{
+		f:           f,
+		sc:          sc,
+		fracVersion: f.info.BinaryDataVer,
+		midCache:    NewUnpackCache(),
+		ridCache:    NewUnpackCache(),
 	}
 
-	return &dp, func() {
-		dp.midCache.Release()
-		dp.ridCache.Release()
+	return &ip, func() {
+		ip.midCache.Release()
+		ip.ridCache.Release()
 		f.useLock.RUnlock()
-	}, true
+	}
 }

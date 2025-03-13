@@ -1,16 +1,17 @@
-package search
+package searcher
 
 import (
 	"fmt"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 )
 
-type createLeafFunc func(parser.Token, *Stats) (node.Node, error)
+type createLeafFunc func(parser.Token) (node.Node, error)
 
 // buildEvalTree builds eval tree based on syntax tree (of search query) where each leaf is DataNode
 func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *Stats, reverse bool, newLeaf createLeafFunc) (node.Node, error) {
@@ -25,9 +26,9 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *Stats, re
 
 	switch token := root.Value.(type) {
 	case *parser.Literal:
-		return newLeaf(token, stats)
+		return newLeaf(token)
 	case *parser.Range:
-		return newLeaf(token, stats)
+		return newLeaf(token)
 	case *parser.Logical:
 		switch token.Operator {
 		case parser.LogicalAnd:
@@ -48,17 +49,16 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *Stats, re
 }
 
 // evalLeaf finds suitable matching fraction tokens and returns Node that generate corresponding tokens LIDs
-func evalLeaf(dp frac.DataProvider, token parser.Token, stats *Stats, minLID, maxLID uint32, order seq.DocsOrder) (node.Node, error) {
-
-	m := dp.Tracer().Start("get_tids_by_token_expr")
-	tids, err := dp.GetTIDsByTokenExpr(token, nil)
+func evalLeaf(sw *stopwatch.Stopwatch, ti frac.TokenIndex, token parser.Token, stats *Stats, minLID, maxLID uint32, order seq.DocsOrder) (node.Node, error) {
+	m := sw.Start("get_tids_by_token_expr")
+	tids, err := ti.GetTIDsByTokenExpr(token)
 	m.Stop()
 	if err != nil {
 		return nil, err
 	}
 
-	m = dp.Tracer().Start("get_lids_from_tids")
-	lidsTids := dp.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
+	m = sw.Start("get_lids_from_tids")
+	lidsTids := ti.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 	m.Stop()
 
 	stats.LeavesTotal += len(lidsTids)
@@ -86,10 +86,10 @@ type AggLimits struct {
 }
 
 // evalAgg evaluates aggregation with given limits. Returns a suitable aggregator.
-func evalAgg(dp frac.DataProvider, query AggQuery, stats *Stats, minLID, maxLID uint32, limits AggLimits, order seq.DocsOrder) (Aggregator, error) {
+func evalAgg(sw *stopwatch.Stopwatch, ti frac.TokenIndex, query AggQuery, stats *Stats, minLID, maxLID uint32, limits AggLimits, order seq.DocsOrder) (Aggregator, error) {
 	switch query.Func {
 	case seq.AggFuncCount, seq.AggFuncUnique:
-		groupIterator, err := iteratorFromLiteral(dp, query.GroupBy, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
+		groupIterator, err := iteratorFromLiteral(sw, ti, query.GroupBy, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +98,7 @@ func evalAgg(dp frac.DataProvider, query AggQuery, stats *Stats, minLID, maxLID 
 		}
 		return NewSingleSourceUniqueAggregator(groupIterator), nil
 	case seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncSum, seq.AggFuncAvg, seq.AggFuncQuantile:
-		fieldIterator, err := iteratorFromLiteral(dp, query.Field, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxFieldTokens, order)
+		fieldIterator, err := iteratorFromLiteral(sw, ti, query.Field, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxFieldTokens, order)
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +109,7 @@ func evalAgg(dp frac.DataProvider, query AggQuery, stats *Stats, minLID, maxLID 
 			return NewSingleSourceHistogramAggregator(fieldIterator, collectSamples), nil
 		}
 
-		groupIterator, err := iteratorFromLiteral(dp, query.GroupBy, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
+		groupIterator, err := iteratorFromLiteral(sw, ti, query.GroupBy, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
 		if err != nil {
 			return nil, err
 		}
@@ -133,9 +133,9 @@ func haveNotMinMaxQuantiles(quantiles []float64) bool {
 	return have
 }
 
-func iteratorFromLiteral(dp frac.DataProvider, literal *parser.Literal, stats *Stats, minLID, maxLID uint32, maxTIDs, iteratorLimit int, order seq.DocsOrder) (*SourcedNodeIterator, error) {
-	m := dp.Tracer().Start("get_tids_by_token_expr")
-	tids, err := dp.GetTIDsByTokenExpr(literal, nil)
+func iteratorFromLiteral(sw *stopwatch.Stopwatch, ti frac.TokenIndex, literal *parser.Literal, stats *Stats, minLID, maxLID uint32, maxTIDs, iteratorLimit int, order seq.DocsOrder) (*SourcedNodeIterator, error) {
+	m := sw.Start("get_tids_by_token_expr")
+	tids, err := ti.GetTIDsByTokenExpr(literal)
 	m.Stop()
 	if err != nil {
 		return nil, fmt.Errorf("getting TIDs by token expression: %s", err)
@@ -145,8 +145,8 @@ func iteratorFromLiteral(dp frac.DataProvider, literal *parser.Literal, stats *S
 		return nil, fmt.Errorf("%w: tokens length (%d) of field %q more than %d", consts.ErrTooManyUniqValues, len(tids), literal.Field, maxTIDs)
 	}
 
-	m = dp.Tracer().Start("get_lids_from_tids")
-	lidsTids := dp.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
+	m = sw.Start("get_lids_from_tids")
+	lidsTids := ti.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 	m.Stop()
 
 	if len(lidsTids) > 0 {
@@ -154,5 +154,5 @@ func iteratorFromLiteral(dp frac.DataProvider, literal *parser.Literal, stats *S
 	}
 
 	sourcedNode := node.BuildORTreeAgg(lidsTids)
-	return NewSourcedNodeIterator(sourcedNode, dp, tids, iteratorLimit, order.IsReverse()), nil
+	return NewSourcedNodeIterator(sourcedNode, ti, tids, iteratorLimit, order.IsReverse()), nil
 }

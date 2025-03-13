@@ -2,7 +2,6 @@ package fracmanager
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math/rand"
 	"os"
@@ -21,7 +20,6 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -156,7 +154,7 @@ func (fm *FracManager) shiftFirstFrac() frac.Fraction {
 func (fm *FracManager) shrinkSizes(suicideWG *sync.WaitGroup) {
 	var outsiders []frac.Fraction
 	fracs := fm.GetAllFracs()
-	size := fracs.getTotalSize()
+	size := fracs.GetTotalSize()
 
 	for size > fm.config.TotalSize {
 		outsider := fm.shiftFirstFrac()
@@ -187,7 +185,7 @@ func (fm *FracManager) shrinkSizes(suicideWG *sync.WaitGroup) {
 		}
 	}
 
-	if oldestByCT := fracs.getOldestFrac(); oldestByCT != nil {
+	if oldestByCT := fracs.GetOldestFrac(); oldestByCT != nil {
 		newOldestCT := oldestByCT.Info().CreationTime
 		prevOldestCT := fm.OldestCT.Swap(newOldestCT)
 		if newOldestCT != prevOldestCT {
@@ -202,7 +200,7 @@ func (fm *FracManager) shrinkSizes(suicideWG *sync.WaitGroup) {
 // (search and fetch) occurs under blocking (see DataProvider).
 // This way we avoid the race.
 // Accessing the deleted faction data just will return an empty result.
-func (fm *FracManager) GetAllFracs() FracsList {
+func (fm *FracManager) GetAllFracs() frac.List {
 	fm.fracMu.RLock()
 	defer fm.fracMu.RUnlock()
 
@@ -325,26 +323,6 @@ func (fm *FracManager) Load(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (fm *FracManager) SelectFracsInRange(from, to seq.MID) (FracsList, error) {
-	fracs := make(FracsList, 0)
-	for _, f := range fm.GetAllFracs() {
-		if f.IsIntersecting(from, to) {
-			fracs = append(fracs, f)
-		}
-	}
-
-	if fm.config.MaxFractionHits > 0 && len(fracs) > int(fm.config.MaxFractionHits) {
-		metric.RejectedRequests.WithLabelValues("search", "fracs_exceeding").Inc()
-		return nil, fmt.Errorf(
-			"too many fractions hit (%d > %d), try decreasing query time range",
-			len(fracs),
-			fm.config.MaxFractionHits,
-		)
-	}
-
-	return fracs, nil
 }
 
 func (fm *FracManager) Append(ctx context.Context, docs, metas disk.DocBlock, writeQueue *atomic.Uint64) error {

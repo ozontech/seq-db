@@ -22,24 +22,6 @@ func (t *testFakeFrac) IsIntersecting(_, _ seq.MID) bool {
 	return true
 }
 
-func TestProvideLimit(t *testing.T) {
-	maxFractionHits := 10
-	fracsCount := maxFractionHits + 10
-	testFracs := make([]*fracRef, 0, fracsCount)
-	for i := 0; i < fracsCount; i++ {
-		testFracs = append(testFracs, &fracRef{instance: &testFakeFrac{}})
-	}
-
-	cfg := FillConfigWithDefault(&Config{MaxFractionHits: uint64(maxFractionHits)})
-	fm := &FracManager{config: cfg, fracs: testFracs}
-	_, err := fm.SelectFracsInRange(0, 0)
-	assert.Error(t, err)
-	for _, f := range testFracs {
-		v := f.instance.(*testFakeFrac)
-		assert.Equal(t, v.counter.Load(), int64(0))
-	}
-}
-
 func addDummyDoc(t *testing.T, fm *FracManager, dp *frac.DocProvider, seqID seq.ID) {
 	doc := []byte("document")
 	dp.Append(doc, nil, seqID, seq.Tokens("service:100500", "k8s_pod"))
@@ -154,7 +136,7 @@ func TestMatureMode(t *testing.T) {
 	// second run
 	launchAndCheck(func(fm *FracManager) {
 		assert.Equal(t, false, fm.Mature(), "file .immature must exist")
-		for fm.GetAllFracs().getTotalSize() < fm.config.TotalSize {
+		for fm.GetAllFracs().GetTotalSize() < fm.config.TotalSize {
 			makeSealedFrac(fm, 10)
 		}
 		assert.Equal(t, false, fm.Mature(), "file .immature must still exist")

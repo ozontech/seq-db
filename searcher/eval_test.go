@@ -1,4 +1,4 @@
-package search
+package searcher
 
 import (
 	"fmt"
@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 )
@@ -69,14 +68,14 @@ func TestEval(t *testing.T) {
 	p.add("m:d", []uint32{3, 4, 10, 12, 15})
 	// in this case OR = [1, 3, 4, 5, 6, 9, 10, 12, 15]
 	// and AND = [3, 6, 9, 10]
-	newStatic := func(l parser.Token, _ *Stats) (node.Node, error) {
+	newStatic := func(l parser.Token) (node.Node, error) {
 		return p.newStatic(l.(*parser.Literal))
 	}
 
 	t.Run("simple", func(t *testing.T) {
 		ast, err := parser.ParseQuery(`((NOT m:a AND m:b) AND (m:c OR m:d))`, nil)
 		require.NoError(t, err)
-		root, err := buildEvalTree(ast, 1, 12, NewStats(frac.TypeActive), false, newStatic)
+		root, err := buildEvalTree(ast, 1, 12, &Stats{}, false, newStatic)
 		require.NoError(t, err)
 
 		assert.Equal(t, "((STATIC NAND STATIC) AND (STATIC OR STATIC))", root.String())
@@ -86,7 +85,7 @@ func TestEval(t *testing.T) {
 	t.Run("not", func(t *testing.T) {
 		ast, err := parser.ParseQuery(`NOT ((NOT m:a AND m:b) AND (m:c OR m:d))`, nil)
 		require.NoError(t, err)
-		root, err := buildEvalTree(ast, 1, 12, NewStats(frac.TypeActive), false, newStatic)
+		root, err := buildEvalTree(ast, 1, 12, &Stats{}, false, newStatic)
 		require.NoError(t, err)
 
 		assert.Equal(t, "(NOT ((STATIC NAND STATIC) AND (STATIC OR STATIC)))", root.String())

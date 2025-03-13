@@ -1,4 +1,4 @@
-package tracer
+package stopwatch
 
 import (
 	"math/rand"
@@ -25,7 +25,7 @@ func getTimerFn(nowCnt, sinceCnt, tikerCnt *int) (func() time.Time, func(t time.
 	return now, since, tiker
 }
 
-func TestSamplingTracer(t *testing.T) {
+func TestSamplingStopwatch(t *testing.T) {
 	var tikerFn func()
 	var nowCnt, sinceCnt, tikerCnt int
 
@@ -64,7 +64,7 @@ func TestSamplingTracer(t *testing.T) {
 	}
 }
 
-func TestTracer(t *testing.T) {
+func TestStopwatch(t *testing.T) {
 	var tikerFn func()
 	var nowCnt, sinceCnt, tikerCnt int
 
@@ -77,7 +77,7 @@ func TestTracer(t *testing.T) {
 
 	n := 1000
 	m := tr.Start("level1")
-	tracerTestLevel1(n, tr, tikerFn)
+	stopwatchTestLevel1(n, tr, tikerFn)
 	tikerFn()
 	m.Stop()
 
@@ -108,18 +108,18 @@ func TestTracer(t *testing.T) {
 	assert.Equal(t, expextedCounts, tr.GetCounts())
 }
 
-func tracerTestLevel1(n int, tr *Tracer, tikerFn func()) {
+func stopwatchTestLevel1(n int, tr *Stopwatch, tikerFn func()) {
 
 	m1 := tr.Start("cycle1")
 
 	for i := 0; i < n; i++ {
 
 		m2 := tr.Start("level2")
-		tracerTestLevel2(n, tr, tikerFn)
+		stopwatchTestLevel2(n, tr, tikerFn)
 		tikerFn()
 		m2.Stop()
 
-		tracerTestLevel2(n, tr, tikerFn)
+		stopwatchTestLevel2(n, tr, tikerFn)
 	}
 
 	tikerFn()
@@ -127,7 +127,7 @@ func tracerTestLevel1(n int, tr *Tracer, tikerFn func()) {
 
 }
 
-func tracerTestLevel2(n int, tr *Tracer, tikerFn func()) {
+func stopwatchTestLevel2(n int, tr *Stopwatch, tikerFn func()) {
 
 	m0 := tr.Start("cycle2")
 

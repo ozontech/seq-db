@@ -194,13 +194,6 @@ var (
 		Help:      "",
 		Buckets:   SecondsBuckets,
 	})
-	SearchEvalDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "eval_duration_seconds",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	})
 	SearchTreeDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
@@ -208,55 +201,12 @@ var (
 		Help:      "",
 		Buckets:   SecondsBuckets,
 	})
-	SearchHitsTotal = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "hits_total",
-		Help:      "",
-		Buckets:   prometheus.ExponentialBuckets(1, 4, 32),
-	})
-
-	SearchLeavesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "leaves_total",
-		Help:      "",
-		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
-	})
-	SearchNodesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "nodes_total",
-		Help:      "",
-		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
-	})
-	SearchSourcesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "sources_total",
-		Help:      "",
-		Buckets:   prometheus.ExponentialBuckets(1, 4, 20),
-	})
-	SearchAggNodesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "agg_nodes_total",
-		Help:      "",
-		Buckets:   prometheus.ExponentialBuckets(1, 2, 20),
-	})
 	SearchRangesSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
 		Name:      "ranges_seconds",
 		Help:      "",
 		Buckets:   SecondsRanges,
-	})
-	SearchSubSearches = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "sub_searches",
-		Help:      "",
-		Buckets:   []float64{0.99, 1, 1.01, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048},
 	})
 	FetchInFlightQueriesTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
@@ -292,18 +242,6 @@ var (
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(256, 4, 32),
 	})
-	FetchActiveStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetch",
-		Name:      "active_stages_seconds",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
-	FetchSealedStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetch",
-		Name:      "sealed_stages_seconds",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
 	MaintenanceTruncateTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "maintanance",
@@ -353,51 +291,6 @@ var (
 		Name:      "decode_lid_time_ns_total",
 		Help:      "",
 	})
-
-	ActiveRegSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_active_reg_search_sec",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
-	ActiveHistSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_active_hist_search_sec",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
-	ActiveAggSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_active_agg_search_sec",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
-
-	SealedRegSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_sealed_reg_search_sec",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
-	SealedHistSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_sealed_hist_search_sec",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
-	SealedAggSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_sealed_agg_search_sec",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
-
 	StoreReady = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "main",

@@ -214,22 +214,6 @@ func (s *SearchCell) AddOverallTime(duration time.Duration) {
 	s.ExplainSB.OverallTimeNS.Add(uint64(duration.Nanoseconds()))
 }
 
-func (s *SearchCell) AddEvaluationTime(duration time.Duration) {
-	if s == nil {
-		return
-	}
-
-	s.ExplainSB.EvaluationTimeNS.Add(uint64(duration.Nanoseconds()))
-}
-
-func (s *SearchCell) AddMergeTime(duration time.Duration) {
-	if s == nil {
-		return
-	}
-
-	s.ExplainSB.MergeTimeNS.Add(uint64(duration.Nanoseconds()))
-}
-
 func (s *SearchCell) AddParseTime(duration time.Duration) {
 	if s == nil {
 		return
@@ -272,12 +256,10 @@ type SearchExplainSB struct {
 	FieldBlocksRead atomic.Uint64
 	ValsLoaded      atomic.Uint64
 
-	OverallTimeNS    atomic.Uint64
-	ParseTimeNS      atomic.Uint64
-	ProvideTimeNS    atomic.Uint64
-	EvaluationTimeNS atomic.Uint64
-	MergeTimeNS      atomic.Uint64
-	SendTimeNS       atomic.Uint64
+	OverallTimeNS atomic.Uint64
+	ParseTimeNS   atomic.Uint64
+	ProvideTimeNS atomic.Uint64
+	SendTimeNS    atomic.Uint64
 
 	// by frac
 	ReadIDTimeNS          atomic.Uint64
@@ -309,7 +291,7 @@ func (sb SearchExplainSB) String() string {
 	return fmt.Sprintf(
 		">>>>> EXPLAIN\n"+
 			"|BASE|\n	time=%.2fms\n	found=%d\n	speed=%d/sec\n	lid bytes read=%s\n	tid bytes read=%s\n	field bytes read=%s\n	lid blocks read=%d\n	field blocks read=%d\n	vals loaded=%d\n"+
-			"|GLOBAL TIME|\n	parse=%.2fms\n	provide=%.2fms\n	eval=%.2fms\n	merge=%.2fms\n	send=%.2fms\n"+
+			"|GLOBAL TIME|\n	parse=%.2fms\n	provide=%.2fms\n	send=%.2fms\n"+
 			"|FRAC CUM|\n	read lid=%.2fms\n	read fields=%.2fms\n	decode tid=%.2fms\n	decode lid=%.2fms\n	decode field=%.2fms\n	field cache set=%.2fms\n	lid blocks search=%.2fms\n"+
 			"|STATS|\n	fractions=%d\n	mono seqs=%d\n	multi seqs=%d\n	op tids=%d\n	op tids per frac=%d\n"+
 			"|MEM|\n	used per frac=%s\n	alloc=%s\n",
@@ -324,8 +306,6 @@ func (sb SearchExplainSB) String() string {
 		sb.ValsLoaded.Load(),
 		float64(sb.ParseTimeNS.Load())/float64(time.Millisecond),
 		float64(sb.ProvideTimeNS.Load())/float64(time.Millisecond),
-		float64(sb.EvaluationTimeNS.Load())/float64(time.Millisecond),
-		float64(sb.MergeTimeNS.Load())/float64(time.Millisecond),
 		float64(sb.SendTimeNS.Load())/float64(time.Millisecond),
 
 		float64(sb.ReadLIDTimeNS.Load())/float64(time.Millisecond),
