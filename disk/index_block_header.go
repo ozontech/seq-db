@@ -13,17 +13,17 @@ const (
 	IndexBlockHeaderSize = 33
 )
 
-// BlocksRegistryEntry format: C : LLLL : RRRR : EEEE-EEEE-EEEE-EEEE : PPPP-PPPP
+// IndexBlockHeader format: C : LLLL : RRRR : EEEE-EEEE-EEEE-EEEE : PPPP-PPPP
 // See: /docs/format-index-file.md
 
 type IndexBlockHeader []byte
 
-func NewEmptyBlocksRegistryEntry() IndexBlockHeader {
+func NewEmptyIndexBlockHeader() IndexBlockHeader {
 	return make(IndexBlockHeader, IndexBlockHeaderSize)
 }
 
-func NewBlocksRegistryEntry(pos int64, ext1, ext2 uint64, origBuff, finalBuf []byte, codec Codec) IndexBlockHeader {
-	header := NewEmptyBlocksRegistryEntry()
+func NewIndexBlockHeader(pos int64, ext1, ext2 uint64, origBuff, finalBuf []byte, codec Codec) IndexBlockHeader {
+	header := NewEmptyIndexBlockHeader()
 	header.SetExt1(ext1)
 	header.SetExt2(ext2)
 	header.SetLen(uint32(len(finalBuf)))

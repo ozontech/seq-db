@@ -43,13 +43,13 @@ Then, after all **DataBlocks** have been written, we write that blocks metadata 
 
 ## BlocksRegistry block structure
 
-**BlocksRegistry** block is a series of fixed-size structuries called **BlocksRegistryEntry**. 
-Each **DataBlock** corresponds to one of the **BlocksRegistryEntry**. 
-The order of the **DataBlocks** is the same as the order of the corresponding **BlocksRegistryEntries**.
+**BlocksRegistry** block is a series of fixed-size structuries called **IndexBlockHeader**. 
+Each **DataBlock** corresponds to one of the **IndexBlockHeader**. 
+The order of the **DataBlocks** is the same as the order of the corresponding **IndexBlockHeader**s.
 
 There are also an _empty_ **BlocksRegistryEntries**. Such **EmptyBlocks** do not have corresponding **DataBlock** and are used to separate logical groups of **DataBlocks** from each other.
 
-### Format of BlocksRegistryEntry
+### Format of IndexBlockHeader
 
 See `disk/blocks_registry_entry.go`
 
@@ -64,8 +64,8 @@ See `disk/blocks_registry_entry.go`
 // Total: 33 bytes
 ```
 
-**Extensions/flags** part of **BlocksRegistryEntry** is intended to help find a desired block in the **BlocksRegistry** index. So we store in this fields:
+**Extensions/flags** part of **IndexBlockHeader** is intended to help find a desired block in the **BlocksRegistry** index. So we store in this fields:
  * the _range of TIDs_ for each **LIDsBlocks**. This allows us to choose the appropriate LID block for a particular token.
  * the _minimal MID and RID_ for each **MIDsBlock**. This allows us to choose the appropriate Pos block for a particular MID and RID.
 
-Empty BlocksRegistryEntry is just 33 zero bytes.
+Empty IndexBlockHeader is just 33 zero bytes.
