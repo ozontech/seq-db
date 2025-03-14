@@ -6,7 +6,7 @@ import (
 	"github.com/c2h5oh/datasize"
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/fetch"
-	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"go.uber.org/zap"
@@ -24,7 +24,7 @@ type docsStream struct {
 	ids      seq.IDSources
 	totalIDs int
 	fetcher  *fetch.Fetcher
-	fracs    fracmanager.FracsList
+	fracs    frac.List
 	out      chan streamDocsBatch
 	docsBuf  [][]byte
 }
@@ -114,7 +114,7 @@ func (d *docsStream) calcChunkSize(docs [][]byte, prevChunkSize int) int {
 	return newChunkSize
 }
 
-func newDocsStream(ctx context.Context, ids seq.IDSources, fetcher *fetch.Fetcher, fracs fracmanager.FracsList) *docsStream {
+func newDocsStream(ctx context.Context, ids seq.IDSources, fetcher *fetch.Fetcher, fracs frac.List) *docsStream {
 	d := docsStream{
 		ctx:      ctx,
 		ids:      ids,

@@ -10,7 +10,7 @@ import (
 
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/parser"
@@ -231,16 +231,7 @@ func (g *GrpcV1) searchIteratively(ctx context.Context, params search.Params, n 
 	if err != nil {
 		return nil, nil, err
 	}
-
-	if params.Order.IsReverse() {
-		sort.Slice(remainingFracs, func(i, j int) bool { // ascending order by From
-			return remainingFracs[i].Info().From < remainingFracs[j].Info().From
-		})
-	} else {
-		sort.Slice(remainingFracs, func(i, j int) bool { // descending order by To
-			return remainingFracs[i].Info().To > remainingFracs[j].Info().To
-		})
-	}
+	remainingFracs.Sort(params.Order)
 
 	origLimit := params.Limit
 	scanAll := params.IsScanAllRequest()
@@ -255,10 +246,7 @@ func (g *GrpcV1) searchIteratively(ctx context.Context, params search.Params, n 
 	)
 
 	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
-		var fracsToSearch fracmanager.FracsList
-		fracsToSearch, remainingFracs = splitByCount(remainingFracs, n)
-
-		subQPRs, stats, err := g.searchData.workerPool.Search(ctx, fracsToSearch, params)
+		subQPRs, stats, err := g.searchData.workerPool.Search(ctx, remainingFracs.Pop(n), params)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -383,14 +371,7 @@ var searchAll = []parser.Term{{
 	Kind: parser.TermSymbol, Data: aggAsteriskFilter,
 }}
 
-func splitByCount(fl fracmanager.FracsList, n int) (fracmanager.FracsList, fracmanager.FracsList) {
-	if n > len(fl) {
-		n = len(fl)
-	}
-	return fl[:n], fl[n:]
-}
-
-func rightmostBorder(fl fracmanager.FracsList) seq.MID {
+func rightmostBorder(fl frac.List) seq.MID {
 	if len(fl) == 0 {
 		return 0
 	}

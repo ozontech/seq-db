@@ -9,7 +9,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -27,7 +26,7 @@ func New(maxWorkersNum int) *Fetcher {
 	}
 }
 
-func (f *Fetcher) fetchDocsAsync(ctx context.Context, fracs fracmanager.FracsList, idsByFrac [][]seq.ID) ([][][]byte, []error) {
+func (f *Fetcher) fetchDocsAsync(ctx context.Context, fracs frac.List, idsByFrac [][]seq.ID) ([][][]byte, []error) {
 	wg := sync.WaitGroup{}
 	errsByFracs := make([]error, len(fracs))
 	docsByFracs := make([][][]byte, len(fracs))
@@ -55,7 +54,7 @@ loop:
 	return docsByFracs, errsByFracs
 }
 
-func (f *Fetcher) FetchDocs(ctx context.Context, fracs fracmanager.FracsList, ids []seq.IDSource) ([][]byte, error) {
+func (f *Fetcher) FetchDocs(ctx context.Context, fracs frac.List, ids []seq.IDSource) ([][]byte, error) {
 	sw := stopwatch.New()
 
 	m := sw.Start("fill_revers_pos")
@@ -107,16 +106,6 @@ func fetchMultiWithRecover(ctx context.Context, f frac.Fraction, ids []seq.ID) (
 	return dp.Fetch(ids)
 }
 
-func filterFracs(fracs fracmanager.FracsList, minMID, maxMID seq.MID) fracmanager.FracsList {
-	subset := make(fracmanager.FracsList, 0, len(fracs))
-	for _, f := range fracs {
-		if f.IsIntersecting(minMID, maxMID) {
-			subset = append(subset, f)
-		}
-	}
-	return subset
-}
-
 func sortIDs(idsOrig seq.IDSources) (seq.IDSources, seq.MID, seq.MID) {
 	// we expect that idsOrig may already be sorted.
 	// both direction either asc or desc suit us.
@@ -133,12 +122,12 @@ func sortIDs(idsOrig seq.IDSources) (seq.IDSources, seq.MID, seq.MID) {
 	return ids, ids[last].ID.MID, ids[0].ID.MID
 }
 
-func groupIDsByFraction(idsOrig seq.IDSources, fracsIn fracmanager.FracsList) (fracmanager.FracsList, [][]seq.ID) {
+func groupIDsByFraction(idsOrig seq.IDSources, fracsIn frac.List) (frac.List, [][]seq.ID) {
 	// sort idsOrig to get sorted ids for each faction to optimize loading of ids-blocks
 	ids, minMID, maxMID := sortIDs(idsOrig)
 
 	idsBuf := []seq.ID{}
-	fracsOut := filterFracs(fracsIn, minMID, maxMID) // reduce candidate fractions
+	fracsOut := fracsIn.FilterInRange(minMID, maxMID) // reduce candidate fractions
 	idsByFracs := make([][]seq.ID, 0, len(fracsOut))
 
 	// stats
