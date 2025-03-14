@@ -50,14 +50,14 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *Stats, re
 // evalLeaf finds suitable matching fraction tokens and returns Node that generate corresponding tokens LIDs
 func evalLeaf(dp frac.DataProvider, token parser.Token, stats *Stats, minLID, maxLID uint32, order seq.DocsOrder) (node.Node, error) {
 
-	m := dp.Tracer().Start("get_tids_by_token_expr")
+	m := dp.Stopwatch().Start("get_tids_by_token_expr")
 	tids, err := dp.GetTIDsByTokenExpr(token, nil)
 	m.Stop()
 	if err != nil {
 		return nil, err
 	}
 
-	m = dp.Tracer().Start("get_lids_from_tids")
+	m = dp.Stopwatch().Start("get_lids_from_tids")
 	lidsTids := dp.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 	m.Stop()
 
@@ -134,7 +134,7 @@ func haveNotMinMaxQuantiles(quantiles []float64) bool {
 }
 
 func iteratorFromLiteral(dp frac.DataProvider, literal *parser.Literal, stats *Stats, minLID, maxLID uint32, maxTIDs, iteratorLimit int, order seq.DocsOrder) (*SourcedNodeIterator, error) {
-	m := dp.Tracer().Start("get_tids_by_token_expr")
+	m := dp.Stopwatch().Start("get_tids_by_token_expr")
 	tids, err := dp.GetTIDsByTokenExpr(literal, nil)
 	m.Stop()
 	if err != nil {
@@ -145,7 +145,7 @@ func iteratorFromLiteral(dp frac.DataProvider, literal *parser.Literal, stats *S
 		return nil, fmt.Errorf("%w: tokens length (%d) of field %q more than %d", consts.ErrTooManyUniqValues, len(tids), literal.Field, maxTIDs)
 	}
 
-	m = dp.Tracer().Start("get_lids_from_tids")
+	m = dp.Stopwatch().Start("get_lids_from_tids")
 	lidsTids := dp.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 	m.Stop()
 

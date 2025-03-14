@@ -13,7 +13,7 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/tracer"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
@@ -209,22 +209,22 @@ func getLIDsBorders(minMID, maxMID seq.MID, ids frac.IDsProvider) (uint32, uint3
 func searchFracImpl(dataProvider frac.DataProvider, task Task) fracResponse {
 	stats := NewStats(dataProvider.Type())
 
-	tr := dataProvider.Tracer()
+	sw := dataProvider.Stopwatch()
 
 	hasAgg := task.Params.HasAgg()
 	hasHist := task.Params.HasHist()
 
-	defer tr.UpdateMetric(chooseMetric(stats.FracType, hasAgg, hasHist))
+	defer sw.Export(chooseMetric(stats.FracType, hasAgg, hasHist))
 
-	totalMetric := tr.Start("total")
+	totalMetric := sw.Start("total")
 	defer totalMetric.Stop()
 
-	m := tr.Start("get_lids_borders")
+	m := sw.Start("get_lids_borders")
 	idsProvider := dataProvider.IDsProvider()
 	minLID, maxLID := getLIDsBorders(task.Params.From, task.Params.To, idsProvider)
 	m.Stop()
 
-	m = tr.Start("eval_leaf")
+	m = sw.Start("eval_leaf")
 	evalTree, err := buildEvalTree(task.Params.AST, minLID, maxLID, stats, task.Params.Order.IsReverse(),
 		func(token parser.Token, stats *Stats) (node.Node, error) {
 			return evalLeaf(dataProvider, token, stats, minLID, maxLID, task.Params.Order)
@@ -246,7 +246,7 @@ func searchFracImpl(dataProvider frac.DataProvider, task Task) fracResponse {
 
 	aggs := make([]Aggregator, len(task.Params.AggQ))
 	if hasAgg {
-		m = tr.Start("eval_agg")
+		m = sw.Start("eval_agg")
 		for i, query := range task.Params.AggQ {
 			aggs[i], err = evalAgg(dataProvider, query, stats, minLID, maxLID, task.Params.AggLimits, task.Params.Order)
 			if err != nil {
@@ -257,8 +257,8 @@ func searchFracImpl(dataProvider frac.DataProvider, task Task) fracResponse {
 		m.Stop()
 	}
 
-	m = tr.Start("iterate_eval_tree")
-	total, ids, histogram, err := iterateEvalTree(task, evalTree, aggs, idsProvider, tr)
+	m = sw.Start("iterate_eval_tree")
+	total, ids, histogram, err := iterateEvalTree(task, evalTree, aggs, idsProvider, sw)
 	m.Stop()
 
 	if err != nil {
@@ -270,7 +270,7 @@ func searchFracImpl(dataProvider frac.DataProvider, task Task) fracResponse {
 	var aggsResult []seq.QPRHistogram
 	if len(task.Params.AggQ) > 0 {
 		aggsResult = make([]seq.QPRHistogram, len(aggs))
-		m = tr.Start("agg_node_make_map")
+		m = sw.Start("agg_node_make_map")
 		for i := range aggs {
 			aggsResult[i], err = aggs[i].Aggregate()
 			if err != nil {
@@ -323,7 +323,7 @@ func iterateEvalTree(
 	evalTree node.Node,
 	aggs []Aggregator,
 	idsProvider frac.IDsProvider,
-	tr *tracer.Tracer,
+	sw *stopwatch.Stopwatch,
 ) (int, seq.IDSources, map[seq.MID]uint64, error) {
 	fracName := task.Frac.Info().Name()
 	hasHist := task.Params.HasHist()
@@ -349,7 +349,7 @@ func iterateEvalTree(
 			break
 		}
 
-		m := tr.Start("eval_tree_next")
+		m := sw.Start("eval_tree_next")
 		lid, has := evalTree.Next()
 		m.Stop()
 
@@ -358,7 +358,7 @@ func iterateEvalTree(
 		}
 
 		if needMore || hasHist {
-			m = tr.Start("get_mid")
+			m = sw.Start("get_mid")
 			mid := idsProvider.GetMID(seq.LID(lid))
 			m.Stop()
 
@@ -369,7 +369,7 @@ func iterateEvalTree(
 			}
 
 			if needMore {
-				m = tr.Start("get_rid")
+				m = sw.Start("get_rid")
 				rid := idsProvider.GetRID(seq.LID(lid))
 				m.Stop()
 
@@ -390,7 +390,7 @@ func iterateEvalTree(
 		total++ // increment found counter, use aggNode, calculate histogram and collect ids only if id in borders
 
 		if len(aggs) > 0 {
-			m = tr.Start("agg_node_count")
+			m = sw.Start("agg_node_count")
 			for i := range aggs {
 				if err := aggs[i].Next(lid); err != nil {
 					return total, ids, histogram, err

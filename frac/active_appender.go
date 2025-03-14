@@ -8,7 +8,7 @@ import (
 
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/tracer"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 )
 
 type ActiveAppender struct {
@@ -87,8 +87,8 @@ func (a *ActiveAppender) In(frac *Active, docs, metas []byte, writeQueue *atomic
 		AppendQueue: appendQueue,
 	}
 
-	tr := tracer.New()
-	m := tr.Start("send_write_chan")
+	sw := stopwatch.New()
+	m := sw.Start("send_write_chan")
 	metasTask := metaWriteTask{
 		writeTaskBase: writeTaskBase{
 			data: metas,
@@ -106,17 +106,17 @@ func (a *ActiveAppender) In(frac *Active, docs, metas []byte, writeQueue *atomic
 	a.inCh <- &docsTask
 	m.Stop()
 
-	m = tr.Start("wait_write_worker")
+	m = sw.Start("wait_write_worker")
 	metasTask.wg.Wait()
 	m.Stop()
 
-	m = tr.Start("send_index_chan")
+	m = sw.Start("send_index_chan")
 	a.iw.In(task)
 	m.Stop()
 
 	writeQueue.Dec()
 
-	tr.UpdateMetric(metric.BulkStagesSeconds)
+	sw.Export(metric.BulkStagesSeconds)
 }
 
 func (a *ActiveAppender) InReplay(frac *Active, docsLen uint64, metas []byte, appendQueue *atomic.Uint32) {

@@ -17,7 +17,7 @@ import (
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/tracer"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pattern"
@@ -83,7 +83,7 @@ func (p *SealedIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
 type SealedDataProvider struct {
 	*Sealed
 	sc               *SearchCell
-	tracer           *tracer.Tracer
+	sw               *stopwatch.Stopwatch
 	fracVersion      BinaryDataVersion
 	midCache         *UnpackCache
 	ridCache         *UnpackCache
@@ -91,8 +91,8 @@ type SealedDataProvider struct {
 	tokenTableLoader *token.TableLoader
 }
 
-func (dp *SealedDataProvider) Tracer() *tracer.Tracer {
-	return dp.tracer
+func (dp *SealedDataProvider) Stopwatch() *stopwatch.Stopwatch {
+	return dp.sw
 }
 
 func (dp *SealedDataProvider) IDsProvider() IDsProvider {
@@ -165,7 +165,7 @@ func (dp *SealedDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) 
 }
 
 func (dp *SealedDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Sealed.GetLIDsFromTIDs(dp.sc, tids, stats, minLID, maxLID, dp.tracer, order)
+	return dp.Sealed.GetLIDsFromTIDs(dp.sc, tids, stats, minLID, maxLID, dp.sw, order)
 }
 
 // findLIDs returns a slice of LIDs. If seq.ID is not found, LID has the value 0 at the corresponding position
@@ -199,21 +199,21 @@ func findLIDs(p IDsProvider, ids []seq.ID) []seq.LID {
 }
 
 func (dp *SealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
-	defer dp.tracer.UpdateMetric(metric.FetchSealedStagesSeconds)
+	defer dp.sw.Export(metric.FetchSealedStagesSeconds)
 
-	m := dp.tracer.Start("get_lid_by_mid")
+	m := dp.sw.Start("get_lid_by_mid")
 	l := findLIDs(dp.IDsProvider(), ids)
 	m.Stop()
 
-	m = dp.tracer.Start("get_doc_params_by_lid")
+	m = dp.sw.Start("get_doc_params_by_lid")
 	docsPos := dp.getDocPosByLIDs(l)
 	m.Stop()
 
-	m = dp.tracer.Start("get_doc_pos")
+	m = dp.sw.Start("get_doc_pos")
 	blocks, offsets, index := GroupDocsOffsets(docsPos)
 	m.Stop()
 
-	m = dp.tracer.Start("read_doc")
+	m = dp.sw.Start("read_doc")
 	res := make([][]byte, len(ids))
 	for i, docOffsets := range offsets {
 		docs, err := dp.docsReader.ReadDocs(dp.BlocksOffsets[blocks[i]], docOffsets)
@@ -428,8 +428,8 @@ func (f *Sealed) load() {
 	}
 }
 
-func (f *Sealed) GetLIDsFromTIDs(sc *SearchCell, tids []uint32, counter lids.Counter, minLID, maxLID uint32, tr *tracer.Tracer, order seq.DocsOrder) []node.Node {
-	m := tr.Start("GetOpTIDLIDs")
+func (f *Sealed) GetLIDsFromTIDs(sc *SearchCell, tids []uint32, counter lids.Counter, minLID, maxLID uint32, sw *stopwatch.Stopwatch, order seq.DocsOrder) []node.Node {
+	m := sw.Start("GetOpTIDLIDs")
 	defer m.Stop()
 
 	var (
@@ -577,7 +577,7 @@ func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 	dp := SealedDataProvider{
 		Sealed:           f,
 		sc:               sc,
-		tracer:           tracer.New(),
+		sw:               stopwatch.New(),
 		fracVersion:      f.info.BinaryDataVer,
 		midCache:         NewUnpackCache(),
 		ridCache:         NewUnpackCache(),

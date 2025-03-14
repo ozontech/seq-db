@@ -1,4 +1,4 @@
-package tracer
+package stopwatch
 
 import (
 	"math/bits"
@@ -25,7 +25,7 @@ type metricSampled struct {
 	startTime        time.Time
 	samplingSequence func() uint32
 
-	tracer   *Tracer
+	sw       *Stopwatch
 	parent   *metricSampled
 	children map[string]*metricSampled
 }
@@ -40,9 +40,9 @@ func expSamplingSequence() func() uint32 {
 	}
 }
 
-func newTracerMetricSampled(tracer *Tracer, parent *metricSampled) *metricSampled {
+func newStopwatchMetricSampled(sw *Stopwatch, parent *metricSampled) *metricSampled {
 	return &metricSampled{
-		tracer:           tracer,
+		sw:               sw,
 		parent:           parent,
 		children:         make(map[string]*metricSampled),
 		samplingSequence: expSamplingSequence(),
@@ -56,7 +56,7 @@ func (m *metricSampled) start() {
 		m.startTime = time.Time{}
 		return
 	}
-	m.startTime = m.tracer.nowFn()
+	m.startTime = m.sw.nowFn()
 }
 
 func (m *metricSampled) startNested(name string) *metricSampled {
@@ -68,7 +68,7 @@ func (m *metricSampled) startNested(name string) *metricSampled {
 func (m *metricSampled) nested(name string) *metricSampled {
 	nested, ok := m.children[name]
 	if !ok {
-		nested = newTracerMetricSampled(m.tracer, m)
+		nested = newStopwatchMetricSampled(m.sw, m)
 		m.children[name] = nested
 	}
 	return nested
@@ -85,14 +85,14 @@ func (m *metricSampled) needSkip() bool {
 
 func (m *metricSampled) Stop() {
 	if m.stopped {
-		logger.Warn("wrong Tracer usage: call Stop() w/o Start()")
+		logger.Warn("wrong Stopwatch usage: call Stop() w/o Start()")
 		return
 	}
 
 	if m.unstopped > 0 {
 		for name, child := range m.children { // stop nested recursively
 			if !child.stopped {
-				logger.Warn("tracer metric don't stopped", zap.String("name", name))
+				logger.Warn("stopwatch metric don't stopped", zap.String("name", name))
 				child.Stop()
 			}
 		}
@@ -100,12 +100,12 @@ func (m *metricSampled) Stop() {
 
 	m.stopped = true
 	m.parent.unstopped--
-	m.tracer.metric = m.parent
+	m.sw.metric = m.parent
 
 	m.count++
 
 	if !m.startTime.IsZero() {
-		m.duration += m.tracer.sinceFn(m.startTime)
+		m.duration += m.sw.sinceFn(m.startTime)
 		m.measured++
 	}
 }
@@ -115,7 +115,7 @@ func (m *metricSampled) getValues() map[string]time.Duration {
 
 	for name, child := range m.children {
 		if !child.stopped {
-			logger.Warn("wrong Tracer usage: call getValues() w/o Stop()", zap.String("name", name))
+			logger.Warn("wrong Stopwatch usage: call getValues() w/o Stop()", zap.String("name", name))
 			continue
 		}
 

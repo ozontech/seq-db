@@ -21,7 +21,7 @@ import (
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/tracer"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
@@ -59,7 +59,7 @@ func (p *ActiveIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
 type ActiveDataProvider struct {
 	*Active
 	sc          *SearchCell
-	tracer      *tracer.Tracer
+	sw          *stopwatch.Stopwatch
 	idsProvider *ActiveIDsProvider
 }
 
@@ -67,13 +67,13 @@ type ActiveDataProvider struct {
 // Creation of inverser for ActiveIDsProvider is expensive operation
 func (dp *ActiveDataProvider) getIDsProvider() *ActiveIDsProvider {
 	if dp.idsProvider == nil {
-		m := dp.tracer.Start("get_all_documents")
+		m := dp.sw.Start("get_all_documents")
 		mapping := dp.GetAllDocuments() // creation order is matter
 		mids := dp.MIDs.GetVals()       // mids and rids should be created after mapping to ensure that
 		rids := dp.RIDs.GetVals()       // they contain all the ids that mapping contains.
 		m.Stop()
 
-		m = dp.tracer.Start("inverse")
+		m = dp.sw.Start("inverse")
 		inverser := newInverser(mapping, len(mids))
 		m.Stop()
 
@@ -86,8 +86,8 @@ func (dp *ActiveDataProvider) getIDsProvider() *ActiveIDsProvider {
 	return dp.idsProvider
 }
 
-func (dp *ActiveDataProvider) Tracer() *tracer.Tracer {
-	return dp.tracer
+func (dp *ActiveDataProvider) Stopwatch() *stopwatch.Stopwatch {
+	return dp.sw
 }
 
 func (dp *ActiveDataProvider) IDsProvider() IDsProvider {
@@ -95,28 +95,28 @@ func (dp *ActiveDataProvider) IDsProvider() IDsProvider {
 }
 
 func (dp *ActiveDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) ([]uint32, error) {
-	return dp.Active.GetTIDsByTokenExpr(dp.sc, t, tids, dp.tracer)
+	return dp.Active.GetTIDsByTokenExpr(dp.sc, t, tids, dp.sw)
 }
 
 func (dp *ActiveDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Active.GetLIDsFromTIDs(tids, dp.getIDsProvider().inverser, stats, minLID, maxLID, dp.tracer, order)
+	return dp.Active.GetLIDsFromTIDs(tids, dp.getIDsProvider().inverser, stats, minLID, maxLID, dp.sw, order)
 }
 
 func (dp *ActiveDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
-	defer dp.tracer.UpdateMetric(metric.FetchActiveStagesSeconds)
+	defer dp.sw.Export(metric.FetchActiveStagesSeconds)
 
-	m := dp.tracer.Start("get_doc_params_by_id")
+	m := dp.sw.Start("get_doc_params_by_id")
 	docsPos := make([]DocPos, len(ids))
 	for i, id := range ids {
 		docsPos[i] = dp.Active.DocsPositions.GetSync(id)
 	}
 	m.Stop()
 
-	m = dp.tracer.Start("unpack_offsets")
+	m = dp.sw.Start("unpack_offsets")
 	blocks, offsets, index := GroupDocsOffsets(docsPos)
 	m.Stop()
 
-	m = dp.tracer.Start("read_doc")
+	m = dp.sw.Start("read_doc")
 	res := make([][]byte, len(ids))
 	blocksOffsets := dp.Active.DocBlocks.GetVals()
 	for i, docOffsets := range offsets {
@@ -365,23 +365,23 @@ func (f *Active) GetAllDocuments() []uint32 {
 	return f.TokenList.GetAllTokenLIDs().GetLIDs(f.MIDs, f.RIDs)
 }
 
-func (f *Active) GetTIDsByTokenExpr(sc *SearchCell, tk parser.Token, tids []uint32, tr *tracer.Tracer) ([]uint32, error) {
-	res, err := f.TokenList.FindPattern(sc.Context, tk, tids, tr)
+func (f *Active) GetTIDsByTokenExpr(sc *SearchCell, tk parser.Token, tids []uint32, sw *stopwatch.Stopwatch) ([]uint32, error) {
+	res, err := f.TokenList.FindPattern(sc.Context, tk, tids, sw)
 	return res, err
 }
 
-func (f *Active) GetLIDsFromTIDs(tids []uint32, inv *inverser, _ lids.Counter, minLID, maxLID uint32, tr *tracer.Tracer, order seq.DocsOrder) []node.Node {
+func (f *Active) GetLIDsFromTIDs(tids []uint32, inv *inverser, _ lids.Counter, minLID, maxLID uint32, sw *stopwatch.Stopwatch, order seq.DocsOrder) []node.Node {
 	nodes := make([]node.Node, 0, len(tids))
 	for _, tid := range tids {
-		m := tr.Start("provide")
+		m := sw.Start("provide")
 		tlids := f.TokenList.Provide(tid)
 		m.Stop()
 
-		m = tr.Start("LIDs")
+		m = sw.Start("LIDs")
 		unmapped := tlids.GetLIDs(f.MIDs, f.RIDs)
 		m.Stop()
 
-		m = tr.Start("inverse")
+		m = sw.Start("inverse")
 		inverse := inverseLIDs(unmapped, inv, minLID, maxLID)
 		nodes = append(nodes, node.NewStatic(inverse, order.IsReverse()))
 		m.Stop()
@@ -550,7 +550,7 @@ func (f *Active) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 		dp := ActiveDataProvider{
 			Active: f,
 			sc:     NewSearchCell(ctx),
-			tracer: tracer.New(),
+			sw:     stopwatch.New(),
 		}
 
 		return &dp, func() {

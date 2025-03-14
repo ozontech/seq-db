@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/metric/tracer"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
@@ -30,7 +30,7 @@ type IDsProvider interface {
 type DataProvider interface {
 	Type() string
 
-	Tracer() *tracer.Tracer
+	Stopwatch() *stopwatch.Stopwatch
 	IDsProvider() IDsProvider
 	GetValByTID(tid uint32) []byte
 	GetTIDsByTokenExpr(token parser.Token, tids []uint32) ([]uint32, error)

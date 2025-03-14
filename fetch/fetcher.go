@@ -12,7 +12,7 @@ import (
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/tracer"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
@@ -56,25 +56,25 @@ loop:
 }
 
 func (f *Fetcher) FetchDocs(ctx context.Context, fracs fracmanager.FracsList, ids []seq.IDSource) ([][]byte, error) {
-	t := tracer.New()
+	sw := stopwatch.New()
 
-	m := t.Start("fill_revers_pos")
+	m := sw.Start("fill_revers_pos")
 	reversPos := map[seq.ID]int{}
 	for i, id := range ids {
 		reversPos[id.ID] = i
 	}
 	m.Stop()
 
-	m = t.Start("group_ids_by_frac")
+	m = sw.Start("group_ids_by_frac")
 	fracs, idsByFrac := groupIDsByFraction(ids, fracs)
 	m.Stop()
 
-	m = t.Start("fetch_async")
+	m = sw.Start("fetch_async")
 	docsByFracs, errsByFracs := f.fetchDocsAsync(ctx, fracs, idsByFrac)
 	m.Stop()
 
 	// arrange the result in the original order of ids
-	m = t.Start("arrange_order")
+	m = sw.Start("arrange_order")
 	result := make([][]byte, len(ids))
 	for i := range docsByFracs {
 		for j := range docsByFracs[i] {
@@ -85,7 +85,7 @@ func (f *Fetcher) FetchDocs(ctx context.Context, fracs fracmanager.FracsList, id
 	}
 	m.Stop()
 
-	t.UpdateMetric(fetcherStagesSeconds)
+	sw.Export(fetcherStagesSeconds)
 
 	return result, util.CollapseErrors(errsByFracs)
 }

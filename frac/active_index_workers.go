@@ -11,7 +11,7 @@ import (
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/tracer"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 )
 
 type IndexWorkers struct {
@@ -107,8 +107,8 @@ func (w *IndexWorkers) appendWorker(index int) {
 	for task := range w.ch {
 		var err error
 
-		tr := tracer.New()
-		total := tr.Start("total_indexing")
+		sw := stopwatch.New()
+		total := sw.Start("total_indexing")
 
 		if metasPayload, err = disk.DocBlock(task.Metas).DecompressTo(metasPayload); err != nil {
 			logger.Panic("error decompressing meta", zap.Error(err)) // TODO: error handling
@@ -118,7 +118,7 @@ func (w *IndexWorkers) appendWorker(index int) {
 		blockIndex := active.DocBlocks.Append(task.Pos)
 		collector.Init(blockIndex)
 
-		parsingMetric := tr.Start("metas_parsing")
+		parsingMetric := sw.Start("metas_parsing")
 		for len(metasPayload) > 0 {
 			n := binary.LittleEndian.Uint32(metasPayload)
 			metasPayload = metasPayload[4:]
@@ -133,7 +133,7 @@ func (w *IndexWorkers) appendWorker(index int) {
 		}
 		parsingMetric.Stop()
 
-		m := tr.Start("doc_params_set")
+		m := sw.Start("doc_params_set")
 		appendedIDs := active.DocsPositions.SetMultiple(collector.IDs, collector.Positions)
 		if len(appendedIDs) != len(collector.IDs) {
 			// There are duplicates in the active fraction.
@@ -146,20 +146,20 @@ func (w *IndexWorkers) appendWorker(index int) {
 		}
 		m.Stop()
 
-		m = tr.Start("append_ids")
+		m = sw.Start("append_ids")
 		lids := active.AppendIDs(collector.IDs)
 		m.Stop()
 
-		m = tr.Start("token_list_append")
+		m = sw.Start("token_list_append")
 		tokenLIDsPlaces := collector.PrepareTokenLIDsPlaces()
 		active.TokenList.Append(collector.TokensValues, collector.FieldsLengths, tokenLIDsPlaces)
 		m.Stop()
 
-		m = tr.Start("group_lids")
+		m = sw.Start("group_lids")
 		groups := collector.GroupLIDsByToken(lids)
 		m.Stop()
 
-		m = tr.Start("put_lids_queue")
+		m = sw.Start("put_lids_queue")
 		tokensToMerge := addLIDsToTokens(tokenLIDsPlaces, groups)
 		w.sendTokensToMergeWorkers(active, tokensToMerge)
 		m.Stop()
@@ -169,7 +169,7 @@ func (w *IndexWorkers) appendWorker(index int) {
 		task.AppendQueue.Dec()
 
 		total.Stop()
-		tr.UpdateMetric(metric.BulkStagesSeconds)
+		sw.Export(metric.BulkStagesSeconds)
 	}
 }
 

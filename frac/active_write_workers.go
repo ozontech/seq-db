@@ -9,7 +9,7 @@ import (
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/tracer"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -31,25 +31,25 @@ func newWriteWorker(file *os.File) *writeWorker {
 }
 
 func (w *writeWorker) runWrite(inCh <-chan writeTask, name string) {
-	tr := tracer.New()
+	sw := stopwatch.New()
 
 	for t := range inCh {
-		m := tr.Start(name + " >> write_duration")
+		m := sw.Start(name + " >> write_duration")
 		if _, err := w.file.Write(t.fetchBlock()); err != nil {
 			logger.Fatal("can't write fraction file", zap.String("file", w.file.Name()), zap.Error(err))
 		}
 		m.Stop()
-		m = tr.Start(name + " >> write_send_duration")
+		m = sw.Start(name + " >> write_send_duration")
 		w.batchan.Send(t)
 		m.Stop()
 
-		tr.UpdateMetric(metric.BulkStagesSeconds)
+		sw.Export(metric.BulkStagesSeconds)
 	}
 	w.batchan.Close()
 }
 
 func (w *writeWorker) runFsync(name string) {
-	tr := tracer.New()
+	sw := stopwatch.New()
 
 	var payload []writeTask
 	for {
@@ -60,7 +60,7 @@ func (w *writeWorker) runFsync(name string) {
 
 		metric.BulkDiskSyncTasksCount.Observe(float64(len(payload)))
 
-		m := tr.Start(name + " >> fsync")
+		m := sw.Start(name + " >> fsync")
 		if err := w.file.Sync(); err != nil {
 			logger.Fatal("error syncing file",
 				zap.String("file", w.file.Name()),
@@ -69,13 +69,13 @@ func (w *writeWorker) runFsync(name string) {
 		}
 		m.Stop()
 
-		m = tr.Start(name + " >> fsync_done")
+		m = sw.Start(name + " >> fsync_done")
 		for _, v := range payload {
 			v.done()
 		}
 		m.Stop()
 
-		tr.UpdateMetric(metric.BulkStagesSeconds)
+		sw.Export(metric.BulkStagesSeconds)
 	}
 }
 
@@ -92,19 +92,19 @@ func startWriteWorker(file *os.File, inCh <-chan writeTask, wg *sync.WaitGroup, 
 
 func startWriteWorkerWithoutFsync(file *os.File, inCh <-chan writeTask, wg *sync.WaitGroup, name string) {
 	go func() {
-		tr := tracer.New()
+		sw := stopwatch.New()
 		for t := range inCh {
-			m := tr.Start(name + " >> write_duration")
+			m := sw.Start(name + " >> write_duration")
 			if _, err := file.Write(t.fetchBlock()); err != nil {
 				logger.Fatal("can't write fraction file", zap.String("file", file.Name()), zap.Error(err))
 			}
 			m.Stop()
 
-			m = tr.Start(name + " >> write_send_duration")
+			m = sw.Start(name + " >> write_send_duration")
 			t.done()
 			m.Stop()
 
-			tr.UpdateMetric(metric.BulkStagesSeconds)
+			sw.Export(metric.BulkStagesSeconds)
 		}
 		if wg != nil {
 			wg.Done()

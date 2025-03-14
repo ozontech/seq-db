@@ -1,4 +1,4 @@
-package tracer
+package stopwatch
 
 import (
 	"math/rand"
@@ -25,7 +25,7 @@ func getTimerFn(nowCnt, sinceCnt, tikerCnt *int) (func() time.Time, func(t time.
 	return now, since, tiker
 }
 
-func TestSamplingTracer(t *testing.T) {
+func TestSamplingStopwatch(t *testing.T) {
 	var tikerFn func()
 	var nowCnt, sinceCnt, tikerCnt int
 
@@ -48,11 +48,11 @@ func TestSamplingTracer(t *testing.T) {
 		sinceCnt = 0
 		tikerCnt = 0
 
-		tr := New()
-		tr.nowFn, tr.sinceFn, tikerFn = getTimerFn(&nowCnt, &sinceCnt, &tikerCnt)
+		sw := New()
+		sw.nowFn, sw.sinceFn, tikerFn = getTimerFn(&nowCnt, &sinceCnt, &tikerCnt)
 
 		for j := 0; j < i; j++ {
-			l2 := tr.Start("test")
+			l2 := sw.Start("test")
 			tikerFn()
 			l2.Stop()
 		}
@@ -64,20 +64,20 @@ func TestSamplingTracer(t *testing.T) {
 	}
 }
 
-func TestTracer(t *testing.T) {
+func TestStopwatch(t *testing.T) {
 	var tikerFn func()
 	var nowCnt, sinceCnt, tikerCnt int
 
 	now := time.Now()
 	rand.Seed(now.UnixNano())
 
-	tr := New()
+	sw := New()
 
-	tr.nowFn, tr.sinceFn, tikerFn = getTimerFn(&nowCnt, &sinceCnt, &tikerCnt)
+	sw.nowFn, sw.sinceFn, tikerFn = getTimerFn(&nowCnt, &sinceCnt, &tikerCnt)
 
 	n := 1000
-	m := tr.Start("level1")
-	tracerTestLevel1(n, tr, tikerFn)
+	m := sw.Start("level1")
+	stopwatchTestLevel1(n, sw, tikerFn)
 	tikerFn()
 	m.Stop()
 
@@ -92,7 +92,7 @@ func TestTracer(t *testing.T) {
 		"level1 >> cycle1 >> others":                     0,
 		"level1 >> others":                               0,
 	}
-	assert.Equal(t, expextedValues, tr.GetValues())
+	assert.Equal(t, expextedValues, sw.GetValues())
 
 	expextedCounts := map[string]uint32{
 		"level1":                                        1,
@@ -105,21 +105,21 @@ func TestTracer(t *testing.T) {
 		"level1 >> cycle1 >> level2 >> cycle2 >> stub1": uint32(n * n),
 		"level1 >> cycle1 >> level2 >> cycle2 >> stub2": uint32(n * n),
 	}
-	assert.Equal(t, expextedCounts, tr.GetCounts())
+	assert.Equal(t, expextedCounts, sw.GetCounts())
 }
 
-func tracerTestLevel1(n int, tr *Tracer, tikerFn func()) {
+func stopwatchTestLevel1(n int, sw *Stopwatch, tikerFn func()) {
 
-	m1 := tr.Start("cycle1")
+	m1 := sw.Start("cycle1")
 
 	for i := 0; i < n; i++ {
 
-		m2 := tr.Start("level2")
-		tracerTestLevel2(n, tr, tikerFn)
+		m2 := sw.Start("level2")
+		stopwatchTestLevel2(n, sw, tikerFn)
 		tikerFn()
 		m2.Stop()
 
-		tracerTestLevel2(n, tr, tikerFn)
+		stopwatchTestLevel2(n, sw, tikerFn)
 	}
 
 	tikerFn()
@@ -127,17 +127,17 @@ func tracerTestLevel1(n int, tr *Tracer, tikerFn func()) {
 
 }
 
-func tracerTestLevel2(n int, tr *Tracer, tikerFn func()) {
+func stopwatchTestLevel2(n int, sw *Stopwatch, tikerFn func()) {
 
-	m0 := tr.Start("cycle2")
+	m0 := sw.Start("cycle2")
 
 	for i := 0; i < n; i++ {
-		m1 := tr.Start("stub1")
+		m1 := sw.Start("stub1")
 		stub()
 		tikerFn()
 		m1.Stop()
 
-		m1 = tr.Start("stub2")
+		m1 = sw.Start("stub2")
 		stub()
 		tikerFn()
 		m1.Stop()
