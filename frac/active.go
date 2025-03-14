@@ -21,7 +21,6 @@ import (
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
@@ -59,7 +58,6 @@ func (p *ActiveIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 type ActiveDataProvider struct {
 	*Active
 	ctx      context.Context
-	sw       *stopwatch.Stopwatch
 	idsIndex *ActiveIDsIndex
 }
 
@@ -67,15 +65,11 @@ type ActiveDataProvider struct {
 // Creation of inverser for ActiveIDsIndex is expensive operation
 func (dp *ActiveDataProvider) getIDsIndex() *ActiveIDsIndex {
 	if dp.idsIndex == nil {
-		m := dp.sw.Start("get_all_documents")
 		mapping := dp.GetAllDocuments() // creation order is matter
 		mids := dp.MIDs.GetVals()       // mids and rids should be created after mapping to ensure that
 		rids := dp.RIDs.GetVals()       // they contain all the ids that mapping contains.
-		m.Stop()
 
-		m = dp.sw.Start("inverse")
 		inverser := newInverser(mapping, len(mids))
-		m.Stop()
 
 		dp.idsIndex = &ActiveIDsIndex{
 			inverser: inverser,
@@ -86,20 +80,16 @@ func (dp *ActiveDataProvider) getIDsIndex() *ActiveIDsIndex {
 	return dp.idsIndex
 }
 
-func (dp *ActiveDataProvider) Stopwatch() *stopwatch.Stopwatch {
-	return dp.sw
-}
-
 func (dp *ActiveDataProvider) IDsIndex() IDsIndex {
 	return dp.getIDsIndex()
 }
 
 func (dp *ActiveDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) ([]uint32, error) {
-	return dp.Active.GetTIDsByTokenExpr(dp.ctx, t, tids, dp.sw)
+	return dp.Active.GetTIDsByTokenExpr(dp.ctx, t, tids)
 }
 
 func (dp *ActiveDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Active.GetLIDsFromTIDs(tids, dp.getIDsIndex().inverser, stats, minLID, maxLID, dp.sw, order)
+	return dp.Active.GetLIDsFromTIDs(tids, dp.getIDsIndex().inverser, stats, minLID, maxLID, order)
 }
 
 func (dp *ActiveDataProvider) DocsIndex() DocsIndex {
@@ -364,26 +354,18 @@ func (f *Active) GetAllDocuments() []uint32 {
 	return f.TokenList.GetAllTokenLIDs().GetLIDs(f.MIDs, f.RIDs)
 }
 
-func (f *Active) GetTIDsByTokenExpr(ctx context.Context, tk parser.Token, tids []uint32, sw *stopwatch.Stopwatch) ([]uint32, error) {
-	res, err := f.TokenList.FindPattern(ctx, tk, tids, sw)
+func (f *Active) GetTIDsByTokenExpr(ctx context.Context, tk parser.Token, tids []uint32) ([]uint32, error) {
+	res, err := f.TokenList.FindPattern(ctx, tk, tids)
 	return res, err
 }
 
-func (f *Active) GetLIDsFromTIDs(tids []uint32, inv *inverser, _ lids.Counter, minLID, maxLID uint32, sw *stopwatch.Stopwatch, order seq.DocsOrder) []node.Node {
+func (f *Active) GetLIDsFromTIDs(tids []uint32, inv *inverser, _ lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
 	nodes := make([]node.Node, 0, len(tids))
 	for _, tid := range tids {
-		m := sw.Start("provide")
 		tlids := f.TokenList.Provide(tid)
-		m.Stop()
-
-		m = sw.Start("LIDs")
 		unmapped := tlids.GetLIDs(f.MIDs, f.RIDs)
-		m.Stop()
-
-		m = sw.Start("inverse")
 		inverse := inverseLIDs(unmapped, inv, minLID, maxLID)
 		nodes = append(nodes, node.NewStatic(inverse, order.IsReverse()))
-		m.Stop()
 	}
 	return nodes
 }
@@ -549,7 +531,6 @@ func (f *Active) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 		dp := ActiveDataProvider{
 			Active: f,
 			ctx:    ctx,
-			sw:     stopwatch.New(),
 		}
 
 		return &dp, func() {

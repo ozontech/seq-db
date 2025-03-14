@@ -209,7 +209,7 @@ func getLIDsBorders(minMID, maxMID seq.MID, idsIndex frac.IDsIndex) (uint32, uin
 func searchFracImpl(dataProvider frac.DataProvider, task Task) fracResponse {
 	stats := NewStats(dataProvider.Type())
 
-	sw := dataProvider.Stopwatch()
+	sw := stopwatch.New()
 
 	hasAgg := task.Params.HasAgg()
 	hasHist := task.Params.HasHist()
@@ -219,15 +219,18 @@ func searchFracImpl(dataProvider frac.DataProvider, task Task) fracResponse {
 	totalMetric := sw.Start("total")
 	defer totalMetric.Stop()
 
-	m := sw.Start("get_lids_borders")
+	m := sw.Start("get_ids_index")
 	idsIndex := dataProvider.IDsIndex()
+	m.Stop()
+
+	m = sw.Start("get_lids_borders")
 	minLID, maxLID := getLIDsBorders(task.Params.From, task.Params.To, idsIndex)
 	m.Stop()
 
 	m = sw.Start("eval_leaf")
 	evalTree, err := buildEvalTree(task.Params.AST, minLID, maxLID, stats, task.Params.Order.IsReverse(),
 		func(token parser.Token, stats *Stats) (node.Node, error) {
-			return evalLeaf(dataProvider, token, stats, minLID, maxLID, task.Params.Order)
+			return evalLeaf(dataProvider, token, sw, stats, minLID, maxLID, task.Params.Order)
 		},
 	)
 	m.Stop()
@@ -248,7 +251,7 @@ func searchFracImpl(dataProvider frac.DataProvider, task Task) fracResponse {
 	if hasAgg {
 		m = sw.Start("eval_agg")
 		for i, query := range task.Params.AggQ {
-			aggs[i], err = evalAgg(dataProvider, query, stats, minLID, maxLID, task.Params.AggLimits, task.Params.Order)
+			aggs[i], err = evalAgg(dataProvider, query, sw, stats, minLID, maxLID, task.Params.AggLimits, task.Params.Order)
 			if err != nil {
 				m.Stop()
 				return fracResponse{err: err}

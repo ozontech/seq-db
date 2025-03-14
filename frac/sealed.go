@@ -16,7 +16,6 @@ import (
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pattern"
@@ -81,16 +80,11 @@ func (p *SealedIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 type SealedDataProvider struct {
 	*Sealed
 	ctx              context.Context
-	sw               *stopwatch.Stopwatch
 	fracVersion      BinaryDataVersion
 	midCache         *UnpackCache
 	ridCache         *UnpackCache
 	tokenBlockLoader *token.BlockLoader
 	tokenTableLoader *token.TableLoader
-}
-
-func (dp *SealedDataProvider) Stopwatch() *stopwatch.Stopwatch {
-	return dp.sw
 }
 
 func (dp *SealedDataProvider) IDsIndex() IDsIndex {
@@ -158,7 +152,7 @@ func (dp *SealedDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) 
 }
 
 func (dp *SealedDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Sealed.GetLIDsFromTIDs(tids, stats, minLID, maxLID, dp.sw, order)
+	return dp.Sealed.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 }
 
 func (dp *SealedDataProvider) DocsIndex() DocsIndex {
@@ -420,10 +414,7 @@ func (f *Sealed) load() {
 	}
 }
 
-func (f *Sealed) GetLIDsFromTIDs(tids []uint32, counter lids.Counter, minLID, maxLID uint32, sw *stopwatch.Stopwatch, order seq.DocsOrder) []node.Node {
-	m := sw.Start("GetOpTIDLIDs")
-	defer m.Stop()
-
+func (f *Sealed) GetLIDsFromTIDs(tids []uint32, counter lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
 	var (
 		getBlockIndex   func(tid uint32) uint32
 		getLIDsIterator func(uint32, uint32) node.Node
@@ -566,7 +557,6 @@ func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 	dp := SealedDataProvider{
 		Sealed:           f,
 		ctx:              ctx,
-		sw:               stopwatch.New(),
 		fracVersion:      f.info.BinaryDataVer,
 		midCache:         NewUnpackCache(),
 		ridCache:         NewUnpackCache(),

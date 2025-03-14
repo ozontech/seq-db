@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
@@ -35,8 +34,6 @@ type DocsIndex interface {
 
 type DataProvider interface {
 	Type() string
-
-	Stopwatch() *stopwatch.Stopwatch
 
 	IDsIndex() IDsIndex
 	DocsIndex() DocsIndex

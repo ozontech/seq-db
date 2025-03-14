@@ -5,6 +5,7 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
@@ -48,16 +49,15 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *Stats, re
 }
 
 // evalLeaf finds suitable matching fraction tokens and returns Node that generate corresponding tokens LIDs
-func evalLeaf(dp frac.DataProvider, token parser.Token, stats *Stats, minLID, maxLID uint32, order seq.DocsOrder) (node.Node, error) {
-
-	m := dp.Stopwatch().Start("get_tids_by_token_expr")
+func evalLeaf(dp frac.DataProvider, token parser.Token, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, order seq.DocsOrder) (node.Node, error) {
+	m := sw.Start("get_tids_by_token_expr")
 	tids, err := dp.GetTIDsByTokenExpr(token, nil)
 	m.Stop()
 	if err != nil {
 		return nil, err
 	}
 
-	m = dp.Stopwatch().Start("get_lids_from_tids")
+	m = sw.Start("get_lids_from_tids")
 	lidsTids := dp.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 	m.Stop()
 
@@ -86,10 +86,10 @@ type AggLimits struct {
 }
 
 // evalAgg evaluates aggregation with given limits. Returns a suitable aggregator.
-func evalAgg(dp frac.DataProvider, query AggQuery, stats *Stats, minLID, maxLID uint32, limits AggLimits, order seq.DocsOrder) (Aggregator, error) {
+func evalAgg(dp frac.DataProvider, query AggQuery, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, limits AggLimits, order seq.DocsOrder) (Aggregator, error) {
 	switch query.Func {
 	case seq.AggFuncCount, seq.AggFuncUnique:
-		groupIterator, err := iteratorFromLiteral(dp, query.GroupBy, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
+		groupIterator, err := iteratorFromLiteral(dp, query.GroupBy, sw, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +98,7 @@ func evalAgg(dp frac.DataProvider, query AggQuery, stats *Stats, minLID, maxLID 
 		}
 		return NewSingleSourceUniqueAggregator(groupIterator), nil
 	case seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncSum, seq.AggFuncAvg, seq.AggFuncQuantile:
-		fieldIterator, err := iteratorFromLiteral(dp, query.Field, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxFieldTokens, order)
+		fieldIterator, err := iteratorFromLiteral(dp, query.Field, sw, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxFieldTokens, order)
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +109,7 @@ func evalAgg(dp frac.DataProvider, query AggQuery, stats *Stats, minLID, maxLID 
 			return NewSingleSourceHistogramAggregator(fieldIterator, collectSamples), nil
 		}
 
-		groupIterator, err := iteratorFromLiteral(dp, query.GroupBy, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
+		groupIterator, err := iteratorFromLiteral(dp, query.GroupBy, sw, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
 		if err != nil {
 			return nil, err
 		}
@@ -133,8 +133,8 @@ func haveNotMinMaxQuantiles(quantiles []float64) bool {
 	return have
 }
 
-func iteratorFromLiteral(dp frac.DataProvider, literal *parser.Literal, stats *Stats, minLID, maxLID uint32, maxTIDs, iteratorLimit int, order seq.DocsOrder) (*SourcedNodeIterator, error) {
-	m := dp.Stopwatch().Start("get_tids_by_token_expr")
+func iteratorFromLiteral(dp frac.DataProvider, literal *parser.Literal, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, maxTIDs, iteratorLimit int, order seq.DocsOrder) (*SourcedNodeIterator, error) {
+	m := sw.Start("get_tids_by_token_expr")
 	tids, err := dp.GetTIDsByTokenExpr(literal, nil)
 	m.Stop()
 	if err != nil {
@@ -145,7 +145,7 @@ func iteratorFromLiteral(dp frac.DataProvider, literal *parser.Literal, stats *S
 		return nil, fmt.Errorf("%w: tokens length (%d) of field %q more than %d", consts.ErrTooManyUniqValues, len(tids), literal.Field, maxTIDs)
 	}
 
-	m = dp.Stopwatch().Start("get_lids_from_tids")
+	m = sw.Start("get_lids_from_tids")
 	lidsTids := dp.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 	m.Stop()
 

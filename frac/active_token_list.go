@@ -7,7 +7,6 @@ import (
 
 	"github.com/ozontech/seq-db/seq"
 
-	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pattern"
 	"github.com/ozontech/seq-db/util"
@@ -142,7 +141,7 @@ func (tl *TokenList) GetTIDsByField(f string) []uint32 {
 	return tl.FieldTIDs[f]
 }
 
-func (tl *TokenList) FindPattern(ctx context.Context, token parser.Token, tids []uint32, sw *stopwatch.Stopwatch) ([]uint32, error) {
+func (tl *TokenList) FindPattern(ctx context.Context, token parser.Token, tids []uint32) ([]uint32, error) {
 	tk := parser.GetField(token)
 
 	inverseIndex := tl.GetTIDsByField(tk)
@@ -154,9 +153,6 @@ func (tl *TokenList) FindPattern(ctx context.Context, token parser.Token, tids [
 	searcher := pattern.NewSearcher(token, nil, len(inverseIndex))
 
 	doneCh := ctx.Done()
-
-	m := sw.Start("search_cycle")
-	defer m.Stop()
 
 	for i := searcher.Begin(); i <= searcher.End(); i++ {
 
