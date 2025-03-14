@@ -194,13 +194,6 @@ var (
 		Help:      "",
 		Buckets:   SecondsBuckets,
 	})
-	SearchEvalDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "eval_duration_seconds",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	})
 	SearchTreeDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
@@ -308,49 +301,6 @@ var (
 		Namespace: "seq_db_store",
 		Subsystem: "maintanance",
 		Name:      "truncate_total",
-		Help:      "",
-	})
-
-	ReadIDTimeNSTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "read_id_time_ns_total",
-		Help:      "",
-	})
-	ReadLIDTimeNSTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "read_lid_time_ns_total",
-		Help:      "",
-	})
-	ReadFieldTimeNSTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "read_field_time_ns_total",
-		Help:      "",
-	})
-	DecodeIDTimeNSTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "decode_id_time_ns_total",
-		Help:      "",
-	})
-	DecodeFieldTimeNSTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "decode_field_time_ns_total",
-		Help:      "",
-	})
-	DecodeTIDTimeNSTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "decode_tid_time_ns_total",
-		Help:      "",
-	})
-	DecodeLIDTimeNSTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "decode_lid_time_ns_total",
 		Help:      "",
 	})
 

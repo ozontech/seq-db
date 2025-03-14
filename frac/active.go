@@ -58,7 +58,7 @@ func (p *ActiveIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
 
 type ActiveDataProvider struct {
 	*Active
-	sc          *SearchCell
+	ctx         context.Context
 	sw          *stopwatch.Stopwatch
 	idsProvider *ActiveIDsProvider
 }
@@ -95,7 +95,7 @@ func (dp *ActiveDataProvider) IDsProvider() IDsProvider {
 }
 
 func (dp *ActiveDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) ([]uint32, error) {
-	return dp.Active.GetTIDsByTokenExpr(dp.sc, t, tids, dp.sw)
+	return dp.Active.GetTIDsByTokenExpr(dp.ctx, t, tids, dp.sw)
 }
 
 func (dp *ActiveDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
@@ -365,8 +365,8 @@ func (f *Active) GetAllDocuments() []uint32 {
 	return f.TokenList.GetAllTokenLIDs().GetLIDs(f.MIDs, f.RIDs)
 }
 
-func (f *Active) GetTIDsByTokenExpr(sc *SearchCell, tk parser.Token, tids []uint32, sw *stopwatch.Stopwatch) ([]uint32, error) {
-	res, err := f.TokenList.FindPattern(sc.Context, tk, tids, sw)
+func (f *Active) GetTIDsByTokenExpr(ctx context.Context, tk parser.Token, tids []uint32, sw *stopwatch.Stopwatch) ([]uint32, error) {
+	res, err := f.TokenList.FindPattern(ctx, tk, tids, sw)
 	return res, err
 }
 
@@ -549,7 +549,7 @@ func (f *Active) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 	if f.sealed == nil && !f.suicided && f.Info().DocsTotal > 0 { // it is ordinary active fraction state
 		dp := ActiveDataProvider{
 			Active: f,
-			sc:     NewSearchCell(ctx),
+			ctx:    ctx,
 			sw:     stopwatch.New(),
 		}
 

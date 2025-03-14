@@ -1,8 +1,6 @@
 package frac
 
 import (
-	"time"
-
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
@@ -33,14 +31,14 @@ func NewIDsLoader(indexReader *disk.IndexReader, indexCache *IndexCache, table I
 	}
 }
 
-func (il *IDsLoader) GetMIDsBlock(searchSB *SearchCell, lid seq.LID, dst *UnpackCache) {
+func (il *IDsLoader) GetMIDsBlock(lid seq.LID, dst *UnpackCache) {
 	index := il.getIDBlockIndexByLID(lid)
 	if index == dst.lastBlock { // fast path, already unpacked
 		return
 	}
 
 	data := il.cache.MIDs.Get(uint32(index+1), func() ([]byte, int) {
-		block := il.loadMIDBlock(searchSB, uint32(index))
+		block := il.loadMIDBlock(uint32(index))
 		return block, cap(block)
 	})
 
@@ -54,14 +52,14 @@ func (il *IDsLoader) GetMIDsBlock(searchSB *SearchCell, lid seq.LID, dst *Unpack
 	dst.unpackMIDs(index, data)
 }
 
-func (il *IDsLoader) GetRIDsBlock(searchSB *SearchCell, lid seq.LID, dst *UnpackCache, fracVersion BinaryDataVersion) {
+func (il *IDsLoader) GetRIDsBlock(lid seq.LID, dst *UnpackCache, fracVersion BinaryDataVersion) {
 	index := il.getIDBlockIndexByLID(lid)
 	if index == dst.lastBlock { // fast path, already unpacked
 		return
 	}
 
 	data := il.cache.RIDs.Get(uint32(index)+1, func() ([]byte, int) {
-		block := il.loadRIDBlock(searchSB, uint32(index))
+		block := il.loadRIDBlock(uint32(index))
 		return block, cap(block)
 	})
 
@@ -101,11 +99,8 @@ func (il *IDsLoader) paramsBlockIndex(index uint32) uint32 {
 	return il.table.DiskStartBlockIndex + index*3 + 2
 }
 
-func (il *IDsLoader) loadMIDBlock(searchSB *SearchCell, index uint32) []byte {
-	t := time.Now()
+func (il *IDsLoader) loadMIDBlock(index uint32) []byte {
 	data, _, err := il.reader.ReadIndexBlock(il.midBlockIndex(index), nil)
-	searchSB.AddReadIDTimeNS(time.Since(t))
-
 	if util.IsRecoveredPanicError(err) {
 		logger.Panic("todo: handle read err", zap.Error(err))
 	}
@@ -123,10 +118,8 @@ func (il *IDsLoader) loadMIDBlock(searchSB *SearchCell, index uint32) []byte {
 	return data
 }
 
-func (il *IDsLoader) loadRIDBlock(searchCell *SearchCell, index uint32) []byte {
-	t := time.Now()
+func (il *IDsLoader) loadRIDBlock(index uint32) []byte {
 	data, _, err := il.reader.ReadIndexBlock(il.ridBlockIndex(index), nil)
-	searchCell.AddReadIDTimeNS(time.Since(t))
 
 	if util.IsRecoveredPanicError(err) {
 		logger.Panic("todo: handle read err", zap.Error(err))

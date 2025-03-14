@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"sync"
-	"time"
 
 	"go.uber.org/zap"
 
@@ -31,17 +30,16 @@ type SealedIDsProvider struct {
 	loader      *IDsLoader
 	midCache    *UnpackCache
 	ridCache    *UnpackCache
-	searchSB    *SearchCell
 	fracVersion BinaryDataVersion
 }
 
 func (p *SealedIDsProvider) GetMID(lid seq.LID) seq.MID {
-	p.loader.GetMIDsBlock(p.searchSB, seq.LID(lid), p.midCache)
+	p.loader.GetMIDsBlock(seq.LID(lid), p.midCache)
 	return seq.MID(p.midCache.GetValByLID(uint64(lid)))
 }
 
 func (p *SealedIDsProvider) GetRID(lid seq.LID) seq.RID {
-	p.loader.GetRIDsBlock(p.searchSB, seq.LID(lid), p.ridCache, p.fracVersion)
+	p.loader.GetRIDsBlock(seq.LID(lid), p.ridCache, p.fracVersion)
 	return seq.RID(p.ridCache.GetValByLID(uint64(lid)))
 }
 
@@ -82,7 +80,7 @@ func (p *SealedIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
 
 type SealedDataProvider struct {
 	*Sealed
-	sc               *SearchCell
+	ctx              context.Context
 	sw               *stopwatch.Stopwatch
 	fracVersion      BinaryDataVersion
 	midCache         *UnpackCache
@@ -100,7 +98,6 @@ func (dp *SealedDataProvider) IDsProvider() IDsProvider {
 		loader:      NewIDsLoader(dp.indexReader, dp.indexCache, dp.idsTable),
 		midCache:    dp.midCache,
 		ridCache:    dp.ridCache,
-		searchSB:    dp.sc,
 		fracVersion: dp.fracVersion,
 	}
 }
@@ -141,12 +138,8 @@ func (dp *SealedDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) 
 
 	for tid := fetcher.GetTIDFromIndex(begin); tid <= lastTID; tid++ {
 		if tid > entryLastTID {
-			if dp.sc.Exit.Load() {
-				return nil, consts.ErrUnexpectedInterruption
-			}
-			if dp.sc.IsCancelled() {
-				err := fmt.Errorf("search cancelled when matching tokens: reason=%s field=%s, query=%s", dp.sc.Context.Err(), field, searchStr)
-				dp.sc.Cancel(err)
+			if util.IsCancelled(dp.ctx) {
+				err := fmt.Errorf("search cancelled when matching tokens: reason=%s field=%s, query=%s", dp.ctx.Err(), field, searchStr)
 				return nil, err
 			}
 			blockIndex++
@@ -165,7 +158,7 @@ func (dp *SealedDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) 
 }
 
 func (dp *SealedDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Sealed.GetLIDsFromTIDs(dp.sc, tids, stats, minLID, maxLID, dp.sw, order)
+	return dp.Sealed.GetLIDsFromTIDs(tids, stats, minLID, maxLID, dp.sw, order)
 }
 
 // findLIDs returns a slice of LIDs. If seq.ID is not found, LID has the value 0 at the corresponding position
@@ -428,7 +421,7 @@ func (f *Sealed) load() {
 	}
 }
 
-func (f *Sealed) GetLIDsFromTIDs(sc *SearchCell, tids []uint32, counter lids.Counter, minLID, maxLID uint32, sw *stopwatch.Stopwatch, order seq.DocsOrder) []node.Node {
+func (f *Sealed) GetLIDsFromTIDs(tids []uint32, counter lids.Counter, minLID, maxLID uint32, sw *stopwatch.Stopwatch, order seq.DocsOrder) []node.Node {
 	m := sw.Start("GetOpTIDLIDs")
 	defer m.Stop()
 
@@ -437,7 +430,7 @@ func (f *Sealed) GetLIDsFromTIDs(sc *SearchCell, tids []uint32, counter lids.Cou
 		getLIDsIterator func(uint32, uint32) node.Node
 	)
 
-	loader := lids.NewLoader(f.indexReader, f.indexCache.LIDs, sc)
+	loader := lids.NewLoader(f.indexReader, f.indexCache.LIDs)
 
 	if order.IsReverse() {
 		getBlockIndex = func(tid uint32) uint32 { return f.lidsTable.GetLastBlockIndexForTID(tid) }
@@ -451,12 +444,10 @@ func (f *Sealed) GetLIDsFromTIDs(sc *SearchCell, tids []uint32, counter lids.Cou
 		}
 	}
 
-	t := time.Now()
 	startIndexes := make([]uint32, len(tids))
 	for i, tid := range tids {
 		startIndexes[i] = getBlockIndex(tid)
 	}
-	sc.AddLIDBlocksSearchTimeNS(time.Since(t))
 
 	nodes := make([]node.Node, len(tids))
 	for i, tid := range tids {
@@ -573,15 +564,14 @@ func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 
 	f.load()
 
-	sc := NewSearchCell(ctx)
 	dp := SealedDataProvider{
 		Sealed:           f,
-		sc:               sc,
+		ctx:              ctx,
 		sw:               stopwatch.New(),
 		fracVersion:      f.info.BinaryDataVer,
 		midCache:         NewUnpackCache(),
 		ridCache:         NewUnpackCache(),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.indexReader, f.indexCache.Tokens, sc),
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.indexReader, f.indexCache.TokenTable),
 	}
 

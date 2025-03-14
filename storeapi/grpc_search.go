@@ -10,7 +10,6 @@ import (
 
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -96,13 +95,8 @@ func (g *GrpcV1) doSearch(
 	to := seq.MID(req.To)
 	limit := int(req.Size + req.Offset)
 
-	searchCell := frac.NewSearchCell(ctx)
-	searchCell.Explain = req.Explain
-
-	if searchCell.Explain {
-		logger.Info("search request will be explained",
-			zap.Any("request", req),
-		)
+	if req.Explain {
+		logger.Info("search request will be explained", zap.Any("request", req))
 	}
 
 	t := time.Now()
@@ -117,10 +111,8 @@ func (g *GrpcV1) doSearch(
 		return nil, err
 	}
 
-	searchCell.AddParseTime(time.Since(t))
-
-	if searchCell.IsCancelled() {
-		return nil, fmt.Errorf("search cancelled before evaluating: reason=%w", searchCell.Context.Err())
+	if util.IsCancelled(ctx) {
+		return nil, fmt.Errorf("search cancelled before evaluating: reason=%w", ctx.Err())
 	}
 
 	aggQ := make([]search.AggQuery, 0, len(req.Aggs))
@@ -152,7 +144,7 @@ func (g *GrpcV1) doSearch(
 	}
 
 	searchTr := tr.NewChild("search iteratively")
-	qpr, stats, evalDuration, err := g.searchIteratively(searchCell, searchParams, g.config.Search.FractionsPerIteration)
+	qpr, stats, err := g.searchIteratively(ctx, searchParams, g.config.Search.FractionsPerIteration)
 	searchTr.Done()
 	if err != nil {
 		if code, ok := parseStoreError(err); ok {
@@ -162,16 +154,10 @@ func (g *GrpcV1) doSearch(
 		return nil, err
 	}
 
-	updateSearchStatsMetrics(stats, evalDuration.Seconds())
+	updateSearchStatsMetrics(stats)
+	metric.SearchDurationSeconds.Observe(time.Since(start).Seconds())
 
-	searchCell.AddOverallTime(time.Since(start))
-	searchCell.AddFound(qpr.Total)
-
-	updateSearchCellMetrics(searchCell)
-
-	if searchCell.Explain {
-		logger.Info(searchCell.ExplainSB.String())
-
+	if req.Explain {
 		if req.Interval > 0 {
 			keys := make([]uint64, 0, len(qpr.Histogram))
 			for key := range qpr.Histogram {
@@ -204,7 +190,7 @@ func (g *GrpcV1) doSearch(
 		)
 	}
 
-	return buildSearchResponse(qpr, searchCell), nil
+	return buildSearchResponse(qpr), nil
 }
 
 func (g *GrpcV1) parseQuery(ctx context.Context, query string) (*parser.ASTNode, error) {
@@ -240,10 +226,10 @@ func useSeqQL(ctx context.Context) bool {
 	return useSeqQL
 }
 
-func (g *GrpcV1) searchIteratively(searchCell *frac.SearchCell, params search.Params, n int) (*seq.QPR, []*search.Stats, time.Duration, error) {
+func (g *GrpcV1) searchIteratively(ctx context.Context, params search.Params, n int) (*seq.QPR, []*search.Stats, error) {
 	remainingFracs, err := g.fracManager.SelectFracsInRange(params.From, params.To)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, err
 	}
 
 	if params.Order.IsReverse() {
@@ -266,26 +252,18 @@ func (g *GrpcV1) searchIteratively(searchCell *frac.SearchCell, params search.Pa
 			Aggs:      make([]seq.QPRHistogram, len(params.AggQ)),
 		}
 		subQueriesCount float64
-		totalSearchTime time.Duration
 	)
 
 	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
 		var fracsToSearch fracmanager.FracsList
 		fracsToSearch, remainingFracs = splitByCount(remainingFracs, n)
 
-		t := time.Now()
-		subQPRs, stats, err := g.searchData.workerPool.Search(searchCell.Context, fracsToSearch, params)
-		searchTime := time.Since(t)
-		searchCell.AddEvaluationTime(searchTime)
-
-		totalSearchTime += searchTime
+		subQPRs, stats, err := g.searchData.workerPool.Search(ctx, fracsToSearch, params)
 		if err != nil {
-			return nil, allStats, totalSearchTime, err
+			return nil, nil, err
 		}
 
-		t = time.Now()
 		seq.MergeQPRs(total, subQPRs, origLimit, seq.MID(params.HistInterval), params.Order)
-		searchCell.AddMergeTime(time.Since(t))
 
 		// reduce the limit on the number of ensured docs in response
 		params.Limit = origLimit - countIDsAfter(total.IDs, rightmostBorder(remainingFracs))
@@ -298,7 +276,7 @@ func (g *GrpcV1) searchIteratively(searchCell *frac.SearchCell, params search.Pa
 	}
 
 	metric.SearchSubSearches.Observe(subQueriesCount)
-	return total, allStats, totalSearchTime, nil
+	return total, allStats, nil
 }
 
 func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {
@@ -306,7 +284,7 @@ func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {
 	return oldestCt == 0 || oldestCt > from
 }
 
-func buildSearchResponse(qpr *seq.QPR, searchCell *frac.SearchCell) *storeapi.SearchResponse {
+func buildSearchResponse(qpr *seq.QPR) *storeapi.SearchResponse {
 	idSourcesBuf := make([]storeapi.SearchResponse_IdWithHint, len(qpr.IDs))
 	idSources := make([]*storeapi.SearchResponse_IdWithHint, len(qpr.IDs))
 	for i := range qpr.IDs {
@@ -350,17 +328,11 @@ func buildSearchResponse(qpr *seq.QPR, searchCell *frac.SearchCell) *storeapi.Se
 		aggs[i] = &aggsBuf[i]
 	}
 
-	qprErrs := make([]string, len(qpr.Errors))
-	for i, qprErr := range searchCell.Errors {
-		qprErrs[i] = qprErr.Error()
-	}
-
 	return &storeapi.SearchResponse{
 		IdSources: idSources,
 		Histogram: histogram,
 		Aggs:      aggs,
 		Total:     qpr.Total,
-		Errors:    qprErrs,
 	}
 }
 
@@ -471,7 +443,7 @@ func (s *searchRequestMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) err
 	return nil
 }
 
-func updateSearchStatsMetrics(stats []*search.Stats, evalDuration float64) {
+func updateSearchStatsMetrics(stats []*search.Stats) {
 	for _, stat := range stats {
 		metric.SearchLeavesTotal.Observe(float64(stat.LeavesTotal))
 		metric.SearchNodesTotal.Observe(float64(stat.NodesTotal))
@@ -479,18 +451,4 @@ func updateSearchStatsMetrics(stats []*search.Stats, evalDuration float64) {
 		metric.SearchAggNodesTotal.Observe(float64(stat.AggNodesTotal))
 		metric.SearchHitsTotal.Observe(float64(stat.HitsTotal))
 	}
-	metric.SearchEvalDurationSeconds.Observe(evalDuration)
-}
-
-func updateSearchCellMetrics(sc *frac.SearchCell) {
-	metric.SearchDurationSeconds.Observe(float64(sc.ExplainSB.OverallTimeNS.Load()) / float64(time.Second))
-
-	metric.ReadIDTimeNSTotal.Add(float64(sc.ExplainSB.ReadIDTimeNS.Load()))
-	metric.ReadLIDTimeNSTotal.Add(float64(sc.ExplainSB.ReadLIDTimeNS.Load()))
-	metric.ReadFieldTimeNSTotal.Add(float64(sc.ExplainSB.ReadFieldTimeNS.Load()))
-
-	metric.DecodeIDTimeNSTotal.Add(float64(sc.ExplainSB.DecodeIDTimeNS.Load()))
-	metric.DecodeLIDTimeNSTotal.Add(float64(sc.ExplainSB.DecodeLIDTimeNS.Load()))
-	metric.DecodeTIDTimeNSTotal.Add(float64(sc.ExplainSB.DecodeTIDTimeNS.Load()))
-	metric.DecodeFieldTimeNSTotal.Add(float64(sc.ExplainSB.DecodeFieldTimeNS.Load()))
 }
