@@ -26,28 +26,28 @@ import (
 
 const seqDBMagic = "SEQM"
 
-type SealedIDsProvider struct {
+type SealedIDsIndex struct {
 	loader      *IDsLoader
 	midCache    *UnpackCache
 	ridCache    *UnpackCache
 	fracVersion BinaryDataVersion
 }
 
-func (p *SealedIDsProvider) GetMID(lid seq.LID) seq.MID {
+func (p *SealedIDsIndex) GetMID(lid seq.LID) seq.MID {
 	p.loader.GetMIDsBlock(seq.LID(lid), p.midCache)
 	return seq.MID(p.midCache.GetValByLID(uint64(lid)))
 }
 
-func (p *SealedIDsProvider) GetRID(lid seq.LID) seq.RID {
+func (p *SealedIDsIndex) GetRID(lid seq.LID) seq.RID {
 	p.loader.GetRIDsBlock(seq.LID(lid), p.ridCache, p.fracVersion)
 	return seq.RID(p.ridCache.GetValByLID(uint64(lid)))
 }
 
-func (p *SealedIDsProvider) Len() int {
+func (p *SealedIDsIndex) Len() int {
 	return int(p.loader.table.IDsTotal)
 }
 
-func (p *SealedIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
+func (p *SealedIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 	if lid >= seq.LID(p.loader.table.IDsTotal) {
 		// out of right border
 		return true
@@ -93,8 +93,8 @@ func (dp *SealedDataProvider) Stopwatch() *stopwatch.Stopwatch {
 	return dp.sw
 }
 
-func (dp *SealedDataProvider) IDsProvider() IDsProvider {
-	return &SealedIDsProvider{
+func (dp *SealedDataProvider) IDsIndex() IDsIndex {
+	return &SealedIDsIndex{
 		loader:      NewIDsLoader(dp.indexReader, dp.indexCache, dp.idsTable),
 		midCache:    dp.midCache,
 		ridCache:    dp.ridCache,
@@ -161,13 +161,45 @@ func (dp *SealedDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter,
 	return dp.Sealed.GetLIDsFromTIDs(tids, stats, minLID, maxLID, dp.sw, order)
 }
 
+func (dp *SealedDataProvider) DocsIndex() DocsIndex {
+	return &SealedDocsIndex{
+		idsIndex: dp.IDsIndex(),
+		idsLoader: NewIDsLoader(
+			dp.Sealed.indexReader,
+			dp.Sealed.indexCache,
+			dp.Sealed.idsTable,
+		),
+		docsReader:    dp.Sealed.docsReader,
+		blocksOffsets: dp.Sealed.BlocksOffsets,
+	}
+}
+
+type SealedDocsIndex struct {
+	idsIndex      IDsIndex
+	idsLoader     *IDsLoader
+	docsReader    *disk.DocsReader
+	blocksOffsets []uint64
+}
+
+func (di *SealedDocsIndex) GetBlocksOffsets(num uint32) uint64 {
+	return di.blocksOffsets[num]
+}
+
+func (di *SealedDocsIndex) GetDocPos(ids []seq.ID) []DocPos {
+	return di.getDocPosByLIDs(di.findLIDs(ids))
+}
+
+func (di *SealedDocsIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
+	return di.docsReader.ReadDocs(blockOffset, docOffsets)
+}
+
 // findLIDs returns a slice of LIDs. If seq.ID is not found, LID has the value 0 at the corresponding position
-func findLIDs(p IDsProvider, ids []seq.ID) []seq.LID {
+func (di *SealedDocsIndex) findLIDs(ids []seq.ID) []seq.LID {
 	res := make([]seq.LID, len(ids))
 
 	// left and right it is search range
-	left := 1            // first
-	right := p.Len() - 1 // last
+	left := 1                      // first
+	right := di.idsIndex.Len() - 1 // last
 
 	for i, id := range ids {
 
@@ -177,10 +209,10 @@ func findLIDs(p IDsProvider, ids []seq.ID) []seq.LID {
 		}
 
 		lid := seq.LID(util.BinSearchInRange(left, right, func(lid int) bool {
-			return p.LessOrEqual(seq.LID(lid), id)
+			return di.idsIndex.LessOrEqual(seq.LID(lid), id)
 		}))
 
-		if id.MID == p.GetMID(lid) && id.RID == p.GetRID(lid) {
+		if id.MID == di.idsIndex.GetMID(lid) && id.RID == di.idsIndex.GetRID(lid) {
 			res[i] = lid
 		}
 
@@ -191,48 +223,15 @@ func findLIDs(p IDsProvider, ids []seq.ID) []seq.LID {
 	return res
 }
 
-func (dp *SealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
-	defer dp.sw.Export(metric.FetchSealedStagesSeconds)
-
-	m := dp.sw.Start("get_lid_by_mid")
-	l := findLIDs(dp.IDsProvider(), ids)
-	m.Stop()
-
-	m = dp.sw.Start("get_doc_params_by_lid")
-	docsPos := dp.getDocPosByLIDs(l)
-	m.Stop()
-
-	m = dp.sw.Start("get_doc_pos")
-	blocks, offsets, index := GroupDocsOffsets(docsPos)
-	m.Stop()
-
-	m = dp.sw.Start("read_doc")
-	res := make([][]byte, len(ids))
-	for i, docOffsets := range offsets {
-		docs, err := dp.docsReader.ReadDocs(dp.BlocksOffsets[blocks[i]], docOffsets)
-		if err != nil {
-			return nil, err
-		}
-		for i, j := range index[i] {
-			res[j] = docs[i]
-		}
-	}
-	m.Stop()
-
-	return res, nil
-}
-
 // GetDocPosByLIDs returns a slice of DocPos for the corresponding LIDs.
 // Passing sorted LIDs (asc or desc) will improve the performance of this method.
 // For LID with zero value will return DocPos with `DocPosNotFound` value
-func (dp *SealedDataProvider) getDocPosByLIDs(localIDs []seq.LID) []DocPos {
+func (di *SealedDocsIndex) getDocPosByLIDs(localIDs []seq.LID) []DocPos {
 	var (
 		prevIndex int64
 		positions []uint64
 		startLID  seq.LID
 	)
-
-	idsLoader := NewIDsLoader(dp.indexReader, dp.indexCache, dp.idsTable)
 
 	res := make([]DocPos, len(localIDs))
 	for i, lid := range localIDs {
@@ -241,9 +240,9 @@ func (dp *SealedDataProvider) getDocPosByLIDs(localIDs []seq.LID) []DocPos {
 			continue
 		}
 
-		index := idsLoader.getIDBlockIndexByLID(lid)
+		index := di.idsLoader.getIDBlockIndexByLID(lid)
 		if positions == nil || prevIndex != index {
-			positions = idsLoader.GetParamsBlock(uint32(index))
+			positions = di.idsLoader.GetParamsBlock(uint32(index))
 			startLID = seq.LID(index * consts.IDsPerBlock)
 		}
 

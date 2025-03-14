@@ -1,4 +1,4 @@
-package fetch
+package fetcher
 
 import (
 	"context"
@@ -21,37 +21,12 @@ type Fetcher struct {
 }
 
 func New(maxWorkersNum int) *Fetcher {
+	if maxWorkersNum <= 0 {
+		logger.Panic("invalid workers value")
+	}
 	return &Fetcher{
 		sem: make(chan struct{}, maxWorkersNum),
 	}
-}
-
-func (f *Fetcher) fetchDocsAsync(ctx context.Context, fracs frac.List, idsByFrac [][]seq.ID) ([][][]byte, []error) {
-	wg := sync.WaitGroup{}
-	errsByFracs := make([]error, len(fracs))
-	docsByFracs := make([][][]byte, len(fracs))
-
-loop:
-	for i, fraction := range fracs {
-		select {
-		case <-ctx.Done():
-			for n := i; n < len(fracs); n++ {
-				errsByFracs[n] = ctx.Err()
-			}
-			break loop
-		case f.sem <- struct{}{}: // acquire semaphore
-			wg.Add(1)
-			go func() {
-				docsByFracs[i], errsByFracs[i] = fetchMultiWithRecover(ctx, fraction, idsByFrac[i])
-				<-f.sem // release semaphore
-				wg.Done()
-			}()
-		}
-	}
-
-	wg.Wait()
-
-	return docsByFracs, errsByFracs
 }
 
 func (f *Fetcher) FetchDocs(ctx context.Context, fracs frac.List, ids []seq.IDSource) ([][]byte, error) {
@@ -69,7 +44,7 @@ func (f *Fetcher) FetchDocs(ctx context.Context, fracs frac.List, ids []seq.IDSo
 	m.Stop()
 
 	m = sw.Start("fetch_async")
-	docsByFracs, errsByFracs := f.fetchDocsAsync(ctx, fracs, idsByFrac)
+	docsByFracs, err := f.fetchDocsAsync(ctx, fracs, idsByFrac)
 	m.Stop()
 
 	// arrange the result in the original order of ids
@@ -86,14 +61,54 @@ func (f *Fetcher) FetchDocs(ctx context.Context, fracs frac.List, ids []seq.IDSo
 
 	sw.Export(fetcherStagesSeconds)
 
-	return result, util.CollapseErrors(errsByFracs)
+	return result, err
 }
 
-func fetchMultiWithRecover(ctx context.Context, f frac.Fraction, ids []seq.ID) (_ [][]byte, err error) {
+func (f *Fetcher) fetchDocsAsync(ctx context.Context, fracs []frac.Fraction, idsByFrac [][]seq.ID) ([][][]byte, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var err error
+
+	once := sync.Once{}
+	wg := sync.WaitGroup{}
+	docs := make([][][]byte, len(fracs))
+
+loop:
+	for i, frac := range fracs {
+		select {
+		case <-ctx.Done():
+			once.Do(func() { err = ctx.Err() })
+			break loop
+		case f.sem <- struct{}{}: // acquire semaphore
+			wg.Add(1)
+			go func() {
+				var fracErr error
+				if docs[i], fracErr = fracFetch(ctx, frac, idsByFrac[i]); fracErr != nil {
+					once.Do(func() {
+						err = fracErr
+						cancel()
+					})
+				}
+				<-f.sem // release semaphore
+				wg.Done()
+			}()
+		}
+	}
+
+	wg.Wait()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return docs, nil
+}
+
+func fracFetch(ctx context.Context, f frac.Fraction, ids []seq.ID) (_ [][]byte, err error) {
 	defer func() {
-		if panicData := recover(); panicData != nil {
-			err = fmt.Errorf("internal error: fetch panicked on fraction %s: %s", f.Info().Name(), panicData)
-			util.Recover(metric.StorePanics, err)
+		if panicData := util.RecoverToError(recover(), metric.StorePanics); panicData != nil {
+			err = fmt.Errorf("internal error: fetch panicked on fraction %s, error=%w", f.Info().Name(), panicData)
 		}
 	}()
 
@@ -103,7 +118,36 @@ func fetchMultiWithRecover(ctx context.Context, f frac.Fraction, ids []seq.ID) (
 	}
 	defer release()
 
-	return dp.Fetch(ids)
+	sw := stopwatch.New()
+	res := make([][]byte, len(ids))
+	if err := indexFetch(ids, sw, dp.DocsIndex(), res); err != nil {
+		return nil, err
+	}
+
+	sw.Export(getStagesMetric(dp.Type()))
+
+	return res, nil
+}
+
+func indexFetch(ids []seq.ID, sw *stopwatch.Stopwatch, docsIndex frac.DocsIndex, res [][]byte) error {
+	m := sw.Start("get_docs_pos")
+	docsPos := docsIndex.GetDocPos(ids)
+	blocks, offsets, index := frac.GroupDocsOffsets(docsPos)
+	m.Stop()
+
+	m = sw.Start("read_doc")
+	for i, docOffsets := range offsets {
+		docs, err := docsIndex.ReadDocs(docsIndex.GetBlocksOffsets(blocks[i]), docOffsets)
+		if err != nil {
+			return err
+		}
+		for i, j := range index[i] {
+			res[j] = docs[i]
+		}
+	}
+	m.Stop()
+
+	return nil
 }
 
 func sortIDs(idsOrig seq.IDSources) (seq.IDSources, seq.MID, seq.MID) {

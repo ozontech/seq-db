@@ -1,8 +1,9 @@
-package fetch
+package fetcher
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/metric"
 )
 
@@ -33,4 +34,24 @@ var (
 		Subsystem: "fetcher",
 		Name:      "hint_misses",
 	})
+
+	fetcherActiveStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "active_stages_seconds",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
+	fetcherSealedStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "sealed_stages_seconds",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
 )
+
+func getStagesMetric(fracType string) *prometheus.HistogramVec {
+	if fracType == frac.TypeActive {
+		return fetcherActiveStagesSeconds
+	}
+	return fetcherSealedStagesSeconds
+}

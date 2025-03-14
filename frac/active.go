@@ -28,27 +28,27 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-type ActiveIDsProvider struct {
+type ActiveIDsIndex struct {
 	mids     []uint64
 	rids     []uint64
 	inverser *inverser
 }
 
-func (p *ActiveIDsProvider) GetMID(lid seq.LID) seq.MID {
+func (p *ActiveIDsIndex) GetMID(lid seq.LID) seq.MID {
 	restoredLID := p.inverser.Revert(uint32(lid))
 	return seq.MID(p.mids[restoredLID])
 }
 
-func (p *ActiveIDsProvider) GetRID(lid seq.LID) seq.RID {
+func (p *ActiveIDsIndex) GetRID(lid seq.LID) seq.RID {
 	restoredLID := p.inverser.Revert(uint32(lid))
 	return seq.RID(p.rids[restoredLID])
 }
 
-func (p *ActiveIDsProvider) Len() int {
+func (p *ActiveIDsIndex) Len() int {
 	return p.inverser.Len()
 }
 
-func (p *ActiveIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
+func (p *ActiveIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 	checkedMID := p.GetMID(lid)
 	if checkedMID == id.MID {
 		return p.GetRID(lid) <= id.RID
@@ -58,15 +58,15 @@ func (p *ActiveIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
 
 type ActiveDataProvider struct {
 	*Active
-	ctx         context.Context
-	sw          *stopwatch.Stopwatch
-	idsProvider *ActiveIDsProvider
+	ctx      context.Context
+	sw       *stopwatch.Stopwatch
+	idsIndex *ActiveIDsIndex
 }
 
-// getIDsProvider creates on demand and returns ActiveIDsProvider.
-// Creation of inverser for ActiveIDsProvider is expensive operation
-func (dp *ActiveDataProvider) getIDsProvider() *ActiveIDsProvider {
-	if dp.idsProvider == nil {
+// getIDsIndex creates on demand and returns ActiveIDsIndex.
+// Creation of inverser for ActiveIDsIndex is expensive operation
+func (dp *ActiveDataProvider) getIDsIndex() *ActiveIDsIndex {
+	if dp.idsIndex == nil {
 		m := dp.sw.Start("get_all_documents")
 		mapping := dp.GetAllDocuments() // creation order is matter
 		mids := dp.MIDs.GetVals()       // mids and rids should be created after mapping to ensure that
@@ -77,21 +77,21 @@ func (dp *ActiveDataProvider) getIDsProvider() *ActiveIDsProvider {
 		inverser := newInverser(mapping, len(mids))
 		m.Stop()
 
-		dp.idsProvider = &ActiveIDsProvider{
+		dp.idsIndex = &ActiveIDsIndex{
 			inverser: inverser,
 			mids:     mids,
 			rids:     rids,
 		}
 	}
-	return dp.idsProvider
+	return dp.idsIndex
 }
 
 func (dp *ActiveDataProvider) Stopwatch() *stopwatch.Stopwatch {
 	return dp.sw
 }
 
-func (dp *ActiveDataProvider) IDsProvider() IDsProvider {
-	return dp.getIDsProvider()
+func (dp *ActiveDataProvider) IDsIndex() IDsIndex {
+	return dp.getIDsIndex()
 }
 
 func (dp *ActiveDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) ([]uint32, error) {
@@ -99,38 +99,37 @@ func (dp *ActiveDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) 
 }
 
 func (dp *ActiveDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Active.GetLIDsFromTIDs(tids, dp.getIDsProvider().inverser, stats, minLID, maxLID, dp.sw, order)
+	return dp.Active.GetLIDsFromTIDs(tids, dp.getIDsIndex().inverser, stats, minLID, maxLID, dp.sw, order)
 }
 
-func (dp *ActiveDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
-	defer dp.sw.Export(metric.FetchActiveStagesSeconds)
+func (dp *ActiveDataProvider) DocsIndex() DocsIndex {
+	return &ActiveDocsIndex{
+		blocksOffsets: dp.Active.DocBlocks.GetVals(),
+		docsPositions: dp.Active.DocsPositions,
+		docsReader:    dp.Active.docsReader,
+	}
+}
 
-	m := dp.sw.Start("get_doc_params_by_id")
+type ActiveDocsIndex struct {
+	blocksOffsets []uint64
+	docsPositions *DocsPositions
+	docsReader    *disk.DocsReader
+}
+
+func (di *ActiveDocsIndex) GetBlocksOffsets(num uint32) uint64 {
+	return di.blocksOffsets[num]
+}
+
+func (di *ActiveDocsIndex) GetDocPos(ids []seq.ID) []DocPos {
 	docsPos := make([]DocPos, len(ids))
 	for i, id := range ids {
-		docsPos[i] = dp.Active.DocsPositions.GetSync(id)
+		docsPos[i] = di.docsPositions.GetSync(id)
 	}
-	m.Stop()
+	return docsPos
+}
 
-	m = dp.sw.Start("unpack_offsets")
-	blocks, offsets, index := GroupDocsOffsets(docsPos)
-	m.Stop()
-
-	m = dp.sw.Start("read_doc")
-	res := make([][]byte, len(ids))
-	blocksOffsets := dp.Active.DocBlocks.GetVals()
-	for i, docOffsets := range offsets {
-		docs, err := dp.docsReader.ReadDocs(blocksOffsets[blocks[i]], docOffsets)
-		if err != nil {
-			return nil, err
-		}
-		for i, j := range index[i] {
-			res[j] = docs[i]
-		}
-	}
-	m.Stop()
-
-	return res, nil
+func (di *ActiveDocsIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
+	return di.docsReader.ReadDocs(blockOffset, docOffsets)
 }
 
 type Active struct {
@@ -554,8 +553,8 @@ func (f *Active) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 		}
 
 		return &dp, func() {
-			if dp.idsProvider != nil {
-				dp.idsProvider.inverser.Release()
+			if dp.idsIndex != nil {
+				dp.idsIndex.inverser.Release()
 			}
 			f.useLock.RUnlock()
 		}, true

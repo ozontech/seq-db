@@ -183,8 +183,8 @@ func searchFrac(task Task) (resp fracResponse) {
 	return searchFracImpl(dataProvider, task)
 }
 
-func getLIDsBorders(minMID, maxMID seq.MID, ids frac.IDsProvider) (uint32, uint32) {
-	if ids.Len() == 0 {
+func getLIDsBorders(minMID, maxMID seq.MID, idsIndex frac.IDsIndex) (uint32, uint32) {
+	if idsIndex.Len() == 0 {
 		return 0, 0
 	}
 
@@ -192,7 +192,7 @@ func getLIDsBorders(minMID, maxMID seq.MID, ids frac.IDsProvider) (uint32, uint3
 	maxID := seq.ID{MID: maxMID, RID: math.MaxUint64}
 
 	from := 1 // first ID is not accessible (lid == 0 is invalid value)
-	to := ids.Len() - 1
+	to := idsIndex.Len() - 1
 
 	if minMID > 0 { // decrementing minMID to make LessOrEqual work like Less
 		minID.MID--
@@ -200,8 +200,8 @@ func getLIDsBorders(minMID, maxMID seq.MID, ids frac.IDsProvider) (uint32, uint3
 	}
 
 	// minLID corresponds to maxMID and maxLID corresponds to minMID due to reverse order of MIDs
-	minLID := util.BinSearchInRange(from, to, func(lid int) bool { return ids.LessOrEqual(seq.LID(lid), maxID) })
-	maxLID := util.BinSearchInRange(minLID, to, func(lid int) bool { return ids.LessOrEqual(seq.LID(lid), minID) }) - 1
+	minLID := util.BinSearchInRange(from, to, func(lid int) bool { return idsIndex.LessOrEqual(seq.LID(lid), maxID) })
+	maxLID := util.BinSearchInRange(minLID, to, func(lid int) bool { return idsIndex.LessOrEqual(seq.LID(lid), minID) }) - 1
 
 	return uint32(minLID), uint32(maxLID)
 }
@@ -220,8 +220,8 @@ func searchFracImpl(dataProvider frac.DataProvider, task Task) fracResponse {
 	defer totalMetric.Stop()
 
 	m := sw.Start("get_lids_borders")
-	idsProvider := dataProvider.IDsProvider()
-	minLID, maxLID := getLIDsBorders(task.Params.From, task.Params.To, idsProvider)
+	idsIndex := dataProvider.IDsIndex()
+	minLID, maxLID := getLIDsBorders(task.Params.From, task.Params.To, idsIndex)
 	m.Stop()
 
 	m = sw.Start("eval_leaf")
@@ -258,7 +258,7 @@ func searchFracImpl(dataProvider frac.DataProvider, task Task) fracResponse {
 	}
 
 	m = sw.Start("iterate_eval_tree")
-	total, ids, histogram, err := iterateEvalTree(task, evalTree, aggs, idsProvider, sw)
+	total, ids, histogram, err := iterateEvalTree(task, evalTree, aggs, idsIndex, sw)
 	m.Stop()
 
 	if err != nil {
@@ -322,7 +322,7 @@ func iterateEvalTree(
 	task Task,
 	evalTree node.Node,
 	aggs []Aggregator,
-	idsProvider frac.IDsProvider,
+	idsIndex frac.IDsIndex,
 	sw *stopwatch.Stopwatch,
 ) (int, seq.IDSources, map[seq.MID]uint64, error) {
 	fracName := task.Frac.Info().Name()
@@ -359,7 +359,7 @@ func iterateEvalTree(
 
 		if needMore || hasHist {
 			m = sw.Start("get_mid")
-			mid := idsProvider.GetMID(seq.LID(lid))
+			mid := idsIndex.GetMID(seq.LID(lid))
 			m.Stop()
 
 			if hasHist {
@@ -370,7 +370,7 @@ func iterateEvalTree(
 
 			if needMore {
 				m = sw.Start("get_rid")
-				rid := idsProvider.GetRID(seq.LID(lid))
+				rid := idsIndex.GetRID(seq.LID(lid))
 				m.Stop()
 
 				id := seq.ID{MID: mid, RID: rid}

@@ -12,7 +12,7 @@ import (
 
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/fetch"
+	"github.com/ozontech/seq-db/fetcher"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/storeapi"
@@ -87,7 +87,7 @@ type searchData struct {
 }
 
 type fetchData struct {
-	docFetcher *fetch.Fetcher
+	docFetcher *fetcher.Fetcher
 }
 
 type GrpcV1 struct {
@@ -117,7 +117,7 @@ func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mappingPr
 			workerPool: search.NewWorkerPool(config.Search.WorkersCount),
 		},
 		fetchData: fetchData{
-			docFetcher: fetch.New(conf.FetchWorkers),
+			docFetcher: fetcher.New(conf.FetchWorkers),
 		},
 	}
 
