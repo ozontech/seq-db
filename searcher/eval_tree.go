@@ -1,4 +1,4 @@
-package search
+package searcher
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
-type createLeafFunc func(parser.Token, *Stats) (node.Node, error)
+type createLeafFunc func(parser.Token) (node.Node, error)
 
 // buildEvalTree builds eval tree based on syntax tree (of search query) where each leaf is DataNode
 func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *Stats, reverse bool, newLeaf createLeafFunc) (node.Node, error) {
@@ -26,9 +26,9 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *Stats, re
 
 	switch token := root.Value.(type) {
 	case *parser.Literal:
-		return newLeaf(token, stats)
+		return newLeaf(token)
 	case *parser.Range:
-		return newLeaf(token, stats)
+		return newLeaf(token)
 	case *parser.Logical:
 		switch token.Operator {
 		case parser.LogicalAnd:

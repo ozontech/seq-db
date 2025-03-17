@@ -51,6 +51,12 @@ func (p IDSources) IDs() []ID {
 	return ids
 }
 
+func (p IDSources) ApplyHint(hint string) {
+	for i := range p {
+		p[i].Hint = hint
+	}
+}
+
 type ErrorSource struct {
 	ErrStr string
 	Source uint64

@@ -17,7 +17,7 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/querytracer"
-	"github.com/ozontech/seq-db/search"
+	"github.com/ozontech/seq-db/searcher"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
@@ -82,8 +82,8 @@ type bulkData struct {
 }
 
 type searchData struct {
-	workerPool *search.WorkerPool
-	inflight   atomic.Int64
+	searcher *searcher.Searcher
+	inflight atomic.Int64
 }
 
 type fetchData struct {
@@ -114,7 +114,13 @@ func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mappingPr
 			writeQueue:  atomic.NewUint64(0),
 		},
 		searchData: searchData{
-			workerPool: search.NewWorkerPool(config.Search.WorkersCount),
+			searcher: searcher.New(config.Search.WorkersCount, searcher.Conf{
+				AggLimits: searcher.AggLimits{
+					MaxFieldTokens:     config.Search.Aggregation.MaxFieldTokens,
+					MaxGroupTokens:     config.Search.Aggregation.MaxGroupTokens,
+					MaxTIDsPerFraction: config.Search.Aggregation.MaxTIDsPerFraction,
+				},
+			}),
 		},
 		fetchData: fetchData{
 			docFetcher: fetcher.New(conf.FetchWorkers),
