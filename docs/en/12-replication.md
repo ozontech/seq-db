@@ -10,16 +10,15 @@ Because seq-db stores act as standalone stateful applications,
 the only component aware of the replication factor and cluster architecture 
 is the seq-db proxy. 
 
-
 The default replication factor used in seq-db proxy is `rf=1`.
 The replication factor can be changed using the `--replicas` and `--hot-replicas` flag 
-for the cold and hot stores respectively. Read more about hot-cold architecture [here](todo).
+for the cold and hot stores respectively. Read more about hot-cold architecture here <!-- todo -->.
 
 
 ## Read and write semantics
 seq-db proxy only supports synchronous replication, meaning that a write operation 
-is only successful when seq-db proxy receive an acknowledgement 
+is only successful when seq-db proxy receives an acknowledgement 
 from **all** replicas that the received documents were persisted on disk.
 
 When reading from a shard, on the other hand, a response from one of the 
-replicas is enough to form a search response. 
+replicas of a specific shard is enough to form a search response. 

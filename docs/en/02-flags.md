@@ -32,7 +32,7 @@ position: 1
 
 ### Clustering Flags
 
-- **--write-stores=WRITE-STORES:** List of hosts for writing data. Specified as a string with values ​​separated by commas. For example, `--write-stores=host1,host2,host3,host4`.
+- **--write-stores=WRITE-STORES:** List of hosts for writing data. Specified as a string with `host:port` formatted values ​​separated by commas. For example, `--write-stores=host1,host2,host3,host4`.
 - **--read-stores=READ-STORES:** List of hosts for reading data. If not set, `--write-stores` is used. Can be used, for example, in case of data migration to other hosts, when we write to some stores and read from other, old stores.
 - **--hot-stores=HOT-STORES:** List of `hot` storage hosts. If specified, the proxy works with 2 store clusters: cold (`--write-stores`) and hot (`--hot-stores`). And sends each write request to each of these clusters accordingly. But when reading, it first tries to get data from the `hot` cluster and in some cases from the `cold` one.
 - **--hot-read-stores=HOT-READ-STORES:** List of `hot` storage hosts for reading. Can be used when migrating data to other hosts.
