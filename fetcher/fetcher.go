@@ -112,19 +112,24 @@ func fracFetch(ctx context.Context, f frac.Fraction, ids []seq.ID) (_ [][]byte, 
 		}
 	}()
 
-	dp, release, ok := f.DataProvider(ctx)
-	if !ok {
+	ip, release := f.TakeIndexProvider(ctx)
+	defer release()
+
+	indexes := ip.Indexes()
+	if len(indexes) == 0 {
 		return nil, nil
 	}
-	defer release()
 
 	sw := stopwatch.New()
 	res := make([][]byte, len(ids))
-	if err := indexFetch(ids, sw, dp.DocsIndex(), res); err != nil {
-		return nil, err
+
+	for _, index := range indexes {
+		if err := indexFetch(ids, sw, index.DocsIndex(), res); err != nil {
+			return nil, err
+		}
 	}
 
-	sw.Export(getStagesMetric(dp.Type()))
+	sw.Export(getStagesMetric(f.Type()))
 
 	return res, nil
 }

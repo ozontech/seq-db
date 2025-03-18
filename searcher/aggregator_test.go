@@ -87,11 +87,11 @@ func BenchmarkAggWide(b *testing.B) {
 	}
 }
 
-type MockDataProvider struct {
-	frac.DataProvider // embed to implement DataProvider interface and override only needed methods
+type MockTokenIndex struct {
+	frac.TokenIndex // embed to implement TokenIndex interface and override only needed methods
 }
 
-func (m *MockDataProvider) GetValByTID(tid uint32) []byte {
+func (m *MockTokenIndex) GetValByTID(tid uint32) []byte {
 	return []byte(strconv.Itoa(int(tid)))
 }
 
@@ -122,7 +122,7 @@ func TestTwoSourceAggregator(t *testing.T) {
 	r := require.New(t)
 
 	// Mock data provider and sources.
-	dp := &MockDataProvider{}
+	dp := &MockTokenIndex{}
 	field := &MockNode{
 		Pairs: []IDSourcePair{
 			{LID: 1, Source: 0},
@@ -176,7 +176,7 @@ func TestTwoSourceAggregator(t *testing.T) {
 
 func TestSingleTreeCountAggregator(t *testing.T) {
 	r := require.New(t)
-	dp := &MockDataProvider{}
+	dp := &MockTokenIndex{}
 	field := &MockNode{
 		Pairs: []IDSourcePair{
 			{LID: 1, Source: 0},

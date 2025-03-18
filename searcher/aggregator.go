@@ -279,7 +279,7 @@ func (n *SingleSourceHistogramAggregator) Aggregate() (seq.QPRHistogram, error) 
 // SourcedNodeIterator can iterate the sourced node that returns source, which means index in a tids slice.
 type SourcedNodeIterator struct {
 	sourcedNode node.Sourced
-	dp          frac.DataProvider
+	ti          frac.TokenIndex
 	tids        []uint32
 
 	tokensCache map[uint32]string
@@ -294,11 +294,11 @@ type SourcedNodeIterator struct {
 	less node.LessFn
 }
 
-func NewSourcedNodeIterator(sourced node.Sourced, dp frac.DataProvider, tids []uint32, limit int, reverse bool) *SourcedNodeIterator {
+func NewSourcedNodeIterator(sourced node.Sourced, ti frac.TokenIndex, tids []uint32, limit int, reverse bool) *SourcedNodeIterator {
 	lastID, lastSource, has := sourced.NextSourced()
 	return &SourcedNodeIterator{
 		sourcedNode:      sourced,
-		dp:               dp,
+		ti:               ti,
 		tids:             tids,
 		tokensCache:      make(map[uint32]string),
 		uniqSourcesLimit: limit,
@@ -336,14 +336,14 @@ func (s *SourcedNodeIterator) ConsumeTokenSource(lid uint32) (uint32, bool, erro
 func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
 	const useCacheThreshold = 2
 	if s.countBySource[source] < useCacheThreshold {
-		return string(s.dp.GetValByTID(s.tids[source]))
+		return string(s.ti.GetValByTID(s.tids[source]))
 	}
 
 	val, ok := s.tokensCache[source]
 	if ok {
 		return val
 	}
-	val = string(s.dp.GetValByTID(s.tids[source]))
+	val = string(s.ti.GetValByTID(s.tids[source]))
 	s.tokensCache[source] = val
 	return val
 }

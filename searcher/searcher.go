@@ -173,37 +173,58 @@ func (s *Searcher) fracSearch(ctx context.Context, params Params, f frac.Fractio
 	params.From = max(params.From, info.From)
 	params.To = min(params.To, info.To)
 
-	dataProvider, release, ok := f.DataProvider(ctx)
-	if !ok {
+	ip, release := f.TakeIndexProvider(ctx)
+	defer release()
+
+	indexes := ip.Indexes()
+	if len(indexes) == 0 { // it is possible for a suicided fraction for example
 		metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()
 		return nil, nil
 	}
 
-	defer release()
+	sw := stopwatch.New()
+	m := sw.Start("total")
 
 	stats := &Stats{}
-	sw := stopwatch.New()
+	qprs := make([]*seq.QPR, 0, len(indexes))
 
-	m := sw.Start("total")
-	qpr, err := s.indexSearch(ctx, params, dataProvider, sw, stats)
-	m.Stop()
+	for _, index := range indexes {
+		if !index.IsIntersecting(params.From, params.To) {
+			continue
+		}
 
-	if err != nil {
-		return nil, err
+		qpr, err := s.indexSearch(ctx, params, index, sw, stats)
+		if err != nil {
+			return nil, err
+		}
+
+		qprs = append(qprs, qpr)
 	}
 
-	if qpr == nil { // it is possible for a suicided fraction for example
-		metric.CountersTotal.WithLabelValues("empty_qpr").Inc()
-		return nil, nil
-	}
-
+	qpr := mergeQPRs(qprs, params)
 	qpr.IDs.ApplyHint(info.Name())
 
-	stagesMetric := getStagesMetric(dataProvider.Type(), params.HasAgg(), params.HasHist())
+	m.Stop()
+
+	stagesMetric := getStagesMetric(f.Type(), params.HasAgg(), params.HasHist())
 	sw.Export(stagesMetric)
 	stats.updateMetrics()
 
 	return qpr, nil
+}
+
+func mergeQPRs(qprs []*seq.QPR, params Params) *seq.QPR {
+	if len(qprs) == 0 {
+		return &seq.QPR{
+			Histogram: make(map[seq.MID]uint64),
+			Aggs:      make([]seq.QPRHistogram, len(params.AggQ)),
+		}
+	}
+	qpr := qprs[0]
+	if len(qprs) > 1 {
+		seq.MergeQPRs(qpr, qprs[1:], params.Limit, seq.MID(params.HistInterval), params.Order)
+	}
+	return qpr
 }
 
 func getLIDsBorders(minMID, maxMID seq.MID, idsIndex frac.IDsIndex) (uint32, uint32) {
@@ -229,16 +250,16 @@ func getLIDsBorders(minMID, maxMID seq.MID, idsIndex frac.IDsIndex) (uint32, uin
 	return uint32(minLID), uint32(maxLID)
 }
 
-func (s *Searcher) indexSearch(ctx context.Context, params Params, dp frac.DataProvider, sw *stopwatch.Stopwatch, stats *Stats) (*seq.QPR, error) {
+func (s *Searcher) indexSearch(ctx context.Context, params Params, index frac.Index, sw *stopwatch.Stopwatch, stats *Stats) (*seq.QPR, error) {
 	m := sw.Start("get_lids_borders")
-	idsProvider := dp.IDsIndex()
-	minLID, maxLID := getLIDsBorders(params.From, params.To, idsProvider)
+	idsIndex := index.IDsIndex()
+	minLID, maxLID := getLIDsBorders(params.From, params.To, idsIndex)
 	m.Stop()
 
 	m = sw.Start("eval_leaf")
 	evalTree, err := buildEvalTree(params.AST, minLID, maxLID, stats, params.Order.IsReverse(),
 		func(token parser.Token) (node.Node, error) {
-			return evalLeaf(dp, token, sw, stats, minLID, maxLID, params.Order)
+			return evalLeaf(index.TokenIndex(), token, sw, stats, minLID, maxLID, params.Order)
 		},
 	)
 	m.Stop()
@@ -257,7 +278,7 @@ func (s *Searcher) indexSearch(ctx context.Context, params Params, dp frac.DataP
 	if params.HasAgg() {
 		m = sw.Start("eval_agg")
 		for i, query := range params.AggQ {
-			aggs[i], err = evalAgg(dp, query, sw, stats, minLID, maxLID, s.cfg.AggLimits, params.Order)
+			aggs[i], err = evalAgg(index.TokenIndex(), query, sw, stats, minLID, maxLID, s.cfg.AggLimits, params.Order)
 			if err != nil {
 				m.Stop()
 				return nil, err
@@ -267,7 +288,7 @@ func (s *Searcher) indexSearch(ctx context.Context, params Params, dp frac.DataP
 	}
 
 	m = sw.Start("iterate_eval_tree")
-	total, ids, histogram, err := iterateEvalTree(ctx, params, idsProvider, evalTree, aggs, sw)
+	total, ids, histogram, err := iterateEvalTree(ctx, params, idsIndex, evalTree, aggs, sw)
 	m.Stop()
 
 	if err != nil {
