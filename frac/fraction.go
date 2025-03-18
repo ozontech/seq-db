@@ -32,24 +32,35 @@ type DocsIndex interface {
 	ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error)
 }
 
-type DataProvider interface {
-	Type() string
-
-	IDsIndex() IDsIndex
-	DocsIndex() DocsIndex
-
+type TokenIndex interface {
 	GetValByTID(tid uint32) []byte
-	GetTIDsByTokenExpr(token parser.Token, tids []uint32) ([]uint32, error)
+	GetTIDsByTokenExpr(token parser.Token) ([]uint32, error)
 	GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node
 }
 
-type Fraction interface {
-	Info() *Info
-
+type SkipIndex interface {
 	IsIntersecting(from seq.MID, to seq.MID) bool
 	Contains(mid seq.MID) bool
-	FullSize() uint64
+}
 
-	DataProvider(ctx context.Context) (DataProvider, func(), bool)
+type Index interface {
+	SkipIndex
+
+	IDsIndex() IDsIndex
+	TokenIndex() TokenIndex
+	DocsIndex() DocsIndex
+}
+
+type IndexProvider interface {
+	Indexes() []Index
+}
+
+type Fraction interface {
+	SkipIndex
+
+	Type() string
+	Info() *Info
+	TakeIndexProvider(ctx context.Context) (IndexProvider, func())
+	FullSize() uint64
 	Suicide()
 }

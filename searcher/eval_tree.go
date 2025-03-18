@@ -49,16 +49,16 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *Stats, re
 }
 
 // evalLeaf finds suitable matching fraction tokens and returns Node that generate corresponding tokens LIDs
-func evalLeaf(dp frac.DataProvider, token parser.Token, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, order seq.DocsOrder) (node.Node, error) {
+func evalLeaf(ti frac.TokenIndex, token parser.Token, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, order seq.DocsOrder) (node.Node, error) {
 	m := sw.Start("get_tids_by_token_expr")
-	tids, err := dp.GetTIDsByTokenExpr(token, nil)
+	tids, err := ti.GetTIDsByTokenExpr(token)
 	m.Stop()
 	if err != nil {
 		return nil, err
 	}
 
 	m = sw.Start("get_lids_from_tids")
-	lidsTids := dp.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
+	lidsTids := ti.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 	m.Stop()
 
 	stats.LeavesTotal += len(lidsTids)
@@ -86,10 +86,10 @@ type AggLimits struct {
 }
 
 // evalAgg evaluates aggregation with given limits. Returns a suitable aggregator.
-func evalAgg(dp frac.DataProvider, query AggQuery, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, limits AggLimits, order seq.DocsOrder) (Aggregator, error) {
+func evalAgg(ti frac.TokenIndex, query AggQuery, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, limits AggLimits, order seq.DocsOrder) (Aggregator, error) {
 	switch query.Func {
 	case seq.AggFuncCount, seq.AggFuncUnique:
-		groupIterator, err := iteratorFromLiteral(dp, query.GroupBy, sw, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
+		groupIterator, err := iteratorFromLiteral(ti, query.GroupBy, sw, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +98,7 @@ func evalAgg(dp frac.DataProvider, query AggQuery, sw *stopwatch.Stopwatch, stat
 		}
 		return NewSingleSourceUniqueAggregator(groupIterator), nil
 	case seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncSum, seq.AggFuncAvg, seq.AggFuncQuantile:
-		fieldIterator, err := iteratorFromLiteral(dp, query.Field, sw, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxFieldTokens, order)
+		fieldIterator, err := iteratorFromLiteral(ti, query.Field, sw, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxFieldTokens, order)
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +109,7 @@ func evalAgg(dp frac.DataProvider, query AggQuery, sw *stopwatch.Stopwatch, stat
 			return NewSingleSourceHistogramAggregator(fieldIterator, collectSamples), nil
 		}
 
-		groupIterator, err := iteratorFromLiteral(dp, query.GroupBy, sw, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
+		groupIterator, err := iteratorFromLiteral(ti, query.GroupBy, sw, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
 		if err != nil {
 			return nil, err
 		}
@@ -133,9 +133,9 @@ func haveNotMinMaxQuantiles(quantiles []float64) bool {
 	return have
 }
 
-func iteratorFromLiteral(dp frac.DataProvider, literal *parser.Literal, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, maxTIDs, iteratorLimit int, order seq.DocsOrder) (*SourcedNodeIterator, error) {
+func iteratorFromLiteral(ti frac.TokenIndex, literal *parser.Literal, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, maxTIDs, iteratorLimit int, order seq.DocsOrder) (*SourcedNodeIterator, error) {
 	m := sw.Start("get_tids_by_token_expr")
-	tids, err := dp.GetTIDsByTokenExpr(literal, nil)
+	tids, err := ti.GetTIDsByTokenExpr(literal)
 	m.Stop()
 	if err != nil {
 		return nil, fmt.Errorf("getting TIDs by token expression: %s", err)
@@ -146,7 +146,7 @@ func iteratorFromLiteral(dp frac.DataProvider, literal *parser.Literal, sw *stop
 	}
 
 	m = sw.Start("get_lids_from_tids")
-	lidsTids := dp.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
+	lidsTids := ti.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 	m.Stop()
 
 	if len(lidsTids) > 0 {
@@ -154,5 +154,5 @@ func iteratorFromLiteral(dp frac.DataProvider, literal *parser.Literal, sw *stop
 	}
 
 	sourcedNode := node.BuildORTreeAgg(lidsTids)
-	return NewSourcedNodeIterator(sourcedNode, dp, tids, iteratorLimit, order.IsReverse()), nil
+	return NewSourcedNodeIterator(sourcedNode, ti, tids, iteratorLimit, order.IsReverse()), nil
 }
