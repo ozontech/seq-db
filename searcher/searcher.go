@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -19,7 +20,9 @@ import (
 )
 
 type Conf struct {
-	AggLimits AggLimits
+	AggLimits             AggLimits
+	MaxFractionHits       int // the maximum number of fractions used in the search
+	FractionsPerIteration int
 }
 
 type Searcher struct {
@@ -37,8 +40,76 @@ func New(maxWorkersNum int, cfg Conf) *Searcher {
 	}
 }
 
-func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params Params) ([]*seq.QPR, error) {
-	return s.searchDocsAsync(ctx, fracs, params)
+func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params Params) (*seq.QPR, error) {
+	remainingFracs, err := s.prepareFracs(fracs, params)
+	if err != nil {
+		return nil, err
+	}
+
+	origLimit := params.Limit
+	scanAll := params.IsScanAllRequest()
+
+	var (
+		total = &seq.QPR{
+			Histogram: make(map[seq.MID]uint64),
+			Aggs:      make([]seq.QPRHistogram, len(params.AggQ)),
+		}
+		subQueriesCount float64
+	)
+
+	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
+		subQPRs, err := s.searchDocsAsync(ctx, remainingFracs.Shift(s.cfg.FractionsPerIteration), params)
+		if err != nil {
+			return nil, err
+		}
+
+		seq.MergeQPRs(total, subQPRs, origLimit, seq.MID(params.HistInterval), params.Order)
+
+		// reduce the limit on the number of ensured docs in response
+		params.Limit = origLimit - calcEnsuredIDsCount(total.IDs, remainingFracs, params.Order)
+
+		subQueriesCount++
+	}
+
+	SearchSubSearches.Observe(subQueriesCount)
+	return total, nil
+
+}
+
+func (s *Searcher) prepareFracs(fracs frac.List, params Params) (frac.List, error) {
+	fracs = fracs.FilterInRange(params.From, params.To)
+	if s.cfg.MaxFractionHits > 0 && len(fracs) > s.cfg.MaxFractionHits {
+		return nil, fmt.Errorf(
+			"%w (%d > %d), try decreasing query time range",
+			consts.ErrTooManyFractionsHit,
+			len(fracs),
+			s.cfg.MaxFractionHits,
+		)
+	}
+	fracs.Sort(params.Order)
+	return fracs, nil
+}
+
+// calcEnsuredIDsCount calculates the number of IDs that are guaranteed to be included in the response
+// (they will never be displaced and cut off in the next iterations)
+func calcEnsuredIDsCount(ids seq.IDSources, remainingFracs frac.List, order seq.DocsOrder) int {
+	if len(remainingFracs) == 0 {
+		return len(ids)
+	}
+
+	nextFracInfo := remainingFracs[0].Info()
+
+	if order.IsReverse() {
+		// ids here are in ASCENDING ORDER
+		// we will never get new IDs from the remaining fractions that are less than nextFracInfo.From,
+		// so any IDs we have that are less than nextFracInfo.From are guaranteed to be included in the response
+		return sort.Search(len(ids), func(i int) bool { return ids[i].ID.MID >= nextFracInfo.From })
+	}
+
+	// ids here are in DESCENDING ORDER
+	// we will never get new IDs from the remaining fractions that are greater than nextFracInfo.To,
+	// so any IDs we have that are greater than nextFracInfo.To are guaranteed to be included in the response
+	return sort.Search(len(ids), func(i int) bool { return ids[i].ID.MID <= nextFracInfo.To })
 }
 
 func (s *Searcher) searchDocsAsync(ctx context.Context, fracs []frac.Fraction, params Params) ([]*seq.QPR, error) {
@@ -113,7 +184,10 @@ func (s *Searcher) fracSearch(ctx context.Context, params Params, f frac.Fractio
 	stats := &Stats{}
 	sw := stopwatch.New()
 
+	m := sw.Start("total")
 	qpr, err := s.indexSearch(ctx, params, dataProvider, sw, stats)
+	m.Stop()
+
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +199,7 @@ func (s *Searcher) fracSearch(ctx context.Context, params Params, f frac.Fractio
 
 	qpr.IDs.ApplyHint(info.Name())
 
-	stagesMetric := chooseStagesMetric(dataProvider.Type(), params.HasAgg(), params.HasHist())
+	stagesMetric := getStagesMetric(dataProvider.Type(), params.HasAgg(), params.HasHist())
 	sw.Export(stagesMetric)
 	stats.updateMetrics()
 
@@ -156,11 +230,6 @@ func getLIDsBorders(minMID, maxMID seq.MID, idsIndex frac.IDsIndex) (uint32, uin
 }
 
 func (s *Searcher) indexSearch(ctx context.Context, params Params, dp frac.DataProvider, sw *stopwatch.Stopwatch, stats *Stats) (*seq.QPR, error) {
-	hasAgg := params.HasAgg()
-
-	totalMetric := sw.Start("total")
-	defer totalMetric.Stop()
-
 	m := sw.Start("get_lids_borders")
 	idsProvider := dp.IDsIndex()
 	minLID, maxLID := getLIDsBorders(params.From, params.To, idsProvider)
@@ -185,7 +254,7 @@ func (s *Searcher) indexSearch(ctx context.Context, params Params, dp frac.DataP
 	}
 
 	aggs := make([]Aggregator, len(params.AggQ))
-	if hasAgg {
+	if params.HasAgg() {
 		m = sw.Start("eval_agg")
 		for i, query := range params.AggQ {
 			aggs[i], err = evalAgg(dp, query, sw, stats, minLID, maxLID, s.cfg.AggLimits, params.Order)
@@ -296,8 +365,7 @@ func iterateEvalTree(
 				id := seq.ID{MID: mid, RID: rid}
 
 				if total == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
-					foundID := seq.IDSource{ID: id}
-					ids = append(ids, foundID)
+					ids = append(ids, seq.IDSource{ID: id})
 				}
 				lastID = id
 			}

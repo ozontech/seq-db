@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"strconv"
 	"time"
 
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/parser"
@@ -139,7 +137,7 @@ func (g *GrpcV1) doSearch(
 	}
 
 	searchTr := tr.NewChild("search iteratively")
-	qpr, err := g.searchIteratively(ctx, searchParams, g.config.Search.FractionsPerIteration)
+	qpr, err := g.searchData.searcher.SearchDocs(ctx, g.fracManager.GetAllFracs(), searchParams)
 	searchTr.Done()
 	if err != nil {
 		if code, ok := parseStoreError(err); ok {
@@ -218,45 +216,6 @@ func useSeqQL(ctx context.Context) bool {
 	val := useSeqQLValues[0]
 	useSeqQL, _ := strconv.ParseBool(val)
 	return useSeqQL
-}
-
-func (g *GrpcV1) searchIteratively(ctx context.Context, params searcher.Params, n int) (*seq.QPR, error) {
-	remainingFracs, err := g.fracManager.SelectFracsInRange(params.From, params.To)
-	if err != nil {
-		return nil, err
-	}
-	remainingFracs.Sort(params.Order)
-
-	origLimit := params.Limit
-	scanAll := params.IsScanAllRequest()
-
-	var (
-		total = &seq.QPR{
-			Histogram: make(map[seq.MID]uint64),
-			Aggs:      make([]seq.QPRHistogram, len(params.AggQ)),
-		}
-		subQueriesCount float64
-	)
-
-	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
-		subQPRs, err := g.searchData.searcher.SearchDocs(ctx, remainingFracs.Shift(n), params)
-		if err != nil {
-			return nil, err
-		}
-
-		seq.MergeQPRs(total, subQPRs, origLimit, seq.MID(params.HistInterval), params.Order)
-
-		// reduce the limit on the number of ensured docs in response
-		params.Limit = origLimit - countIDsAfter(total.IDs, rightmostBorder(remainingFracs))
-		subQueriesCount++
-	}
-
-	if total == nil {
-		total = &seq.QPR{}
-	}
-
-	metric.SearchSubSearches.Observe(subQueriesCount)
-	return total, nil
 }
 
 func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {
@@ -362,20 +321,6 @@ func aggQueryFromProto(aggQuery *storeapi.AggQuery) (searcher.AggQuery, error) {
 var searchAll = []parser.Term{{
 	Kind: parser.TermSymbol, Data: aggAsteriskFilter,
 }}
-
-func rightmostBorder(fl frac.List) seq.MID {
-	if len(fl) == 0 {
-		return 0
-	}
-	return fl[0].Info().To
-}
-
-func countIDsAfter(ids seq.IDSources, mid seq.MID) int {
-	if mid == 0 {
-		return len(ids)
-	}
-	return sort.Search(len(ids), func(i int) bool { return ids[i].ID.MID <= mid })
-}
 
 type aggQueryMarshaler storeapi.AggQuery
 

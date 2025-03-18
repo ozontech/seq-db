@@ -2,7 +2,6 @@ package fracmanager
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math/rand"
 	"os"
@@ -21,7 +20,6 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -325,22 +323,6 @@ func (fm *FracManager) Load(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (fm *FracManager) SelectFracsInRange(from, to seq.MID) (frac.List, error) {
-	fracs := fm.GetAllFracs().FilterInRange(from, to)
-
-	if fm.config.MaxFractionHits > 0 && len(fracs) > int(fm.config.MaxFractionHits) {
-		metric.RejectedRequests.WithLabelValues("search", "fracs_exceeding").Inc()
-		return nil, fmt.Errorf(
-			"%w (%d > %d), try decreasing query time range",
-			consts.ErrTooManyFractionsHit,
-			len(fracs),
-			fm.config.MaxFractionHits,
-		)
-	}
-
-	return fracs, nil
 }
 
 func (fm *FracManager) Append(ctx context.Context, docs, metas disk.DocBlock, writeQueue *atomic.Uint64) error {

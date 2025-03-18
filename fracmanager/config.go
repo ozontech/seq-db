@@ -14,8 +14,6 @@ type Config struct {
 	TotalSize uint64
 	CacheSize uint64
 
-	MaxFractionHits uint64 // the maximum number of fractions used in the search
-
 	FracLoadLimit     uint64 // how many sealed fractions should fracmanager load, if 0 then loads all
 	ShouldReplay      bool
 	ShouldRemoveMeta  bool

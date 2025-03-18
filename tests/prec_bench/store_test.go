@@ -281,7 +281,6 @@ func StoreConfigBase() *storeapi.StoreConfig {
 		FracManager: *fracmanager.FillConfigWithDefault(&fracmanager.Config{
 			FracLoadLimit:    0,
 			ShouldRemoveMeta: true,
-			MaxFractionHits:  4096,
 		}),
 		API: storeapi.APIConfig{
 			StoreMode: "",
@@ -291,6 +290,7 @@ func StoreConfigBase() *storeapi.StoreConfig {
 			},
 			Search: storeapi.SearchConfig{
 				WorkersCount:          128,
+				MaxFractionHits:       4096,
 				FractionsPerIteration: runtime.GOMAXPROCS(0),
 				RequestsLimit:         30,
 				LogThreshold:          time.Second * 3,

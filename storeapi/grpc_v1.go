@@ -15,6 +15,7 @@ import (
 	"github.com/ozontech/seq-db/fetcher"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/searcher"
@@ -34,6 +35,7 @@ type AggregationsConfig struct {
 
 type SearchConfig struct {
 	WorkersCount          int
+	MaxFractionHits       int
 	FractionsPerIteration int
 	RequestsLimit         uint64
 	LogThreshold          time.Duration
@@ -120,6 +122,8 @@ func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mappingPr
 					MaxGroupTokens:     config.Search.Aggregation.MaxGroupTokens,
 					MaxTIDsPerFraction: config.Search.Aggregation.MaxTIDsPerFraction,
 				},
+				MaxFractionHits:       config.Search.MaxFractionHits,
+				FractionsPerIteration: config.Search.FractionsPerIteration,
 			}),
 		},
 		fetchData: fetchData{
@@ -195,6 +199,7 @@ func parseStoreError(e error) (storeapi.SearchErrorCode, bool) {
 	}
 
 	if errors.Is(e, consts.ErrTooManyFractionsHit) {
+		metric.RejectedRequests.WithLabelValues("search", "fracs_exceeding").Inc()
 		return storeapi.SearchErrorCode_TOO_MANY_FRACTIONS_HIT, true
 	}
 
