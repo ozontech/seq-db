@@ -246,7 +246,7 @@ func (g *GrpcV1) searchIteratively(ctx context.Context, params search.Params, n 
 	)
 
 	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
-		subQPRs, stats, err := g.searchData.workerPool.Search(ctx, remainingFracs.Pop(n), params)
+		subQPRs, stats, err := g.searchData.workerPool.Search(ctx, remainingFracs.Shift(n), params)
 		if err != nil {
 			return nil, nil, err
 		}

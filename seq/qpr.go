@@ -19,6 +19,11 @@ const (
 	DocsOrderAsc  DocsOrder = 1
 )
 
+func (o DocsOrder) IsNormal() bool {
+	// it is not a bug: normal order is descending
+	return o == DocsOrderDesc
+}
+
 func (o DocsOrder) IsReverse() bool {
 	return o == DocsOrderAsc
 }

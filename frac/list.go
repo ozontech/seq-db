@@ -41,13 +41,16 @@ func (l List) GetOldestFrac() Fraction {
 }
 
 func (l List) Sort(order seq.DocsOrder) {
-	if order.IsReverse() {
-		sort.Slice(l, func(i, j int) bool { // ascending order by From
-			return l[i].Info().From < l[j].Info().From
+	if order.IsNormal() {
+		// descending order by To
+		// it is not a bug: normal order is descending
+		sort.Slice(l, func(i, j int) bool {
+			return l[i].Info().To > l[j].Info().To
 		})
 	} else {
-		sort.Slice(l, func(i, j int) bool { // descending order by To
-			return l[i].Info().To > l[j].Info().To
+		// ascending order by From
+		sort.Slice(l, func(i, j int) bool {
+			return l[i].Info().From < l[j].Info().From
 		})
 	}
 }
@@ -62,7 +65,7 @@ func (l List) FilterInRange(from, to seq.MID) List {
 	return res
 }
 
-func (l *List) Pop(n int) []Fraction {
+func (l *List) Shift(n int) []Fraction {
 	n = min(n, len(*l))
 	res := (*l)[:n]
 	*l = (*l)[n:]
