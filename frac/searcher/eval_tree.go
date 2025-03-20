@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
@@ -14,7 +13,7 @@ import (
 type createLeafFunc func(parser.Token) (node.Node, error)
 
 // buildEvalTree builds eval tree based on syntax tree (of search query) where each leaf is DataNode
-func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *Stats, reverse bool, newLeaf createLeafFunc) (node.Node, error) {
+func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *stats, reverse bool, newLeaf createLeafFunc) (node.Node, error) {
 	children := make([]node.Node, 0, len(root.Children))
 	for _, child := range root.Children {
 		childNode, err := buildEvalTree(child, minVal, maxVal, stats, reverse, newLeaf)
@@ -49,7 +48,7 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *Stats, re
 }
 
 // evalLeaf finds suitable matching fraction tokens and returns Node that generate corresponding tokens LIDs
-func evalLeaf(ti frac.TokenIndex, token parser.Token, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, order seq.DocsOrder) (node.Node, error) {
+func evalLeaf(ti tokenIndex, token parser.Token, sw *stopwatch.Stopwatch, stats *stats, minLID, maxLID uint32, order seq.DocsOrder) (node.Node, error) {
 	m := sw.Start("get_tids_by_token_expr")
 	tids, err := ti.GetTIDsByTokenExpr(token)
 	m.Stop()
@@ -86,7 +85,7 @@ type AggLimits struct {
 }
 
 // evalAgg evaluates aggregation with given limits. Returns a suitable aggregator.
-func evalAgg(ti frac.TokenIndex, query AggQuery, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, limits AggLimits, order seq.DocsOrder) (Aggregator, error) {
+func evalAgg(ti tokenIndex, query AggQuery, sw *stopwatch.Stopwatch, stats *stats, minLID, maxLID uint32, limits AggLimits, order seq.DocsOrder) (Aggregator, error) {
 	switch query.Func {
 	case seq.AggFuncCount, seq.AggFuncUnique:
 		groupIterator, err := iteratorFromLiteral(ti, query.GroupBy, sw, stats, minLID, maxLID, limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order)
@@ -133,7 +132,7 @@ func haveNotMinMaxQuantiles(quantiles []float64) bool {
 	return have
 }
 
-func iteratorFromLiteral(ti frac.TokenIndex, literal *parser.Literal, sw *stopwatch.Stopwatch, stats *Stats, minLID, maxLID uint32, maxTIDs, iteratorLimit int, order seq.DocsOrder) (*SourcedNodeIterator, error) {
+func iteratorFromLiteral(ti tokenIndex, literal *parser.Literal, sw *stopwatch.Stopwatch, stats *stats, minLID, maxLID uint32, maxTIDs, iteratorLimit int, order seq.DocsOrder) (*SourcedNodeIterator, error) {
 	m := sw.Start("get_tids_by_token_expr")
 	tids, err := ti.GetTIDsByTokenExpr(literal)
 	m.Stop()

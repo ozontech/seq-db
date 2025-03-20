@@ -59,8 +59,14 @@ type Active struct {
 	sealed Fraction
 }
 
-func NewActive(baseFileName string, metaRemove bool, indexWorkers *IndexWorkers, readLimiter *disk.ReadLimiter, docsCache *cache.Cache[[]byte]) *Active {
-
+func NewActive(
+	baseFileName string,
+	metaRemove bool,
+	indexWorkers *IndexWorkers,
+	readLimiter *disk.ReadLimiter,
+	docsCache *cache.Cache[[]byte],
+	searchCfg SearchCfg,
+) *Active {
 	docsFile, docsStats := openFile(baseFileName + consts.DocsFileSuffix)
 	metaFile, metaStats := openFile(baseFileName + consts.MetaFileSuffix)
 
@@ -82,6 +88,7 @@ func NewActive(baseFileName string, metaRemove bool, indexWorkers *IndexWorkers,
 		frac: frac{
 			BaseFileName: baseFileName,
 			info:         NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
+			searchCfg:    searchCfg,
 		},
 	}
 
@@ -257,10 +264,6 @@ func (f *Active) GetAllDocuments() []uint32 {
 	return f.TokenList.GetAllTokenLIDs().GetLIDs(f.MIDs, f.RIDs)
 }
 
-func (f *Active) Type() string {
-	return TypeActive
-}
-
 func (f *Active) Release(sealed Fraction) {
 	f.useLock.Lock()
 	f.sealed = sealed
@@ -394,11 +397,11 @@ func (f *Active) String() string {
 	return f.toString("active")
 }
 
-func (f *Active) TakeIndexProvider(ctx context.Context) (IndexProvider, func()) {
+func (f *Active) DataProvider(ctx context.Context) (DataProvider, func()) {
 	f.useLock.RLock()
 
 	if f.sealed == nil && !f.suicided && f.Info().DocsTotal > 0 { // it is ordinary active fraction state
-		ip := ActiveIndexProvider{
+		ip := activeDataProvider{
 			f:   f,
 			ctx: ctx,
 		}
@@ -414,7 +417,7 @@ func (f *Active) TakeIndexProvider(ctx context.Context) (IndexProvider, func()) 
 	defer f.useLock.RUnlock()
 
 	if f.sealed != nil { // move on to the daughter sealed faction
-		dp, releaseSealed := f.sealed.TakeIndexProvider(ctx)
+		dp, releaseSealed := f.sealed.DataProvider(ctx)
 		metric.CountersTotal.WithLabelValues("use_sealed_from_active").Inc()
 		return dp, releaseSealed
 	}

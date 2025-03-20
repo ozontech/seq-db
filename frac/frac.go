@@ -8,10 +8,17 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac/searcher"
 	"github.com/ozontech/seq-db/seq"
 )
 
+type SearchCfg struct {
+	AggLimits searcher.AggLimits
+}
+
 type frac struct {
+	searchCfg SearchCfg
+
 	statsMu sync.Mutex
 
 	info *Info

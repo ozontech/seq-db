@@ -9,12 +9,12 @@ import (
 
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac/searcher"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/querytracer"
-	"github.com/ozontech/seq-db/searcher"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tracing"
 	"github.com/ozontech/seq-db/util"

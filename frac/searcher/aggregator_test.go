@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -88,7 +87,7 @@ func BenchmarkAggWide(b *testing.B) {
 }
 
 type MockTokenIndex struct {
-	frac.TokenIndex // embed to implement TokenIndex interface and override only needed methods
+	tokenIndex // embed to implement TokenIndex interface and override only needed methods
 }
 
 func (m *MockTokenIndex) GetValByTID(tid uint32) []byte {
@@ -194,7 +193,6 @@ func TestSingleTreeCountAggregator(t *testing.T) {
 		t.Errorf("Unexpected error: %v", err)
 	}
 	expectedResult := seq.QPRHistogram{
-		NotExists: 0,
 		HistogramByToken: map[string]*seq.AggregationHistogram{
 			// "0" because DataProvider converts TID source (tid index) to string
 			"0": {

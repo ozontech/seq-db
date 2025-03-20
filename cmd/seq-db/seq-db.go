@@ -24,6 +24,7 @@ import (
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/searcher"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/mappingprovider"
@@ -320,6 +321,13 @@ func startStore(ctx context.Context, addr string, mp storeapi.MappingProvider) *
 				DocsPositionsZstdLevel: *sealCompressLevel,
 				TokenTableZstdLevel:    *sealCompressLevel,
 			},
+			SearchCfg: frac.SearchCfg{
+				AggLimits: searcher.AggLimits{
+					MaxFieldTokens:     *aggMaxFieldTokens,
+					MaxGroupTokens:     *aggMaxGroupTokens,
+					MaxTIDsPerFraction: *aggMaxTIDsPerFraction,
+				},
+			},
 		},
 		API: storeapi.APIConfig{
 			StoreMode: configMode,
@@ -333,11 +341,6 @@ func startStore(ctx context.Context, addr string, mp storeapi.MappingProvider) *
 				FractionsPerIteration: runtime.GOMAXPROCS(0),
 				RequestsLimit:         *searchRequestsLimit,
 				LogThreshold:          time.Millisecond * time.Duration(*logSearchThresholdMs),
-				Aggregation: storeapi.AggregationsConfig{
-					MaxGroupTokens:     *aggMaxGroupTokens,
-					MaxFieldTokens:     *aggMaxFieldTokens,
-					MaxTIDsPerFraction: *aggMaxTIDsPerFraction,
-				},
 			},
 			Fetch: storeapi.FetchConfig{
 				LogThreshold: time.Millisecond * time.Duration(*logFetchThresholdMs),
