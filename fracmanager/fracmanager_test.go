@@ -15,7 +15,6 @@ import (
 
 type testFakeFrac struct {
 	frac.Fraction
-	counter atomic.Int64
 }
 
 func (t *testFakeFrac) IsIntersecting(_, _ seq.MID) bool {
@@ -24,7 +23,7 @@ func (t *testFakeFrac) IsIntersecting(_, _ seq.MID) bool {
 
 func addDummyDoc(t *testing.T, fm *FracManager, dp *frac.DocProvider, seqID seq.ID) {
 	doc := []byte("document")
-	dp.Append(doc, nil, seqID, seq.Tokens("service:100500", "k8s_pod"))
+	dp.Append(doc, nil, seqID, seq.Tokens("service:100500", "k8s_pod", "_all_:"))
 	docs, metas := dp.Provide()
 	err := fm.Append(context.Background(), docs, metas, atomic.NewUint64(0))
 	assert.NoError(t, err)

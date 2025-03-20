@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -279,7 +278,7 @@ func (n *SingleSourceHistogramAggregator) Aggregate() (seq.QPRHistogram, error) 
 // SourcedNodeIterator can iterate the sourced node that returns source, which means index in a tids slice.
 type SourcedNodeIterator struct {
 	sourcedNode node.Sourced
-	ti          frac.TokenIndex
+	ti          tokenIndex
 	tids        []uint32
 
 	tokensCache map[uint32]string
@@ -294,7 +293,7 @@ type SourcedNodeIterator struct {
 	less node.LessFn
 }
 
-func NewSourcedNodeIterator(sourced node.Sourced, ti frac.TokenIndex, tids []uint32, limit int, reverse bool) *SourcedNodeIterator {
+func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, limit int, reverse bool) *SourcedNodeIterator {
 	lastID, lastSource, has := sourced.NextSourced()
 	return &SourcedNodeIterator{
 		sourcedNode:      sourced,

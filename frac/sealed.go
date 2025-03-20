@@ -51,7 +51,14 @@ const (
 	HalfRemove
 )
 
-func NewSealed(baseFile string, readLimiter *disk.ReadLimiter, indexCache *IndexCache, docsCache *cache.Cache[[]byte], fracInfoCache *Info) *Sealed {
+func NewSealed(
+	baseFile string,
+	readLimiter *disk.ReadLimiter,
+	indexCache *IndexCache,
+	docsCache *cache.Cache[[]byte],
+	fracInfoCache *Info,
+	searchCfg SearchCfg,
+) *Sealed {
 	f := &Sealed{
 		loadMu: &sync.RWMutex{},
 
@@ -62,6 +69,7 @@ func NewSealed(baseFile string, readLimiter *disk.ReadLimiter, indexCache *Index
 		frac: frac{
 			info:         fracInfoCache,
 			BaseFileName: baseFile,
+			searchCfg:    searchCfg,
 		},
 		PartialSuicideMode: Off,
 	}
@@ -124,6 +132,7 @@ func NewSealedFromActive(active *Active, readLimiter *disk.ReadLimiter, indexFil
 		frac: frac{
 			info:         &infoCopy,
 			BaseFileName: active.BaseFileName,
+			searchCfg:    active.searchCfg,
 		},
 	}
 
@@ -167,10 +176,6 @@ func (f *Sealed) loadHeader() *Info {
 	info.IndexOnDisk = uint64(stat.Size())
 
 	return info
-}
-
-func (f *Sealed) Type() string {
-	return TypeSealed
 }
 
 func (f *Sealed) load() {
@@ -276,7 +281,7 @@ func (f *Sealed) String() string {
 	return f.toString("sealed")
 }
 
-func (f *Sealed) TakeIndexProvider(ctx context.Context) (IndexProvider, func()) {
+func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func()) {
 	f.useLock.RLock()
 
 	if f.suicided {
@@ -294,7 +299,7 @@ func (f *Sealed) TakeIndexProvider(ctx context.Context) (IndexProvider, func()) 
 
 	f.load()
 
-	dp := SealedIndexProvider{
+	dp := sealedDataProvider{
 		f:                f,
 		ctx:              ctx,
 		fracVersion:      f.info.BinaryDataVer,

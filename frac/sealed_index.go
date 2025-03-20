@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/fetcher"
 	"github.com/ozontech/seq-db/frac/lids"
+	"github.com/ozontech/seq-db/frac/searcher"
 	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pattern"
@@ -16,7 +22,7 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-type SealedIndexProvider struct {
+type sealedDataProvider struct {
 	f                *Sealed
 	ctx              context.Context
 	fracVersion      BinaryDataVersion
@@ -26,70 +32,121 @@ type SealedIndexProvider struct {
 	tokenTableLoader *token.TableLoader
 }
 
-func (ip *SealedIndexProvider) Indexes() []Index {
-	return []Index{&SealedIndex{ip: ip}}
+var (
+	fetcherSealedStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "sealed_stages_seconds",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
+
+	sealedAggSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "tracer_sealed_agg_search_sec",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
+	sealedHistSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "tracer_sealed_hist_search_sec",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
+	sealedRegSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "tracer_sealed_reg_search_sec",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
+)
+
+func (dp *sealedDataProvider) getFetchIndex() *sealedFetchIndex {
+	idsLoader := NewIDsLoader(dp.f.indexReader, dp.f.indexCache, dp.f.idsTable)
+	docsIndex := &sealedFetchIndex{
+		idsIndex: &sealedIDsIndex{
+			loader:      idsLoader,
+			midCache:    dp.midCache,
+			ridCache:    dp.ridCache,
+			fracVersion: dp.fracVersion,
+		},
+		idsLoader:     idsLoader,
+		docsReader:    dp.f.docsReader,
+		blocksOffsets: dp.f.BlocksOffsets,
+	}
+	return docsIndex
 }
 
-type SealedIndex struct {
-	ip *SealedIndexProvider
-}
-
-func (index *SealedIndex) IsIntersecting(from, to seq.MID) bool {
-	return index.ip.f.IsIntersecting(from, to)
-}
-
-func (index *SealedIndex) Contains(mid seq.MID) bool {
-	return index.ip.f.Contains(mid)
-}
-
-func (index *SealedIndex) IDsIndex() IDsIndex {
-	return &SealedIDsIndex{
-		loader:      NewIDsLoader(index.ip.f.indexReader, index.ip.f.indexCache, index.ip.f.idsTable),
-		midCache:    index.ip.midCache,
-		ridCache:    index.ip.ridCache,
-		fracVersion: index.ip.fracVersion,
+func (dp *sealedDataProvider) getSearchIndex() *sealedSearchIndex {
+	return &sealedSearchIndex{
+		sealedIDsIndex: &sealedIDsIndex{
+			loader:      NewIDsLoader(dp.f.indexReader, dp.f.indexCache, dp.f.idsTable),
+			midCache:    dp.midCache,
+			ridCache:    dp.ridCache,
+			fracVersion: dp.fracVersion,
+		},
+		SealedTokenIndex: &SealedTokenIndex{ip: dp},
 	}
 }
 
-func (index *SealedIndex) TokenIndex() TokenIndex {
-	return &SealedTokenIndex{ip: index.ip}
-}
-
-func (index *SealedIndex) DocsIndex() DocsIndex {
-	return &SealedDocsIndex{
-		idsIndex: index.IDsIndex(),
-		idsLoader: NewIDsLoader(
-			index.ip.f.indexReader,
-			index.ip.f.indexCache,
-			index.ip.f.idsTable,
-		),
-		docsReader:    index.ip.f.docsReader,
-		blocksOffsets: index.ip.f.BlocksOffsets,
+func (dp *sealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
+	sw := stopwatch.New()
+	res := make([][]byte, len(ids))
+	if err := fetcher.IndexFetch(ids, sw, dp.getFetchIndex(), res); err != nil {
+		return nil, err
 	}
+	sw.Export(fetcherSealedStagesSeconds)
+
+	return res, nil
 }
 
-type SealedIDsIndex struct {
+func (dp *sealedDataProvider) Search(ctx context.Context, params searcher.Params) (*seq.QPR, error) {
+	s := searcher.New(ctx, params, dp.f.searchCfg.AggLimits, getSealedSearchMetric(params))
+	if err := s.IndexSearch(dp.getSearchIndex()); err != nil {
+		return nil, err
+	}
+	qpr := s.GetResult()
+	qpr.IDs.ApplyHint(dp.f.Info().Name())
+
+	return qpr, nil
+}
+
+func getSealedSearchMetric(params searcher.Params) *prometheus.HistogramVec {
+	if params.HasAgg() {
+		return sealedAggSearchSec
+	}
+	if params.HasHist() {
+		return sealedHistSearchSec
+	}
+	return sealedRegSearchSec
+}
+
+type sealedSearchIndex struct {
+	*sealedIDsIndex
+	*SealedTokenIndex
+}
+
+type sealedIDsIndex struct {
 	loader      *IDsLoader
 	midCache    *UnpackCache
 	ridCache    *UnpackCache
 	fracVersion BinaryDataVersion
 }
 
-func (p *SealedIDsIndex) GetMID(lid seq.LID) seq.MID {
+func (p *sealedIDsIndex) GetMID(lid seq.LID) seq.MID {
 	p.loader.GetMIDsBlock(seq.LID(lid), p.midCache)
 	return seq.MID(p.midCache.GetValByLID(uint64(lid)))
 }
 
-func (p *SealedIDsIndex) GetRID(lid seq.LID) seq.RID {
+func (p *sealedIDsIndex) GetRID(lid seq.LID) seq.RID {
 	p.loader.GetRIDsBlock(seq.LID(lid), p.ridCache, p.fracVersion)
 	return seq.RID(p.ridCache.GetValByLID(uint64(lid)))
 }
 
-func (p *SealedIDsIndex) Len() int {
+func (p *sealedIDsIndex) Len() int {
 	return int(p.loader.table.IDsTotal)
 }
 
-func (p *SealedIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
+func (p *sealedIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 	if lid >= seq.LID(p.loader.table.IDsTotal) {
 		// out of right border
 		return true
@@ -121,7 +178,7 @@ func (p *SealedIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 }
 
 type SealedTokenIndex struct {
-	ip *SealedIndexProvider
+	ip *sealedDataProvider
 }
 
 func (ti *SealedTokenIndex) GetValByTID(tid uint32) []byte {
@@ -214,27 +271,27 @@ func (ti *SealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 	return nodes
 }
 
-type SealedDocsIndex struct {
-	idsIndex      IDsIndex
+type sealedFetchIndex struct {
+	idsIndex      *sealedIDsIndex
 	idsLoader     *IDsLoader
 	docsReader    *disk.DocsReader
 	blocksOffsets []uint64
 }
 
-func (di *SealedDocsIndex) GetBlocksOffsets(num uint32) uint64 {
+func (di *sealedFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return di.blocksOffsets[num]
 }
 
-func (di *SealedDocsIndex) GetDocPos(ids []seq.ID) []DocPos {
+func (di *sealedFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
 	return di.getDocPosByLIDs(di.findLIDs(ids))
 }
 
-func (di *SealedDocsIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
+func (di *sealedFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
 	return di.docsReader.ReadDocs(blockOffset, docOffsets)
 }
 
 // findLIDs returns a slice of LIDs. If seq.ID is not found, LID has the value 0 at the corresponding position
-func (di *SealedDocsIndex) findLIDs(ids []seq.ID) []seq.LID {
+func (di *sealedFetchIndex) findLIDs(ids []seq.ID) []seq.LID {
 	res := make([]seq.LID, len(ids))
 
 	// left and right it is search range
@@ -266,27 +323,28 @@ func (di *SealedDocsIndex) findLIDs(ids []seq.ID) []seq.LID {
 // GetDocPosByLIDs returns a slice of DocPos for the corresponding LIDs.
 // Passing sorted LIDs (asc or desc) will improve the performance of this method.
 // For LID with zero value will return DocPos with `DocPosNotFound` value
-func (di *SealedDocsIndex) getDocPosByLIDs(localIDs []seq.LID) []DocPos {
+func (di *sealedFetchIndex) getDocPosByLIDs(localIDs []seq.LID) []seq.DocPos {
 	var (
-		prevIndex int64
+		prevIndex int64 = -1
 		positions []uint64
 		startLID  seq.LID
 	)
 
-	res := make([]DocPos, len(localIDs))
+	res := make([]seq.DocPos, len(localIDs))
 	for i, lid := range localIDs {
 		if lid == 0 {
-			res[i] = DocPosNotFound
+			res[i] = seq.DocPosNotFound
 			continue
 		}
 
 		index := di.idsLoader.getIDBlockIndexByLID(lid)
-		if positions == nil || prevIndex != index {
+		if prevIndex != index {
 			positions = di.idsLoader.GetParamsBlock(uint32(index))
 			startLID = seq.LID(index * consts.IDsPerBlock)
+			prevIndex = index
 		}
 
-		res[i] = DocPos(positions[lid-startLID])
+		res[i] = seq.DocPos(positions[lid-startLID])
 	}
 
 	return res

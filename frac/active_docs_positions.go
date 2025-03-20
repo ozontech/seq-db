@@ -8,23 +8,23 @@ import (
 
 type DocsPositions struct {
 	mu        sync.RWMutex
-	positions map[seq.ID]DocPos
+	positions map[seq.ID]seq.DocPos
 }
 
 func NewSyncDocsPositions() *DocsPositions {
 	return &DocsPositions{
-		positions: make(map[seq.ID]DocPos),
+		positions: make(map[seq.ID]seq.DocPos),
 	}
 }
 
-func (dp *DocsPositions) Get(id seq.ID) DocPos {
+func (dp *DocsPositions) Get(id seq.ID) seq.DocPos {
 	if val, ok := dp.positions[id]; ok {
 		return val
 	}
-	return DocPosNotFound
+	return seq.DocPosNotFound
 }
 
-func (dp *DocsPositions) GetSync(id seq.ID) DocPos {
+func (dp *DocsPositions) GetSync(id seq.ID) seq.DocPos {
 	dp.mu.RLock()
 	defer dp.mu.RUnlock()
 
@@ -32,7 +32,7 @@ func (dp *DocsPositions) GetSync(id seq.ID) DocPos {
 }
 
 // SetMultiple returns a slice of added ids
-func (dp *DocsPositions) SetMultiple(ids []seq.ID, pos []DocPos) []seq.ID {
+func (dp *DocsPositions) SetMultiple(ids []seq.ID, pos []seq.DocPos) []seq.ID {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
 

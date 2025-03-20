@@ -3,94 +3,156 @@ package frac
 import (
 	"context"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/fetcher"
 	"github.com/ozontech/seq-db/frac/lids"
+	"github.com/ozontech/seq-db/frac/searcher"
+	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 )
 
-type ActiveIndexProvider struct {
+var (
+	fetcherActiveStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "active_stages_seconds",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
+
+	activeAggSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "tracer_active_agg_search_sec",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
+	activeHistSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "tracer_active_hist_search_sec",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
+	activeRegSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "tracer_active_reg_search_sec",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
+)
+
+type activeDataProvider struct {
 	f        *Active
 	ctx      context.Context
-	idsIndex *ActiveIDsIndex
+	idsIndex *activeIDsIndex
 }
 
 // getIDsIndex creates on demand and returns ActiveIDsIndex.
 // Creation of inverser for ActiveIDsIndex is expensive operation
-func (ip *ActiveIndexProvider) createIDsIndex() *ActiveIDsIndex {
-	mapping := ip.f.GetAllDocuments() // creation order is matter
-	mids := ip.f.MIDs.GetVals()       // mids and rids should be created after mapping to ensure that
-	rids := ip.f.RIDs.GetVals()       // they contain all the ids that mapping contains.
+func (dp *activeDataProvider) createIDsIndex() *activeIDsIndex {
+	mapping := dp.f.GetAllDocuments() // creation order is matter
+	mids := dp.f.MIDs.GetVals()       // mids and rids should be created after mapping to ensure that
+	rids := dp.f.RIDs.GetVals()       // they contain all the ids that mapping contains.
 
 	inverser := newInverser(mapping, len(mids))
 
-	return &ActiveIDsIndex{
+	return &activeIDsIndex{
 		inverser: inverser,
 		mids:     mids,
 		rids:     rids,
 	}
 }
 
-func (ip *ActiveIndexProvider) getIDsIndex() *ActiveIDsIndex {
-	if ip.idsIndex == nil {
-		ip.idsIndex = ip.createIDsIndex()
+func (dp *activeDataProvider) getIDsIndex() *activeIDsIndex {
+	if dp.idsIndex == nil {
+		dp.idsIndex = dp.createIDsIndex()
 	}
-	return ip.idsIndex
+	return dp.idsIndex
 }
 
-func (ip *ActiveIndexProvider) Indexes() []Index {
-	return []Index{&ActiveIndex{ip: ip}}
+func (dp *activeDataProvider) getSearchIndexes() []*activeSearchIndex {
+	return []*activeSearchIndex{{
+		Active:           dp.f,
+		activeIDsIndex:   dp.createIDsIndex(),
+		activeTokenIndex: &activeTokenIndex{ip: dp},
+	}}
 }
 
-type ActiveIndex struct {
-	ip *ActiveIndexProvider
+func (dp *activeDataProvider) getFetchIndexes() []*activeFetchIndex {
+	return []*activeFetchIndex{{
+		blocksOffsets: dp.f.DocBlocks.GetVals(),
+		docsPositions: dp.f.DocsPositions,
+		docsReader:    dp.f.docsReader,
+	}}
 }
 
-func (index *ActiveIndex) IsIntersecting(from, to seq.MID) bool {
-	return index.ip.f.IsIntersecting(from, to)
-}
-func (index *ActiveIndex) Contains(mid seq.MID) bool {
-	return index.ip.f.Contains(mid)
-}
-
-func (index *ActiveIndex) IDsIndex() IDsIndex {
-	return index.ip.getIDsIndex()
-}
-
-func (index *ActiveIndex) TokenIndex() TokenIndex {
-	return &ActiveTokenIndex{ip: index.ip}
-}
-
-func (index *ActiveIndex) DocsIndex() DocsIndex {
-	return &ActiveDocsIndex{
-		blocksOffsets: index.ip.f.DocBlocks.GetVals(),
-		docsPositions: index.ip.f.DocsPositions,
-		docsReader:    index.ip.f.docsReader,
+func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
+	sw := stopwatch.New()
+	res := make([][]byte, len(ids))
+	for _, index := range dp.getFetchIndexes() {
+		if err := fetcher.IndexFetch(ids, sw, index, res); err != nil {
+			return nil, err
+		}
 	}
+	sw.Export(fetcherActiveStagesSeconds)
+	return res, nil
 }
 
-type ActiveIDsIndex struct {
+func (dp *activeDataProvider) Search(ctx context.Context, params searcher.Params) (*seq.QPR, error) {
+	s := searcher.New(ctx, params, dp.f.searchCfg.AggLimits, getActiveSearchMetric(params))
+	for _, index := range dp.getSearchIndexes() {
+		if !index.IsIntersecting(params.From, params.To) {
+			continue
+		}
+		if err := s.IndexSearch(index); err != nil {
+			return nil, err
+		}
+	}
+	qpr := s.GetResult()
+	qpr.IDs.ApplyHint(dp.f.Info().Name())
+	return qpr, nil
+}
+
+func getActiveSearchMetric(params searcher.Params) *prometheus.HistogramVec {
+	if params.HasAgg() {
+		return activeAggSearchSec
+	}
+	if params.HasHist() {
+		return activeHistSearchSec
+	}
+	return activeRegSearchSec
+}
+
+type activeSearchIndex struct {
+	*Active
+	*activeIDsIndex
+	*activeTokenIndex
+}
+
+type activeIDsIndex struct {
 	mids     []uint64
 	rids     []uint64
 	inverser *inverser
 }
 
-func (p *ActiveIDsIndex) GetMID(lid seq.LID) seq.MID {
+func (p *activeIDsIndex) GetMID(lid seq.LID) seq.MID {
 	restoredLID := p.inverser.Revert(uint32(lid))
 	return seq.MID(p.mids[restoredLID])
 }
 
-func (p *ActiveIDsIndex) GetRID(lid seq.LID) seq.RID {
+func (p *activeIDsIndex) GetRID(lid seq.LID) seq.RID {
 	restoredLID := p.inverser.Revert(uint32(lid))
 	return seq.RID(p.rids[restoredLID])
 }
 
-func (p *ActiveIDsIndex) Len() int {
+func (p *activeIDsIndex) Len() int {
 	return p.inverser.Len()
 }
 
-func (p *ActiveIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
+func (p *activeIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 	checkedMID := p.GetMID(lid)
 	if checkedMID == id.MID {
 		return p.GetRID(lid) <= id.RID
@@ -98,19 +160,19 @@ func (p *ActiveIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 	return checkedMID < id.MID
 }
 
-type ActiveTokenIndex struct {
-	ip *ActiveIndexProvider
+type activeTokenIndex struct {
+	ip *activeDataProvider
 }
 
-func (ti *ActiveTokenIndex) GetValByTID(tid uint32) []byte {
+func (ti *activeTokenIndex) GetValByTID(tid uint32) []byte {
 	return ti.ip.f.TokenList.GetValByTID(tid)
 }
 
-func (ti *ActiveTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
+func (ti *activeTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
 	return ti.ip.f.TokenList.FindPattern(ti.ip.ctx, t, nil)
 }
 
-func (ti *ActiveTokenIndex) GetLIDsFromTIDs(tids []uint32, _ lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
+func (ti *activeTokenIndex) GetLIDsFromTIDs(tids []uint32, _ lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
 	f := ti.ip.f
 	inv := ti.ip.getIDsIndex().inverser
 
@@ -138,24 +200,24 @@ func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint
 	return result
 }
 
-type ActiveDocsIndex struct {
+type activeFetchIndex struct {
 	blocksOffsets []uint64
 	docsPositions *DocsPositions
 	docsReader    *disk.DocsReader
 }
 
-func (di *ActiveDocsIndex) GetBlocksOffsets(num uint32) uint64 {
+func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return di.blocksOffsets[num]
 }
 
-func (di *ActiveDocsIndex) GetDocPos(ids []seq.ID) []DocPos {
-	docsPos := make([]DocPos, len(ids))
+func (di *activeFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
+	docsPos := make([]seq.DocPos, len(ids))
 	for i, id := range ids {
 		docsPos[i] = di.docsPositions.GetSync(id)
 	}
 	return docsPos
 }
 
-func (di *ActiveDocsIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
+func (di *activeFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
 	return di.docsReader.ReadDocs(blockOffset, docOffsets)
 }

@@ -12,13 +12,11 @@ import (
 
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/fetcher"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/querytracer"
-	"github.com/ozontech/seq-db/searcher"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
@@ -27,20 +25,12 @@ type MappingProvider interface {
 	GetMapping() seq.Mapping
 }
 
-type AggregationsConfig struct {
-	MaxGroupTokens     int
-	MaxFieldTokens     int
-	MaxTIDsPerFraction int
-}
-
 type SearchConfig struct {
 	WorkersCount          int
 	MaxFractionHits       int
 	FractionsPerIteration int
 	RequestsLimit         uint64
 	LogThreshold          time.Duration
-
-	Aggregation AggregationsConfig
 }
 
 type BulkConfig struct {
@@ -84,12 +74,12 @@ type bulkData struct {
 }
 
 type searchData struct {
-	searcher *searcher.Searcher
+	searcher *fracmanager.Searcher
 	inflight atomic.Int64
 }
 
 type fetchData struct {
-	docFetcher *fetcher.Fetcher
+	docFetcher *fracmanager.Fetcher
 }
 
 type GrpcV1 struct {
@@ -116,18 +106,13 @@ func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mappingPr
 			writeQueue:  atomic.NewUint64(0),
 		},
 		searchData: searchData{
-			searcher: searcher.New(config.Search.WorkersCount, searcher.Conf{
-				AggLimits: searcher.AggLimits{
-					MaxFieldTokens:     config.Search.Aggregation.MaxFieldTokens,
-					MaxGroupTokens:     config.Search.Aggregation.MaxGroupTokens,
-					MaxTIDsPerFraction: config.Search.Aggregation.MaxTIDsPerFraction,
-				},
+			searcher: fracmanager.NewSearcher(config.Search.WorkersCount, fracmanager.SearcherCfg{
 				MaxFractionHits:       config.Search.MaxFractionHits,
 				FractionsPerIteration: config.Search.FractionsPerIteration,
 			}),
 		},
 		fetchData: fetchData{
-			docFetcher: fetcher.New(conf.FetchWorkers),
+			docFetcher: fracmanager.NewFetcher(conf.FetchWorkers),
 		},
 	}
 

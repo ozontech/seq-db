@@ -200,11 +200,11 @@ func (fm *FracManager) shrinkSizes(suicideWG *sync.WaitGroup) {
 // (search and fetch) occurs under blocking (see DataProvider).
 // This way we avoid the race.
 // Accessing the deleted faction data just will return an empty result.
-func (fm *FracManager) GetAllFracs() frac.List {
+func (fm *FracManager) GetAllFracs() List {
 	fm.fracMu.RLock()
 	defer fm.fracMu.RUnlock()
 
-	fracs := make(frac.List, len(fm.fracs))
+	fracs := make(List, len(fm.fracs))
 	for i, f := range fm.fracs {
 		fracs[i] = f.instance
 	}
@@ -295,7 +295,7 @@ func (fm *FracManager) Load(ctx context.Context) error {
 	var err error
 	var notSealed []activeRef
 
-	l := NewLoader(fm.config, fm.readLimiter, fm.cacheMaintainer, fm.indexWorkers, fm.fracCache)
+	l := &loader{fm: fm}
 	if fm.fracs, notSealed, err = l.load(ctx); err != nil {
 		return err
 	}
@@ -360,6 +360,28 @@ func (fm *FracManager) seal(activeRef activeRef) {
 	activeRef.frac.Release(sealed)
 }
 
+func (fm *FracManager) NewActive(basePath string) *frac.Active {
+	return frac.NewActive(
+		basePath,
+		fm.config.ShouldRemoveMeta,
+		fm.indexWorkers,
+		fm.readLimiter,
+		fm.cacheMaintainer.CreateDocBlockCache(),
+		fm.config.SearchCfg,
+	)
+}
+
+func (fm *FracManager) NewSealed(basePath string, cachedFracInfo *frac.Info) *frac.Sealed {
+	return frac.NewSealed(
+		basePath,
+		fm.readLimiter,
+		fm.cacheMaintainer.CreateIndexCache(),
+		fm.cacheMaintainer.CreateDocBlockCache(),
+		cachedFracInfo,
+		fm.config.SearchCfg,
+	)
+}
+
 func (fm *FracManager) rotate() activeRef {
 	filePath := fileBasePattern + fm.nextFractionID()
 	baseFilePath := filepath.Join(fm.config.DataDir, filePath)
@@ -370,7 +392,7 @@ func (fm *FracManager) rotate() activeRef {
 
 	prev := fm.active
 
-	active := frac.NewActive(baseFilePath, fm.config.ShouldRemoveMeta, fm.indexWorkers, fm.readLimiter, fm.cacheMaintainer.CreateDocBlockCache())
+	active := fm.NewActive(baseFilePath)
 	fm.active.frac = active
 	fm.active.ref = &fracRef{instance: active}
 	fm.fracs = append(fm.fracs, fm.active.ref)
