@@ -41,9 +41,8 @@ func (l List) GetOldestFrac() Fraction {
 }
 
 func (l List) Sort(order seq.DocsOrder) {
-	if order.IsNormal() {
+	if order.IsDesc() {
 		// descending order by To
-		// it is not a bug: normal order is descending
 		sort.Slice(l, func(i, j int) bool {
 			return l[i].Info().To > l[j].Info().To
 		})
