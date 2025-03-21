@@ -16,10 +16,16 @@ type Metric interface {
 
 // Stopwatch is designed to measure the time of execution of code fragments.
 // Unlike OpenTelemetry Tracing it is extremely simple and lightweight.
-// Even small fragments can be measured. There is no means for transferring/collecting data
-// some where (storage, etc.) Stopwatch gives access to measurements only in runtime.
+// Even small fragments can be measured.
+//
+// There is no means for automatic transferring/collecting data somewhere (storage, etc.)
+// Therefore, you need to explicitly call the Export() or GetValues() method
+//
+// Stopwatch
+//   - is not concurrent-safe
 //   - supports nested metrics
-//   - supports sampling
+//   - supports sampling (in case of frequent measurement of the same metric, for example in a cycle,
+//     not all measurements actually occur, in order to save resources)
 type Stopwatch struct {
 	root   *metricSampled
 	metric *metricSampled
