@@ -141,8 +141,8 @@ func indexFetch(ids []seq.ID, sw *stopwatch.Stopwatch, docsIndex frac.DocsIndex,
 		if err != nil {
 			return err
 		}
-		for i, j := range index[i] {
-			res[j] = docs[i]
+		for src, dst := range index[i] {
+			res[dst] = docs[src]
 		}
 	}
 	m.Stop()
