@@ -85,20 +85,6 @@ In case both hot and cold models are used, the read queries will, first of all, 
 
 
 
-## Cluster setup example
-The setup we use in production is dictated by the strict fault tolerance requirements. 
-- Each document must be stored in replicas located in at least two different datacenters.
-- In case of hardware failure, including the loss of one datacenter:
-    - all documents written to the hot stores prior to the failure must be available. 
-    - new documents must be saved on shards with replicas in the remaining available machines/datacenters.
-- It is admissible to temporarily lose read access to the documents stored on the cold replicas. 
-
-
-
-
-## read-only shard setup
-
-
 <!-- 
 ## Quick local cluster setup
 
