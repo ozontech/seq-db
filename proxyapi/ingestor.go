@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ozontech/seq-db/network/grpcutil"
+	"github.com/ozontech/seq-db/proxy/stores"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"go.uber.org/atomic"
@@ -16,6 +17,8 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
+
+	storeapiclient "github.com/ozontech/seq-db/storeapi"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
@@ -104,7 +107,7 @@ func appendClients(ctx context.Context, clients map[string]storeapi.StoreApiClie
 	return nil
 }
 
-func NewIngestor(config IngestorConfig) (*Ingestor, error) {
+func NewIngestor(config IngestorConfig, store *storeapiclient.Store) (*Ingestor, error) {
 	config.setDefaults()
 
 	rateLimiter := ratelimiter.NewRateLimiter(config.API.QueryRateLimit, metric.RateLimiterSize.Set)
@@ -121,10 +124,19 @@ func NewIngestor(config IngestorConfig) (*Ingestor, error) {
 		return nil, fmt.Errorf("register grpc handler: %s", err)
 	}
 
-	clients, err := clientsFromConfig(ctx, config.Search)
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("initialize clients: %s", err)
+	var clients map[string]storeapi.StoreApiClient
+	if store != nil {
+		clients = map[string]storeapi.StoreApiClient{
+			"memory": storeapiclient.NewClient(store),
+		}
+		config.Bulk.HotStores = stores.NewStoresFromString("memory", 1)
+		config.Search.HotStores = stores.NewStoresFromString("memory", 1)
+	} else {
+		clients, err = clientsFromConfig(ctx, config.Search)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("initialize clients: %s", err)
+		}
 	}
 
 	searchIngestor := search.NewIngestor(config.Search, clients)

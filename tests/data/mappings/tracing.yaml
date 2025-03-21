@@ -24,6 +24,8 @@ mapping-list:
       - name: "tagsMap"
         type: object
         mapping-list:
+          - name: "slo.high_response_time.violated"
+            type: keyword
           - name: "error"
             type: keyword
           - name: "ip"

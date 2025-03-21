@@ -41,7 +41,9 @@ type TestingEnvConfig struct {
 	HotModeEnabled    bool
 	QueryRateLimit    *float64
 	FracManagerConfig *fracmanager.Config
-	Mapping           seq.Mapping
+
+	Mapping        seq.Mapping
+	IndexAllFields bool
 
 	StartStorePort    int
 	StartIngestorPort int
@@ -138,7 +140,7 @@ func NewTestingEnv(cfg *TestingEnvConfig) *TestingEnv {
 		logger.Fatal("empty data dir")
 	}
 
-	if len(cfg.Mapping) == 0 {
+	if len(cfg.Mapping) == 0 && !cfg.IndexAllFields {
 		cfg.Mapping = seq.TestMapping
 	}
 
@@ -220,7 +222,11 @@ func (cfg *TestingEnvConfig) MakeStores(confs []storeapi.StoreConfig, ports []in
 
 		common.CreateDir(confs[i].FracManager.DataDir)
 
-		mappingProvider, err := mappingprovider.New("", mappingprovider.WithMapping(cfg.Mapping))
+		mappingProvider, err := mappingprovider.New(
+			"",
+			mappingprovider.WithMapping(cfg.Mapping),
+			mappingprovider.WithIndexAllFields(cfg.IndexAllFields),
+		)
 		if err != nil {
 			logger.Fatal("can't create mapping", zap.Error(err))
 		}
@@ -276,10 +282,16 @@ func MakeIngestors(cfg *TestingEnvConfig, hot, cold [][]string) []*Ingestor {
 	for i := 0; i < cfg.IngestorCount; i++ {
 		addr := giveAddr(cfg.StartIngestorPort + i)
 		grpcAddr := giveAddr(cfg.StartIngestorPort + i + cfg.IngestorCount)
-		mappingProvider, err := mappingprovider.New("", mappingprovider.WithMapping(cfg.Mapping))
+
+		mappingProvider, err := mappingprovider.New(
+			"",
+			mappingprovider.WithMapping(cfg.Mapping),
+			mappingprovider.WithIndexAllFields(cfg.IndexAllFields),
+		)
 		if err != nil {
 			logger.Fatal("can't create mapping", zap.Error(err))
 		}
+
 		proxyIngestor, err := proxyapi.NewIngestor(
 			proxyapi.IngestorConfig{
 				API: proxyapi.APIConfig{
@@ -315,6 +327,7 @@ func MakeIngestors(cfg *TestingEnvConfig, hot, cold [][]string) []*Ingestor {
 					ShuffleReplicas: false,
 				},
 			},
+			nil,
 		)
 		if err != nil {
 			logger.Fatal("error during ingestor init", zap.Error(err))

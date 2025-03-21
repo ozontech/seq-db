@@ -154,6 +154,19 @@ func searchFrac(task Task) (resp fracResponse) {
 		return fracResponse{err: task.Ctx.Err()}
 	}
 
+	// The index of the active fraction changes in parts and at a single moment in time may not be consistent.
+	// So we can add new IDs to the index but update the range [from; to] with a delay.
+	// Because of this, at the Search stage, we can get IDs that are outside the fraction range [from; to].
+	//
+	// Because of this, at the next Fetch stage, we may not find documents with such IDs, because we will ignore
+	// the fraction whose range [from; to] does not contain this ID.
+	//
+	// To prevent this from happening, so that the Search stage and the Fetch stage work consistently,
+	// we must limit the query range in accordance with the current fraction range [from; to].
+	info := task.Frac.Info()
+	task.Params.From = max(task.Params.From, info.From)
+	task.Params.To = min(task.Params.To, info.To)
+
 	dataProvider, release, ok := task.Frac.DataProvider(task.Ctx)
 	if !ok {
 		metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()

@@ -4,20 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"github.com/ozontech/seq-db/seq"
-)
-
-// PipeStage is pipe stage in following strict order: search, aggregation (not implemented yet) and formatting.
-// After each new stage, we cannot go back to the previous stage.
-// For example, we cannot use `where` pipe after `fields` pipe.
-// See /docs/seqql_en.md for more details.
-type PipeStage byte
-
-// Order of stages is important. Do not change it.
-const (
-	PipeStageSearch PipeStage = iota + 1
-	PipeStageFormatting
 )
 
 type Pipe interface {
@@ -26,9 +12,8 @@ type Pipe interface {
 }
 
 func parsePipes(lex *lexer) ([]Pipe, error) {
-	// Counter of 'fields' and 'remove' pipes.
+	// Counter of 'fields' pipes.
 	fieldFilters := 0
-	lastStage := PipeStageSearch
 	var pipes []Pipe
 	for !lex.IsEnd() {
 		if !lex.IsKeyword("|") {
@@ -36,7 +21,6 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 		}
 		lex.Next()
 
-		var newStage PipeStage
 		switch {
 		case lex.IsKeyword("fields"):
 			p, err := parsePipeFields(lex)
@@ -44,23 +28,7 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 				return nil, fmt.Errorf("parsing 'fields' pipe: %s", err)
 			}
 			pipes = append(pipes, p)
-			newStage = PipeStageFormatting
 			fieldFilters++
-		case lex.IsKeyword("remove"):
-			p, err := parsePipeRemove(lex)
-			if err != nil {
-				return nil, fmt.Errorf("parsing 'remove' pipe: %s", err)
-			}
-			pipes = append(pipes, p)
-			newStage = PipeStageFormatting
-			fieldFilters++
-		case lex.IsKeyword("where"):
-			p, err := parsePipeWhere(lex, nil)
-			if err != nil {
-				return nil, fmt.Errorf("parsing 'where' pipe: %s", err)
-			}
-			pipes = append(pipes, p)
-			newStage = PipeStageSearch
 		default:
 			return nil, fmt.Errorf("unknown pipe: %s", lex.Token)
 		}
@@ -68,21 +36,13 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 		if fieldFilters > 1 {
 			return nil, fmt.Errorf("multiple field filters is not allowed")
 		}
-
-		if newStage != lastStage {
-			if newStage < lastStage {
-				currentPipe := pipes[len(pipes)-1]
-				prevPipe := pipes[len(pipes)-2]
-				return nil, fmt.Errorf("pipe %q cannot be after pipe %q", currentPipe.Name(), prevPipe.Name())
-			}
-			lastStage = newStage
-		}
 	}
 	return pipes, nil
 }
 
 type PipeFields struct {
 	Fields []string
+	Except bool
 }
 
 func (f *PipeFields) Name() string {
@@ -91,6 +51,9 @@ func (f *PipeFields) Name() string {
 
 func (f *PipeFields) DumpSeqQL(o *strings.Builder) {
 	o.WriteString("fields ")
+	if f.Except {
+		o.WriteString("except ")
+	}
 	for i, field := range f.Fields {
 		if i > 0 {
 			o.WriteString(", ")
@@ -105,6 +68,12 @@ func parsePipeFields(lex *lexer) (*PipeFields, error) {
 	}
 
 	lex.Next()
+	except := false
+	if lex.IsKeyword("except") {
+		except = true
+		lex.Next()
+	}
+
 	fields, err := parseFieldList(lex)
 	if err != nil {
 		return nil, err
@@ -112,6 +81,7 @@ func parsePipeFields(lex *lexer) (*PipeFields, error) {
 
 	return &PipeFields{
 		Fields: fields,
+		Except: except,
 	}, nil
 }
 
@@ -138,66 +108,6 @@ func parseFieldList(lex *lexer) ([]string, error) {
 		return nil, fmt.Errorf("empty list")
 	}
 	return fields, nil
-}
-
-type PipeRemove struct {
-	Fields []string
-}
-
-func (p *PipeRemove) Name() string {
-	return "remove"
-}
-
-func (p *PipeRemove) DumpSeqQL(o *strings.Builder) {
-	o.WriteString("remove ")
-	for i, field := range p.Fields {
-		if i > 0 {
-			o.WriteString(", ")
-		}
-		o.WriteString(quoteTokenIfNeeded(field))
-	}
-}
-
-func parsePipeRemove(lex *lexer) (*PipeRemove, error) {
-	if !lex.IsKeyword("remove") {
-		return nil, fmt.Errorf("missing 'remove' keyword, got %q", lex.Token)
-	}
-
-	lex.Next()
-	fields, err := parseFieldList(lex)
-	if err != nil {
-		return nil, err
-	}
-
-	return &PipeRemove{
-		Fields: fields,
-	}, nil
-}
-
-type PipeWhere struct {
-	Root *ASTNode
-}
-
-func (p *PipeWhere) Name() string {
-	return "where"
-}
-
-func parsePipeWhere(lex *lexer, mapping seq.Mapping) (*PipeWhere, error) {
-	if !lex.IsKeyword("where") {
-		return nil, fmt.Errorf("missing 'where' keyword, got %q", lex.Token)
-	}
-
-	lex.Next()
-	root, err := parseSeqQLFilter(lex, mapping, 0)
-	if err != nil {
-		return nil, err
-	}
-	return &PipeWhere{Root: root}, nil
-}
-
-func (p *PipeWhere) DumpSeqQL(o *strings.Builder) {
-	o.WriteString("where ")
-	p.Root.DumpSeqQL(o)
 }
 
 func quoteTokenIfNeeded(token string) string {
@@ -237,6 +147,9 @@ var reservedKeywords = uniqueTokens([]string{
 
 	// Pipe separator.
 	"|",
+
+	// Pipe specific keywords.
+	"fields", "except",
 })
 
 func needQuoteToken(s string) bool {

@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
           retention-days: 1
 
   upload:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs:
       - test
     steps:
@@ -59,7 +59,7 @@ jobs:
           files: profile.out
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -84,7 +84,7 @@ jobs:
           skip-build-cache: true
 
   check-diff:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

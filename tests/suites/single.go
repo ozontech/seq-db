@@ -121,7 +121,7 @@ func (s *Single) RestartStore() {
 func (s *Single) RestartIngestor() {
 	// if ingestor is already stopped will just start
 	s.Env.StopIngestor()
-	s.Env.Ingestors = setup.MakeIngestors(s.Config, [][]string{}, s.Env.Ingestor().Config.Search.ReadStores.Shards)
+	s.Env.Ingestors = setup.MakeIngestors(s.Config, s.Env.Ingestor().Config.Search.HotStores.Shards, nil)
 }
 
 // -- setup --

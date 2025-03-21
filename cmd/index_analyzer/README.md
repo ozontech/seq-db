@@ -1,4 +1,4 @@
-# Seq-DB Index Analyzer
+# seq-db Index Analyzer
 
 To run|for example:
 

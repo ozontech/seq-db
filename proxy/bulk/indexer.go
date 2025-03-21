@@ -59,9 +59,26 @@ func (i *indexer) decodeInternal(n *insaneJSON.Node, id seq.ID, name []byte, met
 			fieldName = bytes.Join([][]byte{name, fieldName}, fieldSeparator)
 		}
 
-		mappingTypes := i.mapping[string(fieldName)]
-		mainType := mappingTypes.Main.TokenizerType
+		var (
+			mappingTypes seq.MappingTypes
+			mainType     seq.TokenizerType
+		)
 
+		switch i.mapping {
+		case nil:
+			mappingType := seq.MappingType{
+				Title:         string(fieldName),
+				TokenizerType: seq.TokenizerTypeKeyword,
+			}
+			mappingTypes = seq.MappingTypes{
+				Main: mappingType,
+				All:  []seq.MappingType{mappingType},
+			}
+		default:
+			mappingTypes = i.mapping[string(fieldName)]
+		}
+
+		mainType = mappingTypes.Main.TokenizerType
 		if mainType == seq.TokenizerTypeNoop {
 			// Field is not in the mapping.
 			continue

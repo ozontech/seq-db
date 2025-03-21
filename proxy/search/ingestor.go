@@ -180,17 +180,13 @@ func tryParseFieldsFilter(query string) FetchFieldsFilter {
 	}
 	// Find first 'fields' or 'remove' pipe since only one of them is allowed.
 	for _, pipe := range q.Pipes {
-		switch p := pipe.(type) {
-		case *parser.PipeRemove:
-			return FetchFieldsFilter{
-				Fields:    p.Fields,
-				AllowList: false,
-			}
-		case *parser.PipeFields:
-			return FetchFieldsFilter{
-				Fields:    p.Fields,
-				AllowList: true,
-			}
+		p, ok := pipe.(*parser.PipeFields)
+		if !ok {
+			continue
+		}
+		return FetchFieldsFilter{
+			Fields:    p.Fields,
+			AllowList: !p.Except,
 		}
 	}
 	return FetchFieldsFilter{}

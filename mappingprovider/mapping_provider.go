@@ -15,31 +15,40 @@ import (
 
 const defaultUpdatePeriod = 30 * time.Second
 
-func WithUpdatePeriod(up time.Duration) func(*MappingProvider) {
+type Option func(*MappingProvider)
+
+func WithUpdatePeriod(up time.Duration) Option {
 	return func(p *MappingProvider) {
 		p.updatePeriod = up
 	}
 }
 
-func WithMapping(m seq.Mapping) func(*MappingProvider) {
+func WithMapping(m seq.Mapping) Option {
 	return func(p *MappingProvider) {
 		p.mapping = m
 		p.rawMapping = seq.NewRawMapping(m)
 	}
 }
 
+func WithIndexAllFields(enabled bool) Option {
+	return func(p *MappingProvider) {
+		p.indexAllFields = enabled
+	}
+}
+
 type MappingProvider struct {
-	filePath     string
-	updatePeriod time.Duration
-	checksum     [sha256.Size]byte
-	mapping      seq.Mapping
-	rawMapping   *seq.RawMapping
-	mu           sync.RWMutex
+	filePath       string
+	updatePeriod   time.Duration
+	checksum       [sha256.Size]byte
+	mapping        seq.Mapping
+	rawMapping     *seq.RawMapping
+	mu             sync.RWMutex
+	indexAllFields bool
 }
 
 func New(
 	filePath string,
-	opts ...func(*MappingProvider),
+	opts ...Option,
 ) (*MappingProvider, error) {
 	p := &MappingProvider{
 		filePath:     filePath,
@@ -54,6 +63,10 @@ func New(
 		return p, nil
 	}
 
+	if p.indexAllFields {
+		return p, nil
+	}
+
 	if err := p.initMapping(); err != nil {
 		return nil, err
 	}
@@ -64,6 +77,10 @@ func New(
 func (p *MappingProvider) GetMapping() seq.Mapping {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+
+	if p.indexAllFields {
+		return nil
+	}
 
 	return p.mapping
 }

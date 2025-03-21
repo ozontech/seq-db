@@ -16,4 +16,6 @@ var (
 	MaxFetchSizeBytes = 4 * consts.MB
 
 	MaxRequestedDocuments = consts.DefaultMaxRequestedDocuments
+
+	UseSeqQLByDefault = false
 )

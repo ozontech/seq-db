@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/ozontech/seq-db/proxy/search"
@@ -430,6 +431,49 @@ func (s *SingleTestSuite) TestWildcardSymbols() {
 		s.AssertSearch(`message:\*\*\*\**`, docStrs, []int{3, 1, 0})
 		s.AssertSearch(`message:value* AND message:\*\**`, docStrs, []int{1, 0})
 		s.AssertSearch(`message:value* OR message:\*\**`, docStrs, []int{3, 2, 1, 0})
+	})
+}
+
+func (s *SingleTestSuite) TestIndexingAllFields() {
+	defer func(m seq.Mapping, enabled bool) {
+		s.Config.Mapping = m
+		s.Config.IndexAllFields = enabled
+	}(s.Config.Mapping, s.Config.IndexAllFields)
+
+	// Reset mappings and explicitly set all fields indexing option.
+	// We need to restart both store and ingestor to apply new config.
+	s.Config.Mapping = nil
+	s.Config.IndexAllFields = true
+
+	s.RestartStore()
+	s.RestartIngestor()
+
+	var (
+		docsCount = 5
+		now       = time.Now()
+		docs      []setup.ExampleDoc
+	)
+
+	for i := 1; i < docsCount+1; i++ {
+		now = now.Add(time.Second)
+		docs = append(docs, setup.ExampleDoc{
+			Service:   fmt.Sprintf("service-%d", i),
+			Message:   fmt.Sprintf("I am tired of repeating the same message for the %d-th time!", i),
+			Level:     4130134,
+			Timestamp: now,
+		})
+	}
+
+	docStrs := setup.DocsToStrings(docs)
+	// Just make sure that mapping is not overriden by something.
+	require.Empty(s.T(), s.Ingestor().Config.Bulk.MappingProvider.GetMapping(), "mapping is not empty")
+
+	s.Bulk(docStrs)
+	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
+		s.AssertSearch(`service:"service-1"`, docStrs, []int{0})
+		s.AssertSearch(`service:"service-*"`, docStrs, []int{4, 3, 2, 1, 0})
+		s.AssertSearch(`level:"4130134"`, docStrs, []int{4, 3, 2, 1, 0})
+		s.AssertSearch(`unknown:"foobarbaz"`, docStrs, nil)
 	})
 }
 

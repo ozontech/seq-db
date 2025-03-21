@@ -75,9 +75,7 @@ func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []frac.M
 		// couldn't parse given event time
 		parseErrors.Inc()
 	} else if documentDelayed(docDelay, p.drift, p.futureDrift) {
-		updateDocTime(p.decoder, timeField, requestTime.UTC(), docTime)
 		docTime = requestTime
-		doc = p.decoder.Encode(doc[:0])
 	}
 
 	id := seq.NewID(docTime, (rand.Uint64()<<16)+p.proxyIndex)
@@ -182,28 +180,4 @@ func parseESTime(t string) (time.Time, bool) {
 	}
 
 	return time.Date(int(year), time.Month(month), int(day), int(hour), int(minute), int(second), int(nsecs), time.UTC), true
-}
-
-func updateDocTime(root *insaneJSON.Root, fieldName []string, now, origTime time.Time) {
-	setInsaneJSONValue(root, consts.OriginalTimeFieldName, origTime.Format(time.RFC3339Nano))
-	setInsaneJSONValue(root, fieldName, now.Format(time.RFC3339Nano))
-}
-
-func setInsaneJSONValue(root *insaneJSON.Root, path []string, v string) {
-	n := root.Dig(path...)
-	if !n.IsNil() {
-		n.MutateToString(v)
-		return
-	}
-
-	n = root.Node
-	for _, k := range path {
-		if n.Dig(k).IsNil() || !n.Dig(k).IsObject() {
-			n = n.AddField(k).MutateToObject()
-			continue
-		}
-		n = n.Dig(k)
-	}
-
-	n.MutateToString(v)
 }

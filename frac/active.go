@@ -59,18 +59,32 @@ func (p *ActiveIDsProvider) LessOrEqual(lid seq.LID, id seq.ID) bool {
 
 type ActiveDataProvider struct {
 	*Active
-	sc       *SearchCell
-	tracer   *tracer.Tracer
-	inverser *inverser
+	sc          *SearchCell
+	tracer      *tracer.Tracer
+	idsProvider *ActiveIDsProvider
 }
 
-// getInverser creates on demand and returns inverser
-// inverser creation is expensive operation
-func (dp *ActiveDataProvider) getInverser() *inverser {
-	if dp.inverser == nil {
-		dp.inverser = dp.Active.inverser(dp.tracer)
+// getIDsProvider creates on demand and returns ActiveIDsProvider.
+// Creation of inverser for ActiveIDsProvider is expensive operation
+func (dp *ActiveDataProvider) getIDsProvider() *ActiveIDsProvider {
+	if dp.idsProvider == nil {
+		m := dp.tracer.Start("get_all_documents")
+		mapping := dp.GetAllDocuments() // creation order is matter
+		mids := dp.MIDs.GetVals()       // mids and rids should be created after mapping to ensure that
+		rids := dp.RIDs.GetVals()       // they contain all the ids that mapping contains.
+		m.Stop()
+
+		m = dp.tracer.Start("inverse")
+		inverser := newInverser(mapping, len(mids))
+		m.Stop()
+
+		dp.idsProvider = &ActiveIDsProvider{
+			inverser: inverser,
+			mids:     mids,
+			rids:     rids,
+		}
 	}
-	return dp.inverser
+	return dp.idsProvider
 }
 
 func (dp *ActiveDataProvider) Tracer() *tracer.Tracer {
@@ -78,11 +92,7 @@ func (dp *ActiveDataProvider) Tracer() *tracer.Tracer {
 }
 
 func (dp *ActiveDataProvider) IDsProvider() IDsProvider {
-	return &ActiveIDsProvider{
-		inverser: dp.getInverser(),
-		mids:     dp.MIDs.GetVals(),
-		rids:     dp.RIDs.GetVals(),
-	}
+	return dp.getIDsProvider()
 }
 
 func (dp *ActiveDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) ([]uint32, error) {
@@ -90,7 +100,7 @@ func (dp *ActiveDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) 
 }
 
 func (dp *ActiveDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Active.GetLIDsFromTIDs(tids, dp.getInverser(), stats, minLID, maxLID, dp.tracer, order)
+	return dp.Active.GetLIDsFromTIDs(tids, dp.getIDsProvider().inverser, stats, minLID, maxLID, dp.tracer, order)
 }
 
 func (dp *ActiveDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
@@ -420,22 +430,6 @@ func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint
 	return result
 }
 
-func (f *Active) inverser(tr *tracer.Tracer) *inverser {
-	m := tr.Start("get_all_documents")
-	mapping := f.GetAllDocuments()
-	m.Stop()
-
-	if len(mapping) == 0 {
-		return nil
-	}
-
-	m = tr.Start("inverse")
-	i := newInverser(mapping)
-	m.Stop()
-
-	return i
-}
-
 func (f *Active) GetValByTID(tid uint32) []byte {
 	return f.TokenList.GetValByTID(tid)
 }
@@ -582,7 +576,7 @@ func (f *Active) String() string {
 func (f *Active) DataProvider(ctx context.Context) (DataProvider, func(), bool) {
 	f.useLock.RLock()
 
-	if f.sealed == nil && !f.suicided && f.MIDs.Len() > 0 { // it is ordinary active fraction state
+	if f.sealed == nil && !f.suicided && f.Info().DocsTotal > 0 { // it is ordinary active fraction state
 		dp := ActiveDataProvider{
 			Active: f,
 			sc:     NewSearchCell(ctx),
@@ -590,8 +584,8 @@ func (f *Active) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 		}
 
 		return &dp, func() {
-			if dp.inverser != nil {
-				dp.inverser.Release()
+			if dp.idsProvider != nil {
+				dp.idsProvider.inverser.Release()
 			}
 			f.useLock.RUnlock()
 		}, true

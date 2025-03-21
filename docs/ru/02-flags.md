@@ -16,7 +16,7 @@
 
 ### Indexing Flags
 
-- **--mapping=MAPPING:** Path to the file with indexing parameters. See the corresponding section.
+- **--mapping=MAPPING:** Path to the file with indexing parameters or value `auto`. See the corresponding section.
 - **--case-sensitive:** Token case sensitivity. By default, if not specified, the search is case-insensitive.
 - **--max-token-size=72:** Maximum token size.
 - **--partial-indexing:** By default, if the indexed value exceeds the maximum size, it is ignored and does not get into the index. If this parameter is set, the value will be truncated to the maximum length and indexed.
@@ -31,7 +31,7 @@
 - **--read-stores=READ-STORES:** List of hosts for reading data. If not set, `--write-stores` is used. Can be used, for example, in case of data migration to other hosts, when we write to some stores and read from other, old stores.
 - **--hot-stores=HOT-STORES:** List of `hot` storage hosts. If specified, the proxy works with 2 store clusters: cold (`--write-stores`) and hot (`--hot-stores`). And sends each write request to each of these clusters accordingly. But when reading, it first tries to get data from the `hot` cluster and in some cases from the `cold` one.
 - **--hot-read-stores=HOT-READ-STORES:** List of `hot` storage hosts for reading. Can be used when migrating data to other hosts.
-- ***--store-mode="":** Storage operating mode. If specified, the allowed values ​​are `hot` or `cold`. If the `hot` mode is selected, then when executing a search query, if the requested data range is older than the oldest store documents, the service will return a special error `query wants old data`. Ingestor will make a request to the `cold` store cluster in this case.
+- **--store-mode="":** Storage operating mode. If specified, the allowed values ​​are `hot` or `cold`. If the `hot` mode is selected, then when executing a search query, if the requested data range is older than the oldest store documents, the service will return a special error `query wants old data`. Ingestor will make a request to the `cold` store cluster in this case.
 - **--replicas=1:** Replication factor for storages. If N is specified, the first N hosts in the list are replicas of one shard, the next N are replicas of another shard, etc.
 - **--hot-replicas=HOT-REPLICAS:** Replication factor for hot storages. If not specified, the global factor is used.
 - **--shuffle-replicas:** Shuffle replicas before performing a search. If not specified, then the first replica is always read, and only in case of failure, the second one comes.

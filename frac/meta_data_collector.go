@@ -10,10 +10,10 @@ import (
 )
 
 type MetaData struct {
-	ID seq.ID `json:"id"`
+	ID seq.ID
 	// Size of an uncompressed document in bytes.
-	Size   uint32      `json:"s"`
-	Tokens []MetaToken `json:"t"`
+	Size   uint32
+	Tokens []MetaToken
 }
 
 // String used in tests for human-readable output.

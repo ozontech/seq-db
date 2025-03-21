@@ -21,23 +21,30 @@ func toLowerIfCaseInsensitive(isCaseSensitive bool, x []byte) []byte {
 }
 
 // toLowerTryInplace tries to lowercase given []byte inplace (without allocations)
-// but if utf-8 is encountered, fallbacks to bytes.Map which returns new []byte
+// but if width of upper and lower rune differs, fallbacks to bytes.Map which returns new []byte
 func toLowerTryInplace(s []byte) []byte {
-
-	for i := 0; i < len(s); i++ {
-		if !isASCII[s[i]] {
-			return toLowerUnicode(s)
+	for i := 0; i < len(s); {
+		if isASCII[s[i]] {
+			s[i] = toLowerMap[s[i]]
+			i++
+			continue
 		}
 
-		s[i] = toLowerMap[s[i]]
+		// please, refer to bytes.Map implementation for details
+		upper, upperWid := utf8.DecodeRune(s[i:])
+		lower := unicode.To(unicode.LowerCase, upper)
+
+		// size of original rune is not equal to size of lower rune
+		// sometimes is the case, please refer to https://github.com/ozontech/seq-db/pull/123#discussion_r1944557462
+		if utf8.RuneLen(lower) != upperWid {
+			// nolint:gocritic // suggested change to use bytes.ToLower is ignored because ToLower logic is rewritten
+			return bytes.Map(unicode.ToLower, s)
+		}
+		utf8.EncodeRune(s[i:], lower)
+
+		i += upperWid
 	}
-
 	return s
-}
-
-func toLowerUnicode(s []byte) []byte {
-	// nolint:gocritic // suggested change to use bytes.ToLower is ignored because ToLower logic is rewritten
-	return bytes.Map(unicode.ToLower, s)
 }
 
 var (

@@ -370,9 +370,8 @@ func TestParseSeqQLError(t *testing.T) {
 
 	// Test pipes.
 	test(`message:--||`, `unknown pipe: |`)
-	test(`source_type:access* | fields message | where login:admin`, `pipe "where" cannot be after pipe "fields"`)
-	test(`source_type:access* | fields message | remove login:admin`, `parsing 'remove' pipe: unexpected symbol ":"`)
-	test(`source_type:access* | fields message | remove login`, `multiple field filters is not allowed`)
+	test(`source_type:access* | fields message | fields except login:admin`, `parsing 'fields' pipe: unexpected symbol ":"`)
+	test(`source_type:access* | fields message | fields login`, `multiple field filters is not allowed`)
 	test(`* | fields event, `, `parsing 'fields' pipe: trailing comma not allowed`)
 }
 

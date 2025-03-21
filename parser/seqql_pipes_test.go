@@ -23,7 +23,7 @@ func TestParsePipeFields(t *testing.T) {
 	test(`* | fields k8s_namespace`, `* | fields k8s_namespace`)
 }
 
-func TestParsePipeRemove(t *testing.T) {
+func TestParsePipeFieldsExcept(t *testing.T) {
 	test := func(q, expected string) {
 		t.Helper()
 		query, err := ParseSeqQL(q, nil)
@@ -31,34 +31,10 @@ func TestParsePipeRemove(t *testing.T) {
 		require.Equal(t, expected, query.SeqQLString())
 	}
 
-	test("* | remove message,error, level", "* | remove message, error, level")
-	test("* | remove level", "* | remove level")
-	test(`* | remove "_id"`, `* | remove _id`)
-	test(`* | remove "_\\message\\_"`, `* | remove "_\\message\\_"`)
-	test(`* | remove "_\\message*"`, `* | remove "_\\message\*"`)
-	test(`* | remove k8s_namespace`, `* | remove k8s_namespace`)
-}
-
-func TestParsePipeWhere(t *testing.T) {
-	test := func(q, expected string) {
-		t.Helper()
-		query, err := ParseSeqQL(q, nil)
-		require.NoError(t, err)
-		require.Equal(t, expected, query.SeqQLString())
-	}
-
-	test("* | where __MESSAGE__:`error*`*", `* | where __MESSAGE__:"error\*"*`)
-	test("* | where 'level':`info`", "* | where level:info")
-	test("* | where level:error | where message:error | where _id:42", "* | where level:error | where message:error | where _id:42")
-	test(`* | where "User-Agent":"curl"`, `* | where User-Agent:curl`)
-	test(`* | where "_\\message*":"*"`, `* | where "_\\message\*":*`)
-	test(`* | where '_\message'*:*`, `* | where "_\\message\*":*`)
-	test(`* | where test:composite-pipes | where * | fields level`, `* | where test:composite-pipes | where * | fields level`)
-	test(` # My search query
-			* 
-| 
-where test:composite-pipes|where *
-|remove level`, `* | where test:composite-pipes | where * | remove level`)
-
-	test(`* | where level:error | where level:*`, `* | where level:error | where level:*`)
+	test("* | fields except message,error, level", "* | fields except message, error, level")
+	test("* | fields except level", "* | fields except level")
+	test(`* | fields except "_id"`, `* | fields except _id`)
+	test(`* | fields except "_\\message\\_"`, `* | fields except "_\\message\\_"`)
+	test(`* | fields except "_\\message*"`, `* | fields except "_\\message\*"`)
+	test(`* | fields except k8s_namespace`, `* | fields except k8s_namespace`)
 }

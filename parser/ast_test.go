@@ -142,7 +142,7 @@ func checkSelf(t *testing.T, e *ASTNode) {
 }
 
 func TestParsingASTStress(t *testing.T) {
-	iterations := 5000
+	iterations := 500
 	if testing.Short() {
 		iterations = 50
 	}

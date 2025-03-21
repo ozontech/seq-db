@@ -6,15 +6,10 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"time"
 
-	"go.opencensus.io/trace"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
-
+	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -27,6 +22,12 @@ import (
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tracing"
 	"github.com/ozontech/seq-db/util"
+	"go.opencensus.io/trace"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 func (g *GrpcV1) Search(ctx context.Context, req *storeapi.SearchRequest) (*storeapi.SearchResponse, error) {
@@ -209,7 +210,7 @@ func (g *GrpcV1) parseQuery(ctx context.Context, query string) (*parser.ASTNode,
 		query = seq.TokenAll + ":*"
 	}
 	var ast *parser.ASTNode
-	if hasHeaderUseSeqQL(ctx) {
+	if useSeqQL(ctx) {
 		seqql, err := parser.ParseSeqQL(query, g.mappingProvider.GetMapping())
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "can't parse query %q: %v", query, err)
@@ -225,10 +226,16 @@ func (g *GrpcV1) parseQuery(ctx context.Context, query string) (*parser.ASTNode,
 	return ast, nil
 }
 
-func hasHeaderUseSeqQL(ctx context.Context) bool {
+func useSeqQL(ctx context.Context) bool {
 	md, _ := metadata.FromIncomingContext(ctx)
 	useSeqQLValues := md.Get("use-seq-ql")
-	return slices.Contains(useSeqQLValues, "true")
+	if len(useSeqQLValues) == 0 {
+		// Header isn't set, so use default query language.
+		return conf.UseSeqQLByDefault
+	}
+	val := useSeqQLValues[0]
+	useSeqQL, _ := strconv.ParseBool(val)
+	return useSeqQL
 }
 
 func (g *GrpcV1) searchIteratively(searchCell *frac.SearchCell, params search.Params, n int) (*seq.QPR, []*search.Stats, time.Duration, error) {

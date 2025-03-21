@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"sync"
 
-	insaneJSON "github.com/ozontech/insane-json"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/tracer"
-	"github.com/ozontech/seq-db/seq"
 )
 
 type IndexWorkers struct {
@@ -99,37 +97,7 @@ func (w *IndexWorkers) In(t *IndexTask) {
 	w.ch <- t
 }
 
-func extractMetaData(jsonRoot *insaneJSON.Root, payload []byte) MetaData {
-	if err := jsonRoot.DecodeBytes(payload); err != nil {
-		logger.Panic("can't decode meta", zap.Error(err))
-	}
-
-	var tokens []MetaToken
-	for _, node := range jsonRoot.Dig("t").AsArray() {
-		tokenPair := node.AsArray()
-		key, value := tokenPair[0].AsBytes(), tokenPair[1].AsBytes()
-		tokens = append(tokens, MetaToken{
-			Key:   key,
-			Value: value,
-		})
-	}
-
-	md := MetaData{
-		ID: seq.ID{
-			MID: seq.MID(jsonRoot.Dig("mid").AsUint64()),
-			RID: seq.RID(jsonRoot.Dig("rid").AsUint64()),
-		},
-		Size:   uint32(jsonRoot.Dig("s").AsUint64()),
-		Tokens: tokens,
-	}
-
-	return md
-}
-
 func (w *IndexWorkers) appendWorker(index int) {
-	metaRoot := insaneJSON.Spawn()
-	defer insaneJSON.Release(metaRoot)
-
 	// just a reusable buffer for unpacking
 	var metasPayload []byte
 
@@ -158,14 +126,9 @@ func (w *IndexWorkers) appendWorker(index int) {
 			metasPayload = metasPayload[n:]
 
 			var meta MetaData
-			if IsItBinaryEncodedMetaData(documentMetadata) {
-				if err := meta.UnmarshalBinary(documentMetadata); err != nil {
-					logger.Panic("BUG: can't unmarshal meta", zap.Error(err))
-				}
-			} else {
-				meta = extractMetaData(metaRoot, documentMetadata)
+			if err := meta.UnmarshalBinary(documentMetadata); err != nil {
+				logger.Panic("BUG: can't unmarshal meta", zap.Error(err))
 			}
-
 			collector.AppendMeta(meta)
 		}
 		parsingMetric.Stop()
@@ -187,14 +150,6 @@ func (w *IndexWorkers) appendWorker(index int) {
 		lids := active.AppendIDs(collector.IDs)
 		m.Stop()
 
-		// update stats before appending, because otherwise we could
-		// 1. append
-		// 2. search in active frac
-		// 3. find the docs
-		// 4. fetch them <--- and here [from, to] interval will be wrong
-		// 5. update stats (update [from, to])
-		active.UpdateStats(collector.MinMID, collector.MaxMID, collector.DocsCounter, collector.SizeCounter)
-
 		m = tr.Start("token_list_append")
 		tokenLIDsPlaces := collector.PrepareTokenLIDsPlaces()
 		active.TokenList.Append(collector.TokensValues, collector.FieldsLengths, tokenLIDsPlaces)
@@ -208,6 +163,8 @@ func (w *IndexWorkers) appendWorker(index int) {
 		tokensToMerge := addLIDsToTokens(tokenLIDsPlaces, groups)
 		w.sendTokensToMergeWorkers(active, tokensToMerge)
 		m.Stop()
+
+		active.UpdateStats(collector.MinMID, collector.MaxMID, collector.DocsCounter, collector.SizeCounter)
 
 		task.AppendQueue.Dec()
 

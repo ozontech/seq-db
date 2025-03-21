@@ -53,7 +53,7 @@ var (
 	fracSize               = kingpin.Flag("frac-size", `size of one fraction`).Default("128MB").Bytes()
 	totalSize              = kingpin.Flag("total-size", `max size of all data`).Default("1GB").Bytes()
 	cacheSize              = kingpin.Flag("cache-size", `max size of the cache`).Default("8GB").Bytes()
-	mappingPath            = kingpin.Flag("mapping", `path to mapping file`).Required().ExistingFile()
+	mappingPath            = kingpin.Flag("mapping", `path to mapping file or 'auto' to index all fields`).Required().String()
 	storeMode              = kingpin.Flag("store-mode", `store operation mode`).Default("").HintOptions("", storeapi.StoreModeCold, storeapi.StoreModeHot).String()
 	queryRateLimit         = kingpin.Flag("query-rate-limit", `max requests per second`).Default("2.0").Float()
 	logSearchThresholdMs   = kingpin.Flag("log-search-threshold-ms", `threshold for logging search queries, ms`).Default("3000").Int()
@@ -100,11 +100,14 @@ var (
 
 	enableMappingUpdates = kingpin.Flag("enable-mapping-updates", "this will periodically check mapping file and reload configuration if there is an update").Default("false").Bool()
 	mappingUpdatePeriod  = kingpin.Flag("mapping-update-period", "the amount of time to pass for the mappings to be reloaded").Default("30s").Duration()
+
+	useSeqQLByDefault = kingpin.Flag("use-seq-ql-by-default", "enable seq-ql as default query language").Default("false").Bool()
 )
 
 const (
 	appModeIngestor = "ingestor"
 	appModeStore    = "store"
+	appModeSingle   = "single"
 )
 
 func validateIngestorTopology(hotStores, hotReadStores, _, _ *stores.Stores) error {
@@ -135,19 +138,7 @@ func main() {
 	kingpin.Parse()
 	kingpin.Version(buildinfo.Version)
 
-	mappingProvider, err := mappingprovider.New(
-		*mappingPath,
-		mappingprovider.WithUpdatePeriod(*mappingUpdatePeriod),
-	)
-	if err != nil {
-		logger.Fatal("load mapping error", zap.Error(err))
-	}
-	if *enableMappingUpdates {
-		mappingProvider.WatchUpdates(ctx)
-	}
-
 	runtime.SetMutexProfileFraction(5)
-
 	_, _ = maxprocs.Set(maxprocs.Logger(func(tpl string, args ...interface{}) {
 		logger.Info(fmt.Sprintf(tpl, args...))
 	}))
@@ -158,6 +149,7 @@ func main() {
 	conf.CaseSensitive = *caseSensitive
 	conf.SkipFsync = *skipFsync
 	conf.MaxRequestedDocuments = int(*maxSearchDocs)
+	conf.UseSeqQLByDefault = *useSeqQLByDefault
 	backoff.DefaultConfig.MaxDelay = 10 * time.Second
 
 	var serviceReady atomic.Bool
@@ -175,144 +167,27 @@ func main() {
 		logger.Error("error initializing tracing", zap.Error(err))
 	}
 
+	mappingProvider, err := mappingprovider.New(
+		*mappingPath,
+		mappingprovider.WithUpdatePeriod(*mappingUpdatePeriod),
+		mappingprovider.WithIndexAllFields(enableIndexingForAllFields(*mappingPath)),
+	)
+	if err != nil {
+		logger.Fatal("load mapping error", zap.Error(err))
+	}
+
+	if *enableMappingUpdates {
+		mappingProvider.WatchUpdates(ctx)
+	}
+
 	switch *mode {
 	case appModeStore:
-		var configMode string
-		if *storeMode == storeapi.StoreModeCold || *storeMode == storeapi.StoreModeHot {
-			configMode = *storeMode
-		}
-		config := storeapi.StoreConfig{
-			FracManager: fracmanager.Config{
-				DataDir:           *dataDir,
-				FracSize:          uint64(*fracSize),
-				TotalSize:         uint64(*totalSize),
-				CacheSize:         uint64(*cacheSize),
-				MaxFractionHits:   *maxFractionHits,
-				FracLoadLimit:     0,
-				ShouldReplay:      true,
-				ShouldRemoveMeta:  true,
-				MaintenanceDelay:  0,
-				CacheGCDelay:      0,
-				CacheCleanupDelay: 0,
-				SealParams: frac.SealParams{
-					IDsZstdLevel:           *sealCompressLevel,
-					LIDsZstdLevel:          *sealCompressLevel,
-					TokenListZstdLevel:     *sealCompressLevel,
-					DocsPositionsZstdLevel: *sealCompressLevel,
-					TokenTableZstdLevel:    *sealCompressLevel,
-				},
-			},
-			API: storeapi.APIConfig{
-				StoreMode: configMode,
-				Bulk: storeapi.BulkConfig{
-					RequestsLimit: *bulkRequestsLimit,
-					LogThreshold:  time.Millisecond * time.Duration(*logBulkThresholdMs),
-				},
-				Search: storeapi.SearchConfig{
-					WorkersCount:          *searchWorkersCount,
-					FractionsPerIteration: numCPU,
-					RequestsLimit:         *searchRequestsLimit,
-					LogThreshold:          time.Millisecond * time.Duration(*logSearchThresholdMs),
-					Aggregation: storeapi.AggregationsConfig{
-						MaxGroupTokens:     *aggMaxGroupTokens,
-						MaxFieldTokens:     *aggMaxFieldTokens,
-						MaxTIDsPerFraction: *aggMaxTIDsPerFraction,
-					},
-				},
-				Fetch: storeapi.FetchConfig{
-					LogThreshold: time.Millisecond * time.Duration(*logFetchThresholdMs),
-				},
-			},
-		}
-		store, err = storeapi.NewStore(ctx, config, mappingProvider)
-		if err != nil {
-			logger.Fatal("initializing store", zap.Error(err))
-		}
-		lis, err := net.Listen("tcp", *addr)
-		if err != nil {
-			logger.Fatal("store can't listen grpc addr", zap.Error(err))
-		}
-		store.Start(lis)
+		store = startStore(ctx, *addr, mappingProvider)
 	case appModeIngestor:
-		hotReplicasNum := *replicas
-		if *hotReplicas > 0 {
-			hotReplicasNum = *hotReplicas
-		}
-
-		hotStores := stores.NewStoresFromString(*hotStores, hotReplicasNum)
-		hotReadStores := stores.NewStoresFromString(*hotReadStores, hotReplicasNum)
-		readStores := stores.NewStoresFromString(*readStores, *replicas)
-		writeStores := stores.NewStoresFromString(*writeStores, *replicas)
-
-		logger.Info("stores data",
-			zap.String("read_stores", readStores.String()),
-			zap.String("write_stores", writeStores.String()),
-			zap.String("hot_stores", hotStores.String()),
-			zap.String("hot_read_stores", hotReadStores.String()),
-		)
-
-		err = validateIngestorTopology(hotStores, hotReadStores, readStores, writeStores)
-		if err != nil {
-			logger.Fatal("validating topology", zap.Error(err))
-		}
-
-		grpcListener, err := net.Listen("tcp", *proxyGrpcAddr)
-		if err != nil {
-			logger.Fatal("ingestor can't listen grpc addr", zap.String("grpc_addr", *proxyGrpcAddr), zap.Error(err))
-		}
-		grpcGatewayAddr := grpcListener.Addr().String()
-
-		ingestor, err = proxyapi.NewIngestor(
-			proxyapi.IngestorConfig{
-				API: proxyapi.APIConfig{
-					SearchTimeout:  consts.DefaultSearchTimeout,
-					ExportTimeout:  consts.DefaultExportTimeout,
-					QueryRateLimit: *queryRateLimit,
-					EsVersion:      *esVersion,
-					GatewayAddr:    grpcGatewayAddr,
-				},
-				Search: search.Config{
-					HotStores:       hotStores,
-					HotReadStores:   hotReadStores,
-					ReadStores:      readStores,
-					WriteStores:     writeStores,
-					ShuffleReplicas: *shuffleReplicas,
-					MirrorAddr:      *mirrorAddr,
-				},
-				Bulk: bulk.IngestorConfig{
-					HotStores:   hotStores,
-					WriteStores: writeStores,
-					BulkCircuit: circuitbreaker.Config{
-						Timeout:                  *bulkShardTimeout,
-						MaxConcurrent:            int64(*maxInflightBulks),
-						NumBuckets:               *bulkBucketsCount,
-						BucketWidth:              *bulkBucketWidth,
-						RequestVolumeThreshold:   *bulkVolumeThreshold,
-						ErrorThresholdPercentage: *bulkErrPercentage,
-						SleepWindow:              *bulkSleepWindow,
-					},
-					MaxInflightBulks:       *maxInflightBulks,
-					AllowedTimeDrift:       *allowedTimeDrift,
-					FutureAllowedTimeDrift: *futureAllowedTimeDrift,
-					MappingProvider:        mappingProvider,
-					MaxTokenSize:           *maxTokenSize,
-					CaseSensitive:          *caseSensitive,
-					PartialFieldIndexing:   *partialFieldIndexing,
-					DocsZSTDCompressLevel:  *docsZSTDCompressLevel,
-					MetasZSTDCompressLevel: *metasZSTDCompressLevel,
-					MaxDocumentSize:        int(*maxDocSize),
-				},
-			},
-		)
-		if err != nil {
-			logger.Panic("failed to init ingestor", zap.Error(err))
-		}
-
-		httpListener, err := net.Listen("tcp", *addr)
-		if err != nil {
-			logger.Fatal("ingestor can't listen http addr", zap.String("http_addr", *addr), zap.Error(err))
-		}
-		ingestor.Start(httpListener, grpcListener)
+		ingestor = startProxy(ctx, *addr, mappingProvider, *caseSensitive, nil)
+	case appModeSingle:
+		store = startStore(ctx, "", mappingProvider)
+		ingestor = startProxy(ctx, *addr, mappingProvider, *caseSensitive, store)
 	default:
 		logger.Fatal("unknown mode", zap.String("mode", *mode))
 	}
@@ -333,4 +208,158 @@ func main() {
 	debugServer.Stop(200 * time.Millisecond)
 
 	logger.Info("quit")
+}
+
+func startProxy(_ context.Context, addr string, mp bulk.MappingProvider, caseSensitive bool, inMemory *storeapi.Store) *proxyapi.Ingestor {
+	logger.Info("max queries per second", zap.Float64("limit", *queryRateLimit))
+
+	hotReplicasNum := *replicas
+	if *hotReplicas > 0 {
+		hotReplicasNum = *hotReplicas
+	}
+
+	hotStores := stores.NewStoresFromString(*hotStores, hotReplicasNum)
+	hotReadStores := stores.NewStoresFromString(*hotReadStores, hotReplicasNum)
+	readStores := stores.NewStoresFromString(*readStores, *replicas)
+	writeStores := stores.NewStoresFromString(*writeStores, *replicas)
+
+	logger.Info("stores data",
+		zap.String("read_stores", readStores.String()),
+		zap.String("write_stores", writeStores.String()),
+		zap.String("hot_stores", hotStores.String()),
+		zap.String("hot_read_stores", hotReadStores.String()),
+	)
+
+	err := validateIngestorTopology(hotStores, hotReadStores, readStores, writeStores)
+	if err != nil {
+		logger.Fatal("validating topology", zap.Error(err))
+	}
+
+	config := proxyapi.IngestorConfig{
+		API: proxyapi.APIConfig{
+			SearchTimeout:  consts.DefaultSearchTimeout,
+			ExportTimeout:  consts.DefaultExportTimeout,
+			QueryRateLimit: *queryRateLimit,
+			EsVersion:      *esVersion,
+			GatewayAddr:    *proxyGrpcAddr,
+		},
+		Search: search.Config{
+			HotStores:       hotStores,
+			HotReadStores:   hotReadStores,
+			ReadStores:      readStores,
+			WriteStores:     writeStores,
+			ShuffleReplicas: *shuffleReplicas,
+			MirrorAddr:      *mirrorAddr,
+		},
+		Bulk: bulk.IngestorConfig{
+			HotStores:   hotStores,
+			WriteStores: writeStores,
+			BulkCircuit: circuitbreaker.Config{
+				Timeout:                  *bulkShardTimeout,
+				MaxConcurrent:            int64(*maxInflightBulks),
+				NumBuckets:               *bulkBucketsCount,
+				BucketWidth:              *bulkBucketWidth,
+				RequestVolumeThreshold:   *bulkVolumeThreshold,
+				ErrorThresholdPercentage: *bulkErrPercentage,
+				SleepWindow:              *bulkSleepWindow,
+			},
+			MaxInflightBulks:       *maxInflightBulks,
+			AllowedTimeDrift:       *allowedTimeDrift,
+			FutureAllowedTimeDrift: *futureAllowedTimeDrift,
+			MappingProvider:        mp,
+			MaxTokenSize:           *maxTokenSize,
+			CaseSensitive:          caseSensitive,
+			PartialFieldIndexing:   *partialFieldIndexing,
+			DocsZSTDCompressLevel:  *docsZSTDCompressLevel,
+			MetasZSTDCompressLevel: *metasZSTDCompressLevel,
+			MaxDocumentSize:        int(*maxDocSize),
+		},
+	}
+
+	ingestor, err := proxyapi.NewIngestor(config, inMemory)
+	if err != nil {
+		logger.Panic("failed to init ingestor", zap.Error(err))
+	}
+
+	httpListener, err := net.Listen("tcp", addr)
+	if err != nil {
+		logger.Fatal("ingestor can't listen http addr", zap.String("http_addr", addr), zap.Error(err))
+	}
+
+	grpcListener, err := net.Listen("tcp", *proxyGrpcAddr)
+	if err != nil {
+		logger.Fatal("ingestor can't listen grpc addr", zap.String("grpc_addr", *proxyGrpcAddr), zap.Error(err))
+	}
+
+	ingestor.Start(httpListener, grpcListener)
+
+	return ingestor
+}
+
+func startStore(ctx context.Context, addr string, mp storeapi.MappingProvider) *storeapi.Store {
+	var configMode string
+	if *storeMode == storeapi.StoreModeCold || *storeMode == storeapi.StoreModeHot {
+		configMode = *storeMode
+	}
+	config := storeapi.StoreConfig{
+		FracManager: fracmanager.Config{
+			DataDir:           *dataDir,
+			FracSize:          uint64(*fracSize),
+			TotalSize:         uint64(*totalSize),
+			CacheSize:         uint64(*cacheSize),
+			MaxFractionHits:   *maxFractionHits,
+			FracLoadLimit:     0,
+			ShouldReplay:      true,
+			ShouldRemoveMeta:  true,
+			MaintenanceDelay:  0,
+			CacheGCDelay:      0,
+			CacheCleanupDelay: 0,
+			SealParams: frac.SealParams{
+				IDsZstdLevel:           *sealCompressLevel,
+				LIDsZstdLevel:          *sealCompressLevel,
+				TokenListZstdLevel:     *sealCompressLevel,
+				DocsPositionsZstdLevel: *sealCompressLevel,
+				TokenTableZstdLevel:    *sealCompressLevel,
+			},
+		},
+		API: storeapi.APIConfig{
+			StoreMode: configMode,
+			Bulk: storeapi.BulkConfig{
+				RequestsLimit: *bulkRequestsLimit,
+				LogThreshold:  time.Millisecond * time.Duration(*logBulkThresholdMs),
+			},
+			Search: storeapi.SearchConfig{
+				WorkersCount:          *searchWorkersCount,
+				FractionsPerIteration: runtime.GOMAXPROCS(0),
+				RequestsLimit:         *searchRequestsLimit,
+				LogThreshold:          time.Millisecond * time.Duration(*logSearchThresholdMs),
+				Aggregation: storeapi.AggregationsConfig{
+					MaxGroupTokens:     *aggMaxGroupTokens,
+					MaxFieldTokens:     *aggMaxFieldTokens,
+					MaxTIDsPerFraction: *aggMaxTIDsPerFraction,
+				},
+			},
+			Fetch: storeapi.FetchConfig{
+				LogThreshold: time.Millisecond * time.Duration(*logFetchThresholdMs),
+			},
+		},
+	}
+	store, err := storeapi.NewStore(ctx, config, mp)
+	if err != nil {
+		logger.Fatal("initializing store", zap.Error(err))
+	}
+
+	if addr != "" {
+		lis, err := net.Listen("tcp", addr)
+		if err != nil {
+			logger.Fatal("store can't listen grpc addr", zap.Error(err))
+		}
+		store.Start(lis)
+	}
+
+	return store
+}
+
+func enableIndexingForAllFields(mappingPath string) bool {
+	return mappingPath == "auto"
 }

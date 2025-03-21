@@ -271,12 +271,11 @@ func TestProcessDocuments(t *testing.T) {
 					Time          string      `json:"time"`
 				}
 				type Trace struct {
-					Spans             []Span `json:"spans"`
-					TraceID           string `json:"trace_id"`
-					TraceDuration     int64  `json:"trace_duration"`
-					Timestamp         string `json:"timestamp"`
-					Service           string `json:"service"`
-					OriginalTimestamp string `json:"original_timestamp,omitempty"`
+					Spans         []Span `json:"spans"`
+					TraceID       string `json:"trace_id"`
+					TraceDuration int64  `json:"trace_duration"`
+					Timestamp     string `json:"timestamp"`
+					Service       string `json:"service"`
 				}
 				trace := Trace{
 					Spans: []Span{{
@@ -306,7 +305,7 @@ func TestProcessDocuments(t *testing.T) {
 					}},
 					TraceID:       "AAAAAAAAAAAbCmADWEwUBQ==",
 					TraceDuration: 137252000,
-					Timestamp:     now.Add(-cfg.AllowedTimeDrift * 6).Format(consts.ESTimeFormat),
+					Timestamp:     now.Add(-cfg.AllowedTimeDrift * 6).Format(time.RFC3339Nano),
 					Service:       "seq-ui",
 				}
 
@@ -315,8 +314,6 @@ func TestProcessDocuments(t *testing.T) {
 					panic(err)
 				}
 
-				trace.OriginalTimestamp = now.Add(-cfg.AllowedTimeDrift * 6).Truncate(time.Millisecond).Format(time.RFC3339Nano)
-				trace.Timestamp = now.Format(time.RFC3339Nano)
 				expTrace, err := json.Marshal(trace)
 				if err != nil {
 					panic(err)
@@ -495,7 +492,7 @@ func BenchmarkProcessDocuments(b *testing.B) {
 	doc := []byte(fmt.Sprintf(`{
 		"level":"error",
 		"timestamp":%q,
-		"message":"can't store in the shard",
+		"message":"невозможно сохранить данные в шарде",
 		"error":"circuit breaker execute: can't receive bulk acceptance: 
 			host=***REMOVED***, err=rpc error: code = Unavailable desc = connection error: 
 			desc = \"transport: Error while dialing: dial tcp 10.233.140.20:9002: connect: connection refused\"",

@@ -82,9 +82,8 @@ const (
 )
 
 var (
-	TimeFields            = [][]string{{"timestamp"}, {"time"}, {"ts"}}
-	TimeFormats           = []string{ESTimeFormat, time.RFC3339Nano, time.RFC3339}
-	OriginalTimeFieldName = []string{"original_timestamp"}
+	TimeFields  = [][]string{{"timestamp"}, {"time"}, {"ts"}}
+	TimeFormats = []string{ESTimeFormat, time.RFC3339Nano, time.RFC3339}
 )
 
 const (

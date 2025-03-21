@@ -1,22 +1,22 @@
 # Public API
 
-## Introduction
+## Введение
 
-seq-db consists of 2 components - proxy and store:
+seq-db состоит из 2ух компонент - proxy и store:
 
-- seq-db proxy and seq-db store communicate via *internal* [seq-db store gRPC API](../api/storeapi/store_api.proto).
-- To search, clients should use [seq-db proxy gRPC API](../api/seqproxyapi/v1/seq_proxy_api.proto).
-- To bulk, clients should
-  use [HTTP API elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html)
-- To debug search API, we have `seq-db proxy HTTP API`.
+- seq-db proxy и seq-db store общаются по *внутреннему* [seq-db store gRPC API](https://github.com/ozontech/seq-db/tree/main/api/storeapi).
+- Для поиска клиенты взаимодействуют с [seq-db proxy gRPC API](https://github.com/ozontech/seq-db/tree/main/api/seqproxyapi/v1).
+- Для вставки
+  используется [HTTP API elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html)
+- Для целей дебага, поисковых запросов есть `seq-db proxy HTTP API`.
 
-This document describes `seq-db proxy gRPC API` in details
+Этот документ подробно описывает особенности `seq-db proxy gRPC API`
 
 ## Bulk HTTP API
 
-seq-db compatible with bulk API elasticsearch
+seq-db совместима с API вставки elasticsearch
 
-Example request:
+Пример запроса:
 
 ```bash
 curl -X POST http://localhost:9002/_bulk -d '
@@ -43,7 +43,7 @@ curl -X POST http://localhost:9002/_bulk -d '
 '
 ```
 
-Example response:
+Пример ответа:
 
 ```json
 {
@@ -71,16 +71,16 @@ Example response:
 
 ```
 
-You can notice that service field `index` is left empty. seq-db ignores data passed in this field, since it uses mapping
-for field indexing. More information about mapping in [relevant document](./mapping.md)
+Можно заметить, что служебное поле `index` оставлено пустым. seq-db игнорирует данные, передаваемые в этом поле, потому
+что использует маппинг для индексации полей. Подробнее о маппинге [соответствующем документе](03-index-types.md)
 
 ## Search gRPC API
 
 ### `/Search`
 
-Document search method by request. Takes in query in seq-ql format and returns list of satisfying documents.
+Метод поиска документов по запросу. Принимает в себя запрос в формате seq-ql и возвращает список документов
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext -d '
@@ -95,7 +95,7 @@ grpcurl -plaintext -d '
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/Search
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json
 {
@@ -118,13 +118,13 @@ Example successful response:
 }
 ```
 
-`data` field contains original document in base64 format. If we try to decode it
+В поле `data` лежит оригинальный документ в формате base64. Если расшифруем
 
 ```bash
 echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
 ```
 
-we get
+получим
 
 ```json
 {
@@ -135,9 +135,9 @@ we get
 
 ### `/GetAggregation`
 
-Method of getting aggregations by aggregation query
+Метод получения агрегаций по запросу
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext -d '
@@ -156,7 +156,7 @@ grpcurl -plaintext -d '
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
-Example successful response
+Пример успешного ответа
 
 ```json
 {
@@ -185,9 +185,9 @@ Example successful response
 
 ### `/GetHistogram`
 
-Method of getting histograms by query
+Метод получения гистограмм по запросу
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext -d '
@@ -202,7 +202,7 @@ grpcurl -plaintext -d '
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetHistogram
 ```
 
-Example successful response
+Пример успешного ответа
 
 ```json
 {
@@ -227,10 +227,10 @@ Example successful response
 
 ### `/ComplexSearch`
 
-Search request combining fetch of [documents](#search), [aggregations](#getaggregation)
-and [histograms](#gethistogram)
+Поисковый запрос объединяющий в себя получение [документов](#search), [агрегаций](#getaggregation)
+и [гистограмм](#gethistogram)
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext -d '
@@ -260,7 +260,7 @@ grpcurl -plaintext -d '
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/ComplexSearch
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json
 {
@@ -301,9 +301,9 @@ Example successful response:
 
 ### `/Fetch`
 
-Method returning stream of documents by passed seq-id's
+Метод возвращающий поток документов по переданным seq-id
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext -d '
@@ -315,7 +315,7 @@ grpcurl -plaintext -d '
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/Fetch
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json lines
 {
@@ -332,15 +332,15 @@ Example successful response:
 
 #### `/Mapping`
 
-Method returning mapping seq-db working with
+Возвращает маппинг с которым работает seq-db
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext localhost:9004 seqproxyapi.v1.SeqProxyApi/Mapping
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json
 {
@@ -348,7 +348,7 @@ Example successful response:
 }
 ```
 
-decoding base64 results in:
+или если расшифруем base64:
 
 ```json
 {
@@ -368,15 +368,15 @@ decoding base64 results in:
 
 #### `/Status`
 
-Method returning detailed information about seq-db stores seq-db proxy working with
+Возвращает информацию о store`ах с которыми взаимодействует proxy
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext localhost:9004 seqproxyapi.v1.SeqProxyApi/Status
 ```
 
-Example successful response
+Пример успешного ответа
 
 ```json
 {
@@ -395,9 +395,9 @@ Example successful response
 
 #### `/Export`
 
-Same method as a [`/Search`](#search), but streaming
+Метод делающий то же, что и [`/Search`](#search), только потоковый
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext -d '
@@ -411,7 +411,7 @@ grpcurl -plaintext -d '
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/Export
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json lines
 {
