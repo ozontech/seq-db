@@ -253,8 +253,12 @@ func (i *Ingestor) processDocsToCompressor(
 		if originalDoc == nil {
 			break
 		}
+
+		poolDoc := bytespool.AcquireReset(len(originalDoc))
+		poolDoc.B = append(poolDoc.B, originalDoc...)
+
 		parseStart := time.Now()
-		doc, metas, err := proc.Process(originalDoc, requestTime)
+		metas, err := proc.Process(poolDoc.B, requestTime)
 		if err != nil {
 			if errors.Is(err, errNotAnObject) {
 				logger.Error("unable to process the document because it is not an object", zap.Any("document", json.RawMessage(originalDoc)))
@@ -265,11 +269,13 @@ func (i *Ingestor) processDocsToCompressor(
 		}
 		parseDuration += time.Since(parseStart)
 
-		binaryDocs.B = binary.LittleEndian.AppendUint32(binaryDocs.B, uint32(len(doc)))
-		binaryDocs.B = append(binaryDocs.B, doc...)
+		binaryDocs.B = binary.LittleEndian.AppendUint32(binaryDocs.B, uint32(len(originalDoc)))
+		binaryDocs.B = append(binaryDocs.B, originalDoc...)
 		for _, meta := range metas {
 			binaryMetas.B = marshalAppendMeta(binaryMetas.B, meta)
 		}
+
+		bytespool.Release(poolDoc)
 		total++
 	}
 
