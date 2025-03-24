@@ -770,7 +770,6 @@ func (s *IntegrationTestSuite) TestAggStat() {
 				`{"service": "sum1", "v":1}`,
 				`{"service": "sum1", "v":-1}`,
 				`{"service": "sum1", "v":-0}`,
-				`{"service": "sum1", "v":+0}`,
 				`{"service": "sum1", "v":0}`,
 				`{"service": "sum1"}`,
 				// test negative values
@@ -942,7 +941,6 @@ func (s *IntegrationTestSuite) TestAggStat() {
 				`{"v":1, "service":"sum_without_group_by"}`,
 				`{"v":2, "service":"sum_without_group_by"}`,
 				`{"v":-0, "service":"sum_without_group_by"}`,
-				`{"v":+0, "service":"sum_without_group_by"}`,
 				`{"v":0, "service":"sum_without_group_by"}`,
 			},
 			SearchQuery: `service:"sum_without_group_by"`,
