@@ -4,21 +4,15 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 
 	"github.com/ozontech/seq-db/parser"
+	"github.com/ozontech/seq-db/util"
 )
 
 type TokenFetcher interface {
 	FetchToken(int) []byte
-}
-
-type SimpleFetcher struct {
-	Data []string
-}
-
-func (f *SimpleFetcher) FetchToken(i int) []byte {
-	return []byte(f.Data[i])
 }
 
 type Searcher interface {
@@ -40,42 +34,13 @@ func (s *baseSearch) End() int {
 	return s.end
 }
 
-func binSearch(from, to int, pred func(int) bool) int {
-	for to-from > 1 {
-		mid := (from + to) / 2
-		if !pred(mid) {
-			from = mid
-		} else {
-			to = mid
-		}
-	}
-	return from
-}
-
-func cut(b []byte, l int) []byte {
-	if len(b) > l {
-		return b[:l]
-	}
-	return b
-}
-
-func narrowRangeByPrefix(from, to int, prefix []byte, fetcher TokenFetcher) (int, int) {
-	from = binSearch(from-1, to+1, func(mid int) bool {
-		return bytes.Compare(prefix, cut(fetcher.FetchToken(mid), len(prefix))) <= 0
-	}) + 1
-	to = binSearch(from-1, to+1, func(mid int) bool {
-		return bytes.Compare(prefix, cut(fetcher.FetchToken(mid), len(prefix))) < 0
-	})
-	return from, to
-}
-
 type LiteralSearch struct {
 	baseSearch
 	value    []byte
 	narrowed bool
 }
 
-func NewLiteralSearch(base baseSearch, token *parser.Literal) *LiteralSearch {
+func newLiteralSearch(base baseSearch, token *parser.Literal) *LiteralSearch {
 	if len(token.Terms) != 1 || token.Terms[0].Kind != parser.TermText {
 		return nil
 	}
@@ -85,23 +50,10 @@ func NewLiteralSearch(base baseSearch, token *parser.Literal) *LiteralSearch {
 	}
 }
 
-func binSearch2(from, to int, pred func(int) bool) int {
-	to++
-	for from < to {
-		mid := (from + to) / 2
-		if !pred(mid) {
-			from = mid + 1
-		} else {
-			to = mid
-		}
-	}
-	return from
-}
-
 func (s *LiteralSearch) Narrow(fetcher TokenFetcher) {
 	s.narrowed = true
 
-	s.begin = binSearch2(s.begin, s.end, func(i int) bool { return bytes.Compare(fetcher.FetchToken(i), s.value) >= 0 })
+	s.begin = sort.Search(s.end+1, func(tid int) bool { return bytes.Compare(fetcher.FetchToken(tid), s.value) >= 0 })
 
 	if s.begin <= s.end && bytes.Equal(fetcher.FetchToken(s.begin), s.value) {
 		s.end = s.begin
@@ -128,7 +80,7 @@ type WildcardSearch struct {
 	narrowed  bool
 }
 
-func NewWildcardSearch(base baseSearch, token *parser.Literal) *WildcardSearch {
+func newWildcardSearch(base baseSearch, token *parser.Literal) *WildcardSearch {
 	s := &WildcardSearch{
 		baseSearch: base,
 	}
@@ -152,9 +104,21 @@ func NewWildcardSearch(base baseSearch, token *parser.Literal) *WildcardSearch {
 	return s
 }
 
+func cut(b []byte, l int) []byte {
+	return b[:min(len(b), l)]
+}
+
 func (s *WildcardSearch) Narrow(fetcher TokenFetcher) {
 	s.narrowed = true
-	s.begin, s.end = narrowRangeByPrefix(s.begin, s.end, s.prefix, fetcher)
+	l := len(s.prefix)
+	s.begin = util.BinSearchInRange(s.begin, s.end, func(tid int) bool {
+		tokenPrefix := cut(fetcher.FetchToken(tid), l)
+		return bytes.Compare(tokenPrefix, s.prefix) >= 0
+	})
+	s.end = util.BinSearchInRange(s.begin, s.end, func(tid int) bool {
+		tokenPrefix := cut(fetcher.FetchToken(tid), l)
+		return bytes.Compare(tokenPrefix, s.prefix) > 0
+	}) - 1
 }
 
 func (s *WildcardSearch) checkPrefix(val []byte) bool {
@@ -299,13 +263,13 @@ func NewSearcher(token parser.Token, fetcher TokenFetcher, size int) Searcher {
 	}
 	switch t := token.(type) {
 	case *parser.Literal:
-		if s := NewLiteralSearch(base, t); s != nil {
+		if s := newLiteralSearch(base, t); s != nil {
 			if fetcher != nil {
 				s.Narrow(fetcher)
 			}
 			return s
 		}
-		s := NewWildcardSearch(base, t)
+		s := newWildcardSearch(base, t)
 		if fetcher != nil {
 			s.Narrow(fetcher)
 		}

@@ -13,7 +13,15 @@ import (
 	"github.com/ozontech/seq-db/parser"
 )
 
-func (f *SimpleFetcher) isSorted() bool {
+type simpleFetcher struct {
+	Data []string
+}
+
+func (f *simpleFetcher) FetchToken(i int) []byte {
+	return []byte(f.Data[i])
+}
+
+func (f *simpleFetcher) isSorted() bool {
 	for i := 0; i < len(f.Data)-1; i++ {
 		if f.Data[i] > f.Data[i+1] {
 			return false
@@ -22,7 +30,7 @@ func (f *SimpleFetcher) isSorted() bool {
 	return true
 }
 
-func search(t *testing.T, fetcher *SimpleFetcher, narrow bool, req string, expect []string) {
+func search(t *testing.T, fetcher *simpleFetcher, narrow bool, req string, expect []string) {
 	searchType := "full"
 	if narrow {
 		searchType = "narrow"
@@ -48,13 +56,13 @@ func search(t *testing.T, fetcher *SimpleFetcher, narrow bool, req string, expec
 	assert.Equal(t, expect, res, "%s search request %q failed", searchType, req)
 }
 
-func searchAll(t *testing.T, fetch *SimpleFetcher, req string, expect []string) {
+func searchAll(t *testing.T, fetch *simpleFetcher, req string, expect []string) {
 	search(t, fetch, false, req, expect)
 	search(t, fetch, true, req, expect)
 }
 
 func TestPatternSimple(t *testing.T) {
-	fetch := &SimpleFetcher{
+	fetch := &simpleFetcher{
 		Data: []string{
 			"ab",
 			"abc",
@@ -86,7 +94,7 @@ func TestPatternSimple(t *testing.T) {
 
 func TestPatternShuffled(t *testing.T) {
 	for i := 0; i < 10000; i++ {
-		fetch := &SimpleFetcher{
+		fetch := &simpleFetcher{
 			Data: []string{
 				"ab",
 				"abc",
@@ -123,7 +131,7 @@ func TestPatternShuffled(t *testing.T) {
 }
 
 func TestPatternPrefix(t *testing.T) {
-	fetch := &SimpleFetcher{
+	fetch := &simpleFetcher{
 		Data: []string{
 			"a",
 			"aa",
@@ -159,7 +167,7 @@ func TestPatternPrefix(t *testing.T) {
 
 func TestPatternEmpty(t *testing.T) {
 	a := assert.New(t)
-	fetch := &SimpleFetcher{}
+	fetch := &simpleFetcher{}
 
 	a.True(fetch.isSorted(), "data is not sorted")
 
@@ -169,7 +177,7 @@ func TestPatternEmpty(t *testing.T) {
 }
 
 func TestPatternSingle(t *testing.T) {
-	fetch := &SimpleFetcher{
+	fetch := &simpleFetcher{
 		Data: []string{"abacaba"},
 	}
 
@@ -183,7 +191,7 @@ func TestPatternSingle(t *testing.T) {
 }
 
 func TestPatternSuffix(t *testing.T) {
-	fetch := &SimpleFetcher{
+	fetch := &simpleFetcher{
 		Data: []string{
 			"abc",
 			"acd",
@@ -208,7 +216,7 @@ func TestPatternSuffix(t *testing.T) {
 }
 
 func TestPatternSuffix2(t *testing.T) {
-	fetch := &SimpleFetcher{
+	fetch := &simpleFetcher{
 		Data: []string{
 			"aba",
 			"abac",
@@ -229,7 +237,7 @@ func TestPatternSuffix2(t *testing.T) {
 }
 
 func TestPatternMiddle(t *testing.T) {
-	fetch := &SimpleFetcher{
+	fetch := &simpleFetcher{
 		Data: []string{
 			"a:b:a",
 			"aba",
@@ -251,7 +259,7 @@ func TestPatternMiddle(t *testing.T) {
 }
 
 func TestRange(t *testing.T) {
-	fetch := &SimpleFetcher{
+	fetch := &simpleFetcher{
 		Data: []string{
 			"1",
 			"34",
@@ -283,7 +291,7 @@ func TestRange(t *testing.T) {
 func TestRangeNumberWildcard(t *testing.T) {
 	maxInt64 := strconv.Itoa(math.MaxInt64)
 	minInt64 := strconv.Itoa(math.MinInt64)
-	fetch := &SimpleFetcher{
+	fetch := &simpleFetcher{
 		Data: []string{
 			"-4",
 			"-8",
@@ -322,7 +330,7 @@ func TestRangeNumberWildcard(t *testing.T) {
 }
 
 func TestRangeText(t *testing.T) {
-	fetch := &SimpleFetcher{
+	fetch := &simpleFetcher{
 		Data: []string{
 			"ab",
 			"abc",
@@ -359,7 +367,7 @@ func TestRangeText(t *testing.T) {
 }
 
 func TestPatternSymbols(t *testing.T) {
-	fetch := &SimpleFetcher{
+	fetch := &simpleFetcher{
 		Data: []string{
 			"*",
 			"**",

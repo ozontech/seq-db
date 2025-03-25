@@ -199,41 +199,19 @@ func (ti *SealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error)
 		return nil, nil
 	}
 
-	fetcher := token.NewFetcher(ti.ip.tokenBlockLoader, entries)
-	searcher := pattern.NewSearcher(t, fetcher, fetcher.GetTokensCount())
+	f := token.NewFetcher(ti.ip.tokenBlockLoader, entries)
+	s := pattern.NewSearcher(t, f, f.GetTokensCount())
 
-	begin := searcher.Begin()
-	end := searcher.End()
-	if begin > end {
-		return nil, nil
-	}
-
-	blockIndex := fetcher.GetBlockIndex(begin)
-	lastTID := fetcher.GetTIDFromIndex(end)
-
-	entry := entries[blockIndex]
-	tokensBlock := ti.ip.tokenBlockLoader.Load(entry)
-	entryLastTID := entry.GetLastTID()
-
-	var tids []uint32
-	for tid := fetcher.GetTIDFromIndex(begin); tid <= lastTID; tid++ {
-		if tid > entryLastTID {
-			if util.IsCancelled(ti.ip.ctx) {
-				err := fmt.Errorf("search cancelled when matching tokens: reason=%s field=%s, query=%s", ti.ip.ctx.Err(), field, searchStr)
-				return nil, err
-			}
-			blockIndex++
-			entry = entries[blockIndex]
-			tokensBlock = ti.ip.tokenBlockLoader.Load(entry)
-			entryLastTID = entry.GetLastTID()
+	tids := []uint32{}
+	for i := s.Begin(); i <= s.End(); i++ {
+		if util.IsCancelled(ti.ip.ctx) {
+			err := fmt.Errorf("search cancelled when matching tokens: reason=%w field=%s, query=%s", ti.ip.ctx.Err(), field, searchStr)
+			return nil, err
 		}
-
-		val := tokensBlock.GetValByTID(tid)
-		if searcher.Check(val) {
-			tids = append(tids, tid)
+		if s.Check(f.FetchToken(i)) {
+			tids = append(tids, f.GetTIDFromIndex(i))
 		}
 	}
-
 	return tids, nil
 }
 

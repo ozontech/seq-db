@@ -22,6 +22,5 @@ type Fraction interface {
 
 	Info() *Info
 	DataProvider(ctx context.Context) (DataProvider, func())
-	FullSize() uint64
 	Suicide()
 }

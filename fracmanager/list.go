@@ -12,7 +12,7 @@ type List []frac.Fraction
 func (l List) GetTotalSize() uint64 {
 	size := uint64(0)
 	for _, f := range l {
-		size += f.FullSize()
+		size += f.Info().FullSize()
 	}
 	return size
 }

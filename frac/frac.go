@@ -5,11 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/searcher"
-	"github.com/ozontech/seq-db/seq"
 )
 
 type SearchCfg struct {
@@ -29,51 +26,7 @@ type frac struct {
 	suicided bool
 }
 
-func (f *frac) Contains(id seq.MID) bool {
-	return f.IsIntersecting(id, id)
-}
-
-func (f *frac) IsIntersecting(from, to seq.MID) bool {
-	info := f.Info()
-	if info.DocsTotal == 0 { // don't include fresh active fraction
-		return false
-	}
-
-	if to < info.From || info.To < from {
-		return false
-	}
-
-	if info.Distribution == nil { // can't check distribution
-		return true
-	}
-
-	// check with distribution
-	return info.Distribution.IsIntersecting(from, to)
-}
-
-func (f *frac) Info() *Info {
-	f.statsMu.Lock()
-	defer f.statsMu.Unlock()
-	info := *f.info
-
-	return &info
-}
-
-func (f *frac) setInfoSealingTime(newTime uint64) {
-	f.statsMu.Lock()
-	defer f.statsMu.Unlock()
-
-	f.info.SealingTime = newTime
-}
-
-func (f *frac) setInfoIndexOnDisk(newSize uint64) {
-	f.statsMu.Lock()
-	defer f.statsMu.Unlock()
-
-	f.info.IndexOnDisk = newSize
-}
-
-func (f *frac) toString(fracType string) string {
+func toString(f Fraction, fracType string) string {
 	stats := f.Info()
 	s := fmt.Sprintf(
 		"%s fraction name=%s, creation time=%s, from=%s, to=%s, %s",
@@ -88,14 +41,4 @@ func (f *frac) toString(fracType string) string {
 		return s[1:]
 	}
 	return s
-}
-
-// logArgs returns slice of zap.Field for frac close log.
-func (f *frac) closeLogArgs(fracType, hint string, err error) []zap.Field {
-	return []zap.Field{
-		zap.String("frac", f.BaseFileName),
-		zap.String("type", fracType),
-		zap.String("hint", hint),
-		zap.Error(err),
-	}
 }

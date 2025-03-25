@@ -52,6 +52,13 @@ func (d ID) Bytes() []byte {
 	return final
 }
 
+func (d ID) Bin() [16]byte {
+	buf := make([]byte, 0, 16)
+	buf = binary.LittleEndian.AppendUint64(buf, uint64(d.MID))
+	buf = binary.LittleEndian.AppendUint64(buf, uint64(d.RID))
+	return [16]byte(buf)
+}
+
 func LessOrEqual(a, b ID) bool {
 	if a.MID == b.MID {
 		return a.RID <= b.RID

@@ -163,13 +163,14 @@ func (fm *FracManager) shrinkSizes(suicideWG *sync.WaitGroup) {
 		}
 
 		outsiders = append(outsiders, outsider)
-		size -= outsider.FullSize()
+		info := outsider.Info()
+		size -= info.FullSize()
 		fracs = fracs[1:]
 
 		if !fm.Mature() {
 			fm.setMature()
 		}
-		fm.fracCache.RemoveFraction(outsider.Info().Name())
+		fm.fracCache.RemoveFraction(info.Name())
 		metric.MaintenanceTruncateTotal.Inc()
 		logger.Info("truncating last fraction", zap.Any("fraction", outsider))
 	}
@@ -222,7 +223,7 @@ func (fm *FracManager) processFracsStats() {
 
 	for _, f := range fracs {
 		info := f.Info()
-		totalSize += f.FullSize()
+		totalSize += info.FullSize()
 		docsTotal += uint64(info.DocsTotal)
 		docsRaw += info.DocsRaw
 		docsDisk += info.DocsOnDisk
@@ -402,7 +403,7 @@ func (fm *FracManager) rotate() activeRef {
 
 func (fm *FracManager) shouldSealOnExit(active *frac.Active) bool {
 	minSize := float64(fm.config.FracSize) * consts.SealOnExitFracSizePercent / 100
-	return active.FullSize() > uint64(minSize)
+	return active.Info().FullSize() > uint64(minSize)
 }
 
 func (fm *FracManager) Stop() {
@@ -413,8 +414,9 @@ func (fm *FracManager) Stop() {
 	fm.mntcWG.Wait()
 	fm.cacheWG.Wait()
 
-	n := fm.active.frac.Info().Name()
-	s := uint64(util.SizeToUnit(fm.active.frac.FullSize(), "mb"))
+	info := fm.active.frac.Info()
+	n := info.Name()
+	s := uint64(util.SizeToUnit(info.FullSize(), "mb"))
 
 	if fm.shouldSealOnExit(fm.active.frac) {
 		logger.Info("start sealing fraction on exit", zap.String("frac", n), zap.Uint64("fill_size_mb", s))

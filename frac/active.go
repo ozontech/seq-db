@@ -28,6 +28,9 @@ import (
 type Active struct {
 	frac
 
+	statsMu sync.Mutex
+	info    *Info
+
 	MIDs *UInt64s
 	RIDs *UInt64s
 
@@ -291,14 +294,20 @@ func (f *Active) close(closeDocs bool, hint string) {
 	if closeDocs {
 		if err := f.docsFile.Close(); err != nil {
 			logger.Error("can't close docs file",
-				f.closeLogArgs("active", hint, err)...,
+				zap.String("frac", f.BaseFileName),
+				zap.String("type", "active"),
+				zap.String("hint", hint),
+				zap.Error(err),
 			)
 		}
 	}
 
 	if err := f.metaFile.Close(); err != nil {
 		logger.Error("can't close meta file",
-			f.closeLogArgs("active", hint, err)...,
+			zap.String("frac", f.BaseFileName),
+			zap.String("type", "active"),
+			zap.String("hint", hint),
+			zap.Error(err),
 		)
 	}
 }
@@ -394,7 +403,7 @@ func (f *Active) ExplainDoc(_ seq.ID) {
 }
 
 func (f *Active) String() string {
-	return f.toString("active")
+	return toString(f, "active")
 }
 
 func (f *Active) DataProvider(ctx context.Context) (DataProvider, func()) {
@@ -427,4 +436,34 @@ func (f *Active) DataProvider(ctx context.Context) (DataProvider, func()) {
 	}
 
 	return EmptyIndexProvider{}, func() {}
+}
+
+func (f *Active) setInfoSealingTime(newTime uint64) {
+	f.statsMu.Lock()
+	defer f.statsMu.Unlock()
+
+	f.info.SealingTime = newTime
+}
+
+func (f *Active) setInfoIndexOnDisk(newSize uint64) {
+	f.statsMu.Lock()
+	defer f.statsMu.Unlock()
+
+	f.info.IndexOnDisk = newSize
+}
+
+func (f *Active) Info() *Info {
+	f.statsMu.Lock()
+	defer f.statsMu.Unlock()
+
+	info := *f.info
+	return &info
+}
+
+func (f *Active) IsIntersecting(from, to seq.MID) bool {
+	return f.Info().IsIntersecting(from, to)
+}
+
+func (f *Active) Contains(mid seq.MID) bool {
+	return f.Info().IsIntersecting(mid, mid)
 }
