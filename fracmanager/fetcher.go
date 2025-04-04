@@ -1,4 +1,4 @@
-package fetcher
+package fracmanager
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/frac"
@@ -16,11 +18,40 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
+var (
+	fetcherStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "stages_seconds",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
+	fetcherIDsPerFraction = promauto.NewSummary(prometheus.SummaryOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "ids_per_fraction",
+	})
+	fetcherWithHints = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "requests_with_hints",
+	})
+	fetcherWithoutHint = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "requests_without_hints",
+	})
+	fetcherHintMisses = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "hint_misses",
+	})
+)
+
 type Fetcher struct {
 	sem chan struct{}
 }
 
-func New(maxWorkersNum int) *Fetcher {
+func NewFetcher(maxWorkersNum int) *Fetcher {
 	if maxWorkersNum <= 0 {
 		logger.Panic("invalid workers value")
 	}
@@ -29,7 +60,7 @@ func New(maxWorkersNum int) *Fetcher {
 	}
 }
 
-func (f *Fetcher) FetchDocs(ctx context.Context, fracs frac.List, ids []seq.IDSource) ([][]byte, error) {
+func (f *Fetcher) FetchDocs(ctx context.Context, fracs List, ids []seq.IDSource) ([][]byte, error) {
 	sw := stopwatch.New()
 
 	m := sw.Start("fill_revers_pos")
@@ -112,42 +143,10 @@ func fracFetch(ctx context.Context, f frac.Fraction, ids []seq.ID) (_ [][]byte, 
 		}
 	}()
 
-	dp, release, ok := f.DataProvider(ctx)
-	if !ok {
-		return nil, nil
-	}
+	dp, release := f.DataProvider(ctx)
 	defer release()
 
-	sw := stopwatch.New()
-	res := make([][]byte, len(ids))
-	if err := indexFetch(ids, sw, dp.DocsIndex(), res); err != nil {
-		return nil, err
-	}
-
-	sw.Export(getStagesMetric(dp.Type()))
-
-	return res, nil
-}
-
-func indexFetch(ids []seq.ID, sw *stopwatch.Stopwatch, docsIndex frac.DocsIndex, res [][]byte) error {
-	m := sw.Start("get_docs_pos")
-	docsPos := docsIndex.GetDocPos(ids)
-	blocks, offsets, index := frac.GroupDocsOffsets(docsPos)
-	m.Stop()
-
-	m = sw.Start("read_doc")
-	for i, docOffsets := range offsets {
-		docs, err := docsIndex.ReadDocs(docsIndex.GetBlocksOffsets(blocks[i]), docOffsets)
-		if err != nil {
-			return err
-		}
-		for src, dst := range index[i] {
-			res[dst] = docs[src]
-		}
-	}
-	m.Stop()
-
-	return nil
+	return dp.Fetch(ids)
 }
 
 func sortIDs(idsOrig seq.IDSources) (seq.IDSources, seq.MID, seq.MID) {
@@ -166,7 +165,7 @@ func sortIDs(idsOrig seq.IDSources) (seq.IDSources, seq.MID, seq.MID) {
 	return ids, ids[last].ID.MID, ids[0].ID.MID
 }
 
-func groupIDsByFraction(idsOrig seq.IDSources, fracsIn frac.List) (frac.List, [][]seq.ID) {
+func groupIDsByFraction(idsOrig seq.IDSources, fracsIn List) (List, [][]seq.ID) {
 	// sort idsOrig to get sorted ids for each faction to optimize loading of ids-blocks
 	ids, minMID, maxMID := sortIDs(idsOrig)
 

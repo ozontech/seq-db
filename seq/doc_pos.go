@@ -1,4 +1,4 @@
-package frac
+package seq
 
 import (
 	"math"

@@ -82,7 +82,7 @@ func BenchmarkSealing(b *testing.B) {
 		TokenTableZstdLevel:    minZstdLevel,
 	}
 	for i := 0; i < b.N; i++ {
-		active := NewActive(filepath.Join(dataDir, "test_"+strconv.Itoa(i)), true, indexWorkers, readLimiter, nil)
+		active := NewActive(filepath.Join(dataDir, "test_"+strconv.Itoa(i)), true, indexWorkers, readLimiter, nil, Config{})
 		err := fillActiveFraction(active)
 		assert.NoError(b, err)
 

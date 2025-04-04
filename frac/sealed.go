@@ -3,8 +3,6 @@ package frac
 import (
 	"context"
 	"errors"
-	"fmt"
-	"math"
 	"os"
 	"sync"
 
@@ -17,236 +15,10 @@ import (
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/node"
-	"github.com/ozontech/seq-db/parser"
-	"github.com/ozontech/seq-db/pattern"
-	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
 
 const seqDBMagic = "SEQM"
-
-type SealedIDsIndex struct {
-	loader      *IDsLoader
-	midCache    *UnpackCache
-	ridCache    *UnpackCache
-	fracVersion BinaryDataVersion
-}
-
-func (p *SealedIDsIndex) GetMID(lid seq.LID) seq.MID {
-	p.loader.GetMIDsBlock(seq.LID(lid), p.midCache)
-	return seq.MID(p.midCache.GetValByLID(uint64(lid)))
-}
-
-func (p *SealedIDsIndex) GetRID(lid seq.LID) seq.RID {
-	p.loader.GetRIDsBlock(seq.LID(lid), p.ridCache, p.fracVersion)
-	return seq.RID(p.ridCache.GetValByLID(uint64(lid)))
-}
-
-func (p *SealedIDsIndex) Len() int {
-	return int(p.loader.table.IDsTotal)
-}
-
-func (p *SealedIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
-	if lid >= seq.LID(p.loader.table.IDsTotal) {
-		// out of right border
-		return true
-	}
-
-	blockIndex := p.loader.getIDBlockIndexByLID(lid)
-	if !seq.LessOrEqual(p.loader.table.MinBlockIDs[blockIndex], id) {
-		// the LID's block min ID is greater than the given ID, so any ID of that block is also greater
-		return false
-	}
-
-	if blockIndex > 0 && seq.LessOrEqual(p.loader.table.MinBlockIDs[blockIndex-1], id) {
-		// the min ID of the previous block is also less than or equal to the given ID,
-		// so any ID of this block is definitely less than or equal to the given ID.
-		return true
-	}
-
-	checkedMID := p.GetMID(lid)
-	if checkedMID == id.MID {
-		if id.RID == math.MaxUint64 {
-			// this is a real use case for LessOrEqual
-			// in this case the <= condition always becomes true,
-			// so we don't need to load the RID from the disk
-			return true
-		}
-		return p.GetRID(lid) <= id.RID
-	}
-	return checkedMID < id.MID
-}
-
-type SealedDataProvider struct {
-	*Sealed
-	ctx              context.Context
-	fracVersion      BinaryDataVersion
-	midCache         *UnpackCache
-	ridCache         *UnpackCache
-	tokenBlockLoader *token.BlockLoader
-	tokenTableLoader *token.TableLoader
-}
-
-func (dp *SealedDataProvider) IDsIndex() IDsIndex {
-	return &SealedIDsIndex{
-		loader:      NewIDsLoader(dp.indexReader, dp.indexCache, dp.idsTable),
-		midCache:    dp.midCache,
-		ridCache:    dp.ridCache,
-		fracVersion: dp.fracVersion,
-	}
-}
-
-func (dp *SealedDataProvider) GetValByTID(tid uint32) []byte {
-	tokenTable := dp.tokenTableLoader.Load()
-	if entry := tokenTable.GetEntryByTID(tid); entry != nil {
-		return dp.tokenBlockLoader.Load(entry).GetValByTID(tid)
-	}
-	return nil
-}
-
-func (dp *SealedDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) ([]uint32, error) {
-	field := parser.GetField(t)
-	searchStr := parser.GetHint(t)
-
-	tokenTable := dp.tokenTableLoader.Load()
-	entries := tokenTable.SelectEntries(field, searchStr)
-	if len(entries) == 0 {
-		return tids, nil
-	}
-
-	fetcher := token.NewFetcher(dp.tokenBlockLoader, entries)
-	searcher := pattern.NewSearcher(t, fetcher, fetcher.GetTokensCount())
-
-	begin := searcher.Begin()
-	end := searcher.End()
-	if begin > end {
-		return tids, nil
-	}
-
-	blockIndex := fetcher.GetBlockIndex(begin)
-	lastTID := fetcher.GetTIDFromIndex(end)
-
-	entry := entries[blockIndex]
-	tokensBlock := dp.tokenBlockLoader.Load(entry)
-	entryLastTID := entry.GetLastTID()
-
-	for tid := fetcher.GetTIDFromIndex(begin); tid <= lastTID; tid++ {
-		if tid > entryLastTID {
-			if util.IsCancelled(dp.ctx) {
-				err := fmt.Errorf("search cancelled when matching tokens: reason=%s field=%s, query=%s", dp.ctx.Err(), field, searchStr)
-				return nil, err
-			}
-			blockIndex++
-			entry = entries[blockIndex]
-			tokensBlock = dp.tokenBlockLoader.Load(entry)
-			entryLastTID = entry.GetLastTID()
-		}
-
-		val := tokensBlock.GetValByTID(tid)
-		if searcher.Check(val) {
-			tids = append(tids, tid)
-		}
-	}
-
-	return tids, nil
-}
-
-func (dp *SealedDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Sealed.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
-}
-
-func (dp *SealedDataProvider) DocsIndex() DocsIndex {
-	return &SealedDocsIndex{
-		idsIndex: dp.IDsIndex(),
-		idsLoader: NewIDsLoader(
-			dp.Sealed.indexReader,
-			dp.Sealed.indexCache,
-			dp.Sealed.idsTable,
-		),
-		docsReader:    dp.Sealed.docsReader,
-		blocksOffsets: dp.Sealed.BlocksOffsets,
-	}
-}
-
-type SealedDocsIndex struct {
-	idsIndex      IDsIndex
-	idsLoader     *IDsLoader
-	docsReader    *disk.DocsReader
-	blocksOffsets []uint64
-}
-
-func (di *SealedDocsIndex) GetBlocksOffsets(num uint32) uint64 {
-	return di.blocksOffsets[num]
-}
-
-func (di *SealedDocsIndex) GetDocPos(ids []seq.ID) []DocPos {
-	return di.getDocPosByLIDs(di.findLIDs(ids))
-}
-
-func (di *SealedDocsIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
-	return di.docsReader.ReadDocs(blockOffset, docOffsets)
-}
-
-// findLIDs returns a slice of LIDs. If seq.ID is not found, LID has the value 0 at the corresponding position
-func (di *SealedDocsIndex) findLIDs(ids []seq.ID) []seq.LID {
-	res := make([]seq.LID, len(ids))
-
-	// left and right it is search range
-	left := 1                      // first
-	right := di.idsIndex.Len() - 1 // last
-
-	for i, id := range ids {
-
-		if i == 0 || !seq.Less(id, ids[i-1]) {
-			// reset search range (it is not DESC sorted IDs)
-			left = 1
-		}
-
-		lid := seq.LID(util.BinSearchInRange(left, right, func(lid int) bool {
-			return di.idsIndex.LessOrEqual(seq.LID(lid), id)
-		}))
-
-		if id.MID == di.idsIndex.GetMID(lid) && id.RID == di.idsIndex.GetRID(lid) {
-			res[i] = lid
-		}
-
-		// try to refine the search range, but this optimization works for DESC sorted IDs only
-		left = int(lid)
-	}
-
-	return res
-}
-
-// GetDocPosByLIDs returns a slice of DocPos for the corresponding LIDs.
-// Passing sorted LIDs (asc or desc) will improve the performance of this method.
-// For LID with zero value will return DocPos with `DocPosNotFound` value
-func (di *SealedDocsIndex) getDocPosByLIDs(localIDs []seq.LID) []DocPos {
-	var (
-		prevIndex int64 = -1
-		positions []uint64
-		startLID  seq.LID
-	)
-
-	res := make([]DocPos, len(localIDs))
-	for i, lid := range localIDs {
-		if lid == 0 {
-			res[i] = DocPosNotFound
-			continue
-		}
-
-		index := di.idsLoader.getIDBlockIndexByLID(lid)
-		if prevIndex != index {
-			positions = di.idsLoader.GetParamsBlock(uint32(index))
-			startLID = seq.LID(index * consts.IDsPerBlock)
-			prevIndex = index
-		}
-
-		res[i] = DocPos(positions[lid-startLID])
-	}
-
-	return res
-}
 
 type Sealed struct {
 	frac
@@ -280,7 +52,14 @@ const (
 	HalfRemove
 )
 
-func NewSealed(baseFile string, readLimiter *disk.ReadLimiter, indexCache *IndexCache, docsCache *cache.Cache[[]byte], fracInfoCache *Info) *Sealed {
+func NewSealed(
+	baseFile string,
+	readLimiter *disk.ReadLimiter,
+	indexCache *IndexCache,
+	docsCache *cache.Cache[[]byte],
+	fracInfoCache *Info,
+	config Config,
+) *Sealed {
 	f := &Sealed{
 		loadMu: &sync.RWMutex{},
 
@@ -291,6 +70,7 @@ func NewSealed(baseFile string, readLimiter *disk.ReadLimiter, indexCache *Index
 		frac: frac{
 			info:         fracInfoCache,
 			BaseFileName: baseFile,
+			Config:       config,
 		},
 		PartialSuicideMode: Off,
 	}
@@ -358,6 +138,7 @@ func NewSealedFromActive(active *Active, readLimiter *disk.ReadLimiter, indexFil
 		frac: frac{
 			info:         &infoCopy,
 			BaseFileName: active.BaseFileName,
+			Config:       active.Config,
 		},
 	}
 
@@ -403,10 +184,6 @@ func (f *Sealed) loadHeader() *Info {
 	return info
 }
 
-func (f *Sealed) Type() string {
-	return TypeSealed
-}
-
 func (f *Sealed) load() {
 	f.loadMu.Lock()
 	defer f.loadMu.Unlock()
@@ -419,39 +196,6 @@ func (f *Sealed) load() {
 		(&Loader{}).Load(f)
 		f.isLoaded = true
 	}
-}
-
-func (f *Sealed) GetLIDsFromTIDs(tids []uint32, counter lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	var (
-		getBlockIndex   func(tid uint32) uint32
-		getLIDsIterator func(uint32, uint32) node.Node
-	)
-
-	loader := lids.NewLoader(f.indexReader, f.indexCache.LIDs)
-
-	if order.IsReverse() {
-		getBlockIndex = func(tid uint32) uint32 { return f.lidsTable.GetLastBlockIndexForTID(tid) }
-		getLIDsIterator = func(startIndex uint32, tid uint32) node.Node {
-			return (*lids.IteratorAsc)(lids.NewLIDsCursor(f.lidsTable, loader, startIndex, tid, counter, minLID, maxLID))
-		}
-	} else {
-		getBlockIndex = func(tid uint32) uint32 { return f.lidsTable.GetFirstBlockIndexForTID(tid) }
-		getLIDsIterator = func(startIndex uint32, tid uint32) node.Node {
-			return (*lids.IteratorDesc)(lids.NewLIDsCursor(f.lidsTable, loader, startIndex, tid, counter, minLID, maxLID))
-		}
-	}
-
-	startIndexes := make([]uint32, len(tids))
-	for i, tid := range tids {
-		startIndexes[i] = getBlockIndex(tid)
-	}
-
-	nodes := make([]node.Node, len(tids))
-	for i, tid := range tids {
-		nodes[i] = getLIDsIterator(startIndexes[i], tid)
-	}
-
-	return nodes
 }
 
 func (f *Sealed) Suicide() {
@@ -547,23 +291,17 @@ func (f *Sealed) close(hint string) {
 	}
 }
 
-func (f *Sealed) FullSize() uint64 {
-	f.statsMu.Lock()
-	defer f.statsMu.Unlock()
-	return f.info.DocsOnDisk + f.info.IndexOnDisk
-}
-
 func (f *Sealed) String() string {
 	return f.toString("sealed")
 }
 
-func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func(), bool) {
+func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func()) {
 	f.useLock.RLock()
 
 	if f.suicided {
 		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
 		f.useLock.RUnlock()
-		return nil, nil, false
+		return EmptyDataProvider{}, func() {}
 	}
 
 	defer func() {
@@ -575,19 +313,28 @@ func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func(), bool) 
 
 	f.load()
 
-	dp := SealedDataProvider{
-		Sealed:           f,
+	dp := f.createDataProvider(ctx)
+
+	return dp, func() {
+		dp.release()
+		f.useLock.RUnlock()
+	}
+}
+
+func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
+	return &sealedDataProvider{
 		ctx:              ctx,
+		info:             f.Info(),
+		config:           &f.Config,
+		docsReader:       f.docsReader,
+		blocksOffsets:    f.BlocksOffsets,
 		fracVersion:      f.info.BinaryDataVer,
 		midCache:         NewUnpackCache(),
 		ridCache:         NewUnpackCache(),
+		lidsTable:        f.lidsTable,
+		idsLoader:        NewIDsLoader(f.indexReader, f.indexCache, f.idsTable),
+		lidsLoader:       lids.NewLoader(f.indexReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.indexReader, f.indexCache.TokenTable),
 	}
-
-	return &dp, func() {
-		dp.midCache.Release()
-		dp.ridCache.Release()
-		f.useLock.RUnlock()
-	}, true
 }

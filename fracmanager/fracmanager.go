@@ -164,7 +164,7 @@ func (fm *FracManager) shrinkSizes(suicideWG *sync.WaitGroup) {
 		}
 
 		outsiders = append(outsiders, outsider)
-		size -= outsider.FullSize()
+		size -= outsider.Info().FullSize()
 		fracs = fracs[1:]
 
 		if !fm.Mature() {
@@ -201,11 +201,11 @@ func (fm *FracManager) shrinkSizes(suicideWG *sync.WaitGroup) {
 // (search and fetch) occurs under blocking (see DataProvider).
 // This way we avoid the race.
 // Accessing the deleted faction data just will return an empty result.
-func (fm *FracManager) GetAllFracs() frac.List {
+func (fm *FracManager) GetAllFracs() List {
 	fm.fracMu.RLock()
 	defer fm.fracMu.RUnlock()
 
-	fracs := make(frac.List, len(fm.fracs))
+	fracs := make(List, len(fm.fracs))
 	for i, f := range fm.fracs {
 		fracs[i] = f.instance
 	}
@@ -223,7 +223,7 @@ func (fm *FracManager) processFracsStats() {
 
 	for _, f := range fracs {
 		info := f.Info()
-		totalSize += f.FullSize()
+		totalSize += info.FullSize()
 		docsTotal += uint64(info.DocsTotal)
 		docsRaw += info.DocsRaw
 		docsDisk += info.DocsOnDisk
@@ -296,7 +296,8 @@ func (fm *FracManager) Load(ctx context.Context) error {
 	var err error
 	var notSealed []activeRef
 
-	l := NewLoader(fm.config, fm.readLimiter, fm.cacheMaintainer, fm.indexWorkers, fm.fracCache)
+	l := NewLoader(fm.config, fm.readLimiter, fm.cacheMaintainer, fm.indexWorkers, fm.fracCache, fm.config.Fraction)
+
 	if fm.fracs, notSealed, err = l.load(ctx); err != nil {
 		return err
 	}
@@ -390,7 +391,14 @@ func (fm *FracManager) rotate() activeRef {
 
 	prev := fm.active
 
-	active := frac.NewActive(baseFilePath, fm.config.ShouldRemoveMeta, fm.indexWorkers, fm.readLimiter, fm.cacheMaintainer.CreateDocBlockCache())
+	active := frac.NewActive(
+		baseFilePath,
+		fm.config.ShouldRemoveMeta,
+		fm.indexWorkers,
+		fm.readLimiter,
+		fm.cacheMaintainer.CreateDocBlockCache(),
+		fm.config.Fraction,
+	)
 	fm.active.frac = active
 	fm.active.ref = &fracRef{instance: active}
 	fm.fracs = append(fm.fracs, fm.active.ref)
@@ -400,7 +408,7 @@ func (fm *FracManager) rotate() activeRef {
 
 func (fm *FracManager) shouldSealOnExit(active *frac.Active) bool {
 	minSize := float64(fm.config.FracSize) * consts.SealOnExitFracSizePercent / 100
-	return active.FullSize() > uint64(minSize)
+	return active.Info().FullSize() > uint64(minSize)
 }
 
 func (fm *FracManager) Stop() {
@@ -412,7 +420,7 @@ func (fm *FracManager) Stop() {
 	fm.cacheWG.Wait()
 
 	n := fm.active.frac.Info().Name()
-	s := uint64(util.SizeToUnit(fm.active.frac.FullSize(), "mb"))
+	s := uint64(util.SizeToUnit(fm.active.frac.Info().FullSize(), "mb"))
 
 	if fm.shouldSealOnExit(fm.active.frac) {
 		logger.Info("start sealing fraction on exit", zap.String("frac", n), zap.Uint64("fill_size_mb", s))

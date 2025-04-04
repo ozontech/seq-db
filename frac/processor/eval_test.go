@@ -1,4 +1,4 @@
-package searcher
+package processor
 
 import (
 	"fmt"
@@ -75,7 +75,7 @@ func TestEval(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
 		ast, err := parser.ParseQuery(`((NOT m:a AND m:b) AND (m:c OR m:d))`, nil)
 		require.NoError(t, err)
-		root, err := buildEvalTree(ast, 1, 12, &Stats{}, false, newStatic)
+		root, err := buildEvalTree(ast, 1, 12, &searchStats{}, false, newStatic)
 		require.NoError(t, err)
 
 		assert.Equal(t, "((STATIC NAND STATIC) AND (STATIC OR STATIC))", root.String())
@@ -85,7 +85,7 @@ func TestEval(t *testing.T) {
 	t.Run("not", func(t *testing.T) {
 		ast, err := parser.ParseQuery(`NOT ((NOT m:a AND m:b) AND (m:c OR m:d))`, nil)
 		require.NoError(t, err)
-		root, err := buildEvalTree(ast, 1, 12, &Stats{}, false, newStatic)
+		root, err := buildEvalTree(ast, 1, 12, &searchStats{}, false, newStatic)
 		require.NoError(t, err)
 
 		assert.Equal(t, "(NOT ((STATIC NAND STATIC) AND (STATIC OR STATIC)))", root.String())

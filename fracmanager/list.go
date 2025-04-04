@@ -1,22 +1,23 @@
-package frac
+package fracmanager
 
 import (
 	"sort"
 
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
 )
 
-type List []Fraction
+type List []frac.Fraction
 
 func (l List) GetTotalSize() uint64 {
 	size := uint64(0)
 	for _, f := range l {
-		size += f.FullSize()
+		size += f.Info().FullSize()
 	}
 	return size
 }
 
-func (l List) GetOldestFrac() Fraction {
+func (l List) GetOldestFrac() frac.Fraction {
 	if len(l) == 0 {
 		return nil
 	}
@@ -64,7 +65,7 @@ func (l List) FilterInRange(from, to seq.MID) List {
 	return res
 }
 
-func (l *List) Shift(n int) []Fraction {
+func (l *List) Shift(n int) []frac.Fraction {
 	n = min(n, len(*l))
 	res := (*l)[:n]
 	*l = (*l)[n:]

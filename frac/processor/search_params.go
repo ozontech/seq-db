@@ -1,4 +1,4 @@
-package searcher
+package processor
 
 import (
 	"github.com/ozontech/seq-db/parser"
@@ -12,7 +12,7 @@ type AggQuery struct {
 	Quantiles []float64
 }
 
-type Params struct {
+type SearchParams struct {
 	AST *parser.ASTNode
 
 	AggQ         []AggQuery
@@ -26,14 +26,14 @@ type Params struct {
 	Order     seq.DocsOrder
 }
 
-func (p *Params) HasHist() bool {
+func (p *SearchParams) HasHist() bool {
 	return p.HistInterval > 0
 }
 
-func (p *Params) HasAgg() bool {
+func (p *SearchParams) HasAgg() bool {
 	return len(p.AggQ) > 0
 }
 
-func (p *Params) IsScanAllRequest() bool {
+func (p *SearchParams) IsScanAllRequest() bool {
 	return p.WithTotal || p.HasAgg() || p.HasHist()
 }

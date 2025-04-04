@@ -21,106 +21,9 @@ import (
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/node"
-	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
-
-type ActiveIDsIndex struct {
-	mids     []uint64
-	rids     []uint64
-	inverser *inverser
-}
-
-func (p *ActiveIDsIndex) GetMID(lid seq.LID) seq.MID {
-	restoredLID := p.inverser.Revert(uint32(lid))
-	return seq.MID(p.mids[restoredLID])
-}
-
-func (p *ActiveIDsIndex) GetRID(lid seq.LID) seq.RID {
-	restoredLID := p.inverser.Revert(uint32(lid))
-	return seq.RID(p.rids[restoredLID])
-}
-
-func (p *ActiveIDsIndex) Len() int {
-	return p.inverser.Len()
-}
-
-func (p *ActiveIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
-	checkedMID := p.GetMID(lid)
-	if checkedMID == id.MID {
-		return p.GetRID(lid) <= id.RID
-	}
-	return checkedMID < id.MID
-}
-
-type ActiveDataProvider struct {
-	*Active
-	ctx      context.Context
-	idsIndex *ActiveIDsIndex
-}
-
-// getIDsIndex creates on demand and returns ActiveIDsIndex.
-// Creation of inverser for ActiveIDsIndex is expensive operation
-func (dp *ActiveDataProvider) getIDsIndex() *ActiveIDsIndex {
-	if dp.idsIndex == nil {
-		mapping := dp.GetAllDocuments() // creation order is matter
-		mids := dp.MIDs.GetVals()       // mids and rids should be created after mapping to ensure that
-		rids := dp.RIDs.GetVals()       // they contain all the ids that mapping contains.
-
-		inverser := newInverser(mapping, len(mids))
-
-		dp.idsIndex = &ActiveIDsIndex{
-			inverser: inverser,
-			mids:     mids,
-			rids:     rids,
-		}
-	}
-	return dp.idsIndex
-}
-
-func (dp *ActiveDataProvider) IDsIndex() IDsIndex {
-	return dp.getIDsIndex()
-}
-
-func (dp *ActiveDataProvider) GetTIDsByTokenExpr(t parser.Token, tids []uint32) ([]uint32, error) {
-	return dp.Active.GetTIDsByTokenExpr(dp.ctx, t, tids)
-}
-
-func (dp *ActiveDataProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	return dp.Active.GetLIDsFromTIDs(tids, dp.getIDsIndex().inverser, stats, minLID, maxLID, order)
-}
-
-func (dp *ActiveDataProvider) DocsIndex() DocsIndex {
-	return &ActiveDocsIndex{
-		blocksOffsets: dp.Active.DocBlocks.GetVals(),
-		docsPositions: dp.Active.DocsPositions,
-		docsReader:    dp.Active.docsReader,
-	}
-}
-
-type ActiveDocsIndex struct {
-	blocksOffsets []uint64
-	docsPositions *DocsPositions
-	docsReader    *disk.DocsReader
-}
-
-func (di *ActiveDocsIndex) GetBlocksOffsets(num uint32) uint64 {
-	return di.blocksOffsets[num]
-}
-
-func (di *ActiveDocsIndex) GetDocPos(ids []seq.ID) []DocPos {
-	docsPos := make([]DocPos, len(ids))
-	for i, id := range ids {
-		docsPos[i] = di.docsPositions.GetSync(id)
-	}
-	return docsPos
-}
-
-func (di *ActiveDocsIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
-	return di.docsReader.ReadDocs(blockOffset, docOffsets)
-}
 
 type Active struct {
 	frac
@@ -156,8 +59,14 @@ type Active struct {
 	sealed Fraction
 }
 
-func NewActive(baseFileName string, metaRemove bool, indexWorkers *IndexWorkers, readLimiter *disk.ReadLimiter, docsCache *cache.Cache[[]byte]) *Active {
-
+func NewActive(
+	baseFileName string,
+	metaRemove bool,
+	indexWorkers *IndexWorkers,
+	readLimiter *disk.ReadLimiter,
+	docsCache *cache.Cache[[]byte],
+	config Config,
+) *Active {
 	docsFile, docsStats := openFile(baseFileName + consts.DocsFileSuffix)
 	metaFile, metaStats := openFile(baseFileName + consts.MetaFileSuffix)
 
@@ -179,6 +88,7 @@ func NewActive(baseFileName string, metaRemove bool, indexWorkers *IndexWorkers,
 		frac: frac{
 			BaseFileName: baseFileName,
 			info:         NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
+			Config:       config,
 		},
 	}
 
@@ -354,43 +264,6 @@ func (f *Active) GetAllDocuments() []uint32 {
 	return f.TokenList.GetAllTokenLIDs().GetLIDs(f.MIDs, f.RIDs)
 }
 
-func (f *Active) GetTIDsByTokenExpr(ctx context.Context, tk parser.Token, tids []uint32) ([]uint32, error) {
-	res, err := f.TokenList.FindPattern(ctx, tk, tids)
-	return res, err
-}
-
-func (f *Active) GetLIDsFromTIDs(tids []uint32, inv *inverser, _ lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
-	nodes := make([]node.Node, 0, len(tids))
-	for _, tid := range tids {
-		tlids := f.TokenList.Provide(tid)
-		unmapped := tlids.GetLIDs(f.MIDs, f.RIDs)
-		inverse := inverseLIDs(unmapped, inv, minLID, maxLID)
-		nodes = append(nodes, node.NewStatic(inverse, order.IsReverse()))
-	}
-	return nodes
-}
-
-func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint32 {
-	result := make([]uint32, 0, len(unmapped))
-	for _, v := range unmapped {
-		// we skip those values that are not in the inverser, because such values appeared after the search query started
-		if val, ok := inv.Inverse(v); ok {
-			if minLID <= uint32(val) && uint32(val) <= maxLID {
-				result = append(result, uint32(val))
-			}
-		}
-	}
-	return result
-}
-
-func (f *Active) GetValByTID(tid uint32) []byte {
-	return f.TokenList.GetValByTID(tid)
-}
-
-func (f *Active) Type() string {
-	return TypeActive
-}
-
 func (f *Active) Release(sealed Fraction) {
 	f.useLock.Lock()
 	f.sealed = sealed
@@ -519,47 +392,48 @@ func (f *Active) Suicide() { // it seams we never call this method (of Active fr
 	}
 }
 
-func (f *Active) FullSize() uint64 {
-	stats := f.Info()
-	return stats.DocsOnDisk + stats.MetaOnDisk
-}
-
-func (f *Active) ExplainDoc(_ seq.ID) {
-
-}
-
 func (f *Active) String() string {
 	return f.toString("active")
 }
 
-func (f *Active) DataProvider(ctx context.Context) (DataProvider, func(), bool) {
+func (f *Active) DataProvider(ctx context.Context) (DataProvider, func()) {
 	f.useLock.RLock()
 
 	if f.sealed == nil && !f.suicided && f.Info().DocsTotal > 0 { // it is ordinary active fraction state
-		dp := ActiveDataProvider{
-			Active: f,
-			ctx:    ctx,
-		}
-
-		return &dp, func() {
-			if dp.idsIndex != nil {
-				dp.idsIndex.inverser.Release()
-			}
+		dp := f.createDataProvider(ctx)
+		return dp, func() {
+			dp.release()
 			f.useLock.RUnlock()
-		}, true
+		}
 	}
 
 	defer f.useLock.RUnlock()
 
 	if f.sealed != nil { // move on to the daughter sealed faction
-		dp, releaseSealed, ok := f.sealed.DataProvider(ctx)
+		dp, releaseSealed := f.sealed.DataProvider(ctx)
 		metric.CountersTotal.WithLabelValues("use_sealed_from_active").Inc()
-		return dp, releaseSealed, ok
+		return dp, releaseSealed
 	}
 
 	if f.suicided {
 		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
 	}
 
-	return nil, nil, false
+	return EmptyDataProvider{}, func() {}
+}
+
+func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
+	return &activeDataProvider{
+		ctx:    ctx,
+		config: &f.Config,
+		info:   f.Info(),
+
+		mids:      f.MIDs,
+		rids:      f.RIDs,
+		tokenList: f.TokenList,
+
+		blocksOffsets: f.DocBlocks.GetVals(),
+		docsPositions: f.DocsPositions,
+		docsReader:    f.docsReader,
+	}
 }

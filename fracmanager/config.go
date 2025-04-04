@@ -21,6 +21,7 @@ type Config struct {
 	CacheCleanupDelay time.Duration
 	CacheGCDelay      time.Duration
 	SealParams        frac.SealParams
+	Fraction          frac.Config
 }
 
 func FillConfigWithDefault(config *Config) *Config {

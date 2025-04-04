@@ -292,7 +292,7 @@ func TestFracInfoSavedToCache(t *testing.T) {
 		cnt++
 		fm.GetActiveFrac().WaitWriteIdle()
 		fracInstance := rotateAndSeal(fm)
-		totalSize += fracInstance.FullSize()
+		totalSize += fracInstance.Info().FullSize()
 		info := fracInstance.Info()
 		infos[info.Name()] = info
 		dp.TryReset()
@@ -380,7 +380,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 		info := fracInstance.Info()
 		q.Add(item{
 			value: info.Name(),
-			size:  int(fracInstance.FullSize()),
+			size:  int(fracInstance.Info().FullSize()),
 		})
 		infos[info.Name()] = info
 		dp.TryReset()

@@ -123,3 +123,7 @@ func (s *Info) InitEmptyDistribution() bool {
 	s.Distribution = seq.NewMIDsDistribution(distFrom, distTo, DistributionBucket)
 	return true
 }
+
+func (s *Info) FullSize() uint64 {
+	return s.DocsOnDisk + s.IndexOnDisk + s.MetaOnDisk
+}

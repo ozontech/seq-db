@@ -35,6 +35,7 @@ type loader struct {
 	cacheMaintainer *CacheMaintainer
 	indexWorkers    *frac.IndexWorkers
 	fracCache       *sealedFracCache
+	fracConfig      frac.Config
 }
 
 func NewLoader(
@@ -43,6 +44,7 @@ func NewLoader(
 	cacheMaintainer *CacheMaintainer,
 	indexWorkers *frac.IndexWorkers,
 	fracCache *sealedFracCache,
+	fracConfig frac.Config,
 ) *loader {
 	return &loader{
 		config:          config,
@@ -50,6 +52,7 @@ func NewLoader(
 		cacheMaintainer: cacheMaintainer,
 		indexWorkers:    indexWorkers,
 		fracCache:       fracCache,
+		fracConfig:      fracConfig,
 	}
 }
 
@@ -77,7 +80,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 
 	for i, info := range infosList {
 		if info.hasMeta {
-			actives = append(actives, frac.NewActive(info.base, t.config.ShouldRemoveMeta, t.indexWorkers, t.readLimiter, t.cacheMaintainer.CreateDocBlockCache()))
+			actives = append(actives, frac.NewActive(info.base, t.config.ShouldRemoveMeta, t.indexWorkers, t.readLimiter, t.cacheMaintainer.CreateDocBlockCache(), t.fracConfig))
 		} else {
 			cachedFracInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
 			if ok {
@@ -86,7 +89,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 				uncachedFracs++
 			}
 
-			sealed := frac.NewSealed(info.base, t.readLimiter, t.cacheMaintainer.CreateIndexCache(), t.cacheMaintainer.CreateDocBlockCache(), cachedFracInfo)
+			sealed := frac.NewSealed(info.base, t.readLimiter, t.cacheMaintainer.CreateIndexCache(), t.cacheMaintainer.CreateDocBlockCache(), cachedFracInfo, t.fracConfig)
 			fracs = append(fracs, &fracRef{instance: sealed})
 
 			stats := sealed.Info()

@@ -1,4 +1,4 @@
-package searcher
+package processor
 
 import (
 	"math"
@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -87,11 +86,11 @@ func BenchmarkAggWide(b *testing.B) {
 	}
 }
 
-type MockDataProvider struct {
-	frac.DataProvider // embed to implement DataProvider interface and override only needed methods
+type MockTokenIndex struct {
+	tokenIndex // embed to implement TokenIndex interface and override only needed methods
 }
 
-func (m *MockDataProvider) GetValByTID(tid uint32) []byte {
+func (m *MockTokenIndex) GetValByTID(tid uint32) []byte {
 	return []byte(strconv.Itoa(int(tid)))
 }
 
@@ -122,7 +121,7 @@ func TestTwoSourceAggregator(t *testing.T) {
 	r := require.New(t)
 
 	// Mock data provider and sources.
-	dp := &MockDataProvider{}
+	dp := &MockTokenIndex{}
 	field := &MockNode{
 		Pairs: []IDSourcePair{
 			{LID: 1, Source: 0},
@@ -176,7 +175,7 @@ func TestTwoSourceAggregator(t *testing.T) {
 
 func TestSingleTreeCountAggregator(t *testing.T) {
 	r := require.New(t)
-	dp := &MockDataProvider{}
+	dp := &MockTokenIndex{}
 	field := &MockNode{
 		Pairs: []IDSourcePair{
 			{LID: 1, Source: 0},
@@ -194,7 +193,6 @@ func TestSingleTreeCountAggregator(t *testing.T) {
 		t.Errorf("Unexpected error: %v", err)
 	}
 	expectedResult := seq.QPRHistogram{
-		NotExists: 0,
 		HistogramByToken: map[string]*seq.AggregationHistogram{
 			// "0" because DataProvider converts TID source (tid index) to string
 			"0": {
