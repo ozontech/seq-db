@@ -15,13 +15,21 @@ import (
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
 
 const seqDBMagic = "SEQM"
 
 type Sealed struct {
-	frac
+	Config Config
+
+	BaseFileName string
+
+	info *Info
+
+	useMu    sync.RWMutex
+	suicided bool
 
 	docsFile   *os.File
 	docsCache  *cache.Cache[[]byte]
@@ -67,11 +75,10 @@ func NewSealed(
 		docsCache:   docsCache,
 		indexCache:  indexCache,
 
-		frac: frac{
-			info:         fracInfoCache,
-			BaseFileName: baseFile,
-			Config:       config,
-		},
+		info:         fracInfoCache,
+		BaseFileName: baseFile,
+		Config:       config,
+
 		PartialSuicideMode: Off,
 	}
 
@@ -135,11 +142,9 @@ func NewSealedFromActive(active *Active, readLimiter *disk.ReadLimiter, indexFil
 
 		readLimiter: readLimiter,
 
-		frac: frac{
-			info:         &infoCopy,
-			BaseFileName: active.BaseFileName,
-			Config:       active.Config,
-		},
+		info:         &infoCopy,
+		BaseFileName: active.BaseFileName,
+		Config:       active.Config,
 	}
 
 	// put the token table built during sealing into the cache of the sealed faction
@@ -199,9 +204,9 @@ func (f *Sealed) load() {
 }
 
 func (f *Sealed) Suicide() {
-	f.useLock.Lock()
+	f.useMu.Lock()
 	f.suicided = true
-	f.useLock.Unlock()
+	f.useMu.Unlock()
 
 	f.close("suicide")
 
@@ -282,31 +287,39 @@ func (f *Sealed) close(hint string) {
 
 	if f.docsFile != nil { // docs file may not be opened since it's loaded lazily
 		if err := f.docsFile.Close(); err != nil {
-			logger.Error("can't close docs file", f.closeLogArgs("sealed", hint, err)...)
+			logger.Error("can't close docs file",
+				zap.String("frac", f.BaseFileName),
+				zap.String("type", "sealed"),
+				zap.String("hint", hint),
+				zap.Error(err))
 		}
 	}
 
 	if err := f.indexFile.Close(); err != nil {
-		logger.Error("can't close index file", f.closeLogArgs("sealed", hint, err)...)
+		logger.Error("can't close index file",
+			zap.String("frac", f.BaseFileName),
+			zap.String("type", "sealed"),
+			zap.String("hint", hint),
+			zap.Error(err))
 	}
 }
 
 func (f *Sealed) String() string {
-	return f.toString("sealed")
+	return fracToString(f, "sealed")
 }
 
 func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func()) {
-	f.useLock.RLock()
+	f.useMu.RLock()
 
 	if f.suicided {
 		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
-		f.useLock.RUnlock()
+		f.useMu.RUnlock()
 		return EmptyDataProvider{}, func() {}
 	}
 
 	defer func() {
 		if panicData := recover(); panicData != nil {
-			f.useLock.RUnlock()
+			f.useMu.RUnlock()
 			panic(panicData)
 		}
 	}()
@@ -317,14 +330,14 @@ func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func()) {
 
 	return dp, func() {
 		dp.release()
-		f.useLock.RUnlock()
+		f.useMu.RUnlock()
 	}
 }
 
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 	return &sealedDataProvider{
 		ctx:              ctx,
-		info:             f.Info(),
+		info:             f.info,
 		config:           &f.Config,
 		docsReader:       f.docsReader,
 		blocksOffsets:    f.BlocksOffsets,
@@ -337,4 +350,16 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.indexReader, f.indexCache.TokenTable),
 	}
+}
+
+func (f *Sealed) Info() *Info {
+	return f.info
+}
+
+func (f *Sealed) Contains(id seq.MID) bool {
+	return f.info.IsIntersecting(id, id)
+}
+
+func (f *Sealed) IsIntersecting(from, to seq.MID) bool {
+	return f.info.IsIntersecting(from, to)
 }

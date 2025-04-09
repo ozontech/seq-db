@@ -31,7 +31,7 @@ func NewDiskBlocksProducer(frac *Active) *DiskBlocksProducer {
 }
 
 func (g *DiskBlocksProducer) getInfoBlock() *DiskInfoBlock {
-	g.frac.BuildInfoDistribution(g.getSortedSeqIDs())
+	g.frac.buildInfoDistribution(g.getSortedSeqIDs())
 	return &DiskInfoBlock{info: g.frac.Info()}
 }
 

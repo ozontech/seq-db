@@ -26,7 +26,16 @@ import (
 )
 
 type Active struct {
-	frac
+	Config Config
+
+	BaseFileName string
+
+	useMu    sync.RWMutex
+	sealed   Fraction // derivative fraction
+	suicided bool
+
+	infoMu sync.RWMutex
+	info   *Info
 
 	MIDs *UInt64s
 	RIDs *UInt64s
@@ -54,9 +63,6 @@ type Active struct {
 	idsTable   IDsTable
 	lidsTable  *lids.Table
 	tokenTable token.Table
-
-	// derivative fraction
-	sealed Fraction
 }
 
 func NewActive(
@@ -85,11 +91,9 @@ func NewActive(
 
 		appender: StartAppender(docsFile, metaFile, conf.IndexWorkers, conf.SkipFsync, indexWorkers),
 
-		frac: frac{
-			BaseFileName: baseFileName,
-			info:         NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
-			Config:       config,
-		},
+		BaseFileName: baseFileName,
+		info:         NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
+		Config:       config,
 	}
 
 	// use of 0 as keys in maps is prohibited – it's system key, so add first element
@@ -265,9 +269,9 @@ func (f *Active) GetAllDocuments() []uint32 {
 }
 
 func (f *Active) Release(sealed Fraction) {
-	f.useLock.Lock()
+	f.useMu.Lock()
 	f.sealed = sealed
-	f.useLock.Unlock()
+	f.useMu.Unlock()
 
 	f.TokenList.Stop()
 
@@ -278,11 +282,11 @@ func (f *Active) Release(sealed Fraction) {
 }
 
 func (f *Active) UpdateDiskStats(docsLen, metaLen uint64) uint64 {
-	f.statsMu.Lock()
+	f.infoMu.Lock()
 	pos := f.info.DocsOnDisk
 	f.info.DocsOnDisk += docsLen
 	f.info.MetaOnDisk += metaLen
-	f.statsMu.Unlock()
+	f.infoMu.Unlock()
 	return pos
 }
 
@@ -291,15 +295,19 @@ func (f *Active) close(closeDocs bool, hint string) {
 	if closeDocs {
 		if err := f.docsFile.Close(); err != nil {
 			logger.Error("can't close docs file",
-				f.closeLogArgs("active", hint, err)...,
-			)
+				zap.String("frac", f.BaseFileName),
+				zap.String("type", "active"),
+				zap.String("hint", hint),
+				zap.Error(err))
 		}
 	}
 
 	if err := f.metaFile.Close(); err != nil {
 		logger.Error("can't close meta file",
-			f.closeLogArgs("active", hint, err)...,
-		)
+			zap.String("frac", f.BaseFileName),
+			zap.String("type", "active"),
+			zap.String("hint", hint),
+			zap.Error(err))
 	}
 }
 
@@ -326,8 +334,8 @@ func (f *Active) AppendID(id seq.ID) uint32 {
 }
 
 func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount uint64) {
-	f.statsMu.Lock()
-	defer f.statsMu.Unlock()
+	f.infoMu.Lock()
+	defer f.infoMu.Unlock()
 
 	if f.info.From > minMID {
 		f.info.From = minMID
@@ -339,19 +347,19 @@ func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount 
 	f.info.DocsRaw += sizeCount
 }
 
-func (f *Active) BuildInfoDistribution(ids []seq.ID) {
-	info := f.Info()
-	info.BuildDistribution(ids)
-
-	f.statsMu.Lock()
-	f.info = info
-	f.statsMu.Unlock()
+func (f *Active) buildInfoDistribution(ids []seq.ID) {
+	// We must update `info` inside active fraction because we are passing this `info`
+	// with built `distribution` to derivative sealed fraction.
+	// In fact we must not call this method concurrently so no one else should wait for Lock().
+	f.infoMu.Lock()
+	f.info.BuildDistribution(ids)
+	f.infoMu.Unlock()
 }
 
 func (f *Active) Suicide() { // it seams we never call this method (of Active fraction)
-	f.useLock.Lock()
+	f.useMu.Lock()
 	f.suicided = true
-	f.useLock.Unlock()
+	f.useMu.Unlock()
 
 	if !f.isSealed {
 		f.close(true, "suicide")
@@ -393,21 +401,21 @@ func (f *Active) Suicide() { // it seams we never call this method (of Active fr
 }
 
 func (f *Active) String() string {
-	return f.toString("active")
+	return fracToString(f, "active")
 }
 
 func (f *Active) DataProvider(ctx context.Context) (DataProvider, func()) {
-	f.useLock.RLock()
+	f.useMu.RLock()
 
 	if f.sealed == nil && !f.suicided && f.Info().DocsTotal > 0 { // it is ordinary active fraction state
 		dp := f.createDataProvider(ctx)
 		return dp, func() {
 			dp.release()
-			f.useLock.RUnlock()
+			f.useMu.RUnlock()
 		}
 	}
 
-	defer f.useLock.RUnlock()
+	defer f.useMu.RUnlock()
 
 	if f.sealed != nil { // move on to the daughter sealed faction
 		dp, releaseSealed := f.sealed.DataProvider(ctx)
@@ -436,4 +444,31 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 		docsPositions: f.DocsPositions,
 		docsReader:    f.docsReader,
 	}
+}
+
+func (f *Active) setInfoSealingTime(newTime uint64) {
+	f.infoMu.Lock()
+	f.info.SealingTime = newTime
+	f.infoMu.Unlock()
+}
+
+func (f *Active) setInfoIndexOnDisk(newSize uint64) {
+	f.infoMu.Lock()
+	f.info.IndexOnDisk = newSize
+	f.infoMu.Unlock()
+}
+
+func (f *Active) Info() *Info {
+	f.infoMu.RLock()
+	defer f.infoMu.RUnlock()
+
+	return &(*f.info)
+}
+
+func (f *Active) Contains(id seq.MID) bool {
+	return f.Info().IsIntersecting(id, id)
+}
+
+func (f *Active) IsIntersecting(from, to seq.MID) bool {
+	return f.Info().IsIntersecting(from, to)
 }

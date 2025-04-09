@@ -127,3 +127,20 @@ func (s *Info) InitEmptyDistribution() bool {
 func (s *Info) FullSize() uint64 {
 	return s.DocsOnDisk + s.IndexOnDisk + s.MetaOnDisk
 }
+
+func (s *Info) IsIntersecting(from, to seq.MID) bool {
+	if s.DocsTotal == 0 { // don't include fresh active fraction
+		return false
+	}
+
+	if to < s.From || s.To < from {
+		return false
+	}
+
+	if s.Distribution == nil { // can't check distribution
+		return true
+	}
+
+	// check with distribution
+	return s.Distribution.IsIntersecting(from, to)
+}
