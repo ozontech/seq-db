@@ -272,11 +272,10 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	const maxSize = 10000
 
 	fm, err := NewFracManagerWithBackgroundStart(&Config{
-		FracSize:         100,
-		TotalSize:        maxSize * 2,
-		ShouldReplay:     false,
-		ShouldRemoveMeta: true,
-		DataDir:          dataDir,
+		FracSize:     100,
+		TotalSize:    maxSize * 2,
+		ShouldReplay: false,
+		DataDir:      dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -290,7 +289,6 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	for totalSize < maxSize {
 		addDummyDoc(t, fm, dp, seq.SimpleID(cnt))
 		cnt++
-		fm.GetActiveFrac().WaitWriteIdle()
 		fracInstance := rotateAndSeal(fm)
 		totalSize += fracInstance.Info().FullSize()
 		info := fracInstance.Info()
@@ -358,11 +356,10 @@ func TestExtraFractionsRemoved(t *testing.T) {
 	q := newEvictingQueue(maxSize)
 
 	fm, err := NewFracManagerWithBackgroundStart(&Config{
-		FracSize:         100,
-		TotalSize:        maxSize,
-		ShouldReplay:     false,
-		ShouldRemoveMeta: true,
-		DataDir:          dataDir,
+		FracSize:     100,
+		TotalSize:    maxSize,
+		ShouldReplay: false,
+		DataDir:      dataDir,
 	})
 
 	assert.NoError(t, err)
@@ -375,7 +372,6 @@ func TestExtraFractionsRemoved(t *testing.T) {
 
 	for i := 1; i < times+1; i++ {
 		addDummyDoc(t, fm, dp, seq.SimpleID(i))
-		fm.GetActiveFrac().WaitWriteIdle()
 		fracInstance := rotateAndSeal(fm)
 		info := fracInstance.Info()
 		q.Add(item{
@@ -420,11 +416,10 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	const times = 10
 	// make some fractions
 	fm, err := NewFracManagerWithBackgroundStart(&Config{
-		FracSize:         100,
-		TotalSize:        maxSize,
-		ShouldReplay:     false,
-		ShouldRemoveMeta: true,
-		DataDir:          dataDir,
+		FracSize:     100,
+		TotalSize:    maxSize,
+		ShouldReplay: false,
+		DataDir:      dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -434,7 +429,6 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 
 	for i := 1; i < times+1; i++ {
 		addDummyDoc(t, fm, dp, seq.SimpleID(i))
-		fm.GetActiveFrac().WaitWriteIdle()
 		rotateAndSeal(fm)
 		dp.TryReset()
 	}
@@ -458,11 +452,10 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 
 	// create a new fracmanager that will read the fraction cache file
 	fm2, err := NewFracManagerWithBackgroundStart(&Config{
-		FracSize:         100,
-		TotalSize:        maxSize,
-		ShouldReplay:     false,
-		ShouldRemoveMeta: true,
-		DataDir:          dataDir,
+		FracSize:     100,
+		TotalSize:    maxSize,
+		ShouldReplay: false,
+		DataDir:      dataDir,
 	})
 	assert.NoError(t, err)
 

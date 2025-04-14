@@ -12,7 +12,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -30,29 +29,16 @@ type fracInfo struct {
 }
 
 type loader struct {
-	config          *Config
-	readLimiter     *disk.ReadLimiter
-	cacheMaintainer *CacheMaintainer
-	indexWorkers    *frac.IndexWorkers
-	fracCache       *sealedFracCache
-	fracConfig      frac.Config
+	config    *Config
+	builder   *builder
+	fracCache *sealedFracCache
 }
 
-func NewLoader(
-	config *Config,
-	readLimiter *disk.ReadLimiter,
-	cacheMaintainer *CacheMaintainer,
-	indexWorkers *frac.IndexWorkers,
-	fracCache *sealedFracCache,
-	fracConfig frac.Config,
-) *loader {
+func NewLoader(config *Config, builder *builder, fracCache *sealedFracCache) *loader {
 	return &loader{
-		config:          config,
-		readLimiter:     readLimiter,
-		cacheMaintainer: cacheMaintainer,
-		indexWorkers:    indexWorkers,
-		fracCache:       fracCache,
-		fracConfig:      fracConfig,
+		config:    config,
+		builder:   builder,
+		fracCache: fracCache,
 	}
 }
 
@@ -80,7 +66,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 
 	for i, info := range infosList {
 		if info.hasMeta {
-			actives = append(actives, frac.NewActive(info.base, t.config.ShouldRemoveMeta, t.indexWorkers, t.readLimiter, t.cacheMaintainer.CreateDocBlockCache(), t.fracConfig))
+			actives = append(actives, t.builder.NewActive(info.base))
 		} else {
 			cachedFracInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
 			if ok {
@@ -89,7 +75,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 				uncachedFracs++
 			}
 
-			sealed := frac.NewSealed(info.base, t.readLimiter, t.cacheMaintainer.CreateIndexCache(), t.cacheMaintainer.CreateDocBlockCache(), cachedFracInfo, t.fracConfig)
+			sealed := t.builder.NewSealed(info.base, cachedFracInfo)
 			fracs = append(fracs, &fracRef{instance: sealed})
 
 			stats := sealed.Info()
@@ -113,19 +99,17 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 	logger.Info("replaying active fractions", zap.Int("count", len(actives)))
 	notSealed := make([]activeRef, 0)
 	for _, a := range actives {
-		if err := a.ReplayBlocks(ctx, t.readLimiter); err != nil {
+		if err := a.ReplayBlocks(ctx); err != nil {
 			return nil, nil, fmt.Errorf("while replaying blocks: %w", err)
 		}
 		if a.Info().DocsTotal == 0 { // skip empty
 			removeFractionFiles(a.BaseFileName)
 			continue
 		}
-		active := activeRef{
-			frac: a,
-			ref:  &fracRef{instance: a},
-		}
-		fracs = append(fracs, active.ref)
-		notSealed = append(notSealed, active)
+
+		activeRef := t.builder.newActiveRef(a)
+		fracs = append(fracs, activeRef.ref)
+		notSealed = append(notSealed, activeRef)
 	}
 
 	return fracs, notSealed, nil
@@ -225,7 +209,7 @@ func (t *loader) noValidDoc(info *fracInfo) (invalid bool) {
 		}
 	}()
 
-	docsReader := disk.NewDocsReader(t.readLimiter, docFile, nil)
+	docsReader := t.builder.NewDocBlocksReader(docFile)
 	_, _, err = docsReader.ReadDocBlockPayload(0)
 	return err != nil
 }

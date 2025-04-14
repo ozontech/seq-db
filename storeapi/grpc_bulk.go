@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -14,6 +16,23 @@ import (
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/tracing"
 )
+
+var inflightBulksTotal = promauto.NewGauge(prometheus.GaugeOpts{
+	Namespace: "seq_db_store",
+	Subsystem: "bulk",
+	Name:      "in_flight_queries_total",
+	Help:      "",
+})
+
+func (g *GrpcV1) incBulkCounter() int64 {
+	inflightBulksTotal.Inc()
+	return g.inflightBulks.Inc()
+}
+
+func (g *GrpcV1) decBulkCounter() {
+	inflightBulksTotal.Dec()
+	g.inflightBulks.Dec()
+}
 
 func (g *GrpcV1) Bulk(ctx context.Context, req *storeapi.BulkRequest) (*emptypb.Empty, error) {
 	ctx, span := tracing.StartSpan(ctx, "store-server/Bulk")
@@ -35,11 +54,8 @@ func (g *GrpcV1) doBulk(ctx context.Context, req *storeapi.BulkRequest) error {
 		return fmt.Errorf("wrong protocol, count=0: %v", req)
 	}
 
-	metric.BulkInFlightQueriesTotal.Inc()
-	defer metric.BulkInFlightQueriesTotal.Dec()
-
-	inflightRequests := g.bulkData.inflight.Inc()
-	defer g.bulkData.inflight.Dec()
+	inflightRequests := g.incBulkCounter()
+	defer g.decBulkCounter()
 
 	if inflightRequests > int64(g.config.Bulk.RequestsLimit) {
 		metric.RejectedRequests.WithLabelValues("bulk", "limit_exceeding").Inc()
@@ -47,10 +63,9 @@ func (g *GrpcV1) doBulk(ctx context.Context, req *storeapi.BulkRequest) error {
 	}
 
 	g.bulkData.appendQueue.Inc()
-	g.bulkData.writeQueue.Inc()
 	start := time.Now()
 
-	err := g.fracManager.Append(ctx, req.Docs, req.Metas, g.bulkData.writeQueue)
+	err := g.fracManager.Append(ctx, req.Docs, req.Metas)
 
 	g.bulkData.appendQueue.Dec()
 

@@ -33,11 +33,11 @@ type Sealed struct {
 
 	docsFile   *os.File
 	docsCache  *cache.Cache[[]byte]
-	docsReader *disk.DocsReader
+	docsReader disk.DocsReader
 
 	indexFile   *os.File
 	indexCache  *IndexCache
-	indexReader *disk.IndexReader
+	indexReader disk.IndexReader
 
 	idsTable      IDsTable
 	lidsTable     *lids.Table
@@ -65,7 +65,7 @@ func NewSealed(
 	readLimiter *disk.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
-	fracInfoCache *Info,
+	info *Info,
 	config Config,
 ) *Sealed {
 	f := &Sealed{
@@ -75,7 +75,7 @@ func NewSealed(
 		docsCache:   docsCache,
 		indexCache:  indexCache,
 
-		info:         fracInfoCache,
+		info:         info,
 		BaseFileName: baseFile,
 		Config:       config,
 
@@ -83,7 +83,7 @@ func NewSealed(
 	}
 
 	// fast path if fraction-info cache exists AND it has valid index size
-	if fracInfoCache != nil && fracInfoCache.IndexOnDisk > 0 {
+	if info != nil && info.IndexOnDisk > 0 {
 		return f
 	}
 
@@ -94,7 +94,7 @@ func NewSealed(
 }
 
 func (f *Sealed) openIndex() {
-	if f.indexReader == nil {
+	if f.indexFile == nil {
 		var err error
 		name := f.BaseFileName + consts.IndexFileSuffix
 		f.indexFile, err = os.Open(name)
@@ -106,7 +106,7 @@ func (f *Sealed) openIndex() {
 }
 
 func (f *Sealed) openDocs() {
-	if f.docsReader == nil {
+	if f.docsFile == nil {
 		var err error
 		f.docsFile, err = os.Open(f.BaseFileName + consts.DocsFileSuffix)
 		if err != nil {
@@ -118,38 +118,55 @@ func (f *Sealed) openDocs() {
 				logger.Fatal("can't open sdocs file", zap.String("frac", f.BaseFileName), zap.Error(err))
 			}
 		}
-		f.docsReader = disk.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
+		f.docsReader = disk.NewDocsReader(disk.NewDocBlocksReader(f.readLimiter, f.docsFile), f.docsCache)
 	}
 }
 
-func NewSealedFromActive(active *Active, readLimiter *disk.ReadLimiter, indexFile *os.File, indexCache *IndexCache) *Sealed {
-	infoCopy := *active.info
+type PreloadedData struct {
+	info          *Info
+	idsTable      IDsTable
+	lidsTable     *lids.Table
+	tokenTable    token.Table
+	BlocksOffsets []uint64
+	indexFile     *os.File
+	docsFile      *os.File
+	docsCache     *cache.Cache[[]byte]
+	docsReader    disk.DocsReader
+}
+
+func NewSealedPreloaded(
+	baseFile string,
+	preloaded *PreloadedData,
+	readLimiter *disk.ReadLimiter,
+	indexCache *IndexCache,
+	config Config,
+) *Sealed {
 	f := &Sealed{
-		idsTable:      active.idsTable,
-		lidsTable:     active.lidsTable,
-		BlocksOffsets: active.DocBlocks.GetVals(),
+		idsTable:      preloaded.idsTable,
+		lidsTable:     preloaded.lidsTable,
+		BlocksOffsets: preloaded.BlocksOffsets,
 
-		docsFile:   active.docsFile,
-		docsCache:  active.docsCache,
-		docsReader: active.docsReader,
+		docsFile:   preloaded.docsFile,
+		docsCache:  preloaded.docsCache,
+		docsReader: preloaded.docsReader,
 
-		indexFile:   indexFile,
+		indexFile:   preloaded.indexFile,
 		indexCache:  indexCache,
-		indexReader: disk.NewIndexReader(readLimiter, indexFile, indexCache.Registry),
+		indexReader: disk.NewIndexReader(readLimiter, preloaded.indexFile, indexCache.Registry),
 
 		loadMu:   &sync.RWMutex{},
 		isLoaded: true,
 
 		readLimiter: readLimiter,
 
-		info:         &infoCopy,
-		BaseFileName: active.BaseFileName,
-		Config:       active.Config,
+		info:         preloaded.info,
+		BaseFileName: baseFile,
+		Config:       config,
 	}
 
 	// put the token table built during sealing into the cache of the sealed faction
 	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
-		return active.tokenTable, active.tokenTable.Size()
+		return preloaded.tokenTable, preloaded.tokenTable.Size()
 	})
 
 	docsCountK := float64(f.info.DocsTotal) / 1000
@@ -345,8 +362,8 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		midCache:         NewUnpackCache(),
 		ridCache:         NewUnpackCache(),
 		lidsTable:        f.lidsTable,
-		idsLoader:        NewIDsLoader(f.indexReader, f.indexCache, f.idsTable),
-		lidsLoader:       lids.NewLoader(f.indexReader, f.indexCache.LIDs),
+		idsLoader:        NewIDsLoader(&f.indexReader, f.indexCache, f.idsTable),
+		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.indexReader, f.indexCache.TokenTable),
 	}

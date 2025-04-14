@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"sync"
 
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
@@ -23,20 +22,10 @@ type IndexWorkers struct {
 }
 
 type IndexTask struct {
-	DocsLen uint64
-	Frac    *Active
-	Metas   disk.DocBlock
-	Pos     uint64
-
-	AppendQueue *atomic.Uint32
-}
-
-func (t *IndexTask) GetDocsLen() uint64 {
-	return t.DocsLen
-}
-
-func (t *IndexTask) GetMetaLen() uint64 {
-	return uint64(len(t.Metas))
+	Frac  *Active
+	Metas disk.DocBlock
+	Pos   uint64
+	Wg    *sync.WaitGroup
 }
 
 type MergeTask struct {
@@ -166,7 +155,7 @@ func (w *IndexWorkers) appendWorker(index int) {
 
 		active.UpdateStats(collector.MinMID, collector.MaxMID, collector.DocsCounter, collector.SizeCounter)
 
-		task.AppendQueue.Dec()
+		task.Wg.Done()
 
 		total.Stop()
 		sw.Export(metric.BulkStagesSeconds)

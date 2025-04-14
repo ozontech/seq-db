@@ -21,7 +21,7 @@ type SealParams struct {
 	TokenTableZstdLevel    int
 }
 
-func seal(f *Active, params SealParams) *os.File {
+func Seal(f *Active, params SealParams) *PreloadedData {
 	logger.Info("sealing fraction", zap.String("fraction", f.BaseFileName))
 
 	start := time.Now()
@@ -43,7 +43,8 @@ func seal(f *Active, params SealParams) *os.File {
 		logger.Fatal("can't seek file", zap.String("file", indexFile.Name()), zap.Error(err))
 	}
 
-	if err = writeAllBlocks(f, indexFile, params); err != nil {
+	preloaded, err := writeAllBlocks(f, indexFile, params)
+	if err != nil {
 		logger.Fatal("can't seek file", zap.String("file", indexFile.Name()), zap.Error(err))
 	}
 
@@ -57,8 +58,6 @@ func seal(f *Active, params SealParams) *os.File {
 		logger.Fatal("can't sync tmp index file", zap.String("file", indexFile.Name()), zap.Error(err))
 	}
 
-	f.close(false, "seal")
-
 	newFileName := f.BaseFileName + consts.IndexFileSuffix
 	err = os.Rename(tmpFileName, newFileName)
 	if err != nil {
@@ -69,80 +68,81 @@ func seal(f *Active, params SealParams) *os.File {
 		)
 	}
 
-	if f.shouldRemoveMeta {
-		rmFileName := f.BaseFileName + consts.MetaFileSuffix
-		err = os.Remove(rmFileName)
-		if err != nil {
-			logger.Error("can't delete metas file", zap.String("file", rmFileName), zap.Error(err))
-		}
-	}
-
 	logger.Info(
 		"fraction sealed",
 		zap.String("fraction", newFileName),
 		zap.Float64("time_spent_s", util.DurationToUnit(time.Since(start), "s")),
 	)
-	return indexFile
+
+	return preloaded
 }
 
-func writeAllBlocks(f *Active, ws io.WriteSeeker, params SealParams) error {
+func writeAllBlocks(f *Active, indexFile *os.File, params SealParams) (*PreloadedData, error) {
 	var err error
 
-	writer := NewSealedBlockWriter(ws)
+	writer := NewSealedBlockWriter(indexFile)
 	producer := NewDiskBlocksProducer(f)
 
 	logger.Info("sealing frac stats...")
 	if err = writer.writeInfoBlock(producer.getInfoBlock()); err != nil {
 		logger.Error("seal info error", zap.Error(err))
-		return err
+		return nil, err
 	}
 
 	logger.Info("sealing tokens...")
 	tokenTable, err := writer.writeTokensBlocks(params.TokenListZstdLevel, producer.getTokensBlocksGenerator())
 	if err != nil {
 		logger.Error("sealing tokens error", zap.Error(err))
-		return err
+		return nil, err
 	}
 
 	logger.Info("sealing tokens table...")
 	if err = writer.writeTokenTableBlocks(params.TokenTableZstdLevel, producer.getTokenTableBlocksGenerator(tokenTable)); err != nil {
 		logger.Error("sealing tokens table error", zap.Error(err))
-		return err
+		return nil, err
 	}
 
 	logger.Info("writing document positions block...")
 	if err = writer.writePositionsBlock(params.DocsPositionsZstdLevel, producer.getPositionBlock()); err != nil {
 		logger.Error("document positions block error", zap.Error(err))
-		return err
+		return nil, err
 	}
 
 	logger.Info("sealing ids...")
 	minBlockIDs, err := writer.writeIDsBlocks(params.IDsZstdLevel, producer.getIDsBlocksGenerator(consts.IDsBlockSize))
 	if err != nil {
 		logger.Error("seal ids error", zap.Error(err))
-		return err
+		return nil, err
 	}
 
 	logger.Info("sealing lids...")
 	lidsTable, err := writer.writeLIDsBlocks(params.LIDsZstdLevel, producer.getLIDsBlockGenerator(consts.LIDBlockCap))
 	if err != nil {
 		logger.Error("seal lids error", zap.Error(err))
-		return err
+		return nil, err
 	}
 
 	logger.Info("write registry...")
 	if err = writer.WriteRegistryBlock(); err != nil {
 		logger.Error("write registry error", zap.Error(err))
-		return err
+		return nil, err
 	}
 
-	f.idsTable = createIDsTable(f, writer.startOfIDsBlockIndex, minBlockIDs)
-	f.lidsTable = lidsTable
-	f.tokenTable = tokenTable
+	preloaded := PreloadedData{
+		info:          &(*f.info),
+		idsTable:      createIDsTable(f, writer.startOfIDsBlockIndex, minBlockIDs),
+		lidsTable:     lidsTable,
+		tokenTable:    tokenTable,
+		BlocksOffsets: f.DocBlocks.GetVals(),
+		docsFile:      f.docsFile,
+		docsCache:     f.docsCache,
+		docsReader:    f.docsReader,
+		indexFile:     indexFile,
+	}
 
 	writer.stats.WriteLogs()
 
-	return nil
+	return &preloaded, nil
 }
 
 func createIDsTable(f *Active, startOfIDsBlockIndex uint32, minBlockIDs []seq.ID) IDsTable {

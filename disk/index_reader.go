@@ -17,8 +17,8 @@ type IndexReader struct {
 	cache   *cache.Cache[[]byte]
 }
 
-func NewIndexReader(reader *ReadLimiter, file *os.File, registryCache *cache.Cache[[]byte]) *IndexReader {
-	return &IndexReader{
+func NewIndexReader(reader *ReadLimiter, file *os.File, registryCache *cache.Cache[[]byte]) IndexReader {
+	return IndexReader{
 		limiter: reader,
 		file:    file,
 		cache:   registryCache,

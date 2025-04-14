@@ -15,7 +15,7 @@ import (
 )
 
 type Loader struct {
-	reader     *disk.IndexReader
+	reader     disk.IndexReader
 	blockIndex uint32
 	blockBuf   []byte
 }

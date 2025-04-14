@@ -97,10 +97,10 @@ func (b *Block) getCacheEntry() *CacheEntry {
 type BlockLoader struct {
 	fracName string
 	cache    *cache.Cache[*CacheEntry]
-	reader   *disk.IndexReader
+	reader   disk.IndexReader
 }
 
-func NewBlockLoader(fracName string, reader *disk.IndexReader, c *cache.Cache[*CacheEntry]) *BlockLoader {
+func NewBlockLoader(fracName string, reader disk.IndexReader, c *cache.Cache[*CacheEntry]) *BlockLoader {
 	return &BlockLoader{
 		fracName: fracName,
 		cache:    c,

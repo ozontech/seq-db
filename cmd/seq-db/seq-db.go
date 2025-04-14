@@ -309,7 +309,6 @@ func startStore(ctx context.Context, addr string, mp storeapi.MappingProvider) *
 			CacheSize:         uint64(*cacheSize),
 			FracLoadLimit:     0,
 			ShouldReplay:      true,
-			ShouldRemoveMeta:  true,
 			MaintenanceDelay:  0,
 			CacheGCDelay:      0,
 			CacheCleanupDelay: 0,
@@ -328,6 +327,7 @@ func startStore(ctx context.Context, addr string, mp storeapi.MappingProvider) *
 						MaxTIDsPerFraction: *aggMaxTIDsPerFraction,
 					},
 				},
+				KeepMetaFile: false,
 			},
 		},
 		API: storeapi.APIConfig{

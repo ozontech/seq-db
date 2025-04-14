@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/atomic"
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
@@ -17,25 +16,22 @@ func addDummyDoc(t *testing.T, fm *FracManager, dp *frac.DocProvider, seqID seq.
 	doc := []byte("document")
 	dp.Append(doc, nil, seqID, seq.Tokens("service:100500", "k8s_pod", "_all_:"))
 	docs, metas := dp.Provide()
-	err := fm.Append(context.Background(), docs, metas, atomic.NewUint64(0))
+	err := fm.Append(context.Background(), docs, metas)
 	assert.NoError(t, err)
 }
 
 func MakeSomeFractions(t *testing.T, fm *FracManager) {
 	dp := frac.NewDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
-	fm.GetActiveFrac().WaitWriteIdle()
 	fm.seal(fm.rotate())
 
 	dp.TryReset()
 
 	addDummyDoc(t, fm, dp, seq.SimpleID(2))
-	fm.GetActiveFrac().WaitWriteIdle()
 	fm.seal(fm.rotate())
 
 	dp.TryReset()
 	addDummyDoc(t, fm, dp, seq.SimpleID(3))
-	fm.GetActiveFrac().WaitWriteIdle()
 }
 
 func TestCleanUp(t *testing.T) {
@@ -45,11 +41,10 @@ func TestCleanUp(t *testing.T) {
 	defer common.RemoveDir(dataDir)
 
 	fm, err := NewFracManagerWithBackgroundStart(&Config{
-		FracSize:         1000,
-		TotalSize:        100000,
-		ShouldReplay:     false,
-		ShouldRemoveMeta: true,
-		DataDir:          dataDir,
+		FracSize:     1000,
+		TotalSize:    100000,
+		ShouldReplay: false,
+		DataDir:      dataDir,
 	})
 
 	assert.NoError(t, err)
@@ -64,18 +59,19 @@ func TestCleanUp(t *testing.T) {
 	second.PartialSuicideMode = frac.HalfRemove
 	second.Suicide()
 
-	shouldSealOnExit := fm.shouldSealOnExit(fm.active.frac)
+	info := fm.active.frac.Info()
+	shouldSealOnExit := info.FullSize() > fm.minFracSizeToSeal()
+
 	fm.Stop()
-	if shouldSealOnExit && fm.active.frac.Info().DocsTotal > 0 {
+	if shouldSealOnExit && info.DocsTotal > 0 {
 		t.Error("active fraction should be empty after rotation and sealing")
 	}
 
 	fm, err = NewFracManagerWithBackgroundStart(&Config{
-		FracSize:         100,
-		TotalSize:        100000,
-		ShouldReplay:     false,
-		ShouldRemoveMeta: true,
-		DataDir:          dataDir,
+		FracSize:     100,
+		TotalSize:    100000,
+		ShouldReplay: false,
+		DataDir:      dataDir,
 	})
 
 	assert.NoError(t, err)
@@ -92,17 +88,16 @@ func TestMatureMode(t *testing.T) {
 
 	launchAndCheck := func(checkFn func(fm *FracManager)) {
 		fm := NewFracManager(&Config{
-			FracSize:         500,
-			TotalSize:        5000,
-			ShouldReplay:     false,
-			ShouldRemoveMeta: true,
-			DataDir:          dataDir,
+			FracSize:     500,
+			TotalSize:    5000,
+			ShouldReplay: false,
+			DataDir:      dataDir,
 		})
 		assert.NoError(t, fm.Load(context.Background()))
 
 		checkFn(fm)
 
-		fm.indexWorkers.Stop()
+		fm.builder.Stop()
 	}
 
 	id := 1
@@ -112,7 +107,6 @@ func TestMatureMode(t *testing.T) {
 			addDummyDoc(t, fm, dp, seq.SimpleID(id))
 			id++
 		}
-		fm.GetActiveFrac().WaitWriteIdle()
 		fm.seal(fm.rotate())
 		dp.TryReset()
 	}

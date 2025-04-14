@@ -41,7 +41,7 @@ func getAllFracs(dataDir string) []string {
 	return files
 }
 
-func getReader(path string) (*disk.IndexReader, *os.File) {
+func getReader(path string) (disk.IndexReader, *os.File) {
 	c := cache.NewCache[[]byte](nil, nil)
 	f, err := os.Open(path)
 	if err != nil {
@@ -50,7 +50,7 @@ func getReader(path string) (*disk.IndexReader, *os.File) {
 	return disk.NewIndexReader(readLimiter, f, c), f
 }
 
-func readBlock(reader *disk.IndexReader, blockIndex uint32) ([]byte, error) {
+func readBlock(reader disk.IndexReader, blockIndex uint32) ([]byte, error) {
 	data, _, err := reader.ReadIndexBlock(blockIndex, nil)
 	if err != nil {
 		return nil, err

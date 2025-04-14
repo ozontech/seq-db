@@ -279,8 +279,7 @@ func MakeTempDir(b *testing.B, config *storeapi.StoreConfig) {
 func StoreConfigBase() *storeapi.StoreConfig {
 	return &storeapi.StoreConfig{
 		FracManager: *fracmanager.FillConfigWithDefault(&fracmanager.Config{
-			FracLoadLimit:    0,
-			ShouldRemoveMeta: true,
+			FracLoadLimit: 0,
 		}),
 		API: storeapi.APIConfig{
 			StoreMode: "",

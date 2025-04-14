@@ -2,6 +2,8 @@ package frac
 
 type Config struct {
 	Search SearchConfig
+
+	KeepMetaFile bool
 }
 
 type SearchConfig struct {

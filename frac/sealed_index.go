@@ -66,7 +66,7 @@ type sealedDataProvider struct {
 	tokenTableLoader *token.TableLoader
 
 	blocksOffsets []uint64
-	docsReader    *disk.DocsReader
+	docsReader    disk.DocsReader
 }
 
 func (dp *sealedDataProvider) getIDsIndex() *sealedIDsIndex {
@@ -297,7 +297,7 @@ func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 type sealedFetchIndex struct {
 	idsIndex      *sealedIDsIndex
 	idsLoader     *IDsLoader
-	docsReader    *disk.DocsReader
+	docsReader    disk.DocsReader
 	blocksOffsets []uint64
 }
 

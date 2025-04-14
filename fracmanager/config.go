@@ -16,7 +16,6 @@ type Config struct {
 
 	FracLoadLimit     uint64 // how many sealed fractions should fracmanager load, if 0 then loads all
 	ShouldReplay      bool
-	ShouldRemoveMeta  bool
 	MaintenanceDelay  time.Duration
 	CacheCleanupDelay time.Duration
 	CacheGCDelay      time.Duration

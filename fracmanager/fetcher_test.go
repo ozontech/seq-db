@@ -16,19 +16,18 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	common.RecreateDir(dataDir)
 	defer common.RemoveDir(dataDir)
 	config := &Config{
-		FracSize:         1000,
-		TotalSize:        100000,
-		ShouldReplay:     false,
-		ShouldRemoveMeta: true,
-		DataDir:          dataDir,
+		FracSize:     1000,
+		TotalSize:    100000,
+		ShouldReplay: false,
+		DataDir:      dataDir,
 	}
 	fm, err := NewFracManagerWithBackgroundStart(config)
 	assert.NoError(t, err)
 	dp := frac.NewDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
 
-	fm.GetActiveFrac().WaitWriteIdle()
-	info := fm.GetActiveFrac().Info()
+	fm.Writer().WaitWriteIdle()
+	info := fm.Active().Info()
 
 	id := seq.IDSource{
 		ID: seq.SimpleID(1),
@@ -49,9 +48,9 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	fm.WaitIdle()
 	dp.TryReset()
 	addDummyDoc(t, fm, dp, seq.SimpleID(2))
-	fm.GetActiveFrac().WaitWriteIdle()
+	fm.Writer().WaitWriteIdle()
 
-	info = fm.GetActiveFrac().Info()
+	info = fm.Active().Info()
 
 	newID := seq.IDSource{
 		ID: seq.SimpleID(2),

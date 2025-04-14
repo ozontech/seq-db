@@ -40,8 +40,7 @@ type FracManager struct {
 	fracs  []*fracRef
 	active activeRef
 
-	readLimiter  *disk.ReadLimiter
-	indexWorkers *frac.IndexWorkers
+	builder *builder
 
 	OldestCT atomic.Uint64
 	mature   atomic.Bool
@@ -60,7 +59,7 @@ type fracRef struct {
 
 type activeRef struct {
 	ref  *fracRef // ref contains a back reference to the fraction in the slice
-	frac *frac.Active
+	frac *transitionFrac
 }
 
 // NewFracManagerWithBackgroundStart only used from tests
@@ -77,34 +76,36 @@ func NewFracManagerWithBackgroundStart(config *Config) (*FracManager, error) {
 func NewFracManager(config *Config) *FracManager {
 	FillConfigWithDefault(config)
 
+	cacheMaintainer := NewCacheMaintainer(config.CacheSize, &CacheMaintainerMetrics{
+		HitsTotal:       metric.CacheHitsTotal,
+		MissTotal:       metric.CacheMissTotal,
+		PanicsTotal:     metric.CachePanicsTotal,
+		LockWaitsTotal:  metric.CacheLockWaitsTotal,
+		WaitsTotal:      metric.CacheWaitsTotal,
+		ReattemptsTotal: metric.CacheReattemptsTotal,
+		SizeRead:        metric.CacheSizeRead,
+		SizeOccupied:    metric.CacheSizeOccupied,
+		SizeReleased:    metric.CacheSizeReleased,
+		MapsRecreated:   metric.CacheMapsRecreated,
+		MissLatency:     metric.CacheMissLatencySec,
+
+		Oldest:            metric.CacheOldest,
+		AddBuckets:        metric.CacheAddBuckets,
+		DelBuckets:        metric.CacheDelBuckets,
+		CleanGenerations:  metric.CacheCleanGenerations,
+		ChangeGenerations: metric.CacheChangeGenerations,
+	})
+
 	indexWorkers := frac.NewIndexWorkers(conf.IndexWorkers, conf.IndexWorkers)
+	readLimiter := disk.NewReadLimiter(conf.ReaderWorkers, metric.StoreBytesRead)
 
 	fracManager := &FracManager{
-		config:       config,
-		mature:       atomic.Bool{},
-		indexWorkers: indexWorkers,
-		readLimiter:  disk.NewReadLimiter(conf.ReaderWorkers, metric.StoreBytesRead),
-		ulidEntropy:  ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
-		cacheMaintainer: NewCacheMaintainer(config.CacheSize, &CacheMaintainerMetrics{
-			HitsTotal:       metric.CacheHitsTotal,
-			MissTotal:       metric.CacheMissTotal,
-			PanicsTotal:     metric.CachePanicsTotal,
-			LockWaitsTotal:  metric.CacheLockWaitsTotal,
-			WaitsTotal:      metric.CacheWaitsTotal,
-			ReattemptsTotal: metric.CacheReattemptsTotal,
-			SizeRead:        metric.CacheSizeRead,
-			SizeOccupied:    metric.CacheSizeOccupied,
-			SizeReleased:    metric.CacheSizeReleased,
-			MapsRecreated:   metric.CacheMapsRecreated,
-			MissLatency:     metric.CacheMissLatencySec,
-
-			Oldest:            metric.CacheOldest,
-			AddBuckets:        metric.CacheAddBuckets,
-			DelBuckets:        metric.CacheDelBuckets,
-			CleanGenerations:  metric.CacheCleanGenerations,
-			ChangeGenerations: metric.CacheChangeGenerations,
-		}),
-		fracCache: NewSealedFracCache(filepath.Join(config.DataDir, consts.FracCacheFileSuffix)),
+		config:          config,
+		mature:          atomic.Bool{},
+		cacheMaintainer: cacheMaintainer,
+		builder:         newBuilder(config.Fraction, cacheMaintainer, readLimiter, indexWorkers),
+		ulidEntropy:     ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
+		fracCache:       NewSealedFracCache(filepath.Join(config.DataDir, consts.FracCacheFileSuffix)),
 	}
 
 	return fracManager
@@ -119,7 +120,7 @@ func (fm *FracManager) maintenance(sealWG, suicideWG *sync.WaitGroup) {
 	logger.Debug("maintenance started")
 
 	n := time.Now()
-	if fm.GetActiveFrac().Info().DocsOnDisk > fm.config.FracSize {
+	if fm.Active().Info().DocsOnDisk > fm.config.FracSize {
 		active := fm.rotate()
 
 		sealWG.Add(1)
@@ -291,12 +292,10 @@ func (fm *FracManager) Start() {
 }
 
 func (fm *FracManager) Load(ctx context.Context) error {
-	fm.indexWorkers.Start() // first start indexWorkers to allow active frac replaying
-
 	var err error
 	var notSealed []activeRef
 
-	l := NewLoader(fm.config, fm.readLimiter, fm.cacheMaintainer, fm.indexWorkers, fm.fracCache, fm.config.Fraction)
+	l := NewLoader(fm.config, fm.builder, fm.fracCache)
 
 	if fm.fracs, notSealed, err = l.load(ctx); err != nil {
 		return err
@@ -327,22 +326,19 @@ func (fm *FracManager) Load(ctx context.Context) error {
 	return nil
 }
 
-func (fm *FracManager) Append(ctx context.Context, docs, metas disk.DocBlock, writeQueue *atomic.Uint64) error {
+func (fm *FracManager) Append(ctx context.Context, docs, metas disk.DocBlock) error {
 	for {
 		select {
 		case <-ctx.Done():
-			writeQueue.Dec()
 			return ctx.Err()
 		default:
-			if err := fm.GetActiveFrac().Append(docs, metas, writeQueue); err != nil { // can get fail if fraction already sealed
-				logger.Info("append fail", zap.Error(err))
-				continue
+			err := fm.Writer().Append(docs, metas)
+			if err == nil {
+				return nil
 			}
+			logger.Info("append fail", zap.Error(err)) // can get fail if fraction already sealed
 		}
-		break
 	}
-
-	return nil
 }
 
 var (
@@ -365,20 +361,17 @@ func (fm *FracManager) seal(activeRef activeRef) {
 		sealsDoneSeconds.Observe(time.Since(now).Seconds())
 	}()
 
-	indexFile, err := activeRef.frac.Seal(fm.config.SealParams)
+	sealed, err := activeRef.frac.Seal(fm.config.SealParams)
 	if err != nil {
-		logger.Panic("sealing error", zap.Error(err))
+		logger.Fatal("sealing error", zap.Error(err))
 	}
-	sealed := frac.NewSealedFromActive(activeRef.frac, fm.readLimiter, indexFile, fm.cacheMaintainer.CreateIndexCache())
 
-	stats := sealed.Info()
-	fm.fracCache.AddFraction(stats.Name(), stats)
+	info := sealed.Info()
+	fm.fracCache.AddFraction(info.Name(), info)
 
 	fm.fracMu.Lock()
 	activeRef.ref.instance = sealed
 	fm.fracMu.Unlock()
-
-	activeRef.frac.Release(sealed)
 }
 
 func (fm *FracManager) rotate() activeRef {
@@ -386,51 +379,60 @@ func (fm *FracManager) rotate() activeRef {
 	baseFilePath := filepath.Join(fm.config.DataDir, filePath)
 	logger.Info("creating new fraction", zap.String("filepath", baseFilePath))
 
+	next := fm.builder.newActiveRef(fm.builder.NewActive(baseFilePath))
+
 	fm.fracMu.Lock()
-	defer fm.fracMu.Unlock()
-
 	prev := fm.active
-
-	active := frac.NewActive(
-		baseFilePath,
-		fm.config.ShouldRemoveMeta,
-		fm.indexWorkers,
-		fm.readLimiter,
-		fm.cacheMaintainer.CreateDocBlockCache(),
-		fm.config.Fraction,
-	)
-	fm.active.frac = active
-	fm.active.ref = &fracRef{instance: active}
+	fm.active = next
 	fm.fracs = append(fm.fracs, fm.active.ref)
+	fm.fracMu.Unlock()
 
 	return prev
 }
 
-func (fm *FracManager) shouldSealOnExit(active *frac.Active) bool {
-	minSize := float64(fm.config.FracSize) * consts.SealOnExitFracSizePercent / 100
-	return active.Info().FullSize() > uint64(minSize)
+func (fm *FracManager) minFracSizeToSeal() uint64 {
+	return fm.config.FracSize * consts.SealOnExitFracSizePercent / 100
 }
 
 func (fm *FracManager) Stop() {
-	fm.indexWorkers.Stop()
+
+	fm.builder.Stop()
 	fm.stopFn()
 
 	fm.statWG.Wait()
 	fm.mntcWG.Wait()
 	fm.cacheWG.Wait()
 
-	n := fm.active.frac.Info().Name()
-	s := uint64(util.SizeToUnit(fm.active.frac.Info().FullSize(), "mb"))
+	info := fm.active.frac.Info()
 
-	if fm.shouldSealOnExit(fm.active.frac) {
-		logger.Info("start sealing fraction on exit", zap.String("frac", n), zap.Uint64("fill_size_mb", s))
+	status := "frac too small to be sealed"
+	needSealing := false
+
+	if info.FullSize() > fm.minFracSizeToSeal() {
+		needSealing = true
+		status = "need seal active fraction before exit"
+	}
+
+	logger.Info(
+		"sealing on exit",
+		zap.String("status", status),
+		zap.String("frac", info.Name()),
+		zap.Uint64("fill_size_mb", uint64(util.SizeToUnit(info.FullSize(), "mb"))),
+	)
+
+	if needSealing {
 		fm.seal(fm.active)
-	} else {
-		logger.Info("frac too small to be sealed on exit", zap.String("frac", n), zap.Uint64("fill_size_mb", s))
 	}
 }
 
-func (fm *FracManager) GetActiveFrac() *frac.Active {
+func (fm *FracManager) Writer() *transitionFrac {
+	fm.fracMu.RLock()
+	defer fm.fracMu.RUnlock()
+
+	return fm.active.frac
+}
+
+func (fm *FracManager) Active() frac.Fraction {
 	fm.fracMu.RLock()
 	defer fm.fracMu.RUnlock()
 
@@ -438,7 +440,7 @@ func (fm *FracManager) GetActiveFrac() *frac.Active {
 }
 
 func (fm *FracManager) WaitIdle() {
-	fm.GetActiveFrac().WaitWriteIdle()
+	fm.Writer().WaitWriteIdle()
 }
 
 func (fm *FracManager) setMature() {

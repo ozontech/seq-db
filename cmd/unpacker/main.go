@@ -46,7 +46,7 @@ func main() {
 	}
 	total := stat.Size()
 
-	reader := disk.NewDocsReader(disk.NewReadLimiter(1, nil), inFile, nil)
+	reader := disk.NewDocBlocksReader(disk.NewReadLimiter(1, nil), inFile)
 
 	offset := int64(0)
 

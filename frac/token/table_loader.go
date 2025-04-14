@@ -12,13 +12,13 @@ const CacheKeyTable = 1
 
 type TableLoader struct {
 	fracName string
-	reader   *disk.IndexReader
+	reader   disk.IndexReader
 	cache    *cache.Cache[Table]
 	i        uint32
 	buf      []byte
 }
 
-func NewTableLoader(fracName string, reader *disk.IndexReader, c *cache.Cache[Table]) *TableLoader {
+func NewTableLoader(fracName string, reader disk.IndexReader, c *cache.Cache[Table]) *TableLoader {
 	return &TableLoader{
 		fracName: fracName,
 		reader:   reader,

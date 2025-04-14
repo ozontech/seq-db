@@ -79,9 +79,8 @@ func (cfg *TestingEnvConfig) GetFracManagerConfig(replicaID string) fracmanager.
 		// Fastest zstd compression, see: https://github.com/facebook/zstd/releases/tag/v1.3.4.
 		const fastestZstdLevel = -5
 		config = fracmanager.FillConfigWithDefault(&fracmanager.Config{
-			FracSize:         256 * consts.MB,
-			TotalSize:        1 * consts.GB,
-			ShouldRemoveMeta: true,
+			FracSize:  256 * consts.MB,
+			TotalSize: 1 * consts.GB,
 			SealParams: frac.SealParams{
 				IDsZstdLevel:           fastestZstdLevel,
 				LIDsZstdLevel:          fastestZstdLevel,
