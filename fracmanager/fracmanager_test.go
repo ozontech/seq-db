@@ -34,18 +34,15 @@ func addDummyDoc(t *testing.T, fm *FracManager, dp *frac.DocProvider, seqID seq.
 func MakeSomeFractions(t *testing.T, fm *FracManager) {
 	dp := frac.NewDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
-	fm.GetActiveFrac().WaitWriteIdle()
 	fm.seal(fm.rotate())
 
 	dp.TryReset()
 
 	addDummyDoc(t, fm, dp, seq.SimpleID(2))
-	fm.GetActiveFrac().WaitWriteIdle()
 	fm.seal(fm.rotate())
 
 	dp.TryReset()
 	addDummyDoc(t, fm, dp, seq.SimpleID(3))
-	fm.GetActiveFrac().WaitWriteIdle()
 }
 
 func TestCleanUp(t *testing.T) {
@@ -72,10 +69,11 @@ func TestCleanUp(t *testing.T) {
 	second := fm.fracs[1].instance.(*frac.Sealed)
 	second.PartialSuicideMode = frac.HalfRemove
 	second.Suicide()
+	info := fm.active.frac.Info()
+	shouldSealOnExit := info.FullSize() > fm.minFracSizeToSeal()
 
-	shouldSealOnExit := fm.shouldSealOnExit(fm.active.frac)
 	fm.Stop()
-	if shouldSealOnExit && fm.active.frac.Info().DocsTotal > 0 {
+	if shouldSealOnExit && info.DocsTotal > 0 {
 		t.Error("active fraction should be empty after rotation and sealing")
 	}
 
@@ -119,7 +117,6 @@ func TestMatureMode(t *testing.T) {
 			addDummyDoc(t, fm, dp, seq.SimpleID(id))
 			id++
 		}
-		fm.GetActiveFrac().WaitWriteIdle()
 		fm.seal(fm.rotate())
 		dp.TryReset()
 	}

@@ -25,9 +25,8 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	assert.NoError(t, err)
 	dp := frac.NewDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
-
-	fm.GetActiveFrac().WaitWriteIdle()
-	info := fm.GetActiveFrac().Info()
+	fm.WaitIdle()
+	info := fm.Active().Info()
 
 	id := seq.IDSource{
 		ID: seq.SimpleID(1),
@@ -48,9 +47,9 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	fm.WaitIdle()
 	dp.TryReset()
 	addDummyDoc(t, fm, dp, seq.SimpleID(2))
-	fm.GetActiveFrac().WaitWriteIdle()
+	fm.WaitIdle()
 
-	info = fm.GetActiveFrac().Info()
+	info = fm.Active().Info()
 
 	newID := seq.IDSource{
 		ID: seq.SimpleID(2),

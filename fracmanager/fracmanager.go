@@ -59,7 +59,7 @@ type fracRef struct {
 
 type activeRef struct {
 	ref  *fracRef // ref contains a back reference to the fraction in the slice
-	frac *frac.Active
+	frac *proxyFrac
 }
 
 func NewFracManager(config *Config) *FracManager {
@@ -106,7 +106,7 @@ func (fm *FracManager) maintenance(sealWG, suicideWG *sync.WaitGroup) {
 	logger.Debug("maintenance started")
 
 	n := time.Now()
-	if fm.GetActiveFrac().Info().DocsOnDisk > fm.config.FracSize {
+	if fm.Active().Info().DocsOnDisk > fm.config.FracSize {
 		active := fm.rotate()
 
 		sealWG.Add(1)
@@ -313,20 +313,18 @@ func (fm *FracManager) Load(ctx context.Context) error {
 }
 
 func (fm *FracManager) Append(ctx context.Context, docs, metas disk.DocBlock) error {
+	var err error
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			if err := fm.GetActiveFrac().Append(docs, metas); err != nil { // can get fail if fraction already sealed
-				logger.Info("append fail", zap.Error(err))
-				continue
+			if err = fm.Writer().Append(docs, metas); err == nil {
+				return nil
 			}
+			logger.Info("append fail", zap.Error(err)) // can get fail if fraction already sealed
 		}
-		break
 	}
-
-	return nil
 }
 
 var (
@@ -349,23 +347,17 @@ func (fm *FracManager) seal(activeRef activeRef) {
 		sealsDoneSeconds.Observe(time.Since(now).Seconds())
 	}()
 
-	preloaded, err := activeRef.frac.Seal(fm.config.SealParams)
+	sealed, err := activeRef.frac.Seal(fm.config.SealParams)
 	if err != nil {
-		logger.Panic("sealing error", zap.Error(err))
+		logger.Fatal("sealing error", zap.Error(err))
 	}
 
-	sealed := fm.fracProvider.NewSealedPreloaded(activeRef.frac.BaseFileName, preloaded)
-
-	stats := sealed.Info()
-	fm.fracCache.AddFraction(stats.Name(), stats)
+	info := sealed.Info()
+	fm.fracCache.AddFraction(info.Name(), info)
 
 	fm.fracMu.Lock()
 	activeRef.ref.instance = sealed
 	fm.fracMu.Unlock()
-
-	if err := activeRef.frac.Release(sealed); err != nil {
-		logger.Fatal("failed to release active fraction", zap.Error(err))
-	}
 }
 
 func (fm *FracManager) rotate() activeRef {
@@ -384,9 +376,8 @@ func (fm *FracManager) rotate() activeRef {
 	return prev
 }
 
-func (fm *FracManager) shouldSealOnExit(active *frac.Active) bool {
-	minSize := float64(fm.config.FracSize) * consts.SealOnExitFracSizePercent / 100
-	return active.Info().FullSize() > uint64(minSize)
+func (fm *FracManager) minFracSizeToSeal() uint64 {
+	return fm.config.FracSize * consts.SealOnExitFracSizePercent / 100
 }
 
 func (fm *FracManager) Stop() {
@@ -397,18 +388,35 @@ func (fm *FracManager) Stop() {
 	fm.mntcWG.Wait()
 	fm.cacheWG.Wait()
 
-	n := fm.active.frac.Info().Name()
-	s := uint64(util.SizeToUnit(fm.active.frac.Info().FullSize(), "mb"))
+	needSealing := false
+	status := "frac too small to be sealed"
 
-	if fm.shouldSealOnExit(fm.active.frac) {
-		logger.Info("start sealing fraction on exit", zap.String("frac", n), zap.Uint64("fill_size_mb", s))
+	info := fm.active.frac.Info()
+	if info.FullSize() > fm.minFracSizeToSeal() {
+		needSealing = true
+		status = "need seal active fraction before exit"
+	}
+
+	logger.Info(
+		"sealing on exit",
+		zap.String("status", status),
+		zap.String("frac", info.Name()),
+		zap.Uint64("fill_size_mb", uint64(util.SizeToUnit(info.FullSize(), "mb"))),
+	)
+
+	if needSealing {
 		fm.seal(fm.active)
-	} else {
-		logger.Info("frac too small to be sealed on exit", zap.String("frac", n), zap.Uint64("fill_size_mb", s))
 	}
 }
 
-func (fm *FracManager) GetActiveFrac() *frac.Active {
+func (fm *FracManager) Writer() *proxyFrac {
+	fm.fracMu.RLock()
+	defer fm.fracMu.RUnlock()
+
+	return fm.active.frac
+}
+
+func (fm *FracManager) Active() frac.Fraction {
 	fm.fracMu.RLock()
 	defer fm.fracMu.RUnlock()
 
@@ -416,7 +424,7 @@ func (fm *FracManager) GetActiveFrac() *frac.Active {
 }
 
 func (fm *FracManager) WaitIdle() {
-	fm.GetActiveFrac().WaitWriteIdle()
+	fm.Writer().WaitWriteIdle()
 }
 
 func (fm *FracManager) setMature() {

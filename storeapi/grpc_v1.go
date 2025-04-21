@@ -121,7 +121,7 @@ func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mappingPr
 
 func (g *GrpcV1) bulkStats() {
 	for {
-		stats := g.fracManager.GetActiveFrac().Info()
+		stats := g.fracManager.Active().Info()
 		if stats.Name() == "" {
 			time.Sleep(time.Second * 5)
 			continue
@@ -131,7 +131,7 @@ func (g *GrpcV1) bulkStats() {
 		fracName := stats.Name()
 		time.Sleep(time.Second * 5)
 		if g.bulkData.batches.Load() > 0 {
-			stats = g.fracManager.GetActiveFrac().Info()
+			stats = g.fracManager.Active().Info()
 			if fracName != stats.Name() {
 				continue
 			}

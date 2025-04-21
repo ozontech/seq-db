@@ -2,8 +2,6 @@ package frac
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"math"
 	"os"
@@ -31,8 +29,8 @@ type Active struct {
 	BaseFileName string
 
 	useMu    sync.RWMutex
-	sealed   Fraction // derivative fraction
 	suicided bool
+	released bool
 
 	infoMu sync.RWMutex
 	info   *Info
@@ -57,10 +55,6 @@ type Active struct {
 
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
-	indexWg sync.WaitGroup
-
-	sealingMu sync.RWMutex
-	isSealed  bool
 }
 
 const (
@@ -212,12 +206,7 @@ var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 }, []string{"stage"})
 
 // Append causes data to be written on disk and sends metas to index workers
-// Checks the state of a faction and may return an error if the faction has already started sealing.
-func (f *Active) Append(docs, metas []byte) (err error) {
-	if !f.tryStartAppend() {
-		return errors.New("fraction is not writable")
-	}
-
+func (f *Active) Append(docs, metas []byte, wg *sync.WaitGroup) (err error) {
 	sw := stopwatch.New()
 	m := sw.Start("append")
 	if err = f.writer.Write(docs, metas, sw); err != nil {
@@ -225,95 +214,14 @@ func (f *Active) Append(docs, metas []byte) (err error) {
 		return err
 	}
 	f.updateDiskStats(uint64(len(docs)), uint64(len(metas)))
-	f.indexer.Index(f, metas, &f.indexWg, sw)
+	f.indexer.Index(f, metas, wg, sw)
 	m.Stop()
 	sw.Export(bulkStagesSeconds)
-
 	return nil
-}
-
-func (f *Active) tryStartAppend() bool {
-	f.sealingMu.RLock()
-	defer f.sealingMu.RUnlock()
-
-	if f.isSealed {
-		return false
-	}
-
-	f.indexWg.Add(1) // It is important to place it inside the lock
-	return true
-}
-
-func (f *Active) WaitWriteIdle() {
-	f.indexWg.Wait()
-}
-
-func (f *Active) setSealed() error {
-	f.sealingMu.Lock()
-	defer f.sealingMu.Unlock()
-
-	if f.isSealed {
-		return errors.New("fraction is already sealed")
-	}
-	f.isSealed = true
-	return nil
-}
-
-func (f *Active) Seal(params SealParams) (*PreloadedData, error) {
-	if err := f.setSealed(); err != nil {
-		return nil, err
-	}
-
-	logger.Info("waiting fraction to stop write...")
-	start := time.Now()
-	f.WaitWriteIdle()
-	logger.Info("write is stopped", zap.Float64("time_wait_s", util.DurationToUnit(time.Since(start), "s")))
-
-	return seal(f, params)
 }
 
 func (f *Active) GetAllDocuments() []uint32 {
 	return f.TokenList.GetAllTokenLIDs().GetLIDs(f.MIDs, f.RIDs)
-}
-
-func (f *Active) Release(sealed Fraction) error {
-	f.useMu.Lock()
-	f.sealed = sealed
-	f.useMu.Unlock()
-
-	f.TokenList.Stop()
-
-	f.RIDs = nil
-	f.MIDs = nil
-	f.TokenList = nil
-	f.DocsPositions = nil
-
-	// Once frac is released, it is safe to remove the docs file,
-	// since search queries will use the sealed implementation.
-
-	if !f.Config.SkipSortDocs {
-		if err := f.docsFile.Close(); err != nil {
-			return fmt.Errorf("closing docs file: %w", err)
-		}
-		rmFileName := f.BaseFileName + consts.DocsFileSuffix
-		if err := os.Remove(rmFileName); err != nil {
-			logger.Error("error removing docs file",
-				zap.String("file", rmFileName),
-				zap.Error(err))
-		}
-	}
-
-	f.docsCache.Release()
-	f.sortCache.Release()
-
-	if !f.Config.KeepMetaFile {
-		rmFileName := f.BaseFileName + consts.MetaFileSuffix
-		if err := os.Remove(rmFileName); err != nil {
-			logger.Error("can't delete metas file", zap.String("file", rmFileName), zap.Error(err))
-		}
-	}
-
-	return nil
 }
 
 func (f *Active) updateDiskStats(docsLen, metaLen uint64) {
@@ -321,27 +229,6 @@ func (f *Active) updateDiskStats(docsLen, metaLen uint64) {
 	f.info.DocsOnDisk += docsLen
 	f.info.MetaOnDisk += metaLen
 	f.infoMu.Unlock()
-}
-
-func (f *Active) close(closeDocs bool, hint string) {
-	f.writer.Stop()
-	if closeDocs {
-		if err := f.docsFile.Close(); err != nil {
-			logger.Error("can't close docs file",
-				zap.String("frac", f.BaseFileName),
-				zap.String("type", "active"),
-				zap.String("hint", hint),
-				zap.Error(err))
-		}
-	}
-
-	if err := f.metaFile.Close(); err != nil {
-		logger.Error("can't close meta file",
-			zap.String("frac", f.BaseFileName),
-			zap.String("type", "active"),
-			zap.String("hint", hint),
-			zap.Error(err))
-	}
 }
 
 func (f *Active) AppendIDs(ids []seq.ID) []uint32 {
@@ -376,50 +263,6 @@ func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount 
 	f.info.DocsRaw += sizeCount
 }
 
-func (f *Active) Suicide() { // it seams we never call this method (of Active fraction)
-	f.useMu.Lock()
-	f.suicided = true
-	f.useMu.Unlock()
-
-	if !f.isSealed {
-		f.close(true, "suicide")
-
-		err := os.Remove(f.BaseFileName + consts.MetaFileSuffix)
-		if err != nil {
-			logger.Error("error removing file",
-				zap.String("file", f.BaseFileName+consts.MetaFileSuffix),
-				zap.Error(err),
-			)
-		}
-	}
-
-	rmPath := f.BaseFileName + consts.DocsFileSuffix
-	if err := os.Remove(rmPath); err != nil {
-		logger.Error("error removing file",
-			zap.String("file", rmPath),
-			zap.Error(err),
-		)
-	}
-
-	rmPath = f.BaseFileName + consts.SdocsFileSuffix
-	if err := os.Remove(rmPath); err != nil && !os.IsNotExist(err) {
-		logger.Error("error removing file",
-			zap.String("file", rmPath),
-			zap.Error(err),
-		)
-	}
-
-	if f.isSealed {
-		rmPath = f.BaseFileName + consts.IndexFileSuffix
-		if err := os.Remove(rmPath); err != nil {
-			logger.Error("error removing file",
-				zap.String("file", rmPath),
-				zap.Error(err),
-			)
-		}
-	}
-}
-
 func (f *Active) String() string {
 	return fracToString(f, "active")
 }
@@ -427,27 +270,20 @@ func (f *Active) String() string {
 func (f *Active) DataProvider(ctx context.Context) (DataProvider, func()) {
 	f.useMu.RLock()
 
-	if f.sealed == nil && !f.suicided && f.Info().DocsTotal > 0 { // it is ordinary active fraction state
-		dp := f.createDataProvider(ctx)
-		return dp, func() {
-			dp.release()
-			f.useMu.RUnlock()
+	if f.suicided || f.released || f.Info().DocsTotal == 0 { // it is empty active fraction state
+		if f.suicided {
+			metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
 		}
+		f.useMu.RUnlock()
+		return EmptyDataProvider{}, func() {}
 	}
 
-	defer f.useMu.RUnlock()
-
-	if f.sealed != nil { // move on to the daughter sealed faction
-		dp, releaseSealed := f.sealed.DataProvider(ctx)
-		metric.CountersTotal.WithLabelValues("use_sealed_from_active").Inc()
-		return dp, releaseSealed
+	// it is ordinary active fraction state
+	dp := f.createDataProvider(ctx)
+	return dp, func() {
+		dp.release()
+		f.useMu.RUnlock()
 	}
-
-	if f.suicided {
-		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
-	}
-
-	return EmptyDataProvider{}, func() {}
 }
 
 func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
@@ -480,4 +316,74 @@ func (f *Active) Contains(id seq.MID) bool {
 
 func (f *Active) IsIntersecting(from, to seq.MID) bool {
 	return f.Info().IsIntersecting(from, to)
+}
+
+func (f *Active) Release() {
+	f.useMu.Lock()
+	f.released = true
+	f.useMu.Unlock()
+
+	f.releaseMem()
+
+	if !f.Config.KeepMetaFile {
+		f.removeMetaFile()
+	}
+
+	if !f.Config.SkipSortDocs {
+		// we use sorted docs in sealed fraction so we can remove original docs of active fraction
+		f.removeDocsFiles()
+	}
+}
+
+func (f *Active) Suicide() {
+	f.useMu.Lock()
+	released := f.released
+	f.suicided = true
+	f.released = true
+	f.useMu.Unlock()
+
+	if released { // fraction can be suicided after release
+		if f.Config.KeepMetaFile {
+			f.removeMetaFile() // meta was not removed while release
+		}
+		if f.Config.SkipSortDocs {
+			f.removeDocsFiles() // docs was not removed while release
+		}
+	} else { // was not release
+		f.releaseMem()
+		f.removeMetaFile()
+		f.removeDocsFiles()
+	}
+}
+
+func (f *Active) releaseMem() {
+	f.writer.Stop()
+	f.TokenList.Stop()
+
+	f.docsCache.Release()
+	f.sortCache.Release()
+
+	if err := f.metaFile.Close(); err != nil {
+		logger.Error("can't close meta file", zap.String("frac", f.BaseFileName), zap.Error(err))
+	}
+
+	f.RIDs = nil
+	f.MIDs = nil
+	f.TokenList = nil
+	f.DocsPositions = nil
+}
+
+func (f *Active) removeDocsFiles() {
+	if err := f.docsFile.Close(); err != nil {
+		logger.Error("can't close docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
+	}
+	if err := os.Remove(f.docsFile.Name()); err != nil {
+		logger.Error("can't delete docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
+	}
+}
+
+func (f *Active) removeMetaFile() {
+	if err := os.Remove(f.metaFile.Name()); err != nil {
+		logger.Error("can't delete metas file", zap.String("frac", f.BaseFileName), zap.Error(err))
+	}
 }

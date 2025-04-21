@@ -70,8 +70,9 @@ func (fp *fractionProvider) Stop() {
 }
 
 func (fp *fractionProvider) newActiveRef(active *frac.Active) activeRef {
+	frac := &proxyFrac{active: active, fp: fp}
 	return activeRef{
-		frac: active,
-		ref:  &fracRef{instance: active},
+		frac: frac,
+		ref:  &fracRef{instance: frac},
 	}
 }

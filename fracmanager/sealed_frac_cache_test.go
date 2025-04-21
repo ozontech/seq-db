@@ -258,9 +258,9 @@ func TestUnusedFractionsCleanup(t *testing.T) {
 }
 
 func rotateAndSeal(fm *FracManager) frac.Fraction {
-	active3 := fm.rotate()
-	fm.seal(active3)
-	return active3.ref.instance
+	active := fm.rotate()
+	fm.seal(active)
+	return active.ref.instance
 }
 
 func TestFracInfoSavedToCache(t *testing.T) {
@@ -289,7 +289,6 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	for totalSize < maxSize {
 		addDummyDoc(t, fm, dp, seq.SimpleID(cnt))
 		cnt++
-		fm.GetActiveFrac().WaitWriteIdle()
 		fracInstance := rotateAndSeal(fm)
 		totalSize += fracInstance.Info().FullSize()
 		info := fracInstance.Info()
@@ -373,7 +372,6 @@ func TestExtraFractionsRemoved(t *testing.T) {
 
 	for i := 1; i < times+1; i++ {
 		addDummyDoc(t, fm, dp, seq.SimpleID(i))
-		fm.GetActiveFrac().WaitWriteIdle()
 		fracInstance := rotateAndSeal(fm)
 		info := fracInstance.Info()
 		q.Add(item{
@@ -431,7 +429,6 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 
 	for i := 1; i < times+1; i++ {
 		addDummyDoc(t, fm, dp, seq.SimpleID(i))
-		fm.GetActiveFrac().WaitWriteIdle()
 		rotateAndSeal(fm)
 		dp.TryReset()
 	}
