@@ -14,7 +14,11 @@ import (
 func TestDocBlocksWriter(t *testing.T) {
 	r := require.New(t)
 
-	payload := []byte(`"hello world"`)
+	origDoc := []byte(`"hello world"`)
+
+	payload := binary.LittleEndian.AppendUint32(nil, uint32(len(origDoc)))
+	payload = append(payload, origDoc...)
+
 	test := func(blockSize int, docsCount int, expectedBlocks int) {
 		t.Helper()
 
@@ -50,16 +54,16 @@ func TestDocBlocksWriter(t *testing.T) {
 			binDoc := binDocs[docOffset:]
 			docLen := binary.LittleEndian.Uint32(binDoc)
 			doc := binDoc[4 : 4+docLen]
-			r.Equal(string(payload), string(doc))
+			r.Equal(string(origDoc), string(doc))
 		}
 	}
 
 	test(0, 4, 1)
-	test(len(payload), 4, 4)
-	test(len(payload)+2, 4, 4)
-	test(len(payload)*2, 4, 2)
-	test(len(payload)*4, 4, 1)
-	test(len(payload)*4, 8, 2)
+	test(len(origDoc), 4, 4)
+	test(len(origDoc)+2, 4, 4)
+	test(len(origDoc)*2, 4, 2)
+	test(len(origDoc)*4, 4, 1)
+	test(len(origDoc)*4, 8, 2)
 }
 
 func assertBlocks(t *testing.T, docBlocks []byte, numBlocks int) {

@@ -102,3 +102,30 @@ func extractDocsFromBlock(block []byte, docOffsets []uint64) [][]byte {
 
 	return res
 }
+
+func (r *DocsReader) ReadDocsFn(blockOffset uint64, docOffsets []uint64, fn func([]byte) error) error {
+	block, err := r.cache.GetWithError(uint32(blockOffset), func() ([]byte, int, error) {
+		block, _, err := r.ReadDocBlockPayload(int64(blockOffset))
+		if err != nil {
+			return nil, 0, fmt.Errorf("can't fetch doc at pos %d: %w", blockOffset, err)
+		}
+		return block, cap(block), nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	return extractDocsFromBlockFn(block, docOffsets, fn)
+}
+
+func extractDocsFromBlockFn(block []byte, docOffsets []uint64, fn func([]byte) error) error {
+	for _, offset := range docOffsets {
+		size := binary.LittleEndian.Uint32(block[offset:]) + 4
+		err := fn(block[offset : offset+uint64(size)])
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}

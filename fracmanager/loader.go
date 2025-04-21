@@ -92,7 +92,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 			}
 		} else {
 			if info.hasMeta {
-				actives = append(actives, frac.NewActive(info.base, t.indexWorkers, t.readLimiter, t.cacheMaintainer.CreateDocBlockCache()))
+				actives = append(actives, frac.NewActive(info.base, t.indexWorkers, t.readLimiter, t.cacheMaintainer.CreateADocBlockCache()))
 			} else {
 				infoCached, sealed := t.loadSealedFrac(diskFracCache, info)
 				fracs = append(fracs, &fracRef{instance: sealed})
@@ -142,7 +142,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 func (t *loader) loadSealedFrac(diskFracCache *sealedFracCache, info *fracInfo) (bool, *frac.Sealed) {
 	cachedFracInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
 
-	sealed := frac.NewSealed(info.base, t.readLimiter, t.cacheMaintainer.CreateIndexCache(), t.cacheMaintainer.CreateDocBlockCache(), cachedFracInfo)
+	sealed := frac.NewSealed(info.base, t.readLimiter, t.cacheMaintainer.CreateIndexCache(), t.cacheMaintainer.CreateADocBlockCache(), cachedFracInfo)
 
 	stats := sealed.Info()
 	t.fracCache.AddFraction(stats.Name(), stats)

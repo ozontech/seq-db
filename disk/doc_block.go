@@ -3,6 +3,7 @@ package disk
 import (
 	"encoding/binary"
 
+	"github.com/pierrec/lz4/v4"
 	"github.com/ozontech/seq-db/util"
 	"github.com/ozontech/seq-db/zstd"
 )
@@ -74,6 +75,26 @@ func (b DocBlock) SetExt2(x uint64) {
 
 func (b DocBlock) Payload() []byte {
 	return b[DocBlockHeaderLen:]
+}
+
+func Lz4CompressDocBlock(src []byte, dst DocBlock) DocBlock {
+	dst = util.EnsureSliceSize(dst, DocBlockHeaderLen+len(src))
+	dst = util.EnsureSliceSize(dst, DocBlockHeaderLen+lz4.CompressBlockBound(len(src)))
+
+	var c lz4.Compressor
+	if n, err := c.CompressBlock(src, dst[DocBlockHeaderLen:]); err != nil || n == 0 || n >= len(src) {
+		dst.SetCodec(CodecNo)
+		copy(dst[DocBlockHeaderLen:], src)
+		dst = dst[:DocBlockHeaderLen+len(src)]
+	} else {
+		dst.SetCodec(CodecLZ4)
+		dst = dst[:DocBlockHeaderLen+n]
+	}
+
+	dst.CalcLen()
+	dst.SetRawLen(uint64(len(src)))
+
+	return dst
 }
 
 func CompressDocBlock(src []byte, dst DocBlock, zstdLevel int) DocBlock {

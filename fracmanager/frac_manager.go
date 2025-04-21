@@ -370,8 +370,8 @@ func (fm *FracManager) seal(activeRef activeRef) {
 	}
 
 	indexCache := fm.cacheMaintainer.CreateIndexCache()
-	docsCache := fm.cacheMaintainer.CreateDocBlockCache()
-	sealed := frac.NewSealedFromActive(activeRef.frac, fm.readLimiter, indexFile, indexCache, docsCache)
+	sortedDocsCache := fm.cacheMaintainer.CreateSDocBlockCache()
+	sealed := frac.NewSealedFromActive(activeRef.frac, fm.readLimiter, indexFile, indexCache, sortedDocsCache)
 
 	stats := sealed.Info()
 	fm.fracCache.AddFraction(stats.Name(), stats)
@@ -395,7 +395,7 @@ func (fm *FracManager) rotate() activeRef {
 
 	prev := fm.active
 
-	active := frac.NewActive(baseFilePath, fm.indexWorkers, fm.readLimiter, fm.cacheMaintainer.CreateDocBlockCache())
+	active := frac.NewActive(baseFilePath, fm.indexWorkers, fm.readLimiter, fm.cacheMaintainer.CreateADocBlockCache())
 	fm.active.frac = active
 	fm.active.ref = &fracRef{instance: active}
 	fm.fracs = append(fm.fracs, fm.active.ref)

@@ -354,7 +354,7 @@ func (f *Active) Seal(params SealParams) (*os.File, error) {
 	f.WaitWriteIdle()
 	logger.Info("write is stopped", zap.Float64("time_wait_s", util.DurationToUnit(time.Since(start), "s")))
 
-	return seal(f, params), nil
+	return seal(f, params, f.docsReader), nil
 }
 
 func (f *Active) GetAllDocuments() []uint32 {

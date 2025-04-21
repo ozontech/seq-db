@@ -50,7 +50,9 @@ func (c *DocsMetasCompressor) CompressDocsAndMetas(docs, meta []byte) {
 	c.metaBuf = initBuf(c.metaBuf, len(meta))
 
 	// Compress docs block.
-	c.docsBuf = disk.CompressDocBlock(docs, c.docsBuf, c.docsCompressLevel)
+	// c.docsBuf = disk.CompressDocBlock(docs, c.docsBuf, c.docsCompressLevel)
+	c.docsBuf = disk.Lz4CompressDocBlock(docs, c.docsBuf)
+
 	// Compress metas block.
 	c.metaBuf = disk.CompressDocBlock(meta, c.metaBuf, c.metaCompressLevel)
 	// Set compressed doc block size.

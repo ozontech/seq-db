@@ -15,8 +15,8 @@ const (
 	GB = 1024 * 1024 * 1024
 
 	DefaultMaintenanceDelay  = time.Second
-	DefaultCacheGCDelay      = 10 * time.Second
-	DefaultCacheCleanupDelay = 50 * time.Millisecond
+	DefaultCacheGCDelay      = 1 * time.Second
+	DefaultCacheCleanupDelay = 10 * time.Millisecond
 
 	// indexing
 	LIDBlockCap                = 64 * KB
