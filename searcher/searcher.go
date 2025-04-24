@@ -40,25 +40,32 @@ func New(maxWorkersNum int, cfg Conf) *Searcher {
 	}
 }
 
+func emptyQpr(params Params) *seq.QPR {
+	return &seq.QPR{
+		Histogram: make(map[seq.MID]uint64),
+		Aggs:      make([]seq.QPRHistogram, len(params.AggQ)),
+	}
+}
+
 func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params Params) (*seq.QPR, error) {
 	remainingFracs, err := s.prepareFracs(fracs, params)
 	if err != nil {
 		return nil, err
 	}
 
+	subSearchesCnt := 0
 	origLimit := params.Limit
 	scanAll := params.IsScanAllRequest()
 
-	var (
-		total = &seq.QPR{
-			Histogram: make(map[seq.MID]uint64),
-			Aggs:      make([]seq.QPRHistogram, len(params.AggQ)),
-		}
-		subQueriesCount float64
-	)
+	total := emptyQpr(params)
+
+	fracsChunkSize := s.cfg.FractionsPerIteration
+	if fracsChunkSize == 0 {
+		fracsChunkSize = len(remainingFracs)
+	}
 
 	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
-		subQPRs, err := s.searchDocsAsync(ctx, remainingFracs.Shift(s.cfg.FractionsPerIteration), params)
+		subQPRs, err := s.searchDocsAsync(ctx, remainingFracs.Shift(fracsChunkSize), params)
 		if err != nil {
 			return nil, err
 		}
@@ -68,10 +75,10 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 		// reduce the limit on the number of ensured docs in response
 		params.Limit = origLimit - calcEnsuredIDsCount(total.IDs, remainingFracs, params.Order)
 
-		subQueriesCount++
+		subSearchesCnt++
 	}
 
-	SearchSubSearches.Observe(subQueriesCount)
+	SearchSubSearches.Observe(float64(subSearchesCnt))
 	return total, nil
 
 }
@@ -176,7 +183,7 @@ func (s *Searcher) fracSearch(ctx context.Context, params Params, f frac.Fractio
 	dataProvider, release, ok := f.DataProvider(ctx)
 	if !ok {
 		metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()
-		return nil, nil
+		return emptyQpr(params), nil
 	}
 
 	defer release()
@@ -194,7 +201,7 @@ func (s *Searcher) fracSearch(ctx context.Context, params Params, f frac.Fractio
 
 	if qpr == nil { // it is possible for a suicided fraction for example
 		metric.CountersTotal.WithLabelValues("empty_qpr").Inc()
-		return nil, nil
+		return emptyQpr(params), nil
 	}
 
 	qpr.IDs.ApplyHint(info.Name())
