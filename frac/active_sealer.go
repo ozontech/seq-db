@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
+	"slices"
 	"sync"
 	"time"
 
@@ -245,8 +247,9 @@ type docBlocksWriter struct {
 	curBlockIndex      int
 	currentBlockOffset uint64
 
-	docs     []byte
-	blockBuf []byte
+	docs      []byte
+	docsQueue [][]byte
+	blockBuf  [][]byte
 
 	BlockOffsets []uint64
 	Positions    map[seq.ID]DocPos
@@ -265,6 +268,8 @@ func getDocBlocksWriter(w io.Writer, blockSize, compressLevel int) *docBlocksWri
 		blockSize = consts.MB * 4
 	}
 
+	queueSize := max(runtime.GOMAXPROCS(0)/2, 1)
+
 	*bw = docBlocksWriter{
 		w:             w,
 		compressLevel: compressLevel,
@@ -273,12 +278,14 @@ func getDocBlocksWriter(w io.Writer, blockSize, compressLevel int) *docBlocksWri
 		curBlockIndex:      0,
 		currentBlockOffset: 0,
 
-		docs:     bw.docs[:0],
-		blockBuf: bw.blockBuf[:0],
+		docsQueue: slices.Grow(bw.docsQueue[:0], queueSize),
+		blockBuf:  slices.Grow(bw.blockBuf[:0], queueSize)[:queueSize],
 
-		BlockOffsets: bw.BlockOffsets[:0],
-		Positions:    bw.Positions,
+		Positions: bw.Positions,
 	}
+
+	bw.shiftDocsBuf()
+
 	clear(bw.Positions)
 
 	return bw
@@ -287,6 +294,12 @@ func getDocBlocksWriter(w io.Writer, blockSize, compressLevel int) *docBlocksWri
 func putDocBlocksWriter(bw *docBlocksWriter) {
 	bw.w = nil
 	docBlocksWriterPool.Put(bw)
+}
+
+func (w *docBlocksWriter) shiftDocsBuf() {
+	w.docsQueue = w.docsQueue[:len(w.docsQueue)+1]
+	w.docs = w.docsQueue[len(w.docsQueue)-1]
+	w.docs = w.docs[:0]
 }
 
 func (w *docBlocksWriter) WriteDoc(id seq.ID, doc []byte) error {
@@ -304,29 +317,44 @@ func (w *docBlocksWriter) WriteDoc(id seq.ID, doc []byte) error {
 }
 
 func (w *docBlocksWriter) flushBlock() error {
-	blockLen, err := w.compressWriteBlock()
-	if err != nil {
-		return err
+	w.docsQueue[len(w.docsQueue)-1] = w.docs
+
+	if len(w.docsQueue) == cap(w.docsQueue) {
+		if err := w.compressWriteBlocks(); err != nil {
+			return err
+		}
 	}
 
-	w.docs = w.docs[:0]
-	w.BlockOffsets = append(w.BlockOffsets, w.currentBlockOffset)
+	w.shiftDocsBuf()
 	w.curBlockIndex++
-	w.currentBlockOffset += uint64(blockLen)
 
 	return nil
 }
 
-func (w *docBlocksWriter) compressWriteBlock() (int, error) {
-	w.blockBuf = w.blockBuf[:0]
-	w.blockBuf = disk.CompressDocBlock(w.docs, w.blockBuf, w.compressLevel)
-
-	if _, err := w.w.Write(w.blockBuf); err != nil {
-		return 0, err
+func (w *docBlocksWriter) compressWriteBlocks() error {
+	wg := sync.WaitGroup{}
+	for i := range w.docsQueue {
+		wg.Add(1)
+		go func() {
+			w.blockBuf[i] = disk.CompressDocBlock(
+				w.docsQueue[i],
+				w.blockBuf[i][:0],
+				w.compressLevel,
+			)
+			wg.Done()
+		}()
 	}
+	wg.Wait()
 
-	blockLen := len(w.blockBuf)
-	return blockLen, nil
+	for i := range w.docsQueue {
+		if _, err := w.w.Write(w.blockBuf[i]); err != nil {
+			return err
+		}
+		w.BlockOffsets = append(w.BlockOffsets, w.currentBlockOffset)
+		w.currentBlockOffset += uint64(len(w.blockBuf[i]))
+	}
+	w.docsQueue = w.docsQueue[:0]
+	return nil
 }
 
 func (w *docBlocksWriter) Flush() error {
@@ -335,5 +363,12 @@ func (w *docBlocksWriter) Flush() error {
 			return err
 		}
 	}
+
+	if len(w.docsQueue) > 0 {
+		if err := w.compressWriteBlocks(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

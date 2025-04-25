@@ -98,8 +98,8 @@ var (
 		`ZSTD compress level for metas, change these parameters if you need to change the network load, does not affect the final size of documents or index on disk, check the doc for more details: https://facebook.github.io/zstd/zstd_manual.html`).Default("1").Int()
 
 	sealZstdCompressLevel      = kingpin.Flag("seal-zstd-compress-level", "ZSTD compress level that will be used on seal index file: https://facebook.github.io/zstd/zstd_manual.html").Default("3").Int()
-	docBlocksZstdCompressLevel = kingpin.Flag("doc-block-zstd-compress-level", `ZSTD compress level for document blocks, check the doc for more details: https://facebook.github.io/zstd/zstd_manual.html`).Default("1").Int()
-	docBlockSize               = kingpin.Flag("doc-block-size", "document block size, large size consumes more RAM but improves compression ratio").Default("256KiB").Bytes()
+	docBlocksZstdCompressLevel = kingpin.Flag("doc-block-zstd-compress-level", `ZSTD compress level for document blocks, check the doc for more details: https://facebook.github.io/zstd/zstd_manual.html`).Default("3").Int()
+	docBlockSize               = kingpin.Flag("doc-block-size", "document block size, large size consumes more RAM but improves compression ratio").Default("128KiB").Bytes()
 
 	maxDocSize = kingpin.Flag("max-document-size", "the maximum document size, documents larger than this will be skipped").Default("128KiB").Bytes()
 

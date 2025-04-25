@@ -142,7 +142,7 @@ func (t *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 func (t *loader) loadSealedFrac(diskFracCache *sealedFracCache, info *fracInfo) (bool, *frac.Sealed) {
 	cachedFracInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
 
-	sealed := frac.NewSealed(info.base, t.readLimiter, t.cacheMaintainer.CreateIndexCache(), t.cacheMaintainer.CreateADocBlockCache(), cachedFracInfo)
+	sealed := frac.NewSealed(info.base, t.readLimiter, t.cacheMaintainer.CreateIndexCache(), t.cacheMaintainer.CreateSDocBlockCache(), cachedFracInfo)
 
 	stats := sealed.Info()
 	t.fracCache.AddFraction(stats.Name(), stats)

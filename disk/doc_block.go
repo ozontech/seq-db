@@ -78,7 +78,6 @@ func (b DocBlock) Payload() []byte {
 }
 
 func Lz4CompressDocBlock(src []byte, dst DocBlock) DocBlock {
-	dst = util.EnsureSliceSize(dst, DocBlockHeaderLen+len(src))
 	dst = util.EnsureSliceSize(dst, DocBlockHeaderLen+lz4.CompressBlockBound(len(src)))
 
 	var c lz4.Compressor
