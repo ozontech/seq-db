@@ -59,11 +59,12 @@ func (f *frac) setInfoSealingTime(newTime uint64) {
 	f.info.SealingTime = newTime
 }
 
-func (f *frac) setInfoIndexOnDisk(newSize uint64) {
+func (f *frac) setInfoIndexOnDisk(newSize, newSize2 uint64) {
 	f.statsMu.Lock()
 	defer f.statsMu.Unlock()
 
 	f.info.IndexOnDisk = newSize
+	f.info.DocsOnDisk = newSize2
 }
 
 func (f *frac) toString(fracType string) string {

@@ -73,7 +73,13 @@ func seal(f *Active, params SealParams, docsReader *disk.DocsReader) *os.File {
 	if err != nil {
 		logger.Fatal("can't stat index file", zap.String("file", indexFile.Name()), zap.Error(err))
 	}
-	f.setInfoIndexOnDisk(uint64(stat.Size()))
+
+	stat2, err := sdocsFile.Stat()
+	if err != nil {
+		logger.Fatal("can't stat index file", zap.String("file", sdocsFile.Name()), zap.Error(err))
+	}
+
+	f.setInfoIndexOnDisk(uint64(stat.Size()), uint64(stat2.Size()))
 
 	if err := indexFile.Sync(); err != nil {
 		logger.Fatal("can't sync tmp index file", zap.String("file", indexFile.Name()), zap.Error(err))

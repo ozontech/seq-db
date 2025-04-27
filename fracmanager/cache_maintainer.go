@@ -58,7 +58,6 @@ var config = []cleanerConf{
 	},
 	{
 		layers: []string{sdocsName},
-
 		weight: 8,
 	},
 	{
