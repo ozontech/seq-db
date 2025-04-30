@@ -46,15 +46,15 @@ var config = []cleanerConf{
 	},
 	{
 		layers: []string{tokenTableName},
-		weight: 8,
+		weight: 10,
 	},
 	{
 		layers: []string{tokensName},
-		weight: 36,
+		weight: 35,
 	},
 	{
 		layers: []string{lidsName},
-		weight: 37,
+		weight: 35,
 	},
 	{
 		layers: []string{sdocsName},
@@ -62,7 +62,7 @@ var config = []cleanerConf{
 	},
 	{
 		layers:    []string{adocsName},
-		sizeLimit: 3 * consts.GB,
+		sizeLimit: 2 * consts.GB,
 	},
 }
 
