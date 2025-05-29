@@ -5,96 +5,91 @@ import (
 	"sync"
 
 	"github.com/ozontech/seq-db/bytespool"
-	"go.uber.org/atomic"
-	"go.uber.org/zap"
-
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
+	"go.uber.org/zap"
 )
 
-type IndexWorkers struct {
-	ch          chan *IndexTask
-	chMerge     chan *MergeTask
+type ActiveIndexer struct {
+	ch          chan *indexTask
+	chMerge     chan *mergeTask
 	workerCount int
 
 	stopFn func()
 }
 
-type IndexTask struct {
-	DocsLen uint64
-	Frac    *Active
-	Metas   disk.DocBlock
-	Pos     uint64
-
-	AppendQueue *atomic.Uint32
+type indexTask struct {
+	Frac  *Active
+	Metas disk.DocBlock
+	Pos   uint64
+	Wg    *sync.WaitGroup
 }
 
-func (t *IndexTask) GetDocsLen() uint64 {
-	return t.DocsLen
-}
-
-func (t *IndexTask) GetMetaLen() uint64 {
-	return uint64(len(t.Metas))
-}
-
-type MergeTask struct {
+type mergeTask struct {
 	frac      *Active
 	tokenLIDs *TokenLIDs
 }
 
-func NewIndexWorkers(workerCount, chLen int) *IndexWorkers {
-	return &IndexWorkers{
-		ch:          make(chan *IndexTask, chLen),
-		chMerge:     make(chan *MergeTask, chLen),
+func NewActiveIndexer(workerCount, chLen int) *ActiveIndexer {
+	return &ActiveIndexer{
+		ch:          make(chan *indexTask, chLen),
+		chMerge:     make(chan *mergeTask, chLen),
 		workerCount: workerCount,
 	}
 }
 
-func (w *IndexWorkers) Start() {
-	wg := sync.WaitGroup{}
-	wg.Add(w.workerCount)
+func (ai *ActiveIndexer) Index(frac *Active, metas []byte, wg *sync.WaitGroup, sw *stopwatch.Stopwatch) {
+	m := sw.Start("send_index_chan")
+	ai.ch <- &indexTask{
+		Pos:   disk.DocBlock(metas).GetExt2(),
+		Metas: metas,
+		Frac:  frac,
+		Wg:    wg,
+	}
+	m.Stop()
+}
 
-	for i := 0; i < w.workerCount; i++ {
+func (ai *ActiveIndexer) Start() {
+	wg := sync.WaitGroup{}
+	wg.Add(ai.workerCount)
+
+	for i := 0; i < ai.workerCount; i++ {
 		go func(index int) {
 			defer wg.Done()
-			w.appendWorker(index)
+			ai.appendWorker(index)
 		}(i)
 	}
 
-	wg.Add(w.workerCount)
-	for i := 0; i < w.workerCount; i++ {
+	wg.Add(ai.workerCount)
+	for i := 0; i < ai.workerCount; i++ {
 		go func() {
 			defer wg.Done()
-			w.mergeWorker()
+			ai.mergeWorker()
 		}()
 	}
 
-	w.stopFn = func() {
-		close(w.ch)
-		close(w.chMerge)
+	ai.stopFn = func() {
+		close(ai.ch)
+		close(ai.chMerge)
 
 		wg.Wait()
 
-		w.stopFn = nil
+		ai.stopFn = nil
 	}
 }
 
-func (w *IndexWorkers) mergeWorker() {
-	for task := range w.chMerge {
+func (ai *ActiveIndexer) mergeWorker() {
+	for task := range ai.chMerge {
 		task.tokenLIDs.GetLIDs(task.frac.MIDs, task.frac.RIDs) // GetLIDs cause sort and merge LIDs from queue
 	}
 }
 
-func (w *IndexWorkers) Stop() {
-	if w.stopFn != nil {
-		w.stopFn()
+func (ai *ActiveIndexer) Stop() {
+	if ai.stopFn != nil {
+		ai.stopFn()
 	}
-}
-
-func (w *IndexWorkers) In(t *IndexTask) {
-	w.ch <- t
 }
 
 var metaDataPool = sync.Pool{
@@ -103,11 +98,11 @@ var metaDataPool = sync.Pool{
 	},
 }
 
-func (w *IndexWorkers) appendWorker(index int) {
+func (ai *ActiveIndexer) appendWorker(index int) {
 	// collector of bulk meta data
 	collector := newMetaDataCollector()
 
-	for task := range w.ch {
+	for task := range ai.ch {
 		var err error
 
 		sw := stopwatch.New()
@@ -169,26 +164,26 @@ func (w *IndexWorkers) appendWorker(index int) {
 
 		m = sw.Start("put_lids_queue")
 		tokensToMerge := addLIDsToTokens(tokenLIDsPlaces, groups)
-		w.sendTokensToMergeWorkers(active, tokensToMerge)
+		ai.sendTokensToMergeWorkers(active, tokensToMerge)
 		m.Stop()
 
 		active.UpdateStats(collector.MinMID, collector.MaxMID, collector.DocsCounter, collector.SizeCounter)
 
-		task.AppendQueue.Dec()
+		task.Wg.Done()
 
 		total.Stop()
-		sw.Export(metric.BulkStagesSeconds)
+		sw.Export(bulkStagesSeconds)
 	}
 }
 
-func (w *IndexWorkers) sendTokensToMergeWorkers(frac *Active, tokens []*TokenLIDs) {
+func (ai *ActiveIndexer) sendTokensToMergeWorkers(frac *Active, tokens []*TokenLIDs) {
 	for _, tl := range tokens {
-		task := MergeTask{
+		task := mergeTask{
 			frac:      frac,
 			tokenLIDs: tl,
 		}
 		select {
-		case w.chMerge <- &task:
+		case ai.chMerge <- &task:
 		default: // skip background merge if workers are busy
 		}
 	}

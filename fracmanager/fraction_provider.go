@@ -16,18 +16,18 @@ var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
 type fractionProvider struct {
 	config        *frac.Config
 	cacheProvider *CacheMaintainer
-	indexWorkers  *frac.IndexWorkers
+	activeIndexer *frac.ActiveIndexer
 	readLimiter   *disk.ReadLimiter
 }
 
 func newFractionProvider(c *frac.Config, cp *CacheMaintainer, readerWorkers, indexWorkers int) *fractionProvider {
-	iw := frac.NewIndexWorkers(indexWorkers, indexWorkers)
-	iw.Start() // first start indexWorkers to allow active frac replaying
+	ai := frac.NewActiveIndexer(indexWorkers, indexWorkers)
+	ai.Start() // first start indexWorkers to allow active frac replaying
 
 	return &fractionProvider{
 		config:        c,
 		cacheProvider: cp,
-		indexWorkers:  iw,
+		activeIndexer: ai,
 		readLimiter:   disk.NewReadLimiter(readerWorkers, storeBytesRead),
 	}
 }
@@ -35,7 +35,7 @@ func newFractionProvider(c *frac.Config, cp *CacheMaintainer, readerWorkers, ind
 func (fp *fractionProvider) NewActive(name string) *frac.Active {
 	return frac.NewActive(
 		name,
-		fp.indexWorkers,
+		fp.activeIndexer,
 		fp.readLimiter,
 		fp.cacheProvider.CreateDocBlockCache(),
 		fp.cacheProvider.CreateSortDocsCache(),
@@ -66,7 +66,7 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *frac.
 }
 
 func (fp *fractionProvider) Stop() {
-	fp.indexWorkers.Stop()
+	fp.activeIndexer.Stop()
 }
 
 func (fp *fractionProvider) newActiveRef(active *frac.Active) activeRef {

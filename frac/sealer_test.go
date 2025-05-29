@@ -67,10 +67,10 @@ func BenchmarkSealing(b *testing.B) {
 
 	readLimiter := disk.NewReadLimiter(1, nil)
 
-	indexWorkers := NewIndexWorkers(10, 10)
+	activeIndexer := NewActiveIndexer(10, 10)
 
-	indexWorkers.Start()
-	defer indexWorkers.Stop()
+	activeIndexer.Start()
+	defer activeIndexer.Stop()
 
 	const minZstdLevel = -5
 	defaultSealParams := SealParams{
@@ -84,7 +84,7 @@ func BenchmarkSealing(b *testing.B) {
 	}
 	for i := 0; i < b.N; i++ {
 
-		active := NewActive(filepath.Join(dataDir, "test_"+strconv.Itoa(i)), indexWorkers, readLimiter, nil, nil, &Config{})
+		active := NewActive(filepath.Join(dataDir, "test_"+strconv.Itoa(i)), activeIndexer, readLimiter, nil, nil, &Config{})
 		err := fillActiveFraction(active)
 		assert.NoError(b, err)
 

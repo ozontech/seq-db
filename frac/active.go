@@ -11,17 +11,18 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/atomic"
-	"go.uber.org/zap"
-
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
+	"go.uber.org/zap"
 )
 
 type Active struct {
@@ -54,8 +55,9 @@ type Active struct {
 	metaFile   *os.File
 	metaReader disk.DocBlocksReader
 
-	appendQueueSize atomic.Uint32
-	appender        ActiveAppender
+	writer  *ActiveWriter
+	indexer *ActiveIndexer
+	indexWg sync.WaitGroup
 
 	sealingMu sync.RWMutex
 	isSealed  bool
@@ -73,14 +75,14 @@ var systemSeqID = seq.ID{
 
 func NewActive(
 	baseFileName string,
-	indexWorkers *IndexWorkers,
+	activeIndexer *ActiveIndexer,
 	readLimiter *disk.ReadLimiter,
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
 	config *Config,
 ) *Active {
-	docsFile, docsStats := openFile(baseFileName+consts.DocsFileSuffix, conf.SkipFsync)
-	metaFile, metaStats := openFile(baseFileName+consts.MetaFileSuffix, conf.SkipFsync)
+	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, conf.SkipFsync)
+	metaFile, metaStats := mustOpenFile(baseFileName+consts.MetaFileSuffix, conf.SkipFsync)
 
 	f := &Active{
 		TokenList:     NewActiveTokenList(conf.IndexWorkers),
@@ -98,7 +100,8 @@ func NewActive(
 		metaFile:   metaFile,
 		metaReader: disk.NewDocBlocksReader(readLimiter, metaFile),
 
-		appender: StartAppender(docsFile, metaFile, conf.IndexWorkers, conf.SkipFsync, indexWorkers),
+		indexer: activeIndexer,
+		writer:  NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), conf.SkipFsync),
 
 		BaseFileName: baseFileName,
 		info:         NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
@@ -114,7 +117,7 @@ func NewActive(
 	return f
 }
 
-func openFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
+func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
 	file, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o776)
 	if err != nil {
 		logger.Fatal("can't create docs file", zap.String("file", name), zap.Error(err))
@@ -132,18 +135,20 @@ func openFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
 	return file, stat
 }
 
-func (f *Active) ReplayBlocks(ctx context.Context) error {
+func (f *Active) Replay(ctx context.Context) error {
 	logger.Info("start replaying...")
 
 	targetSize := f.info.MetaOnDisk
 	t := time.Now()
 
-	f.info.DocsOnDisk = 0
-	f.info.MetaOnDisk = 0
 	docsPos := uint64(0)
 	metaPos := uint64(0)
 	step := targetSize / 10
 	next := step
+
+	sw := stopwatch.New()
+	wg := sync.WaitGroup{}
+
 out:
 	for {
 		select {
@@ -173,23 +178,17 @@ out:
 			}
 
 			docBlockLen := disk.DocBlock(meta).GetExt1()
+			disk.DocBlock(meta).SetExt2(docsPos) // todo: remove this on next release
+
 			docsPos += docBlockLen
 			metaPos += metaSize
 
-			if err := f.Replay(docBlockLen, meta); err != nil {
-				return err
-			}
+			wg.Add(1)
+			f.indexer.Index(f, meta, &wg, sw)
 		}
 	}
 
-	f.WaitWriteIdle()
-
-	if _, err := f.docsFile.Seek(int64(docsPos), io.SeekStart); err != nil {
-		return fmt.Errorf("can't seek docs file: file=%s, err=%w", f.docsFile.Name(), err)
-	}
-	if _, err := f.metaFile.Seek(int64(metaPos), io.SeekStart); err != nil {
-		return fmt.Errorf("can't seek meta file: file=%s, err=%w", f.metaFile.Name(), err)
-	}
+	wg.Wait()
 
 	tookSeconds := util.DurationToUnit(time.Since(t), "s")
 	throughputRaw := util.SizeToUnit(f.info.DocsRaw, "mb") / tookSeconds
@@ -205,30 +204,35 @@ out:
 	return nil
 }
 
-// Append causes data to be written on disk and sends IndexTask to index workers
+var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Namespace: "seq_db_store",
+	Subsystem: "bulk",
+	Name:      "stages_seconds",
+	Buckets:   metric.SecondsBuckets,
+}, []string{"stage"})
+
+// Append causes data to be written on disk and sends metas to index workers
 // Checks the state of a faction and may return an error if the faction has already started sealing.
-func (f *Active) Append(docs, metas []byte) error {
-	if !f.incAppendQueueSize() {
+func (f *Active) Append(docs, metas []byte) (err error) {
+	if !f.tryStartAppend() {
 		return errors.New("fraction is not writable")
 	}
 
-	f.appender.In(f, docs, metas, &f.appendQueueSize)
-
-	return nil
-}
-
-func (f *Active) Replay(docsLen uint64, metas []byte) error {
-	if !f.incAppendQueueSize() {
-		// shouldn't actually be possible
-		return errors.New("replaying of fraction being sealed")
+	sw := stopwatch.New()
+	m := sw.Start("append")
+	if err = f.writer.Write(docs, metas, sw); err != nil {
+		m.Stop()
+		return err
 	}
-
-	f.appender.InReplay(f, docsLen, metas, &f.appendQueueSize)
+	f.updateDiskStats(uint64(len(docs)), uint64(len(metas)))
+	f.indexer.Index(f, metas, &f.indexWg, sw)
+	m.Stop()
+	sw.Export(bulkStagesSeconds)
 
 	return nil
 }
 
-func (f *Active) incAppendQueueSize() bool {
+func (f *Active) tryStartAppend() bool {
 	f.sealingMu.RLock()
 	defer f.sealingMu.RUnlock()
 
@@ -236,14 +240,12 @@ func (f *Active) incAppendQueueSize() bool {
 		return false
 	}
 
-	f.appendQueueSize.Inc()
+	f.indexWg.Add(1) // It is important to place it inside the lock
 	return true
 }
 
 func (f *Active) WaitWriteIdle() {
-	for f.appendQueueSize.Load() > 0 {
-		time.Sleep(time.Millisecond * 10)
-	}
+	f.indexWg.Wait()
 }
 
 func (f *Active) setSealed() error {
@@ -314,17 +316,15 @@ func (f *Active) Release(sealed Fraction) error {
 	return nil
 }
 
-func (f *Active) UpdateDiskStats(docsLen, metaLen uint64) uint64 {
+func (f *Active) updateDiskStats(docsLen, metaLen uint64) {
 	f.infoMu.Lock()
-	pos := f.info.DocsOnDisk
 	f.info.DocsOnDisk += docsLen
 	f.info.MetaOnDisk += metaLen
 	f.infoMu.Unlock()
-	return pos
 }
 
 func (f *Active) close(closeDocs bool, hint string) {
-	f.appender.Stop()
+	f.writer.Stop()
 	if closeDocs {
 		if err := f.docsFile.Close(); err != nil {
 			logger.Error("can't close docs file",
@@ -360,10 +360,6 @@ func (f *Active) AppendIDs(ids []seq.ID) []uint32 {
 	}
 
 	return lidsList
-}
-
-func (f *Active) AppendID(id seq.ID) uint32 {
-	return f.AppendIDs([]seq.ID{id})[0]
 }
 
 func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount uint64) {

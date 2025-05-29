@@ -161,13 +161,6 @@ var (
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 16),
 	})
-	BulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "bulk",
-		Name:      "stages_seconds",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
 
 	SearchInFlightQueriesTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
