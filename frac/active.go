@@ -133,12 +133,10 @@ func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
 func (f *Active) Replay(ctx context.Context) error {
 	logger.Info("start replaying...")
 
-	targetSize := f.info.MetaOnDisk
 	t := time.Now()
 
-	docsPos := uint64(0)
-	metaPos := uint64(0)
-	step := targetSize / 10
+	offset := uint64(0)
+	step := f.info.MetaOnDisk / 10
 	next := step
 
 	sw := stopwatch.New()
@@ -150,7 +148,7 @@ out:
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			meta, metaSize, err := f.metaReader.ReadDocBlock(int64(metaPos))
+			meta, metaSize, err := f.metaReader.ReadDocBlock(int64(offset))
 			if err == io.EOF {
 				if metaSize != 0 {
 					logger.Warn("last meta block is partially written, skipping it")
@@ -161,22 +159,17 @@ out:
 				return err
 			}
 
-			if metaPos > next {
+			if offset > next {
 				next += step
-				progress := float64(metaPos) / float64(targetSize) * 100
+				progress := float64(offset) / float64(f.info.MetaOnDisk) * 100
 				logger.Info("replaying batch, meta",
-					zap.Uint64("from", metaPos),
-					zap.Uint64("to", metaPos+metaSize),
-					zap.Uint64("target", targetSize),
+					zap.Uint64("from", offset),
+					zap.Uint64("to", offset+metaSize),
+					zap.Uint64("target", f.info.MetaOnDisk),
 					util.ZapFloat64WithPrec("progress_percentage", progress, 2),
 				)
 			}
-
-			docBlockLen := disk.DocBlock(meta).GetExt1()
-			disk.DocBlock(meta).SetExt2(docsPos) // todo: remove this on next release
-
-			docsPos += docBlockLen
-			metaPos += metaSize
+			offset += metaSize
 
 			wg.Add(1)
 			f.indexer.Index(f, meta, &wg, sw)
@@ -191,7 +184,7 @@ out:
 	logger.Info("active fraction replayed",
 		zap.String("name", f.info.Name()),
 		zap.Uint32("docs_total", f.info.DocsTotal),
-		util.ZapUint64AsSizeStr("docs_size", docsPos),
+		util.ZapUint64AsSizeStr("docs_size", f.info.DocsOnDisk),
 		util.ZapFloat64WithPrec("took_s", tookSeconds, 1),
 		util.ZapFloat64WithPrec("throughput_raw_mb_sec", throughputRaw, 1),
 		util.ZapFloat64WithPrec("throughput_meta_mb_sec", throughputMeta, 1),
