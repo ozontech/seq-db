@@ -68,11 +68,3 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *frac.
 func (fp *fractionProvider) Stop() {
 	fp.activeIndexer.Stop()
 }
-
-func (fp *fractionProvider) newActiveRef(active *frac.Active) activeRef {
-	frac := &proxyFrac{active: active, fp: fp}
-	return activeRef{
-		frac: frac,
-		ref:  &fracRef{instance: frac},
-	}
-}
