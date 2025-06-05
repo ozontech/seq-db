@@ -23,7 +23,7 @@ type Fraction interface {
 	Suicide()
 }
 
-func fracToString(f Fraction, fracType string) string {
+func FracToString(f Fraction, fracType string) string {
 	info := f.Info()
 	s := fmt.Sprintf(
 		"%s fraction name=%s, creation time=%s, from=%s, to=%s, %s",

@@ -1,9 +1,8 @@
-package frac
+package active2
 
 import (
 	"context"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,6 +14,7 @@ import (
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -23,8 +23,8 @@ import (
 	"go.uber.org/zap"
 )
 
-type Active struct {
-	Config *Config
+type Active2 struct {
+	Config *frac.Config
 
 	BaseFileName string
 
@@ -32,17 +32,10 @@ type Active struct {
 	suicided bool
 	released bool
 
-	infoMu sync.RWMutex
-	info   *Info
-
-	MIDs *UInt64s
-	RIDs *UInt64s
-
-	DocBlocks *UInt64s
-
-	TokenList *TokenList
-
-	DocsPositions *DocsPositions
+	indexMu sync.RWMutex
+	info    *frac.Info
+	indexes Indexes
+	indexer Indexer
 
 	docsFile   *os.File
 	docsReader disk.DocsReader
@@ -53,38 +46,20 @@ type Active struct {
 	metaFile   *os.File
 	metaReader disk.DocBlocksReader
 
-	writer  *ActiveWriter
-	indexer *ActiveIndexer
+	writer *frac.ActiveWriter
 }
 
-const (
-	systemMID = math.MaxUint64
-	systemRID = math.MaxUint64
-)
-
-var systemSeqID = seq.ID{
-	MID: systemMID,
-	RID: systemRID,
-}
-
-func NewActive(
+func New(
 	baseFileName string,
-	activeIndexer *ActiveIndexer,
 	readLimiter *disk.ReadLimiter,
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
-	config *Config,
-) *Active {
+	config *frac.Config,
+) *Active2 {
 	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, conf.SkipFsync)
 	metaFile, metaStats := mustOpenFile(baseFileName+consts.MetaFileSuffix, conf.SkipFsync)
 
-	f := &Active{
-		TokenList:     NewActiveTokenList(conf.IndexWorkers),
-		DocsPositions: NewSyncDocsPositions(),
-		MIDs:          NewIDs(),
-		RIDs:          NewIDs(),
-		DocBlocks:     NewIDs(),
-
+	f := &Active2{
 		docsFile:   docsFile,
 		docsCache:  docsCache,
 		sortCache:  sortCache,
@@ -94,17 +69,12 @@ func NewActive(
 		metaFile:   metaFile,
 		metaReader: disk.NewDocBlocksReader(readLimiter, metaFile),
 
-		indexer: activeIndexer,
-		writer:  NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), conf.SkipFsync),
+		writer: frac.NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), conf.SkipFsync),
 
 		BaseFileName: baseFileName,
-		info:         NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
+		info:         frac.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
 		Config:       config,
 	}
-
-	// use of 0 as keys in maps is prohibited – it's system key, so add first element
-	f.MIDs.Append(systemMID)
-	f.RIDs.Append(systemRID)
 
 	logger.Info("active fraction created", zap.String("fraction", baseFileName))
 
@@ -129,13 +99,12 @@ func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
 	return file, stat
 }
 
-func (f *Active) Replay(ctx context.Context) error {
+func (f *Active2) Replay(ctx context.Context) error {
 	logger.Info("start replaying...")
 
 	targetSize := f.info.MetaOnDisk
 	t := time.Now()
 
-	docsPos := uint64(0)
 	metaPos := uint64(0)
 	step := targetSize / 10
 	next := step
@@ -171,14 +140,16 @@ out:
 				)
 			}
 
-			docBlockLen := disk.DocBlock(meta).GetExt1()
-			disk.DocBlock(meta).SetExt2(docsPos) // todo: remove this on next release
-
-			docsPos += docBlockLen
 			metaPos += metaSize
 
 			wg.Add(1)
-			f.indexer.Index(f, meta, &wg, sw)
+			f.indexer.Index(meta, sw, func(index *memIndex, err error) {
+				if err != nil {
+					logger.Fatal("bulk indexing error", zap.Error(err))
+				}
+				f.addIndex(index)
+				wg.Done()
+			})
 		}
 	}
 
@@ -190,7 +161,7 @@ out:
 	logger.Info("active fraction replayed",
 		zap.String("name", f.info.Name()),
 		zap.Uint32("docs_total", f.info.DocsTotal),
-		util.ZapUint64AsSizeStr("docs_size", docsPos),
+		util.ZapUint64AsSizeStr("docs_size", f.info.DocsOnDisk),
 		util.ZapFloat64WithPrec("took_s", tookSeconds, 1),
 		util.ZapFloat64WithPrec("throughput_raw_mb_sec", throughputRaw, 1),
 		util.ZapFloat64WithPrec("throughput_meta_mb_sec", throughputMeta, 1),
@@ -206,52 +177,43 @@ var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 }, []string{"stage"})
 
 // Append causes data to be written on disk and sends metas to index workers
-func (f *Active) Append(docs, metas []byte, wg *sync.WaitGroup) (err error) {
+func (f *Active2) Append(docs, meta []byte, wg *sync.WaitGroup) (err error) {
 	sw := stopwatch.New()
 	m := sw.Start("append")
-	if err = f.writer.Write(docs, metas, sw); err != nil {
+	if err = f.writer.Write(docs, meta, sw); err != nil {
 		m.Stop()
 		return err
 	}
-	f.updateDiskStats(uint64(len(docs)), uint64(len(metas)))
-	f.indexer.Index(f, metas, wg, sw)
+	f.updateDiskStats(uint64(len(docs)), uint64(len(meta)))
+
+	f.indexer.Index(meta, sw, func(index *memIndex, err error) {
+		if err != nil {
+			logger.Fatal("bulk indexing error", zap.Error(err))
+		}
+		f.addIndex(index)
+		wg.Done()
+	})
+
 	m.Stop()
 	sw.Export(bulkStagesSeconds)
 	return nil
 }
 
-func (f *Active) GetAllDocuments() []uint32 {
-	return f.TokenList.GetAllTokenLIDs().GetLIDs(f.MIDs, f.RIDs)
-}
-
-func (f *Active) updateDiskStats(docsLen, metaLen uint64) {
-	f.infoMu.Lock()
+func (f *Active2) updateDiskStats(docsLen, metaLen uint64) {
+	f.indexMu.Lock()
 	f.info.DocsOnDisk += docsLen
 	f.info.MetaOnDisk += metaLen
-	f.infoMu.Unlock()
+	f.indexMu.Unlock()
 }
 
-func (f *Active) AppendIDs(ids []seq.ID) []uint32 {
-	// take both locks, append in both arrays at once
-	// i.e. so one thread wouldn't append between other thread appends
+func (f *Active2) addIndex(index *memIndex) {
+	maxMID := index.ids[0].MID
+	minMID := index.ids[len(index.ids)-1].MID
 
-	lidsList := make([]uint32, 0, len(ids))
-	f.MIDs.mu.Lock()
-	f.RIDs.mu.Lock()
-	defer f.RIDs.mu.Unlock()
-	defer f.MIDs.mu.Unlock()
+	f.indexMu.Lock()
+	defer f.indexMu.Unlock()
 
-	for _, id := range ids {
-		lidsList = append(lidsList, f.MIDs.append(uint64(id.MID)))
-		f.RIDs.append(uint64(id.RID))
-	}
-
-	return lidsList
-}
-
-func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount uint64) {
-	f.infoMu.Lock()
-	defer f.infoMu.Unlock()
+	f.indexes.Add(index)
 
 	if f.info.From > minMID {
 		f.info.From = minMID
@@ -259,66 +221,73 @@ func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount 
 	if f.info.To < maxMID {
 		f.info.To = maxMID
 	}
-	f.info.DocsTotal += docCount
-	f.info.DocsRaw += sizeCount
+	f.info.DocsRaw += index.docsSize
+	f.info.DocsTotal += index.docsCount
 }
 
-func (f *Active) String() string {
-	return FracToString(f, "active")
+func (f *Active2) String() string {
+	return frac.FracToString(f, "active2")
 }
 
-func (f *Active) DataProvider(ctx context.Context) (DataProvider, func()) {
+func (f *Active2) DataProvider(ctx context.Context) (frac.DataProvider, func()) {
 	f.useMu.RLock()
 
-	if f.suicided || f.released || f.Info().DocsTotal == 0 { // it is empty active fraction state
-		if f.suicided {
-			metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
-		}
+	if f.suicided {
 		f.useMu.RUnlock()
-		return EmptyDataProvider{}, func() {}
+		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
+		return frac.EmptyDataProvider{}, func() {}
+	}
+
+	if f.released {
+		f.useMu.RUnlock()
+		metric.CountersTotal.WithLabelValues("fraction_released").Inc()
+		return frac.EmptyDataProvider{}, func() {}
+	}
+
+	dp := f.createDataProvider(ctx)
+
+	if dp.info.DocsTotal == 0 { // it is empty active fraction state
+		f.useMu.RUnlock()
+		metric.CountersTotal.WithLabelValues("fraction_empty").Inc()
+		return frac.EmptyDataProvider{}, func() {}
 	}
 
 	// it is ordinary active fraction state
-	dp := f.createDataProvider(ctx)
-	return dp, func() {
-		dp.release()
-		f.useMu.RUnlock()
+	return dp, f.useMu.RUnlock
+}
+
+func (f *Active2) createDataProvider(ctx context.Context) *dataProvider {
+	f.indexMu.RLock()
+	info := *f.info // copy
+	indexes := f.indexes.Indexes()
+	f.indexMu.RUnlock()
+
+	return &dataProvider{
+		ctx:        ctx,
+		config:     f.Config,
+		info:       &info,
+		indexes:    indexes,
+		docsReader: &f.docsReader,
 	}
 }
 
-func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
-	return &activeDataProvider{
-		ctx:    ctx,
-		config: f.Config,
-		info:   f.Info(),
-
-		mids:      f.MIDs,
-		rids:      f.RIDs,
-		tokenList: f.TokenList,
-
-		blocksOffsets: f.DocBlocks.GetVals(),
-		docsPositions: f.DocsPositions,
-		docsReader:    &f.docsReader,
-	}
-}
-
-func (f *Active) Info() *Info {
-	f.infoMu.RLock()
-	defer f.infoMu.RUnlock()
+func (f *Active2) Info() *frac.Info {
+	f.indexMu.RLock()
+	defer f.indexMu.RUnlock()
 
 	cp := *f.info // copy
 	return &cp
 }
 
-func (f *Active) Contains(id seq.MID) bool {
+func (f *Active2) Contains(id seq.MID) bool {
 	return f.Info().IsIntersecting(id, id)
 }
 
-func (f *Active) IsIntersecting(from, to seq.MID) bool {
+func (f *Active2) IsIntersecting(from, to seq.MID) bool {
 	return f.Info().IsIntersecting(from, to)
 }
 
-func (f *Active) Release() {
+func (f *Active2) Release() {
 	f.useMu.Lock()
 	f.released = true
 	f.useMu.Unlock()
@@ -335,7 +304,7 @@ func (f *Active) Release() {
 	}
 }
 
-func (f *Active) Suicide() {
+func (f *Active2) Suicide() {
 	f.useMu.Lock()
 	released := f.released
 	f.suicided = true
@@ -356,24 +325,16 @@ func (f *Active) Suicide() {
 	}
 }
 
-func (f *Active) releaseMem() {
+func (f *Active2) releaseMem() {
 	f.writer.Stop()
-	f.TokenList.Stop()
-
-	f.docsCache.Release()
-	f.sortCache.Release()
+	f.indexes.StopMergeLoop()
 
 	if err := f.metaFile.Close(); err != nil {
 		logger.Error("can't close meta file", zap.String("frac", f.BaseFileName), zap.Error(err))
 	}
-
-	f.RIDs = nil
-	f.MIDs = nil
-	f.TokenList = nil
-	f.DocsPositions = nil
 }
 
-func (f *Active) removeDocsFiles() {
+func (f *Active2) removeDocsFiles() {
 	if err := f.docsFile.Close(); err != nil {
 		logger.Error("can't close docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
 	}
@@ -382,7 +343,7 @@ func (f *Active) removeDocsFiles() {
 	}
 }
 
-func (f *Active) removeMetaFile() {
+func (f *Active2) removeMetaFile() {
 	if err := os.Remove(f.metaFile.Name()); err != nil {
 		logger.Error("can't delete metas file", zap.String("frac", f.BaseFileName), zap.Error(err))
 	}

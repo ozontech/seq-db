@@ -321,7 +321,7 @@ func (f *Sealed) close(hint string) {
 }
 
 func (f *Sealed) String() string {
-	return fracToString(f, "sealed")
+	return FracToString(f, "sealed")
 }
 
 func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func()) {
