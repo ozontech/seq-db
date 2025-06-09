@@ -69,7 +69,7 @@ type TokenList struct {
 	allTokenLIDs *TokenLIDs
 
 	tidMu     sync.RWMutex
-	tidToVal  [][]byte
+	TidToVal  [][]byte
 	tidToLIDs []*TokenLIDs
 }
 
@@ -79,7 +79,7 @@ func NewActiveTokenList(workers int) *TokenList {
 		FieldTIDs:  make(map[string][]uint32),
 		fieldSizes: make(map[string]uint32),
 	}
-	tl.tidToVal = append(tl.tidToVal, nil)
+	tl.TidToVal = append(tl.TidToVal, nil)
 	tl.tidToLIDs = append(tl.tidToLIDs, nil)
 
 	for i := range tl.chList {
@@ -149,7 +149,7 @@ func (tl *TokenList) GetValByTID(tid uint32) []byte {
 	defer tl.tidMu.RUnlock()
 
 	// we only append to this slice, so it is safe to return it
-	return tl.tidToVal[tid]
+	return tl.TidToVal[tid]
 }
 
 func (tl *TokenList) Provide(tid uint32) *TokenLIDs {
@@ -175,7 +175,7 @@ func (tl *TokenList) getTokenProvider(field string) *activeTokenProvider {
 	inverseIndex := tl.GetTIDsByField(field)
 
 	tl.tidMu.RLock()
-	tidToVal := tl.tidToVal
+	tidToVal := tl.TidToVal
 	tl.tidMu.RUnlock()
 
 	return &activeTokenProvider{
@@ -247,8 +247,8 @@ func (tl *TokenList) Append(tokens [][]byte, fieldsLengths []int, tokenLIDsPlace
 func (tl *TokenList) createTIDs(newTokensData []tokenData) {
 	tl.tidMu.Lock()
 	for i, token := range newTokensData {
-		newTokensData[i].tid = uint32(len(tl.tidToVal))
-		tl.tidToVal = append(tl.tidToVal, token.value)
+		newTokensData[i].tid = uint32(len(tl.TidToVal))
+		tl.TidToVal = append(tl.TidToVal, token.value)
 		tl.tidToLIDs = append(tl.tidToLIDs, token.tokenLIDs)
 	}
 	tl.tidMu.Unlock()

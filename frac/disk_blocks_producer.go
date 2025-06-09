@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac/ids"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/seq"
@@ -50,18 +51,25 @@ func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, 
 	}
 }
 
-func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPositions *DocsPositions, size int) func(func(*DiskIDsBlock) error) error {
-	return func(push func(*DiskIDsBlock) error) error {
+func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPositions *DocsPositions, size int) func(func(*ids.Block) error) error {
+	return func(push func(*ids.Block) error) error {
+		mids := make([]uint64, 0, size)
+		rids := make([]uint64, 0, size)
 		pos := make([]uint64, 0, size)
 
 		for len(sortedSeqIDs) > 0 {
 			right := min(size, len(sortedSeqIDs))
-			ids := sortedSeqIDs[:right]
+			seqIDs := sortedSeqIDs[:right]
 			sortedSeqIDs = sortedSeqIDs[right:]
-			pos = g.fillPos(docsPositions, ids, pos)
-			block := DiskIDsBlock{
-				ids: ids,
-				pos: pos,
+			block := ids.Block{
+				MIDs: mids[:0],
+				RIDs: rids[:0],
+				Pos:  pos[:0],
+			}
+			for _, id := range seqIDs {
+				block.MIDs = append(block.MIDs, uint64(id.MID))
+				block.RIDs = append(block.RIDs, uint64(id.RID))
+				block.Pos = append(block.Pos, uint64(docsPositions.Get(id)))
 			}
 			if err := push(&block); err != nil {
 				return nil
@@ -70,14 +78,6 @@ func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPo
 
 		return nil
 	}
-}
-
-func (g *DiskBlocksProducer) fillPos(positions *DocsPositions, ids []seq.ID, pos []uint64) []uint64 {
-	pos = pos[:len(ids)] // we assume that pos has enough capacity
-	for i, id := range ids {
-		pos[i] = uint64(positions.Get(id))
-	}
-	return pos
 }
 
 func (g *DiskBlocksProducer) getFracSortedFields(tokenList *TokenList) []string {
@@ -112,8 +112,8 @@ func (g *DiskBlocksProducer) getTIDsSortedByToken(tokenList *TokenList, field st
 		&valSort{
 			val: tids,
 			lessFn: func(i int, j int) bool {
-				a := tokenList.tidToVal[tids[i]]
-				b := tokenList.tidToVal[tids[j]]
+				a := tokenList.TidToVal[tids[i]]
+				b := tokenList.TidToVal[tids[j]]
 				return bytes.Compare(a, b) < 0
 			},
 		},
@@ -166,7 +166,7 @@ func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func
 func (g *DiskBlocksProducer) fillTokens(tokenList *TokenList, tids []uint32, tokens [][]byte) [][]byte {
 	tokens = util.EnsureSliceSize(tokens, len(tids))
 	for i, tid := range tids {
-		tokens[i] = tokenList.tidToVal[tid]
+		tokens[i] = tokenList.TidToVal[tid]
 	}
 	return tokens
 }

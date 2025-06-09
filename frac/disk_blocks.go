@@ -5,7 +5,6 @@ import (
 
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/packer"
-	"github.com/ozontech/seq-db/seq"
 )
 
 type DiskInfoBlock struct {
@@ -28,43 +27,6 @@ func (b *DiskPositionsBlock) pack(p *packer.BytesPacker) {
 
 	var prev uint64
 	for _, pos := range b.blocks {
-		p.PutVarint(int64(pos - prev))
-		prev = pos
-	}
-}
-
-type DiskIDsBlock struct {
-	ids []seq.ID
-	pos []uint64
-}
-
-func (b *DiskIDsBlock) getMinID() seq.ID {
-	return b.ids[len(b.ids)-1]
-}
-
-func (b *DiskIDsBlock) getExtForRegistry() (uint64, uint64) {
-	last := b.getMinID()
-	return uint64(last.MID), uint64(last.RID)
-}
-
-func (b *DiskIDsBlock) packMIDs(p *packer.BytesPacker) {
-	var mid, prev uint64
-	for _, id := range b.ids {
-		mid = uint64(id.MID)
-		p.PutVarint(int64(mid - prev))
-		prev = mid
-	}
-}
-
-func (b *DiskIDsBlock) packRIDs(p *packer.BytesPacker) {
-	for _, id := range b.ids {
-		p.PutUint64(uint64(id.RID))
-	}
-}
-
-func (b *DiskIDsBlock) packPos(p *packer.BytesPacker) {
-	var prev uint64
-	for _, pos := range b.pos {
 		p.PutVarint(int64(pos - prev))
 		prev = pos
 	}

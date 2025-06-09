@@ -16,6 +16,7 @@ import (
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/ids"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
@@ -71,8 +72,8 @@ func Seal(f *Active, params SealParams) (*PreloadedData, error) {
 	}
 	info.IndexOnDisk = uint64(stat.Size())
 
-	preloaded.info = &info
-	preloaded.indexFile = indexFile
+	preloaded.Info = &info
+	preloaded.IndexFile = indexFile
 
 	logger.Info(
 		"fraction sealed",
@@ -201,11 +202,11 @@ func writeSealedFraction(f *Active, info *Info, indexFile io.WriteSeeker, params
 	writer.stats.WriteLogs()
 
 	return &PreloadedData{
-		docsFile:      docsFile,
-		lidsTable:     lidsTable,
-		tokenTable:    tokenTable,
-		blocksOffsets: blocksOffsets,
-		idsTable: IDsTable{
+		DocsFile:      docsFile,
+		LIDsTable:     lidsTable,
+		TokenTable:    tokenTable,
+		BlocksOffsets: blocksOffsets,
+		IDsTable: ids.Table{
 			MinBlockIDs:         minBlockIDs,
 			IDsTotal:            f.MIDs.Len(),
 			IDBlocksTotal:       f.DocBlocks.Len(),

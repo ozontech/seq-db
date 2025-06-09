@@ -6,6 +6,7 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/ids"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/packer"
@@ -79,7 +80,7 @@ func (w *DiskBlocksWriter) writePositionsBlock(zstdCompressLevel int, block *Dis
 	return nil
 }
 
-func (w *DiskBlocksWriter) writeIDsBlocks(zstdLevel int, generateBlocks func(func(*DiskIDsBlock) error) error) ([]seq.ID, error) {
+func (w *DiskBlocksWriter) writeIDsBlocks(zstdLevel int, generateBlocks func(func(*ids.Block) error) error) ([]seq.ID, error) {
 	w.startOfIDsBlockIndex = w.writer.GetBlockIndex()
 
 	levelOpt := disk.WithZstdCompressLevel(zstdLevel)
@@ -88,23 +89,23 @@ func (w *DiskBlocksWriter) writeIDsBlocks(zstdLevel int, generateBlocks func(fun
 
 	minBlockIDs := make([]seq.ID, 0)
 
-	push := func(block *DiskIDsBlock) error {
-		block.packMIDs(former.Packer())
-		if err := former.FlushForced(disk.WithExt(block.getExtForRegistry()), levelOpt); err != nil {
+	push := func(block *ids.Block) error {
+		block.PackMIDs(former.Packer())
+		if err := former.FlushForced(disk.WithExt(block.GetExtForRegistry()), levelOpt); err != nil {
 			return err
 		}
 
-		block.packRIDs(former.Packer())
+		block.PackRIDs(former.Packer())
 		if err := former.FlushForced(levelOpt); err != nil {
 			return err
 		}
 
-		block.packPos(former.Packer())
+		block.PackPos(former.Packer())
 		if err := former.FlushForced(levelOpt); err != nil {
 			return err
 		}
 
-		minBlockIDs = append(minBlockIDs, block.getMinID())
+		minBlockIDs = append(minBlockIDs, block.GetMinID())
 		return nil
 	}
 

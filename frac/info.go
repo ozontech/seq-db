@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/buildinfo"
+	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
@@ -30,14 +31,14 @@ const (
 )
 
 type Info struct {
-	Path          string            `json:"name"`
-	Ver           string            `json:"ver"`
-	BinaryDataVer BinaryDataVersion `json:"binary_data_ver"`
-	DocsTotal     uint32            `json:"docs_total"`
-	DocsOnDisk    uint64            `json:"docs_on_disk"`  // how much compressed docs data is stored on disk
-	DocsRaw       uint64            `json:"docs_raw"`      // how much raw docs data is appended
-	MetaOnDisk    uint64            `json:"meta_on_disk"`  // how much compressed metadata is stored on disk
-	IndexOnDisk   uint64            `json:"index_on_disk"` // how much compressed index data is stored on disk
+	Path          string                 `json:"name"`
+	Ver           string                 `json:"ver"`
+	BinaryDataVer conf.BinaryDataVersion `json:"binary_data_ver"`
+	DocsTotal     uint32                 `json:"docs_total"`
+	DocsOnDisk    uint64                 `json:"docs_on_disk"`  // how much compressed docs data is stored on disk
+	DocsRaw       uint64                 `json:"docs_raw"`      // how much raw docs data is appended
+	MetaOnDisk    uint64                 `json:"meta_on_disk"`  // how much compressed metadata is stored on disk
+	IndexOnDisk   uint64                 `json:"index_on_disk"` // how much compressed index data is stored on disk
 
 	ConstRegularBlockSize uint64 `json:"const_regular_block_size"`
 	ConstIDsPerBlock      uint64 `json:"const_ids_per_block"`
@@ -53,7 +54,7 @@ type Info struct {
 func NewInfo(filename string, docsOnDisk, metaOnDisk uint64) *Info {
 	return &Info{
 		Ver:                   buildinfo.Version,
-		BinaryDataVer:         BinaryDataV1,
+		BinaryDataVer:         conf.BinaryDataV1,
 		Path:                  filename,
 		From:                  math.MaxUint64,
 		To:                    0,

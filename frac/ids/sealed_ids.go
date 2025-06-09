@@ -1,8 +1,10 @@
-package frac
+package ids
 
 import (
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
@@ -10,34 +12,43 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-type IDsTable struct {
+type Table struct {
 	MinBlockIDs         []seq.ID // from max to min
 	IDBlocksTotal       uint32
 	IDsTotal            uint32
 	DiskStartBlockIndex uint32
 }
 
-type IDsLoader struct {
-	reader *disk.IndexReader
-	table  IDsTable
-	cache  *IndexCache
+type Loader struct {
+	Table       Table
+	reader      *disk.IndexReader
+	midsCache   *cache.Cache[[]byte]
+	ridsCache   *cache.Cache[[]byte]
+	paramsCache *cache.Cache[[]uint64]
 }
 
-func NewIDsLoader(indexReader *disk.IndexReader, indexCache *IndexCache, table IDsTable) *IDsLoader {
-	return &IDsLoader{
-		reader: indexReader,
-		cache:  indexCache,
-		table:  table,
+func NewLoader(
+	indexReader *disk.IndexReader,
+	midsCache, ridsCache *cache.Cache[[]byte],
+	paramsCache *cache.Cache[[]uint64],
+	table Table,
+) *Loader {
+	return &Loader{
+		reader:      indexReader,
+		midsCache:   midsCache,
+		ridsCache:   ridsCache,
+		paramsCache: paramsCache,
+		Table:       table,
 	}
 }
 
-func (il *IDsLoader) GetMIDsBlock(lid seq.LID, dst *UnpackCache) {
-	index := il.getIDBlockIndexByLID(lid)
+func (il *Loader) GetMIDsBlock(lid seq.LID, dst *UnpackCache) {
+	index := il.GetIDBlockIndexByLID(lid)
 	if index == dst.lastBlock { // fast path, already unpacked
 		return
 	}
 
-	data := il.cache.MIDs.Get(uint32(index+1), func() ([]byte, int) {
+	data := il.midsCache.Get(uint32(index+1), func() ([]byte, int) {
 		block := il.loadMIDBlock(uint32(index))
 		return block, cap(block)
 	})
@@ -52,13 +63,13 @@ func (il *IDsLoader) GetMIDsBlock(lid seq.LID, dst *UnpackCache) {
 	dst.unpackMIDs(index, data)
 }
 
-func (il *IDsLoader) GetRIDsBlock(lid seq.LID, dst *UnpackCache, fracVersion BinaryDataVersion) {
-	index := il.getIDBlockIndexByLID(lid)
+func (il *Loader) GetRIDsBlock(lid seq.LID, dst *UnpackCache, fracVersion conf.BinaryDataVersion) {
+	index := il.GetIDBlockIndexByLID(lid)
 	if index == dst.lastBlock { // fast path, already unpacked
 		return
 	}
 
-	data := il.cache.RIDs.Get(uint32(index)+1, func() ([]byte, int) {
+	data := il.ridsCache.Get(uint32(index)+1, func() ([]byte, int) {
 		block := il.loadRIDBlock(uint32(index))
 		return block, cap(block)
 	})
@@ -73,8 +84,8 @@ func (il *IDsLoader) GetRIDsBlock(lid seq.LID, dst *UnpackCache, fracVersion Bin
 	dst.unpackRIDs(index, data, fracVersion)
 }
 
-func (il *IDsLoader) GetParamsBlock(index uint32) []uint64 {
-	params := il.cache.Params.Get(index+1, func() ([]uint64, int) {
+func (il *Loader) GetParamsBlock(index uint32) []uint64 {
+	params := il.paramsCache.Get(index+1, func() ([]uint64, int) {
 		block := il.loadParamsBlock(index)
 		return block, cap(block) * 8
 	})
@@ -87,19 +98,19 @@ func (il *IDsLoader) GetParamsBlock(index uint32) []uint64 {
 }
 
 // blocks are stored as triplets on disk, (MID + RID + Pos), check docs/format-index-file.go
-func (il *IDsLoader) midBlockIndex(index uint32) uint32 {
-	return il.table.DiskStartBlockIndex + index*3
+func (il *Loader) midBlockIndex(index uint32) uint32 {
+	return il.Table.DiskStartBlockIndex + index*3
 }
 
-func (il *IDsLoader) ridBlockIndex(index uint32) uint32 {
-	return il.table.DiskStartBlockIndex + index*3 + 1
+func (il *Loader) ridBlockIndex(index uint32) uint32 {
+	return il.Table.DiskStartBlockIndex + index*3 + 1
 }
 
-func (il *IDsLoader) paramsBlockIndex(index uint32) uint32 {
-	return il.table.DiskStartBlockIndex + index*3 + 2
+func (il *Loader) paramsBlockIndex(index uint32) uint32 {
+	return il.Table.DiskStartBlockIndex + index*3 + 2
 }
 
-func (il *IDsLoader) loadMIDBlock(index uint32) []byte {
+func (il *Loader) loadMIDBlock(index uint32) []byte {
 	data, _, err := il.reader.ReadIndexBlock(il.midBlockIndex(index), nil)
 	if util.IsRecoveredPanicError(err) {
 		logger.Panic("todo: handle read err", zap.Error(err))
@@ -109,8 +120,8 @@ func (il *IDsLoader) loadMIDBlock(index uint32) []byte {
 		logger.Panic("wrong mid block",
 			zap.Uint32("index", index),
 			zap.Uint32("disk_index", il.midBlockIndex(index)),
-			zap.Uint32("blocks_total", il.table.IDBlocksTotal),
-			zap.Any("min_block_ids", il.table.MinBlockIDs),
+			zap.Uint32("blocks_total", il.Table.IDBlocksTotal),
+			zap.Any("min_block_ids", il.Table.MinBlockIDs),
 			zap.Error(err),
 		)
 	}
@@ -118,7 +129,7 @@ func (il *IDsLoader) loadMIDBlock(index uint32) []byte {
 	return data
 }
 
-func (il *IDsLoader) loadRIDBlock(index uint32) []byte {
+func (il *Loader) loadRIDBlock(index uint32) []byte {
 	data, _, err := il.reader.ReadIndexBlock(il.ridBlockIndex(index), nil)
 
 	if util.IsRecoveredPanicError(err) {
@@ -128,7 +139,7 @@ func (il *IDsLoader) loadRIDBlock(index uint32) []byte {
 	return data
 }
 
-func (il *IDsLoader) loadParamsBlock(index uint32) []uint64 {
+func (il *Loader) loadParamsBlock(index uint32) []uint64 {
 	data, _, err := il.reader.ReadIndexBlock(il.paramsBlockIndex(index), nil)
 	if util.IsRecoveredPanicError(err) {
 		logger.Panic("todo: handle read err", zap.Error(err))
@@ -136,6 +147,6 @@ func (il *IDsLoader) loadParamsBlock(index uint32) []uint64 {
 	return unpackRawIDsVarint(data, make([]uint64, 0, consts.IDsPerBlock))
 }
 
-func (il *IDsLoader) getIDBlockIndexByLID(lid seq.LID) int64 {
+func (il *Loader) GetIDBlockIndexByLID(lid seq.LID) int64 {
 	return int64(lid) / consts.IDsPerBlock
 }

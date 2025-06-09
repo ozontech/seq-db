@@ -1,9 +1,9 @@
-package frac
+package ids
 
 import (
-	"encoding/binary"
 	"sync"
 
+	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 )
 
@@ -51,38 +51,14 @@ func (c *UnpackCache) unpackMIDs(index int64, data []byte) {
 	c.values = unpackRawIDsVarint(data, c.values)
 }
 
-func (c *UnpackCache) unpackRIDs(index int64, data []byte, fracVersion BinaryDataVersion) {
+func (c *UnpackCache) unpackRIDs(index int64, data []byte, fracVersion conf.BinaryDataVersion) {
 	c.lastBlock = index
 	c.startLID = uint64(index) * consts.IDsPerBlock
 
-	if fracVersion < BinaryDataV1 {
+	if fracVersion < conf.BinaryDataV1 {
 		c.values = unpackRawIDsVarint(data, c.values)
 		return
 	}
 
 	c.values = unpackRawIDsNoVarint(data, c.values)
-}
-
-func unpackRawIDsVarint(src []byte, dst []uint64) []uint64 {
-	dst = dst[:0]
-	id := uint64(0)
-	for len(src) != 0 {
-		delta, n := binary.Varint(src)
-		if n <= 0 {
-			panic("varint decoded with error")
-		}
-		src = src[n:]
-		id += uint64(delta)
-		dst = append(dst, id)
-	}
-	return dst
-}
-
-func unpackRawIDsNoVarint(src []byte, dst []uint64) []uint64 {
-	dst = dst[:0]
-	for len(src) != 0 {
-		dst = append(dst, binary.LittleEndian.Uint64(src))
-		src = src[8:]
-	}
-	return dst
 }

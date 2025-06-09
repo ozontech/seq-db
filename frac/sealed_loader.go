@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/ids"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
@@ -71,7 +72,7 @@ func (l *Loader) skipBlock() disk.IndexBlockHeader {
 	return header
 }
 
-func (l *Loader) loadIDs() (idsTable IDsTable, blocksOffsets []uint64, err error) {
+func (l *Loader) loadIDs() (idsTable ids.Table, blocksOffsets []uint64, err error) {
 	var result []byte
 
 	result, err = l.nextIndexBlock()

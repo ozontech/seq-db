@@ -11,6 +11,7 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/ids"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
@@ -39,7 +40,7 @@ type Sealed struct {
 	indexCache  *IndexCache
 	indexReader disk.IndexReader
 
-	idsTable      IDsTable
+	idsTable      ids.Table
 	lidsTable     *lids.Table
 	BlocksOffsets []uint64
 
@@ -123,13 +124,13 @@ func (f *Sealed) openDocs() {
 }
 
 type PreloadedData struct {
-	info          *Info
-	idsTable      IDsTable
-	lidsTable     *lids.Table
-	tokenTable    token.Table
-	blocksOffsets []uint64
-	indexFile     *os.File
-	docsFile      *os.File
+	Info          *Info
+	IDsTable      ids.Table
+	LIDsTable     *lids.Table
+	TokenTable    token.Table
+	BlocksOffsets []uint64
+	IndexFile     *os.File
+	DocsFile      *os.File
 }
 
 func NewSealedPreloaded(
@@ -141,31 +142,31 @@ func NewSealedPreloaded(
 	config *Config,
 ) *Sealed {
 	f := &Sealed{
-		idsTable:      preloaded.idsTable,
-		lidsTable:     preloaded.lidsTable,
-		BlocksOffsets: preloaded.blocksOffsets,
+		idsTable:      preloaded.IDsTable,
+		lidsTable:     preloaded.LIDsTable,
+		BlocksOffsets: preloaded.BlocksOffsets,
 
-		docsFile:   preloaded.docsFile,
+		docsFile:   preloaded.DocsFile,
 		docsCache:  docsCache,
-		docsReader: disk.NewDocsReader(rl, preloaded.docsFile, docsCache),
+		docsReader: disk.NewDocsReader(rl, preloaded.DocsFile, docsCache),
 
-		indexFile:   preloaded.indexFile,
+		indexFile:   preloaded.IndexFile,
 		indexCache:  indexCache,
-		indexReader: disk.NewIndexReader(rl, preloaded.indexFile, indexCache.Registry),
+		indexReader: disk.NewIndexReader(rl, preloaded.IndexFile, indexCache.Registry),
 
 		loadMu:   &sync.RWMutex{},
 		isLoaded: true,
 
 		readLimiter: rl,
 
-		info:         preloaded.info,
+		info:         preloaded.Info,
 		BaseFileName: baseFile,
 		Config:       config,
 	}
 
 	// put the token table built during sealing into the cache of the sealed faction
 	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
-		return preloaded.tokenTable, preloaded.tokenTable.Size()
+		return preloaded.TokenTable, preloaded.TokenTable.Size()
 	})
 
 	docsCountK := float64(f.info.DocsTotal) / 1000
@@ -358,10 +359,10 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		docsReader:       &f.docsReader,
 		blocksOffsets:    f.BlocksOffsets,
 		fracVersion:      f.info.BinaryDataVer,
-		midCache:         NewUnpackCache(),
-		ridCache:         NewUnpackCache(),
+		midCache:         ids.NewUnpackCache(),
+		ridCache:         ids.NewUnpackCache(),
 		lidsTable:        f.lidsTable,
-		idsLoader:        NewIDsLoader(&f.indexReader, f.indexCache, f.idsTable),
+		idsLoader:        ids.NewLoader(&f.indexReader, f.indexCache.MIDs, f.indexCache.RIDs, f.indexCache.Params, f.idsTable),
 		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.indexReader, f.indexCache.TokenTable),
