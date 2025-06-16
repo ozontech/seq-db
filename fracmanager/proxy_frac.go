@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealer"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
@@ -115,7 +116,12 @@ func (f *proxyFrac) Seal(params frac.SealParams) (*frac.Sealed, error) {
 
 	f.WaitWriteIdle()
 
-	preloaded, err := frac.Seal(active, params)
+	src, err := frac.NewActiveSealingSource(active, params)
+	if err != nil {
+		return nil, err
+	}
+
+	preloaded, err := sealer.Seal(src, params)
 	if err != nil {
 		return nil, err
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
@@ -114,7 +115,9 @@ func BenchmarkSealing(b *testing.B) {
 		active.GetAllDocuments() // emulate search-pre-sorted LIDs
 
 		b.StartTimer()
-		_, err = frac.Seal(active, defaultSealParams)
+		src, err := frac.NewActiveSealingSource(active, defaultSealParams)
+		assert.NoError(b, err)
+		_, err = sealer.Seal(src, defaultSealParams)
 		assert.NoError(b, err)
 
 		b.StopTimer()
