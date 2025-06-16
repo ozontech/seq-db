@@ -13,10 +13,10 @@ import (
 )
 
 type Table struct {
-	MinBlockIDs         []seq.ID // from max to min
-	IDBlocksTotal       uint32
-	IDsTotal            uint32
-	DiskStartBlockIndex uint32
+	MinBlockIDs     []seq.ID // from max to min
+	IDBlocksTotal   uint32
+	IDsTotal        uint32
+	StartBlockIndex uint32
 }
 
 type Loader struct {
@@ -99,15 +99,15 @@ func (il *Loader) GetParamsBlock(index uint32) []uint64 {
 
 // blocks are stored as triplets on disk, (MID + RID + Pos), check docs/format-index-file.go
 func (il *Loader) midBlockIndex(index uint32) uint32 {
-	return il.Table.DiskStartBlockIndex + index*3
+	return il.Table.StartBlockIndex + index*3
 }
 
 func (il *Loader) ridBlockIndex(index uint32) uint32 {
-	return il.Table.DiskStartBlockIndex + index*3 + 1
+	return il.Table.StartBlockIndex + index*3 + 1
 }
 
 func (il *Loader) paramsBlockIndex(index uint32) uint32 {
-	return il.Table.DiskStartBlockIndex + index*3 + 2
+	return il.Table.StartBlockIndex + index*3 + 2
 }
 
 func (il *Loader) loadMIDBlock(index uint32) []byte {

@@ -1,19 +1,17 @@
 package frac
 
 import (
-	"encoding/json"
 	"fmt"
+	"iter"
 	"math"
 	"path"
 	"time"
 
 	"github.com/c2h5oh/datasize"
-	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -75,22 +73,6 @@ func (s *Info) String() string {
 	)
 }
 
-func (s *Info) Load(data []byte) {
-	err := json.Unmarshal(data, s)
-	if err != nil {
-		logger.Panic("stats unmarshalling error", zap.Error(err))
-	}
-}
-
-func (s *Info) Save() []byte {
-	result, err := json.Marshal(s)
-	if err != nil {
-		logger.Panic("stats marshaling error", zap.Error(err))
-	}
-
-	return result
-}
-
 func (s *Info) Name() string {
 	if s.Path == "" {
 		return ""
@@ -103,6 +85,18 @@ func (s *Info) BuildDistribution(ids []seq.ID) {
 		return
 	}
 	for _, id := range ids {
+		s.Distribution.Add(id.MID)
+	}
+}
+
+func (s *Info) BuildDistributionIter(ids iter.Seq[seq.ID]) {
+	if !s.InitEmptyDistribution() {
+		return
+	}
+	for id := range ids {
+		if id.MID == systemMID {
+			continue
+		}
 		s.Distribution.Add(id.MID)
 	}
 }

@@ -69,17 +69,16 @@ func loadInfo(path string) *frac.Info {
 		logger.Fatal("seq-db index file header corrupted", zap.String("file", path))
 	}
 
-	info := &frac.Info{}
-	info.Load(result[4:])
-	info.MetaOnDisk = 0
+	b := frac.BlockInfo{}
+	b.Unpack(result)
 
 	stat, err := f.Stat()
 	if err != nil {
 		logger.Fatal("can't stat index file", zap.String("file", path), zap.Error(err))
 	}
-	info.IndexOnDisk = uint64(stat.Size())
+	b.Info.IndexOnDisk = uint64(stat.Size())
 
-	return info
+	return b.Info
 }
 
 func buildDist(dist *seq.MIDsDistribution, path string, _ *frac.Info) {

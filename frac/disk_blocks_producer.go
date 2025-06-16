@@ -23,26 +23,28 @@ func NewDiskBlocksProducer() *DiskBlocksProducer {
 	}
 }
 
-func (g *DiskBlocksProducer) getInfoBlock(info *Info) *DiskInfoBlock {
-	return &DiskInfoBlock{info: info}
+func (g *DiskBlocksProducer) getInfoBlock(info *Info) *BlockInfo {
+	return &BlockInfo{Info: info}
 }
 
-func (g *DiskBlocksProducer) getPositionBlock(idsLen uint32, blocks []uint64) *DiskPositionsBlock {
-	return &DiskPositionsBlock{
-		totalIDs: idsLen,
-		blocks:   blocks,
+func (g *DiskBlocksProducer) getPositionBlock(idsLen uint32, blocks []uint64) *BlockBlocksOffsets {
+	return &BlockBlocksOffsets{
+		IDsTotal:      idsLen,
+		BlocksOffsets: blocks,
 	}
 }
 
-func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, tokenTable token.Table) func(func(*DiskTokenTableBlock) error) error {
-	return func(push func(*DiskTokenTableBlock) error) error {
+func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, tokenTable token.Table) func(func(token.TableBlock) error) error {
+	return func(push func(token.TableBlock) error) error {
 		for _, field := range g.getFracSortedFields(tokenList) {
 			if fieldData, ok := tokenTable[field]; ok {
-				block := DiskTokenTableBlock{
-					field:   field,
-					entries: fieldData.Entries,
+				block := token.TableBlock{
+					FieldsTables: []token.FieldTable{{
+						Field:   field,
+						Entries: fieldData.Entries,
+					}},
 				}
-				if err := push(&block); err != nil {
+				if err := push(block); err != nil {
 					return err
 				}
 			}
@@ -123,8 +125,8 @@ func (g *DiskBlocksProducer) getTIDsSortedByToken(tokenList *TokenList, field st
 	return tids
 }
 
-func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func(func(*DiskTokensBlock) error) error {
-	return func(push func(*DiskTokensBlock) error) error {
+func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func(func(*BlockTokens) error) error {
+	return func(push func(*BlockTokens) error) error {
 		var cur uint32 = 1
 		var tokens [][]byte
 
@@ -143,7 +145,7 @@ func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func
 				tokens = g.fillTokens(tokenList, tids[:right], tokens)
 				tids = tids[right:]
 
-				block := DiskTokensBlock{
+				block := BlockTokens{
 					field:            field,
 					isStartOfField:   first,
 					totalSizeOfField: fieldSize,

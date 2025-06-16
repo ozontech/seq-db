@@ -11,9 +11,9 @@ type IndexCache struct {
 	MIDs       *cache.Cache[[]byte]
 	RIDs       *cache.Cache[[]byte]
 	Params     *cache.Cache[[]uint64]
-	Tokens     *cache.Cache[*token.CacheEntry]
-	TokenTable *cache.Cache[token.Table]
 	LIDs       *cache.Cache[*lids.Chunks]
+	Tokens     *cache.Cache[*token.Block]
+	TokenTable *cache.Cache[token.Table]
 }
 
 func (s *IndexCache) Release() {

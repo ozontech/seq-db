@@ -44,6 +44,7 @@ func Seal(f *Active, params SealParams) (*PreloadedData, error) {
 		logger.Panic("sealing of an empty active fraction is not supported")
 	}
 	info.SealingTime = uint64(start.UnixMilli())
+	info.MetaOnDisk = 0
 
 	indexFile, err := os.OpenFile(f.BaseFileName+consts.IndexTmpFileSuffix, os.O_TRUNC|os.O_CREATE|os.O_RDWR, 0o776)
 	if err != nil {
@@ -207,10 +208,10 @@ func writeSealedFraction(f *Active, info *Info, indexFile io.WriteSeeker, params
 		TokenTable:    tokenTable,
 		BlocksOffsets: blocksOffsets,
 		IDsTable: ids.Table{
-			MinBlockIDs:         minBlockIDs,
-			IDsTotal:            f.MIDs.Len(),
-			IDBlocksTotal:       f.DocBlocks.Len(),
-			DiskStartBlockIndex: writer.startOfIDsBlockIndex,
+			MinBlockIDs:     minBlockIDs,
+			IDsTotal:        f.MIDs.Len(),
+			IDBlocksTotal:   f.DocBlocks.Len(),
+			StartBlockIndex: writer.startOfIDsBlockIndex,
 		},
 	}, nil
 }
@@ -249,7 +250,7 @@ func writeDocBlocksInOrder(pos *DocsPositions, blocks []uint64, docsReader disk.
 		blockOffsetIndex, docOffset := oldPos.Unpack()
 		blockOffset := blocks[blockOffsetIndex]
 		err := docsReader.ReadDocsFunc(blockOffset, []uint64{docOffset}, func(doc []byte) error {
-			return bw.WriteDoc(id, doc)
+			return bw.WriteDoc(id, doc[4:])
 		})
 		if err != nil {
 			return fmt.Errorf("writing document to block: %s", err)

@@ -6,15 +6,15 @@ type Provider struct {
 	loader  *BlockLoader
 	entries []*TableEntry // continuous monotonic sequence of token table entries
 
-	curBlockIndex  int
-	curTokensBlock *Block
+	curEntryIndex int
+	curEntryData  *entryData
 }
 
 func NewProvider(loader *BlockLoader, entries []*TableEntry) *Provider {
 	return &Provider{
 		loader:        loader,
 		entries:       entries,
-		curBlockIndex: -1,
+		curEntryIndex: -1,
 	}
 }
 
@@ -30,19 +30,19 @@ func (tp *Provider) Ordered() bool {
 	return true
 }
 
-func (tp *Provider) findBlock(tid uint32) int {
-	if tp.curBlockIndex >= 0 && tp.entries[tp.curBlockIndex].checkTIDInBlock(tid) { // fast path
-		return tp.curBlockIndex
+func (tp *Provider) findEntry(tid uint32) int {
+	if tp.curEntryIndex >= 0 && tp.entries[tp.curEntryIndex].checkTIDInBlock(tid) { // fast path
+		return tp.curEntryIndex
 	}
 
 	return sort.Search(len(tp.entries), func(blockIndex int) bool { return tid <= tp.entries[blockIndex].getLastTID() })
 }
 
 func (tp *Provider) GetToken(tid uint32) []byte {
-	blockIndex := tp.findBlock(tid)
-	if blockIndex != tp.curBlockIndex {
-		tp.curBlockIndex = blockIndex
-		tp.curTokensBlock = tp.loader.Load(tp.entries[blockIndex])
+	entryIndex := tp.findEntry(tid)
+	if entryIndex != tp.curEntryIndex {
+		tp.curEntryIndex = entryIndex
+		tp.curEntryData = tp.loader.Load(tp.entries[entryIndex])
 	}
-	return tp.curTokensBlock.GetValByTID(tid)
+	return tp.curEntryData.GetValByTID(tid)
 }

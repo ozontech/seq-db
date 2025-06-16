@@ -9,21 +9,21 @@ import (
 )
 
 type Table struct {
-	StartIndex uint32
-	MaxTIDs    []uint32 // defines last tid for each block
-	MinTIDs    []uint32 // defines first not continued tid for each block
+	StartBlockIndex uint32
+	MaxTIDs         []uint32 // defines last tid for each block
+	MinTIDs         []uint32 // defines first not continued tid for each block
 
 	// TODO: We need fix MinTID issue that we have to compensate with DiskBlock.getAdjustedMinTID()
 	// TODO: After that we do not need store IsContinued flag, and able calc it as MaxTIDs[i] == MinTIDs[i+1]
 	IsContinued []bool
 }
 
-func NewTable(startOfLIDsBlockIndex uint32, minTIDs, maxTIDs []uint32, isContinued []bool) *Table {
+func NewTable(StartBlockIndex uint32, minTIDs, maxTIDs []uint32, isContinued []bool) *Table {
 	return &Table{
-		StartIndex:  startOfLIDsBlockIndex,
-		MinTIDs:     minTIDs,
-		MaxTIDs:     maxTIDs,
-		IsContinued: isContinued,
+		StartBlockIndex: StartBlockIndex,
+		MinTIDs:         minTIDs,
+		MaxTIDs:         maxTIDs,
+		IsContinued:     isContinued,
 	}
 }
 
@@ -35,7 +35,7 @@ func (t *Table) Add(block *Block) {
 
 func (t *Table) GetAdjustedMinTID(blockIndex uint32) uint32 {
 	if t.IsContinued[blockIndex] {
-		return t.MinTIDs[blockIndex] - 1
+		return t.MinTIDs[blockIndex] - 1 // todo: fix this issue
 	}
 	return t.MinTIDs[blockIndex]
 }

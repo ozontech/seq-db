@@ -4,7 +4,6 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/packer"
 	"go.uber.org/zap"
 )
 
@@ -27,7 +26,17 @@ func NewTableLoader(fracName string, reader *disk.IndexReader, c *cache.Cache[Ta
 }
 
 func (l *TableLoader) Load() Table {
-	table, err := l.cache.GetWithError(CacheKeyTable, l.load)
+	table, err := l.cache.GetWithError(CacheKeyTable, func() (Table, int, error) {
+		blocks, err := l.load()
+		if err != nil {
+			return nil, 0, err
+		}
+		table := make(Table)
+		for _, block := range blocks {
+			block.FillTable(table)
+		}
+		return table, table.Size(), nil
+	})
 	if err != nil {
 		logger.Fatal("load token table error",
 			zap.String("frac", l.fracName),
@@ -52,7 +61,7 @@ func (l *TableLoader) readBlock() ([]byte, error) {
 	return block, err
 }
 
-func (l *TableLoader) load() (Table, int, error) {
+func (l *TableLoader) load() ([]TableBlock, error) {
 	// todo: scan all headers in sealed_loader and remember startIndex for each sections
 	// todo: than use this startIndex to load sections on demand (do not scan every time)
 	l.i = 1
@@ -60,37 +69,14 @@ func (l *TableLoader) load() (Table, int, error) {
 		h = l.readHeader()
 	}
 
-	size := 0
-	tokenTable := make(map[string]*FieldData)
-	for block, err := l.readBlock(); len(block) > 0; block, err = l.readBlock() {
+	blocks := make([]TableBlock, 0)
+	for blockData, err := l.readBlock(); len(blockData) > 0; blockData, err = l.readBlock() {
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
-
-		unpacker := packer.NewBytesUnpacker(block)
-		for unpacker.Len() > 0 {
-			fieldName := string(unpacker.GetBinary())
-			field := FieldData{Entries: make([]*TableEntry, unpacker.GetUint32())}
-			entries := make([]TableEntry, len(field.Entries))
-			for i := range field.Entries {
-				e := &entries[i]
-				e.StartTID = unpacker.GetUint32()
-				e.ValCount = unpacker.GetUint32()
-				e.StartIndex = unpacker.GetUint32() // todo: it seems we can calculate this field using valCount but not store startIndex on disk
-				e.BlockIndex = unpacker.GetUint32()
-				minVal := unpacker.GetBinary()
-				if i == 0 {
-					field.MinVal = string(minVal)
-				}
-				e.MaxVal = string(unpacker.GetBinary())
-				field.Entries[i] = e
-				size += len(e.MaxVal)
-			}
-			tokenTable[fieldName] = &field
-			size += len(fieldName) + len(entries)*int(TableEntrySize) + len(field.MinVal)
-		}
+		tb := TableBlock{}
+		tb.Unpack(blockData)
+		blocks = append(blocks, tb)
 	}
-	size += len(tokenTable) * int(FieldDataSize)
-
-	return tokenTable, size, nil
+	return blocks, nil
 }

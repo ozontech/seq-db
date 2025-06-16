@@ -30,9 +30,8 @@ func TestUnpackRIDs(t *testing.T) {
 		prev = rid
 	}
 
-	noVarintPacker := packer.NewBytesPacker([]byte{})
 	idsBlock := Block{RIDs: rids}
-	idsBlock.PackRIDs(noVarintPacker)
+	buf := idsBlock.PackRIDs(nil)
 
 	// varint case
 	cache := NewUnpackCache()
@@ -41,7 +40,7 @@ func TestUnpackRIDs(t *testing.T) {
 
 	// no varint case
 	cache = NewUnpackCache()
-	cache.unpackRIDs(0, noVarintPacker.Data, conf.BinaryDataV1)
+	cache.unpackRIDs(0, buf, conf.BinaryDataV1)
 	assert.Equal(t, rids, cache.values)
 
 	// wrong format

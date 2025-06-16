@@ -3,7 +3,6 @@ package ids
 import (
 	"encoding/binary"
 
-	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -13,35 +12,31 @@ type Block struct {
 	Pos  []uint64
 }
 
-func (b *Block) GetMinID() seq.ID {
+func (b *Block) MinID() seq.ID {
 	return seq.ID{
-		MID: b.minMID(),
-		RID: b.minRID(),
+		MID: b.MinMID(),
+		RID: b.MinRID(),
 	}
 }
 
-func (b *Block) minMID() seq.MID {
+func (b *Block) MinMID() seq.MID {
 	return seq.MID(b.MIDs[len(b.MIDs)-1])
 }
 
-func (b *Block) minRID() seq.RID {
+func (b *Block) MinRID() seq.RID {
 	return seq.RID(b.RIDs[len(b.RIDs)-1])
 }
 
-func (b *Block) GetExtForRegistry() (uint64, uint64) {
-	return uint64(b.minMID()), uint64(b.minRID())
+func (b *Block) PackMIDs(dst []byte) []byte {
+	return packRawIDsVarint(b.MIDs, dst)
 }
 
-func (b *Block) PackMIDs(p *packer.BytesPacker) {
-	p.Data = packRawIDsVarint(b.MIDs, p.Data)
+func (b *Block) PackRIDs(dst []byte) []byte {
+	return packRawIDsNoVarint(b.RIDs, dst)
 }
 
-func (b *Block) PackRIDs(p *packer.BytesPacker) {
-	p.Data = packRawIDsNoVarint(b.RIDs, p.Data)
-}
-
-func (b *Block) PackPos(p *packer.BytesPacker) {
-	p.Data = packRawIDsVarint(b.Pos, p.Data)
+func (b *Block) PackPos(dst []byte) []byte {
+	return packRawIDsVarint(b.Pos, dst)
 }
 
 func packRawIDsVarint(src []uint64, dst []byte) []byte {

@@ -48,7 +48,7 @@ func (l *Loader) readLIDsChunks(blockIndex uint32) (*Chunks, error) {
 	}
 
 	chunks := &Chunks{}
-	err = chunks.unpack(packer.NewBytesUnpacker(l.blockBuf), l.unpackBuf)
+	err = chunks.Unpack(packer.NewBytesUnpacker(l.blockBuf), l.unpackBuf)
 	if err != nil {
 		return nil, err
 	}
