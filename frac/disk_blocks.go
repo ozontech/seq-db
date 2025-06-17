@@ -45,19 +45,6 @@ func (b *DiskIDsBlock) packPos(p *packer.BytesPacker) {
 	}
 }
 
-type DiskTokenTableBlock struct {
-	field   string
-	entries []*token.TableEntry
-}
-
-func (t DiskTokenTableBlock) pack(p *packer.BytesPacker) {
-	p.PutStringWithSize(t.field)
-	p.PutUint32(uint32(len(t.entries)))
-	for _, entry := range t.entries {
-		entry.Pack(p)
-	}
-}
-
 type DiskTokensBlock struct {
 	field            string
 	isStartOfField   bool

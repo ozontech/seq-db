@@ -169,13 +169,13 @@ func (w *DiskBlocksWriter) writeTokensBlocks(zstdCompressLevel int, generateBloc
 	return tokenTable, nil
 }
 
-func (w *DiskBlocksWriter) writeTokenTableBlocks(zstdCompressLevel int, generateBlocks func(func(*DiskTokenTableBlock) error) error) error {
+func (w *DiskBlocksWriter) writeTokenTableBlocks(zstdCompressLevel int, generateBlocks func(func(*token.TableBlock) error) error) error {
 	former := w.NewBlockFormer("token_table", consts.RegularBlockSize)
 
 	opts := []disk.FlushOption{disk.WithZstdCompressLevel(zstdCompressLevel)}
 
-	push := func(block *DiskTokenTableBlock) error {
-		block.pack(former.Packer())
+	push := func(block *token.TableBlock) error {
+		former.Packer().Data = block.Pack(former.Packer().Data)
 		if _, err := former.FlushIfNeeded(opts...); err != nil {
 			return err
 		}

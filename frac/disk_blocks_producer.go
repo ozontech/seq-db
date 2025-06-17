@@ -35,13 +35,15 @@ func (g *DiskBlocksProducer) getPositionBlock(idsLen uint32, blocks []uint64) *B
 	}
 }
 
-func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, tokenTable token.Table) func(func(*DiskTokenTableBlock) error) error {
-	return func(push func(*DiskTokenTableBlock) error) error {
+func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, tokenTable token.Table) func(func(*token.TableBlock) error) error {
+	return func(push func(*token.TableBlock) error) error {
 		for _, field := range g.getFracSortedFields(tokenList) {
 			if fieldData, ok := tokenTable[field]; ok {
-				block := DiskTokenTableBlock{
-					field:   field,
-					entries: fieldData.Entries,
+				block := token.TableBlock{
+					FieldsTables: []token.FieldTable{{
+						Field:   field,
+						Entries: fieldData.Entries,
+					}},
 				}
 				if err := push(&block); err != nil {
 					return err
