@@ -41,7 +41,7 @@ func (it *IteratorDesc) narrowLIDsRange(lids []uint32, tryNextBlock bool) ([]uin
 }
 
 func (it *IteratorDesc) loadNextLIDsChunk() {
-	chunks, err := it.loader.GetLIDsChunks(it.table.StartIndex + it.blockIndex)
+	chunks, err := it.loader.GetLIDsChunks(it.table.StartBlockIndex + it.blockIndex)
 	if err != nil {
 		logger.Panic("error loading LIDs block", zap.Error(err))
 	}

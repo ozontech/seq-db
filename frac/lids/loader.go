@@ -6,7 +6,7 @@ import (
 	"github.com/ozontech/seq-db/packer"
 )
 
-type unpackBuffer struct {
+type UnpackBuffer struct {
 	lids    []uint32
 	offsets []uint32
 }
@@ -15,22 +15,22 @@ type unpackBuffer struct {
 // NOT THREAD SAFE. Do not use concurrently.
 // Use your own Loader instance for each search query
 type Loader struct {
-	cache     *cache.Cache[*Chunks]
+	cache     *cache.Cache[*Block]
 	reader    *disk.IndexReader
-	unpackBuf *unpackBuffer
+	unpackBuf *UnpackBuffer
 	blockBuf  []byte
 }
 
-func NewLoader(reader *disk.IndexReader, chunkCache *cache.Cache[*Chunks]) *Loader {
+func NewLoader(reader *disk.IndexReader, chunkCache *cache.Cache[*Block]) *Loader {
 	return &Loader{
 		cache:     chunkCache,
 		reader:    reader,
-		unpackBuf: &unpackBuffer{},
+		unpackBuf: &UnpackBuffer{},
 	}
 }
 
-func (l *Loader) GetLIDsChunks(blockIndex uint32) (*Chunks, error) {
-	return l.cache.GetWithError(blockIndex, func() (*Chunks, int, error) {
+func (l *Loader) GetLIDsChunks(blockIndex uint32) (*Block, error) {
+	return l.cache.GetWithError(blockIndex, func() (*Block, int, error) {
 		chunks, err := l.readLIDsChunks(blockIndex)
 		if err != nil {
 			return chunks, 0, err
@@ -40,15 +40,15 @@ func (l *Loader) GetLIDsChunks(blockIndex uint32) (*Chunks, error) {
 	})
 }
 
-func (l *Loader) readLIDsChunks(blockIndex uint32) (*Chunks, error) {
+func (l *Loader) readLIDsChunks(blockIndex uint32) (*Block, error) {
 	var err error
 	l.blockBuf, _, err = l.reader.ReadIndexBlock(blockIndex, l.blockBuf)
 	if err != nil {
 		return nil, err
 	}
 
-	chunks := &Chunks{}
-	err = chunks.unpack(packer.NewBytesUnpacker(l.blockBuf), l.unpackBuf)
+	chunks := &Block{}
+	err = chunks.Unpack(packer.NewBytesUnpacker(l.blockBuf), l.unpackBuf)
 	if err != nil {
 		return nil, err
 	}

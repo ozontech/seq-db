@@ -8,6 +8,21 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
+type lidsBlockMeta struct {
+	MinTID      uint32
+	MaxTID      uint32
+	IsContinued bool
+}
+
+func (m lidsBlockMeta) getExtForRegistry() (uint64, uint64) {
+	var ext1, ext2 uint64
+	if m.IsContinued {
+		ext1 = 1
+	}
+	ext2 = uint64(m.MaxTID)<<32 | uint64(m.MinTID)
+	return ext1, ext2
+}
+
 type DiskIDsBlock struct {
 	ids []seq.ID
 	pos []uint64
