@@ -1,6 +1,7 @@
 package disk
 
 import (
+	"encoding/binary"
 	"io"
 
 	"go.uber.org/zap"
@@ -8,7 +9,6 @@ import (
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/zstd"
 )
 
@@ -84,15 +84,15 @@ func (w *BlocksWriter) WriteBlocksRegistry() error {
 		return err
 	}
 
-	p := packer.NewBytesPacker(make([]byte, 0, 16))
-	p.PutUint64(uint64(pos))
-	p.PutUint64(uint64(size))
+	buf := make([]byte, 0, 16)
+	buf = binary.LittleEndian.AppendUint64(buf, uint64(pos))
+	buf = binary.LittleEndian.AppendUint64(buf, uint64(size))
 
 	if _, err = w.writeSeeker.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
 
-	if _, err = w.writeSeeker.Write(p.Data); err != nil {
+	if _, err = w.writeSeeker.Write(buf); err != nil {
 		return err
 	}
 
