@@ -1,8 +1,6 @@
 package token
 
 import (
-	"go.uber.org/zap/zapcore"
-
 	"github.com/ozontech/seq-db/packer"
 )
 
@@ -18,15 +16,6 @@ type TableEntry struct {
 	MaxVal string
 }
 
-func (t *TableEntry) MarshalLogObject(enc zapcore.ObjectEncoder) error {
-	enc.AddUint32("start_index", t.StartIndex)
-	enc.AddUint32("start_tid", t.StartTID)
-	enc.AddUint32("val_count", t.ValCount)
-	enc.AddUint32("block_index", t.BlockIndex)
-	enc.AddString("max_val", t.MaxVal)
-	return nil
-}
-
 func (t *TableEntry) Pack(p *packer.BytesPacker) {
 	p.PutUint32(t.StartTID)
 	p.PutUint32(t.ValCount)
@@ -36,7 +25,7 @@ func (t *TableEntry) Pack(p *packer.BytesPacker) {
 	p.PutStringWithSize(t.MaxVal)
 }
 
-func (t *TableEntry) getIndexInTokensBlock(tid uint32) uint32 {
+func (t *TableEntry) GetIndexInTokensBlock(tid uint32) uint32 {
 	return t.StartIndex + tid - t.StartTID
 }
 
