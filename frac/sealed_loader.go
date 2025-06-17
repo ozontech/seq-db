@@ -1,8 +1,6 @@
 package frac
 
 import (
-	"encoding/binary"
-	"errors"
 	"time"
 
 	"go.uber.org/zap"
@@ -74,30 +72,17 @@ func (l *Loader) skipBlock() disk.IndexBlockHeader {
 func (l *Loader) loadIDs() (idsTable IDsTable, blocksOffsets []uint64, err error) {
 	var result []byte
 
-	result, err = l.nextIndexBlock()
-	if err != nil {
+	if result, err = l.nextIndexBlock(); err != nil {
 		return idsTable, nil, err
 	}
 
-	idsTable.IDBlocksTotal = binary.LittleEndian.Uint32(result)
-	result = result[4:]
+	b := BlockOffsets{}
+	b.Unpack(result)
 
-	// total ids
-	idsTable.IDsTotal = binary.LittleEndian.Uint32(result)
-	result = result[4:]
+	blocksOffsets = b.BlocksOffsets
 
-	offset := uint64(0)
-	for len(result) != 0 {
-		delta, n := binary.Varint(result)
-		if n == 0 {
-			return idsTable, nil, errors.New("blocks offset decoding error: varint returned 0")
-		}
-		result = result[n:]
-		offset += uint64(delta)
-
-		blocksOffsets = append(blocksOffsets, offset)
-	}
-
+	idsTable.IDsTotal = b.IDsTotal
+	idsTable.IDBlocksTotal = uint32(len(b.BlocksOffsets))
 	idsTable.DiskStartBlockIndex = l.blockIndex
 
 	for {

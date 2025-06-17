@@ -8,7 +8,6 @@ import (
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
-	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
@@ -37,19 +36,18 @@ func (w *DiskBlocksWriter) NewBlockFormer(name string, size int) *disk.BlockForm
 	return disk.NewBlockFormer(name, w.writer, size, w.resetBuf(size))
 }
 
-func (w *DiskBlocksWriter) writeInfoBlock(block *DiskInfoBlock) error {
+func (w *DiskBlocksWriter) writeInfoBlock(block *BlockInfo) error {
 	now := time.Now()
 
-	p := packer.NewBytesPacker(w.resetBuf(consts.RegularBlockSize))
-	block.pack(p)
-	n, err := w.writer.WriteBlock("info", p.Data, false, 0, 0, 0)
+	w.buf = block.Pack(w.resetBuf(consts.RegularBlockSize))
+	n, err := w.writer.WriteBlock("info", w.buf, false, 0, 0, 0)
 	if err != nil {
 		return err
 	}
 
 	w.stats = append(w.stats, &disk.BlockStats{
 		Name:     "info",
-		Raw:      uint64(len(p.Data)),
+		Raw:      uint64(len(w.buf)),
 		Comp:     uint64(n),
 		Blocks:   1,
 		Duration: time.Since(now),
@@ -58,19 +56,17 @@ func (w *DiskBlocksWriter) writeInfoBlock(block *DiskInfoBlock) error {
 	return nil
 }
 
-func (w *DiskBlocksWriter) writePositionsBlock(zstdCompressLevel int, block *DiskPositionsBlock) error {
+func (w *DiskBlocksWriter) writePositionsBlock(zstdCompressLevel int, block *BlockOffsets) error {
 	now := time.Now()
-
-	p := packer.NewBytesPacker(w.resetBuf(consts.IDsBlockSize))
-	block.pack(p)
-	n, err := w.writer.WriteBlock("positions", p.Data, true, zstdCompressLevel, 0, 0)
+	w.buf = block.Pack(w.resetBuf(consts.IDsBlockSize))
+	n, err := w.writer.WriteBlock("positions", w.buf, true, zstdCompressLevel, 0, 0)
 	if err != nil {
 		return err
 	}
 
 	w.stats = append(w.stats, &disk.BlockStats{
 		Name:     "positions",
-		Raw:      uint64(len(p.Data)),
+		Raw:      uint64(len(w.buf)),
 		Comp:     uint64(n),
 		Blocks:   1,
 		Duration: time.Since(now),

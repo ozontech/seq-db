@@ -13,11 +13,10 @@ import (
 	"go.uber.org/zap"
 )
 
-func unpackInfo(result []byte) *frac.Info {
-	result = result[4:]
-	info := &frac.Info{}
-	info.Load(result)
-	return info
+func unpackInfo(data []byte) *frac.Info {
+	b := frac.BlockInfo{}
+	_ = b.Unpack(data)
+	return b.Info
 }
 
 func unpackTokens(data []byte, dst [][]byte) [][]byte {

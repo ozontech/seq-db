@@ -68,39 +68,21 @@ func (r *DocsReader) ReadDocBlockPayload(offset int64) ([]byte, uint64, error) {
 }
 
 func (r *DocsReader) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
-	block, err := r.cache.GetWithError(uint32(blockOffset), func() ([]byte, int, error) {
-		block, _, err := r.ReadDocBlockPayload(int64(blockOffset))
-		if err != nil {
-			return nil, 0, fmt.Errorf("can't fetch doc at pos %d: %w", blockOffset, err)
-		}
-		return block, cap(block), nil
+	totalSize := 0
+	res := make([][]byte, 0, len(docOffsets))
+	r.ReadDocsFunc(blockOffset, docOffsets, func(doc []byte) error {
+		totalSize += len(doc)
+		res = append(res, doc)
+		return nil
 	})
-
-	if err != nil {
-		return nil, err
+	// copy
+	buf := make([]byte, 0, totalSize)
+	for i, doc := range res {
+		pos := len(buf)
+		buf = append(buf, doc...)
+		res[i] = buf[pos:]
 	}
-
-	return extractDocsFromBlock(block, docOffsets), nil
-}
-
-func extractDocsFromBlock(block []byte, docOffsets []uint64) [][]byte {
-	var totalDocsSize uint32
-	docSizes := make([]uint32, len(docOffsets))
-	for i, offset := range docOffsets {
-		size := binary.LittleEndian.Uint32(block[offset:])
-		docSizes[i] = size
-		totalDocsSize += size
-	}
-
-	buf := make([]byte, 0, totalDocsSize)
-	res := make([][]byte, len(docOffsets))
-	for i, offset := range docOffsets {
-		bufPos := len(buf)
-		buf = append(buf, block[4+offset:4+offset+uint64(docSizes[i])]...)
-		res[i] = buf[bufPos:]
-	}
-
-	return res
+	return res, nil
 }
 
 func (r *DocsReader) ReadDocsFunc(blockOffset uint64, docOffsets []uint64, cb func([]byte) error) error {

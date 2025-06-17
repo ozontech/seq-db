@@ -57,7 +57,7 @@ func (w *BlocksWriter) WriteBlock(blockType string, data []byte, compress bool, 
 		return 0, err
 	}
 
-	w.appendBlocksRegistry(NewIndexBlockHeader(pos, ext1, ext2, data, finalData, codec))
+	w.appendBlocksRegistry(NewIndexBlockHeader(pos, ext1, ext2, len(finalData), len(data), codec))
 	if _, err = w.writeSeeker.Write(finalData); err != nil {
 		return 0, err
 	}

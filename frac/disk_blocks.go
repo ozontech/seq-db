@@ -8,31 +8,6 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
-type DiskInfoBlock struct {
-	info *Info
-}
-
-func (b *DiskInfoBlock) pack(p *packer.BytesPacker) {
-	p.PutBytes([]byte(seqDBMagic))
-	p.PutBytes(b.info.Save())
-}
-
-type DiskPositionsBlock struct {
-	totalIDs uint32
-	blocks   []uint64
-}
-
-func (b *DiskPositionsBlock) pack(p *packer.BytesPacker) {
-	p.PutUint32(uint32(len(b.blocks)))
-	p.PutUint32(b.totalIDs)
-
-	var prev uint64
-	for _, pos := range b.blocks {
-		p.PutVarint(int64(pos - prev))
-		prev = pos
-	}
-}
-
 type DiskIDsBlock struct {
 	ids []seq.ID
 	pos []uint64
