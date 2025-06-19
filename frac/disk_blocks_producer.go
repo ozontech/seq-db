@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac/ids"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/seq"
@@ -54,24 +55,25 @@ func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, 
 	}
 }
 
-func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPositions *DocsPositions, size int) func(func(*DiskIDsBlock) error) error {
-	return func(push func(*DiskIDsBlock) error) error {
-		pos := make([]uint64, 0, size)
-
+func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPositions *DocsPositions, size int) func(func(idsBlock) error) error {
+	return func(push func(idsBlock) error) error {
+		block := idsBlock{
+			mids:   ids.BlockMIDs{Values: make([]uint64, 0, size)},
+			rids:   ids.BlockRIDs{Values: make([]uint64, 0, size)},
+			params: ids.BlockParams{Values: make([]uint64, 0, size)},
+		}
 		for len(sortedSeqIDs) > 0 {
 			right := min(size, len(sortedSeqIDs))
-			ids := sortedSeqIDs[:right]
-			sortedSeqIDs = sortedSeqIDs[right:]
-			pos = g.fillPos(docsPositions, ids, pos)
-			block := DiskIDsBlock{
-				ids: ids,
-				pos: pos,
+			block.params.Values = g.fillPos(docsPositions, sortedSeqIDs[:right], block.params.Values)
+			for _, id := range sortedSeqIDs[:right] {
+				block.mids.Values = append(block.mids.Values, uint64(id.MID))
+				block.rids.Values = append(block.mids.Values, uint64(id.RID))
 			}
-			if err := push(&block); err != nil {
+			sortedSeqIDs = sortedSeqIDs[right:]
+			if err := push(block); err != nil {
 				return nil
 			}
 		}
-
 		return nil
 	}
 }
@@ -178,27 +180,26 @@ func (g *DiskBlocksProducer) fillTokens(tokenList *TokenList, tids []uint32, tok
 	return tokens
 }
 
-func (g *DiskBlocksProducer) getLIDsBlockGenerator(tokenList *TokenList, oldToNewLIDsIndex []uint32, mids, rids *UInt64s, maxBlockSize int) func(func(lidsBlockMeta, lids.Block) error) error {
+func (g *DiskBlocksProducer) getLIDsBlockGenerator(tokenList *TokenList, oldToNewLIDsIndex []uint32, mids, rids *UInt64s, maxBlockSize int) func(func(lidsBlock) error) error {
 	var maxTID, lastMaxTID uint32
 
 	isContinued := false
 	offsets := []uint32{0} // first offset is always zero
 	blockLIDs := make([]uint32, 0, maxBlockSize)
 
-	newBlockFn := func(isLastLID bool) (lidsBlockMeta, lids.Block) {
-		meta := lidsBlockMeta{
+	newBlockFn := func(isLastLID bool) lidsBlock {
+		block := lidsBlock{
 			// for continued block we will have minTID > maxTID
 			// this is not a bug, everything is according to plan for now
 			// TODO: But in future we want to get rid of this
-			MinTID:      lastMaxTID + 1,
-			MaxTID:      maxTID,
-			IsContinued: isContinued,
-		}
-
-		block := lids.Block{
-			LIDs:      reassignLIDs(blockLIDs, oldToNewLIDsIndex),
-			Offsets:   offsets,
-			IsLastLID: isLastLID,
+			minTID:      lastMaxTID + 1,
+			maxTID:      maxTID,
+			isContinued: isContinued,
+			payload: lids.Block{
+				LIDs:      reassignLIDs(blockLIDs, oldToNewLIDsIndex),
+				Offsets:   offsets,
+				IsLastLID: isLastLID,
+			},
 		}
 
 		lastMaxTID = maxTID
@@ -208,10 +209,10 @@ func (g *DiskBlocksProducer) getLIDsBlockGenerator(tokenList *TokenList, oldToNe
 		offsets = offsets[:1] // keep the first offset, which is always zero
 		blockLIDs = blockLIDs[:0]
 
-		return meta, block
+		return block
 	}
 
-	return func(push func(lidsBlockMeta, lids.Block) error) error {
+	return func(push func(lidsBlock) error) error {
 		for _, field := range g.getFracSortedFields(tokenList) {
 			for _, tid := range g.getTIDsSortedByToken(tokenList, field) {
 				maxTID++

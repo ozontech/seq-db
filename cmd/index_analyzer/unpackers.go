@@ -54,7 +54,7 @@ func unpackTokenTable(data []byte, tokenTable token.Table) {
 	}
 }
 
-func unpackLIDsChunks(data []byte) *lids.Block {
+func unpackLIDsBlock(data []byte) *lids.Block {
 	unpacker := packer.NewBytesUnpacker(data)
 	c := lids.Block{}
 	c.Unpack(unpacker, &lids.UnpackBuffer{})

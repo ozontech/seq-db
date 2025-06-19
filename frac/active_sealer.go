@@ -16,6 +16,7 @@ import (
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/ids"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
@@ -212,7 +213,7 @@ func writeSealedFraction(f *Active, docsReader *disk.DocsReader, indexFile, sdoc
 		return err
 	}
 
-	f.idsTable = IDsTable{
+	f.idsTable = ids.Table{
 		MinBlockIDs:         minBlockIDs,
 		IDsTotal:            f.MIDs.Len(),
 		IDBlocksTotal:       f.DocBlocks.Len(),

@@ -137,12 +137,12 @@ func analyzeIndex(
 			break
 		}
 
-		chunk := unpackLIDsChunks(data)
+		block := unpackLIDsBlock(data)
 
-		last := len(chunk.Offsets) - 2
+		last := len(block.Offsets) - 2
 		for i := 0; i <= last; i++ {
-			lids = append(lids, chunk.LIDs[chunk.Offsets[i]:chunk.Offsets[i+1]]...)
-			if i < last || chunk.IsLastLID { // the end of token lids
+			lids = append(lids, block.LIDs[block.Offsets[i]:block.Offsets[i+1]]...)
+			if i < last || block.IsLastLID { // the end of token lids
 				lidsTotal += len(lids)
 				lidsLens[tid] = len(lids)
 				lidsUniq[getLIDsHash(lids)] = len(lids)

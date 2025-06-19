@@ -23,36 +23,36 @@ func (c *Block) getLIDs(i int) []uint32 {
 	return c.LIDs[c.Offsets[i]:c.Offsets[i+1]]
 }
 
-func (c *Block) GetSizeBytes() int {
+func (b *Block) GetSizeBytes() int {
 	const (
 		uint32Size = int(unsafe.Sizeof(uint32(0)))
-		chunksSize = int(unsafe.Sizeof(*c))
+		blockSize  = int(unsafe.Sizeof(*b))
 	)
-	return chunksSize + uint32Size*cap(c.LIDs) + uint32Size*cap(c.Offsets)
+	return blockSize + uint32Size*cap(b.LIDs) + uint32Size*cap(b.Offsets)
 }
 
-func (c *Block) Pack(buf []byte) []byte {
+func (b *Block) Pack(buf []byte) []byte {
 	lastLID := int64(0)
-	last := c.getCount() - 1
+	last := b.getCount() - 1
 
 	for i := 0; i <= last; i++ {
-		for _, lid := range c.getLIDs(i) {
+		for _, lid := range b.getLIDs(i) {
 			buf = binary.AppendVarint(buf, int64(lid)-lastLID)
 			lastLID = int64(lid)
 		}
-		if i < last || c.IsLastLID {
+		if i < last || b.IsLastLID {
 			// when we add this value to prev we must get -1 (or math.MaxUint32 for uint32)
-			// it is the end-marker; see Chunks.unpack()
+			// it is the end-marker; see `block.Unpack()`
 			buf = binary.AppendVarint(buf, -1-lastLID)
 		}
 	}
 	return buf
 }
 
-func (c *Block) Unpack(data *packer.BytesUnpacker, buf *UnpackBuffer) error {
+func (b *Block) Unpack(data *packer.BytesUnpacker, buf *UnpackBuffer) error {
 	var lid, offset uint32
 
-	c.IsLastLID = true
+	b.IsLastLID = true
 
 	buf.lids = buf.lids[:0]
 	buf.offsets = buf.offsets[:0]
@@ -65,7 +65,7 @@ func (c *Block) Unpack(data *packer.BytesUnpacker, buf *UnpackBuffer) error {
 		}
 		lid += uint32(delta)
 
-		if lid == math.MaxUint32 { // end of LIDs of current TID, see Chunks.Pack() method
+		if lid == math.MaxUint32 { // end of LIDs of current TID, see `block.Pack()` method
 			offset = uint32(len(buf.lids))
 			buf.offsets = append(buf.offsets, offset)
 			lid -= uint32(delta)
@@ -76,13 +76,13 @@ func (c *Block) Unpack(data *packer.BytesUnpacker, buf *UnpackBuffer) error {
 	}
 
 	if int(offset) < len(buf.lids) {
-		c.IsLastLID = false
+		b.IsLastLID = false
 		buf.offsets = append(buf.offsets, uint32(len(buf.lids)))
 	}
 
 	// copy from buffer
-	c.LIDs = append([]uint32{}, buf.lids...)
-	c.Offsets = append([]uint32{}, buf.offsets...)
+	b.LIDs = append([]uint32{}, buf.lids...)
+	b.Offsets = append([]uint32{}, buf.offsets...)
 
 	return nil
 }

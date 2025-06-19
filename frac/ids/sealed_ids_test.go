@@ -1,4 +1,4 @@
-package frac
+package ids
 
 import (
 	"encoding/binary"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -30,22 +31,22 @@ func TestUnpackRIDs(t *testing.T) {
 	}
 
 	noVarint := []byte{}
-	idsBlock := DiskIDsBlock{ids: ids}
-	noVarint = idsBlock.packRIDs(noVarint)
+	ridsBlock := BlockRIDs{Values: rids}
+	noVarint = ridsBlock.Pack(noVarint)
 
 	// varint case
 	cache := NewUnpackCache()
-	cache.unpackRIDs(0, varint, BinaryDataV0)
+	cache.unpackRIDs(0, varint, conf.BinaryDataV0)
 	assert.Equal(t, rids, cache.values)
 
 	// no varint case
 	cache = NewUnpackCache()
-	cache.unpackRIDs(0, noVarint, BinaryDataV1)
+	cache.unpackRIDs(0, noVarint, conf.BinaryDataV1)
 	assert.Equal(t, rids, cache.values)
 
 	// wrong format
 	assert.Panics(t, func() {
 		cache = NewUnpackCache()
-		cache.unpackRIDs(0, varint, BinaryDataV1)
+		cache.unpackRIDs(0, varint, conf.BinaryDataV1)
 	})
 }

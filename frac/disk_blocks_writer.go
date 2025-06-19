@@ -75,7 +75,7 @@ func (w *DiskBlocksWriter) writePositionsBlock(zstdCompressLevel int, block *Blo
 	return nil
 }
 
-func (w *DiskBlocksWriter) writeIDsBlocks(zstdLevel int, generateBlocks func(func(*DiskIDsBlock) error) error) ([]seq.ID, error) {
+func (w *DiskBlocksWriter) writeIDsBlocks(zstdLevel int, generateBlocks func(func(idsBlock) error) error) ([]seq.ID, error) {
 	w.startOfIDsBlockIndex = w.writer.GetBlockIndex()
 
 	levelOpt := disk.WithZstdCompressLevel(zstdLevel)
@@ -84,23 +84,23 @@ func (w *DiskBlocksWriter) writeIDsBlocks(zstdLevel int, generateBlocks func(fun
 
 	minBlockIDs := make([]seq.ID, 0)
 
-	push := func(block *DiskIDsBlock) error {
-		former.Buf = block.packMIDs(former.Buf)
-		if err := former.FlushForced(disk.WithExt(block.getExtForRegistry()), levelOpt); err != nil {
+	push := func(block idsBlock) error {
+		former.Buf = block.mids.Pack(former.Buf)
+		if err := former.FlushForced(disk.WithExt(block.GetExtForRegistry()), levelOpt); err != nil {
 			return err
 		}
 
-		former.Buf = block.packRIDs(former.Buf)
+		former.Buf = block.rids.Pack(former.Buf)
 		if err := former.FlushForced(levelOpt); err != nil {
 			return err
 		}
 
-		former.Buf = block.packPos(former.Buf)
+		former.Buf = block.params.Pack(former.Buf)
 		if err := former.FlushForced(levelOpt); err != nil {
 			return err
 		}
 
-		minBlockIDs = append(minBlockIDs, block.getMinID())
+		minBlockIDs = append(minBlockIDs, block.GetMinID())
 		return nil
 	}
 
@@ -197,21 +197,21 @@ func (w *DiskBlocksWriter) writeTokenTableBlocks(zstdCompressLevel int, generate
 	return nil
 }
 
-func (w *DiskBlocksWriter) writeLIDsBlocks(zstdCompressLevel int, generateBlocks func(func(lidsBlockMeta, lids.Block) error) error) (*lids.Table, error) {
+func (w *DiskBlocksWriter) writeLIDsBlocks(zstdCompressLevel int, generateBlocks func(func(lidsBlock) error) error) (*lids.Table, error) {
 	lidsTable := lids.NewTable(w.writer.GetBlockIndex(), nil, nil, nil)
 
 	former := w.NewBlockFormer("lids", consts.RegularBlockSize)
 
 	levelOpt := disk.WithZstdCompressLevel(zstdCompressLevel)
 
-	push := func(meta lidsBlockMeta, block lids.Block) error {
-		former.Buf = block.Pack(former.Buf)
-		if err := former.FlushForced(disk.WithExt(meta.getExtForRegistry()), levelOpt); err != nil {
+	push := func(block lidsBlock) error {
+		former.Buf = block.payload.Pack(former.Buf)
+		if err := former.FlushForced(disk.WithExt(block.getExtForRegistry()), levelOpt); err != nil {
 			return err
 		}
-		lidsTable.MinTIDs = append(lidsTable.MinTIDs, meta.MinTID)
-		lidsTable.MaxTIDs = append(lidsTable.MaxTIDs, meta.MaxTID)
-		lidsTable.IsContinued = append(lidsTable.IsContinued, meta.IsContinued)
+		lidsTable.MinTIDs = append(lidsTable.MinTIDs, block.minTID)
+		lidsTable.MaxTIDs = append(lidsTable.MaxTIDs, block.maxTID)
+		lidsTable.IsContinued = append(lidsTable.IsContinued, block.isContinued)
 		return nil
 	}
 

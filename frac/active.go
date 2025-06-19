@@ -18,6 +18,7 @@ import (
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/ids"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
@@ -60,7 +61,7 @@ type Active struct {
 	isSealed  bool
 
 	// to transfer data to sealed frac
-	idsTable            IDsTable
+	idsTable            ids.Table
 	lidsTable           *lids.Table
 	tokenTable          token.Table
 	sortedDocsFile      *os.File

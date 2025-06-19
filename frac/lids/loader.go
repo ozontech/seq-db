@@ -21,37 +21,37 @@ type Loader struct {
 	blockBuf  []byte
 }
 
-func NewLoader(reader *disk.IndexReader, chunkCache *cache.Cache[*Block]) *Loader {
+func NewLoader(reader *disk.IndexReader, cache *cache.Cache[*Block]) *Loader {
 	return &Loader{
-		cache:     chunkCache,
+		cache:     cache,
 		reader:    reader,
 		unpackBuf: &UnpackBuffer{},
 	}
 }
 
-func (l *Loader) GetLIDsChunks(blockIndex uint32) (*Block, error) {
+func (l *Loader) GetLIDsBlock(blockIndex uint32) (*Block, error) {
 	return l.cache.GetWithError(blockIndex, func() (*Block, int, error) {
-		chunks, err := l.readLIDsChunks(blockIndex)
+		block, err := l.readLIDsBlock(blockIndex)
 		if err != nil {
-			return chunks, 0, err
+			return block, 0, err
 		}
-		chunksSize := chunks.GetSizeBytes()
-		return chunks, chunksSize, nil
+		size := block.GetSizeBytes()
+		return block, size, nil
 	})
 }
 
-func (l *Loader) readLIDsChunks(blockIndex uint32) (*Block, error) {
+func (l *Loader) readLIDsBlock(blockIndex uint32) (*Block, error) {
 	var err error
 	l.blockBuf, _, err = l.reader.ReadIndexBlock(blockIndex, l.blockBuf)
 	if err != nil {
 		return nil, err
 	}
 
-	chunks := &Block{}
-	err = chunks.Unpack(packer.NewBytesUnpacker(l.blockBuf), l.unpackBuf)
+	block := &Block{}
+	err = block.Unpack(packer.NewBytesUnpacker(l.blockBuf), l.unpackBuf)
 	if err != nil {
 		return nil, err
 	}
 
-	return chunks, err
+	return block, err
 }

@@ -34,7 +34,7 @@ func (t *Table) GetAdjustedMinTID(blockIndex uint32) uint32 {
 	return t.MinTIDs[blockIndex]
 }
 
-func (t *Table) GetChunksCount(blockIndex uint32) uint32 {
+func (t *Table) GetBlocksCount(blockIndex uint32) uint32 {
 	return t.MaxTIDs[blockIndex] - t.GetAdjustedMinTID(blockIndex) + 1
 }
 
@@ -95,6 +95,6 @@ func (t *Table) HasTIDInNextBlock(blockIndex, tid uint32) bool {
 	return false
 }
 
-func (t *Table) GetChunkIndex(blockIndex, tid uint32) int {
+func (t *Table) GetBlockIndex(blockIndex, tid uint32) int {
 	return int(tid - t.GetAdjustedMinTID(blockIndex))
 }
