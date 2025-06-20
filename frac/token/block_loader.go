@@ -8,98 +8,68 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/util"
 )
 
 const sizeOfUint32 = uint32(unsafe.Sizeof(uint32(0)))
 
-type CacheEntry struct {
-	Block, Offset []byte
-}
-
-func (t *CacheEntry) GetSize() int {
-	const selfSize = int(unsafe.Sizeof(CacheEntry{}))
-	return selfSize + cap(t.Block) + cap(t.Offset)
-}
-
 type Block struct {
-	payload []byte
-	offsets []byte
-	entry   *TableEntry
+	Payload []byte
+	Offsets []uint32
 }
 
-func newBlock(entry *TableEntry, payload, offsets []byte) *Block {
-	return &Block{
-		entry:   entry,
-		payload: payload,
-		offsets: offsets,
-	}
+func (b *Block) Size() int {
+	const selfSize = int(unsafe.Sizeof(Block{}))
+	return selfSize + cap(b.Payload) + cap(b.Offsets)*int(sizeOfUint32)
 }
 
-func (b *Block) GetValByTID(tid uint32) []byte {
-	valIndex := b.entry.getIndexInTokensBlock(tid)
-	offset := binary.LittleEndian.Uint32(b.offsets[valIndex*sizeOfUint32:])
-	l := binary.LittleEndian.Uint32(b.payload[offset:])
-
-	offset += sizeOfUint32 // skip val length
-	return b.payload[offset : offset+l]
+func (b Block) Pack(dst []byte) []byte {
+	return append(dst, b.Payload...)
 }
 
-func (b *Block) unpack(data []byte) error {
+func (b *Block) Unpack(data []byte) error {
 	var offset uint32
-
-	payload := data
-
-	buf := bytespool.Acquire(4 * int(b.entry.ValCount))
-	defer bytespool.Release(buf)
-
-	offsets := buf.B[:0]
-
+	b.Payload = data
 	for i := 0; len(data) != 0; i++ {
 		l := binary.LittleEndian.Uint32(data)
 		data = data[sizeOfUint32:]
 		offset += sizeOfUint32
-
 		if l == math.MaxUint32 {
 			continue
 		}
 		if l > uint32(len(data)) {
 			return fmt.Errorf("wrong field block for token %d, in pos %d", i, offset)
 		}
-
-		offsets = binary.LittleEndian.AppendUint32(offsets, offset-sizeOfUint32)
-
+		b.Offsets = append(b.Offsets, offset-sizeOfUint32)
 		data = data[l:]
 		offset += l
 	}
-
-	b.payload = payload
-	b.offsets = append([]byte{}, offsets...)
-
 	return nil
 }
 
-func (b *Block) getCacheEntry() *CacheEntry {
-	return &CacheEntry{
-		Block:  b.payload,
-		Offset: b.offsets,
-	}
+func (b *Block) Len() int {
+	return len(b.Offsets)
+}
+
+func (b *Block) GetToken(index int) []byte {
+	offset := b.Offsets[index]
+	l := binary.LittleEndian.Uint32(b.Payload[offset:])
+	offset += sizeOfUint32 // skip val length
+	return b.Payload[offset : offset+l]
 }
 
 // BlockLoader is responsible for Reading from disk, unpacking and caching tokens blocks.
 // NOT THREAD SAFE. Do not use concurrently.
-// Use your own Loader instance for each search query
+// Use your own BlockLoader instance for each search query
 type BlockLoader struct {
 	fracName string
-	cache    *cache.Cache[*CacheEntry]
+	cache    *cache.Cache[*Block]
 	reader   *disk.IndexReader
 }
 
-func NewBlockLoader(fracName string, reader *disk.IndexReader, c *cache.Cache[*CacheEntry]) *BlockLoader {
+func NewBlockLoader(fracName string, reader *disk.IndexReader, c *cache.Cache[*Block]) *BlockLoader {
 	return &BlockLoader{
 		fracName: fracName,
 		cache:    c,
@@ -107,32 +77,28 @@ func NewBlockLoader(fracName string, reader *disk.IndexReader, c *cache.Cache[*C
 	}
 }
 
-func (l *BlockLoader) Load(entry *TableEntry) *Block {
-	cacheEntry := l.cache.Get(entry.BlockIndex, func() (*CacheEntry, int) {
-		tokenEntry := l.read(entry).getCacheEntry()
-		size := tokenEntry.GetSize()
-		return tokenEntry, size
+func (l *BlockLoader) Load(index uint32) *Block {
+	block := l.cache.Get(index, func() (*Block, int) {
+		block, err := l.read(index)
+		if err != nil {
+			logger.Panic("error reading tokens block", // todo: get rid of panic here
+				zap.Error(err),
+				zap.Any("index", index),
+				zap.String("frac", l.fracName),
+			)
+		}
+		size := block.Size()
+		return block, size
 	})
-	return newBlock(entry, cacheEntry.Block, cacheEntry.Offset)
+	return block
 }
 
-func (l *BlockLoader) readBinary(blockIndex uint32) []byte {
-	data, _, err := l.reader.ReadIndexBlock(blockIndex, nil)
-	if util.IsRecoveredPanicError(err) {
-		logger.Panic("todo: handle read err", zap.Error(err))
+func (l *BlockLoader) read(index uint32) (*Block, error) {
+	data, _, err := l.reader.ReadIndexBlock(index, nil)
+	if err != nil {
+		return nil, err
 	}
-	return data
-}
-
-func (l *BlockLoader) read(entry *TableEntry) *Block {
-	tokensBlock := newBlock(entry, nil, nil)
-	if err := tokensBlock.unpack(l.readBinary(entry.BlockIndex)); err != nil {
-		logger.Panic("error reading tokens block",
-			zap.Error(err),
-			zap.Any("entry", entry),
-			zap.String("frac", l.fracName),
-		)
-	}
-
-	return tokensBlock
+	block := Block{}
+	err = block.Unpack(data)
+	return &block, err
 }

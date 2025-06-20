@@ -100,18 +100,27 @@ func analyzeIndex(
 		if len(data) == 0 { // empty block - is section separator
 			break
 		}
-		tokens = unpackTokens(data, tokens)
+		block := token.Block{}
+		if err := block.Unpack(data); err != nil {
+			logger.Fatal("error unpacking tokens", zap.Error(err))
+		}
+		for i := range block.Len() {
+			tokens = append(tokens, block.GetToken(i))
+		}
 	}
 
 	// load tokens table
-	tokenTable := make(token.Table)
+	tokenTableBlocks := []token.TableBlock{}
 	for {
 		data := readBlock()
 		if len(data) == 0 { // empty block - is section separator
 			break
 		}
-		unpackTokenTable(data, tokenTable)
+		block := token.TableBlock{}
+		block.Unpack(data)
+		tokenTableBlocks = append(tokenTableBlocks, block)
 	}
+	tokenTable := token.TableFromBlocks(tokenTableBlocks)
 
 	// skip position
 	blockIndex++

@@ -2,7 +2,6 @@ package frac
 
 import (
 	"encoding/binary"
-	"math"
 
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
@@ -91,45 +90,21 @@ func (b *DiskIDsBlock) packPos(dst []byte) []byte {
 	return dst
 }
 
-type DiskTokenTableBlock struct {
-	field   string
-	entries []*token.TableEntry
-}
-
-func (t DiskTokenTableBlock) pack(dst []byte) []byte {
-	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(t.field)))
-	dst = append(dst, t.field...)
-	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(t.entries)))
-	for _, entry := range t.entries {
-		dst = entry.Pack(dst)
-	}
-	return dst
-}
-
-type DiskTokensBlock struct {
+type tokensBlock struct {
 	field            string
 	isStartOfField   bool
 	totalSizeOfField int
 	startTID         uint32
-	tokens           [][]byte
+	payload          token.Block
 }
 
-func (t *DiskTokensBlock) createTokenTableEntry(startIndex, blockIndex uint32) *token.TableEntry {
-	size := len(t.tokens)
+func (t *tokensBlock) createTokenTableEntry(startIndex, blockIndex uint32) *token.TableEntry {
+	size := len(t.payload.Offsets)
 	return &token.TableEntry{
 		StartIndex: startIndex,
 		StartTID:   t.startTID,
 		ValCount:   uint32(size),
 		BlockIndex: blockIndex,
-		MaxVal:     string(t.tokens[size-1]),
+		MaxVal:     string(t.payload.GetToken(size - 1)),
 	}
-}
-
-func (t *DiskTokensBlock) pack(dst []byte) []byte {
-	for _, token := range t.tokens {
-		dst = binary.LittleEndian.AppendUint32(dst, uint32(len(token)))
-		dst = append(dst, token...)
-	}
-	dst = binary.LittleEndian.AppendUint32(dst, math.MaxUint32)
-	return dst
 }

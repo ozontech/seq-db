@@ -2,13 +2,13 @@ package frac
 
 import (
 	"bytes"
+	"encoding/binary"
 	"sort"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/util"
 )
 
 type DiskBlocksProducer struct {
@@ -33,15 +33,17 @@ func (g *DiskBlocksProducer) getPositionBlock(idsLen uint32, blocks []uint64) *D
 	}
 }
 
-func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, tokenTable token.Table) func(func(*DiskTokenTableBlock) error) error {
-	return func(push func(*DiskTokenTableBlock) error) error {
+func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, tokenTable token.Table) func(func(token.TableBlock) error) error {
+	return func(push func(token.TableBlock) error) error {
 		for _, field := range g.getFracSortedFields(tokenList) {
 			if fieldData, ok := tokenTable[field]; ok {
-				block := DiskTokenTableBlock{
-					field:   field,
-					entries: fieldData.Entries,
+				block := token.TableBlock{
+					FieldsTables: []token.FieldTable{{
+						Field:   field,
+						Entries: fieldData.Entries,
+					}},
 				}
-				if err := push(&block); err != nil {
+				if err := push(block); err != nil {
 					return err
 				}
 			}
@@ -123,10 +125,10 @@ func (g *DiskBlocksProducer) getTIDsSortedByToken(tokenList *TokenList, field st
 	return tids
 }
 
-func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func(func(*DiskTokensBlock) error) error {
-	return func(push func(*DiskTokensBlock) error) error {
+func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func(func(*tokensBlock) error) error {
+	return func(push func(*tokensBlock) error) error {
 		var cur uint32 = 1
-		var tokens [][]byte
+		var payload token.Block
 
 		fieldSizes := tokenList.GetFieldSizes()
 
@@ -140,15 +142,15 @@ func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func
 
 			for len(tids) > 0 {
 				right := min(blockSize, len(tids))
-				tokens = g.fillTokens(tokenList, tids[:right], tokens)
+				g.fillTokens(tokenList, tids[:right], &payload)
 				tids = tids[right:]
 
-				block := DiskTokensBlock{
+				block := tokensBlock{
 					field:            field,
 					isStartOfField:   first,
 					totalSizeOfField: fieldSize,
 					startTID:         cur,
-					tokens:           tokens,
+					payload:          payload,
 				}
 
 				if err := push(&block); err != nil {
@@ -163,12 +165,15 @@ func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func
 	}
 }
 
-func (g *DiskBlocksProducer) fillTokens(tokenList *TokenList, tids []uint32, tokens [][]byte) [][]byte {
-	tokens = util.EnsureSliceSize(tokens, len(tids))
-	for i, tid := range tids {
-		tokens[i] = tokenList.tidToVal[tid]
+func (g *DiskBlocksProducer) fillTokens(tokenList *TokenList, tids []uint32, block *token.Block) {
+	block.Payload = block.Payload[:0]
+	block.Offsets = block.Offsets[:0]
+	for _, tid := range tids {
+		val := tokenList.tidToVal[tid]
+		block.Offsets = append(block.Offsets, uint32(len(block.Payload)))
+		block.Payload = binary.LittleEndian.AppendUint32(block.Payload, uint32(len(val)))
+		block.Payload = append(block.Payload, val...)
 	}
-	return tokens
 }
 
 func (g *DiskBlocksProducer) getLIDsBlockGenerator(tokenList *TokenList, oldToNewLIDsIndex []uint32, mids, rids *UInt64s, maxBlockSize int) func(func(*lidsBlock) error) error {

@@ -11,7 +11,7 @@ type IndexCache struct {
 	MIDs       *cache.Cache[[]byte]
 	RIDs       *cache.Cache[[]byte]
 	Params     *cache.Cache[[]uint64]
-	Tokens     *cache.Cache[*token.CacheEntry]
+	Tokens     *cache.Cache[*token.Block]
 	TokenTable *cache.Cache[token.Table]
 	LIDs       *cache.Cache[*lids.Block]
 }
