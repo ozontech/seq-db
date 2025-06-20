@@ -1,6 +1,7 @@
 package lids
 
 import (
+	"encoding/binary"
 	"math"
 	"unsafe"
 
@@ -22,22 +23,22 @@ func (b *Block) getLIDs(i int) []uint32 {
 	return b.LIDs[b.Offsets[i]:b.Offsets[i+1]]
 }
 
-func (b *Block) Pack(p *packer.BytesPacker) {
+func (b *Block) Pack(dst []byte) []byte {
 	lastLID := int64(0)
 	last := b.getCount() - 1
-
 	for i := 0; i <= last; i++ {
 		for _, lid := range b.getLIDs(i) {
-			p.PutVarint(int64(lid) - lastLID)
+			dst = binary.AppendVarint(dst, int64(lid)-lastLID)
 			lastLID = int64(lid)
 		}
 
 		if i < last || b.IsLastLID {
 			// when we add this value to prev we must get -1 (or math.MaxUint32 for uint32)
 			// it is the end-marker; see `Block.Unpack()`
-			p.PutVarint(-1 - lastLID)
+			dst = binary.AppendVarint(dst, -1-lastLID)
 		}
 	}
+	return dst
 }
 
 func (b *Block) GetSizeBytes() int {

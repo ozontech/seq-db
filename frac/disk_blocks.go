@@ -1,11 +1,11 @@
 package frac
 
 import (
+	"encoding/binary"
 	"math"
 
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
-	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -29,9 +29,10 @@ type DiskInfoBlock struct {
 	info *Info
 }
 
-func (b *DiskInfoBlock) pack(p *packer.BytesPacker) {
-	p.PutBytes([]byte(seqDBMagic))
-	p.PutBytes(b.info.Save())
+func (b *DiskInfoBlock) pack(dst []byte) []byte {
+	dst = append(dst, seqDBMagic...)
+	dst = append(dst, b.info.Save()...)
+	return dst
 }
 
 type DiskPositionsBlock struct {
@@ -39,15 +40,15 @@ type DiskPositionsBlock struct {
 	blocks   []uint64
 }
 
-func (b *DiskPositionsBlock) pack(p *packer.BytesPacker) {
-	p.PutUint32(uint32(len(b.blocks)))
-	p.PutUint32(b.totalIDs)
-
+func (b *DiskPositionsBlock) pack(dst []byte) []byte {
 	var prev uint64
+	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(b.blocks)))
+	dst = binary.LittleEndian.AppendUint32(dst, b.totalIDs)
 	for _, pos := range b.blocks {
-		p.PutVarint(int64(pos - prev))
+		dst = binary.AppendVarint(dst, int64(pos-prev))
 		prev = pos
 	}
+	return dst
 }
 
 type DiskIDsBlock struct {
@@ -64,27 +65,30 @@ func (b *DiskIDsBlock) getExtForRegistry() (uint64, uint64) {
 	return uint64(last.MID), uint64(last.RID)
 }
 
-func (b *DiskIDsBlock) packMIDs(p *packer.BytesPacker) {
+func (b *DiskIDsBlock) packMIDs(dst []byte) []byte {
 	var mid, prev uint64
 	for _, id := range b.ids {
 		mid = uint64(id.MID)
-		p.PutVarint(int64(mid - prev))
+		dst = binary.AppendVarint(dst, int64(mid-prev))
 		prev = mid
 	}
+	return dst
 }
 
-func (b *DiskIDsBlock) packRIDs(p *packer.BytesPacker) {
+func (b *DiskIDsBlock) packRIDs(dst []byte) []byte {
 	for _, id := range b.ids {
-		p.PutUint64(uint64(id.RID))
+		dst = binary.LittleEndian.AppendUint64(dst, uint64(id.RID))
 	}
+	return dst
 }
 
-func (b *DiskIDsBlock) packPos(p *packer.BytesPacker) {
+func (b *DiskIDsBlock) packPos(dst []byte) []byte {
 	var prev uint64
 	for _, pos := range b.pos {
-		p.PutVarint(int64(pos - prev))
+		dst = binary.AppendVarint(dst, int64(pos-prev))
 		prev = pos
 	}
+	return dst
 }
 
 type DiskTokenTableBlock struct {
@@ -92,12 +96,14 @@ type DiskTokenTableBlock struct {
 	entries []*token.TableEntry
 }
 
-func (t DiskTokenTableBlock) pack(p *packer.BytesPacker) {
-	p.PutStringWithSize(t.field)
-	p.PutUint32(uint32(len(t.entries)))
+func (t DiskTokenTableBlock) pack(dst []byte) []byte {
+	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(t.field)))
+	dst = append(dst, t.field...)
+	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(t.entries)))
 	for _, entry := range t.entries {
-		entry.Pack(p)
+		dst = entry.Pack(dst)
 	}
+	return dst
 }
 
 type DiskTokensBlock struct {
@@ -119,10 +125,11 @@ func (t *DiskTokensBlock) createTokenTableEntry(startIndex, blockIndex uint32) *
 	}
 }
 
-func (t *DiskTokensBlock) pack(p *packer.BytesPacker) {
+func (t *DiskTokensBlock) pack(dst []byte) []byte {
 	for _, token := range t.tokens {
-		p.PutUint32(uint32(len(token)))
-		p.PutBytes(token)
+		dst = binary.LittleEndian.AppendUint32(dst, uint32(len(token)))
+		dst = append(dst, token...)
 	}
-	p.PutUint32(math.MaxUint32)
+	dst = binary.LittleEndian.AppendUint32(dst, math.MaxUint32)
+	return dst
 }

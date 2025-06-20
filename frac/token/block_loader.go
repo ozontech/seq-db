@@ -12,7 +12,6 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -58,7 +57,7 @@ func (b *Block) unpack(data []byte) error {
 	buf := bytespool.Acquire(4 * int(b.entry.ValCount))
 	defer bytespool.Release(buf)
 
-	offsetsPacker := packer.NewBytesPacker(buf.B[:0])
+	offsets := buf.B[:0]
 
 	for i := 0; len(data) != 0; i++ {
 		l := binary.LittleEndian.Uint32(data)
@@ -72,14 +71,14 @@ func (b *Block) unpack(data []byte) error {
 			return fmt.Errorf("wrong field block for token %d, in pos %d", i, offset)
 		}
 
-		offsetsPacker.PutUint32(offset - sizeOfUint32)
+		offsets = binary.LittleEndian.AppendUint32(offsets, offset-sizeOfUint32)
 
 		data = data[l:]
 		offset += l
 	}
 
 	b.payload = payload
-	b.offsets = append([]byte{}, offsetsPacker.Data...)
+	b.offsets = append([]byte{}, offsets...)
 
 	return nil
 }

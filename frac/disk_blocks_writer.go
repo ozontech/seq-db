@@ -8,7 +8,6 @@ import (
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
-	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
@@ -39,17 +38,15 @@ func (w *DiskBlocksWriter) NewBlockFormer(name string, size int) *disk.BlockForm
 
 func (w *DiskBlocksWriter) writeInfoBlock(block *DiskInfoBlock) error {
 	now := time.Now()
-
-	p := packer.NewBytesPacker(w.resetBuf(consts.RegularBlockSize))
-	block.pack(p)
-	n, err := w.writer.WriteBlock("info", p.Data, false, 0, 0, 0)
+	w.buf = block.pack(w.resetBuf(consts.RegularBlockSize))
+	n, err := w.writer.WriteBlock("info", w.buf, false, 0, 0, 0)
 	if err != nil {
 		return err
 	}
 
 	w.stats = append(w.stats, &disk.BlockStats{
 		Name:     "info",
-		Raw:      uint64(len(p.Data)),
+		Raw:      uint64(len(w.buf)),
 		Comp:     uint64(n),
 		Blocks:   1,
 		Duration: time.Since(now),
@@ -60,17 +57,15 @@ func (w *DiskBlocksWriter) writeInfoBlock(block *DiskInfoBlock) error {
 
 func (w *DiskBlocksWriter) writePositionsBlock(zstdCompressLevel int, block *DiskPositionsBlock) error {
 	now := time.Now()
-
-	p := packer.NewBytesPacker(w.resetBuf(consts.IDsBlockSize))
-	block.pack(p)
-	n, err := w.writer.WriteBlock("positions", p.Data, true, zstdCompressLevel, 0, 0)
+	w.buf = block.pack(w.resetBuf(consts.IDsBlockSize))
+	n, err := w.writer.WriteBlock("positions", w.buf, true, zstdCompressLevel, 0, 0)
 	if err != nil {
 		return err
 	}
 
 	w.stats = append(w.stats, &disk.BlockStats{
 		Name:     "positions",
-		Raw:      uint64(len(p.Data)),
+		Raw:      uint64(len(w.buf)),
 		Comp:     uint64(n),
 		Blocks:   1,
 		Duration: time.Since(now),
@@ -89,17 +84,17 @@ func (w *DiskBlocksWriter) writeIDsBlocks(zstdLevel int, generateBlocks func(fun
 	minBlockIDs := make([]seq.ID, 0)
 
 	push := func(block *DiskIDsBlock) error {
-		block.packMIDs(former.Packer())
+		former.Buf = block.packMIDs(former.Buf)
 		if err := former.FlushForced(disk.WithExt(block.getExtForRegistry()), levelOpt); err != nil {
 			return err
 		}
 
-		block.packRIDs(former.Packer())
+		former.Buf = block.packRIDs(former.Buf)
 		if err := former.FlushForced(levelOpt); err != nil {
 			return err
 		}
 
-		block.packPos(former.Packer())
+		former.Buf = block.packPos(former.Buf)
 		if err := former.FlushForced(levelOpt); err != nil {
 			return err
 		}
@@ -147,7 +142,7 @@ func (w *DiskBlocksWriter) writeTokensBlocks(zstdCompressLevel int, generateBloc
 		}
 		fieldData.Entries = append(fieldData.Entries, tokenTableEntry)
 
-		block.pack(former.Packer())
+		former.Buf = block.pack(former.Buf)
 		startIndex += uint32(len(block.tokens))
 
 		if flushed, err := former.FlushIfNeeded(opts...); err != nil {
@@ -179,7 +174,7 @@ func (w *DiskBlocksWriter) writeTokenTableBlocks(zstdCompressLevel int, generate
 	opts := []disk.FlushOption{disk.WithZstdCompressLevel(zstdCompressLevel)}
 
 	push := func(block *DiskTokenTableBlock) error {
-		block.pack(former.Packer())
+		former.Buf = block.pack(former.Buf)
 		if _, err := former.FlushIfNeeded(opts...); err != nil {
 			return err
 		}
@@ -209,7 +204,7 @@ func (w *DiskBlocksWriter) writeLIDsBlocks(zstdCompressLevel int, generateBlocks
 	levelOpt := disk.WithZstdCompressLevel(zstdCompressLevel)
 
 	push := func(block *lidsBlock) error {
-		block.payload.Pack(former.Packer())
+		former.Buf = block.payload.Pack(former.Buf)
 		if err := former.FlushForced(disk.WithExt(block.getExtForRegistry()), levelOpt); err != nil {
 			return err
 		}

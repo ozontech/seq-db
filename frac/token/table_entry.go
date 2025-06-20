@@ -1,9 +1,9 @@
 package token
 
 import (
-	"go.uber.org/zap/zapcore"
+	"encoding/binary"
 
-	"github.com/ozontech/seq-db/packer"
+	"go.uber.org/zap/zapcore"
 )
 
 // TableEntry describes token.Block metadata: what TID and tokens it contains and etc.
@@ -27,13 +27,16 @@ func (t *TableEntry) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	return nil
 }
 
-func (t *TableEntry) Pack(p *packer.BytesPacker) {
-	p.PutUint32(t.StartTID)
-	p.PutUint32(t.ValCount)
-	p.PutUint32(t.StartIndex) // todo: it seems we do not need to store this field - we can calculate it from ValCount while reading
-	p.PutUint32(t.BlockIndex)
-	p.PutStringWithSize(t.MinVal)
-	p.PutStringWithSize(t.MaxVal)
+func (t *TableEntry) Pack(dst []byte) []byte {
+	dst = binary.LittleEndian.AppendUint32(dst, t.StartTID)
+	dst = binary.LittleEndian.AppendUint32(dst, t.ValCount)
+	dst = binary.LittleEndian.AppendUint32(dst, t.StartIndex) // todo: it seems we do not need to store this field - we can calculate it from ValCount while reading
+	dst = binary.LittleEndian.AppendUint32(dst, t.BlockIndex)
+	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(t.MinVal)))
+	dst = append(dst, t.MinVal...)
+	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(t.MaxVal)))
+	dst = append(dst, t.MaxVal...)
+	return dst
 }
 
 func (t *TableEntry) getIndexInTokensBlock(tid uint32) uint32 {
