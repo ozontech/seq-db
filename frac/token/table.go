@@ -18,7 +18,7 @@ type Table map[string]*FieldData
 
 type FieldData struct {
 	MinVal  string
-	Entries []*TableEntry
+	Entries []*TableEntry // expect that TableEntry are necessarily ordered by StartTID here
 }
 
 func cut(s string, l int) string {

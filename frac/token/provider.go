@@ -1,20 +1,23 @@
 package token
 
-import "sort"
+import (
+	"sort"
+)
 
 type Provider struct {
-	loader  *BlockLoader
-	entries []*TableEntry // continuous monotonic sequence of token table entries
+	loader   *BlockLoader
+	entries  []*TableEntry // continuous monotonic sequence of token table entries
+	curEntry *TableEntry
 
-	curBlockIndex  int
-	curTokensBlock *Block
+	curBlock      *Block
+	curBlockIndex uint32
 }
 
 func NewProvider(loader *BlockLoader, entries []*TableEntry) *Provider {
 	return &Provider{
-		loader:        loader,
-		entries:       entries,
-		curBlockIndex: -1,
+		loader:   loader,
+		entries:  entries,
+		curEntry: nil,
 	}
 }
 
@@ -30,19 +33,25 @@ func (tp *Provider) Ordered() bool {
 	return true
 }
 
-func (tp *Provider) findBlock(tid uint32) int {
-	if tp.curBlockIndex >= 0 && tp.entries[tp.curBlockIndex].checkTIDInBlock(tid) { // fast path
-		return tp.curBlockIndex
+func (tp *Provider) findEntry(tid uint32) *TableEntry {
+	if tp.curEntry != nil && tp.curEntry.checkTIDInBlock(tid) { // fast path
+		return tp.curEntry
 	}
 
-	return sort.Search(len(tp.entries), func(blockIndex int) bool { return tid <= tp.entries[blockIndex].getLastTID() })
+	entryIndex := sort.Search(len(tp.entries), func(blockIndex int) bool { return tid <= tp.entries[blockIndex].getLastTID() })
+	return tp.entries[entryIndex]
+}
+
+func (tp *Provider) findBlock(blockIndex uint32) *Block {
+	if tp.curBlockIndex != blockIndex {
+		tp.curBlockIndex = blockIndex
+		tp.curBlock = tp.loader.Load(blockIndex)
+	}
+	return tp.curBlock
 }
 
 func (tp *Provider) GetToken(tid uint32) []byte {
-	blockIndex := tp.findBlock(tid)
-	if blockIndex != tp.curBlockIndex {
-		tp.curBlockIndex = blockIndex
-		tp.curTokensBlock = tp.loader.Load(tp.entries[blockIndex])
-	}
-	return tp.curTokensBlock.GetValByTID(tid)
+	entry := tp.findEntry(tid)
+	block := tp.findBlock(entry.BlockIndex)
+	return block.GetToken(entry.GetIndexInTokensBlock(tid))
 }

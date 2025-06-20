@@ -28,7 +28,7 @@ func TestBlockFetcher(t *testing.T) {
 	blocks := makeBlocks([]int{0, 1, 2, 3, 5, 9, 100, 101, 103, 105, 110})
 	tp := NewProvider(nil, blocks)
 	for tid := 1; tid < 110; tid++ {
-		block := tp.findBlock(uint32(tid))
-		checkIndexInBlock(t, int(tid), blocks[block])
+		te := tp.findEntry(uint32(tid))
+		checkIndexInBlock(t, int(tid), te)
 	}
 }
