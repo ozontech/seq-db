@@ -201,19 +201,23 @@ func (w *DiskBlocksWriter) writeTokenTableBlocks(zstdCompressLevel int, generate
 	return nil
 }
 
-func (w *DiskBlocksWriter) writeLIDsBlocks(zstdCompressLevel int, generateBlocks func(func(*lids.Block) error) error) (*lids.Table, error) {
+func (w *DiskBlocksWriter) writeLIDsBlocks(zstdCompressLevel int, generateBlocks func(func(*lidsBlock) error) error) (*lids.Table, error) {
 	lidsTable := lids.NewTable(w.writer.GetBlockIndex(), nil, nil, nil)
 
 	former := w.NewBlockFormer("lids", consts.RegularBlockSize)
 
 	levelOpt := disk.WithZstdCompressLevel(zstdCompressLevel)
 
-	push := func(block *lids.Block) error {
-		block.Chunks.Pack(former.Packer())
-		if err := former.FlushForced(disk.WithExt(block.GetExtForRegistry()), levelOpt); err != nil {
+	push := func(block *lidsBlock) error {
+		block.payload.Pack(former.Packer())
+		if err := former.FlushForced(disk.WithExt(block.getExtForRegistry()), levelOpt); err != nil {
 			return err
 		}
-		lidsTable.Add(block)
+
+		lidsTable.MinTIDs = append(lidsTable.MinTIDs, block.minTID)
+		lidsTable.MaxTIDs = append(lidsTable.MaxTIDs, block.maxTID)
+		lidsTable.IsContinued = append(lidsTable.IsContinued, block.isContinued)
+
 		return nil
 	}
 

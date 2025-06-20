@@ -40,17 +40,17 @@ func (it *IteratorDesc) narrowLIDsRange(lids []uint32, tryNextBlock bool) ([]uin
 	return lids, tryNextBlock
 }
 
-func (it *IteratorDesc) loadNextLIDsChunk() {
-	chunks, err := it.loader.GetLIDsChunks(it.table.StartIndex + it.blockIndex)
+func (it *IteratorDesc) loadNextLIDsBlock() {
+	block, err := it.loader.GetLIDsBlock(it.table.StartBlockIndex + it.blockIndex)
 	if err != nil {
 		logger.Panic("error loading LIDs block", zap.Error(err))
 	}
 
-	if chunks.getCount() != int(it.table.GetChunksCount(it.blockIndex)) {
+	if block.getCount() != int(it.table.GetChunksCount(it.blockIndex)) {
 		logger.Panic("unexpected LIDs count")
 	}
 
-	it.lids = chunks.getLIDs(it.table.GetChunkIndex(it.blockIndex, it.tid))
+	it.lids = block.getLIDs(it.table.GetChunkIndex(it.blockIndex, it.tid))
 	it.tryNextBlock = it.table.HasTIDInNextBlock(it.blockIndex, it.tid)
 	it.blockIndex++
 }
@@ -61,7 +61,7 @@ func (it *IteratorDesc) Next() (uint32, bool) {
 			return 0, false
 		}
 
-		it.loadNextLIDsChunk() // last chunk in block but not last for tid; need load next block
+		it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
 		it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
 		it.counter.AddLIDsCount(len(it.lids)) // inc loaded LIDs count
 	}
