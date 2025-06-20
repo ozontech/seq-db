@@ -3,12 +3,10 @@ package disk
 
 import (
 	"time"
-
-	"github.com/ozontech/seq-db/packer"
 )
 
 type BlockFormer struct {
-	packer         *packer.BytesPacker
+	Buf            []byte
 	writer         *BlocksWriter
 	blockThreshold int
 
@@ -49,7 +47,7 @@ func WithZstdCompressLevel(level int) FlushOption {
 
 func NewBlockFormer(blockType string, writer *BlocksWriter, blockSize int, buf []byte) *BlockFormer {
 	return &BlockFormer{
-		packer:         packer.NewBytesPacker(buf[:0]),
+		Buf:            buf[:0],
 		writer:         writer,
 		blockThreshold: blockSize,
 		start:          time.Now(),
@@ -57,19 +55,15 @@ func NewBlockFormer(blockType string, writer *BlocksWriter, blockSize int, buf [
 	}
 }
 
-func (b *BlockFormer) Packer() *packer.BytesPacker {
-	return b.packer
-}
-
 func (b *BlockFormer) FlushIfNeeded(options ...FlushOption) (bool, error) {
-	if len(b.packer.Data) > b.blockThreshold {
+	if len(b.Buf) > b.blockThreshold {
 		return true, b.FlushForced(options...)
 	}
 	return false, nil
 }
 
 func (b *BlockFormer) FlushForced(options ...FlushOption) error {
-	if len(b.packer.Data) == 0 {
+	if len(b.Buf) == 0 {
 		return nil
 	}
 
@@ -78,16 +72,16 @@ func (b *BlockFormer) FlushForced(options ...FlushOption) error {
 		applyFn(o)
 	}
 
-	n, err := b.writer.WriteBlock(b.stats.Name, b.packer.Data, true, o.zstdCompressLevel, o.ext1, o.ext2)
+	n, err := b.writer.WriteBlock(b.stats.Name, b.Buf, true, o.zstdCompressLevel, o.ext1, o.ext2)
 	if err != nil {
 		return err
 	}
 
 	b.stats.Blocks++
-	b.stats.Raw += uint64(len(b.packer.Data))
+	b.stats.Raw += uint64(len(b.Buf))
 	b.stats.Comp += uint64(n)
 
-	b.packer.Data = b.packer.Data[:0]
+	b.Buf = b.Buf[:0]
 	return nil
 }
 
