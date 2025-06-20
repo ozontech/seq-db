@@ -11,6 +11,7 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -90,8 +91,9 @@ func analyzeIndex(
 	}
 
 	// load info
-	info := unpackInfo(readBlock())
-	docsCount := int(info.DocsTotal)
+	b := frac.BlockInfo{}
+	_ = b.Unpack(readBlock())
+	docsCount := int(b.Info.DocsTotal)
 
 	// load tokens
 	tokens := [][]byte{}

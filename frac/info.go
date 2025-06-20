@@ -1,18 +1,15 @@
 package frac
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"path"
 	"time"
 
 	"github.com/c2h5oh/datasize"
-	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -72,22 +69,6 @@ func (s *Info) String() string {
 		datasize.ByteSize(s.DocsRaw).HR(),
 		datasize.ByteSize(s.DocsOnDisk).HR(),
 	)
-}
-
-func (s *Info) Load(data []byte) {
-	err := json.Unmarshal(data, s)
-	if err != nil {
-		logger.Panic("stats unmarshalling error", zap.Error(err))
-	}
-}
-
-func (s *Info) Save() []byte {
-	result, err := json.Marshal(s)
-	if err != nil {
-		logger.Panic("stats marshaling error", zap.Error(err))
-	}
-
-	return result
 }
 
 func (s *Info) Name() string {

@@ -19,8 +19,6 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-const seqDBMagic = "SEQM"
-
 type Sealed struct {
 	Config *Config
 
@@ -185,23 +183,22 @@ func NewSealedPreloaded(
 func (f *Sealed) loadHeader() *Info {
 	block, _, err := f.indexReader.ReadIndexBlock(0, nil)
 	if err != nil {
-		logger.Panic("todo")
+		logger.Fatal("error reading info block from index", zap.String("file", f.indexFile.Name()), zap.Error(err))
 	}
-	if len(block) < 4 || string(block[:4]) != seqDBMagic {
-		logger.Fatal("seq-db index file header corrupted", zap.String("file", f.indexFile.Name()))
-	}
-	info := &Info{}
-	info.Load(block[4:])
 
+	// unpack
+	bi := BlockInfo{}
+	if err := bi.Unpack(block); err != nil {
+		logger.Fatal("error unpacking info block", zap.String("file", f.indexFile.Name()), zap.Error(err))
+	}
+	info := bi.Info
+
+	// set index size
 	stat, err := f.indexFile.Stat()
 	if err != nil {
 		logger.Fatal("can't stat index file", zap.String("file", f.indexFile.Name()), zap.Error(err))
 	}
-
-	info.MetaOnDisk = 0        // todo: make this correction on sealing
-	info.Path = f.BaseFileName // todo: make this correction on sealing
 	info.IndexOnDisk = uint64(stat.Size())
-
 	return info
 }
 
