@@ -171,22 +171,22 @@ func (g *DiskBlocksProducer) fillTokens(tokenList *TokenList, tids []uint32, tok
 	return tokens
 }
 
-func (g *DiskBlocksProducer) getLIDsBlockGenerator(tokenList *TokenList, oldToNewLIDsIndex []uint32, mids, rids *UInt64s, maxBlockSize int) func(func(*lids.Block) error) error {
+func (g *DiskBlocksProducer) getLIDsBlockGenerator(tokenList *TokenList, oldToNewLIDsIndex []uint32, mids, rids *UInt64s, maxBlockSize int) func(func(*lidsBlock) error) error {
 	var maxTID, lastMaxTID uint32
 
 	isContinued := false
 	offsets := []uint32{0} // first offset is always zero
 	blockLIDs := make([]uint32, 0, maxBlockSize)
 
-	newBlockFn := func(isLastLID bool) *lids.Block {
-		block := &lids.Block{
+	newBlockFn := func(isLastLID bool) *lidsBlock {
+		block := &lidsBlock{
 			// for continued block we will have minTID > maxTID
 			// this is not a bug, everything is according to plan for now
 			// TODO: But in future we want to get rid of this
-			MinTID:      lastMaxTID + 1,
-			MaxTID:      maxTID,
-			IsContinued: isContinued,
-			Chunks: lids.Chunks{
+			minTID:      lastMaxTID + 1,
+			maxTID:      maxTID,
+			isContinued: isContinued,
+			payload: lids.Block{
 				LIDs:      reassignLIDs(blockLIDs, oldToNewLIDsIndex),
 				Offsets:   offsets,
 				IsLastLID: isLastLID,
@@ -202,7 +202,7 @@ func (g *DiskBlocksProducer) getLIDsBlockGenerator(tokenList *TokenList, oldToNe
 		return block
 	}
 
-	return func(push func(*lids.Block) error) error {
+	return func(push func(*lidsBlock) error) error {
 		for _, field := range g.getFracSortedFields(tokenList) {
 			for _, tid := range g.getTIDsSortedByToken(tokenList, field) {
 				maxTID++

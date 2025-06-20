@@ -147,7 +147,7 @@ func (cm *CacheMaintainer) CreateIndexCache() *frac.IndexCache {
 		MIDs:       newCache[[]byte](cm, midsName),
 		RIDs:       newCache[[]byte](cm, ridsName),
 		Params:     newCache[[]uint64](cm, paramsName),
-		LIDs:       newCache[*lids.Chunks](cm, lidsName),
+		LIDs:       newCache[*lids.Block](cm, lidsName),
 		Tokens:     newCache[*token.CacheEntry](cm, tokensName),
 		TokenTable: newCache[token.Table](cm, tokenTableName),
 		Registry:   newCache[[]byte](cm, indexName),

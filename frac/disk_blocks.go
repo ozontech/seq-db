@@ -3,10 +3,27 @@ package frac
 import (
 	"math"
 
+	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/seq"
 )
+
+type lidsBlock struct {
+	payload     lids.Block
+	minTID      uint32
+	maxTID      uint32
+	isContinued bool
+}
+
+func (e lidsBlock) getExtForRegistry() (uint64, uint64) {
+	var ext1, ext2 uint64
+	if e.isContinued {
+		ext1 = 1
+	}
+	ext2 = uint64(e.maxTID)<<32 | uint64(e.minTID)
+	return ext1, ext2
+}
 
 type DiskInfoBlock struct {
 	info *Info
