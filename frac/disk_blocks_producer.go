@@ -22,8 +22,8 @@ func NewDiskBlocksProducer() *DiskBlocksProducer {
 	}
 }
 
-func (g *DiskBlocksProducer) getInfoBlock(info *Info) *DiskInfoBlock {
-	return &DiskInfoBlock{info: info}
+func (g *DiskBlocksProducer) getInfoBlock(info *Info) *BlockInfo {
+	return &BlockInfo{Info: info}
 }
 
 func (g *DiskBlocksProducer) getPositionBlock(idsLen uint32, blocks []uint64) *DiskPositionsBlock {
