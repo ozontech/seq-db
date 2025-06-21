@@ -55,9 +55,9 @@ func (w *DiskBlocksWriter) writeInfoBlock(block *BlockInfo) error {
 	return nil
 }
 
-func (w *DiskBlocksWriter) writePositionsBlock(zstdCompressLevel int, block *DiskPositionsBlock) error {
+func (w *DiskBlocksWriter) writePositionsBlock(zstdCompressLevel int, block *BlockOffsets) error {
 	now := time.Now()
-	w.buf = block.pack(w.resetBuf(consts.IDsBlockSize))
+	w.buf = block.Pack(w.resetBuf(consts.IDsBlockSize))
 	n, err := w.writer.WriteBlock("positions", w.buf, true, zstdCompressLevel, 0, 0)
 	if err != nil {
 		return err
