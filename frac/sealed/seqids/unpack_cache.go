@@ -1,9 +1,10 @@
-package frac
+package seqids
 
 import (
 	"encoding/binary"
 	"sync"
 
+	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 )
 
@@ -51,11 +52,11 @@ func (c *UnpackCache) unpackMIDs(index int64, data []byte) {
 	c.values = unpackRawIDsVarint(data, c.values)
 }
 
-func (c *UnpackCache) unpackRIDs(index int64, data []byte, fracVersion BinaryDataVersion) {
+func (c *UnpackCache) unpackRIDs(index int64, data []byte, fracVersion conf.BinaryDataVersion) {
 	c.lastBlock = index
 	c.startLID = uint64(index) * consts.IDsPerBlock
 
-	if fracVersion < BinaryDataV1 {
+	if fracVersion < conf.BinaryDataV1 {
 		c.values = unpackRawIDsVarint(data, c.values)
 		return
 	}

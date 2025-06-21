@@ -1,8 +1,10 @@
-package frac
+package seqids
 
 import (
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
@@ -18,26 +20,36 @@ type IDsTable struct {
 }
 
 type IDsLoader struct {
-	reader *disk.IndexReader
-	table  IDsTable
-	cache  *IndexCache
+	reader      *disk.IndexReader
+	Table       IDsTable
+	cacheMIDs   *cache.Cache[[]byte]
+	cacheRIDs   *cache.Cache[[]byte]
+	cacheParams *cache.Cache[[]uint64]
 }
 
-func NewIDsLoader(indexReader *disk.IndexReader, indexCache *IndexCache, table IDsTable) *IDsLoader {
+func NewIDsLoader(
+	indexReader *disk.IndexReader,
+	cacheMIDs *cache.Cache[[]byte],
+	cacheRIDs *cache.Cache[[]byte],
+	cacheParams *cache.Cache[[]uint64],
+	table IDsTable,
+) *IDsLoader {
 	return &IDsLoader{
-		reader: indexReader,
-		cache:  indexCache,
-		table:  table,
+		reader:      indexReader,
+		Table:       table,
+		cacheMIDs:   cacheMIDs,
+		cacheRIDs:   cacheRIDs,
+		cacheParams: cacheParams,
 	}
 }
 
 func (il *IDsLoader) GetMIDsBlock(lid seq.LID, dst *UnpackCache) {
-	index := il.getIDBlockIndexByLID(lid)
+	index := il.GetIDBlockIndexByLID(lid)
 	if index == dst.lastBlock { // fast path, already unpacked
 		return
 	}
 
-	data := il.cache.MIDs.Get(uint32(index+1), func() ([]byte, int) {
+	data := il.cacheMIDs.Get(uint32(index+1), func() ([]byte, int) {
 		block := il.loadMIDBlock(uint32(index))
 		return block, cap(block)
 	})
@@ -52,13 +64,13 @@ func (il *IDsLoader) GetMIDsBlock(lid seq.LID, dst *UnpackCache) {
 	dst.unpackMIDs(index, data)
 }
 
-func (il *IDsLoader) GetRIDsBlock(lid seq.LID, dst *UnpackCache, fracVersion BinaryDataVersion) {
-	index := il.getIDBlockIndexByLID(lid)
+func (il *IDsLoader) GetRIDsBlock(lid seq.LID, dst *UnpackCache, fracVersion conf.BinaryDataVersion) {
+	index := il.GetIDBlockIndexByLID(lid)
 	if index == dst.lastBlock { // fast path, already unpacked
 		return
 	}
 
-	data := il.cache.RIDs.Get(uint32(index)+1, func() ([]byte, int) {
+	data := il.cacheRIDs.Get(uint32(index)+1, func() ([]byte, int) {
 		block := il.loadRIDBlock(uint32(index))
 		return block, cap(block)
 	})
@@ -74,7 +86,7 @@ func (il *IDsLoader) GetRIDsBlock(lid seq.LID, dst *UnpackCache, fracVersion Bin
 }
 
 func (il *IDsLoader) GetParamsBlock(index uint32) []uint64 {
-	params := il.cache.Params.Get(index+1, func() ([]uint64, int) {
+	params := il.cacheParams.Get(index+1, func() ([]uint64, int) {
 		block := il.loadParamsBlock(index)
 		return block, cap(block) * 8
 	})
@@ -88,15 +100,15 @@ func (il *IDsLoader) GetParamsBlock(index uint32) []uint64 {
 
 // blocks are stored as triplets on disk, (MID + RID + Pos), check docs/format-index-file.go
 func (il *IDsLoader) midBlockIndex(index uint32) uint32 {
-	return il.table.DiskStartBlockIndex + index*3
+	return il.Table.DiskStartBlockIndex + index*3
 }
 
 func (il *IDsLoader) ridBlockIndex(index uint32) uint32 {
-	return il.table.DiskStartBlockIndex + index*3 + 1
+	return il.Table.DiskStartBlockIndex + index*3 + 1
 }
 
 func (il *IDsLoader) paramsBlockIndex(index uint32) uint32 {
-	return il.table.DiskStartBlockIndex + index*3 + 2
+	return il.Table.DiskStartBlockIndex + index*3 + 2
 }
 
 func (il *IDsLoader) loadMIDBlock(index uint32) []byte {
@@ -109,8 +121,8 @@ func (il *IDsLoader) loadMIDBlock(index uint32) []byte {
 		logger.Panic("wrong mid block",
 			zap.Uint32("index", index),
 			zap.Uint32("disk_index", il.midBlockIndex(index)),
-			zap.Uint32("blocks_total", il.table.IDBlocksTotal),
-			zap.Any("min_block_ids", il.table.MinBlockIDs),
+			zap.Uint32("blocks_total", il.Table.IDBlocksTotal),
+			zap.Any("min_block_ids", il.Table.MinBlockIDs),
 			zap.Error(err),
 		)
 	}
@@ -136,6 +148,6 @@ func (il *IDsLoader) loadParamsBlock(index uint32) []uint64 {
 	return unpackRawIDsVarint(data, make([]uint64, 0, consts.IDsPerBlock))
 }
 
-func (il *IDsLoader) getIDBlockIndexByLID(lid seq.LID) int64 {
+func (il *IDsLoader) GetIDBlockIndexByLID(lid seq.LID) int64 {
 	return int64(lid) / consts.IDsPerBlock
 }

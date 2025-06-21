@@ -6,8 +6,9 @@ import (
 	"sort"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/seqids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -52,8 +53,8 @@ func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, 
 	}
 }
 
-func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPositions *DocsPositions, size int) func(func(*DiskIDsBlock) error) error {
-	return func(push func(*DiskIDsBlock) error) error {
+func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPositions *DocsPositions, size int) func(func(*seqids.DiskIDsBlock) error) error {
+	return func(push func(*seqids.DiskIDsBlock) error) error {
 		pos := make([]uint64, 0, size)
 
 		for len(sortedSeqIDs) > 0 {
@@ -61,9 +62,9 @@ func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPo
 			ids := sortedSeqIDs[:right]
 			sortedSeqIDs = sortedSeqIDs[right:]
 			pos = g.fillPos(docsPositions, ids, pos)
-			block := DiskIDsBlock{
-				ids: ids,
-				pos: pos,
+			block := seqids.DiskIDsBlock{
+				IDs: ids,
+				Pos: pos,
 			}
 			if err := push(&block); err != nil {
 				return nil

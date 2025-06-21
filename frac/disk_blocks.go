@@ -3,9 +3,8 @@ package frac
 import (
 	"encoding/binary"
 
-	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/frac/token"
-	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 )
 
 type lidsBlock struct {
@@ -34,46 +33,6 @@ func (b *DiskPositionsBlock) pack(dst []byte) []byte {
 	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(b.blocks)))
 	dst = binary.LittleEndian.AppendUint32(dst, b.totalIDs)
 	for _, pos := range b.blocks {
-		dst = binary.AppendVarint(dst, int64(pos-prev))
-		prev = pos
-	}
-	return dst
-}
-
-type DiskIDsBlock struct {
-	ids []seq.ID
-	pos []uint64
-}
-
-func (b *DiskIDsBlock) getMinID() seq.ID {
-	return b.ids[len(b.ids)-1]
-}
-
-func (b *DiskIDsBlock) getExtForRegistry() (uint64, uint64) {
-	last := b.getMinID()
-	return uint64(last.MID), uint64(last.RID)
-}
-
-func (b *DiskIDsBlock) packMIDs(dst []byte) []byte {
-	var mid, prev uint64
-	for _, id := range b.ids {
-		mid = uint64(id.MID)
-		dst = binary.AppendVarint(dst, int64(mid-prev))
-		prev = mid
-	}
-	return dst
-}
-
-func (b *DiskIDsBlock) packRIDs(dst []byte) []byte {
-	for _, id := range b.ids {
-		dst = binary.LittleEndian.AppendUint64(dst, uint64(id.RID))
-	}
-	return dst
-}
-
-func (b *DiskIDsBlock) packPos(dst []byte) []byte {
-	var prev uint64
-	for _, pos := range b.pos {
 		dst = binary.AppendVarint(dst, int64(pos-prev))
 		prev = pos
 	}

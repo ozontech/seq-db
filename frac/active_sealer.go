@@ -16,8 +16,9 @@ import (
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
-	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/seqids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
@@ -206,7 +207,7 @@ func writeSealedFraction(f *Active, info *Info, indexFile io.WriteSeeker, params
 		lidsTable:     lidsTable,
 		tokenTable:    tokenTable,
 		blocksOffsets: blocksOffsets,
-		idsTable: IDsTable{
+		idsTable: seqids.IDsTable{
 			MinBlockIDs:         minBlockIDs,
 			IDsTotal:            f.MIDs.Len(),
 			IDBlocksTotal:       f.DocBlocks.Len(),

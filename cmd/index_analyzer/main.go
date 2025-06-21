@@ -12,8 +12,8 @@ import (
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 )

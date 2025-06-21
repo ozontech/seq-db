@@ -8,11 +8,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
-	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/processor"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/seqids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
@@ -55,10 +57,10 @@ type sealedDataProvider struct {
 	info   *Info
 	config *Config
 
-	idsLoader   *IDsLoader
-	midCache    *UnpackCache
-	ridCache    *UnpackCache
-	fracVersion BinaryDataVersion
+	idsLoader   *seqids.IDsLoader
+	midCache    *seqids.UnpackCache
+	ridCache    *seqids.UnpackCache
+	fracVersion conf.BinaryDataVersion
 
 	lidsTable  *lids.Table
 	lidsLoader *lids.Loader
@@ -149,10 +151,10 @@ func getSealedSearchMetric(params processor.SearchParams) *prometheus.HistogramV
 }
 
 type sealedIDsIndex struct {
-	loader      *IDsLoader
-	midCache    *UnpackCache
-	ridCache    *UnpackCache
-	fracVersion BinaryDataVersion
+	loader      *seqids.IDsLoader
+	midCache    *seqids.UnpackCache
+	ridCache    *seqids.UnpackCache
+	fracVersion conf.BinaryDataVersion
 }
 
 func (p *sealedIDsIndex) GetMID(lid seq.LID) seq.MID {
@@ -166,22 +168,22 @@ func (p *sealedIDsIndex) GetRID(lid seq.LID) seq.RID {
 }
 
 func (p *sealedIDsIndex) Len() int {
-	return int(p.loader.table.IDsTotal)
+	return int(p.loader.Table.IDsTotal)
 }
 
 func (p *sealedIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
-	if lid >= seq.LID(p.loader.table.IDsTotal) {
+	if lid >= seq.LID(p.loader.Table.IDsTotal) {
 		// out of right border
 		return true
 	}
 
-	blockIndex := p.loader.getIDBlockIndexByLID(lid)
-	if !seq.LessOrEqual(p.loader.table.MinBlockIDs[blockIndex], id) {
+	blockIndex := p.loader.GetIDBlockIndexByLID(lid)
+	if !seq.LessOrEqual(p.loader.Table.MinBlockIDs[blockIndex], id) {
 		// the LID's block min ID is greater than the given ID, so any ID of that block is also greater
 		return false
 	}
 
-	if blockIndex > 0 && seq.LessOrEqual(p.loader.table.MinBlockIDs[blockIndex-1], id) {
+	if blockIndex > 0 && seq.LessOrEqual(p.loader.Table.MinBlockIDs[blockIndex-1], id) {
 		// the min ID of the previous block is also less than or equal to the given ID,
 		// so any ID of this block is definitely less than or equal to the given ID.
 		return true
@@ -269,7 +271,7 @@ func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 
 type sealedFetchIndex struct {
 	idsIndex      *sealedIDsIndex
-	idsLoader     *IDsLoader
+	idsLoader     *seqids.IDsLoader
 	docsReader    *disk.DocsReader
 	blocksOffsets []uint64
 }
@@ -333,7 +335,7 @@ func (di *sealedFetchIndex) getDocPosByLIDs(localIDs []seq.LID) []seq.DocPos {
 			continue
 		}
 
-		index := di.idsLoader.getIDBlockIndexByLID(lid)
+		index := di.idsLoader.GetIDBlockIndexByLID(lid)
 		if prevIndex != index {
 			positions = di.idsLoader.GetParamsBlock(uint32(index))
 			startLID = seq.LID(index * consts.IDsPerBlock)
