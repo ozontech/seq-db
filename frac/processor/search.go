@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/lids"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"

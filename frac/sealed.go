@@ -11,8 +11,9 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
-	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac/sealed/ids"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
@@ -37,7 +38,7 @@ type Sealed struct {
 	indexCache  *IndexCache
 	indexReader disk.IndexReader
 
-	idsTable      IDsTable
+	idsTable      ids.IDsTable
 	lidsTable     *lids.Table
 	BlocksOffsets []uint64
 
@@ -122,7 +123,7 @@ func (f *Sealed) openDocs() {
 
 type PreloadedData struct {
 	info          *Info
-	idsTable      IDsTable
+	idsTable      ids.IDsTable
 	lidsTable     *lids.Table
 	tokenTable    token.Table
 	blocksOffsets []uint64
@@ -355,10 +356,10 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		docsReader:       &f.docsReader,
 		blocksOffsets:    f.BlocksOffsets,
 		fracVersion:      f.info.BinaryDataVer,
-		midCache:         NewUnpackCache(),
-		ridCache:         NewUnpackCache(),
+		midCache:         ids.NewUnpackCache(),
+		ridCache:         ids.NewUnpackCache(),
 		lidsTable:        f.lidsTable,
-		idsLoader:        NewIDsLoader(&f.indexReader, f.indexCache, f.idsTable),
+		idsLoader:        ids.NewIDsLoader(&f.indexReader, f.indexCache.MIDs, f.indexCache.RIDs, f.indexCache.Params, f.idsTable),
 		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.indexReader, f.indexCache.TokenTable),
