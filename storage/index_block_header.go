@@ -22,12 +22,12 @@ func NewEmptyIndexBlockHeader() IndexBlockHeader {
 	return make(IndexBlockHeader, IndexBlockHeaderSize)
 }
 
-func NewIndexBlockHeader(pos int64, ext1, ext2 uint64, origBuff, finalBuf []byte, codec Codec) IndexBlockHeader {
+func NewIndexBlockHeader(pos int64, ext1, ext2 uint64, size, rawSize int, codec Codec) IndexBlockHeader {
 	header := NewEmptyIndexBlockHeader()
 	header.SetExt1(ext1)
 	header.SetExt2(ext2)
-	header.SetLen(uint32(len(finalBuf)))
-	header.SetRawLen(uint32(len(origBuff)))
+	header.SetLen(uint32(size))
+	header.SetRawLen(uint32(rawSize))
 	header.SetCodec(codec)
 	header.SetPos(uint64(pos))
 	return header

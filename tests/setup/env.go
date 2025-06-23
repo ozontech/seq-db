@@ -22,7 +22,7 @@ import (
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/mappingprovider"
@@ -34,7 +34,7 @@ import (
 	"github.com/ozontech/seq-db/seq"
 	seqs3 "github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/storeapi"
-	"github.com/ozontech/seq-db/tests/common"
+	tests_common "github.com/ozontech/seq-db/tests/common"
 )
 
 type TestingEnvConfig struct {
@@ -91,7 +91,7 @@ func (cfg *TestingEnvConfig) GetFracManagerConfig(replicaID string) fracmanager.
 		c = fracmanager.FillConfigWithDefault(&fracmanager.Config{
 			FracSize:  256 * uint64(units.MiB),
 			TotalSize: 1 * uint64(units.GiB),
-			SealParams: frac.SealParams{
+			SealParams: common.SealParams{
 				IDsZstdLevel:           fastestZstdLevel,
 				LIDsZstdLevel:          fastestZstdLevel,
 				TokenListZstdLevel:     fastestZstdLevel,
@@ -264,7 +264,7 @@ func (cfg *TestingEnvConfig) MakeStores(
 
 	for i := range confs {
 		k := i / replicas
-		common.CreateDir(confs[i].FracManager.DataDir)
+		tests_common.CreateDir(confs[i].FracManager.DataDir)
 
 		mappingProvider, err := mappingprovider.New(
 			"",
@@ -429,7 +429,7 @@ func (t *TestingEnv) IngestorFetchAddr() string {
 }
 
 func randomListener() (lis net.Listener) {
-	lis, err := net.Listen("tcp", fmt.Sprintf("%s:0", common.Localhost))
+	lis, err := net.Listen("tcp", fmt.Sprintf("%s:0", tests_common.Localhost))
 	if err != nil {
 		panic(err)
 	}

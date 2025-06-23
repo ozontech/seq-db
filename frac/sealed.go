@@ -12,6 +12,8 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -31,7 +33,7 @@ type Sealed struct {
 
 	BaseFileName string
 
-	info *Info
+	info *common.Info
 
 	useMu    sync.RWMutex
 	suicided bool
@@ -44,20 +46,14 @@ type Sealed struct {
 	indexCache  *IndexCache
 	indexReader storage.IndexReader
 
-	loadMu   *sync.RWMutex
-	isLoaded bool
-	state    sealedState
+	loadMu     *sync.RWMutex
+	isLoaded   bool
+	blocksData sealed.BlocksData
 
 	readLimiter *storage.ReadLimiter
 
 	// shit for testing
 	PartialSuicideMode PSD
-}
-
-type sealedState struct {
-	idsTable      seqids.Table
-	lidsTable     *lids.Table
-	BlocksOffsets []uint64
 }
 
 type PSD int // emulates hard shutdown on different stages of fraction deletion, used for tests
@@ -73,7 +69,7 @@ func NewSealed(
 	readLimiter *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
-	info *Info,
+	info *common.Info,
 	config *Config,
 ) *Sealed {
 	f := &Sealed{
@@ -116,67 +112,50 @@ func (f *Sealed) openIndex() {
 func (f *Sealed) openDocs() {
 	if f.docsFile == nil {
 		var err error
-		f.docsFile, err = os.Open(f.BaseFileName + consts.DocsFileSuffix)
+		f.docsFile, err = os.Open(f.BaseFileName + consts.SdocsFileSuffix) // try first open *.sdocs file
 		if err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
-				logger.Fatal("can't open docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
-			}
-			f.docsFile, err = os.Open(f.BaseFileName + consts.SdocsFileSuffix)
-			if err != nil {
 				logger.Fatal("can't open sdocs file", zap.String("frac", f.BaseFileName), zap.Error(err))
+			}
+			f.docsFile, err = os.Open(f.BaseFileName + consts.DocsFileSuffix) // fallback to *.docs file
+			if err != nil {
+				logger.Fatal("can't open docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
 			}
 		}
 		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
 	}
 }
 
-type PreloadedData struct {
-	info          *Info
-	idsTable      seqids.Table
-	lidsTable     *lids.Table
-	tokenTable    token.Table
-	blocksOffsets []uint64
-	indexFile     *os.File
-	docsFile      *os.File
-}
-
 func NewSealedPreloaded(
 	baseFile string,
-	preloaded *PreloadedData,
+	preloaded *sealed.PreloadedData,
 	rl *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
 	config *Config,
 ) *Sealed {
 	f := &Sealed{
-		state: sealedState{
-			idsTable:      preloaded.idsTable,
-			lidsTable:     preloaded.lidsTable,
-			BlocksOffsets: preloaded.blocksOffsets,
-		},
-
-		docsFile:   preloaded.docsFile,
+		blocksData: preloaded.BlocksData,
 		docsCache:  docsCache,
-		docsReader: storage.NewDocsReader(rl, preloaded.docsFile, docsCache),
-
-		indexFile:   preloaded.indexFile,
-		indexCache:  indexCache,
-		indexReader: storage.NewIndexReader(rl, preloaded.indexFile.Name(), preloaded.indexFile, indexCache.Registry),
+		indexCache: indexCache,
 
 		loadMu:   &sync.RWMutex{},
 		isLoaded: true,
 
 		readLimiter: rl,
 
-		info:         preloaded.info,
+		info:         preloaded.Info,
 		BaseFileName: baseFile,
 		Config:       config,
 	}
 
 	// put the token table built during sealing into the cache of the sealed fraction
 	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
-		return preloaded.tokenTable, preloaded.tokenTable.Size()
+		return preloaded.TokenTable, preloaded.TokenTable.Size()
 	})
+
+	f.openDocs()
+	f.openIndex()
 
 	docsCountK := float64(f.info.DocsTotal) / 1000
 	logger.Info("sealed fraction created from active",
@@ -201,7 +180,7 @@ func (f *Sealed) load() {
 		f.openDocs()
 		f.openIndex()
 
-		(&Loader{}).Load(&f.state, f.info, &f.indexReader)
+		(&Loader{}).Load(&f.blocksData, f.info, &f.indexReader)
 		f.isLoaded = true
 	}
 }
@@ -377,25 +356,25 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		info:             f.info,
 		config:           f.Config,
 		docsReader:       &f.docsReader,
-		blocksOffsets:    f.state.BlocksOffsets,
-		lidsTable:        f.state.lidsTable,
+		blocksOffsets:    f.blocksData.BlocksOffsets,
+		lidsTable:        f.blocksData.LIDsTable,
 		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.indexReader, f.indexCache.TokenTable),
 
-		idsTable: &f.state.idsTable,
+		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
 			&f.indexReader,
 			f.indexCache.MIDs,
 			f.indexCache.RIDs,
 			f.indexCache.Params,
-			&f.state.idsTable,
+			&f.blocksData.IDsTable,
 			f.info.BinaryDataVer,
 		),
 	}
 }
 
-func (f *Sealed) Info() *Info {
+func (f *Sealed) Info() *common.Info {
 	return f.info
 }
 
@@ -410,7 +389,7 @@ func (f *Sealed) IsIntersecting(from, to seq.MID) bool {
 func loadHeader(
 	indexFile storage.ImmutableFile,
 	indexReader storage.IndexReader,
-) *Info {
+) *common.Info {
 	block, _, err := indexReader.ReadIndexBlock(0, nil)
 	if err != nil {
 		logger.Fatal(
@@ -420,7 +399,7 @@ func loadHeader(
 		)
 	}
 
-	var bi BlockInfo
+	var bi sealed.BlockInfo
 	if err := bi.Unpack(block); err != nil {
 		logger.Fatal(
 			"error unpacking info block",

@@ -29,15 +29,18 @@ func AcquireWriterSize(out io.Writer, size int) *Writer {
 	}
 }
 
-func FlushReleaseWriter(w *Writer) error {
-	err := w.Flush()
-	if err != nil {
-		return err
-	}
+func ReleaseWriter(w *Writer) {
 	Release(w.Buf)
 	w.Buf = nil
 	w.out = nil
 	writerPool.Put(w)
+}
+
+func FlushReleaseWriter(w *Writer) error {
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	ReleaseWriter(w)
 	return nil
 }
 
