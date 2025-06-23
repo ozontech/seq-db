@@ -13,8 +13,9 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/tests/common"
+	tests_common "github.com/ozontech/seq-db/tests/common"
 )
 
 const dummyFracFixture = `{"a":{"name":"a","ver":"1.1","docs_total":1,"docs_on_disk":363,"docs_raw":450,"meta_on_disk":0,"index_on_disk":1284,"const_regular_block_size":16384,"const_ids_per_block":4096,"const_lid_block_cap":65536,"from":1666193255114,"to":1666193255114,"creation_time":1666193044479},"b":{"name":"b","ver":"1.2","docs_total":1,"docs_on_disk":363,"docs_raw":450,"meta_on_disk":0,"index_on_disk":1276,"const_regular_block_size":16384,"const_ids_per_block":4096,"const_lid_block_cap":65536,"from":1666193602304,"to":1666193602304,"creation_time":1666193598979}}`
@@ -25,13 +26,13 @@ func loadFracCacheContent(dataDir string) ([]byte, error) {
 	return content, err
 }
 
-func loadFracCache(dataDir string) (map[string]*frac.Info, error) {
+func loadFracCache(dataDir string) (map[string]*common.Info, error) {
 	content, err := loadFracCacheContent(dataDir)
 	if err != nil {
 		return nil, err
 	}
 
-	fracCache := make(map[string]*frac.Info)
+	fracCache := make(map[string]*common.Info)
 	err = json.Unmarshal(content, &fracCache)
 	if err != nil {
 		return nil, err
@@ -47,10 +48,10 @@ func writeToFracCache(dataDir, fname, data string) error {
 }
 
 func TestEmpty(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
+	dataDir := tests_common.GetTestTmpDir(t)
 
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	tests_common.RecreateDir(dataDir)
+	defer tests_common.RemoveDir(dataDir)
 
 	f := NewSealedFracCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 	err := f.SyncWithDisk()
@@ -71,10 +72,10 @@ func TestEmpty(t *testing.T) {
 }
 
 func TestLoadFromDisk(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
+	dataDir := tests_common.GetTestTmpDir(t)
 
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	tests_common.RecreateDir(dataDir)
+	defer tests_common.RemoveDir(dataDir)
 
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
@@ -101,9 +102,9 @@ func TestLoadFromDisk(t *testing.T) {
 }
 
 func TestRemoveFraction(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	dataDir := tests_common.GetTestTmpDir(t)
+	tests_common.RecreateDir(dataDir)
+	defer tests_common.RemoveDir(dataDir)
 
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
@@ -121,7 +122,7 @@ func TestRemoveFraction(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, contents, []byte("{}"))
 
-	newInfo := &frac.Info{
+	newInfo := &common.Info{
 		Path:                  "/data/c",
 		Ver:                   "1.3",
 		DocsTotal:             0,
@@ -142,7 +143,7 @@ func TestRemoveFraction(t *testing.T) {
 
 	m, err := loadFracCache(dataDir)
 	assert.NoError(t, err)
-	expected := map[string]*frac.Info{"c": newInfo}
+	expected := map[string]*common.Info{"c": newInfo}
 
 	assert.Equal(t, expected, m)
 	f.RemoveFraction("c")
@@ -155,10 +156,10 @@ func TestRemoveFraction(t *testing.T) {
 }
 
 func TestWriteToDisk(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
+	dataDir := tests_common.GetTestTmpDir(t)
 
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	tests_common.RecreateDir(dataDir)
+	defer tests_common.RemoveDir(dataDir)
 
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
@@ -166,7 +167,7 @@ func TestWriteToDisk(t *testing.T) {
 	f := NewSealedFracCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 	f.LoadFromDisk(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 
-	newInfo := &frac.Info{
+	newInfo := &common.Info{
 		Path:                  "/data/c",
 		Ver:                   "1.3",
 		DocsTotal:             0,
@@ -225,15 +226,15 @@ func TestWriteToDisk(t *testing.T) {
 }
 
 func TestUnusedFractionsCleanup(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
+	dataDir := tests_common.GetTestTmpDir(t)
 
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	tests_common.RecreateDir(dataDir)
+	defer tests_common.RemoveDir(dataDir)
 
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
 
-	expected := map[string]*frac.Info{}
+	expected := map[string]*common.Info{}
 
 	cacheFile := filepath.Join(dataDir, consts.FracCacheFileSuffix)
 	diskFracCache := NewFracCacheFromDisk(cacheFile)
@@ -264,10 +265,10 @@ func rotateAndSeal(fm *FracManager) frac.Fraction {
 }
 
 func TestFracInfoSavedToCache(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
+	dataDir := tests_common.GetTestTmpDir(t)
 
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	tests_common.RecreateDir(dataDir)
+	defer tests_common.RemoveDir(dataDir)
 
 	const maxSize = 10000
 
@@ -283,7 +284,7 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
-	infos := map[string]*frac.Info{}
+	infos := map[string]*common.Info{}
 	totalSize := uint64(0)
 	cnt := 1
 	for totalSize < maxSize {
@@ -346,10 +347,10 @@ func appendGlob(files []string, dataDir, glob string) []string {
 }
 
 func TestExtraFractionsRemoved(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
+	dataDir := tests_common.GetTestTmpDir(t)
 
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	tests_common.RecreateDir(dataDir)
+	defer tests_common.RemoveDir(dataDir)
 
 	const maxSize = 5500
 	const times = 10
@@ -369,7 +370,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
-	infos := map[string]*frac.Info{}
+	infos := map[string]*common.Info{}
 
 	for i := 1; i < times+1; i++ {
 		addDummyDoc(t, fm, dp, seq.SimpleID(i))
@@ -409,10 +410,10 @@ func TestExtraFractionsRemoved(t *testing.T) {
 }
 
 func TestMissingCacheFilesDeleted(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
+	dataDir := tests_common.GetTestTmpDir(t)
 
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	tests_common.RecreateDir(dataDir)
+	defer tests_common.RemoveDir(dataDir)
 
 	const maxSize = 5500
 	const times = 10

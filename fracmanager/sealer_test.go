@@ -16,6 +16,9 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
+	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/seq"
 	tests_common "github.com/ozontech/seq-db/tests/common"
 )
@@ -65,9 +68,9 @@ func fillActiveFraction(active *frac.Active) error {
 	return nil
 }
 
-func defaultSealingParams() frac.SealParams {
+func defaultSealingParams() common.SealParams {
 	const minZstdLevel = 1
-	return frac.SealParams{
+	return common.SealParams{
 		IDsZstdLevel:           minZstdLevel,
 		LIDsZstdLevel:          minZstdLevel,
 		TokenListZstdLevel:     minZstdLevel,
@@ -76,7 +79,6 @@ func defaultSealingParams() frac.SealParams {
 		DocBlocksZstdLevel:     minZstdLevel,
 		DocBlockSize:           128 * consts.KB,
 	}
-
 }
 
 func Benchmark_SealingNoSort(b *testing.B) {
@@ -90,7 +92,6 @@ func Benchmark_SealingWithSort(b *testing.B) {
 func runSealingBench(b *testing.B, cfg *frac.Config) {
 	cm := NewCacheMaintainer(consts.MB*64, consts.MB*64, nil)
 	fp := newFractionProvider(cfg, cm, 1, 1)
-	defer fp.Stop()
 
 	dataDir := filepath.Join(b.TempDir(), "BenchmarkSealing")
 	tests_common.RecreateDir(dataDir)
@@ -100,9 +101,17 @@ func runSealingBench(b *testing.B, cfg *frac.Config) {
 	assert.NoError(b, err)
 
 	active.WaitWriteIdle()
+	fp.Stop()
 
 	params := defaultSealingParams()
-	_, err = frac.Seal(active, params, true)
+
+	seal := func(active *frac.Active, params common.SealParams) (*sealed.PreloadedData, error) {
+		src, err := frac.NewActiveSealingSource(active, params)
+		assert.NoError(b, err)
+		return sealing.Seal(src, params)
+	}
+
+	_, err = seal(active, params)
 	assert.NoError(b, err)
 
 	b.ReportAllocs()
@@ -114,7 +123,7 @@ func runSealingBench(b *testing.B, cfg *frac.Config) {
 	).Stop()
 
 	for b.Loop() {
-		_, err = frac.Seal(active, params, true)
+		_, err = seal(active, params)
 		assert.NoError(b, err)
 	}
 }

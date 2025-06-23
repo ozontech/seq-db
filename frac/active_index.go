@@ -6,6 +6,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/metric"
@@ -46,7 +47,7 @@ var (
 type activeDataProvider struct {
 	ctx    context.Context
 	config *Config
-	info   *Info
+	info   *common.Info
 
 	mids *UInt64s
 	rids *UInt64s

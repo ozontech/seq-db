@@ -21,6 +21,7 @@ import (
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/limits"
 	"github.com/ozontech/seq-db/logger"
@@ -235,7 +236,7 @@ func startStore(ctx context.Context, addr string, mp storeapi.MappingProvider) *
 			MaintenanceDelay:  0,
 			CacheGCDelay:      0,
 			CacheCleanupDelay: 0,
-			SealParams: frac.SealParams{
+			SealParams: common.SealParams{
 				IDsZstdLevel:           *flagZstdSealCompressLevel,
 				LIDsZstdLevel:          *flagZstdSealCompressLevel,
 				TokenListZstdLevel:     *flagZstdSealCompressLevel,

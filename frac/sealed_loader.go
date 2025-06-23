@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/ids"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/logger"
@@ -77,7 +78,7 @@ func (l *Loader) loadIDs() (idsTable ids.Table, blocksOffsets []uint64, err erro
 		return idsTable, nil, err
 	}
 
-	b := BlockOffsets{}
+	b := sealed.BlockOffsets{}
 	b.Unpack(result)
 	blocksOffsets = b.Offsets
 

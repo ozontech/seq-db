@@ -1,9 +1,8 @@
 package token
 
-// TableEntry describes token.Block metadata: what TID and tokens it contains and etc.
-// One token.Block can cover multiple instances of token.TableEntry
+// `token.TableEntry` is part of `token.Table` and points to a fragment of `token.Block`
 type TableEntry struct {
-	StartIndex uint32 // number of tokens in block before this TokenEntry
+	StartIndex uint32 // offset from the beginning of the block to the first token pointed to by the TableEntry
 	StartTID   uint32 // first TID of TableEntry
 	BlockIndex uint32 // sequence number of the physical block of tokens in the file
 	ValCount   uint32
