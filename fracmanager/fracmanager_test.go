@@ -11,8 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/tests/common"
+	testscommon "github.com/ozontech/seq-db/tests/common"
 )
 
 // newFracManagerWithBackgroundStart only used from tests
@@ -48,10 +49,10 @@ func MakeSomeFractions(t *testing.T, fm *FracManager) {
 }
 
 func TestCleanUp(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
+	dataDir := testscommon.GetTestTmpDir(t)
 
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	testscommon.RecreateDir(dataDir)
+	defer testscommon.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:     1000,
@@ -94,9 +95,9 @@ func TestCleanUp(t *testing.T) {
 }
 
 func TestMatureMode(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	dataDir := testscommon.GetTestTmpDir(t)
+	testscommon.RecreateDir(dataDir)
+	defer testscommon.RemoveDir(dataDir)
 
 	launchAndCheck := func(checkFn func(fm *FracManager)) {
 		fm := NewFracManager(context.Background(), &Config{
@@ -170,7 +171,7 @@ func TestOldestCT(t *testing.T) {
 
 		for i := range fracCount {
 			fm.localFracs = append(fm.localFracs, &fracRef{instance: frac.NewSealed(
-				"", nil, nil, nil, &frac.Info{
+				"", nil, nil, nil, &common.Info{
 					Path:         fmt.Sprintf("local-frac-%d", i),
 					IndexOnDisk:  1,
 					CreationTime: uint64(nowOldestLocal.UnixMilli()),
@@ -193,7 +194,7 @@ func TestOldestCT(t *testing.T) {
 
 		for i := range fracCount {
 			fm.remoteFracs = append(fm.remoteFracs, frac.NewRemote(
-				t.Context(), "", nil, nil, nil, &frac.Info{
+				t.Context(), "", nil, nil, nil, &common.Info{
 					Path:         fmt.Sprintf("remote-frac-%d", i),
 					IndexOnDisk:  1,
 					CreationTime: uint64(nowOldestRemote.UnixMilli()),
@@ -207,7 +208,7 @@ func TestOldestCT(t *testing.T) {
 
 		for i := range fracCount {
 			fm.localFracs = append(fm.localFracs, &fracRef{instance: frac.NewSealed(
-				"", nil, nil, nil, &frac.Info{
+				"", nil, nil, nil, &common.Info{
 					Path:         fmt.Sprintf("local-frac-%d", i),
 					IndexOnDisk:  1,
 					CreationTime: uint64(nowOldestLocal.UnixMilli()),

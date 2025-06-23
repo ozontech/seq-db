@@ -105,6 +105,7 @@ func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
 	return blocks, nil
 }
 
+// TableBlock represents how token.Table is stored on disk
 type TableBlock struct {
 	FieldsTables []FieldTable
 }

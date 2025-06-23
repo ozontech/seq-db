@@ -18,8 +18,11 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
+	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/tests/common"
+	testscommon "github.com/ozontech/seq-db/tests/common"
 )
 
 var (
@@ -38,7 +41,7 @@ func fillActiveFraction(active *frac.Active) error {
 	docRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(docRoot)
 
-	file, err := os.Open(filepath.Join(common.TestDataDir, "k8s.logs"))
+	file, err := os.Open(filepath.Join(testscommon.TestDataDir, "k8s.logs"))
 	if err != nil {
 		return err
 	}
@@ -81,9 +84,9 @@ func fillActiveFraction(active *frac.Active) error {
 	return nil
 }
 
-func defaultSealingParams() frac.SealParams {
+func defaultSealingParams() common.SealParams {
 	const minZstdLevel = 1
-	return frac.SealParams{
+	return common.SealParams{
 		IDsZstdLevel:           minZstdLevel,
 		LIDsZstdLevel:          minZstdLevel,
 		TokenListZstdLevel:     minZstdLevel,
@@ -108,15 +111,22 @@ func runSealingBench(b *testing.B, cfg *frac.Config) {
 	defer fp.Stop()
 
 	dataDir := filepath.Join(b.TempDir(), "BenchmarkSealing")
-	common.RecreateDir(dataDir)
+	testscommon.RecreateDir(dataDir)
 
 	active := fp.NewActive(filepath.Join(dataDir, "test"))
 	err := fillActiveFraction(active)
 	assert.NoError(b, err)
+	fp.Stop()
+
+	seal := func(active *frac.Active, params common.SealParams) (*sealed.PreloadedData, error) {
+		src, err := frac.NewActiveSealingSource(active, params)
+		assert.NoError(b, err)
+		return sealing.Seal(src, params)
+	}
 
 	params := defaultSealingParams()
 	// The first sealing will sort all the LIDs, so we take this load out of the measurement range
-	_, err = frac.Seal(active, params)
+	_, err = seal(active, params)
 	assert.NoError(b, err)
 
 	b.ReportAllocs()
@@ -136,7 +146,7 @@ func runSealingBench(b *testing.B, cfg *frac.Config) {
 	}
 
 	for b.Loop() {
-		_, err = frac.Seal(active, params)
+		_, err = seal(active, params)
 		assert.NoError(b, err)
 	}
 }
