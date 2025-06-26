@@ -4,8 +4,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
 

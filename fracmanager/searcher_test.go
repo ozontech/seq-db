@@ -6,12 +6,12 @@ import (
 	"math"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/stretchr/testify/assert"
 )
 
 type testFakeFrac struct {

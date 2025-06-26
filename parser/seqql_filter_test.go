@@ -3,9 +3,9 @@ package parser
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLexer(t *testing.T) {

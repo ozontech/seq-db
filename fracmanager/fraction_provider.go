@@ -1,10 +1,10 @@
 package fracmanager
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
