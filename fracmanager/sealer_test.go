@@ -11,12 +11,11 @@ import (
 	"time"
 
 	insaneJSON "github.com/ozontech/insane-json"
+	"github.com/pkg/profile"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	tests_common "github.com/ozontech/seq-db/tests/common"
 )
@@ -53,8 +52,9 @@ func fillActiveFraction(active *frac.Active) error {
 			id := seq.NewID(time.Now(), uint64(rand.Int63()))
 			dp.Append(doc, docRoot, id, seq.Tokens(
 				"_all_:",
-				"service:100500",
-				"k8s_pod:"+strconv.Itoa(k%100000),
+				"service:service"+strconv.Itoa(rand.Intn(200)),
+				"k8s_pod1:"+strconv.Itoa(k%100000),
+				"k8s_pod2:"+strconv.Itoa(k%1000000),
 			))
 		}
 		if err := active.Append(dp.Provide()); err != nil {
@@ -66,7 +66,7 @@ func fillActiveFraction(active *frac.Active) error {
 }
 
 func defaultSealingParams() frac.SealParams {
-	const minZstdLevel = -5
+	const minZstdLevel = 1
 	return frac.SealParams{
 		IDsZstdLevel:           minZstdLevel,
 		LIDsZstdLevel:          minZstdLevel,
@@ -88,8 +88,6 @@ func Benchmark_SealingWithSort(b *testing.B) {
 }
 
 func runSealingBench(b *testing.B, cfg *frac.Config) {
-	logger.SetLevel(zapcore.FatalLevel)
-
 	cm := NewCacheMaintainer(consts.MB*64, consts.MB*64, nil)
 	fp := newFractionProvider(cfg, cm, 1, 1)
 	defer fp.Stop()
@@ -107,8 +105,13 @@ func runSealingBench(b *testing.B, cfg *frac.Config) {
 	_, err = frac.Seal(active, params, true)
 	assert.NoError(b, err)
 
-	b.ResetTimer()
 	b.ReportAllocs()
+
+	defer profile.Start(
+		profile.CPUProfile,
+		profile.ProfilePath("."),
+		profile.NoShutdownHook,
+	).Stop()
 
 	for b.Loop() {
 		_, err = frac.Seal(active, params, true)
