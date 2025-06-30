@@ -9,6 +9,7 @@ import (
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -60,8 +61,25 @@ func (g *grpcV1) FetchAsyncSearchResult(ctx context.Context, r *seqproxyapi.Fetc
 
 	docs := makeProtoDocs(&resp.QPR, stream)
 
+	searchReq := &seqproxyapi.StartAsyncSearchRequest{
+		Retention: durationpb.New(resp.Request.Retention),
+		Query: &seqproxyapi.SearchQuery{
+			Query: resp.Request.Query,
+			From:  timestamppb.New(resp.Request.From),
+			To:    timestamppb.New(resp.Request.To),
+		},
+		Aggs:     makeProtoRequestAggregations(resp.Request.Aggregations),
+		WithDocs: resp.Request.WithDocs,
+	}
+	if resp.Request.HistogramInterval > 0 {
+		searchReq.Hist = &seqproxyapi.HistQuery{
+			Interval: seq.MIDToDuration(resp.Request.HistogramInterval).String(),
+		}
+	}
+
 	return &seqproxyapi.FetchAsyncSearchResultResponse{
-		Status: seqproxyapi.MustProtoAsyncSearchStatus(resp.Status),
+		Status:  seqproxyapi.MustProtoAsyncSearchStatus(resp.Status),
+		Request: searchReq,
 		Response: &seqproxyapi.ComplexSearchResponse{
 			Total:   int64(resp.QPR.Total),
 			Docs:    docs,
@@ -90,4 +108,17 @@ func (g *grpcV1) DeleteAsyncSearch(ctx context.Context, r *seqproxyapi.DeleteAsy
 		return nil, fmt.Errorf("deleting search: %s", err)
 	}
 	return &seqproxyapi.DeleteAsyncSearchResponse{}, nil
+}
+
+func makeProtoRequestAggregations(sourceAggs []search.AggQuery) []*seqproxyapi.AggQuery {
+	aggs := make([]*seqproxyapi.AggQuery, 0, len(sourceAggs))
+	for _, agg := range sourceAggs {
+		aggs = append(aggs, &seqproxyapi.AggQuery{
+			Field:     agg.Field,
+			GroupBy:   agg.GroupBy,
+			Func:      seqproxyapi.AggFunc(agg.Func),
+			Quantiles: agg.Quantiles,
+		})
+	}
+	return aggs
 }

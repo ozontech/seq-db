@@ -10,6 +10,7 @@ import (
 	"github.com/ozontech/seq-db/seq"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -77,6 +78,11 @@ func (g *GrpcV1) FetchAsyncSearchResult(_ context.Context, r *storeapi.FetchAsyn
 		DiskUsage:         uint64(fr.DiskUsage),
 		Aggs:              convertAggQueriesToProto(fr.AggQueries),
 		HistogramInterval: int64(fr.HistInterval),
+		Query:             fr.Query,
+		From:              timestamppb.New(fr.From.Time()),
+		To:                timestamppb.New(fr.To.Time()),
+		Retention:         durationpb.New(fr.Retention),
+		WithDocs:          fr.WithDocs,
 	}, nil
 }
 

@@ -89,6 +89,8 @@ type FetchAsyncSearchResultResponse struct {
 	DiskUsage uint64
 
 	AggResult []seq.AggregationResult
+
+	Request AsyncRequest
 }
 
 func (si *Ingestor) FetchAsyncSearchResult(ctx context.Context, r FetchAsyncSearchResultRequest) (FetchAsyncSearchResultResponse, DocsIterator, error) {
@@ -139,6 +141,7 @@ func (si *Ingestor) FetchAsyncSearchResult(ctx context.Context, r FetchAsyncSear
 	}
 
 	var aggQueries []seq.AggregateArgs
+	var searchReq *AsyncRequest
 	anyResponse := false
 	for _, shard := range searchStores.Shards {
 		for _, replica := range shard {
@@ -151,6 +154,7 @@ func (si *Ingestor) FetchAsyncSearchResult(ctx context.Context, r FetchAsyncSear
 			}
 			anyResponse = true
 			mergeStoreResp(storeResp, replica)
+
 			if len(aggQueries) == 0 {
 				for _, agg := range storeResp.Aggs {
 					aggQueries = append(aggQueries, seq.AggregateArgs{
@@ -159,6 +163,29 @@ func (si *Ingestor) FetchAsyncSearchResult(ctx context.Context, r FetchAsyncSear
 					})
 				}
 			}
+
+			if searchReq == nil {
+				reqAggs := make([]AggQuery, 0, len(storeResp.Aggs))
+				for _, agg := range storeResp.Aggs {
+					reqAggs = append(reqAggs, AggQuery{
+						Field:     agg.Field,
+						GroupBy:   agg.GroupBy,
+						Func:      agg.Func.MustAggFunc(),
+						Quantiles: agg.Quantiles,
+					})
+				}
+
+				searchReq = &AsyncRequest{
+					Retention:         storeResp.Retention.AsDuration(),
+					Query:             storeResp.Query,
+					From:              storeResp.From.AsTime(),
+					To:                storeResp.To.AsTime(),
+					Aggregations:      reqAggs,
+					HistogramInterval: histInterval,
+					WithDocs:          storeResp.WithDocs,
+				}
+			}
+
 			break
 		}
 	}
@@ -173,6 +200,7 @@ func (si *Ingestor) FetchAsyncSearchResult(ctx context.Context, r FetchAsyncSear
 		pr.Progress = 1
 	}
 	pr.AggResult = pr.QPR.Aggregate(aggQueries)
+	pr.Request = *searchReq
 
 	docsStream := DocsIterator(EmptyDocsStream{})
 	var size int

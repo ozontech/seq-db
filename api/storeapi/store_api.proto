@@ -160,6 +160,12 @@ message FetchAsyncSearchResultResponse {
 
   repeated AggQuery aggs = 9;
   int64 histogram_interval = 10;
+  
+  string query = 11;
+  google.protobuf.Timestamp from = 12;
+  google.protobuf.Timestamp to = 13;
+  google.protobuf.Duration retention = 14;
+  bool with_docs = 15;
 }
 
 message CancelAsyncSearchRequest{

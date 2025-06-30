@@ -427,6 +427,7 @@ func (m *FetchAsyncSearchResultResponse) CloneVT() *FetchAsyncSearchResultRespon
 	}
 	r := new(FetchAsyncSearchResultResponse)
 	r.Status = m.Status
+	r.Request = m.Request.CloneVT()
 	r.Response = m.Response.CloneVT()
 	r.StartedAt = (*timestamppb.Timestamp)((*timestamppb1.Timestamp)(m.StartedAt).CloneVT())
 	r.ExpiresAt = (*timestamppb.Timestamp)((*timestamppb1.Timestamp)(m.ExpiresAt).CloneVT())
@@ -1375,6 +1376,9 @@ func (this *FetchAsyncSearchResultResponse) EqualVT(that *FetchAsyncSearchResult
 		return false
 	}
 	if this.Status != that.Status {
+		return false
+	}
+	if !this.Request.EqualVT(that.Request) {
 		return false
 	}
 	if !this.Response.EqualVT(that.Response) {
@@ -3491,13 +3495,13 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVT(dAtA []byte) (in
 	if m.DiskUsage != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.DiskUsage))
 		i--
-		dAtA[i] = 0x38
+		dAtA[i] = 0x40
 	}
 	if m.Progress != 0 {
 		i -= 8
 		binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Progress))))
 		i--
-		dAtA[i] = 0x31
+		dAtA[i] = 0x39
 	}
 	if m.CanceledAt != nil {
 		size, err := (*timestamppb1.Timestamp)(m.CanceledAt).MarshalToSizedBufferVT(dAtA[:i])
@@ -3507,7 +3511,7 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVT(dAtA []byte) (in
 		i -= size
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 		i--
-		dAtA[i] = 0x2a
+		dAtA[i] = 0x32
 	}
 	if m.ExpiresAt != nil {
 		size, err := (*timestamppb1.Timestamp)(m.ExpiresAt).MarshalToSizedBufferVT(dAtA[:i])
@@ -3517,7 +3521,7 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVT(dAtA []byte) (in
 		i -= size
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 		i--
-		dAtA[i] = 0x22
+		dAtA[i] = 0x2a
 	}
 	if m.StartedAt != nil {
 		size, err := (*timestamppb1.Timestamp)(m.StartedAt).MarshalToSizedBufferVT(dAtA[:i])
@@ -3527,10 +3531,20 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVT(dAtA []byte) (in
 		i -= size
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 		i--
-		dAtA[i] = 0x1a
+		dAtA[i] = 0x22
 	}
 	if m.Response != nil {
 		size, err := m.Response.MarshalToSizedBufferVT(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if m.Request != nil {
+		size, err := m.Request.MarshalToSizedBufferVT(dAtA[:i])
 		if err != nil {
 			return 0, err
 		}
@@ -5488,13 +5502,13 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVTStrict(dAtA []byt
 	if m.DiskUsage != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.DiskUsage))
 		i--
-		dAtA[i] = 0x38
+		dAtA[i] = 0x40
 	}
 	if m.Progress != 0 {
 		i -= 8
 		binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Progress))))
 		i--
-		dAtA[i] = 0x31
+		dAtA[i] = 0x39
 	}
 	if m.CanceledAt != nil {
 		size, err := (*timestamppb1.Timestamp)(m.CanceledAt).MarshalToSizedBufferVTStrict(dAtA[:i])
@@ -5504,7 +5518,7 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVTStrict(dAtA []byt
 		i -= size
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 		i--
-		dAtA[i] = 0x2a
+		dAtA[i] = 0x32
 	}
 	if m.ExpiresAt != nil {
 		size, err := (*timestamppb1.Timestamp)(m.ExpiresAt).MarshalToSizedBufferVTStrict(dAtA[:i])
@@ -5514,7 +5528,7 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVTStrict(dAtA []byt
 		i -= size
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 		i--
-		dAtA[i] = 0x22
+		dAtA[i] = 0x2a
 	}
 	if m.StartedAt != nil {
 		size, err := (*timestamppb1.Timestamp)(m.StartedAt).MarshalToSizedBufferVTStrict(dAtA[:i])
@@ -5524,10 +5538,20 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVTStrict(dAtA []byt
 		i -= size
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
 		i--
-		dAtA[i] = 0x1a
+		dAtA[i] = 0x22
 	}
 	if m.Response != nil {
 		size, err := m.Response.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if m.Request != nil {
+		size, err := m.Request.MarshalToSizedBufferVTStrict(dAtA[:i])
 		if err != nil {
 			return 0, err
 		}
@@ -6807,6 +6831,10 @@ func (m *FetchAsyncSearchResultResponse) SizeVT() (n int) {
 	_ = l
 	if m.Status != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Status))
+	}
+	if m.Request != nil {
+		l = m.Request.SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	if m.Response != nil {
 		l = m.Response.SizeVT()
@@ -9762,6 +9790,42 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVT(dAtA []byte) error {
 			}
 		case 2:
 			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Request", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Request == nil {
+				m.Request = &StartAsyncSearchRequest{}
+			}
+			if err := m.Request.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Response", wireType)
 			}
 			var msglen int
@@ -9796,7 +9860,7 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVT(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 3:
+		case 4:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field StartedAt", wireType)
 			}
@@ -9832,7 +9896,7 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVT(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 4:
+		case 5:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ExpiresAt", wireType)
 			}
@@ -9868,7 +9932,7 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVT(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 5:
+		case 6:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field CanceledAt", wireType)
 			}
@@ -9904,7 +9968,7 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVT(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 6:
+		case 7:
 			if wireType != 1 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Progress", wireType)
 			}
@@ -9915,7 +9979,7 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVT(dAtA []byte) error {
 			v = uint64(binary.LittleEndian.Uint64(dAtA[iNdEx:]))
 			iNdEx += 8
 			m.Progress = float64(math.Float64frombits(v))
-		case 7:
+		case 8:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field DiskUsage", wireType)
 			}
@@ -14453,6 +14517,42 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 			}
 		case 2:
 			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Request", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Request == nil {
+				m.Request = &StartAsyncSearchRequest{}
+			}
+			if err := m.Request.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Response", wireType)
 			}
 			var msglen int
@@ -14487,7 +14587,7 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 3:
+		case 4:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field StartedAt", wireType)
 			}
@@ -14523,7 +14623,7 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 4:
+		case 5:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ExpiresAt", wireType)
 			}
@@ -14559,7 +14659,7 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 5:
+		case 6:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field CanceledAt", wireType)
 			}
@@ -14595,7 +14695,7 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 6:
+		case 7:
 			if wireType != 1 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Progress", wireType)
 			}
@@ -14606,7 +14706,7 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 			v = uint64(binary.LittleEndian.Uint64(dAtA[iNdEx:]))
 			iNdEx += 8
 			m.Progress = float64(math.Float64frombits(v))
-		case 7:
+		case 8:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field DiskUsage", wireType)
 			}

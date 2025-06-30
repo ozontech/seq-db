@@ -628,6 +628,12 @@ type FetchSearchResultResponse struct {
 	// Stuff that needed seq-db proxy to complete async search response.
 	AggQueries   []processor.AggQuery
 	HistInterval uint64
+
+	Query     string
+	From      seq.MID
+	To        seq.MID
+	Retention time.Duration
+	WithDocs  bool
 }
 
 func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSearchResultResponse, bool) {
@@ -683,6 +689,11 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		Error:        info.Error,
 		AggQueries:   info.Request.Params.AggQ,
 		HistInterval: info.Request.Params.HistInterval,
+		Query:        info.Request.Query,
+		From:         info.Request.Params.From,
+		To:           info.Request.Params.To,
+		Retention:    info.Request.Retention,
+		WithDocs:     info.Request.Params.Limit == math.MaxInt,
 	}, true
 }
 
