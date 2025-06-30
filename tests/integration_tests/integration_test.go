@@ -1134,7 +1134,7 @@ func (s *IntegrationTestSuite) TestSeal() {
 
 	bulksNum := getBulkIterationsNum(env)
 	iterations := bulksNum
-	result := 51639 * iterations
+	result := 174746 * iterations
 	for i := 0; i < iterations; i++ {
 		file, err := os.Open(common.TestDataDir + "/k8s.logs")
 		require.NoError(s.T(), err)
@@ -1170,7 +1170,7 @@ func (s *IntegrationTestSuite) TestSeal() {
 
 	env.WaitIdle()
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`level:ERROR`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, _, err := env.Search(`status:200`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(result, withTotal), qpr.Total, "wrong doc count")
 	}
@@ -1179,7 +1179,7 @@ func (s *IntegrationTestSuite) TestSeal() {
 	env.SealAll()
 
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`level:ERROR`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, _, err := env.Search(`status:200`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(result, withTotal), qpr.Total, "wrong doc count")
 	}
@@ -1192,7 +1192,7 @@ func (s *IntegrationTestSuite) TestSeal() {
 	defer env.StopAll()
 
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`level:ERROR`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, _, err := env.Search(`status:200`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(result, withTotal), qpr.Total, "wrong doc count")
 	}
