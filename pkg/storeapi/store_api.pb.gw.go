@@ -131,6 +131,54 @@ func local_request_StoreApi_FetchAsyncSearchResult_0(ctx context.Context, marsha
 	return msg, metadata, err
 }
 
+func request_StoreApi_CancelAsyncSearch_0(ctx context.Context, marshaler runtime.Marshaler, client StoreApiClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq CancelAsyncSearchRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := client.CancelAsyncSearch(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_StoreApi_CancelAsyncSearch_0(ctx context.Context, marshaler runtime.Marshaler, server StoreApiServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq CancelAsyncSearchRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := server.CancelAsyncSearch(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_StoreApi_DeleteAsyncSearch_0(ctx context.Context, marshaler runtime.Marshaler, client StoreApiClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq DeleteAsyncSearchRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := client.DeleteAsyncSearch(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_StoreApi_DeleteAsyncSearch_0(ctx context.Context, marshaler runtime.Marshaler, server StoreApiServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq DeleteAsyncSearchRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := server.DeleteAsyncSearch(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 func request_StoreApi_Fetch_0(ctx context.Context, marshaler runtime.Marshaler, client StoreApiClient, req *http.Request, pathParams map[string]string) (StoreApi_FetchClient, runtime.ServerMetadata, error) {
 	var (
 		protoReq FetchRequest
@@ -260,6 +308,46 @@ func RegisterStoreApiHandlerServer(ctx context.Context, mux *runtime.ServeMux, s
 			return
 		}
 		forward_StoreApi_FetchAsyncSearchResult_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_StoreApi_CancelAsyncSearch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/api.StoreApi/CancelAsyncSearch", runtime.WithHTTPPathPattern("/api.StoreApi/CancelAsyncSearch"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_StoreApi_CancelAsyncSearch_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_StoreApi_CancelAsyncSearch_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_StoreApi_DeleteAsyncSearch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/api.StoreApi/DeleteAsyncSearch", runtime.WithHTTPPathPattern("/api.StoreApi/DeleteAsyncSearch"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_StoreApi_DeleteAsyncSearch_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_StoreApi_DeleteAsyncSearch_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 
 	mux.Handle(http.MethodPost, pattern_StoreApi_Fetch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
@@ -396,6 +484,40 @@ func RegisterStoreApiHandlerClient(ctx context.Context, mux *runtime.ServeMux, c
 		}
 		forward_StoreApi_FetchAsyncSearchResult_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_StoreApi_CancelAsyncSearch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/api.StoreApi/CancelAsyncSearch", runtime.WithHTTPPathPattern("/api.StoreApi/CancelAsyncSearch"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_StoreApi_CancelAsyncSearch_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_StoreApi_CancelAsyncSearch_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_StoreApi_DeleteAsyncSearch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/api.StoreApi/DeleteAsyncSearch", runtime.WithHTTPPathPattern("/api.StoreApi/DeleteAsyncSearch"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_StoreApi_DeleteAsyncSearch_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_StoreApi_DeleteAsyncSearch_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	mux.Handle(http.MethodPost, pattern_StoreApi_Fetch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
@@ -438,6 +560,8 @@ var (
 	pattern_StoreApi_Search_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "Search"}, ""))
 	pattern_StoreApi_StartAsyncSearch_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "StartAsyncSearch"}, ""))
 	pattern_StoreApi_FetchAsyncSearchResult_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "FetchAsyncSearchResult"}, ""))
+	pattern_StoreApi_CancelAsyncSearch_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "CancelAsyncSearch"}, ""))
+	pattern_StoreApi_DeleteAsyncSearch_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "DeleteAsyncSearch"}, ""))
 	pattern_StoreApi_Fetch_0                  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "Fetch"}, ""))
 	pattern_StoreApi_Status_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "Status"}, ""))
 )
@@ -447,6 +571,8 @@ var (
 	forward_StoreApi_Search_0                 = runtime.ForwardResponseMessage
 	forward_StoreApi_StartAsyncSearch_0       = runtime.ForwardResponseMessage
 	forward_StoreApi_FetchAsyncSearchResult_0 = runtime.ForwardResponseMessage
+	forward_StoreApi_CancelAsyncSearch_0      = runtime.ForwardResponseMessage
+	forward_StoreApi_DeleteAsyncSearch_0      = runtime.ForwardResponseMessage
 	forward_StoreApi_Fetch_0                  = runtime.ForwardResponseStream
 	forward_StoreApi_Status_0                 = runtime.ForwardResponseMessage
 )
