@@ -14,7 +14,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func (g *GrpcV1) StartAsyncSearch(_ context.Context, r *storeapi.StartAsyncSearchRequest) (*storeapi.StartAsyncSearchResponse, error) {
+func (g *GrpcV1) StartAsyncSearch(
+	_ context.Context,
+	r *storeapi.StartAsyncSearchRequest,
+) (*storeapi.StartAsyncSearchResponse, error) {
 	aggs, err := aggQueriesFromProto(r.Aggs)
 	if err != nil {
 		return nil, err
@@ -50,7 +53,10 @@ func (g *GrpcV1) StartAsyncSearch(_ context.Context, r *storeapi.StartAsyncSearc
 	return &storeapi.StartAsyncSearchResponse{}, nil
 }
 
-func (g *GrpcV1) FetchAsyncSearchResult(_ context.Context, r *storeapi.FetchAsyncSearchResultRequest) (*storeapi.FetchAsyncSearchResultResponse, error) {
+func (g *GrpcV1) FetchAsyncSearchResult(
+	_ context.Context,
+	r *storeapi.FetchAsyncSearchResultRequest,
+) (*storeapi.FetchAsyncSearchResultResponse, error) {
 	fr, exists := g.asyncSearcher.FetchSearchResult(fracmanager.FetchSearchResultRequest{
 		ID:    r.SearchId,
 		Limit: int(r.Size + r.Offset),
@@ -86,14 +92,27 @@ func (g *GrpcV1) FetchAsyncSearchResult(_ context.Context, r *storeapi.FetchAsyn
 	}, nil
 }
 
-func (g *GrpcV1) CancelAsyncSearch(_ context.Context, r *storeapi.CancelAsyncSearchRequest) (*storeapi.CancelAsyncSearchResponse, error) {
+func (g *GrpcV1) CancelAsyncSearch(
+	_ context.Context,
+	r *storeapi.CancelAsyncSearchRequest,
+) (*storeapi.CancelAsyncSearchResponse, error) {
 	g.asyncSearcher.CancelSearch(r.SearchId)
 	return &storeapi.CancelAsyncSearchResponse{}, nil
 }
 
-func (g *GrpcV1) DeleteAsyncSearch(_ context.Context, r *storeapi.DeleteAsyncSearchRequest) (*storeapi.DeleteAsyncSearchResponse, error) {
+func (g *GrpcV1) DeleteAsyncSearch(
+	_ context.Context,
+	r *storeapi.DeleteAsyncSearchRequest,
+) (*storeapi.DeleteAsyncSearchResponse, error) {
 	g.asyncSearcher.DeleteSearch(r.SearchId)
 	return &storeapi.DeleteAsyncSearchResponse{}, nil
+}
+
+func (g *GrpcV1) GetAsyncSearchesList(
+	_ context.Context,
+	r *storeapi.GetAsyncSearchesListRequest,
+) (*storeapi.GetAsyncSearchesListResponse, error) {
+	return &storeapi.GetAsyncSearchesListResponse{}, nil
 }
 
 func convertAggQueriesToProto(query []processor.AggQuery) []*storeapi.AggQuery {

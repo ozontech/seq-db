@@ -137,6 +137,26 @@ func (mr *MockStoreApiClientMockRecorder) FetchAsyncSearchResult(arg0, arg1 inte
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchAsyncSearchResult", reflect.TypeOf((*MockStoreApiClient)(nil).FetchAsyncSearchResult), varargs...)
 }
 
+// GetAsyncSearchesList mocks base method.
+func (m *MockStoreApiClient) GetAsyncSearchesList(arg0 context.Context, arg1 *storeapi.GetAsyncSearchesListRequest, arg2 ...grpc.CallOption) (*storeapi.GetAsyncSearchesListResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetAsyncSearchesList", varargs...)
+	ret0, _ := ret[0].(*storeapi.GetAsyncSearchesListResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAsyncSearchesList indicates an expected call of GetAsyncSearchesList.
+func (mr *MockStoreApiClientMockRecorder) GetAsyncSearchesList(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAsyncSearchesList", reflect.TypeOf((*MockStoreApiClient)(nil).GetAsyncSearchesList), varargs...)
+}
+
 // Search mocks base method.
 func (m *MockStoreApiClient) Search(arg0 context.Context, arg1 *storeapi.SearchRequest, arg2 ...grpc.CallOption) (*storeapi.SearchResponse, error) {
 	m.ctrl.T.Helper()

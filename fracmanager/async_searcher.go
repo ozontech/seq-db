@@ -910,6 +910,39 @@ func (as *AsyncSearcher) DeleteSearch(id string) {
 	})
 }
 
+type GetAsyncSearchesListRequest struct {
+	Status AsyncSearchStatus
+	Limit  int
+	Offset int
+}
+
+type GetAsyncSearchesListItem struct {
+	ID     string
+	Status AsyncSearchStatus
+
+	StartedAt  time.Time
+	ExpiresAt  time.Time
+	CanceledAt time.Time
+
+	FracsDone    int
+	FracsInQueue int
+	DiskUsage    int
+
+	// Search request info
+	AggQueries   []processor.AggQuery
+	HistInterval uint64
+	Query        string
+	From         seq.MID
+	To           seq.MID
+	Retention    time.Duration
+	WithDocs     bool
+}
+
+func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []GetAsyncSearchesListItem {
+	var items []GetAsyncSearchesListItem
+	return items
+}
+
 func mustWriteFileAtomic(fpath string, data []byte) {
 	fpathTmp := fpath + asyncSearchTmpFile
 

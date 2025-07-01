@@ -20,6 +20,8 @@ service StoreApi {
   rpc CancelAsyncSearch(CancelAsyncSearchRequest) returns (CancelAsyncSearchResponse) {}
 
   rpc DeleteAsyncSearch(DeleteAsyncSearchRequest) returns (DeleteAsyncSearchResponse) {}
+  
+  rpc GetAsyncSearchesList(GetAsyncSearchesListRequest) returns (GetAsyncSearchesListResponse) {}
 
   rpc Fetch(FetchRequest) returns (stream BinaryData) {}
 
@@ -179,6 +181,36 @@ message DeleteAsyncSearchRequest {
 }
 
 message DeleteAsyncSearchResponse {}
+
+message GetAsyncSearchesListRequest {
+  AsyncSearchStatus status = 1;
+  int32 size = 2;
+  int32 offset = 3;
+}
+
+message GetAsyncSearchesListResponse {
+  repeated AsyncSearchesListItem searches = 1;
+}
+
+message AsyncSearchesListItem {
+  string search_id = 1;
+  AsyncSearchStatus status = 2;
+  google.protobuf.Timestamp started_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  optional google.protobuf.Timestamp canceled_at = 5;
+  uint64 fracs_done = 6;
+  uint64 fracs_queue = 7;
+  uint64 disk_usage = 8;
+
+  repeated AggQuery aggs = 9;
+  int64 histogram_interval = 10;
+  
+  string query = 11;
+  google.protobuf.Timestamp from = 12;
+  google.protobuf.Timestamp to = 13;
+  google.protobuf.Duration retention = 14;
+  bool with_docs = 15;
+}
 
 message IdWithHint {
   string id = 1;

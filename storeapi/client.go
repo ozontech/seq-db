@@ -46,6 +46,10 @@ func (i inMemoryAPIClient) DeleteAsyncSearch(ctx context.Context, in *storeapi.D
 	return i.store.GrpcV1().DeleteAsyncSearch(ctx, in)
 }
 
+func (i inMemoryAPIClient) GetAsyncSearchesList(ctx context.Context, in *storeapi.GetAsyncSearchesListRequest, _ ...grpc.CallOption) (*storeapi.GetAsyncSearchesListResponse, error) {
+	return i.store.GrpcV1().GetAsyncSearchesList(ctx, in)
+}
+
 type storeAPIFetchServer struct {
 	grpc.ServerStream
 	ctx context.Context

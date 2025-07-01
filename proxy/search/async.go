@@ -93,7 +93,10 @@ type FetchAsyncSearchResultResponse struct {
 	Request AsyncRequest
 }
 
-func (si *Ingestor) FetchAsyncSearchResult(ctx context.Context, r FetchAsyncSearchResultRequest) (FetchAsyncSearchResultResponse, DocsIterator, error) {
+func (si *Ingestor) FetchAsyncSearchResult(
+	ctx context.Context,
+	r FetchAsyncSearchResultRequest,
+) (FetchAsyncSearchResultResponse, DocsIterator, error) {
 	// TODO: should we support QueryWantsOldData?
 	searchStores, err := si.getAsyncSearchStores()
 	if err != nil {

@@ -13,7 +13,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func (g *grpcV1) StartAsyncSearch(ctx context.Context, r *seqproxyapi.StartAsyncSearchRequest) (*seqproxyapi.StartAsyncSearchResponse, error) {
+func (g *grpcV1) StartAsyncSearch(
+	ctx context.Context,
+	r *seqproxyapi.StartAsyncSearchRequest,
+) (*seqproxyapi.StartAsyncSearchResponse, error) {
 	aggs, err := convertAggsQuery(r.Aggs)
 	if err != nil {
 		return nil, err
@@ -44,7 +47,10 @@ func (g *grpcV1) StartAsyncSearch(ctx context.Context, r *seqproxyapi.StartAsync
 	}, nil
 }
 
-func (g *grpcV1) FetchAsyncSearchResult(ctx context.Context, r *seqproxyapi.FetchAsyncSearchResultRequest) (*seqproxyapi.FetchAsyncSearchResultResponse, error) {
+func (g *grpcV1) FetchAsyncSearchResult(
+	ctx context.Context,
+	r *seqproxyapi.FetchAsyncSearchResultRequest,
+) (*seqproxyapi.FetchAsyncSearchResultResponse, error) {
 	resp, stream, err := g.searchIngestor.FetchAsyncSearchResult(ctx, search.FetchAsyncSearchResultRequest{
 		ID:     r.SearchId,
 		Size:   int(r.Size),
@@ -96,14 +102,20 @@ func (g *grpcV1) FetchAsyncSearchResult(ctx context.Context, r *seqproxyapi.Fetc
 	}, nil
 }
 
-func (g *grpcV1) CancelAsyncSearch(ctx context.Context, r *seqproxyapi.CancelAsyncSearchRequest) (*seqproxyapi.CancelAsyncSearchResponse, error) {
+func (g *grpcV1) CancelAsyncSearch(
+	ctx context.Context,
+	r *seqproxyapi.CancelAsyncSearchRequest,
+) (*seqproxyapi.CancelAsyncSearchResponse, error) {
 	if err := g.searchIngestor.CancelAsyncSearch(ctx, r.SearchId); err != nil {
 		return nil, fmt.Errorf("cancelling search: %s", err)
 	}
 	return &seqproxyapi.CancelAsyncSearchResponse{}, nil
 }
 
-func (g *grpcV1) DeleteAsyncSearch(ctx context.Context, r *seqproxyapi.DeleteAsyncSearchRequest) (*seqproxyapi.DeleteAsyncSearchResponse, error) {
+func (g *grpcV1) DeleteAsyncSearch(
+	ctx context.Context,
+	r *seqproxyapi.DeleteAsyncSearchRequest,
+) (*seqproxyapi.DeleteAsyncSearchResponse, error) {
 	if err := g.searchIngestor.DeleteAsyncSearch(ctx, r.SearchId); err != nil {
 		return nil, fmt.Errorf("deleting search: %s", err)
 	}
