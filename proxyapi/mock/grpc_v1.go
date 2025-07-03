@@ -99,6 +99,21 @@ func (mr *MockSearchIngestorMockRecorder) FetchAsyncSearchResult(arg0, arg1 inte
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchAsyncSearchResult", reflect.TypeOf((*MockSearchIngestor)(nil).FetchAsyncSearchResult), arg0, arg1)
 }
 
+// GetAsyncSearchesList mocks base method.
+func (m *MockSearchIngestor) GetAsyncSearchesList(arg0 context.Context, arg1 search.GetAsyncSearchesListRequest) ([]search.AsyncSearchesListItem, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAsyncSearchesList", arg0, arg1)
+	ret0, _ := ret[0].([]search.AsyncSearchesListItem)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAsyncSearchesList indicates an expected call of GetAsyncSearchesList.
+func (mr *MockSearchIngestorMockRecorder) GetAsyncSearchesList(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAsyncSearchesList", reflect.TypeOf((*MockSearchIngestor)(nil).GetAsyncSearchesList), arg0, arg1)
+}
+
 // Search mocks base method.
 func (m *MockSearchIngestor) Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, time.Duration, error) {
 	m.ctrl.T.Helper()

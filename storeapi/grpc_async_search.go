@@ -69,7 +69,7 @@ func (g *GrpcV1) FetchAsyncSearchResult(
 	resp := buildSearchResponse(&fr.QPR)
 
 	var canceledAt *timestamppb.Timestamp
-	if fr.CanceledAt.IsZero() {
+	if !fr.CanceledAt.IsZero() {
 		canceledAt = timestamppb.New(fr.CanceledAt)
 	}
 
@@ -112,7 +112,21 @@ func (g *GrpcV1) GetAsyncSearchesList(
 	_ context.Context,
 	r *storeapi.GetAsyncSearchesListRequest,
 ) (*storeapi.GetAsyncSearchesListResponse, error) {
-	return &storeapi.GetAsyncSearchesListResponse{}, nil
+	var status *fracmanager.AsyncSearchStatus
+	if r.Status != nil {
+		s := r.Status.MustAsyncSearchStatus()
+		status = &s
+	}
+
+	searches := g.asyncSearcher.GetAsyncSearchesList(fracmanager.GetAsyncSearchesListRequest{
+		Status: status,
+		Limit:  int(r.Size),
+		Offset: int(r.Offset),
+	})
+
+	return &storeapi.GetAsyncSearchesListResponse{
+		Searches: convertAsyncSearchesToProto(searches),
+	}, nil
 }
 
 func convertAggQueriesToProto(query []processor.AggQuery) []*storeapi.AggQuery {
@@ -130,5 +144,36 @@ func convertAggQueriesToProto(query []processor.AggQuery) []*storeapi.AggQuery {
 		}
 		res = append(res, pq)
 	}
+	return res
+}
+
+func convertAsyncSearchesToProto(in []fracmanager.AsyncSearchesListItem) []*storeapi.AsyncSearchesListItem {
+	res := make([]*storeapi.AsyncSearchesListItem, 0, len(in))
+
+	for _, s := range in {
+		var canceledAt *timestamppb.Timestamp
+		if !s.CanceledAt.IsZero() {
+			canceledAt = timestamppb.New(s.CanceledAt)
+		}
+
+		res = append(res, &storeapi.AsyncSearchesListItem{
+			SearchId:          s.ID,
+			Status:            storeapi.MustProtoAsyncSearchStatus(s.Status),
+			StartedAt:         timestamppb.New(s.StartedAt),
+			ExpiresAt:         timestamppb.New(s.ExpiresAt),
+			CanceledAt:        canceledAt,
+			FracsDone:         uint64(s.FracsDone),
+			FracsQueue:        uint64(s.FracsInQueue),
+			DiskUsage:         uint64(s.DiskUsage),
+			Aggs:              convertAggQueriesToProto(s.AggQueries),
+			HistogramInterval: int64(s.HistInterval),
+			Query:             s.Query,
+			From:              timestamppb.New(s.From.Time()),
+			To:                timestamppb.New(s.To.Time()),
+			Retention:         durationpb.New(s.Retention),
+			WithDocs:          s.WithDocs,
+		})
+	}
+
 	return res
 }

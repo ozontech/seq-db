@@ -516,9 +516,12 @@ func (m *GetAsyncSearchesListRequest) CloneVT() *GetAsyncSearchesListRequest {
 		return (*GetAsyncSearchesListRequest)(nil)
 	}
 	r := new(GetAsyncSearchesListRequest)
-	r.Status = m.Status
 	r.Size = m.Size
 	r.Offset = m.Offset
+	if rhs := m.Status; rhs != nil {
+		tmpVal := *rhs
+		r.Status = &tmpVal
+	}
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
 		copy(r.unknownFields, m.unknownFields)
@@ -1551,7 +1554,7 @@ func (this *GetAsyncSearchesListRequest) EqualVT(that *GetAsyncSearchesListReque
 	} else if this == nil || that == nil {
 		return false
 	}
-	if this.Status != that.Status {
+	if p, q := this.Status, that.Status; (p == nil && q != nil) || (p != nil && (q == nil || *p != *q)) {
 		return false
 	}
 	if this.Size != that.Size {
@@ -3949,8 +3952,8 @@ func (m *GetAsyncSearchesListRequest) MarshalToSizedBufferVT(dAtA []byte) (int, 
 		i--
 		dAtA[i] = 0x10
 	}
-	if m.Status != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Status))
+	if m.Status != nil {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(*m.Status))
 		i--
 		dAtA[i] = 0x8
 	}
@@ -6145,8 +6148,8 @@ func (m *GetAsyncSearchesListRequest) MarshalToSizedBufferVTStrict(dAtA []byte) 
 		i--
 		dAtA[i] = 0x10
 	}
-	if m.Status != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Status))
+	if m.Status != nil {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(*m.Status))
 		i--
 		dAtA[i] = 0x8
 	}
@@ -7496,8 +7499,8 @@ func (m *GetAsyncSearchesListRequest) SizeVT() (n int) {
 	}
 	var l int
 	_ = l
-	if m.Status != 0 {
-		n += 1 + protohelpers.SizeOfVarint(uint64(m.Status))
+	if m.Status != nil {
+		n += 1 + protohelpers.SizeOfVarint(uint64(*m.Status))
 	}
 	if m.Size != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Size))
@@ -10975,7 +10978,7 @@ func (m *GetAsyncSearchesListRequest) UnmarshalVT(dAtA []byte) error {
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Status", wireType)
 			}
-			m.Status = 0
+			var v AsyncSearchStatus
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return protohelpers.ErrIntOverflow
@@ -10985,11 +10988,12 @@ func (m *GetAsyncSearchesListRequest) UnmarshalVT(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.Status |= AsyncSearchStatus(b&0x7F) << shift
+				v |= AsyncSearchStatus(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
+			m.Status = &v
 		case 2:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Size", wireType)
@@ -16179,7 +16183,7 @@ func (m *GetAsyncSearchesListRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Status", wireType)
 			}
-			m.Status = 0
+			var v AsyncSearchStatus
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return protohelpers.ErrIntOverflow
@@ -16189,11 +16193,12 @@ func (m *GetAsyncSearchesListRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.Status |= AsyncSearchStatus(b&0x7F) << shift
+				v |= AsyncSearchStatus(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
+			m.Status = &v
 		case 2:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Size", wireType)

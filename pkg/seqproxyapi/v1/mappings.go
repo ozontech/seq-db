@@ -76,15 +76,15 @@ var statusMappings = []AsyncSearchStatus{
 }
 
 var statusMappingsPb = func() []fracmanager.AsyncSearchStatus {
-	mappings := make([]fracmanager.AsyncSearchStatus, len(orderMappings))
-	for from, to := range orderMappings {
+	mappings := make([]fracmanager.AsyncSearchStatus, len(statusMappings))
+	for from, to := range statusMappings {
 		mappings[to] = fracmanager.AsyncSearchStatus(from)
 	}
 	return mappings
 }()
 
 func (s AsyncSearchStatus) ToAsyncSearchStatus() (fracmanager.AsyncSearchStatus, error) {
-	if int(s) >= len(orderMappingsPb) {
+	if int(s) >= len(statusMappingsPb) {
 		return 0, fmt.Errorf("unknown status")
 	}
 	return statusMappingsPb[s], nil

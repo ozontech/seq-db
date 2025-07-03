@@ -310,7 +310,7 @@ message DeleteAsyncSearchRequest {
 message DeleteAsyncSearchResponse {}
 
 message GetAsyncSearchesListRequest {
-  AsyncSearchStatus status = 1;
+  optional AsyncSearchStatus status = 1;
   // Maximum number of searches to fetch (pagination).
   int32 size = 2;
   // Searches offset (pagination).

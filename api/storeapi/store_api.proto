@@ -183,7 +183,7 @@ message DeleteAsyncSearchRequest {
 message DeleteAsyncSearchResponse {}
 
 message GetAsyncSearchesListRequest {
-  AsyncSearchStatus status = 1;
+  optional AsyncSearchStatus status = 1;
   int32 size = 2;
   int32 offset = 3;
 }

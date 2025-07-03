@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/seq"
@@ -102,6 +103,32 @@ func (g *grpcV1) FetchAsyncSearchResult(
 	}, nil
 }
 
+func (g *grpcV1) GetAsyncSearchesList(
+	ctx context.Context,
+	r *seqproxyapi.GetAsyncSearchesListRequest,
+) (*seqproxyapi.GetAsyncSearchesListResponse, error) {
+	var status *fracmanager.AsyncSearchStatus // TODO: check unknown status errors
+	if r.Status != nil {
+		s := r.Status.MustAsyncSearchStatus()
+		status = &s
+	}
+
+	req := search.GetAsyncSearchesListRequest{
+		Status: status,
+		Size:   int(r.Size),
+		Offset: int(r.Offset),
+	}
+
+	searches, err := g.searchIngestor.GetAsyncSearchesList(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &seqproxyapi.GetAsyncSearchesListResponse{
+		Searches: makeProtoAsyncSearchesList(searches),
+	}, nil
+}
+
 func (g *grpcV1) CancelAsyncSearch(
 	ctx context.Context,
 	r *seqproxyapi.CancelAsyncSearchRequest,
@@ -133,4 +160,43 @@ func makeProtoRequestAggregations(sourceAggs []search.AggQuery) []*seqproxyapi.A
 		})
 	}
 	return aggs
+}
+
+func makeProtoAsyncSearchesList(in []search.AsyncSearchesListItem) []*seqproxyapi.AsyncSearchesListItem {
+	searches := make([]*seqproxyapi.AsyncSearchesListItem, 0, len(in))
+	for _, s := range in {
+		var canceledAt *timestamppb.Timestamp
+		if !s.CanceledAt.IsZero() {
+			canceledAt = timestamppb.New(s.CanceledAt)
+		}
+
+		searchReq := &seqproxyapi.StartAsyncSearchRequest{
+			Retention: durationpb.New(s.Request.Retention),
+			Query: &seqproxyapi.SearchQuery{
+				Query: s.Request.Query,
+				From:  timestamppb.New(s.Request.From),
+				To:    timestamppb.New(s.Request.To),
+			},
+			Aggs:     makeProtoRequestAggregations(s.Request.Aggregations),
+			WithDocs: s.Request.WithDocs,
+		}
+		if s.Request.HistogramInterval > 0 {
+			searchReq.Hist = &seqproxyapi.HistQuery{
+				Interval: seq.MIDToDuration(s.Request.HistogramInterval).String(),
+			}
+		}
+
+		searches = append(searches, &seqproxyapi.AsyncSearchesListItem{
+			SearchId:   s.ID,
+			Status:     seqproxyapi.MustProtoAsyncSearchStatus(s.Status),
+			Request:    searchReq,
+			StartedAt:  timestamppb.New(s.StartedAt),
+			ExpiresAt:  timestamppb.New(s.ExpiresAt),
+			CanceledAt: canceledAt,
+			Progress:   s.Progress,
+			DiskUsage:  s.DiskUsage,
+		})
+	}
+
+	return searches
 }

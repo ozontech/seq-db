@@ -6,15 +6,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
+
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/seq"
-	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 type AsyncRequest struct {
@@ -93,6 +94,26 @@ type FetchAsyncSearchResultResponse struct {
 	Request AsyncRequest
 }
 
+type GetAsyncSearchesListRequest struct {
+	Status *fracmanager.AsyncSearchStatus
+	Size   int
+	Offset int
+}
+
+type AsyncSearchesListItem struct {
+	ID     string
+	Status fracmanager.AsyncSearchStatus
+
+	StartedAt  time.Time
+	ExpiresAt  time.Time
+	CanceledAt time.Time
+
+	Progress  float64
+	DiskUsage uint64
+
+	Request AsyncRequest
+}
+
 func (si *Ingestor) FetchAsyncSearchResult(
 	ctx context.Context,
 	r FetchAsyncSearchResultRequest,
@@ -138,6 +159,8 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		if pr.StartedAt.IsZero() || pr.StartedAt.After(t) {
 			pr.StartedAt = t
 		}
+
+		// TODO: canceled at
 
 		qpr := responseToQPR(sr.Response, si.sourceByClient[replica], false)
 		seq.MergeQPRs(&pr.QPR, []*seq.QPR{qpr}, r.Size+r.Offset, histInterval, r.Order)
@@ -219,6 +242,87 @@ func (si *Ingestor) FetchAsyncSearchResult(
 	}
 
 	return pr, docsStream, nil
+}
+
+func (si *Ingestor) GetAsyncSearchesList(
+	ctx context.Context,
+	r GetAsyncSearchesListRequest,
+) ([]AsyncSearchesListItem, error) {
+	searchStores, err := si.getAsyncSearchStores()
+	if err != nil {
+		return nil, err
+	}
+
+	var status *storeapi.AsyncSearchStatus
+	if r.Status != nil {
+		s := storeapi.MustProtoAsyncSearchStatus(*r.Status)
+		status = &s
+	}
+	req := storeapi.GetAsyncSearchesListRequest{
+		Status: status,
+		Size:   int32(r.Size),
+		Offset: int32(r.Offset),
+	}
+
+	// TODO: handle multiple stores: errors, total disk usage, fracs stats, started at, expired at, etc...
+	// TODO: merge info for each of searches
+
+	searches := make([]AsyncSearchesListItem, 0)
+
+	for _, shard := range searchStores.Shards {
+		for _, replica := range shard {
+			storeResp, err := si.clients[replica].GetAsyncSearchesList(ctx, &req)
+			if err != nil {
+				return nil, err
+			}
+
+			for _, s := range storeResp.Searches {
+				var progress float64
+				if s.FracsDone != 0 {
+					progress = float64(s.FracsDone+s.FracsDone) / float64(s.FracsDone)
+				}
+				if s.Status.MustAsyncSearchStatus() == fracmanager.AsyncSearchStatusDone {
+					progress = 1
+				}
+
+				reqAggs := make([]AggQuery, 0, len(s.Aggs))
+				for _, agg := range s.Aggs {
+					reqAggs = append(reqAggs, AggQuery{
+						Field:     agg.Field,
+						GroupBy:   agg.GroupBy,
+						Func:      agg.Func.MustAggFunc(),
+						Quantiles: agg.Quantiles,
+					})
+				}
+
+				var canceledAt time.Time
+				if s.CanceledAt != nil {
+					canceledAt = s.CanceledAt.AsTime()
+				}
+
+				searches = append(searches, AsyncSearchesListItem{
+					ID:         s.SearchId,
+					Status:     s.Status.MustAsyncSearchStatus(),
+					StartedAt:  s.StartedAt.AsTime(),
+					ExpiresAt:  s.ExpiresAt.AsTime(),
+					CanceledAt: canceledAt,
+					Progress:   progress,
+					DiskUsage:  s.DiskUsage,
+					Request: AsyncRequest{
+						Aggregations:      reqAggs,
+						HistogramInterval: seq.MID(s.HistogramInterval),
+						Query:             s.Query,
+						From:              s.From.AsTime(),
+						To:                s.To.AsTime(),
+						Retention:         s.Retention.AsDuration(),
+						WithDocs:          s.WithDocs,
+					},
+				})
+			}
+		}
+	}
+
+	return searches, nil
 }
 
 func mergeAsyncSearchStatus(a, b fracmanager.AsyncSearchStatus) fracmanager.AsyncSearchStatus {

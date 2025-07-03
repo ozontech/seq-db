@@ -33,6 +33,7 @@ type SearchIngestor interface {
 	FetchAsyncSearchResult(context.Context, search.FetchAsyncSearchResultRequest) (search.FetchAsyncSearchResultResponse, search.DocsIterator, error)
 	CancelAsyncSearch(ctx context.Context, id string) error
 	DeleteAsyncSearch(ctx context.Context, id string) error
+	GetAsyncSearchesList(context.Context, search.GetAsyncSearchesListRequest) ([]search.AsyncSearchesListItem, error)
 }
 
 type MappingProvider interface {
