@@ -1,3 +1,4 @@
+
 pipeline-settings: &pipeline-settings
   settings:
     capacity: 32768
@@ -26,9 +27,9 @@ pipelines:
 
     input:
       <<: *pipeline-input-settings
-      offsets_file: '/var/file.d/offsets/seq-db-offsets.yaml'
+      offsets_file: '/var/file.d/offsets/vlogs-offsets.yaml'
 
     output:
       <<: *pipeline-output-settings
       endpoints:
-        - http://seq-db:9002/
+        - http://vlogs:9428/insert/elasticsearch/

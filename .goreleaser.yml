@@ -21,4 +21,4 @@ builds:
       - -trimpath
       - -pgo=default.pgo
     ldflags:
-      - -w -s -X github.com/ozontech/seqdb/buildinfo.Version={{.Version}}
+      - -w -s -X github.com/ozontech/seq-db/buildinfo.Version={{.Version}}

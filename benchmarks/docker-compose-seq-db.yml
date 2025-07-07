@@ -11,7 +11,7 @@ services:
     ports:
       - '9002:9002'
     volumes:
-      - ./configs/seqdb:/configs
+      - ./configs/seq-db:/configs
       - seq-db-data:/seq-db-data
     command: ./seq-db
       --mode=single

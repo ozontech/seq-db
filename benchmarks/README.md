@@ -16,7 +16,7 @@ We decided to split benchmarks into two separate suites, because `seq-db` and El
 
 So, in order to start `seq-db` benchmark suite, you need to run following command:
 ```bash
-make docker-run-seqdb
+make docker-run-seq-db
 ```
 
 In order to start Elasticsearch benchmark suite, you need to run following command:
@@ -47,12 +47,12 @@ This directory has following layout which is explained in comments:
 │  ├── elasticsearch
 │  ├── file.d
 │  ├── grafana
-│  ├── seqdb
+│  ├── seq-db
 │  └── vmsingle
 ├── dataset  # Here you can find logs which will be ingested by ElasticSearch and seq-db
 │  ├── logs
 │  └── distribute.py
-├── docker-compose-seqdb.yml  # File that contains `seq-db` and `filed` containers
+├── docker-compose-seq-db.yml  # File that contains `seq-db` and `filed` containers
 ├── docker-compose-elastic.yml  # File that contains `elastic` and `filed` containers
 ├── docker-compose.yml  # File that contains all infra containers (different metric exporters)
 └── Makefile

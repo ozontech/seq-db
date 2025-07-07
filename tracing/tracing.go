@@ -20,7 +20,7 @@ var (
 func Start(probability float64) error {
 	defaultProbability = probability
 
-	appName := "seqdb"
+	appName := "seq-db"
 	if v := os.Getenv("TRACING_SERVICE_NAME"); v != "" {
 		appName = v
 	}

@@ -31,7 +31,7 @@ type ReplicasEnv struct {
 }
 
 func NewReplicaEnv(t *testing.T, config setup.TestingEnvConfig) ReplicasEnv {
-	dir, err := os.MkdirTemp(os.TempDir(), "seqdb-replicas-*")
+	dir, err := os.MkdirTemp(os.TempDir(), "seq-db-replicas-*")
 	if err != nil {
 		t.Fatal(err)
 	}

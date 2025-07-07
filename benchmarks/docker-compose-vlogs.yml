@@ -1,0 +1,29 @@
+version: "3"
+
+services:
+  vlogs:
+    image: docker-hub.artifactory.s.***REMOVED***/victoriametrics/victoria-logs:v1.0.0-victorialogs
+    volumes:
+      - vlogs-data:/vlogs
+    ports:
+      - "9428:9428"
+    command:
+      - -storageDataPath=/vlogs
+
+  filed:
+    image: 'ghcr.io/ozontech/file.d:v0.58.1-alpine'
+    deploy:
+      resources:
+        limits:
+          memory: "12GB"
+    volumes:
+      - ./dataset/:/var/file.d/logs/
+      - filed-offsets:/var/file.d/offsets
+      - ./configs/file.d/vlogs.yaml:/usr/share/file.d/vlogs.yaml
+    command: ./file.d --config=/usr/share/file.d/vlogs.yaml
+    depends_on:
+      - vlogs
+
+volumes:
+  vlogs-data:
+  filed-offsets:
