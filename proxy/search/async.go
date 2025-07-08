@@ -328,7 +328,6 @@ func (si *Ingestor) GetAsyncSearchesList(
 
 func mergeAsyncSearchStatus(a, b fracmanager.AsyncSearchStatus) fracmanager.AsyncSearchStatus {
 	statusWeight := []fracmanager.AsyncSearchStatus{
-		0:                                       0,
 		fracmanager.AsyncSearchStatusDone:       1,
 		fracmanager.AsyncSearchStatusInProgress: 2,
 		fracmanager.AsyncSearchStatusCanceled:   3,

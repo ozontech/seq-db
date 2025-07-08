@@ -622,7 +622,7 @@ type FetchSearchResultRequest struct {
 type AsyncSearchStatus byte
 
 const (
-	AsyncSearchStatusDone AsyncSearchStatus = iota + 1
+	AsyncSearchStatusDone AsyncSearchStatus = iota
 	AsyncSearchStatusInProgress
 	AsyncSearchStatusError
 	AsyncSearchStatusCanceled
