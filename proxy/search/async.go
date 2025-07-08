@@ -118,7 +118,6 @@ func (si *Ingestor) FetchAsyncSearchResult(
 	ctx context.Context,
 	r FetchAsyncSearchResultRequest,
 ) (FetchAsyncSearchResultResponse, DocsIterator, error) {
-	// TODO: should we support QueryWantsOldData?
 	searchStores, err := si.getAsyncSearchStores()
 	if err != nil {
 		return FetchAsyncSearchResultResponse{}, nil, err
@@ -159,8 +158,10 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		if pr.StartedAt.IsZero() || pr.StartedAt.After(t) {
 			pr.StartedAt = t
 		}
-
-		// TODO: canceled at
+		t = sr.CanceledAt.AsTime()
+		if sr.CanceledAt != nil && (pr.CanceledAt.IsZero() || pr.CanceledAt.After(t)) {
+			pr.CanceledAt = t
+		}
 
 		qpr := responseToQPR(sr.Response, si.sourceByClient[replica], false)
 		seq.MergeQPRs(&pr.QPR, []*seq.QPR{qpr}, r.Size+r.Offset, histInterval, r.Order)

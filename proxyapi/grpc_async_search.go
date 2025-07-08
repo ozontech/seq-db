@@ -61,9 +61,9 @@ func (g *grpcV1) FetchAsyncSearchResult(
 		return nil, err
 	}
 
-	canceledAt := timestamppb.New(resp.CanceledAt)
-	if resp.CanceledAt.IsZero() {
-		canceledAt = nil
+	var canceledAt *timestamppb.Timestamp
+	if !resp.CanceledAt.IsZero() {
+		canceledAt = timestamppb.New(resp.CanceledAt)
 	}
 
 	docs := makeProtoDocs(&resp.QPR, stream)
