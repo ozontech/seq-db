@@ -280,7 +280,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 			for _, s := range storeResp.Searches {
 				var progress float64
 				if s.FracsDone != 0 {
-					progress = float64(s.FracsDone+s.FracsDone) / float64(s.FracsDone)
+					progress = float64(s.FracsDone+s.FracsQueue) / float64(s.FracsDone)
 				}
 				if s.Status.MustAsyncSearchStatus() == fracmanager.AsyncSearchStatusDone {
 					progress = 1
