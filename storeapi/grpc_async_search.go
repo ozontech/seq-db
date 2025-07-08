@@ -112,14 +112,14 @@ func (g *GrpcV1) GetAsyncSearchesList(
 	_ context.Context,
 	r *storeapi.GetAsyncSearchesListRequest,
 ) (*storeapi.GetAsyncSearchesListResponse, error) {
-	var status *fracmanager.AsyncSearchStatus
+	var searchStatus *fracmanager.AsyncSearchStatus
 	if r.Status != nil {
 		s := r.Status.MustAsyncSearchStatus()
-		status = &s
+		searchStatus = &s
 	}
 
 	searches := g.asyncSearcher.GetAsyncSearchesList(fracmanager.GetAsyncSearchesListRequest{
-		Status: status,
+		Status: searchStatus,
 		Limit:  int(r.Size),
 		Offset: int(r.Offset),
 	})
@@ -147,7 +147,7 @@ func convertAggQueriesToProto(query []processor.AggQuery) []*storeapi.AggQuery {
 	return res
 }
 
-func convertAsyncSearchesToProto(in []fracmanager.AsyncSearchesListItem) []*storeapi.AsyncSearchesListItem {
+func convertAsyncSearchesToProto(in []*fracmanager.AsyncSearchesListItem) []*storeapi.AsyncSearchesListItem {
 	res := make([]*storeapi.AsyncSearchesListItem, 0, len(in))
 
 	for _, s := range in {

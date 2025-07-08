@@ -107,7 +107,7 @@ func (g *grpcV1) GetAsyncSearchesList(
 	ctx context.Context,
 	r *seqproxyapi.GetAsyncSearchesListRequest,
 ) (*seqproxyapi.GetAsyncSearchesListResponse, error) {
-	var status *fracmanager.AsyncSearchStatus // TODO: check unknown status errors
+	var status *fracmanager.AsyncSearchStatus
 	if r.Status != nil {
 		s := r.Status.MustAsyncSearchStatus()
 		status = &s
@@ -162,7 +162,7 @@ func makeProtoRequestAggregations(sourceAggs []search.AggQuery) []*seqproxyapi.A
 	return aggs
 }
 
-func makeProtoAsyncSearchesList(in []search.AsyncSearchesListItem) []*seqproxyapi.AsyncSearchesListItem {
+func makeProtoAsyncSearchesList(in []*search.AsyncSearchesListItem) []*seqproxyapi.AsyncSearchesListItem {
 	searches := make([]*seqproxyapi.AsyncSearchesListItem, 0, len(in))
 	for _, s := range in {
 		var canceledAt *timestamppb.Timestamp

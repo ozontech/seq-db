@@ -100,10 +100,10 @@ func (mr *MockSearchIngestorMockRecorder) FetchAsyncSearchResult(arg0, arg1 inte
 }
 
 // GetAsyncSearchesList mocks base method.
-func (m *MockSearchIngestor) GetAsyncSearchesList(arg0 context.Context, arg1 search.GetAsyncSearchesListRequest) ([]search.AsyncSearchesListItem, error) {
+func (m *MockSearchIngestor) GetAsyncSearchesList(arg0 context.Context, arg1 search.GetAsyncSearchesListRequest) ([]*search.AsyncSearchesListItem, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetAsyncSearchesList", arg0, arg1)
-	ret0, _ := ret[0].([]search.AsyncSearchesListItem)
+	ret0, _ := ret[0].([]*search.AsyncSearchesListItem)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

@@ -948,14 +948,15 @@ type AsyncSearchesListItem struct {
 	WithDocs     bool
 }
 
-func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []AsyncSearchesListItem {
-	var items []AsyncSearchesListItem
+func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*AsyncSearchesListItem {
+	var items []*AsyncSearchesListItem
 
 	as.requestsMu.RLock()
 	requests := as.requests
 	as.requestsMu.RUnlock()
 
-	for id, info := range requests {
+	for id := range requests {
+		info := requests[id]
 		status := info.Status()
 
 		// Filter by status
@@ -977,7 +978,7 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []A
 			fracsInQueue = len(info.Fractions) - fracsDone
 		}
 
-		items = append(items, AsyncSearchesListItem{
+		items = append(items, &AsyncSearchesListItem{
 			ID:           id,
 			Status:       status,
 			StartedAt:    info.StartedAt,

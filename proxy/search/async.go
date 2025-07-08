@@ -247,19 +247,19 @@ func (si *Ingestor) FetchAsyncSearchResult(
 func (si *Ingestor) GetAsyncSearchesList(
 	ctx context.Context,
 	r GetAsyncSearchesListRequest,
-) ([]AsyncSearchesListItem, error) {
+) ([]*AsyncSearchesListItem, error) {
 	searchStores, err := si.getAsyncSearchStores()
 	if err != nil {
 		return nil, err
 	}
 
-	var status *storeapi.AsyncSearchStatus
+	var searchStatus *storeapi.AsyncSearchStatus
 	if r.Status != nil {
 		s := storeapi.MustProtoAsyncSearchStatus(*r.Status)
-		status = &s
+		searchStatus = &s
 	}
 	req := storeapi.GetAsyncSearchesListRequest{
-		Status: status,
+		Status: searchStatus,
 		Size:   int32(r.Size),
 		Offset: int32(r.Offset),
 	}
@@ -267,7 +267,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 	// TODO: handle multiple stores: errors, total disk usage, fracs stats, started at, expired at, etc...
 	// TODO: merge info for each of searches
 
-	searches := make([]AsyncSearchesListItem, 0)
+	searches := make([]*AsyncSearchesListItem, 0)
 
 	for _, shard := range searchStores.Shards {
 		for _, replica := range shard {
@@ -300,7 +300,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 					canceledAt = s.CanceledAt.AsTime()
 				}
 
-				searches = append(searches, AsyncSearchesListItem{
+				searches = append(searches, &AsyncSearchesListItem{
 					ID:         s.SearchId,
 					Status:     s.Status.MustAsyncSearchStatus(),
 					StartedAt:  s.StartedAt.AsTime(),
