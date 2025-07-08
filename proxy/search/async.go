@@ -233,10 +233,9 @@ func (si *Ingestor) FetchAsyncSearchResult(
 	var size int
 	pr.QPR.IDs, size = paginateIDs(pr.QPR.IDs, r.Offset, r.Size)
 	if size > 0 {
-		// TODO: parse pipes from the pr.Query (not provided yet)
-		emptyFieldsFilter := FetchFieldsFilter{}
+		fieldsFilter := tryParseFieldsFilter(pr.Request.Query)
 		var err error
-		docsStream, err = si.FetchDocsStream(ctx, pr.QPR.IDs, false, emptyFieldsFilter)
+		docsStream, err = si.FetchDocsStream(ctx, pr.QPR.IDs, false, fieldsFilter)
 		if err != nil {
 			return pr, nil, err
 		}
