@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -53,7 +54,7 @@ func (si *Ingestor) StartAsyncSearch(ctx context.Context, r AsyncRequest) (Async
 	for i, shard := range searchStores.Shards {
 		var err error
 
-		// todo shuffle
+		// TODO: shuffle
 		for _, replica := range shard {
 			_, err = si.clients[replica].StartAsyncSearch(ctx, &req)
 			if err != nil {
@@ -129,6 +130,46 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		Offset:   int32(r.Offset),
 	}
 
+	storesCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type shardResponse struct {
+		replica string
+		data    *storeapi.FetchAsyncSearchResultResponse
+		err     error
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(searchStores.Shards))
+	respChan := make(chan shardResponse, len(searchStores.Shards))
+	for _, shard := range searchStores.Shards {
+		go func(shard []string) {
+			defer wg.Done()
+
+			for _, replica := range shard {
+				storeResp, err := si.clients[replica].FetchAsyncSearchResult(storesCtx, &req)
+				if err != nil {
+					if status.Code(err) == codes.NotFound {
+						continue
+					}
+				}
+
+				respChan <- shardResponse{
+					replica: replica,
+					data:    storeResp,
+					err:     err,
+				}
+
+				break
+			}
+		}(shard)
+	}
+
+	go func() {
+		wg.Wait()
+		close(respChan)
+	}()
+
 	fracsDone := 0
 	fracsInQueue := 0
 	histInterval := seq.MID(0)
@@ -170,52 +211,48 @@ func (si *Ingestor) FetchAsyncSearchResult(
 	var aggQueries []seq.AggregateArgs
 	var searchReq *AsyncRequest
 	anyResponse := false
-	for _, shard := range searchStores.Shards {
-		for _, replica := range shard {
-			storeResp, err := si.clients[replica].FetchAsyncSearchResult(ctx, &req)
-			if err != nil {
-				if status.Code(err) == codes.NotFound {
-					continue
-				}
-				return FetchAsyncSearchResultResponse{}, nil, err
+
+	for resp := range respChan {
+		if err := resp.err; err != nil {
+			return FetchAsyncSearchResultResponse{}, nil, err
+		}
+
+		anyResponse = true
+		storeResp := resp.data
+		mergeStoreResp(storeResp, resp.replica)
+
+		if len(aggQueries) == 0 {
+			for _, agg := range storeResp.Aggs {
+				aggQueries = append(aggQueries, seq.AggregateArgs{
+					Func:      agg.Func.MustAggFunc(),
+					Quantiles: agg.Quantiles,
+				})
 			}
-			anyResponse = true
-			mergeStoreResp(storeResp, replica)
+		}
 
-			if len(aggQueries) == 0 {
-				for _, agg := range storeResp.Aggs {
-					aggQueries = append(aggQueries, seq.AggregateArgs{
-						Func:      agg.Func.MustAggFunc(),
-						Quantiles: agg.Quantiles,
-					})
-				}
-			}
-
-			if searchReq == nil {
-				reqAggs := make([]AggQuery, 0, len(storeResp.Aggs))
-				for _, agg := range storeResp.Aggs {
-					reqAggs = append(reqAggs, AggQuery{
-						Field:     agg.Field,
-						GroupBy:   agg.GroupBy,
-						Func:      agg.Func.MustAggFunc(),
-						Quantiles: agg.Quantiles,
-					})
-				}
-
-				searchReq = &AsyncRequest{
-					Retention:         storeResp.Retention.AsDuration(),
-					Query:             storeResp.Query,
-					From:              storeResp.From.AsTime(),
-					To:                storeResp.To.AsTime(),
-					Aggregations:      reqAggs,
-					HistogramInterval: histInterval,
-					WithDocs:          storeResp.WithDocs,
-				}
+		if searchReq == nil {
+			reqAggs := make([]AggQuery, 0, len(storeResp.Aggs))
+			for _, agg := range storeResp.Aggs {
+				reqAggs = append(reqAggs, AggQuery{
+					Field:     agg.Field,
+					GroupBy:   agg.GroupBy,
+					Func:      agg.Func.MustAggFunc(),
+					Quantiles: agg.Quantiles,
+				})
 			}
 
-			break
+			searchReq = &AsyncRequest{
+				Retention:         storeResp.Retention.AsDuration(),
+				Query:             storeResp.Query,
+				From:              storeResp.From.AsTime(),
+				To:                storeResp.To.AsTime(),
+				Aggregations:      reqAggs,
+				HistogramInterval: histInterval,
+				WithDocs:          storeResp.WithDocs,
+			}
 		}
 	}
+
 	if !anyResponse {
 		return FetchAsyncSearchResultResponse{}, nil, status.Error(codes.NotFound, "async search result not found")
 	}
