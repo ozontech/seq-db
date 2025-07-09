@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 )
 
 type BlockMIDs struct {
@@ -30,7 +30,7 @@ func (b *BlockMIDs) Unpack(data []byte) error {
 }
 
 type BlockRIDs struct {
-	fracVersion conf.BinaryDataVersion
+	fracVersion config.BinaryDataVersion
 	Values      []uint64
 }
 
@@ -42,7 +42,7 @@ func (b BlockRIDs) Pack(dst []byte) []byte {
 }
 
 func (b *BlockRIDs) Unpack(data []byte) error {
-	if b.fracVersion < conf.BinaryDataV1 {
+	if b.fracVersion < config.BinaryDataV1 {
 		values, err := unpackRawIDsVarint(data, b.Values)
 		if err != nil {
 			return err

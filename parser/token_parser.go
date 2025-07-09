@@ -5,9 +5,8 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/seq"
-
-	"github.com/ozontech/seq-db/conf"
 )
 
 type tokenParser struct {
@@ -214,7 +213,7 @@ func (tp *tokenParser) parseRange(r *Range) error {
 }
 
 func (tp *tokenParser) parseLiteral(fieldName string, indexType seq.TokenizerType) ([]Token, error) {
-	caseSensitive := conf.CaseSensitive
+	caseSensitive := config.CaseSensitive
 	if fieldName == seq.TokenExists {
 		caseSensitive = true
 	}

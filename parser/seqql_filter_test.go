@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -238,11 +238,11 @@ func TestSeqQLCaseSensitive(t *testing.T) {
 		require.Equal(t, out, seqql.SeqQLString())
 	}
 	// Test case sensitivity.
-	conf.CaseSensitive = true
+	config.CaseSensitive = true
 	test("service: AbCdEf", "service:AbCdEf")
 	test("text: AbCdEf", "text:AbCdEf")
 	test("_exists_: 'AbCdEf'", "_exists_:AbCdEf")
-	conf.CaseSensitive = false
+	config.CaseSensitive = false
 	test("service: AbCdEf", "service:abcdef")
 	test("text: AbCdEf", "text:abcdef")
 	test("_exists_: `AbCdEf`", "_exists_:AbCdEf")

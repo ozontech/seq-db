@@ -1,4 +1,4 @@
-package conf
+package config
 
 type BinaryDataVersion uint16
 

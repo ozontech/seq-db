@@ -2,7 +2,7 @@ package seqids
 
 import (
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -21,7 +21,7 @@ func NewProvider(
 	cacheRIDs *cache.Cache[[]byte],
 	cacheParams *cache.Cache[BlockParams],
 	table *Table,
-	fracVersion conf.BinaryDataVersion,
+	fracVersion config.BinaryDataVersion,
 ) *Provider {
 	return &Provider{
 		table: table,

@@ -14,7 +14,7 @@ import (
 	"go.opencensus.io/trace"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxyapi/mock"
 	"github.com/ozontech/seq-db/seq"
@@ -132,7 +132,7 @@ func TestGrpcV1_Fetch(t *testing.T) {
 			name: "too_many_ids",
 			data: fetchTestCaseData{
 				startID:  1,
-				size:     conf.MaxRequestedDocuments + 1,
+				size:     config.MaxRequestedDocuments + 1,
 				noSiMock: true,
 				noResp:   true,
 			},
