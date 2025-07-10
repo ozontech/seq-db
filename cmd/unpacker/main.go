@@ -8,8 +8,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/storage"
 )
 
 // Unpacks .docs file
@@ -46,7 +46,7 @@ func main() {
 	}
 	total := stat.Size()
 
-	reader := disk.NewDocBlocksReader(disk.NewReadLimiter(1, nil), inFile)
+	reader := storage.NewDocBlocksReader(storage.NewReadLimiter(1, nil), inFile)
 
 	offset := int64(0)
 

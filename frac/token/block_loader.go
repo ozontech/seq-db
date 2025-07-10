@@ -10,9 +10,9 @@ import (
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/packer"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -97,10 +97,10 @@ func (b *Block) getCacheEntry() *CacheEntry {
 type BlockLoader struct {
 	fracName string
 	cache    *cache.Cache[*CacheEntry]
-	reader   *disk.IndexReader
+	reader   *storage.IndexReader
 }
 
-func NewBlockLoader(fracName string, reader *disk.IndexReader, c *cache.Cache[*CacheEntry]) *BlockLoader {
+func NewBlockLoader(fracName string, reader *storage.IndexReader, c *cache.Cache[*CacheEntry]) *BlockLoader {
 	return &BlockLoader{
 		fracName: fracName,
 		cache:    c,

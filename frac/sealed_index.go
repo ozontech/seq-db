@@ -8,7 +8,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/token"
@@ -18,6 +17,7 @@ import (
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pattern"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -66,7 +66,7 @@ type sealedDataProvider struct {
 	tokenTableLoader *token.TableLoader
 
 	blocksOffsets []uint64
-	docsReader    *disk.DocsReader
+	docsReader    *storage.DocsReader
 }
 
 func (dp *sealedDataProvider) getIDsIndex() *sealedIDsIndex {
@@ -268,7 +268,7 @@ func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 type sealedFetchIndex struct {
 	idsIndex      *sealedIDsIndex
 	idsLoader     *IDsLoader
-	docsReader    *disk.DocsReader
+	docsReader    *storage.DocsReader
 	blocksOffsets []uint64
 }
 

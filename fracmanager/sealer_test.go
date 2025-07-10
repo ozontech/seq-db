@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/tests/common"
 )
 
@@ -80,7 +80,7 @@ func BenchmarkSealing(b *testing.B) {
 	dataDir := filepath.Join(b.TempDir(), "BenchmarkSealing")
 	common.RecreateDir(dataDir)
 
-	readLimiter := disk.NewReadLimiter(1, nil)
+	readLimiter := storage.NewReadLimiter(1, nil)
 
 	activeIndexer := frac.NewActiveIndexer(10, 10)
 

@@ -1,8 +1,8 @@
 package search
 
 import (
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 )
 
 type StreamingDoc struct {
@@ -28,7 +28,7 @@ func NewStreamingDoc(idSource seq.IDSource, data []byte) StreamingDoc {
 }
 
 func unpackDoc(data []byte, source uint64) StreamingDoc {
-	block := disk.DocBlock(data)
+	block := storage.DocBlock(data)
 	doc := StreamingDoc{
 		ID: seq.ID{
 			MID: seq.MID(block.GetExt1()),

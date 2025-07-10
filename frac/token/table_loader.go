@@ -2,9 +2,9 @@ package token
 
 import (
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/packer"
+	"github.com/ozontech/seq-db/storage"
 	"go.uber.org/zap"
 )
 
@@ -12,13 +12,13 @@ const CacheKeyTable = 1
 
 type TableLoader struct {
 	fracName string
-	reader   *disk.IndexReader
+	reader   *storage.IndexReader
 	cache    *cache.Cache[Table]
 	i        uint32
 	buf      []byte
 }
 
-func NewTableLoader(fracName string, reader *disk.IndexReader, c *cache.Cache[Table]) *TableLoader {
+func NewTableLoader(fracName string, reader *storage.IndexReader, c *cache.Cache[Table]) *TableLoader {
 	return &TableLoader{
 		fracName: fracName,
 		reader:   reader,
@@ -36,7 +36,7 @@ func (l *TableLoader) Load() Table {
 	return table
 }
 
-func (l *TableLoader) readHeader() disk.IndexBlockHeader {
+func (l *TableLoader) readHeader() storage.IndexBlockHeader {
 	h, e := l.reader.GetBlockHeader(l.i)
 	if e != nil {
 		logger.Panic("error reading block header", zap.Error(e))

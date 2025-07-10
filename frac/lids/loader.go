@@ -2,8 +2,8 @@ package lids
 
 import (
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/packer"
+	"github.com/ozontech/seq-db/storage"
 )
 
 type unpackBuffer struct {
@@ -16,12 +16,12 @@ type unpackBuffer struct {
 // Use your own Loader instance for each search query
 type Loader struct {
 	cache     *cache.Cache[*Chunks]
-	reader    *disk.IndexReader
+	reader    *storage.IndexReader
 	unpackBuf *unpackBuffer
 	blockBuf  []byte
 }
 
-func NewLoader(reader *disk.IndexReader, chunkCache *cache.Cache[*Chunks]) *Loader {
+func NewLoader(reader *storage.IndexReader, chunkCache *cache.Cache[*Chunks]) *Loader {
 	return &Loader{
 		cache:     chunkCache,
 		reader:    reader,

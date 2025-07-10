@@ -4,9 +4,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -18,12 +18,12 @@ type IDsTable struct {
 }
 
 type IDsLoader struct {
-	reader *disk.IndexReader
+	reader *storage.IndexReader
 	table  IDsTable
 	cache  *IndexCache
 }
 
-func NewIDsLoader(indexReader *disk.IndexReader, indexCache *IndexCache, table IDsTable) *IDsLoader {
+func NewIDsLoader(indexReader *storage.IndexReader, indexCache *IndexCache, table IDsTable) *IDsLoader {
 	return &IDsLoader{
 		reader: indexReader,
 		cache:  indexCache,

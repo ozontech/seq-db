@@ -8,8 +8,8 @@ import (
 	insaneJSON "github.com/ozontech/insane-json"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 )
 
 type DocProvider struct {
@@ -60,7 +60,7 @@ func (dp *DocProvider) TryReset() {
 
 }
 
-func (dp *DocProvider) Provide() (disk.DocBlock, disk.DocBlock) {
+func (dp *DocProvider) Provide() (storage.DocBlock, storage.DocBlock) {
 	c := GetDocsMetasCompressor(-1, -1)
 	c.CompressDocsAndMetas(dp.Docs, dp.Metas)
 	return c.DocsMetas()

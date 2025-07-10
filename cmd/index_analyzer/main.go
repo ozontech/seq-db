@@ -10,10 +10,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/storage"
 )
 
 // Launch as:
@@ -28,7 +28,7 @@ func main() {
 	cm, stopFn := getCacheMaintainer()
 	defer stopFn()
 
-	readLimiter := disk.NewReadLimiter(1, nil)
+	readLimiter := storage.NewReadLimiter(1, nil)
 
 	mergedTokensUniq := map[string]map[string]int{}
 	mergedTokensValuesUniq := map[string]int{}
@@ -65,7 +65,7 @@ func getCacheMaintainer() (*fracmanager.CacheMaintainer, func()) {
 func analyzeIndex(
 	path string,
 	cm *fracmanager.CacheMaintainer,
-	reader *disk.ReadLimiter,
+	reader *storage.ReadLimiter,
 	mergedTokensUniq map[string]map[string]int,
 	allTokensValuesUniq map[string]int,
 ) Stats {
@@ -77,7 +77,7 @@ func analyzeIndex(
 		panic(err)
 	}
 
-	indexReader := disk.NewIndexReader(reader, f, cache.Registry)
+	indexReader := storage.NewIndexReader(reader, f, cache.Registry)
 
 	readBlock := func() []byte {
 		data, _, err := indexReader.ReadIndexBlock(blockIndex, nil)
