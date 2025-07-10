@@ -3,7 +3,7 @@ package storage
 import (
 	"encoding/binary"
 	"fmt"
-	"os"
+	"io"
 
 	"github.com/ozontech/seq-db/cache"
 )
@@ -13,9 +13,9 @@ type DocsReader struct {
 	cache  *cache.Cache[[]byte]
 }
 
-func NewDocsReader(reader *ReadLimiter, file *os.File, docsCache *cache.Cache[[]byte]) DocsReader {
+func NewDocsReader(limiter *ReadLimiter, reader io.ReaderAt, docsCache *cache.Cache[[]byte]) DocsReader {
 	return DocsReader{
-		reader: NewDocBlocksReader(reader, file),
+		reader: NewDocBlocksReader(limiter, reader),
 		cache:  docsCache,
 	}
 }

@@ -47,7 +47,7 @@ func getReader(path string) (storage.IndexReader, *os.File) {
 	if err != nil {
 		panic(err)
 	}
-	return storage.NewIndexReader(readLimiter, f, c), f
+	return storage.NewIndexReader(readLimiter, f.Name(), f, c), f
 }
 
 func readBlock(reader storage.IndexReader, blockIndex uint32) ([]byte, error) {

@@ -101,7 +101,7 @@ func (f *Sealed) openIndex() {
 		if err != nil {
 			logger.Fatal("can't open index file", zap.String("file", name), zap.Error(err))
 		}
-		f.indexReader = storage.NewIndexReader(f.readLimiter, f.indexFile, f.indexCache.Registry)
+		f.indexReader = storage.NewIndexReader(f.readLimiter, f.indexFile.Name(), f.indexFile, f.indexCache.Registry)
 	}
 }
 
@@ -151,7 +151,7 @@ func NewSealedPreloaded(
 
 		indexFile:   preloaded.indexFile,
 		indexCache:  indexCache,
-		indexReader: storage.NewIndexReader(rl, preloaded.indexFile, indexCache.Registry),
+		indexReader: storage.NewIndexReader(rl, preloaded.indexFile.Name(), preloaded.indexFile, indexCache.Registry),
 
 		loadMu:   &sync.RWMutex{},
 		isLoaded: true,

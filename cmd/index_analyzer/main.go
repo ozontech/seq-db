@@ -77,7 +77,7 @@ func analyzeIndex(
 		panic(err)
 	}
 
-	indexReader := storage.NewIndexReader(reader, f, cache.Registry)
+	indexReader := storage.NewIndexReader(reader, f.Name(), f, cache.Registry)
 
 	readBlock := func() []byte {
 		data, _, err := indexReader.ReadIndexBlock(blockIndex, nil)
