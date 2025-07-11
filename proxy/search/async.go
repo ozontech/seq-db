@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
 )
 
 type AsyncRequest struct {
@@ -54,8 +56,9 @@ func (si *Ingestor) StartAsyncSearch(ctx context.Context, r AsyncRequest) (Async
 	for i, shard := range searchStores.Shards {
 		var err error
 
-		// TODO: shuffle
-		for _, replica := range shard {
+		idx := util.IdxShuffle(len(shard))
+		for i := range len(shard) {
+			replica := shard[idx[i]]
 			_, err = si.clients[replica].StartAsyncSearch(ctx, &req)
 			if err != nil {
 				logger.Error("Can't start async search",
@@ -231,22 +234,12 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		}
 
 		if searchReq == nil {
-			reqAggs := make([]AggQuery, 0, len(storeResp.Aggs))
-			for _, agg := range storeResp.Aggs {
-				reqAggs = append(reqAggs, AggQuery{
-					Field:     agg.Field,
-					GroupBy:   agg.GroupBy,
-					Func:      agg.Func.MustAggFunc(),
-					Quantiles: agg.Quantiles,
-				})
-			}
-
 			searchReq = &AsyncRequest{
 				Retention:         storeResp.Retention.AsDuration(),
 				Query:             storeResp.Query,
 				From:              storeResp.From.AsTime(),
 				To:                storeResp.To.AsTime(),
-				Aggregations:      reqAggs,
+				Aggregations:      buildRequestAggs(storeResp.Aggs),
 				HistogramInterval: histInterval,
 				WithDocs:          storeResp.WithDocs,
 			}
@@ -301,63 +294,121 @@ func (si *Ingestor) GetAsyncSearchesList(
 		Offset: int32(r.Offset),
 	}
 
-	// TODO: handle multiple stores: errors, total disk usage, fracs stats, started at, expired at, etc...
-	// TODO: merge info for each of searches
+	storesCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type shardResponse struct {
+		data *storeapi.GetAsyncSearchesListResponse
+		err  error
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(searchStores.Shards))
+	respChan := make(chan shardResponse, len(searchStores.Shards))
+	for _, shard := range searchStores.Shards {
+		go func(shard []string) {
+			defer wg.Done()
+
+			// we must query all replicas since the required data’s location is unknown in advance
+			for _, replica := range shard {
+				storeResp, err := si.clients[replica].GetAsyncSearchesList(storesCtx, &req)
+				if err != nil {
+					if status.Code(err) == codes.NotFound {
+						continue
+					}
+				}
+
+				respChan <- shardResponse{
+					data: storeResp,
+					err:  err,
+				}
+			}
+		}(shard)
+	}
+
+	go func() {
+		wg.Wait()
+		close(respChan)
+	}()
+
+	responsesByID := make(map[string][]*storeapi.AsyncSearchesListItem)
+
+	for resp := range respChan {
+		if err := resp.err; err != nil {
+			return nil, err
+		}
+
+		for _, s := range resp.data.Searches {
+			responsesByID[s.SearchId] = append(responsesByID[s.SearchId], s)
+		}
+	}
 
 	searches := make([]*AsyncSearchesListItem, 0)
 
-	for _, shard := range searchStores.Shards {
-		for _, replica := range shard {
-			storeResp, err := si.clients[replica].GetAsyncSearchesList(ctx, &req)
-			if err != nil {
-				return nil, err
+	for id, items := range responsesByID {
+		fracsDone := 0
+		fracsInQueue := 0
+		var searchReq *AsyncRequest
+		search := AsyncSearchesListItem{
+			ID: id,
+		}
+
+		mergeListItem := func(sr *storeapi.AsyncSearchesListItem) {
+			search.DiskUsage += sr.DiskUsage
+			fracsInQueue += int(sr.FracsQueue)
+			fracsDone += int(sr.FracsDone)
+
+			ss := sr.Status.MustAsyncSearchStatus()
+			search.Status = mergeAsyncSearchStatus(search.Status, ss)
+
+			t := sr.StartedAt.AsTime()
+			if search.StartedAt.IsZero() || search.StartedAt.After(t) {
+				search.StartedAt = t
 			}
-
-			for _, s := range storeResp.Searches {
-				var progress float64
-				if s.FracsDone != 0 {
-					progress = float64(s.FracsDone+s.FracsQueue) / float64(s.FracsDone)
-				}
-				if s.Status.MustAsyncSearchStatus() == fracmanager.AsyncSearchStatusDone {
-					progress = 1
-				}
-
-				reqAggs := make([]AggQuery, 0, len(s.Aggs))
-				for _, agg := range s.Aggs {
-					reqAggs = append(reqAggs, AggQuery{
-						Field:     agg.Field,
-						GroupBy:   agg.GroupBy,
-						Func:      agg.Func.MustAggFunc(),
-						Quantiles: agg.Quantiles,
-					})
-				}
-
-				var canceledAt time.Time
-				if s.CanceledAt != nil {
-					canceledAt = s.CanceledAt.AsTime()
-				}
-
-				searches = append(searches, &AsyncSearchesListItem{
-					ID:         s.SearchId,
-					Status:     s.Status.MustAsyncSearchStatus(),
-					StartedAt:  s.StartedAt.AsTime(),
-					ExpiresAt:  s.ExpiresAt.AsTime(),
-					CanceledAt: canceledAt,
-					Progress:   progress,
-					DiskUsage:  s.DiskUsage,
-					Request: AsyncRequest{
-						Aggregations:      reqAggs,
-						HistogramInterval: seq.MID(s.HistogramInterval),
-						Query:             s.Query,
-						From:              s.From.AsTime(),
-						To:                s.To.AsTime(),
-						Retention:         s.Retention.AsDuration(),
-						WithDocs:          s.WithDocs,
-					},
-				})
+			t = sr.ExpiresAt.AsTime()
+			if search.ExpiresAt.IsZero() || search.ExpiresAt.After(t) {
+				search.ExpiresAt = t
+			}
+			t = sr.CanceledAt.AsTime()
+			if sr.CanceledAt != nil && (search.CanceledAt.IsZero() || search.CanceledAt.After(t)) {
+				search.CanceledAt = t
 			}
 		}
+
+		for _, s := range items {
+			mergeListItem(s)
+
+			if searchReq == nil {
+				searchReq = &AsyncRequest{
+					Retention:         s.Retention.AsDuration(),
+					Query:             s.Query,
+					From:              s.From.AsTime(),
+					To:                s.To.AsTime(),
+					Aggregations:      buildRequestAggs(s.Aggs),
+					HistogramInterval: seq.MID(s.HistogramInterval),
+					WithDocs:          s.WithDocs,
+				}
+			}
+		}
+
+		if fracsDone != 0 {
+			search.Progress = float64(fracsDone+fracsInQueue) / float64(fracsDone)
+		}
+		if search.Status == fracmanager.AsyncSearchStatusDone {
+			search.Progress = 1
+		}
+		search.Request = *searchReq
+
+		searches = append(searches, &search)
 	}
+
+	// order by (Status ASC, StartedAt DESC)
+	sort.Slice(searches, func(i, j int) bool {
+		if searches[i].Status == searches[j].Status {
+			return searches[i].StartedAt.After(searches[j].StartedAt)
+		}
+		return searches[i].Status < searches[j].Status
+	})
 
 	return searches, nil
 }
@@ -377,6 +428,19 @@ func mergeAsyncSearchStatus(a, b fracmanager.AsyncSearchStatus) fracmanager.Asyn
 	return b
 }
 
+func buildRequestAggs(in []*storeapi.AggQuery) []AggQuery {
+	reqAggs := make([]AggQuery, 0, len(in))
+	for _, agg := range in {
+		reqAggs = append(reqAggs, AggQuery{
+			Field:     agg.Field,
+			GroupBy:   agg.GroupBy,
+			Func:      agg.Func.MustAggFunc(),
+			Quantiles: agg.Quantiles,
+		})
+	}
+	return reqAggs
+}
+
 func (si *Ingestor) CancelAsyncSearch(ctx context.Context, id string) error {
 	searchStores, err := si.getAsyncSearchStores()
 	if err != nil {
@@ -394,7 +458,7 @@ func (si *Ingestor) CancelAsyncSearch(ctx context.Context, id string) error {
 	}
 
 	if err := si.visitEachReplica(searchStores, cancelSearch); err != nil {
-		panic(fmt.Errorf("BUG: unexpected error from visit func"))
+		panic(fmt.Errorf("BUG: unexpected error from visit func")) // TODO: should really we panic here?
 	}
 	if lastErr != nil {
 		return fmt.Errorf("unable to cancel async search for all shards in cluster; last err: %w", lastErr)
@@ -419,7 +483,7 @@ func (si *Ingestor) DeleteAsyncSearch(ctx context.Context, id string) error {
 	}
 
 	if err := si.visitEachReplica(searchStores, cancelSearch); err != nil {
-		panic(fmt.Errorf("BUG: unexpected error from visit func"))
+		panic(fmt.Errorf("BUG: unexpected error from visit func")) // TODO: should really we panic here?
 	}
 	if lastErr != nil {
 		return fmt.Errorf("unable to delete async search for all shards in cluster; last err: %w", lastErr)
