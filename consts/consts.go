@@ -60,7 +60,7 @@ const (
 	IndexTmpFileSuffix = "._index"
 	IndexDelFileSuffix = ".index.del"
 
-	FracCacheFileSuffix = ".frac-cache"
+	FracListFileSuffix = ".frac-list"
 
 	// tracing
 	JaegerDebugKey = "jaeger-debug-id"

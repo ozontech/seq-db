@@ -1,6 +1,7 @@
 package frac
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -48,6 +49,12 @@ type Info struct {
 	CreationTime uint64                `json:"creation_time"`
 	SealingTime  uint64                `json:"sealing_time"`
 	Distribution *seq.MIDsDistribution `json:"distribution"`
+
+	// OffloadedTo specifies remote storage where fraction was offloaded.
+	// For now we support only S3 storage but it is subject to change.
+	//
+	// If fraction is stored locally on disk this field will be empty.
+	OffloadedTo string `json:"offloaded_to"`
 }
 
 func NewInfo(filename string, docsOnDisk, metaOnDisk uint64) *Info {
@@ -143,4 +150,12 @@ func (s *Info) IsIntersecting(from, to seq.MID) bool {
 
 	// check with distribution
 	return s.Distribution.IsIntersecting(from, to)
+}
+
+func (s *Info) IsOffloaded() bool {
+	return s.OffloadedTo != ""
+}
+
+func (s *Info) Exists(_ context.Context) bool {
+	return true
 }

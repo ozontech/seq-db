@@ -30,17 +30,17 @@ type fracInfo struct {
 type loader struct {
 	config       *Config
 	fracProvider *fractionProvider
-	fracCache    *sealedFracCache
+	fracList     *sealedFracList
 
-	cachedFracs   int
-	uncachedFracs int
+	listedFracs   int
+	unlistedFracs int
 }
 
-func NewLoader(config *Config, fracProvider *fractionProvider, fracCache *sealedFracCache) *loader {
+func NewLoader(config *Config, fracProvider *fractionProvider, fracList *sealedFracList) *loader {
 	return &loader{
 		config:       config,
 		fracProvider: fracProvider,
-		fracCache:    fracCache,
+		fracList:     fracList,
 	}
 }
 
@@ -61,7 +61,7 @@ func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 	fracs := make([]*fracRef, 0, cnt)
 	actives := make([]*frac.Active, 0)
 
-	diskFracCache := NewFracCacheFromDisk(filepath.Join(l.config.DataDir, consts.FracCacheFileSuffix))
+	diskFracList := NewFracListFromDisk(filepath.Join(l.config.DataDir, consts.FracListFileSuffix))
 	ts := time.Now()
 
 	for i, info := range infosList {
@@ -72,13 +72,13 @@ func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 			if info.hasDocs {
 				removeFile(info.base + consts.DocsFileSuffix)
 			}
-			sealed := l.loadSealedFrac(diskFracCache, info)
+			sealed := l.loadSealedFrac(diskFracList, info)
 			fracs = append(fracs, &fracRef{instance: sealed})
 		} else {
 			if info.hasMeta {
 				actives = append(actives, l.fracProvider.NewActive(info.base))
 			} else {
-				sealed := l.loadSealedFrac(diskFracCache, info)
+				sealed := l.loadSealedFrac(diskFracList, info)
 				fracs = append(fracs, &fracRef{instance: sealed})
 			}
 		}
@@ -95,7 +95,7 @@ func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 		}
 	}
 
-	logger.Info("fractions list created", zap.Int("cached", l.cachedFracs), zap.Int("uncached", l.uncachedFracs))
+	logger.Info("fractions list created", zap.Int("listed", l.listedFracs), zap.Int("unlisted", l.unlistedFracs))
 
 	logger.Info("replaying active fractions", zap.Int("count", len(actives)))
 	notSealed := make([]activeRef, 0)
@@ -115,18 +115,18 @@ func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 	return fracs, notSealed, nil
 }
 
-func (l *loader) loadSealedFrac(diskFracCache *sealedFracCache, info *fracInfo) *frac.Sealed {
-	cachedInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
+func (l *loader) loadSealedFrac(diskFracList *sealedFracList, info *fracInfo) *frac.Sealed {
+	listedInfo, ok := diskFracList.GetFracInfo(filepath.Base(info.base))
 	if ok {
-		l.cachedFracs++
+		l.listedFracs++
 	} else {
-		l.uncachedFracs++
+		l.unlistedFracs++
 	}
 
-	sealed := l.fracProvider.NewSealed(info.base, cachedInfo)
+	sealed := l.fracProvider.NewSealed(info.base, listedInfo)
 
 	stats := sealed.Info()
-	l.fracCache.AddFraction(stats.Name(), stats)
+	l.fracList.AddFraction(stats.Name(), stats)
 	return sealed
 }
 

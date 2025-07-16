@@ -147,7 +147,7 @@ func main() {
 	}
 
 	dataDir := os.Args[1]
-	filePathOrig := filepath.Join(dataDir, consts.FracCacheFileSuffix)
+	filePathOrig := filepath.Join(dataDir, consts.FracListFileSuffix)
 	filePathDist := filePathOrig + ".dist"
 
 	if exist, err := fileExist(filePathDist); err != nil {
@@ -158,7 +158,7 @@ func main() {
 		}
 	}
 
-	fc := fracmanager.NewSealedFracCache(filePathDist)
+	fc := fracmanager.NewSealedFracList(filePathDist)
 
 	lastSavedTime := time.Now()
 	for _, path := range getAllFracs(dataDir) {
@@ -169,7 +169,7 @@ func main() {
 
 		info, ok := fc.GetFracInfo(key)
 		if ok {
-			logger.Info("found in frac-cache", zap.String("key", key))
+			logger.Info("found in frac-list", zap.String("key", key))
 		} else {
 			info = loadInfo(path)
 			logger.Info("loaded info from index",

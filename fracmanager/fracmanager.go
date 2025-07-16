@@ -35,7 +35,7 @@ type FracManager struct {
 
 	cacheMaintainer *CacheMaintainer
 
-	fracCache *sealedFracCache
+	fracList *sealedFracList
 
 	fracMu sync.RWMutex
 	fracs  []*fracRef
@@ -92,7 +92,7 @@ func NewFracManager(config *Config) *FracManager {
 		cacheMaintainer: cacheMaintainer,
 		fracProvider:    newFractionProvider(&config.Fraction, cacheMaintainer, conf.ReaderWorkers, conf.IndexWorkers),
 		ulidEntropy:     ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
-		fracCache:       NewSealedFracCache(filepath.Join(config.DataDir, consts.FracCacheFileSuffix)),
+		fracList:        NewSealedFracList(filepath.Join(config.DataDir, consts.FracListFileSuffix)),
 	}
 
 	return fracManager
@@ -119,8 +119,8 @@ func (fm *FracManager) maintenance(sealWG, suicideWG *sync.WaitGroup) {
 
 	fm.shrinkSizes(suicideWG)
 
-	if err := fm.fracCache.SyncWithDisk(); err != nil {
-		logger.Error("can't sync frac cache", zap.Error(err))
+	if err := fm.fracList.SyncWithDisk(); err != nil {
+		logger.Error("can't sync frac-list", zap.Error(err))
 	}
 
 	logger.Debug("maintenance finished", zap.Int64("took_ms", time.Since(n).Milliseconds()))
@@ -158,7 +158,7 @@ func (fm *FracManager) shrinkSizes(suicideWG *sync.WaitGroup) {
 		if !fm.Mature() {
 			fm.setMature()
 		}
-		fm.fracCache.RemoveFraction(outsider.Info().Name())
+		fm.fracList.RemoveFraction(outsider.Info().Name())
 		metric.MaintenanceTruncateTotal.Inc()
 		logger.Info("truncating last fraction", zap.Any("fraction", outsider))
 	}
@@ -282,7 +282,7 @@ func (fm *FracManager) Load(ctx context.Context) error {
 	var err error
 	var notSealed []activeRef
 
-	l := NewLoader(fm.config, fm.fracProvider, fm.fracCache)
+	l := NewLoader(fm.config, fm.fracProvider, fm.fracList)
 
 	if fm.fracs, notSealed, err = l.load(ctx); err != nil {
 		return err
@@ -359,7 +359,7 @@ func (fm *FracManager) seal(activeRef activeRef) {
 	}
 
 	info := sealed.Info()
-	fm.fracCache.AddFraction(info.Name(), info)
+	fm.fracList.AddFraction(info.Name(), info)
 
 	fm.fracMu.Lock()
 	activeRef.ref.instance = sealed
