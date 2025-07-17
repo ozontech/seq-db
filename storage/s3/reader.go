@@ -32,7 +32,7 @@ func NewReader(ctx context.Context, c *client, filename string) *reader {
 }
 
 func (r *reader) ReadAt(p []byte, off int64) (n int, err error) {
-	out, err := r.c.GetObject(r.ctx, &s3.GetObjectInput{
+	out, err := r.c.cli.GetObject(r.ctx, &s3.GetObjectInput{
 		Bucket: aws.String(r.c.bucket),
 		Key:    aws.String(r.filename),
 		Range:  aws.String(r.rangeBytes(off, int64(len(p)))),
@@ -68,7 +68,7 @@ func (r *reader) ReadAt(p []byte, off int64) (n int, err error) {
 
 }
 
-// rangeBytes returns valid content of Range header.
+// rangeBytes returns a valid content of a HTTP Range header.
 // See more information here: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Range
 func (r *reader) rangeBytes(start, length int64) string {
 	return fmt.Sprintf("bytes %d-%d/*", start, start+length-1)
