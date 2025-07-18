@@ -6,12 +6,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/pkg/storeapi"
-	"github.com/ozontech/seq-db/seq"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/pkg/storeapi"
+	"github.com/ozontech/seq-db/seq"
 )
 
 type AsyncRequest struct {

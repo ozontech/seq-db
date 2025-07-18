@@ -7,8 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ozontech/seq-db/tests/common"
 	"lukechampine.com/frand" // much faster with multiple goroutines
+
+	"github.com/ozontech/seq-db/tests/common"
 )
 
 // InlineJSON is a string representing valid json

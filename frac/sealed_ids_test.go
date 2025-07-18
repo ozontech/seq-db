@@ -3,10 +3,11 @@ package frac
 import (
 	"testing"
 
-	"github.com/ozontech/seq-db/packer"
-	"github.com/ozontech/seq-db/seq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ozontech/seq-db/packer"
+	"github.com/ozontech/seq-db/seq"
 )
 
 func TestUnpackCache_ValsCapacity(t *testing.T) {

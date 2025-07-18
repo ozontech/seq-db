@@ -96,6 +96,16 @@ ci-tests-race:
 .PHONY: lint
 lint: .lint
 
+.PHONY: imports
+imports:
+	find . \
+	-path './pkg' -prune -o \
+	-type f -name '*.go' \
+	! -name '*.pb.go' \
+	! -name '*.pb.gw.go' \
+	! -name '*_mock.go' \
+	-exec goimports -w -local 'github.com/ozontech/seq-db' {} +
+
 .PHONY: mock
 mock:
 	go run github.com/golang/mock/mockgen@latest \
