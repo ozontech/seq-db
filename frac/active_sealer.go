@@ -35,7 +35,7 @@ type SealParams struct {
 	DocBlockSize       int // DocBlockSize is decompressed payload size of document block.
 }
 
-func seal(f *Active, params SealParams) (*PreloadedData, error) {
+func Seal(f *Active, params SealParams, doNotClose bool) (*PreloadedData, error) {
 	logger.Info("sealing fraction", zap.String("fraction", f.BaseFileName))
 
 	start := time.Now()
@@ -59,7 +59,9 @@ func seal(f *Active, params SealParams) (*PreloadedData, error) {
 		return nil, err
 	}
 
-	f.close(false, "seal")
+	if !doNotClose {
+		f.close(false, "seal")
+	}
 
 	if indexFile, err = syncRename(indexFile, f.BaseFileName+consts.IndexFileSuffix); err != nil {
 		return nil, err

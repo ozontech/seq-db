@@ -267,7 +267,7 @@ func (f *Active) Seal(params SealParams) (*PreloadedData, error) {
 	f.WaitWriteIdle()
 	logger.Info("write is stopped", zap.Float64("time_wait_s", util.DurationToUnit(time.Since(start), "s")))
 
-	return seal(f, params)
+	return Seal(f, params, false)
 }
 
 func (f *Active) GetAllDocuments() []uint32 {
