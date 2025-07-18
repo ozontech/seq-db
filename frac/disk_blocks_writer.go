@@ -114,7 +114,7 @@ func (w *DiskBlocksWriter) writeIDsBlocks(zstdLevel int, generateBlocks func(fun
 	return minBlockIDs, nil
 }
 
-func (w *DiskBlocksWriter) writeTokensBlocks(zstdCompressLevel int, generateBlocks func(func(*DiskTokensBlock) error) error) (token.Table, error) {
+func (w *DiskBlocksWriter) writeTokensBlocks(zstdCompressLevel int, generateBlocks func(func(*tokensBlock) error) error) (token.Table, error) {
 	var startIndex uint32
 	tokenTable := make(token.Table)
 
@@ -122,7 +122,7 @@ func (w *DiskBlocksWriter) writeTokensBlocks(zstdCompressLevel int, generateBloc
 
 	former := w.NewBlockFormer("tokens", consts.RegularBlockSize)
 
-	push := func(block *DiskTokensBlock) error {
+	push := func(block *tokensBlock) error {
 		if block.isStartOfField && block.totalSizeOfField > consts.RegularBlockSize {
 			if err := former.FlushForced(opts...); err != nil {
 				return err
@@ -133,7 +133,7 @@ func (w *DiskBlocksWriter) writeTokensBlocks(zstdCompressLevel int, generateBloc
 		tokenTableEntry := block.createTokenTableEntry(startIndex, w.writer.GetBlockIndex())
 		fieldData, ok := tokenTable[block.field]
 		if !ok {
-			minVal := string(block.tokens[0])
+			minVal := string(block.payload.GetToken(0))
 			fieldData = &token.FieldData{
 				MinVal: minVal,
 			}
@@ -142,8 +142,8 @@ func (w *DiskBlocksWriter) writeTokensBlocks(zstdCompressLevel int, generateBloc
 		}
 		fieldData.Entries = append(fieldData.Entries, tokenTableEntry)
 
-		former.Buf = block.pack(former.Buf)
-		startIndex += uint32(len(block.tokens))
+		former.Buf = block.payload.Pack(former.Buf)
+		startIndex += uint32(block.payload.Len())
 
 		if flushed, err := former.FlushIfNeeded(opts...); err != nil {
 			return err
@@ -168,13 +168,13 @@ func (w *DiskBlocksWriter) writeTokensBlocks(zstdCompressLevel int, generateBloc
 	return tokenTable, nil
 }
 
-func (w *DiskBlocksWriter) writeTokenTableBlocks(zstdCompressLevel int, generateBlocks func(func(*DiskTokenTableBlock) error) error) error {
+func (w *DiskBlocksWriter) writeTokenTableBlocks(zstdCompressLevel int, generateBlocks func(func(token.TableBlock) error) error) error {
 	former := w.NewBlockFormer("token_table", consts.RegularBlockSize)
 
 	opts := []disk.FlushOption{disk.WithZstdCompressLevel(zstdCompressLevel)}
 
-	push := func(block *DiskTokenTableBlock) error {
-		former.Buf = block.pack(former.Buf)
+	push := func(block token.TableBlock) error {
+		former.Buf = block.Pack(former.Buf)
 		if _, err := former.FlushIfNeeded(opts...); err != nil {
 			return err
 		}
