@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -193,6 +194,21 @@ func (i *asyncSearchInfo) Expired() bool {
 
 func (i *asyncSearchInfo) Expiration() time.Time {
 	return i.StartedAt.Add(i.Request.Retention)
+}
+
+func (i *asyncSearchInfo) Status() AsyncSearchStatus {
+	status := AsyncSearchStatusInProgress
+	if i.Finished {
+		if i.Canceled() {
+			status = AsyncSearchStatusCanceled
+		} else if i.Error != "" {
+			status = AsyncSearchStatusError
+		} else {
+			status = AsyncSearchStatusDone
+		}
+	}
+
+	return status
 }
 
 func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs List) error {
@@ -606,7 +622,7 @@ type FetchSearchResultRequest struct {
 type AsyncSearchStatus byte
 
 const (
-	AsyncSearchStatusDone AsyncSearchStatus = iota + 1
+	AsyncSearchStatusDone AsyncSearchStatus = iota
 	AsyncSearchStatusInProgress
 	AsyncSearchStatusError
 	AsyncSearchStatusCanceled
@@ -628,11 +644,17 @@ type FetchSearchResultResponse struct {
 	// Stuff that needed seq-db proxy to complete async search response.
 	AggQueries   []processor.AggQuery
 	HistInterval uint64
+
+	Query     string
+	From      seq.MID
+	To        seq.MID
+	Retention time.Duration
+	WithDocs  bool
 }
 
 func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSearchResultResponse, bool) {
 	info, ok := as.getSearchInfo(r.ID)
-	if !ok || info.Canceled() {
+	if !ok {
 		return FetchSearchResultResponse{}, false
 	}
 
@@ -644,7 +666,7 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		fracsDone = len(info.Fractions)
 		fracsInQueue = 0
 	} else {
-		// todo do not conflict with maintenance
+		// TODO: do not conflict with maintenance
 		p, err := as.findQPRs(r.ID)
 		if err != nil {
 			logger.Fatal("can't load async search result", zap.String("id", r.ID), zap.Error(err))
@@ -654,17 +676,6 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		fracsInQueue = len(info.Fractions) - fracsDone
 	}
 
-	status := AsyncSearchStatusInProgress
-	if info.Finished {
-		if info.Canceled() {
-			status = AsyncSearchStatusCanceled
-		} else if info.Error != "" {
-			status = AsyncSearchStatusError
-		} else {
-			status = AsyncSearchStatusDone
-		}
-	}
-
 	if info.Error != "" {
 		qpr.Errors = append(qpr.Errors, seq.ErrorSource{
 			ErrStr: info.Error,
@@ -672,7 +683,7 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 	}
 
 	return FetchSearchResultResponse{
-		Status:       status,
+		Status:       info.Status(),
 		QPR:          qpr,
 		StartedAt:    info.StartedAt,
 		ExpiresAt:    info.Expiration(),
@@ -683,6 +694,11 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		Error:        info.Error,
 		AggQueries:   info.Request.Params.AggQ,
 		HistInterval: info.Request.Params.HistInterval,
+		Query:        info.Request.Query,
+		From:         info.Request.Params.From,
+		To:           info.Request.Params.To,
+		Retention:    info.Request.Retention,
+		WithDocs:     info.Request.Params.Limit == math.MaxInt,
 	}, true
 }
 
@@ -883,6 +899,11 @@ func (as *AsyncSearcher) checkDiskUsage() {
 func (as *AsyncSearcher) CancelSearch(id string) {
 	as.updateSearchInfo(id, func(info *asyncSearchInfo) {
 		if info.CanceledAt.IsZero() {
+			// TODO: запретить отменять завершенный запрос (???)
+			// if info.Status() != AsyncSearchStatusInProgress {
+			// 	return
+			// }
+
 			info.CanceledAt = time.Now()
 			info.cancel()
 		}
@@ -897,6 +918,96 @@ func (as *AsyncSearcher) DeleteSearch(id string) {
 		}
 		info.Request.Retention = 0
 	})
+}
+
+type GetAsyncSearchesListRequest struct {
+	Status *AsyncSearchStatus
+	Limit  int
+	Offset int
+}
+
+type AsyncSearchesListItem struct {
+	ID     string
+	Status AsyncSearchStatus
+
+	StartedAt  time.Time
+	ExpiresAt  time.Time
+	CanceledAt time.Time
+
+	FracsDone    int
+	FracsInQueue int
+	DiskUsage    int
+
+	// Search request info
+	AggQueries   []processor.AggQuery
+	HistInterval uint64
+	Query        string
+	From         seq.MID
+	To           seq.MID
+	Retention    time.Duration
+	WithDocs     bool
+}
+
+func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*AsyncSearchesListItem {
+	var items []*AsyncSearchesListItem
+
+	as.requestsMu.RLock()
+	requests := as.requests
+	as.requestsMu.RUnlock()
+
+	for id := range requests {
+		info := requests[id]
+		status := info.Status()
+
+		// Filter by status
+		if r.Status != nil && status != *r.Status {
+			continue
+		}
+
+		var fracsDone, fracsInQueue int
+		if info.merged.Load() {
+			fracsDone = len(info.Fractions)
+			fracsInQueue = 0
+		} else {
+			// TODO: do not conflict with maintenance
+			p, err := as.findQPRs(id)
+			if err != nil {
+				logger.Fatal("can't load async search result", zap.String("id", id), zap.Error(err))
+			}
+			fracsDone = len(p)
+			fracsInQueue = len(info.Fractions) - fracsDone
+		}
+
+		items = append(items, &AsyncSearchesListItem{
+			ID:           id,
+			Status:       status,
+			StartedAt:    info.StartedAt,
+			ExpiresAt:    info.Expiration(),
+			CanceledAt:   info.CanceledAt,
+			FracsDone:    fracsDone,
+			FracsInQueue: fracsInQueue,
+			DiskUsage:    int(info.infoSize.Load() + info.qprsSize.Load()),
+			AggQueries:   info.Request.Params.AggQ,
+			HistInterval: info.Request.Params.HistInterval,
+			Query:        info.Request.Query,
+			From:         info.Request.Params.From,
+			To:           info.Request.Params.To,
+			Retention:    info.Request.Retention,
+			WithDocs:     info.Request.Params.Limit == math.MaxInt,
+		})
+	}
+
+	// order by (Status ASC, StartedAt DESC)
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Status == items[j].Status {
+			return items[i].StartedAt.After(items[j].StartedAt)
+		}
+		return items[i].Status < items[j].Status
+	})
+
+	// TODO: limit offset
+
+	return items
 }
 
 func mustWriteFileAtomic(fpath string, data []byte) {

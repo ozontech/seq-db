@@ -10,10 +10,14 @@ import (
 	"github.com/ozontech/seq-db/seq"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func (g *GrpcV1) StartAsyncSearch(_ context.Context, r *storeapi.StartAsyncSearchRequest) (*storeapi.StartAsyncSearchResponse, error) {
+func (g *GrpcV1) StartAsyncSearch(
+	_ context.Context,
+	r *storeapi.StartAsyncSearchRequest,
+) (*storeapi.StartAsyncSearchResponse, error) {
 	aggs, err := aggQueriesFromProto(r.Aggs)
 	if err != nil {
 		return nil, err
@@ -49,7 +53,10 @@ func (g *GrpcV1) StartAsyncSearch(_ context.Context, r *storeapi.StartAsyncSearc
 	return &storeapi.StartAsyncSearchResponse{}, nil
 }
 
-func (g *GrpcV1) FetchAsyncSearchResult(_ context.Context, r *storeapi.FetchAsyncSearchResultRequest) (*storeapi.FetchAsyncSearchResultResponse, error) {
+func (g *GrpcV1) FetchAsyncSearchResult(
+	_ context.Context,
+	r *storeapi.FetchAsyncSearchResultRequest,
+) (*storeapi.FetchAsyncSearchResultResponse, error) {
 	fr, exists := g.asyncSearcher.FetchSearchResult(fracmanager.FetchSearchResultRequest{
 		ID:    r.SearchId,
 		Limit: int(r.Size + r.Offset),
@@ -62,7 +69,7 @@ func (g *GrpcV1) FetchAsyncSearchResult(_ context.Context, r *storeapi.FetchAsyn
 	resp := buildSearchResponse(&fr.QPR)
 
 	var canceledAt *timestamppb.Timestamp
-	if fr.CanceledAt.IsZero() {
+	if !fr.CanceledAt.IsZero() {
 		canceledAt = timestamppb.New(fr.CanceledAt)
 	}
 
@@ -77,17 +84,49 @@ func (g *GrpcV1) FetchAsyncSearchResult(_ context.Context, r *storeapi.FetchAsyn
 		DiskUsage:         uint64(fr.DiskUsage),
 		Aggs:              convertAggQueriesToProto(fr.AggQueries),
 		HistogramInterval: int64(fr.HistInterval),
+		Query:             fr.Query,
+		From:              timestamppb.New(fr.From.Time()),
+		To:                timestamppb.New(fr.To.Time()),
+		Retention:         durationpb.New(fr.Retention),
+		WithDocs:          fr.WithDocs,
 	}, nil
 }
 
-func (g *GrpcV1) CancelAsyncSearch(_ context.Context, r *storeapi.CancelAsyncSearchRequest) (*storeapi.CancelAsyncSearchResponse, error) {
+func (g *GrpcV1) CancelAsyncSearch(
+	_ context.Context,
+	r *storeapi.CancelAsyncSearchRequest,
+) (*storeapi.CancelAsyncSearchResponse, error) {
 	g.asyncSearcher.CancelSearch(r.SearchId)
 	return &storeapi.CancelAsyncSearchResponse{}, nil
 }
 
-func (g *GrpcV1) DeleteAsyncSearch(_ context.Context, r *storeapi.DeleteAsyncSearchRequest) (*storeapi.DeleteAsyncSearchResponse, error) {
+func (g *GrpcV1) DeleteAsyncSearch(
+	_ context.Context,
+	r *storeapi.DeleteAsyncSearchRequest,
+) (*storeapi.DeleteAsyncSearchResponse, error) {
 	g.asyncSearcher.DeleteSearch(r.SearchId)
 	return &storeapi.DeleteAsyncSearchResponse{}, nil
+}
+
+func (g *GrpcV1) GetAsyncSearchesList(
+	_ context.Context,
+	r *storeapi.GetAsyncSearchesListRequest,
+) (*storeapi.GetAsyncSearchesListResponse, error) {
+	var searchStatus *fracmanager.AsyncSearchStatus
+	if r.Status != nil {
+		s := r.Status.MustAsyncSearchStatus()
+		searchStatus = &s
+	}
+
+	searches := g.asyncSearcher.GetAsyncSearchesList(fracmanager.GetAsyncSearchesListRequest{
+		Status: searchStatus,
+		Limit:  int(r.Size),
+		Offset: int(r.Offset),
+	})
+
+	return &storeapi.GetAsyncSearchesListResponse{
+		Searches: convertAsyncSearchesToProto(searches),
+	}, nil
 }
 
 func convertAggQueriesToProto(query []processor.AggQuery) []*storeapi.AggQuery {
@@ -105,5 +144,36 @@ func convertAggQueriesToProto(query []processor.AggQuery) []*storeapi.AggQuery {
 		}
 		res = append(res, pq)
 	}
+	return res
+}
+
+func convertAsyncSearchesToProto(in []*fracmanager.AsyncSearchesListItem) []*storeapi.AsyncSearchesListItem {
+	res := make([]*storeapi.AsyncSearchesListItem, 0, len(in))
+
+	for _, s := range in {
+		var canceledAt *timestamppb.Timestamp
+		if !s.CanceledAt.IsZero() {
+			canceledAt = timestamppb.New(s.CanceledAt)
+		}
+
+		res = append(res, &storeapi.AsyncSearchesListItem{
+			SearchId:          s.ID,
+			Status:            storeapi.MustProtoAsyncSearchStatus(s.Status),
+			StartedAt:         timestamppb.New(s.StartedAt),
+			ExpiresAt:         timestamppb.New(s.ExpiresAt),
+			CanceledAt:        canceledAt,
+			FracsDone:         uint64(s.FracsDone),
+			FracsQueue:        uint64(s.FracsInQueue),
+			DiskUsage:         uint64(s.DiskUsage),
+			Aggs:              convertAggQueriesToProto(s.AggQueries),
+			HistogramInterval: int64(s.HistInterval),
+			Query:             s.Query,
+			From:              timestamppb.New(s.From.Time()),
+			To:                timestamppb.New(s.To.Time()),
+			Retention:         durationpb.New(s.Retention),
+			WithDocs:          s.WithDocs,
+		})
+	}
+
 	return res
 }

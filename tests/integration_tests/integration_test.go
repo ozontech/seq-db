@@ -1830,4 +1830,6 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.True(len(fresp.QPR.Histogram) != 0)
 	r.Equal(len(docs), fresp.QPR.IDs.Len())
 	r.Equal(float64(1), fresp.Progress)
+
+	// TODO: test GetAsyncSearchesList
 }

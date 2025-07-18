@@ -102,6 +102,13 @@ service SeqProxyApi {
       delete: "/async-searches/{search_id}"
     };
   }
+
+  // Fetch list of async searches.
+  rpc GetAsyncSearchesList(GetAsyncSearchesListRequest) returns (GetAsyncSearchesListResponse) {
+    option (google.api.http) = {
+      get: "/async-searches"
+    };
+  }
 }
 
 // Custom error code, returned by seq-db proxy.
@@ -279,14 +286,15 @@ enum AsyncSearchStatus {
 
 message FetchAsyncSearchResultResponse {
   AsyncSearchStatus status = 1;
-  ComplexSearchResponse response = 2;
-  google.protobuf.Timestamp started_at = 3;
-  google.protobuf.Timestamp expires_at = 4;
-  optional google.protobuf.Timestamp canceled_at = 5;
+  StartAsyncSearchRequest request = 2;
+  ComplexSearchResponse response = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  optional google.protobuf.Timestamp canceled_at = 6;
   // Search progress in range [0, 1].
-  double progress = 6;
+  double progress = 7;
   // The size of data stored on disk, in bytes.
-  uint64 disk_usage = 7;
+  uint64 disk_usage = 8;
 }
 
 message CancelAsyncSearchRequest{
@@ -300,6 +308,31 @@ message DeleteAsyncSearchRequest {
 }
 
 message DeleteAsyncSearchResponse {}
+
+message GetAsyncSearchesListRequest {
+  optional AsyncSearchStatus status = 1;
+  // Maximum number of searches to fetch (pagination).
+  int32 size = 2;
+  // Searches offset (pagination).
+  int32 offset = 3;
+}
+
+message GetAsyncSearchesListResponse {
+  repeated AsyncSearchesListItem searches = 1;
+}
+
+message AsyncSearchesListItem {
+  string search_id = 1;
+  AsyncSearchStatus status = 2;
+  StartAsyncSearchRequest request = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  optional google.protobuf.Timestamp canceled_at = 6;
+  // Search progress in range [0, 1].
+  double progress = 7;
+  // The size of data stored on disk, in bytes.
+  uint64 disk_usage = 8;
+}
 
 message GetAggregationRequest {
   SearchQuery query = 1;      // Search query.
