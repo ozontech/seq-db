@@ -13,7 +13,7 @@ type IndexCache struct {
 	Params     *cache.Cache[[]uint64]
 	Tokens     *cache.Cache[*token.CacheEntry]
 	TokenTable *cache.Cache[token.Table]
-	LIDs       *cache.Cache[*lids.Chunks]
+	LIDs       *cache.Cache[*lids.Block]
 }
 
 func (s *IndexCache) Release() {
