@@ -63,6 +63,14 @@ type activeRef struct {
 	frac *proxyFrac
 }
 
+func (fm *FracManager) newActiveRef(active *frac.Active) activeRef {
+	f := &proxyFrac{active: active, fp: fm.fracProvider}
+	return activeRef{
+		frac: f,
+		ref:  &fracRef{instance: f},
+	}
+}
+
 func NewFracManager(config *Config) *FracManager {
 	FillConfigWithDefault(config)
 
@@ -280,11 +288,19 @@ func (fm *FracManager) Start() {
 
 func (fm *FracManager) Load(ctx context.Context) error {
 	var err error
-	var notSealed []activeRef
 
 	l := NewLoader(fm.config, fm.fracProvider, fm.fracCache)
 
-	if fm.fracs, notSealed, err = l.load(ctx); err != nil {
+	actives, sealed, err := l.load()
+	if err != nil {
+		return err
+	}
+
+	for _, s := range sealed {
+		fm.fracs = append(fm.fracs, &fracRef{instance: s})
+	}
+
+	if err := fm.replayAll(ctx, actives); err != nil {
 		return err
 	}
 
@@ -298,16 +314,39 @@ func (fm *FracManager) Load(ctx context.Context) error {
 		}
 	}
 
-	if len(notSealed) == 0 {
-		fm.rotate()
-	} else {
-		if len(notSealed) > 1 {
-			logger.Info("sealing active fractions")
-			for _, active := range notSealed[:len(notSealed)-1] {
-				fm.seal(active)
-			}
+	if fm.active.ref == nil { // no active
+		_ = fm.rotate() // make new empty active
+	}
+
+	return nil
+}
+
+func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) error {
+	wg := sync.WaitGroup{}
+	defer wg.Wait()
+
+	for i, a := range actives {
+		if err := a.Replay(ctx); err != nil {
+			return err
 		}
-		fm.active = notSealed[len(notSealed)-1]
+		if a.Info().DocsTotal == 0 {
+			a.Suicide() // remove empty
+			continue
+		}
+		r := fm.newActiveRef(a)
+		fm.fracs = append(fm.fracs, r.ref)
+
+		if i == len(actives)-1 { // last and not empty
+			fm.active = r
+		} else {
+			wg.Wait() // wait previous sealing complete
+
+			wg.Add(1)
+			go func() {
+				fm.seal(r)
+				wg.Done()
+			}()
+		}
 	}
 
 	return nil
@@ -371,7 +410,7 @@ func (fm *FracManager) rotate() activeRef {
 	baseFilePath := filepath.Join(fm.config.DataDir, filePath)
 	logger.Info("creating new fraction", zap.String("filepath", baseFilePath))
 
-	next := fm.fracProvider.newActiveRef(fm.fracProvider.NewActive(baseFilePath))
+	next := fm.newActiveRef(fm.fracProvider.NewActive(baseFilePath))
 
 	fm.fracMu.Lock()
 	prev := fm.active
