@@ -88,6 +88,24 @@ jobs:
           # Disable build cache.
           skip-build-cache: true
 
+      - name: Install goimports
+        run: go install golang.org/x/tools/cmd/goimports@latest
+
+      - name: Check imports order
+        run: |
+          find . \
+            -path './pkg' -prune -o \
+            -type f -name '*.go' \
+            ! -name '*.pb.go' \
+            ! -name '*.pb.gw.go' \
+            ! -name '*_mock.go' \
+            -exec goimports -w -local 'github.com/ozontech/seq-db' {} +
+          if [ -n "$(git status --porcelain)" ]; then
+            echo 'Codebase is not goimports-ed. Please run `make imports`'
+            git --no-pager diff
+            exit 1
+          fi
+
   check-diff:
     runs-on: ubuntu-latest
     steps:
