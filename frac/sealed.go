@@ -38,7 +38,7 @@ type Sealed struct {
 	indexCache  *IndexCache
 	indexReader disk.IndexReader
 
-	idsTable      ids.IDsTable
+	idsTable      ids.Table
 	lidsTable     *lids.Table
 	BlocksOffsets []uint64
 
@@ -123,7 +123,7 @@ func (f *Sealed) openDocs() {
 
 type PreloadedData struct {
 	info          *Info
-	idsTable      ids.IDsTable
+	idsTable      ids.Table
 	lidsTable     *lids.Table
 	tokenTable    token.Table
 	blocksOffsets []uint64
@@ -356,13 +356,20 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		docsReader:       &f.docsReader,
 		blocksOffsets:    f.BlocksOffsets,
 		fracVersion:      f.info.BinaryDataVer,
-		midCache:         ids.NewUnpackCache(),
-		ridCache:         ids.NewUnpackCache(),
 		lidsTable:        f.lidsTable,
-		idsLoader:        ids.NewIDsLoader(&f.indexReader, f.indexCache.MIDs, f.indexCache.RIDs, f.indexCache.Params, f.idsTable),
 		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.indexReader, f.indexCache.TokenTable),
+
+		idsTable: &f.idsTable,
+		idsProvider: ids.NewProvider(
+			&f.indexReader,
+			f.indexCache.MIDs,
+			f.indexCache.RIDs,
+			f.indexCache.Params,
+			&f.idsTable,
+			f.info.BinaryDataVer,
+		),
 	}
 }
 
