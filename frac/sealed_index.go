@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/ids"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
@@ -54,7 +55,7 @@ var (
 
 type sealedDataProvider struct {
 	ctx    context.Context
-	info   *Info
+	info   *common.Info
 	config *Config
 
 	fracVersion conf.BinaryDataVersion

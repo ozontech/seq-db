@@ -5,6 +5,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
 )
 
 var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
@@ -43,7 +45,7 @@ func (fp *fractionProvider) NewActive(name string) *frac.Active {
 	)
 }
 
-func (fp *fractionProvider) NewSealed(name string, cachedInfo *frac.Info) *frac.Sealed {
+func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *frac.Sealed {
 	return frac.NewSealed(
 		name,
 		fp.readLimiter,
@@ -54,7 +56,7 @@ func (fp *fractionProvider) NewSealed(name string, cachedInfo *frac.Info) *frac.
 	)
 }
 
-func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *frac.PreloadedData) *frac.Sealed {
+func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *sealed.PreloadedData) *frac.Sealed {
 	return frac.NewSealedPreloaded(
 		name,
 		preloadedData,

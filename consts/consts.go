@@ -6,10 +6,9 @@ import (
 )
 
 const (
-	IDsBlockSize     = 4 * KB
-	RegularBlockSize = 16 * KB
 	IDsPerBlock      = 4 * KB
 	LIDBlockCap      = 64 * KB
+	RegularBlockSize = 16 * KB
 
 	KB = 1024
 	MB = 1024 * 1024

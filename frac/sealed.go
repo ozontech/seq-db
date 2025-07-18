@@ -11,6 +11,8 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/ids"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -25,7 +27,7 @@ type Sealed struct {
 
 	BaseFileName string
 
-	info *Info
+	info *common.Info
 
 	useMu    sync.RWMutex
 	suicided bool
@@ -64,7 +66,7 @@ func NewSealed(
 	readLimiter *disk.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
-	info *Info,
+	info *common.Info,
 	config *Config,
 ) *Sealed {
 	f := &Sealed{
@@ -107,12 +109,12 @@ func (f *Sealed) openIndex() {
 func (f *Sealed) openDocs() {
 	if f.docsFile == nil {
 		var err error
-		f.docsFile, err = os.Open(f.BaseFileName + consts.DocsFileSuffix)
+		f.docsFile, err = os.Open(f.BaseFileName + consts.SdocsFileSuffix) // try first open *.sdocs file
 		if err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
 				logger.Fatal("can't open docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
 			}
-			f.docsFile, err = os.Open(f.BaseFileName + consts.SdocsFileSuffix)
+			f.docsFile, err = os.Open(f.BaseFileName + consts.DocsFileSuffix) // fallback to *.docs file
 			if err != nil {
 				logger.Fatal("can't open sdocs file", zap.String("frac", f.BaseFileName), zap.Error(err))
 			}
@@ -121,51 +123,39 @@ func (f *Sealed) openDocs() {
 	}
 }
 
-type PreloadedData struct {
-	info          *Info
-	idsTable      ids.Table
-	lidsTable     *lids.Table
-	tokenTable    token.Table
-	blocksOffsets []uint64
-	indexFile     *os.File
-	docsFile      *os.File
-}
-
 func NewSealedPreloaded(
 	baseFile string,
-	preloaded *PreloadedData,
+	preloaded *sealed.PreloadedData,
 	rl *disk.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
 	config *Config,
 ) *Sealed {
 	f := &Sealed{
-		idsTable:      preloaded.idsTable,
-		lidsTable:     preloaded.lidsTable,
-		BlocksOffsets: preloaded.blocksOffsets,
+		idsTable:      preloaded.IDsTable,
+		lidsTable:     preloaded.LIDsTable,
+		BlocksOffsets: preloaded.BlocksOffsets,
 
-		docsFile:   preloaded.docsFile,
 		docsCache:  docsCache,
-		docsReader: disk.NewDocsReader(rl, preloaded.docsFile, docsCache),
-
-		indexFile:   preloaded.indexFile,
-		indexCache:  indexCache,
-		indexReader: disk.NewIndexReader(rl, preloaded.indexFile, indexCache.Registry),
+		indexCache: indexCache,
 
 		loadMu:   &sync.RWMutex{},
 		isLoaded: true,
 
 		readLimiter: rl,
 
-		info:         preloaded.info,
+		info:         preloaded.Info,
 		BaseFileName: baseFile,
 		Config:       config,
 	}
 
 	// put the token table built during sealing into the cache of the sealed faction
 	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
-		return preloaded.tokenTable, preloaded.tokenTable.Size()
+		return preloaded.TokenTable, preloaded.TokenTable.Size()
 	})
+
+	f.openDocs()
+	f.openIndex()
 
 	docsCountK := float64(f.info.DocsTotal) / 1000
 	logger.Info("sealed fraction created from active",
@@ -181,14 +171,14 @@ func NewSealedPreloaded(
 	return f
 }
 
-func (f *Sealed) loadHeader() *Info {
+func (f *Sealed) loadHeader() *common.Info {
 	block, _, err := f.indexReader.ReadIndexBlock(0, nil)
 	if err != nil {
 		logger.Fatal("error reading info block from index", zap.String("file", f.indexFile.Name()), zap.Error(err))
 	}
 
 	// unpack
-	bi := BlockInfo{}
+	bi := sealed.BlockInfo{}
 	if err := bi.Unpack(block); err != nil {
 		logger.Fatal("error unpacking info block", zap.String("file", f.indexFile.Name()), zap.Error(err))
 	}
@@ -373,7 +363,7 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 	}
 }
 
-func (f *Sealed) Info() *Info {
+func (f *Sealed) Info() *common.Info {
 	return f.info
 }
 

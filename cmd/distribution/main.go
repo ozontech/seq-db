@@ -12,7 +12,8 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
@@ -58,7 +59,7 @@ func readBlock(reader disk.IndexReader, blockIndex uint32) ([]byte, error) {
 	return data, nil
 }
 
-func loadInfo(path string) *frac.Info {
+func loadInfo(path string) *common.Info {
 	indexReader, f := getReader(path)
 	result, err := readBlock(indexReader, 0)
 	if err != nil {
@@ -69,7 +70,7 @@ func loadInfo(path string) *frac.Info {
 		logger.Fatal("seq-db index file header corrupted", zap.String("file", path))
 	}
 
-	b := frac.BlockInfo{}
+	b := sealed.BlockInfo{}
 	b.Unpack(result)
 
 	stat, err := f.Stat()
@@ -81,7 +82,7 @@ func loadInfo(path string) *frac.Info {
 	return b.Info
 }
 
-func buildDist(dist *seq.MIDsDistribution, path string, _ *frac.Info) {
+func buildDist(dist *seq.MIDsDistribution, path string, _ *common.Info) {
 	blocksReader, _ := getReader(path)
 
 	// skip tokens

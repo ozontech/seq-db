@@ -18,6 +18,9 @@ import (
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
+	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
@@ -34,7 +37,7 @@ type Active struct {
 	suicided bool
 
 	infoMu sync.RWMutex
-	info   *Info
+	info   *common.Info
 
 	MIDs *UInt64s
 	RIDs *UInt64s
@@ -101,7 +104,7 @@ func NewActive(
 		appender: StartAppender(docsFile, metaFile, conf.IndexWorkers, conf.SkipFsync, indexWorkers),
 
 		BaseFileName: baseFileName,
-		info:         NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
+		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
 		Config:       config,
 	}
 
@@ -257,7 +260,7 @@ func (f *Active) setSealed() error {
 	return nil
 }
 
-func (f *Active) Seal(params SealParams) (*PreloadedData, error) {
+func (f *Active) Seal(params common.SealParams) (*sealed.PreloadedData, error) {
 	if err := f.setSealed(); err != nil {
 		return nil, err
 	}
@@ -267,7 +270,11 @@ func (f *Active) Seal(params SealParams) (*PreloadedData, error) {
 	f.WaitWriteIdle()
 	logger.Info("write is stopped", zap.Float64("time_wait_s", util.DurationToUnit(time.Since(start), "s")))
 
-	return Seal(f, params, false)
+	src, err := NewActiveSealingSource(f, params)
+	if err != nil {
+		return nil, err
+	}
+	return sealing.Seal(src, params)
 }
 
 func (f *Active) GetAllDocuments() []uint32 {
@@ -470,7 +477,7 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 	}
 }
 
-func (f *Active) Info() *Info {
+func (f *Active) Info() *common.Info {
 	f.infoMu.RLock()
 	defer f.infoMu.RUnlock()
 

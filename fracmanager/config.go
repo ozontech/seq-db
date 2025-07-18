@@ -5,6 +5,7 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/util"
 	"go.uber.org/zap"
@@ -22,7 +23,7 @@ type Config struct {
 	MaintenanceDelay  time.Duration
 	CacheCleanupDelay time.Duration
 	CacheGCDelay      time.Duration
-	SealParams        frac.SealParams
+	SealParams        common.SealParams
 	SortCacheSize     uint64 // size for docs cache for active fraction
 	Fraction          frac.Config
 }
