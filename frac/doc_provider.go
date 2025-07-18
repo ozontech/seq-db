@@ -84,11 +84,11 @@ func encodeMeta(buf []byte, tokens []seq.Token, id seq.ID, size int) []byte {
 
 // extractDocTime extract time from doc by supported fields and return that field
 // if fields are absent or values are not parsable, zero time and empty string are returned
-func extractDocTime(docRoot *insaneJSON.Root) (time.Time, []string) {
+func extractDocTime(docRoot *insaneJSON.Root) (time.Time, string) {
 	var t time.Time
 	var err error
 	for _, field := range consts.TimeFields {
-		timeNode := docRoot.Dig(field...)
+		timeNode := docRoot.Dig(field)
 		if timeNode == nil {
 			continue
 		}
@@ -102,13 +102,13 @@ func extractDocTime(docRoot *insaneJSON.Root) (time.Time, []string) {
 		}
 	}
 
-	return t, nil
+	return t, ""
 }
 
 // ExtractDocTime extracts timestamp from doc
 // It searches by one of supported field name and parses by supported formats
 // If no field was found or not parsable it returns time.Now()
-func ExtractDocTime(docRoot *insaneJSON.Root) (time.Time, []string) {
+func ExtractDocTime(docRoot *insaneJSON.Root) (time.Time, string) {
 	t, f := extractDocTime(docRoot)
 	if t.IsZero() {
 		t = time.Now()

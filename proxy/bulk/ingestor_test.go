@@ -493,9 +493,7 @@ func BenchmarkProcessDocuments(b *testing.B) {
 		"level":"error",
 		"timestamp":%q,
 		"message":"невозможно сохранить данные в шарде",
-		"error":"circuit breaker execute: can't receive bulk acceptance: 
-			host=***REMOVED***, err=rpc error: code = Unavailable desc = connection error: 
-			desc = \"transport: Error while dialing: dial tcp 10.233.140.20:9002: connect: connection refused\"",
+		"error":"circuit breaker execute: can't receive bulk acceptance:\n host=***REMOVED***, err=rpc error: code = Unavailable desc = connection error:\n desc = \"transport: Error while dialing: dial tcp 10.233.140.20:9002: connect: connection refused\"",
 		"shard":0
 	}`, time.Now().Format(consts.ESTimeFormat)))
 

@@ -4,11 +4,13 @@ import (
 	"errors"
 	"math"
 	"math/rand/v2"
+	"slices"
 	"time"
 
-	insaneJSON "github.com/ozontech/insane-json"
+	"github.com/go-faster/jx"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
@@ -37,12 +39,7 @@ type processor struct {
 	futureDrift time.Duration
 
 	indexer *indexer
-	decoder *insaneJSON.Root
-}
-
-func init() {
-	// Disable cache for the Dig() method.
-	insaneJSON.MapUseThreshold = math.MaxInt32
+	decoder *jx.Decoder
 }
 
 func newBulkProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, drift, futureDrift time.Duration, index uint64) *processor {
@@ -55,34 +52,35 @@ func newBulkProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]toke
 			mapping:    mapping,
 			metas:      []frac.MetaData{},
 		},
-		decoder: insaneJSON.Spawn(),
+		decoder: jx.GetDecoder(),
 	}
 }
 
 var errNotAnObject = errors.New("not an object")
 
-func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []frac.MetaData, error) {
-	err := p.decoder.DecodeBytes(doc)
+func (p *processor) Process(doc []byte, requestTime time.Time) ([]frac.MetaData, error) {
+	p.decoder.ResetBytes(doc)
+	if p.decoder.Next() != jx.Object {
+		return nil, errNotAnObject
+	}
+
+	docTime, _, err := extractDocTime(p.decoder)
 	if err != nil {
-		return nil, nil, err
-	}
-	if !p.decoder.IsObject() {
-		return nil, nil, errNotAnObject
-	}
-	docTime, timeField := extractDocTime(p.decoder.Node, requestTime)
-	docDelay := requestTime.Sub(docTime)
-	if timeField == nil {
 		// couldn't parse given event time
 		parseErrors.Inc()
-	} else if documentDelayed(docDelay, p.drift, p.futureDrift) {
+		docTime = requestTime
+	}
+
+	docDelay := requestTime.Sub(docTime)
+	if documentDelayed(docDelay, p.drift, p.futureDrift) {
 		docTime = requestTime
 	}
 
 	id := seq.NewID(docTime, (rand.Uint64()<<16)+p.proxyIndex)
 
-	p.indexer.Index(p.decoder.Node, id, uint32(len(doc)))
+	p.indexer.Index(p.decoder, id, uint32(len(doc)))
 
-	return doc, p.indexer.Metas(), nil
+	return p.indexer.Metas(), nil
 }
 
 func documentDelayed(docDelay, drift, futureDrift time.Duration) bool {
@@ -98,31 +96,53 @@ func documentDelayed(docDelay, drift, futureDrift time.Duration) bool {
 	return delayed
 }
 
-func extractDocTime(node *insaneJSON.Node, requestTime time.Time) (time.Time, []string) {
-	for _, field := range consts.TimeFields {
-		timeVal := node.Dig(field...).AsBytes()
-		if len(timeVal) == 0 {
-			continue
-		}
+func extractDocTime(d *jx.Decoder) (time.Time, string, error) {
+	var (
+		timeValue time.Time
+		timeField string
+		ok        bool
+	)
 
-		for _, f := range consts.TimeFormats {
-			var t time.Time
-			var ok bool
-			if f == consts.ESTimeFormat {
-				// Fallback to optimized es time parsing.
-				t, ok = parseESTime(util.ByteToStringUnsafe(timeVal))
-			} else {
-				var err error
-				t, err = time.Parse(f, util.ByteToStringUnsafe(timeVal))
-				ok = err == nil
+	err := d.Capture(func(d *jx.Decoder) error {
+		return d.ObjBytes(func(d *jx.Decoder, key []byte) error {
+			pos := slices.Index(consts.TimeFields, util.ByteToStringUnsafe(key))
+			if ok || pos == -1 {
+				return d.Skip()
 			}
-			if ok {
-				return t, field
+
+			timeField = consts.TimeFields[pos]
+			timeVal, err := d.StrBytes()
+			if err != nil {
+				return err
 			}
-		}
+
+			var timeValStr = util.ByteToStringUnsafe(timeVal)
+			for _, f := range consts.TimeFormats {
+				if f == consts.ESTimeFormat {
+					// Fallback to optimized es time parsing.
+					timeValue, ok = parseESTime(timeValStr)
+				} else {
+					timeValue, err = time.Parse(f, timeValStr)
+					ok = err == nil
+				}
+
+				if ok {
+					return nil
+				}
+			}
+			return nil
+		})
+	})
+
+	if err != nil {
+		return time.Time{}, "", errors.New("parse time error")
 	}
-	defaultTime := requestTime
-	return defaultTime, nil
+
+	if !ok {
+		return time.Time{}, "", errors.New("no time fields found")
+	}
+
+	return timeValue, timeField, nil
 }
 
 // parseESTime parses time in "2006-01-02 15:04:05.999" format.

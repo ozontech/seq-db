@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	insaneJSON "github.com/ozontech/insane-json"
+	"github.com/go-faster/jx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -16,7 +16,7 @@ func TestExtractDocTime(t *testing.T) {
 		title         string
 		input         []byte
 		expectedTime  time.Time
-		expectedField []string
+		expectedField string
 	}
 
 	// time.Parse uses time.Local if possible
@@ -35,30 +35,32 @@ func TestExtractDocTime(t *testing.T) {
 			title:         "ESTimeFormat, ts field",
 			input:         []byte(`{"message": "hello world", "ts": "2024-04-19 18:04:25.999"}`),
 			expectedTime:  time.Date(2024, 4, 19, 18, 4, 25, 999000000, time.UTC),
-			expectedField: []string{"ts"},
+			expectedField: "ts",
 		},
 		{
 			title:         "time.RFC3339Nano, time field",
 			input:         []byte(`{"message": "hello world", "time": "2024-04-19T18:04:25.999999999+03:00"}`),
 			expectedTime:  time.Date(2024, 4, 19, 18, 4, 25, 999999999, newFixedZone(3*60*60)),
-			expectedField: []string{"time"},
+			expectedField: "time",
 		},
 		{
 			title:         "time.RFC3339, timestamp field",
 			input:         []byte(`{"message": "hello world", "timestamp": "2024-04-19T18:04:25+03:00"}`),
 			expectedTime:  time.Date(2024, 4, 19, 18, 4, 25, 0, newFixedZone(3*60*60)),
-			expectedField: []string{"timestamp"},
+			expectedField: "timestamp",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.title, func(t *testing.T) {
-			root := insaneJSON.Spawn()
-			defer insaneJSON.Release(root)
+			d := jx.GetDecoder()
+			defer jx.PutDecoder(d)
 
-			require.NoError(t, root.DecodeBytes(tc.input))
+			d.ResetBytes(tc.input)
 
-			docTime, timeField := extractDocTime(root.Node, time.Now())
+			docTime, timeField, err := extractDocTime(d)
+
+			require.NoError(t, err)
 			assert.Equal(t, tc.expectedTime, docTime)
 			assert.Equal(t, tc.expectedField, timeField)
 		})
@@ -72,15 +74,14 @@ func TestExtractDocTimeUnknownTimeFormat(t *testing.T) {
 		[]byte(`{"message": "hello world 3", "timestamp": "2024-04-19T17:08:21.203+0500"}`),
 	}
 
-	root := insaneJSON.Spawn()
-	defer insaneJSON.Release(root)
+	d := jx.GetDecoder()
+	defer jx.PutDecoder(d)
 
 	for _, input := range inputs {
-		assert.NoError(t, root.DecodeBytes(input))
+		d.ResetBytes(input)
 
-		docTime, timeField := extractDocTime(root.Node, time.Now())
-		assert.Nil(t, timeField)
-		assert.NotEqual(t, 1, docTime.Year())
+		_, _, err := extractDocTime(d)
+		require.Error(t, err)
 	}
 }
 

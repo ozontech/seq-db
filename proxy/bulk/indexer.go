@@ -5,7 +5,7 @@ import (
 	"slices"
 	"unsafe"
 
-	insaneJSON "github.com/ozontech/insane-json"
+	"github.com/go-faster/jx"
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
@@ -29,13 +29,12 @@ type indexer struct {
 // we use it to find documents that have this field in search and aggregate requests.
 //
 // Careful: any reference to i.metas will be invalidated after the call.
-func (i *indexer) Index(node *insaneJSON.Node, id seq.ID, size uint32) {
+func (i *indexer) Index(d *jx.Decoder, id seq.ID, size uint32) {
 	// Reset previous state.
 	i.metas = i.metas[:0]
 
 	i.appendMeta(id, size)
-
-	i.decodeInternal(node, id, nil, 0)
+	i.decodeObj(d, nil, 0)
 
 	m := i.metas
 	parent := m[0]
@@ -51,18 +50,25 @@ func (i *indexer) Metas() []frac.MetaData {
 
 var fieldSeparator = []byte(".")
 
-func (i *indexer) decodeInternal(n *insaneJSON.Node, id seq.ID, name []byte, metaIndex int) {
-	for _, field := range n.AsFields() {
-		fieldName := field.AsBytes()
+// rawField returns cropped field, in case of strings
+// using default d.Raw() will cause returning string value as a quoted string e.g. `"somevalue"`
+func rawField(d *jx.Decoder) ([]byte, error) {
+	switch d.Next() {
+	case jx.String:
+		return d.StrBytes()
+	default:
+		return d.Raw()
+	}
+}
 
-		if len(name) != 0 {
-			fieldName = bytes.Join([][]byte{name, fieldName}, fieldSeparator)
+func (i *indexer) decodeObj(d *jx.Decoder, prevName []byte, metaIndex int) {
+	_ = d.ObjBytes(func(d *jx.Decoder, fieldName []byte) error {
+		// first level of nesting
+		if prevName != nil {
+			fieldName = bytes.Join([][]byte{prevName, fieldName}, fieldSeparator)
 		}
 
-		var (
-			mappingTypes seq.MappingTypes
-			mainType     seq.TokenizerType
-		)
+		var mappingTypes seq.MappingTypes
 
 		switch i.mapping {
 		case nil:
@@ -78,35 +84,45 @@ func (i *indexer) decodeInternal(n *insaneJSON.Node, id seq.ID, name []byte, met
 			mappingTypes = i.mapping[string(fieldName)]
 		}
 
-		mainType = mappingTypes.Main.TokenizerType
-		if mainType == seq.TokenizerTypeNoop {
-			// Field is not in the mapping.
-			continue
-		}
+		switch mappingTypes.Main.TokenizerType {
+		// Field is not in the mapping.
+		case seq.TokenizerTypeNoop:
+			return d.Skip()
 
-		if mainType == seq.TokenizerTypeObject && field.AsFieldValue().IsObject() {
-			i.decodeInternal(field.AsFieldValue(), id, fieldName, metaIndex)
-			continue
-		}
-
-		if mainType == seq.TokenizerTypeTags && field.AsFieldValue().IsArray() {
-			i.decodeTags(field.AsFieldValue(), fieldName, metaIndex)
-			continue
-		}
-
-		if mainType == seq.TokenizerTypeNested && field.AsFieldValue().IsArray() {
-			for _, nested := range field.AsFieldValue().AsArray() {
-				i.appendNestedMeta()
-				nestedMetaIndex := len(i.metas) - 1
-
-				i.decodeInternal(nested, id, fieldName, nestedMetaIndex)
+		case seq.TokenizerTypeObject:
+			if d.Next() == jx.Object {
+				i.decodeObj(d, fieldName, metaIndex)
+				return nil
 			}
-			continue
+
+		case seq.TokenizerTypeTags:
+			if d.Next() == jx.Array {
+				i.decodeTags(d, fieldName, metaIndex)
+				return nil
+			}
+
+		case seq.TokenizerTypeNested:
+			if d.Next() == jx.Array {
+				_ = d.Arr(func(d *jx.Decoder) error {
+					i.appendNestedMeta()
+					nestedMetaIndex := len(i.metas) - 1
+
+					i.decodeObj(d, fieldName, nestedMetaIndex)
+					return nil
+				})
+				return nil
+			}
 		}
 
-		nodeValue := encodeInsaneNode(field.AsFieldValue())
-		i.metas[metaIndex].Tokens = i.index(mappingTypes, i.metas[metaIndex].Tokens, fieldName, nodeValue)
-	}
+		fieldValue, err := rawField(d)
+		// in case of error, do not index field
+		if err != nil {
+			return err
+		}
+
+		i.metas[metaIndex].Tokens = i.index(mappingTypes, i.metas[metaIndex].Tokens, fieldName, fieldValue)
+		return nil
+	})
 }
 
 func (i *indexer) index(tokenTypes seq.MappingTypes, tokens []frac.MetaToken, key, value []byte) []frac.MetaToken {
@@ -133,13 +149,41 @@ func (i *indexer) index(tokenTypes seq.MappingTypes, tokens []frac.MetaToken, ke
 	return tokens
 }
 
-func (i *indexer) decodeTags(n *insaneJSON.Node, name []byte, tokensIndex int) {
-	for _, tag := range n.AsArray() {
-		fieldName := tag.Dig("key").AsBytes()
+func (i *indexer) decodeTags(d *jx.Decoder, name []byte, tokensIndex int) {
+	_ = d.Arr(func(d *jx.Decoder) error {
+		var fieldName, fieldValue []byte
+		err := d.Obj(func(d *jx.Decoder, objKey string) error {
+			switch objKey {
+			case "key":
+				v, err := rawField(d)
+				if err != nil {
+					return err
+				}
+				fieldName = v
+
+			case "value":
+				v, err := rawField(d)
+				if err != nil {
+					return err
+				}
+				fieldValue = v
+
+			default:
+				return d.Skip()
+			}
+
+			return nil
+		})
+		// ignoring data in case of parsing error
+		if err != nil {
+			return err
+		}
+
 		fieldName = bytes.Join([][]byte{name, fieldName}, fieldSeparator)
-		nodeValue := encodeInsaneNode(tag.Dig("value"))
-		i.metas[tokensIndex].Tokens = i.index(i.mapping[string(fieldName)], i.metas[tokensIndex].Tokens, fieldName, nodeValue)
-	}
+		i.metas[tokensIndex].Tokens = i.index(i.mapping[string(fieldName)], i.metas[tokensIndex].Tokens, fieldName, fieldValue)
+
+		return nil
+	})
 }
 
 // appendMeta increases metas size by 1 and reuses the underlying slices capacity.
@@ -164,14 +208,4 @@ func (i *indexer) appendNestedMeta() {
 	// Special case: nested metadata has zero size to handle nested behavior in the storage.
 	const nestedMetadataSize = 0
 	i.appendMeta(parent.ID, nestedMetadataSize)
-}
-
-func encodeInsaneNode(field *insaneJSON.Node) []byte {
-	if field.IsNil() {
-		return nil
-	}
-	if field.IsArray() || field.IsObject() || field.IsNull() || field.IsTrue() || field.IsFalse() {
-		return field.Encode(nil)
-	}
-	return field.AsBytes()
 }
