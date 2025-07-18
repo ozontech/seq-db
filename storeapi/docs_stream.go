@@ -4,11 +4,12 @@ import (
 	"context"
 
 	"github.com/c2h5oh/datasize"
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
-	"go.uber.org/zap"
 )
 
 const initChunkSize = 1000

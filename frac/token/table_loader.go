@@ -1,11 +1,12 @@
 package token
 
 import (
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/packer"
-	"go.uber.org/zap"
 )
 
 const CacheKeyTable = 1

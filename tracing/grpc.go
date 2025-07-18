@@ -3,11 +3,12 @@ package tracing
 import (
 	"context"
 
-	"github.com/ozontech/seq-db/consts"
 	"go.opencensus.io/plugin/ocgrpc"
 	"go.opencensus.io/trace"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/stats"
+
+	"github.com/ozontech/seq-db/consts"
 )
 
 // ClientHandler injects debugging meta

@@ -5,8 +5,9 @@ import (
 	"net"
 	"os"
 
-	"github.com/ozontech/seq-db/consts"
 	"go.opencensus.io/trace"
+
+	"github.com/ozontech/seq-db/consts"
 )
 
 func getHostname() (string, error) {

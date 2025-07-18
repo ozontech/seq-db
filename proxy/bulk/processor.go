@@ -7,13 +7,14 @@ import (
 	"time"
 
 	insaneJSON "github.com/ozontech/insane-json"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"
 	"github.com/ozontech/seq-db/util"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var (

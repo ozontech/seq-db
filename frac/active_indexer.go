@@ -4,12 +4,13 @@ import (
 	"encoding/binary"
 	"sync"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
-	"go.uber.org/zap"
 )
 
 type ActiveIndexer struct {

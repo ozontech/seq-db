@@ -5,17 +5,18 @@ import (
 	"fmt"
 	"strings"
 
+	"go.opencensus.io/trace"
+	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/seq"
-	"go.opencensus.io/trace"
-	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func (g *grpcV1) Fetch(req *seqproxyapi.FetchRequest, stream seqproxyapi.SeqProxyApi_FetchServer) error {

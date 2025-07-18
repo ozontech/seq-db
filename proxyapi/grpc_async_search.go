@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func (g *grpcV1) StartAsyncSearch(ctx context.Context, r *seqproxyapi.StartAsyncSearchRequest) (*seqproxyapi.StartAsyncSearchResponse, error) {

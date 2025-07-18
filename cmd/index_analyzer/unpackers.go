@@ -5,12 +5,13 @@ import (
 	"math"
 	"unsafe"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/lids"
 	"github.com/ozontech/seq-db/frac/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/packer"
-	"go.uber.org/zap"
 )
 
 func unpackInfo(result []byte) *frac.Info {

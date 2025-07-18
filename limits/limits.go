@@ -5,8 +5,9 @@ import (
 	"runtime"
 
 	"github.com/KimMachineGun/automemlimit/memlimit"
-	"github.com/ozontech/seq-db/logger"
 	"go.uber.org/automaxprocs/maxprocs"
+
+	"github.com/ozontech/seq-db/logger"
 )
 
 var (

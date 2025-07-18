@@ -6,12 +6,13 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
-	"go.uber.org/zap"
 )
 
 var ErrSealingFractionSuicided = errors.New("sealing fraction is suicided")

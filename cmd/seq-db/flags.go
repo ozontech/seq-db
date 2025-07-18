@@ -3,11 +3,12 @@ package main
 import (
 	"strconv"
 
+	"gopkg.in/alecthomas/kingpin.v2"
+
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/limits"
 	"github.com/ozontech/seq-db/storeapi"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 const (

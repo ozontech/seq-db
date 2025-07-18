@@ -4,8 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/ozontech/seq-db/consts"
 	"go.opencensus.io/trace"
+
+	"github.com/ozontech/seq-db/consts"
 )
 
 func isDebug(r *http.Request) bool {

@@ -9,6 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/conf"
 	"github.com/ozontech/seq-db/consts"
@@ -18,9 +22,6 @@ import (
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.uber.org/zap"
 )
 
 type Active struct {
