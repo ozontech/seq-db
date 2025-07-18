@@ -40,6 +40,34 @@ func (m *MockSearchIngestor) EXPECT() *MockSearchIngestorMockRecorder {
 	return m.recorder
 }
 
+// CancelAsyncSearch mocks base method.
+func (m *MockSearchIngestor) CancelAsyncSearch(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CancelAsyncSearch", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CancelAsyncSearch indicates an expected call of CancelAsyncSearch.
+func (mr *MockSearchIngestorMockRecorder) CancelAsyncSearch(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelAsyncSearch", reflect.TypeOf((*MockSearchIngestor)(nil).CancelAsyncSearch), ctx, id)
+}
+
+// DeleteAsyncSearch mocks base method.
+func (m *MockSearchIngestor) DeleteAsyncSearch(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteAsyncSearch", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteAsyncSearch indicates an expected call of DeleteAsyncSearch.
+func (mr *MockSearchIngestorMockRecorder) DeleteAsyncSearch(ctx, id interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAsyncSearch", reflect.TypeOf((*MockSearchIngestor)(nil).DeleteAsyncSearch), ctx, id)
+}
+
 // Documents mocks base method.
 func (m *MockSearchIngestor) Documents(ctx context.Context, r search.FetchRequest) (search.DocsIterator, error) {
 	m.ctrl.T.Helper()
@@ -56,12 +84,13 @@ func (mr *MockSearchIngestorMockRecorder) Documents(ctx, r interface{}) *gomock.
 }
 
 // FetchAsyncSearchResult mocks base method.
-func (m *MockSearchIngestor) FetchAsyncSearchResult(arg0 context.Context, arg1 search.FetchAsyncSearchResultRequest) (search.FetchAsyncSearchResultResponse, error) {
+func (m *MockSearchIngestor) FetchAsyncSearchResult(arg0 context.Context, arg1 search.FetchAsyncSearchResultRequest) (search.FetchAsyncSearchResultResponse, search.DocsIterator, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "FetchAsyncSearchResult", arg0, arg1)
 	ret0, _ := ret[0].(search.FetchAsyncSearchResultResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(search.DocsIterator)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // FetchAsyncSearchResult indicates an expected call of FetchAsyncSearchResult.

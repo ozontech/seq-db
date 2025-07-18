@@ -13,7 +13,7 @@ type AggQuery struct {
 }
 
 type SearchParams struct {
-	AST *parser.ASTNode
+	AST *parser.ASTNode `json:"-"`
 
 	AggQ         []AggQuery
 	HistInterval uint64

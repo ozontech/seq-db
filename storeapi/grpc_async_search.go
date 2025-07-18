@@ -3,7 +3,6 @@ package storeapi
 import (
 	"context"
 	"math"
-	"time"
 
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -20,24 +19,30 @@ func (g *GrpcV1) StartAsyncSearch(_ context.Context, r *storeapi.StartAsyncSearc
 		return nil, err
 	}
 
+	limit := 0
+	if r.WithDocs {
+		limit = math.MaxInt
+	}
+
 	params := processor.SearchParams{
 		AST:          nil, // Parse AST later.
 		AggQ:         aggs,
 		HistInterval: uint64(r.HistogramInterval),
 		From:         seq.MID(r.From),
 		To:           seq.MID(r.To),
-		Limit:        math.MaxInt32, // TODO: use WithDocs from request
+		Limit:        limit,
 		WithTotal:    false,
-		Order:        r.Order.MustDocsOrder(),
+		Order:        seq.DocsOrderDesc,
 	}
 
 	req := fracmanager.AsyncSearchRequest{
 		ID:        r.SearchId,
 		Query:     r.Query,
 		Params:    params,
-		Retention: time.Hour * 24, // todo: use value from request
+		Retention: r.Retention.AsDuration(),
 	}
-	if err := g.asyncSearcher.StartSearch(req); err != nil {
+	fracs := g.fracManager.GetAllFracs().FilterInRange(seq.MID(r.From), seq.MID(r.To))
+	if err := g.asyncSearcher.StartSearch(req, fracs); err != nil {
 		return nil, err
 	}
 
@@ -45,21 +50,44 @@ func (g *GrpcV1) StartAsyncSearch(_ context.Context, r *storeapi.StartAsyncSearc
 }
 
 func (g *GrpcV1) FetchAsyncSearchResult(_ context.Context, r *storeapi.FetchAsyncSearchResultRequest) (*storeapi.FetchAsyncSearchResultResponse, error) {
-	fetchResp, exists := g.asyncSearcher.FetchSearchResult(fracmanager.FetchSearchResultRequest{ID: r.SearchId})
+	fr, exists := g.asyncSearcher.FetchSearchResult(fracmanager.FetchSearchResultRequest{
+		ID:    r.SearchId,
+		Limit: int(r.Size + r.Offset),
+		Order: r.Order.MustDocsOrder(),
+	})
 	if !exists {
 		return nil, status.Error(codes.NotFound, "search not found")
 	}
 
-	resp := buildSearchResponse(&fetchResp.QPR)
+	resp := buildSearchResponse(&fr.QPR)
+
+	var canceledAt *timestamppb.Timestamp
+	if fr.CanceledAt.IsZero() {
+		canceledAt = timestamppb.New(fr.CanceledAt)
+	}
 
 	return &storeapi.FetchAsyncSearchResultResponse{
-		Done:              fetchResp.Done,
+		Status:            storeapi.MustProtoAsyncSearchStatus(fr.Status),
 		Response:          resp,
-		Expiration:        timestamppb.New(fetchResp.Expiration),
-		Aggs:              convertAggQueriesToProto(fetchResp.AggQueries),
-		HistogramInterval: int64(fetchResp.HistInterval),
-		Order:             storeapi.MustProtoOrder(fetchResp.Order),
+		StartedAt:         timestamppb.New(fr.StartedAt),
+		ExpiresAt:         timestamppb.New(fr.ExpiresAt),
+		CanceledAt:        canceledAt,
+		FracsDone:         uint64(fr.FracsDone),
+		FracsQueue:        uint64(fr.FracsInQueue),
+		DiskUsage:         uint64(fr.DiskUsage),
+		Aggs:              convertAggQueriesToProto(fr.AggQueries),
+		HistogramInterval: int64(fr.HistInterval),
 	}, nil
+}
+
+func (g *GrpcV1) CancelAsyncSearch(_ context.Context, r *storeapi.CancelAsyncSearchRequest) (*storeapi.CancelAsyncSearchResponse, error) {
+	g.asyncSearcher.CancelSearch(r.SearchId)
+	return &storeapi.CancelAsyncSearchResponse{}, nil
+}
+
+func (g *GrpcV1) DeleteAsyncSearch(_ context.Context, r *storeapi.DeleteAsyncSearchRequest) (*storeapi.DeleteAsyncSearchResponse, error) {
+	g.asyncSearcher.DeleteSearch(r.SearchId)
+	return &storeapi.DeleteAsyncSearchResponse{}, nil
 }
 
 func convertAggQueriesToProto(query []processor.AggQuery) []*storeapi.AggQuery {

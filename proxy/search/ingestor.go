@@ -132,7 +132,7 @@ func (si *Ingestor) Search(
 	}
 
 	var size int
-	qpr.IDs, size = si.paginateIDs(qpr.IDs, sr.Offset, sr.Size)
+	qpr.IDs, size = paginateIDs(qpr.IDs, sr.Offset, sr.Size)
 	ids := qpr.IDs
 
 	t = time.Now()
@@ -192,7 +192,7 @@ func tryParseFieldsFilter(query string) FetchFieldsFilter {
 	return FetchFieldsFilter{}
 }
 
-func (si *Ingestor) paginateIDs(ids seq.IDSources, offset, size int) (seq.IDSources, int) {
+func paginateIDs(ids seq.IDSources, offset, size int) (seq.IDSources, int) {
 	if len(ids) > offset {
 		ids = ids[offset:]
 	} else {

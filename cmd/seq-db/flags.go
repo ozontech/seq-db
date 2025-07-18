@@ -105,8 +105,10 @@ var (
 	flagSortDocs     = kingpin.Flag("sort-docs", "enable sort docs feature").Default("true").Bool()
 
 	// async search settings
-	flagAsyncSearchesDataDir     = kingpin.Flag("data-dir-async-searches", "data dir that contains async searches, default is subfolder in --data-dir").String()
-	flagAsyncSearchesConcurrency = kingpin.Flag("async-searches-concurrency", "the maximum concurrent async search requests").Default(numCPUStr).Int()
+	flagAsyncSearchesDataDir           = kingpin.Flag("data-dir-async-searches", "data dir that contains async searches, default is subfolder in --data-dir").String()
+	flagAsyncSearchesWorkers           = kingpin.Flag("async-searches-workers", "the maximum concurrent async search requests").Default(numCPUStr).Int()
+	flagAsyncSearchesMaxSize           = kingpin.Flag("async-searches-max-size", "").Default("0").Int()
+	flagAsyncSearchesMaxSizePerRequest = kingpin.Flag("async-searches-max-size-per-request", "").Default("0").Int()
 
 	// features
 	flagUseSeqQLByDefault = kingpin.Flag("use-seq-ql-by-default", "enable seq-ql as default query language").Default("false").Bool()

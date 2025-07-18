@@ -346,7 +346,7 @@ func MergeQPRs(dst *QPR, qprs []*QPR, limit int, histInterval MID, order DocsOrd
 			dst.Histogram[time] += count
 		}
 
-		if qpr.Aggs != nil && dst.Aggs == nil {
+		if len(qpr.Aggs) != 0 && len(dst.Aggs) == 0 {
 			dst.Aggs = make([]QPRHistogram, len(qpr.Aggs))
 		}
 		for i := range qpr.Aggs {

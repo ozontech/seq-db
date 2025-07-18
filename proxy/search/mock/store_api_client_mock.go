@@ -57,6 +57,46 @@ func (mr *MockStoreApiClientMockRecorder) Bulk(arg0, arg1 interface{}, arg2 ...i
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bulk", reflect.TypeOf((*MockStoreApiClient)(nil).Bulk), varargs...)
 }
 
+// CancelAsyncSearch mocks base method.
+func (m *MockStoreApiClient) CancelAsyncSearch(arg0 context.Context, arg1 *storeapi.CancelAsyncSearchRequest, arg2 ...grpc.CallOption) (*storeapi.CancelAsyncSearchResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "CancelAsyncSearch", varargs...)
+	ret0, _ := ret[0].(*storeapi.CancelAsyncSearchResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CancelAsyncSearch indicates an expected call of CancelAsyncSearch.
+func (mr *MockStoreApiClientMockRecorder) CancelAsyncSearch(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelAsyncSearch", reflect.TypeOf((*MockStoreApiClient)(nil).CancelAsyncSearch), varargs...)
+}
+
+// DeleteAsyncSearch mocks base method.
+func (m *MockStoreApiClient) DeleteAsyncSearch(arg0 context.Context, arg1 *storeapi.DeleteAsyncSearchRequest, arg2 ...grpc.CallOption) (*storeapi.DeleteAsyncSearchResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "DeleteAsyncSearch", varargs...)
+	ret0, _ := ret[0].(*storeapi.DeleteAsyncSearchResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DeleteAsyncSearch indicates an expected call of DeleteAsyncSearch.
+func (mr *MockStoreApiClientMockRecorder) DeleteAsyncSearch(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAsyncSearch", reflect.TypeOf((*MockStoreApiClient)(nil).DeleteAsyncSearch), varargs...)
+}
+
 // Fetch mocks base method.
 func (m *MockStoreApiClient) Fetch(arg0 context.Context, arg1 *storeapi.FetchRequest, arg2 ...grpc.CallOption) (storeapi.StoreApi_FetchClient, error) {
 	m.ctrl.T.Helper()

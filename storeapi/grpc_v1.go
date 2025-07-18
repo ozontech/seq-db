@@ -98,6 +98,7 @@ type GrpcV1 struct {
 }
 
 func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mappingProvider MappingProvider) *GrpcV1 {
+	as := fracmanager.MustStartAsync(config.Search.Async, mappingProvider, fracManager.GetAllFracs())
 	g := &GrpcV1{
 		config:          config,
 		fracManager:     fracManager,
@@ -111,7 +112,7 @@ func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mappingPr
 		fetchData: fetchData{
 			docFetcher: fracmanager.NewFetcher(conf.FetchWorkers),
 		},
-		asyncSearcher: fracmanager.MustStartAsync(config.Search.Async, mappingProvider, fracManager),
+		asyncSearcher: as,
 	}
 
 	go g.bulkStats()

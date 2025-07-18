@@ -27,12 +27,13 @@ func (g *grpcV1) StartAsyncSearch(ctx context.Context, r *seqproxyapi.StartAsync
 	}
 
 	resp, err := g.searchIngestor.StartAsyncSearch(ctx, search.AsyncRequest{
+		Retention:         r.Retention.AsDuration(),
 		Query:             r.GetQuery().GetQuery(),
-		From:              r.GetQuery().From.AsTime(),
-		To:                r.GetQuery().To.AsTime(),
-		Order:             r.Order.MustDocsOrder(),
+		From:              r.GetQuery().GetFrom().AsTime(),
+		To:                r.GetQuery().GetTo().AsTime(),
 		Aggregations:      aggs,
 		HistogramInterval: seq.MID(histInterval.Milliseconds()),
+		WithDocs:          r.WithDocs,
 	})
 	if err != nil {
 		return nil, err
@@ -43,26 +44,50 @@ func (g *grpcV1) StartAsyncSearch(ctx context.Context, r *seqproxyapi.StartAsync
 }
 
 func (g *grpcV1) FetchAsyncSearchResult(ctx context.Context, r *seqproxyapi.FetchAsyncSearchResultRequest) (*seqproxyapi.FetchAsyncSearchResultResponse, error) {
-	resp, err := g.searchIngestor.FetchAsyncSearchResult(ctx, search.FetchAsyncSearchResultRequest{
-		ID:       r.SearchId,
-		WithDocs: r.WithDocs,
-		Size:     int(r.Size),
-		Offset:   int(r.Offset),
+	resp, stream, err := g.searchIngestor.FetchAsyncSearchResult(ctx, search.FetchAsyncSearchResultRequest{
+		ID:     r.SearchId,
+		Size:   int(r.Size),
+		Offset: int(r.Offset),
 	})
 	if err != nil {
 		return nil, err
 	}
 
+	canceledAt := timestamppb.New(resp.CanceledAt)
+	if resp.CanceledAt.IsZero() {
+		canceledAt = nil
+	}
+
+	docs := makeProtoDocs(&resp.QPR, stream)
+
 	return &seqproxyapi.FetchAsyncSearchResultResponse{
-		Done:       resp.Done,
-		Expiration: timestamppb.New(resp.Expiration),
+		Status: seqproxyapi.MustProtoAsyncSearchStatus(resp.Status),
 		Response: &seqproxyapi.ComplexSearchResponse{
-			Total:   0,
-			Docs:    makeProtoDocs(&resp.QPR, nil),
+			Total:   int64(resp.QPR.Total),
+			Docs:    docs,
 			Aggs:    makeProtoAggregation(resp.AggResult),
 			Hist:    makeProtoHistogram(&resp.QPR),
 			Error:   nil,
 			Explain: nil,
 		},
+		StartedAt:  timestamppb.New(resp.StartedAt),
+		ExpiresAt:  timestamppb.New(resp.ExpiresAt),
+		CanceledAt: canceledAt,
+		Progress:   resp.Progress,
+		DiskUsage:  resp.DiskUsage,
 	}, nil
+}
+
+func (g *grpcV1) CancelAsyncSearch(ctx context.Context, r *seqproxyapi.CancelAsyncSearchRequest) (*seqproxyapi.CancelAsyncSearchResponse, error) {
+	if err := g.searchIngestor.CancelAsyncSearch(ctx, r.SearchId); err != nil {
+		return nil, fmt.Errorf("cancelling search: %s", err)
+	}
+	return &seqproxyapi.CancelAsyncSearchResponse{}, nil
+}
+
+func (g *grpcV1) DeleteAsyncSearch(ctx context.Context, r *seqproxyapi.DeleteAsyncSearchRequest) (*seqproxyapi.DeleteAsyncSearchResponse, error) {
+	if err := g.searchIngestor.DeleteAsyncSearch(ctx, r.SearchId); err != nil {
+		return nil, fmt.Errorf("deleting search: %s", err)
+	}
+	return &seqproxyapi.DeleteAsyncSearchResponse{}, nil
 }
