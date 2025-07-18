@@ -57,8 +57,6 @@ func init() {
 		zapLogger,
 		atomicLevel,
 	}
-
-	Info("logger initialized", zap.String("log_level", level.String()))
 }
 
 func Debug(msg string, args ...zap.Field) {

@@ -31,11 +31,10 @@ build-image:
 
 .PHONY: run
 run: build-binaries
-	@$(eval DATA_DIR := $(shell mktemp -d))
+	@rm -rdf /tmp/seq-db && mkdir /tmp/seq-db
 	${LOCAL_BIN}/${OS}-${ARCH}/seq-db \
 		--mode=single \
-		--mapping=auto \
-		--data-dir=${DATA_DIR}
+		--config=config.yaml
 
 .PHONY: push-image
 push-image: build-image

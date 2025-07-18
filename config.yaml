@@ -1,0 +1,21 @@
+# DO NOT USE this configuration in production environments.
+# This configuration ONLY for demonstration purposes.
+
+address:
+  http: :9002
+  grpc: :9004
+  debug: :9200
+
+storage:
+  dataDir: /tmp/seq-db
+  fracSize: 64MiB
+  totalSize: 512MiB
+
+slowLogs:
+  bulkThreshold: 20ms
+  searchThreshold: 20ms
+  fetchThreshold: 20ms
+
+mapping:
+  path: auto
+

@@ -16,7 +16,7 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
@@ -63,10 +63,10 @@ type activeRef struct {
 	frac *proxyFrac
 }
 
-func NewFracManager(config *Config) *FracManager {
-	FillConfigWithDefault(config)
+func NewFracManager(cfg *Config) *FracManager {
+	FillConfigWithDefault(cfg)
 
-	cacheMaintainer := NewCacheMaintainer(config.CacheSize, config.SortCacheSize, &CacheMaintainerMetrics{
+	cacheMaintainer := NewCacheMaintainer(cfg.CacheSize, cfg.SortCacheSize, &CacheMaintainerMetrics{
 		HitsTotal:       metric.CacheHitsTotal,
 		MissTotal:       metric.CacheMissTotal,
 		PanicsTotal:     metric.CachePanicsTotal,
@@ -87,12 +87,12 @@ func NewFracManager(config *Config) *FracManager {
 	})
 
 	fracManager := &FracManager{
-		config:          config,
+		config:          cfg,
 		mature:          atomic.Bool{},
 		cacheMaintainer: cacheMaintainer,
-		fracProvider:    newFractionProvider(&config.Fraction, cacheMaintainer, conf.ReaderWorkers, conf.IndexWorkers),
+		fracProvider:    newFractionProvider(&cfg.Fraction, cacheMaintainer, config.ReaderWorkers, config.IndexWorkers),
 		ulidEntropy:     ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
-		fracCache:       NewSealedFracCache(filepath.Join(config.DataDir, consts.FracCacheFileSuffix)),
+		fracCache:       NewSealedFracCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix)),
 	}
 
 	return fracManager

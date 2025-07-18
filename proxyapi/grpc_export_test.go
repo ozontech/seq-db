@@ -12,7 +12,7 @@ import (
 	"go.opencensus.io/trace"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
@@ -281,7 +281,7 @@ func TestGrpcV1_ExportLive(t *testing.T) {
 					from:  now,
 					to:    now.Add(time.Second),
 				},
-				size:     int64(conf.MaxRequestedDocuments) + 10,
+				size:     int64(config.MaxRequestedDocuments) + 10,
 				offset:   0,
 				noSiMock: true,
 				noRlMock: true,

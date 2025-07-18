@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
@@ -73,13 +73,13 @@ func NewActive(
 	readLimiter *disk.ReadLimiter,
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
-	config *Config,
+	cfg *Config,
 ) *Active {
-	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, conf.SkipFsync)
-	metaFile, metaStats := mustOpenFile(baseFileName+consts.MetaFileSuffix, conf.SkipFsync)
+	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
+	metaFile, metaStats := mustOpenFile(baseFileName+consts.MetaFileSuffix, config.SkipFsync)
 
 	f := &Active{
-		TokenList:     NewActiveTokenList(conf.IndexWorkers),
+		TokenList:     NewActiveTokenList(config.IndexWorkers),
 		DocsPositions: NewSyncDocsPositions(),
 		MIDs:          NewIDs(),
 		RIDs:          NewIDs(),
@@ -95,11 +95,11 @@ func NewActive(
 		metaReader: disk.NewDocBlocksReader(readLimiter, metaFile),
 
 		indexer: activeIndexer,
-		writer:  NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), conf.SkipFsync),
+		writer:  NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync),
 
 		BaseFileName: baseFileName,
 		info:         NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
-		Config:       config,
+		Config:       cfg,
 	}
 
 	// use of 0 as keys in maps is prohibited – it's system key, so add first element

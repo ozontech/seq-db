@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/c2h5oh/datasize"
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
@@ -99,7 +99,7 @@ func (d *docsStream) calcChunkSize(docs [][]byte, prevChunkSize int) int {
 	}
 
 	avgDocSize := batchSize / len(docs)
-	newChunkSize := conf.MaxFetchSizeBytes / avgDocSize
+	newChunkSize := int(config.MaxFetchSizeBytes) / avgDocSize
 	if newChunkSize != prevChunkSize {
 		logger.Debug(
 			"fetch chunk recalculated",

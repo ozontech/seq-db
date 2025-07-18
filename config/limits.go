@@ -1,11 +1,9 @@
-package limits
+package config
 
 import (
-	"fmt"
 	"runtime"
 
 	"github.com/KimMachineGun/automemlimit/memlimit"
-	"github.com/ozontech/seq-db/logger"
 	"go.uber.org/automaxprocs/maxprocs"
 )
 
@@ -15,10 +13,14 @@ var (
 )
 
 func init() {
-	_, _ = maxprocs.Set(maxprocs.Logger(func(tpl string, args ...any) { logger.Info(fmt.Sprintf(tpl, args...)) }))
+	_, _ = maxprocs.Set()
 
 	NumCPU = runtime.GOMAXPROCS(0)
 	TotalMemory = getTotalMemory()
+
+	IndexWorkers = NumCPU
+	FetchWorkers = NumCPU
+	ReaderWorkers = NumCPU
 }
 
 func getTotalMemory() uint64 {

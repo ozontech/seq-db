@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
@@ -97,21 +97,21 @@ type GrpcV1 struct {
 	inflightBulks atomic.Int64
 }
 
-func NewGrpcV1(config APIConfig, fracManager *fracmanager.FracManager, mappingProvider MappingProvider) *GrpcV1 {
+func NewGrpcV1(cfg APIConfig, fracManager *fracmanager.FracManager, mappingProvider MappingProvider) *GrpcV1 {
 	g := &GrpcV1{
-		config:          config,
+		config:          cfg,
 		fracManager:     fracManager,
 		mappingProvider: mappingProvider,
 		searchData: searchData{
-			searcher: fracmanager.NewSearcher(config.Search.WorkersCount, fracmanager.SearcherCfg{
-				MaxFractionHits:       config.Search.MaxFractionHits,
-				FractionsPerIteration: config.Search.FractionsPerIteration,
+			searcher: fracmanager.NewSearcher(cfg.Search.WorkersCount, fracmanager.SearcherCfg{
+				MaxFractionHits:       cfg.Search.MaxFractionHits,
+				FractionsPerIteration: cfg.Search.FractionsPerIteration,
 			}),
 		},
 		fetchData: fetchData{
-			docFetcher: fracmanager.NewFetcher(conf.FetchWorkers),
+			docFetcher: fracmanager.NewFetcher(config.FetchWorkers),
 		},
-		asyncSearcher: fracmanager.MustStartAsync(config.Search.Async, mappingProvider, fracManager),
+		asyncSearcher: fracmanager.MustStartAsync(cfg.Search.Async, mappingProvider, fracManager),
 	}
 
 	go g.bulkStats()

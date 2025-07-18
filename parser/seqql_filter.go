@@ -8,7 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -35,7 +35,7 @@ func parseSeqQLFieldFilter(lex *lexer, mapping seq.Mapping) (*ASTNode, error) {
 		return nil, fmt.Errorf("missing filter value for field %q", fieldName)
 	}
 
-	caseSensitive := conf.CaseSensitive
+	caseSensitive := config.CaseSensitive
 	if fieldName == seq.TokenExists {
 		caseSensitive = true
 	}

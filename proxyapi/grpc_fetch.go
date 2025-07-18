@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
@@ -45,7 +45,7 @@ func (g *grpcV1) Fetch(req *seqproxyapi.FetchRequest, stream seqproxyapi.SeqProx
 			ids = append(ids, seqID)
 		}
 	}
-	if conf.MaxRequestedDocuments > 0 && len(ids) > conf.MaxRequestedDocuments {
+	if config.MaxRequestedDocuments > 0 && len(ids) > config.MaxRequestedDocuments {
 		errMsg := fmt.Sprintf("too many documents are requested: count=%d", len(ids))
 		return status.Error(codes.InvalidArgument, errMsg)
 	}

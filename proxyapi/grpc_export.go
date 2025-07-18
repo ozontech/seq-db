@@ -9,7 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 )
@@ -28,9 +28,9 @@ func (g *grpcV1) Export(req *seqproxyapi.ExportRequest, stream seqproxyapi.SeqPr
 	ctx, cancel := context.WithTimeout(stream.Context(), g.config.ExportTimeout)
 	defer cancel()
 
-	if conf.MaxRequestedDocuments > 0 && req.Size > int64(conf.MaxRequestedDocuments) {
+	if config.MaxRequestedDocuments > 0 && req.Size > int64(config.MaxRequestedDocuments) {
 		return status.Errorf(codes.InvalidArgument, "too many documents are requested: count=%d, max=%d",
-			req.Size, conf.MaxRequestedDocuments)
+			req.Size, config.MaxRequestedDocuments)
 	}
 
 	const protocol = "grpc"

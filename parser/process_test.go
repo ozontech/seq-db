@@ -3,12 +3,11 @@ package parser
 import (
 	"testing"
 
-	"github.com/ozontech/seq-db/seq"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/seq"
 )
 
 type testCase struct {
@@ -284,7 +283,7 @@ func TestTokenizationCaseSensitive(t *testing.T) {
 			expect: `service:AbC`,
 		},
 	}
-	conf.CaseSensitive = true
+	config.CaseSensitive = true
 	for _, tst := range tests {
 		t.Run(tst.name, func(t *testing.T) {
 			expr, err := ParseQuery(tst.query, nil)
@@ -297,7 +296,7 @@ func TestTokenizationCaseSensitive(t *testing.T) {
 func TestExistsCaseSensitive(t *testing.T) {
 	q := `_exists_:AbCdEfG`
 	for _, cs := range []bool{true, false} {
-		conf.CaseSensitive = cs
+		config.CaseSensitive = cs
 		expr, err := ParseQuery(q, nil)
 		assert.NoError(t, err)
 		assert.Equal(t, expr.String(), q)
