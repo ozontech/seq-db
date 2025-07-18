@@ -7,9 +7,10 @@ import (
 
 	"github.com/cep21/circuit/v3"
 	"github.com/cep21/circuit/v3/closers/hystrix"
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"go.uber.org/zap"
 )
 
 var (

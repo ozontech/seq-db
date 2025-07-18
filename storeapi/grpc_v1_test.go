@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	insaneJSON "github.com/ozontech/insane-json"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -15,7 +17,6 @@ import (
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestDuplicates(t *testing.T) {

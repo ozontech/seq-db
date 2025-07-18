@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDocBlocksWriter(t *testing.T) {

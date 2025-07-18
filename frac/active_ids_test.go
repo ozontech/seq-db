@@ -4,9 +4,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ozontech/seq-db/logger"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+
+	"github.com/ozontech/seq-db/logger"
 )
 
 func TestSeqListAppend(t *testing.T) {

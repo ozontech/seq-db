@@ -12,8 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/ozontech/seq-db/metric/stopwatch"
 )
 
 type testWriterSyncer struct {
