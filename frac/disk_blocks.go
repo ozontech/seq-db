@@ -24,16 +24,6 @@ func (e lidsBlock) getExtForRegistry() (uint64, uint64) {
 	return ext1, ext2
 }
 
-type DiskInfoBlock struct {
-	info *Info
-}
-
-func (b *DiskInfoBlock) pack(dst []byte) []byte {
-	dst = append(dst, seqDBMagic...)
-	dst = append(dst, b.info.Save()...)
-	return dst
-}
-
 type DiskPositionsBlock struct {
 	totalIDs uint32
 	blocks   []uint64

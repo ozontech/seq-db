@@ -36,9 +36,9 @@ func (w *DiskBlocksWriter) NewBlockFormer(name string, size int) *disk.BlockForm
 	return disk.NewBlockFormer(name, w.writer, size, w.resetBuf(size))
 }
 
-func (w *DiskBlocksWriter) writeInfoBlock(block *DiskInfoBlock) error {
+func (w *DiskBlocksWriter) writeInfoBlock(block *BlockInfo) error {
 	now := time.Now()
-	w.buf = block.pack(w.resetBuf(consts.RegularBlockSize))
+	w.buf = block.Pack(w.resetBuf(consts.RegularBlockSize))
 	n, err := w.writer.WriteBlock("info", w.buf, false, 0, 0, 0)
 	if err != nil {
 		return err
