@@ -56,7 +56,7 @@ jobs:
       - name: Send coverage
         uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: profile.out
 
   lint:
