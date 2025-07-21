@@ -32,11 +32,15 @@ jobs:
           LOG_LEVEL: error
         run: go test -short -coverprofile=profile.out -covermode=atomic -coverpkg=./... ./...
 
+      - name: Strip generated files from coverage
+        run: |
+          grep -v ".pb.go:" profile.out > profile.out.clean
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: profile.out
+          path: profile.out.clean
           if-no-files-found: error
           retention-days: 1
 
@@ -57,7 +61,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: profile.out
+          files: profile.out.clean
 
   lint:
     runs-on: ubuntu-latest
