@@ -1868,7 +1868,7 @@ func (s *IntegrationTestSuite) TestAggregateFieldsWithMultipleTypes() {
 	)
 }
 
-//func (s *IntegrationTestSuite) TestTimeField() {
+// func (s *IntegrationTestSuite) TestTimeField() {
 //	config := *s.Config
 //	config.Mapping = map[string]seq.MappingTypes{
 //		"event":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -1906,7 +1906,7 @@ func (s *IntegrationTestSuite) TestAggregateFieldsWithMultipleTypes() {
 //		diff := d.Time.AsTime().Sub(now).Abs()
 //		r.True(diff < 100*time.Millisecond)
 //	}
-//}
+// }
 
 func (s *IntegrationTestSuite) TestAsyncSearch() {
 	t := s.T()
