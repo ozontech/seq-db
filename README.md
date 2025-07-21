@@ -12,17 +12,23 @@ It supports both single-instance and clustered deployments to meet various scala
 
 ## Quickstart
 
-Get started quickly by following our [Quickstart Guide](http://todo).
+Get started quickly by following our [Quickstart Guide](https://ozontech.github.io/seq-db-docs/).
 
-## Architecture
 
-Learn more about the internal architecture and design decisions in
-our [Architecture Documentation](http://todo/architecture).
+[//]: # ()
+[//]: # (## Architecture)
+
+[//]: # ()
+[//]: # (Learn more about the internal architecture and design decisions in)
+
+[//]: # (our [Architecture Documentation]&#40;http://todo/architecture&#41;.)
+
+[//]: # ()
 
 ## Cluster Configuration
 
 For setting up a clustered deployment, refer to
-our [Cluster Configuration Guide](http://todo/cluster-configuration).
+our [Cluster Configuration Guide](https://ozontech.github.io/seq-db-docs/#cluster-mode).
 
 ## GitHub Registry
 
@@ -39,7 +45,7 @@ Join our community for discussions, support, and contributions:
 ## Benchmarks
 
 See performance benchmarks and comparisons in
-our [Benchmark Reports](http://todo/benchmarks).
+our [Benchmark Reports](https://ozontech.github.io/seq-db-docs/ru/seq-db/benchmarks/).
 
 ## License
 
