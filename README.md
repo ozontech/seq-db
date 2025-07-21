@@ -49,7 +49,7 @@ our [Benchmark Reports](https://ozontech.github.io/seq-db-docs/ru/seq-db/benchma
 
 ## License
 
-This project is licensed under the [ToDo License](https://opensource.org/licenses/).
+This project is licensed under the [Apache 2.0 License](https://github.com/ozontech/seq-db/blob/main/LICENSE).
 
 For any issues or feature requests, please open a ticket in
 our [GitHub Issues](https://github.com/ozontech/seq-db/issues).
