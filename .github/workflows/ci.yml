@@ -34,7 +34,7 @@ jobs:
 
       - name: Strip generated files from coverage
         run: |
-          grep -v -e ".pb.go:" -e ".pb.gw.go:" profile.out > profile.out.clean
+          grep -v -e ".pb.go:" -e ".pb.gw.go:" -e ".mock.go:" -e "/mock/" profile.out > profile.out.clean
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
