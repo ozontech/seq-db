@@ -56,9 +56,9 @@ id: benchmarks
 - был отключен кеш запросов (`request_cache=false`)
 - был отключен подсчёт total hits (`track_total_hits=false`)
 
-Тесты проводились при помощи утилиты grafana k6, параметры запросов указаны в каждом из сценариев, а также доступны в папке benchmarks/k6.
+Тесты проводились при помощи утилиты [Grafana k6](https://k6.io/), параметры запросов указаны в каждом из сценариев, а также доступны в папке benchmarks/k6.
 
-#### Сценарий 1: поиск всех логов с оффсетами
+#### Сценарий: поиск всех логов с оффсетами
 В Elasticsearch в конфигурации по умолчанию ограничивает `page_size*offset <= 10.000`.
 
 Параметры: запросы параллельно с 20 потоков в течение 10 секунд. 
@@ -263,5 +263,5 @@ curl -X PUT "http://localhost:9200/k8s-logs-index/" -H 'Content-Type: applicatio
 
 | Container            | Average Throughput | Average Logs Per Second | 
 |----------------------|--------------------|-------------------------|
-| seq-db               | 1.3 GiB/s          | 585139 docs/sec         |
-| elasticsearch        | 113.58 MiB/s       | 37658 docs/sec          |
+| seq-db               | 1.3 GiB/s          | 585,139 docs/sec        |
+| elasticsearch        | 113.58 MiB/s       | 37,658 docs/sec         |

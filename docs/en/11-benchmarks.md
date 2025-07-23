@@ -56,9 +56,9 @@ Elasticsearch settings:
 - Request cache disabled (`request_cache=false`)
 - Total hits counting disabled (`track_total_hits=false`)
 
-Tests were executed using Grafana k6, with query parameters available in the [benchmarks/k6](https://github.com/ozontech/seq-db/tree/main/benchmarks/k6) folder.
+Tests were executed using [Grafana k6](https://k6.io/), with query parameters available in the [benchmarks/k6](https://github.com/ozontech/seq-db/tree/main/benchmarks/k6) folder.
 
-#### Scenario 1: fetch all logs using offsets
+#### Scenario: fetch all logs using offsets
 
 ES enforces default limit `page_size * offset ≤ 10,000`.
 
@@ -71,7 +71,7 @@ Parameters: 20 looping virtual users for 10s, fetching a random page [1–50].
 
 #### Scenario `status: in(500,400,403)`
 
-20  VUs for 10s.
+Parameters: 20  VUs for 10s.
 
 | DB            | Avg      | P50      | P95      |
 |---------------|----------|----------|----------|
@@ -80,7 +80,7 @@ Parameters: 20 looping virtual users for 10s, fetching a random page [1–50].
 
 #### Scenario `request: GET /english/images/top_stories.gif HTTP/1.0`
 
-20 looping VUs for 10s.
+Parameters: 20 looping VUs for 10s.
 
 | DB            | Avg      | P50      | P95      |
 |---------------|----------|----------|----------|
