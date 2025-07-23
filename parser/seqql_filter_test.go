@@ -226,6 +226,8 @@ service:"wms-svc-logistics-megasort" and level:"#"
 	test(`level:"in(one, t,wo)"`, `level:"in(one, t,wo)"`)
 	test(`level:error and k8s_namespace:in(default, kube-system) and k8s_pod:in(kube-proxy-*, kube-apiserver-*, kube-scheduler-*)`,
 		`((level:error and (k8s_namespace:default or k8s_namespace:kube-system)) and ((k8s_pod:kube-proxy-* or k8s_pod:kube-apiserver-*) or k8s_pod:kube-scheduler-*))`)
+
+	test(`keyword: ip_range(192.168.1.1,192.168.1.2)`, ``)
 }
 
 func TestSeqQLCaseSensitive(t *testing.T) {

@@ -49,6 +49,15 @@ func parseSeqQLFieldFilter(lex *lexer, mapping seq.Mapping) (*ASTNode, error) {
 		return &ASTNode{Value: r}, nil
 	}
 
+	if lex.IsKeyword("ip_range") {
+		lex.Next()
+		r, err := parseFilterIpRange(lex, fieldName, t, caseSensitive)
+		if err != nil {
+			return nil, fmt.Errorf("parsing 'ip_range' filter: %s", err)
+		}
+		return &ASTNode{Value: r}, nil
+	}
+
 	if lex.IsKeyword("in") {
 		lex.Next()
 		ast, err := parseFilterIn(lex, fieldName, t, caseSensitive)
