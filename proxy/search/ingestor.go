@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alecthomas/units"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
@@ -220,8 +221,8 @@ func (si *Ingestor) singleDocsStream(ctx context.Context, explain bool, source u
 	}
 
 	stream, err := client.Fetch(ctx, si.makeFetchReq(ids, explain, fields),
-		grpc.MaxCallRecvMsgSize(256*consts.MB),
-		grpc.MaxCallSendMsgSize(256*consts.MB),
+		grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
+		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("can't fetch docs: %s", err.Error())
@@ -602,8 +603,8 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 	}
 
 	data, err := client.Search(ctx, req,
-		grpc.MaxCallRecvMsgSize(256*consts.MB),
-		grpc.MaxCallSendMsgSize(256*consts.MB),
+		grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
+		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
 		grpc.UseCompressor(gzip.Name),
 	)
 	if err != nil {

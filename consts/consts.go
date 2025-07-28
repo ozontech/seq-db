@@ -3,20 +3,18 @@ package consts
 import (
 	"errors"
 	"time"
+
+	"github.com/alecthomas/units"
 )
 
 const (
 	// DummyMID is used in aggregations when we do not need to build time series.
 	DummyMID = 0
 
-	IDsBlockSize     = 4 * KB
-	RegularBlockSize = 16 * KB
-	IDsPerBlock      = 4 * KB
-	LIDBlockCap      = 64 * KB
-
-	KB = 1024
-	MB = 1024 * 1024
-	GB = 1024 * 1024 * 1024
+	IDsBlockSize     = int(4 * units.KiB)
+	RegularBlockSize = int(16 * units.KiB)
+	IDsPerBlock      = int(4 * units.KiB)
+	LIDBlockCap      = int(64 * units.KiB)
 
 	DefaultMaintenanceDelay  = time.Second
 	DefaultCacheGCDelay      = 1 * time.Second

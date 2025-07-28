@@ -200,7 +200,7 @@ func startProxy(
 				SleepWindow:              cfg.CircuitBreaker.Bulk.SleepWindow,
 			},
 			MaxInflightBulks:       cfg.Limits.InflightBulks,
-			AllowedTimeDrift:       cfg.Indexing.AllowedTimeDrift,
+			AllowedTimeDrift:       cfg.Indexing.PastAllowedTimeDrift,
 			FutureAllowedTimeDrift: cfg.Indexing.FutureAllowedTimeDrift,
 			MappingProvider:        mp,
 			MaxTokenSize:           cfg.Indexing.MaxTokenSize,

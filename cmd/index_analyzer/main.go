@@ -9,7 +9,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/consts"
+	"github.com/alecthomas/units"
+
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
@@ -56,7 +57,7 @@ func main() {
 
 func getCacheMaintainer() (*fracmanager.CacheMaintainer, func()) {
 	done := make(chan struct{})
-	cm := fracmanager.NewCacheMaintainer(consts.GB, consts.MB*64, nil)
+	cm := fracmanager.NewCacheMaintainer(uint64(units.GiB), uint64(units.MiB*64), nil)
 	wg := cm.RunCleanLoop(done, time.Second, time.Second)
 	return cm, func() {
 		close(done)

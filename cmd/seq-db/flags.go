@@ -27,7 +27,7 @@ var (
 			Default("").
 			String()
 
-	// Deprecated. Will be removed in futures versions.
+	// Deprecated. Will be removed in the future versions.
 	// We already use SeqQL by default.
 	flagUseSeqQLByDefault = kingpin.Flag("use-seq-ql-by-default", "enable seq-ql as default query language").
 				Default("false").

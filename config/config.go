@@ -213,7 +213,7 @@ type Config struct {
 	} `config:"tracing"`
 
 	/* Non-tweakable parameters */
-	MaxFetchSizeBytes Bytes `config:"-" default:"4MB"`
+	MaxFetchSizeBytes Bytes `config:"-" default:"4MiB"`
 }
 
 type Bytes units.Base2Bytes

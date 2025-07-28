@@ -13,6 +13,8 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
+	"github.com/alecthomas/units"
+
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
@@ -79,8 +81,8 @@ func (cfg *TestingEnvConfig) GetFracManagerConfig(replicaID string) fracmanager.
 		// Fastest zstd compression, see: https://github.com/facebook/zstd/releases/tag/v1.3.4.
 		const fastestZstdLevel = -5
 		config = fracmanager.FillConfigWithDefault(&fracmanager.Config{
-			FracSize:  256 * consts.MB,
-			TotalSize: 1 * consts.GB,
+			FracSize:  256 * uint64(units.MiB),
+			TotalSize: 1 * uint64(units.GiB),
 			SealParams: frac.SealParams{
 				IDsZstdLevel:           fastestZstdLevel,
 				LIDsZstdLevel:          fastestZstdLevel,
@@ -88,7 +90,7 @@ func (cfg *TestingEnvConfig) GetFracManagerConfig(replicaID string) fracmanager.
 				DocsPositionsZstdLevel: fastestZstdLevel,
 				TokenTableZstdLevel:    fastestZstdLevel,
 				DocBlocksZstdLevel:     fastestZstdLevel,
-				DocBlockSize:           consts.MB * 4,
+				DocBlockSize:           int(units.MiB) * 4,
 			},
 		})
 	}
@@ -305,7 +307,7 @@ func MakeIngestors(cfg *TestingEnvConfig, hot, cold [][]string) []*Ingestor {
 					PartialFieldIndexing:   false,
 					DocsZSTDCompressLevel:  -1,
 					MetasZSTDCompressLevel: -1,
-					MaxDocumentSize:        consts.MB + consts.KB,
+					MaxDocumentSize:        int(units.MiB + units.KiB),
 				},
 				Search: search.Config{
 					HotStores:       hotStores,

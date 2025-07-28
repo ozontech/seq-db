@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/consts"
@@ -76,12 +77,12 @@ func TestProcessDocuments(t *testing.T) {
 		AllowedTimeDrift:       time.Hour,
 		FutureAllowedTimeDrift: time.Hour,
 		MappingProvider:        mappingProvider,
-		MaxTokenSize:           consts.KB,
+		MaxTokenSize:           int(units.KiB),
 		CaseSensitive:          false,
 		PartialFieldIndexing:   false,
 		DocsZSTDCompressLevel:  -1,
 		MetasZSTDCompressLevel: -1,
-		MaxDocumentSize:        consts.KB,
+		MaxDocumentSize:        int(units.KiB),
 	}
 
 	now := time.Now().UTC()
@@ -190,9 +191,9 @@ func TestProcessDocuments(t *testing.T) {
 		{
 			Name: "too_large_document",
 			Payload: func() TestPayload {
-				doc1 := fmt.Sprintf(`{"level": %q}`, strings.Repeat("a", consts.KB+1))
-				doc2 := fmt.Sprintf(`{"message": %q}`, strings.Repeat("a", consts.KB+1))
-				doc3 := fmt.Sprintf(`{"path": %q}`, strings.Repeat("a", consts.KB+1))
+				doc1 := fmt.Sprintf(`{"level": %q}`, strings.Repeat("a", int(units.KiB)+1))
+				doc2 := fmt.Sprintf(`{"message": %q}`, strings.Repeat("a", int(units.KiB)+1))
+				doc3 := fmt.Sprintf(`{"path": %q}`, strings.Repeat("a", int(units.KiB)+1))
 				return TestPayload{
 					InDocs:  []string{doc1, doc2, doc3},
 					ExpDocs: nil,
@@ -469,10 +470,10 @@ func BenchmarkProcessDocuments(b *testing.B) {
 	ctx := context.Background()
 
 	mappingProvider, err := mappingprovider.New("", mappingprovider.WithMapping(map[string]seq.MappingTypes{
-		"level":   seq.NewSingleType(seq.TokenizerTypeKeyword, "level", consts.KB),
-		"message": seq.NewSingleType(seq.TokenizerTypeText, "message", consts.KB),
-		"error":   seq.NewSingleType(seq.TokenizerTypeText, "error", consts.KB),
-		"shard":   seq.NewSingleType(seq.TokenizerTypeKeyword, "shard", consts.KB),
+		"level":   seq.NewSingleType(seq.TokenizerTypeKeyword, "level", int(units.KiB)),
+		"message": seq.NewSingleType(seq.TokenizerTypeText, "message", int(units.KiB)),
+		"error":   seq.NewSingleType(seq.TokenizerTypeText, "error", int(units.KiB)),
+		"shard":   seq.NewSingleType(seq.TokenizerTypeKeyword, "shard", int(units.KiB)),
 	}))
 	if err != nil {
 		b.Fatal(err)
@@ -484,7 +485,7 @@ func BenchmarkProcessDocuments(b *testing.B) {
 		FutureAllowedTimeDrift: time.Hour * 100,
 		MappingProvider:        mappingProvider,
 		CaseSensitive:          false,
-		MaxTokenSize:           consts.KB,
+		MaxTokenSize:           int(units.KiB),
 	}
 
 	ingestor := NewIngestor(cfg, &FakeClient{})
@@ -523,7 +524,7 @@ func BenchmarkProcessDocuments(b *testing.B) {
 }
 
 func newMapping(mappingType seq.TokenizerType) seq.MappingTypes {
-	return seq.NewSingleType(mappingType, "", consts.KB)
+	return seq.NewSingleType(mappingType, "", int(units.KiB))
 }
 
 func newToken(k, v string) frac.MetaToken {

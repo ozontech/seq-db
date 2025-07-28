@@ -11,9 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/stretchr/testify/require"
-
-	"github.com/ozontech/seq-db/consts"
 )
 
 func Test_writeBulkResponse(t *testing.T) {
@@ -53,7 +52,7 @@ func BenchmarkESBulk(b *testing.B) {
 	}
 
 	proc := &FakeBulkProcessor{}
-	handler := NewBulkHandler(proc, consts.KB*512)
+	handler := NewBulkHandler(proc, int(units.KiB)*512)
 
 	request := http.Request{}
 	reqBodyBuf := bytes.NewReader(buf)

@@ -28,9 +28,9 @@ type Info struct {
 	MetaOnDisk    uint64                   `json:"meta_on_disk"`  // how much compressed metadata is stored on disk
 	IndexOnDisk   uint64                   `json:"index_on_disk"` // how much compressed index data is stored on disk
 
-	ConstRegularBlockSize uint64 `json:"const_regular_block_size"`
-	ConstIDsPerBlock      uint64 `json:"const_ids_per_block"`
-	ConstLIDBlockCap      uint64 `json:"const_lid_block_cap"`
+	ConstRegularBlockSize int `json:"const_regular_block_size"`
+	ConstIDsPerBlock      int `json:"const_ids_per_block"`
+	ConstLIDBlockCap      int `json:"const_lid_block_cap"`
 
 	From         seq.MID               `json:"from"`
 	To           seq.MID               `json:"to"`

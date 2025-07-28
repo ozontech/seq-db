@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/cep21/circuit/v3"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
@@ -192,7 +193,11 @@ func (s *shard) Bulk(ctx context.Context, req *storeapi.BulkRequest, writtenRepl
 }
 
 func sendBulkToHost(ctx context.Context, replica replica, req *storeapi.BulkRequest) error {
-	_, err := replica.client.Bulk(ctx, req, grpc.MaxCallRecvMsgSize(256*consts.MB), grpc.MaxCallSendMsgSize(256*consts.MB))
+	_, err := replica.client.Bulk(
+		ctx, req,
+		grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
+		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
+	)
 	if err != nil {
 		return fmt.Errorf("can't receive bulk acceptance: host=%s, err=%w", replica.host, err)
 	}

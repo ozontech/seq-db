@@ -13,6 +13,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/alecthomas/units"
+
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
@@ -188,7 +190,7 @@ func writeSealedFraction(f *Active, info *Info, indexFile io.WriteSeeker, params
 	var lidsTable *lids.Table
 	{
 		logger.Info("sealing lids...")
-		generator := producer.getLIDsBlockGenerator(f.TokenList, oldToNewLIDsIndex, f.MIDs, f.RIDs, consts.LIDBlockCap)
+		generator := producer.getLIDsBlockGenerator(f.TokenList, oldToNewLIDsIndex, f.MIDs, f.RIDs, int(consts.LIDBlockCap))
 		lidsTable, err = writer.writeLIDsBlocks(params.LIDsZstdLevel, generator)
 		if err != nil {
 			return nil, fmt.Errorf("seal lids error: %w", err)
@@ -287,10 +289,10 @@ func getDocBlocksWriter(w io.Writer, blockSize, compressLevel int) *docBlocksWri
 	bw := docBlocksWriterPool.Get().(*docBlocksWriter)
 
 	if blockSize <= 0 {
-		blockSize = consts.MB * 4
+		blockSize = int(units.MiB) * 4
 	}
 
-	bufSize := consts.MB * 32
+	bufSize := int(units.MiB) * 32
 	if bufSize < blockSize {
 		bufSize = blockSize
 	}
