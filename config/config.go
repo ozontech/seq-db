@@ -110,12 +110,15 @@ type Config struct {
 		Aggregation struct {
 			// FieldTokens specifies maximum amount of unique field tokens
 			// that can be processed in single aggregation requests.
+			// Setting this field to 0 disables limit.
 			FieldTokens int `config:"fieldTokens" default:"1000000"`
-			// FieldTokens specifies maximum amount of unique group tokens
+			// GroupTokens specifies maximum amount of unique group tokens
 			// that can be processed in single aggregation requests.
+			// Setting this field to 0 disables limit.
 			GroupTokens int `config:"groupTokens" default:"2000"`
 			// FractionTokens specifies maximum amount of unique tokens
 			// that are contained in single fraction which was picked up by aggregation request.
+			// Setting this field to 0 disables limit.
 			FractionTokens int `config:"fractionTokens" default:"100000"`
 		} `config:"aggregation"`
 	} `config:"limits"`
@@ -165,10 +168,14 @@ type Config struct {
 	} `config:"compression"`
 
 	Indexing struct {
-		MaxTokenSize           int           `config:"maxTokenSize" default:"72"`
-		CaseSensitive          bool          `config:"caseSensitive"`
-		PartialFieldIndexing   bool          `config:"partialFieldIndexing"`
-		AllowedTimeDrift       time.Duration `config:"allowedTimeDrift" default:"24h"`
+		MaxTokenSize         int  `config:"maxTokenSize" default:"72"`
+		CaseSensitive        bool `config:"caseSensitive"`
+		PartialFieldIndexing bool `config:"partialFieldIndexing"`
+		// PastAllowedTimeDrift specifies how much time can elapse since the message’s timestamp.
+		// If more time than PastAllowedTimeDrift has passed since the message’s timestamp, the message's timestamp gets overwritten.
+		PastAllowedTimeDrift time.Duration `config:"pastAllowedTimeDrift" default:"24h"`
+		// FutureAllowedTimeDrift specifies the maximum allowable offset for a message’s timestamp into the future.
+		// If a message’s timestamp is further in the future than FutureAllowedTimeDrift, it is overwritten.
 		FutureAllowedTimeDrift time.Duration `config:"futureAllowedTimeDrift" default:"5m"`
 	} `config:"indexing"`
 
@@ -182,11 +189,16 @@ type Config struct {
 	} `config:"mapping"`
 
 	DocsSorting struct {
-		Enabled      bool  `config:"enabled"`
+		// Enabled enables/disables documents sorting.
+		Enabled bool `config:"enabled"`
+		// DocBlockSize sets document block size.
+		// Large size consumes more RAM but improves compression ratio.
 		DocBlockSize Bytes `config:"docBlockSize"`
 	} `config:"docsSorting"`
 
 	AsyncSearch struct {
+		// DataDir specifies directory that contains data for asynchronous searches.
+		// By default will be subdirectory in [Config.Storage.DataDir].
 		DataDir     string `config:"dataDir"`
 		Concurrency int    `config:"concurrency"`
 	} `config:"asyncSearch"`
