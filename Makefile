@@ -35,7 +35,7 @@ run: build-binaries
 	@rm -rdf /tmp/seq-db && mkdir /tmp/seq-db
 	${LOCAL_BIN}/${OS}-${ARCH}/seq-db \
 		--mode=single \
-		--config=config.yaml
+		--config=config.example.yaml
 
 .PHONY: push-image
 push-image: build-image
