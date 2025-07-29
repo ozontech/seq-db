@@ -2,6 +2,7 @@ package fracmanager
 
 import (
 	"bufio"
+	"flag"
 	"io"
 	"math/rand"
 	"os"
@@ -20,6 +21,16 @@ import (
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
+
+var (
+	cpuProfileFlag = flag.Bool("custom.cpuprofile", false, "Enable CPU profiling")
+	memProfileFlag = flag.Bool("custom.memprofile", false, "Enable Mem profiling")
+)
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	m.Run()
+}
 
 func fillActiveFraction(active *frac.Active) error {
 	const muliplier = 10
@@ -110,11 +121,19 @@ func runSealingBench(b *testing.B, cfg *frac.Config) {
 
 	b.ReportAllocs()
 
-	defer profile.Start( // turn on profiling (look for the file fracmanager/cpu.pprof)
-		profile.CPUProfile,
-		profile.ProfilePath("."),
-		profile.NoShutdownHook,
-	).Stop()
+	if cpuProfileFlag != nil && *cpuProfileFlag {
+		defer profile.Start(
+			profile.CPUProfile,
+			profile.ProfilePath("../."),
+			profile.NoShutdownHook,
+		).Stop()
+	} else if memProfileFlag != nil && *memProfileFlag {
+		defer profile.Start(
+			profile.MemProfileHeap,
+			profile.ProfilePath("../."),
+			profile.NoShutdownHook,
+		).Stop()
+	}
 
 	for b.Loop() {
 		_, err = frac.Seal(active, params)
