@@ -7,6 +7,7 @@ ifeq ($(ARCH), x86_64)
 ARCH := amd64
 endif
 
+IMAGE ?= ghcr.io/ozontech/seq-db
 VERSION ?= $(shell git describe --abbrev=4 --dirty --always --tags)
 TIME := $(shell date '+%Y-%m-%d_%H:%M:%S')
 
@@ -26,7 +27,7 @@ build-image:
 		--build-arg VERSION=${VERSION} \
 		--build-arg BUILD_TIME=${TIME} \
 		--file build/package/Dockerfile \
-		-t ghcr.io/ozontech/seq-db:${VERSION} \
+		-t ${IMAGE}:${VERSION} \
 		.
 
 .PHONY: run
@@ -39,7 +40,7 @@ run: build-binaries
 
 .PHONY: push-image
 push-image: build-image
-	docker push ghcr.io/ozontech/seq-db:${VERSION}
+	docker push ${IMAGE}:${VERSION}
 
 .PHONY: test
 test:
