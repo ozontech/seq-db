@@ -72,7 +72,7 @@ func (l *Loader) skipBlock() disk.IndexBlockHeader {
 	return header
 }
 
-func (l *Loader) loadIDs() (idsTable seqids.IDsTable, blocksOffsets []uint64, err error) {
+func (l *Loader) loadIDs() (idsTable seqids.Table, blocksOffsets []uint64, err error) {
 	var result []byte
 
 	result, err = l.nextIndexBlock()
@@ -99,7 +99,7 @@ func (l *Loader) loadIDs() (idsTable seqids.IDsTable, blocksOffsets []uint64, er
 		blocksOffsets = append(blocksOffsets, offset)
 	}
 
-	idsTable.DiskStartBlockIndex = l.blockIndex
+	idsTable.StartBlockIndex = l.blockIndex
 
 	for {
 		// get MIDs block header

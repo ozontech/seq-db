@@ -11,6 +11,7 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/util"
@@ -146,7 +147,7 @@ func (cm *CacheMaintainer) CreateIndexCache() *frac.IndexCache {
 	return &frac.IndexCache{
 		MIDs:       newCache[[]byte](cm, midsName),
 		RIDs:       newCache[[]byte](cm, ridsName),
-		Params:     newCache[[]uint64](cm, paramsName),
+		Params:     newCache[seqids.BlockParams](cm, paramsName),
 		LIDs:       newCache[*lids.Block](cm, lidsName),
 		Tokens:     newCache[*token.Block](cm, tokensName),
 		TokenTable: newCache[token.Table](cm, tokenTableName),

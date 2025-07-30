@@ -3,6 +3,7 @@ package frac
 import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 )
 
@@ -10,7 +11,7 @@ type IndexCache struct {
 	Registry   *cache.Cache[[]byte]
 	MIDs       *cache.Cache[[]byte]
 	RIDs       *cache.Cache[[]byte]
-	Params     *cache.Cache[[]uint64]
+	Params     *cache.Cache[seqids.BlockParams]
 	Tokens     *cache.Cache[*token.Block]
 	TokenTable *cache.Cache[token.Table]
 	LIDs       *cache.Cache[*lids.Block]

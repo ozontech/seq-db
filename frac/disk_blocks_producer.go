@@ -7,7 +7,6 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
-	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -53,34 +52,31 @@ func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, 
 	}
 }
 
-func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPositions *DocsPositions, size int) func(func(*seqids.DiskIDsBlock) error) error {
-	return func(push func(*seqids.DiskIDsBlock) error) error {
-		pos := make([]uint64, 0, size)
-
+func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPositions *DocsPositions, size int) func(func(*idsBlock) error) error {
+	var block idsBlock
+	return func(push func(*idsBlock) error) error {
 		for len(sortedSeqIDs) > 0 {
 			right := min(size, len(sortedSeqIDs))
-			ids := sortedSeqIDs[:right]
-			sortedSeqIDs = sortedSeqIDs[right:]
-			pos = g.fillPos(docsPositions, ids, pos)
-			block := seqids.DiskIDsBlock{
-				IDs: ids,
-				Pos: pos,
-			}
+			g.fillIDsBlock(sortedSeqIDs[:right], docsPositions, &block)
 			if err := push(&block); err != nil {
 				return nil
 			}
+			sortedSeqIDs = sortedSeqIDs[right:]
 		}
 
 		return nil
 	}
 }
 
-func (g *DiskBlocksProducer) fillPos(positions *DocsPositions, ids []seq.ID, pos []uint64) []uint64 {
-	pos = pos[:len(ids)] // we assume that pos has enough capacity
-	for i, id := range ids {
-		pos[i] = uint64(positions.Get(id))
+func (g *DiskBlocksProducer) fillIDsBlock(ids []seq.ID, positions *DocsPositions, block *idsBlock) {
+	block.mids.Values = block.mids.Values[:0]
+	block.rids.Values = block.rids.Values[:0]
+	block.params.Values = block.params.Values[:0]
+	for _, id := range ids {
+		block.mids.Values = append(block.mids.Values, uint64(id.MID))
+		block.rids.Values = append(block.rids.Values, uint64(id.RID))
+		block.params.Values = append(block.params.Values, uint64(positions.Get(id)))
 	}
-	return pos
 }
 
 func (g *DiskBlocksProducer) getFracSortedFields(tokenList *TokenList) []string {

@@ -4,8 +4,29 @@ import (
 	"encoding/binary"
 
 	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
+	"github.com/ozontech/seq-db/seq"
 )
+
+type idsBlock struct {
+	mids   seqids.BlockMIDs
+	rids   seqids.BlockRIDs
+	params seqids.BlockParams
+}
+
+func (b idsBlock) GetMinID() seq.ID {
+	last := len(b.mids.Values) - 1
+	return seq.ID{
+		MID: seq.MID(b.mids.Values[last]),
+		RID: seq.RID(b.rids.Values[last]),
+	}
+}
+
+func (b idsBlock) GetExtForRegistry() (uint64, uint64) {
+	last := b.GetMinID()
+	return uint64(last.MID), uint64(last.RID)
+}
 
 type lidsBlock struct {
 	payload     lids.Block

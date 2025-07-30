@@ -207,11 +207,11 @@ func writeSealedFraction(f *Active, info *Info, indexFile io.WriteSeeker, params
 		lidsTable:     lidsTable,
 		tokenTable:    tokenTable,
 		blocksOffsets: blocksOffsets,
-		idsTable: seqids.IDsTable{
-			MinBlockIDs:         minBlockIDs,
-			IDsTotal:            f.MIDs.Len(),
-			IDBlocksTotal:       f.DocBlocks.Len(),
-			DiskStartBlockIndex: writer.startOfIDsBlockIndex,
+		idsTable: seqids.Table{
+			MinBlockIDs:     minBlockIDs,
+			IDsTotal:        f.MIDs.Len(),
+			IDBlocksTotal:   f.DocBlocks.Len(),
+			StartBlockIndex: writer.startOfIDsBlockIndex,
 		},
 	}, nil
 }
