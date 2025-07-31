@@ -215,8 +215,10 @@ type Config struct {
 	AsyncSearch struct {
 		// DataDir specifies directory that contains data for asynchronous searches.
 		// By default will be subdirectory in [Config.Storage.DataDir].
-		DataDir     string `config:"data_dir"`
-		Concurrency int    `config:"concurrency"`
+		DataDir           string `config:"data_dir"`
+		Concurrency       int    `config:"concurrency"`
+		MaxTotalSize      int    `config:"max_total_size"`
+		MaxSizePerRequest int    `config:"max_size_per_request"`
 	} `config:"async_search"`
 
 	API struct {

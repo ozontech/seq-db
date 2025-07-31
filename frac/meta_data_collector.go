@@ -43,7 +43,7 @@ func (m *MetaData) MarshalBinaryTo(b []byte) []byte {
 	b = binary.LittleEndian.AppendUint64(b, uint64(m.ID.MID))
 	b = binary.LittleEndian.AppendUint64(b, uint64(m.ID.RID))
 
-	// Encode Size.
+	// Encode BlockLength.
 	b = binary.LittleEndian.AppendUint32(b, m.Size)
 
 	// Encode tokens.

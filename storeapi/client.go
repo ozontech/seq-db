@@ -38,6 +38,14 @@ func (i inMemoryAPIClient) FetchAsyncSearchResult(ctx context.Context, in *store
 	return i.store.GrpcV1().FetchAsyncSearchResult(ctx, in)
 }
 
+func (i inMemoryAPIClient) CancelAsyncSearch(ctx context.Context, in *storeapi.CancelAsyncSearchRequest, _ ...grpc.CallOption) (*storeapi.CancelAsyncSearchResponse, error) {
+	return i.store.GrpcV1().CancelAsyncSearch(ctx, in)
+}
+
+func (i inMemoryAPIClient) DeleteAsyncSearch(ctx context.Context, in *storeapi.DeleteAsyncSearchRequest, _ ...grpc.CallOption) (*storeapi.DeleteAsyncSearchResponse, error) {
+	return i.store.GrpcV1().DeleteAsyncSearch(ctx, in)
+}
+
 type storeAPIFetchServer struct {
 	grpc.ServerStream
 	ctx context.Context

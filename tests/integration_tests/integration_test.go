@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -1943,15 +1944,15 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 
 	ctx := t.Context()
 	resp, err := searcher.StartAsyncSearch(ctx, search.AsyncRequest{
-		Query: "* | fields ip, method, uri",
-		From:  time.UnixMilli(0),
-		To:    time.Now().Add(time.Hour),
+		Query:     "* | fields ip, method, uri",
+		From:      time.UnixMilli(0),
+		To:        time.Now().Add(time.Hour),
+		Retention: time.Minute * 5,
 		Aggregations: []search.AggQuery{
 			{
-				Field:     "size",
-				GroupBy:   "ip",
-				Func:      seq.AggFuncSum,
-				Quantiles: nil,
+				Field:   "size",
+				GroupBy: "ip",
+				Func:    seq.AggFuncSum,
 			},
 			{
 				Field:     "size",
@@ -1961,36 +1962,35 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 			},
 		},
 		HistogramInterval: seq.MID(time.Second.Milliseconds()),
+		WithDocs:          true,
 	})
 	r.NoError(err)
 	r.NotEmpty(resp.ID)
 
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
-
-	fr := search.FetchAsyncSearchResultRequest{
-		ID:       resp.ID,
-		WithDocs: true,
-		Size:     100,
-		Offset:   0,
+	freq := search.FetchAsyncSearchResultRequest{
+		ID:     resp.ID,
+		Size:   100,
+		Offset: 0,
 	}
-
 	for ctx.Err() == nil {
-		fetchResp, err := searcher.FetchAsyncSearchResult(ctx, fr)
+		fresp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 		r.NoError(err)
-		if fetchResp.Done {
-			break
+		if fresp.Status == fracmanager.AsyncSearchStatusInProgress {
+			time.Sleep(time.Millisecond * 50)
+			continue
 		}
-		time.Sleep(time.Millisecond * 200)
+		break
 	}
-
 	r.NoError(ctx.Err())
 
-	fetchResp, err := searcher.FetchAsyncSearchResult(ctx, fr)
+	fresp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 	r.NoError(err)
 
-	r.True(fetchResp.Done)
-	r.True(fetchResp.Expiration.After(time.Now()))
+	r.Equalf(fracmanager.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
+	r.Equal([]seq.ErrorSource(nil), fresp.QPR.Errors)
+	r.True(fresp.ExpiresAt.After(time.Now()))
 	r.Equal([]seq.AggregationResult{
 		{
 			Buckets: []seq.AggregationBucket{
@@ -2014,8 +2014,9 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 				{Name: "put", Value: 5116, Quantiles: []float64{5116, 5116, 4334}},
 			},
 		},
-	}, fetchResp.AggResult)
+	}, fresp.AggResult)
 
-	r.True(len(fetchResp.QPR.Histogram) != 0)
-	r.Equal(len(docs), fetchResp.QPR.IDs.Len())
+	r.True(len(fresp.QPR.Histogram) != 0)
+	r.Equal(len(docs), fresp.QPR.IDs.Len())
+	r.Equal(float64(1), fresp.Progress)
 }
