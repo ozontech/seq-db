@@ -189,7 +189,7 @@ func (i *Ingestor) ProcessDocuments(ctx context.Context, requestTime time.Time, 
 	compressor := frac.GetDocsMetasCompressor(i.config.DocsZSTDCompressLevel, i.config.MetasZSTDCompressLevel)
 	defer frac.PutDocMetasCompressor(compressor)
 
-	total, err := i.processDocsToCompressor(ctx, compressor, requestTime, readNext)
+	total, err := i.processDocsToCompressor(compressor, requestTime, readNext)
 	if err != nil {
 		return 0, err
 	}
@@ -227,7 +227,11 @@ var (
 	}
 )
 
-func (i *Ingestor) processDocsToCompressor(_ context.Context, compressor *frac.DocsMetasCompressor, requestTime time.Time, readNext func() ([]byte, error)) (int, error) {
+func (i *Ingestor) processDocsToCompressor(
+	compressor *frac.DocsMetasCompressor,
+	requestTime time.Time,
+	readNext func() ([]byte, error),
+) (int, error) {
 	parseDuration := time.Duration(0)
 
 	proc := i.getProcessor()
