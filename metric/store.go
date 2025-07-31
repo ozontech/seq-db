@@ -243,7 +243,7 @@ var (
 	}, []string{"stage"})
 	MaintenanceTruncateTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
-		Subsystem: "maintanance",
+		Subsystem: "maintenance",
 		Name:      "truncate_total",
 		Help:      "",
 	})

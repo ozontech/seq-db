@@ -217,7 +217,7 @@ func (n *SingleSourceCountAggregator) Aggregate() (seq.AggregatableSamples, erro
 	}
 
 	// FIXME(dkharms): It will not work correctly with time series, since
-	// we also have to spread [notExists] accross different time bins.
+	// we also have to spread [notExists] across different time bins.
 	if n.notExists > 0 {
 		// Handle non-existent sources in legacy format.
 		aggMap[seq.AggBin{
