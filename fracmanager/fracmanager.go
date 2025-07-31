@@ -287,8 +287,6 @@ func (fm *FracManager) Start() {
 }
 
 func (fm *FracManager) Load(ctx context.Context) error {
-	var err error
-
 	l := NewLoader(fm.config, fm.fracProvider, fm.fracCache)
 
 	actives, sealed, err := l.load()
@@ -322,9 +320,6 @@ func (fm *FracManager) Load(ctx context.Context) error {
 }
 
 func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) error {
-	wg := sync.WaitGroup{}
-	defer wg.Wait()
-
 	for i, a := range actives {
 		if err := a.Replay(ctx); err != nil {
 			return err
@@ -338,15 +333,9 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 
 		if i == len(actives)-1 { // last and not empty
 			fm.active = r
-		} else {
-			wg.Wait() // wait previous sealing complete
-
-			wg.Add(1)
-			go func() {
-				fm.seal(r)
-				wg.Done()
-			}()
+			continue
 		}
+		fm.seal(r)
 	}
 
 	return nil
