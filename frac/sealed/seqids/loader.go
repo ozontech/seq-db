@@ -18,11 +18,11 @@ type Table struct {
 }
 
 func (Table) GetIDBlockIndexByLID(lid uint32) uint32 {
-	return lid / consts.IDsPerBlock
+	return lid / uint32(consts.IDsPerBlock)
 }
 
 func (Table) BlockStartLID(blockIndex uint32) uint32 {
-	return blockIndex * consts.IDsPerBlock
+	return blockIndex * uint32(consts.IDsPerBlock)
 }
 
 type Loader struct {

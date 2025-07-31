@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alecthomas/units"
 	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/pkg/profile"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
@@ -90,7 +90,7 @@ func defaultSealingParams() frac.SealParams {
 		DocsPositionsZstdLevel: minZstdLevel,
 		TokenTableZstdLevel:    minZstdLevel,
 		DocBlocksZstdLevel:     minZstdLevel,
-		DocBlockSize:           128 * consts.KB,
+		DocBlockSize:           128 * int(units.KiB),
 	}
 }
 
@@ -103,7 +103,7 @@ func Benchmark_SealingWithSort(b *testing.B) {
 }
 
 func runSealingBench(b *testing.B, cfg *frac.Config) {
-	cm := NewCacheMaintainer(consts.MB*64, consts.MB*64, nil)
+	cm := NewCacheMaintainer(uint64(units.MiB)*64, uint64(units.MiB)*64, nil)
 	fp := newFractionProvider(cfg, cm, 1, 1)
 	defer fp.Stop()
 
