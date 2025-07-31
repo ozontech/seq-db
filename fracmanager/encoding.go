@@ -387,9 +387,13 @@ func unmarshalAggs(dst []seq.AggregatableSamples, src []byte) (_ []seq.Aggregata
 
 func marshalAggregatableSamples(s seq.AggregatableSamples, dst []byte) []byte {
 	dst = be.AppendUint64(dst, uint64(len(s.SamplesByBin)))
-	for token, hist := range s.SamplesByBin {
-		dst = binary.AppendUvarint(dst, uint64(len(token.Token)))
-		dst = append(dst, []byte(token.Token)...)
+	prevMID := seq.MID(0)
+	for sample, hist := range s.SamplesByBin {
+		delta := int64(sample.MID) - int64(prevMID)
+		prevMID = sample.MID
+		dst = binary.AppendVarint(dst, delta)
+		dst = binary.AppendUvarint(dst, uint64(len(sample.Token)))
+		dst = append(dst, []byte(sample.Token)...)
 		dst = marshalSamplesContainer(hist, dst)
 	}
 	dst = be.AppendUint64(dst, uint64(s.NotExists))
@@ -405,13 +409,23 @@ func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte) ([]byt
 	src = src[8:]
 	q.SamplesByBin = make(map[seq.AggBin]*seq.SamplesContainer, aggs)
 	samples := make([]seq.SamplesContainer, aggs)
+	prev := int64(0)
 	for i := 0; i < int(aggs); i++ {
+		delta, n := binary.Varint(src)
+		src = src[n:]
+		if n <= 0 {
+			return nil, fmt.Errorf("malformed delta mid: %d", n)
+		}
+		mid := delta + prev
+		prev = mid
+
 		v, n := binary.Uvarint(src)
 		if n <= 0 {
 			return nil, fmt.Errorf("invalid token size")
 		}
 		src = src[n:]
-		token := seq.AggBin{Token: string(src[:v])}
+
+		token := string(src[:v])
 		src = src[v:]
 
 		sample := &samples[i]
@@ -421,7 +435,11 @@ func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte) ([]byt
 		}
 		src = tail
 
-		q.SamplesByBin[token] = sample
+		ab := seq.AggBin{
+			MID:   seq.MID(mid),
+			Token: token,
+		}
+		q.SamplesByBin[ab] = sample
 	}
 
 	q.NotExists = int64(be.Uint64(src))

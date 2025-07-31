@@ -54,12 +54,20 @@ func TestQPRMarshalUnmarshal(t *testing.T) {
 						NotExists: 0,
 						Samples:   []float64{100},
 					},
-					{Token: "seq-db store"}: {
+					{Token: "seq-db store", MID: seq.MID(1)}: {
 						Min:       3,
 						Max:       5,
 						Sum:       794,
 						Total:     1,
 						NotExists: 7,
+						Samples:   []float64{324},
+					},
+					{Token: "seq-db store", MID: seq.MID(2)}: {
+						Min:       2,
+						Max:       6,
+						Sum:       544,
+						Total:     2,
+						NotExists: 3,
 						Samples:   []float64{324},
 					},
 				},
