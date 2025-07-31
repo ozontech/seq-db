@@ -7,14 +7,14 @@ address:
   debug: :9200
 
 storage:
-  dataDir: /tmp/seq-db
-  fracSize: 64MiB
-  totalSize: 512MiB
+  data_dir: /tmp/seq-db
+  frac_size: 64MiB
+  total_size: 512MiB
 
-slowLogs:
-  bulkThreshold: 20ms
-  searchThreshold: 20ms
-  fetchThreshold: 20ms
+slow_logs:
+  bulk_threshold: 100ms
+  search_threshold: 20ms
+  fetch_threshold: 20ms
 
 mapping:
   path: auto

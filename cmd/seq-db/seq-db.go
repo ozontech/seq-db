@@ -47,8 +47,8 @@ func validateIngestorTopology(hotStores, hotReadStores, _, _ *stores.Stores) err
 }
 
 func main() {
-	kingpin.Parse()
 	kingpin.Version(buildinfo.Version)
+	kingpin.Parse()
 
 	rand.Seed(time.Now().UnixNano())
 	runtime.SetMutexProfileFraction(5)

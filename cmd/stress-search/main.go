@@ -240,7 +240,7 @@ func doFetch(ctx context.Context, client storeapi.StoreApiClient, req *storeapi.
 	ctx, cancel := context.WithTimeout(ctx, reqTimeout)
 	defer cancel()
 
-	stream, err := client.Fetch(ctx, req, grpc.MaxCallRecvMsgSize(256*int(units.MB)), grpc.MaxCallSendMsgSize(256*int(units.MiB)))
+	stream, err := client.Fetch(ctx, req, grpc.MaxCallRecvMsgSize(256*int(units.MiB)), grpc.MaxCallSendMsgSize(256*int(units.MiB)))
 	if err != nil {
 		return 0, err
 	}

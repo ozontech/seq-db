@@ -14,7 +14,14 @@ const (
 
 func Parse(path string) (Config, error) {
 	var c Config
-	if err := fig.Load(&c, fig.File(path)); err != nil {
+
+	if err := fig.Load(
+		&c,
+		fig.File(path),
+		fig.UseStrict(),
+		fig.Tag("config"),
+		fig.UseEnv("SEQDB"),
+	); err != nil {
 		return Config{}, err
 	}
 
@@ -41,85 +48,85 @@ type Config struct {
 
 	Storage struct {
 		// DataDir is a path to a directory where fractions will be stored.
-		DataDir string `config:"dataDir"`
+		DataDir string `config:"data_dir"`
 		// FracSize specifies the maximum size of an active fraction before it gets sealed.
-		FracSize Bytes `config:"fracSize" default:"128MiB"`
+		FracSize Bytes `config:"frac_size" default:"128MiB"`
 		// TotalSize specifies upper bound of how much disk space can be occupied
 		// by sealed fractions before they get deleted (or offloaded).
-		TotalSize Bytes `config:"totalSize" default:"1GiB"`
-	}
+		TotalSize Bytes `config:"total_size" default:"1GiB"`
+	} `config:"storage"`
 
 	Cluster struct {
 		// WriteStores contains cold store instances which will be written to.
-		WriteStores []string `config:"writeStores"`
+		WriteStores []string `config:"write_stores"`
 		// ReadStores contains cold store instances wich will be queried from.
-		ReadStores []string `config:"readStores"`
+		ReadStores []string `config:"read_stores"`
 
 		// HotStores contains store instances which will be written to and queried from.
-		HotStores []string `config:"hotStores"`
+		HotStores []string `config:"hot_stores"`
 		// HotReadStores contains store instances which will be queried from.
 		// This field is optional but if specified will take precedence over [Proxy.Cluster.HotStores].
-		HotReadStores []string `config:"hotReadStores"`
+		HotReadStores []string `config:"hot_read_stores"`
 
 		// Replicas specifies number of instances that belong to one shard.
 		Replicas int `config:"replicas" default:"1"`
 		// HotReplicas specifies number if hot instances that belong to one shard.
 		// If specified will take precedence over [Replicas] for hot stores.
-		HotReplicas     int  `config:"hotReplicas"`
-		ShuffleReplicas bool `config:"shuffleReplicas"`
+		HotReplicas     int  `config:"hot_replicas"`
+		ShuffleReplicas bool `config:"shuffle_replicas"`
 
 		// MirrorAddress specifies host to which search queries will be mirrored.
 		// It can be useful if you have development cluster and you want to have same search pattern
 		// as you have on production cluster.
-		MirrorAddress string `config:"mirrorAddress"`
+		MirrorAddress string `config:"mirror_address"`
 	} `config:"cluster"`
 
 	SlowLogs struct {
 		// BulkThreshold specifies duration to determine slow bulks.
 		// When bulk request exceeds this threshold it will be logged.
-		BulkThreshold time.Duration `config:"bulkThreshold" default:"0ms"`
+		BulkThreshold time.Duration `config:"bulk_threshold" default:"0ms"`
 		// SearchThreshold specifies duration to determine slow searches.
 		// When search request exceeds this threshold it will be logged.
-		SearchThreshold time.Duration `config:"searchThreshold" default:"3s"`
+		SearchThreshold time.Duration `config:"search_threshold" default:"3s"`
 		// FetchThreshold specifies duration to determine slow fetches.
 		// When fetch request exceeds this threshold it will be logged.
-		FetchThreshold time.Duration `config:"fetchThreshold" default:"3s"`
-	} `config:"slowLogs"`
+		FetchThreshold time.Duration `config:"fetch_threshold" default:"3s"`
+	} `config:"slow_logs"`
 
 	Limits struct {
 		// QueryRate specifies maximum amount of requests per second.
-		QueryRate float64 `config:"queryRate" default:"2"`
+		QueryRate float64 `config:"query_rate" default:"2"`
 
 		// SearchRequests specifies maximum amount of simultaneous requests per second.
-		SearchRequests int `config:"searchRequests" default:"32"`
+		SearchRequests int `config:"search_requests" default:"32"`
 		// BulkRequests specifies maximum amount of simultaneous requests per second.
-		BulkRequests int `config:"bulkRequests" default:"32"`
+		BulkRequests int `config:"bulk_requests" default:"32"`
 		// InflightBulks specifies maximum amount of simultaneous requests per second.
-		InflightBulks int `config:"inflightBulks" default:"32"`
+		InflightBulks int `config:"inflight_bulks" default:"32"`
 
 		// FractionHits specifies maximum amount of fractions that can be processed
 		// within single search request.
-		FractionHits int `config:"fractionHits" default:"6000"`
+		FractionHits int `config:"fraction_hits" default:"6000"`
 		// SearchDocs specifies maximum amount of documents that can be returned
 		// within single search request.
-		SearchDocs int `config:"searchDocs" default:"100000"`
+		SearchDocs int `config:"search_docs" default:"100000"`
 		// DocSize specifies maximum possible size for single document.
 		// Document larger than this threshold will be skipped.
-		DocSize Bytes `config:"docSize" default:"128KiB"`
+		DocSize Bytes `config:"doc_size" default:"128KiB"`
 
 		Aggregation struct {
 			// FieldTokens specifies maximum amount of unique field tokens
 			// that can be processed in single aggregation requests.
 			// Setting this field to 0 disables limit.
-			FieldTokens int `config:"fieldTokens" default:"1000000"`
+			FieldTokens int `config:"field_tokens" default:"1000000"`
 			// GroupTokens specifies maximum amount of unique group tokens
 			// that can be processed in single aggregation requests.
 			// Setting this field to 0 disables limit.
-			GroupTokens int `config:"groupTokens" default:"2000"`
+			GroupTokens int `config:"group_tokens" default:"2000"`
 			// FractionTokens specifies maximum amount of unique tokens
 			// that are contained in single fraction which was picked up by aggregation request.
 			// Setting this field to 0 disables limit.
-			FractionTokens int `config:"fractionTokens" default:"100000"`
+			FractionTokens int `config:"fraction_tokens" default:"100000"`
 		} `config:"aggregation"`
 	} `config:"limits"`
 
@@ -127,65 +134,65 @@ type Config struct {
 		Bulk struct {
 			// Checkout [CircuitBreaker] for more information.
 			// [CircuitBreaker]: https://github.com/ozontech/seq-db/blob/main/network/circuitbreaker/README.md
-			ShardTimeout time.Duration `config:"shardTimeout" default:"10s"`
+			ShardTimeout time.Duration `config:"shard_timeout" default:"10s"`
 			// Checkout [CircuitBreaker] for more information.
 			// [CircuitBreaker]: https://github.com/ozontech/seq-db/blob/main/network/circuitbreaker/README.md
-			ErrPercentage int `config:"errPercentage" default:"50"`
+			ErrPercentage int `config:"err_percentage" default:"50"`
 			// Checkout [CircuitBreaker] for more information.
 			// [CircuitBreaker]: https://github.com/ozontech/seq-db/blob/main/network/circuitbreaker/README.md
-			BucketWidth time.Duration `config:"bucketWidth" default:"1s"`
+			BucketWidth time.Duration `config:"bucket_width" default:"1s"`
 			// Checkout [CircuitBreaker] for more information.
 			// [CircuitBreaker]: https://github.com/ozontech/seq-db/blob/main/network/circuitbreaker/README.md
-			BucketsCount int `config:"bucketsCount" default:"10"`
+			BucketsCount int `config:"buckets_count" default:"10"`
 			// Checkout [CircuitBreaker] for more information.
 			// [CircuitBreaker]: https://github.com/ozontech/seq-db/blob/main/network/circuitbreaker/README.md
-			SleepWindow time.Duration `config:"sleepWindow" default:"5s"`
+			SleepWindow time.Duration `config:"sleep_window" default:"5s"`
 			// Checkout [CircuitBreaker] for more information.
 			// [CircuitBreaker]: https://github.com/ozontech/seq-db/blob/main/network/circuitbreaker/README.md
-			VolumeThreshold int `config:"volumeThreshold" default:"5"`
+			VolumeThreshold int `config:"volume_threshold" default:"5"`
 		} `config:"bulk"`
-	} `config:"circuitBreaker"`
+	} `config:"circuit_breaker"`
 
 	Resources struct {
 		// ReaderWorkers specifies number of workers for readers pool.
 		// By default this setting is equal to [runtime.GOMAXPROCS].
-		ReaderWorkers int `config:"readerWorkers"`
+		ReaderWorkers int `config:"reader_workers"`
 		// SearchWorkers specifies number of workers for searchers pool.
 		// By default this setting is equal to [runtime.GOMAXPROCS].
-		SearchWorkers int `config:"searchWorkers"`
+		SearchWorkers int `config:"search_workers"`
 		// CacheSize specifies maxium size of cache.
 		// By default this setting is equal to 30% of available RAM.
-		CacheSize         Bytes `config:"cacheSize"`
-		SortDocsCacheSize Bytes `config:"sortDocsCacheSize"`
-		SkipFsync         bool  `config:"skipFsync"`
+		CacheSize         Bytes `config:"cache_size"`
+		SortDocsCacheSize Bytes `config:"sort_docs_cache_size"`
+		SkipFsync         bool  `config:"skip_fsync"`
 	} `config:"resources"`
 
 	Compression struct {
-		DocsZstdCompressionLevel     int `config:"docsZstdCompressionLevel" default:"1"`
-		MetasZstdCompressionLevel    int `config:"metasZstdCompressionLevel" default:"1"`
-		SealedZstdCompressionLevel   int `config:"sealedZstdCompressionLevel" default:"3"`
-		DocBlockZstdCompressionLevel int `config:"docBlockZstdCompressionLevel" default:"3"`
+		DocsZstdCompressionLevel     int `config:"docs_zstd_compression_level" default:"1"`
+		MetasZstdCompressionLevel    int `config:"metas_zstd_compression_level" default:"1"`
+		SealedZstdCompressionLevel   int `config:"sealed_zstd_compression_level" default:"3"`
+		DocBlockZstdCompressionLevel int `config:"doc_block_zstd_compression_level" default:"3"`
 	} `config:"compression"`
 
 	Indexing struct {
-		MaxTokenSize         int  `config:"maxTokenSize" default:"72"`
-		CaseSensitive        bool `config:"caseSensitive"`
-		PartialFieldIndexing bool `config:"partialFieldIndexing"`
+		MaxTokenSize         int  `config:"max_token_size" default:"72"`
+		CaseSensitive        bool `config:"case_sensitive"`
+		PartialFieldIndexing bool `config:"partial_field_indexing"`
 		// PastAllowedTimeDrift specifies how much time can elapse since the message’s timestamp.
 		// If more time than PastAllowedTimeDrift has passed since the message’s timestamp, the message's timestamp gets overwritten.
-		PastAllowedTimeDrift time.Duration `config:"pastAllowedTimeDrift" default:"24h"`
+		PastAllowedTimeDrift time.Duration `config:"past_allowed_time_drift" default:"24h"`
 		// FutureAllowedTimeDrift specifies the maximum allowable offset for a message’s timestamp into the future.
 		// If a message’s timestamp is further in the future than FutureAllowedTimeDrift, it is overwritten.
-		FutureAllowedTimeDrift time.Duration `config:"futureAllowedTimeDrift" default:"5m"`
+		FutureAllowedTimeDrift time.Duration `config:"future_allowed_time_drift" default:"5m"`
 	} `config:"indexing"`
 
 	Mapping struct {
 		// Path to mapping file or 'auto' to index all fields as keywords.
 		Path string `config:"path"`
 		// EnableUpdates will periodically check mapping file and reload configuration if there is an update.
-		EnableUpdates bool `config:"enableUpdates"`
+		EnableUpdates bool `config:"enable_updates"`
 		// UpdatePeriod manages how often mapping file will be checked for updates.
-		UpdatePeriod time.Duration `config:"updatePeriod" default:"30s"`
+		UpdatePeriod time.Duration `config:"update_period" default:"30s"`
 	} `config:"mapping"`
 
 	DocsSorting struct {
@@ -193,27 +200,24 @@ type Config struct {
 		Enabled bool `config:"enabled"`
 		// DocBlockSize sets document block size.
 		// Large size consumes more RAM but improves compression ratio.
-		DocBlockSize Bytes `config:"docBlockSize"`
-	} `config:"docsSorting"`
+		DocBlockSize Bytes `config:"doc_block_size"`
+	} `config:"docs_sorting"`
 
 	AsyncSearch struct {
 		// DataDir specifies directory that contains data for asynchronous searches.
 		// By default will be subdirectory in [Config.Storage.DataDir].
-		DataDir     string `config:"dataDir"`
+		DataDir     string `config:"data_dir"`
 		Concurrency int    `config:"concurrency"`
-	} `config:"asyncSearch"`
+	} `config:"async_search"`
 
 	API struct {
 		// EsVersion is the default version that will be returned in the `/` handler.
-		ESVersion string `config:"esVersion" default:"8.9.0"`
+		ESVersion string `config:"es_version" default:"8.9.0"`
 	} `config:"api"`
 
 	Tracing struct {
-		SamplingRate float64 `config:"samplingRate" default:"0.01"`
+		SamplingRate float64 `config:"sampling_rate" default:"0.01"`
 	} `config:"tracing"`
-
-	/* Non-tweakable parameters */
-	MaxFetchSizeBytes Bytes `config:"-" default:"4MiB"`
 }
 
 type Bytes units.Base2Bytes
