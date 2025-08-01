@@ -254,7 +254,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 	}
 
 	if fracsDone != 0 {
-		pr.Progress = float64(fracsDone+fracsInQueue) / float64(fracsDone)
+		pr.Progress = float64(fracsDone) / float64(fracsDone+fracsInQueue)
 	}
 	if pr.Status == fracmanager.AsyncSearchStatusDone {
 		pr.Progress = 1
@@ -455,18 +455,15 @@ func (si *Ingestor) CancelAsyncSearch(ctx context.Context, id string) error {
 	}
 
 	var lastErr error
-	cancelSearch := func(client storeapi.StoreApiClient) error {
+	cancelSearch := func(client storeapi.StoreApiClient) {
 		_, err := client.CancelAsyncSearch(ctx, &storeapi.CancelAsyncSearchRequest{SearchId: id})
 		if err != nil {
 			logger.Error("can't cancel async search", zap.String("id", id), zap.Error(err))
 			lastErr = err
 		}
-		return nil
 	}
 
-	if err := si.visitEachReplica(searchStores, cancelSearch); err != nil {
-		panic(fmt.Errorf("BUG: unexpected error from visit func")) // TODO: should really we panic here?
-	}
+	si.visitEachReplica(searchStores, cancelSearch)
 	if lastErr != nil {
 		return fmt.Errorf("unable to cancel async search for all shards in cluster; last err: %w", lastErr)
 	}
@@ -480,34 +477,28 @@ func (si *Ingestor) DeleteAsyncSearch(ctx context.Context, id string) error {
 	}
 
 	var lastErr error
-	cancelSearch := func(client storeapi.StoreApiClient) error {
+	cancelSearch := func(client storeapi.StoreApiClient) {
 		_, err := client.DeleteAsyncSearch(ctx, &storeapi.DeleteAsyncSearchRequest{SearchId: id})
 		if err != nil {
 			logger.Error("can't delete async search", zap.String("id", id), zap.Error(err))
 			lastErr = err
 		}
-		return nil
 	}
 
-	if err := si.visitEachReplica(searchStores, cancelSearch); err != nil {
-		panic(fmt.Errorf("BUG: unexpected error from visit func")) // TODO: should really we panic here?
-	}
+	si.visitEachReplica(searchStores, cancelSearch)
 	if lastErr != nil {
 		return fmt.Errorf("unable to delete async search for all shards in cluster; last err: %w", lastErr)
 	}
 	return nil
 }
 
-func (si *Ingestor) visitEachReplica(s *stores.Stores, cb func(client storeapi.StoreApiClient) error) error {
+func (si *Ingestor) visitEachReplica(s *stores.Stores, cb func(client storeapi.StoreApiClient)) {
 	for _, shard := range s.Shards {
 		for _, replica := range shard {
 			client := si.clients[replica]
-			if err := cb(client); err != nil {
-				return err
-			}
+			cb(client)
 		}
 	}
-	return nil
 }
 
 func (si *Ingestor) getAsyncSearchStores() (*stores.Stores, error) {
@@ -521,7 +512,7 @@ func (si *Ingestor) getAsyncSearchStores() (*stores.Stores, error) {
 	} else if hrs != nil && len(hrs.Shards) != 0 {
 		searchStores = hrs
 	} else if hs != nil && len(hs.Shards) != 0 {
-		searchStores = si.config.HotStores
+		searchStores = hs
 	} else {
 		return nil, fmt.Errorf("can't find store shards in config")
 	}

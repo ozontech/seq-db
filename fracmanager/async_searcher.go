@@ -40,23 +40,23 @@ const (
 )
 
 var (
-	activeSearches = promauto.NewGauge(prometheus.GaugeOpts{
+	asyncSearchActiveSearches = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
 		Name:      "in_progress",
 		Help:      "Amount of active async searches in progress",
 	})
-	diskUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	asyncSearchDiskUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
 		Name:      "disk_usage_bytes_total",
 	}, []string{"file_type"})
-	storedRequests = promauto.NewGauge(prometheus.GaugeOpts{
+	asyncSearchStoredRequests = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
 		Name:      "stored_requests",
 	})
-	readOnly = promauto.NewGauge(prometheus.GaugeOpts{
+	asyncSearchReadOnly = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
 		Name:      "read_only",
@@ -72,6 +72,8 @@ type AsyncSearcher struct {
 	createDirOnce *sync.Once
 
 	mp MappingProvider
+
+	qprsMu *sync.RWMutex
 
 	requestsMu *sync.RWMutex
 	requests   map[string]asyncSearchInfo
@@ -107,6 +109,7 @@ func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracs List) 
 	as := &AsyncSearcher{
 		config:        config,
 		mp:            mp,
+		qprsMu:        &sync.RWMutex{},
 		requestsMu:    &sync.RWMutex{},
 		requests:      asyncSearches,
 		rateLimit:     make(chan struct{}, workers),
@@ -116,7 +119,7 @@ func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracs List) 
 
 	notProcessedIDs := notProcessedTasks(asyncSearches)
 	for _, id := range notProcessedIDs {
-		activeSearches.Add(1)
+		asyncSearchActiveSearches.Add(1)
 		as.processWg.Add(1)
 		go as.processRequest(id, fracs)
 	}
@@ -223,7 +226,7 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs List) error {
 		logger.Warn("async search already started", zap.String("id", r.ID))
 		return nil
 	}
-	if _, err := uuid.Parse(r.ID); err != nil {
+	if err := uuid.Validate(r.ID); err != nil {
 		return fmt.Errorf("invalid id %q: %s", r.ID, err)
 	}
 
@@ -247,7 +250,7 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs List) error {
 		// Request was saved previously, skip it
 		return nil
 	}
-	activeSearches.Add(1)
+	asyncSearchActiveSearches.Add(1)
 	as.processWg.Add(1)
 	go as.processRequest(r.ID, fracs)
 	return nil
@@ -308,7 +311,7 @@ func (as *AsyncSearcher) processRequest(asyncSearchID string, fracs List) {
 	defer func() { <-as.rateLimit }()
 
 	as.doSearch(asyncSearchID, fracs)
-	activeSearches.Add(-1)
+	asyncSearchActiveSearches.Add(-1)
 	as.processWg.Done()
 }
 
@@ -659,6 +662,9 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		return FetchSearchResultResponse{}, false
 	}
 
+	as.qprsMu.RLock()
+	defer as.qprsMu.RUnlock()
+
 	var qpr seq.QPR
 	var fracsDone, fracsInQueue int
 	if info.merged.Load() {
@@ -667,7 +673,6 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		fracsDone = len(info.Fractions)
 		fracsInQueue = 0
 	} else {
-		// TODO: do not conflict with maintenance
 		p, err := as.findQPRs(r.ID)
 		if err != nil {
 			logger.Fatal("can't load async search result", zap.String("id", r.ID), zap.Error(err))
@@ -857,6 +862,9 @@ func (as *AsyncSearcher) removeExpiredResults(now time.Time) {
 	}
 	as.requestsMu.Unlock()
 
+	as.qprsMu.Lock()
+	defer as.qprsMu.Unlock()
+
 	for _, id := range toRemove {
 		qprPaths, err := as.findQPRs(id)
 		if err != nil {
@@ -882,18 +890,18 @@ func (as *AsyncSearcher) checkDiskUsage() {
 		infoDu += int(r.infoSize.Load())
 		qprsDu += int(r.qprsSize.Load())
 	}
-	diskUsage.WithLabelValues("info").Set(float64(infoDu))
-	diskUsage.WithLabelValues("qpr").Set(float64(qprsDu))
-	storedRequests.Set(float64(len(as.requests)))
+	asyncSearchDiskUsage.WithLabelValues("info").Set(float64(infoDu))
+	asyncSearchDiskUsage.WithLabelValues("qpr").Set(float64(qprsDu))
+	asyncSearchStoredRequests.Set(float64(len(as.requests)))
 
 	du := infoDu + qprsDu
 	if as.config.MaxSize != 0 && du >= as.config.MaxSize {
 		as.readOnly.Store(true)
 		logger.Error("disk usage limit exceeded, read-only mode enabled", zap.Int("current", du), zap.Int("limit", as.config.MaxSize))
-		readOnly.Set(1)
+		asyncSearchReadOnly.Set(1)
 	} else {
 		as.readOnly.Store(false)
-		readOnly.Set(0)
+		asyncSearchReadOnly.Set(0)
 	}
 }
 
@@ -955,13 +963,12 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 	}
 
 	as.requestsMu.RLock()
-	requests := as.requests
-	as.requestsMu.RUnlock()
+	defer as.requestsMu.RUnlock()
 
 	var items []*AsyncSearchesListItem
 
-	for id := range requests {
-		info := requests[id]
+	for id := range as.requests {
+		info := as.requests[id]
 		status := info.Status()
 
 		// Filter by id
@@ -979,13 +986,15 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 			fracsDone = len(info.Fractions)
 			fracsInQueue = 0
 		} else {
-			// TODO: do not conflict with maintenance
+			as.qprsMu.RLock()
 			p, err := as.findQPRs(id)
 			if err != nil {
+				as.qprsMu.RUnlock()
 				logger.Fatal("can't load async search result", zap.String("id", id), zap.Error(err))
 			}
 			fracsDone = len(p)
 			fracsInQueue = len(info.Fractions) - fracsDone
+			as.qprsMu.RUnlock()
 		}
 
 		items = append(items, &AsyncSearchesListItem{
