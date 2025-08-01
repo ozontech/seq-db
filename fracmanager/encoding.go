@@ -35,7 +35,7 @@ func marshalQPR(q *seq.QPR, dst []byte) []byte {
 
 func unmarshalQPR(dst *seq.QPR, src []byte, idsLimit int) (_ []byte, err error) {
 	if len(src) < 19 {
-		return nil, fmt.Errorf("invalid QPR format; want %d bytes, got %d", 41, len(src))
+		return nil, fmt.Errorf("invalid QPR format; want %d bytes, got %d", 19, len(src))
 	}
 
 	version := src[0]
@@ -129,7 +129,7 @@ func marshalIDsBlocks(dst []byte, ids seq.IDSources) []byte {
 		var codec idsCodec
 		b.B, codec = marshalIDsBlock(b.B[:0], blockIDs)
 		if len(b.B) > math.MaxUint32 {
-			panic(fmt.Errorf("unexpected block length %d; want up to %d", len(b.B), math.MaxUint16))
+			panic(fmt.Errorf("unexpected block length %d; want up to %d", len(b.B), math.MaxUint32))
 		}
 		header := idsBlockHeader{
 			Codec:  codec,
