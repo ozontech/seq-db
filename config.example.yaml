@@ -7,7 +7,6 @@ address:
   debug: :9200
 
 storage:
-  data_dir: /tmp/seq-db
   frac_size: 64MiB
   total_size: 512MiB
 
