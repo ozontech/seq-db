@@ -8,6 +8,7 @@ import (
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 )
 
 type DataProvider interface {
@@ -20,6 +21,7 @@ type Fraction interface {
 	IsIntersecting(from seq.MID, to seq.MID) bool
 	Contains(mid seq.MID) bool
 	DataProvider(context.Context) (DataProvider, func())
+	Offload(ctx context.Context, u storage.Uploader) (bool, error)
 	Suicide()
 }
 

@@ -212,6 +212,26 @@ type Config struct {
 		DocBlockSize Bytes `config:"doc_block_size"`
 	} `config:"docs_sorting"`
 
+	Offloading struct {
+		Enabled bool `config:"enabled"`
+		// Retention sets TTL for [frac.Remote] fractions.
+		// By default no retention is configured and all [frac.Remote] fractions are kept forever.
+		Retention time.Duration `config:"retention"`
+
+		// Endpoint configures S3 endpoint for S3 client.
+		Endpoint string `config:"endpoint" default:"http://s3.us-east-1.amazonaws.com/"`
+		// Bucket configures the name of S3 bucket where [frac.Remote] fractions will be stored.
+		Bucket string `config:"bucket"`
+		Region string `config:"region" default:"us-east-1"`
+
+		// AccessKey configures S3 Access Key for S3 client.
+		// You can learn more about access keys [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html).
+		AccessKey string `config:"access_key"`
+		// SecretKey configures S3 Secret Key for S3 client.
+		// You can learn more about secret keys [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html).
+		SecretKey string `config:"secret_key"`
+	} `config:"offloading"`
+
 	AsyncSearch struct {
 		// DataDir specifies directory that contains data for asynchronous searches.
 		// By default will be subdirectory in [Config.Storage.DataDir].

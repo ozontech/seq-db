@@ -222,7 +222,7 @@ func (cfg *TestingEnvConfig) MakeStores(confs []storeapi.StoreConfig, replicas i
 			logger.Fatal("can't create mapping", zap.Error(err))
 		}
 
-		store, err := storeapi.NewStore(context.Background(), confs[i], mappingProvider)
+		store, err := storeapi.NewStore(context.Background(), confs[i], nil, mappingProvider)
 		if err != nil {
 			panic(err)
 		}

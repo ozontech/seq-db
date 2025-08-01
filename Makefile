@@ -43,7 +43,7 @@ push-image: build-image
 
 .PHONY: test
 test:
-	go test ./... -count 1
+	LOG_LEVEL=ERROR go test ./... -count 1
 
 .bin-deps: export GOBIN := $(LOCAL_BIN)
 .bin-deps:

@@ -32,6 +32,7 @@ import (
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
+	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/storeapi"
 	"github.com/ozontech/seq-db/tracing"
 )
@@ -273,6 +274,8 @@ func startStore(
 				SkipSortDocs: !cfg.DocsSorting.Enabled,
 				KeepMetaFile: false,
 			},
+			OffloadingEnabled:   cfg.Offloading.Enabled,
+			OffloadingRetention: cfg.Offloading.Retention,
 		},
 		API: storeapi.APIConfig{
 			StoreMode: configMode,
@@ -298,7 +301,28 @@ func startStore(
 			},
 		},
 	}
-	store, err := storeapi.NewStore(ctx, sconfig, mp)
+
+	var s3cli *s3.Client
+	if cfg.Offloading.Enabled {
+		cli, err := s3.NewClient(
+			cfg.Offloading.Endpoint,
+			cfg.Offloading.AccessKey,
+			cfg.Offloading.SecretKey,
+			cfg.Offloading.Region,
+			cfg.Offloading.Bucket,
+		)
+
+		if err != nil {
+			logger.Fatal(
+				"cannot create S3 client",
+				zap.Error(err),
+			)
+		}
+
+		s3cli = cli
+	}
+
+	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp)
 	if err != nil {
 		logger.Fatal("initializing store", zap.Error(err))
 	}

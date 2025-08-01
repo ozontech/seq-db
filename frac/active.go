@@ -333,6 +333,14 @@ func (f *Active) Release() {
 	}
 }
 
+// Offload for [Active] fraction is no-op.
+//
+// Since search within [Active] fraction is too costly (we have to replay the whole index in memory),
+// we decided to support offloading only for [Sealed] fractions.
+func (f *Active) Offload(context.Context, storage.Uploader) (bool, error) {
+	return false, nil
+}
+
 func (f *Active) Suicide() {
 	f.useMu.Lock()
 	released := f.released
