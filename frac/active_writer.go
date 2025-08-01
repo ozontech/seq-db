@@ -4,8 +4,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/metric/stopwatch"
+	"github.com/ozontech/seq-db/storage"
 )
 
 type ActiveWriter struct {
@@ -35,8 +35,8 @@ func (a *ActiveWriter) Write(docs, meta []byte, sw *stopwatch.Stopwatch) error {
 		return err
 	}
 
-	disk.DocBlock(meta).SetExt1(uint64(len(docs)))
-	disk.DocBlock(meta).SetExt2(uint64(offset))
+	storage.DocBlock(meta).SetExt1(uint64(len(docs)))
+	storage.DocBlock(meta).SetExt2(uint64(offset))
 
 	m = sw.Start("write_meta")
 	_, err = a.meta.Write(meta, sw)

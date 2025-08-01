@@ -7,10 +7,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/bytespool"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
+	"github.com/ozontech/seq-db/storage"
 )
 
 type ActiveIndexer struct {
@@ -23,7 +23,7 @@ type ActiveIndexer struct {
 
 type indexTask struct {
 	Frac  *Active
-	Metas disk.DocBlock
+	Metas storage.DocBlock
 	Pos   uint64
 	Wg    *sync.WaitGroup
 }
@@ -44,7 +44,7 @@ func NewActiveIndexer(workerCount, chLen int) *ActiveIndexer {
 func (ai *ActiveIndexer) Index(frac *Active, metas []byte, wg *sync.WaitGroup, sw *stopwatch.Stopwatch) {
 	m := sw.Start("send_index_chan")
 	ai.ch <- &indexTask{
-		Pos:   disk.DocBlock(metas).GetExt2(),
+		Pos:   storage.DocBlock(metas).GetExt2(),
 		Metas: metas,
 		Frac:  frac,
 		Wg:    wg,

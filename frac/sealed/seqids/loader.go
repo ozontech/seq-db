@@ -6,8 +6,8 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 )
 
 type Table struct {
@@ -26,7 +26,7 @@ func (Table) BlockStartLID(blockIndex uint32) uint32 {
 }
 
 type Loader struct {
-	reader      *disk.IndexReader
+	reader      *storage.IndexReader
 	table       *Table
 	cacheMIDs   *cache.Cache[[]byte]
 	cacheRIDs   *cache.Cache[[]byte]

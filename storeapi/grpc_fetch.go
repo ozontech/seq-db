@@ -12,11 +12,11 @@ import (
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/tracing"
 	"github.com/ozontech/seq-db/util"
 )
@@ -88,8 +88,8 @@ func (g *GrpcV1) doFetch(ctx context.Context, req *storeapi.FetchRequest, stream
 
 		sendTime := time.Now()
 
-		buf = util.EnsureSliceSize(buf, disk.DocBlockHeaderLen+len(doc))
-		block := disk.PackDocBlock(doc, buf)
+		buf = util.EnsureSliceSize(buf, storage.DocBlockHeaderLen+len(doc))
+		block := storage.PackDocBlock(doc, buf)
 		block.SetExt1(uint64(id.ID.MID))
 		block.SetExt2(uint64(id.ID.RID))
 
@@ -167,7 +167,7 @@ func releaseDocFieldsFilter(dp *docFieldsFilter) {
 
 // FilterDocFields filters document with dp.filter.
 // This function doesn't mutate the given doc slice.
-func (dp *docFieldsFilter) FilterDocFields(doc []byte) disk.DocBlock {
+func (dp *docFieldsFilter) FilterDocFields(doc []byte) storage.DocBlock {
 	doc = dp.filterFields(doc)
 	return doc
 }

@@ -4,8 +4,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/storage"
 )
 
 var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
@@ -18,7 +18,7 @@ type fractionProvider struct {
 	config        *frac.Config
 	cacheProvider *CacheMaintainer
 	activeIndexer *frac.ActiveIndexer
-	readLimiter   *disk.ReadLimiter
+	readLimiter   *storage.ReadLimiter
 }
 
 func newFractionProvider(c *frac.Config, cp *CacheMaintainer, readerWorkers, indexWorkers int) *fractionProvider {
@@ -29,7 +29,7 @@ func newFractionProvider(c *frac.Config, cp *CacheMaintainer, readerWorkers, ind
 		config:        c,
 		cacheProvider: cp,
 		activeIndexer: ai,
-		readLimiter:   disk.NewReadLimiter(readerWorkers, storeBytesRead),
+		readLimiter:   storage.NewReadLimiter(readerWorkers, storeBytesRead),
 	}
 }
 
