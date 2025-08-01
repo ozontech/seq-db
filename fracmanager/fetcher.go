@@ -166,7 +166,7 @@ func sortIDs(idsOrig seq.IDSources) (seq.IDSources, seq.MID, seq.MID) {
 }
 
 func groupIDsByFraction(idsOrig seq.IDSources, fracsIn List) (List, [][]seq.ID) {
-	// sort idsOrig to get sorted ids for each faction to optimize loading of ids-blocks
+	// sort idsOrig to get sorted ids for each fraction to optimize loading of ids-blocks
 	ids, minMID, maxMID := sortIDs(idsOrig)
 
 	idsBuf := []seq.ID{}
@@ -178,9 +178,9 @@ func groupIDsByFraction(idsOrig seq.IDSources, fracsIn List) (List, [][]seq.ID) 
 	hintMissesCnt := 0
 
 	l := 0
-	// Here we group `IDs` by factions. Each ID can have a `Hint` - a hint in which faction it should be found.
-	// In this case, such an ID falls into only one single group of this faction.
-	// If the ID has no hint, then it can potentially end up in any faction for which `From < ID.MID < To`
+	// Here we group `IDs` by fractions. Each ID can have a `Hint` - a hint in which fraction it should be found.
+	// In this case, such an ID falls into only one single group of this fraction.
+	// If the ID has no hint, then it can potentially end up in any fraction for which `From < ID.MID < To`
 	for _, f := range fracsOut {
 		i := 0
 		idsBuf = idsBuf[:0]
@@ -220,7 +220,7 @@ func groupIDsByFraction(idsOrig seq.IDSources, fracsIn List) (List, [][]seq.ID) 
 	}
 
 	// By this point, we should have no IDs with `Hints` left in our list.
-	// Otherwise, we either don't have such a faction or the condition `From < ID.MID < To` was not met.
+	// Otherwise, we either don't have such a fraction or the condition `From < ID.MID < To` was not met.
 	for _, id := range ids {
 		if id.Hint == "" {
 			continue

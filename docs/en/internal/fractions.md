@@ -1,4 +1,4 @@
-# Factions
+# Fractions
 
 ## See also
 
@@ -30,10 +30,10 @@ Regular sealing also occurs when the active fraction exceeds the maximum size. T
 
 The sealed fraction consists of 2 files:
 
-* Document file. The same as for the active faction.
-* Index file. This is a serialized representation of the index of the active faction.
+* Document file. The same as for the active fraction.
+* Index file. This is a serialized representation of the index of the active fraction.
 
-Sealing is the process of serializing the in-memory index of the active faction into an index file. 
+Sealing is the process of serializing the in-memory index of the active fraction into an index file. 
 
 The structure of the index file is complex and is described [here](./format-index-file.md) 
 

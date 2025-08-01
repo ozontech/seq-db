@@ -184,11 +184,11 @@ func (fm *FracManager) shrinkSizes(suicideWG *sync.WaitGroup) {
 }
 
 // GetAllFracs returns a list of known fracs. While working with this list,
-// it may become irrelevant (factions may, for example, be deleted).
-// This is a valid situation, because access to the data of these factions
+// it may become irrelevant (fractions may, for example, be deleted).
+// This is a valid situation, because access to the data of these fractions
 // (search and fetch) occurs under blocking (see DataProvider).
 // This way we avoid the race.
-// Accessing the deleted faction data just will return an empty result.
+// Accessing the deleted fraction data just will return an empty result.
 func (fm *FracManager) GetAllFracs() List {
 	fm.fracMu.RLock()
 	defer fm.fracMu.RUnlock()
@@ -351,7 +351,7 @@ func (fm *FracManager) seal(activeRef activeRef) {
 	sealed, err := activeRef.frac.Seal(fm.config.SealParams)
 	if err != nil {
 		if errors.Is(err, ErrSealingFractionSuicided) {
-			// the faction is suicided, this means that it has already pushed out of the list of factions,
+			// the fraction is suicided, this means that it has already pushed out of the list of fractions,
 			// so we simply skip further actions
 			return
 		}

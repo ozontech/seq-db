@@ -162,7 +162,7 @@ func NewSealedPreloaded(
 		Config:       config,
 	}
 
-	// put the token table built during sealing into the cache of the sealed faction
+	// put the token table built during sealing into the cache of the sealed fraction
 	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
 		return preloaded.tokenTable, preloaded.tokenTable.Size()
 	})

@@ -74,7 +74,7 @@
 ### Bulk Request Flags
 
 - **--requests-limit=16:** Maximum number of simultaneous bulk requests.
-- **--skip-fsync:** Skip fsync operations for the active faction. Speeds up data insertion at the expense of reduced data delivery guarantee.
+- **--skip-fsync:** Skip fsync operations for the active fraction. Speeds up data insertion at the expense of reduced data delivery guarantee.
 
 ### Flags Affecting Search Performance
 
