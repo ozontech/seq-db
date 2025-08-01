@@ -67,12 +67,12 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 	dataDir := common.GetTestTmpDir(t)
 	common.RecreateDir(dataDir)
 
-	fm := fracmanager.NewFracManager(&fracmanager.Config{
+	fm := fracmanager.NewFracManager(t.Context(), &fracmanager.Config{
 		FracSize:     500,
 		TotalSize:    5000,
 		ShouldReplay: false,
 		DataDir:      dataDir,
-	})
+	}, nil)
 	assert.NoError(t, fm.Load(context.Background()))
 	fm.Start()
 

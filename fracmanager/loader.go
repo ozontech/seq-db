@@ -14,6 +14,7 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/storage/s3"
 )
 
 type fracInfo struct {
@@ -25,26 +26,33 @@ type fracInfo struct {
 	hasMeta     bool
 	hasSdocs    bool
 	hasSdocsDel bool
+	hasRemote   bool
 }
 
 type loader struct {
+	s3cli *s3.Client
+
 	config       *Config
 	fracProvider *fractionProvider
 	fracCache    *sealedFracCache
 
-	cachedFracs   int
-	uncachedFracs int
+	listedFracs   int
+	unlistedFracs int
 }
 
-func NewLoader(config *Config, fracProvider *fractionProvider, fracCache *sealedFracCache) *loader {
+func NewLoader(
+	config *Config, s3cli *s3.Client,
+	fracProvider *fractionProvider, fracCache *sealedFracCache,
+) *loader {
 	return &loader{
+		s3cli:        s3cli,
 		config:       config,
 		fracProvider: fracProvider,
 		fracCache:    fracCache,
 	}
 }
 
-func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
+func (l *loader) load(ctx context.Context) ([]*fracRef, []*fracRef, []activeRef, error) {
 	fracIDs, infos := l.makeInfos(l.getFileList())
 	sort.Strings(fracIDs)
 
@@ -58,13 +66,19 @@ func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 	infosList := l.filterInfos(fracIDs, infos)
 	cnt := len(infosList)
 
-	fracs := make([]*fracRef, 0, cnt)
+	localFracs := make([]*fracRef, 0, cnt)
+	remoteFracs := make([]*fracRef, 0, cnt)
 	actives := make([]*frac.Active, 0)
 
 	diskFracCache := NewFracCacheFromDisk(filepath.Join(l.config.DataDir, consts.FracCacheFileSuffix))
 	ts := time.Now()
 
 	for i, info := range infosList {
+		if l.config.OffloadingEnabled && info.hasRemote {
+			remote := l.loadRemoteFrac(ctx, diskFracCache, info)
+			remoteFracs = append(remoteFracs, &fracRef{remote})
+		}
+
 		if info.hasSdocs && info.hasIndex {
 			if info.hasMeta {
 				removeFile(info.base + consts.MetaFileSuffix)
@@ -73,13 +87,13 @@ func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 				removeFile(info.base + consts.DocsFileSuffix)
 			}
 			sealed := l.loadSealedFrac(diskFracCache, info)
-			fracs = append(fracs, &fracRef{instance: sealed})
-		} else {
+			localFracs = append(localFracs, &fracRef{sealed})
+		} else if !info.hasRemote {
 			if info.hasMeta {
 				actives = append(actives, l.fracProvider.NewActive(info.base))
 			} else {
 				sealed := l.loadSealedFrac(diskFracCache, info)
-				fracs = append(fracs, &fracRef{instance: sealed})
+				localFracs = append(localFracs, &fracRef{sealed})
 			}
 		}
 
@@ -95,39 +109,55 @@ func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 		}
 	}
 
-	logger.Info("fractions list created", zap.Int("cached", l.cachedFracs), zap.Int("uncached", l.uncachedFracs))
-
+	logger.Info("fractions cache created", zap.Int("listed", l.listedFracs), zap.Int("unlisted", l.unlistedFracs))
 	logger.Info("replaying active fractions", zap.Int("count", len(actives)))
+
 	notSealed := make([]activeRef, 0)
 	for _, a := range actives {
 		if err := a.Replay(ctx); err != nil {
-			return nil, nil, fmt.Errorf("while replaying blocks: %w", err)
+			return nil, nil, nil, fmt.Errorf("while replaying blocks: %w", err)
 		}
 		if a.Info().DocsTotal == 0 { // skip empty
 			removeFractionFiles(a.BaseFileName)
 			continue
 		}
 		activeRef := l.fracProvider.newActiveRef(a)
-		fracs = append(fracs, activeRef.ref)
+		localFracs = append(localFracs, activeRef.ref)
 		notSealed = append(notSealed, activeRef)
 	}
 
-	return fracs, notSealed, nil
+	return localFracs, remoteFracs, notSealed, nil
 }
 
 func (l *loader) loadSealedFrac(diskFracCache *sealedFracCache, info *fracInfo) *frac.Sealed {
-	cachedInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
+	listedInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
 	if ok {
-		l.cachedFracs++
+		l.listedFracs++
 	} else {
-		l.uncachedFracs++
+		l.unlistedFracs++
 	}
 
-	sealed := l.fracProvider.NewSealed(info.base, cachedInfo)
+	sealed := l.fracProvider.NewSealed(info.base, listedInfo)
 
 	stats := sealed.Info()
 	l.fracCache.AddFraction(stats.Name(), stats)
 	return sealed
+}
+
+func (l *loader) loadRemoteFrac(ctx context.Context, diskFracCache *sealedFracCache, info *fracInfo) *frac.Remote {
+	listedInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
+	if ok {
+		l.listedFracs++
+	} else {
+		l.unlistedFracs++
+	}
+
+	remote := l.fracProvider.NewRemote(ctx, info.base, listedInfo, l.s3cli)
+
+	stats := remote.Info()
+	l.fracCache.AddFraction(stats.Name(), stats)
+
+	return remote
 }
 
 func (l *loader) getFileList() []string {
@@ -167,6 +197,11 @@ func (l *loader) filterInfos(fracIDs []string, infos map[string]*fracInfo) []*fr
 		info := infos[id]
 		if info == nil {
 			logger.Panic("frac loader has gone crazy")
+		}
+
+		if info.hasRemote {
+			infoList = append(infoList, info)
+			continue
 		}
 
 		if info.hasDocsDel || info.hasIndexDel || info.hasSdocsDel {
@@ -225,6 +260,8 @@ func (l *loader) makeInfos(files []string) ([]string, map[string]*fracInfo) {
 			info.hasIndexDel = true
 		case consts.MetaFileSuffix:
 			info.hasMeta = true
+		case consts.RemoteFractionSuffix:
+			info.hasRemote = true
 		default:
 			logger.Fatal("unknown file", zap.String("file", file))
 		}

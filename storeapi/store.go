@@ -12,6 +12,7 @@ import (
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/storage/s3"
 )
 
 const (
@@ -45,12 +46,12 @@ func (c *StoreConfig) setDefaults() error {
 	return nil
 }
 
-func NewStore(ctx context.Context, c StoreConfig, mappingProvider MappingProvider) (*Store, error) {
+func NewStore(ctx context.Context, c StoreConfig, s3cli *s3.Client, mappingProvider MappingProvider) (*Store, error) {
 	if err := c.setDefaults(); err != nil {
 		return nil, err
 	}
 
-	fracManager := fracmanager.NewFracManager(&c.FracManager)
+	fracManager := fracmanager.NewFracManager(ctx, &c.FracManager, s3cli)
 	err := fracManager.Load(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("loading time list: %s", err)

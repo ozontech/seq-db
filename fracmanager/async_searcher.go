@@ -116,7 +116,7 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest) error {
 	}
 	r.Params.AST = ast.Root
 
-	fracs := as.fracManager.GetAllFracs().FilterInRange(r.Params.From, r.Params.To)
+	fracs := as.fracManager.GetFracs(FracTypeLocal|FracTypeRemote).FilterInRange(r.Params.From, r.Params.To)
 	fracsToSearch := make([]fracSearchState, 0, len(fracs))
 	for _, f := range fracs {
 		fracsToSearch = append(fracsToSearch, fracSearchState{Name: f.Info().Name()})
@@ -213,7 +213,7 @@ func (as *AsyncSearcher) doSearch(id string) error {
 	}
 
 	r := state.Request
-	fracsInRange := as.fracManager.GetAllFracs().FilterInRange(r.Params.From, r.Params.To)
+	fracsInRange := as.fracManager.GetFracs(FracTypeLocal|FracTypeRemote).FilterInRange(r.Params.From, r.Params.To)
 	fracsByName := make(map[string]frac.Fraction)
 	for _, f := range fracsInRange {
 		fracsByName[f.Info().Name()] = f

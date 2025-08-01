@@ -1,11 +1,14 @@
 package fracmanager
 
 import (
+	"context"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/storage/s3"
 )
 
 var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
@@ -63,6 +66,21 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *frac.
 		fp.cacheProvider.CreateIndexCache(),
 		fp.cacheProvider.CreateDocBlockCache(),
 		fp.config,
+	)
+}
+
+func (fp *fractionProvider) NewRemote(
+	ctx context.Context, name string, cachedInfo *frac.Info, s3cli *s3.Client,
+) *frac.Remote {
+	return frac.NewRemote(
+		ctx,
+		name,
+		fp.readLimiter,
+		fp.cacheProvider.CreateIndexCache(),
+		fp.cacheProvider.CreateDocBlockCache(),
+		cachedInfo,
+		fp.config,
+		s3cli,
 	)
 }
 

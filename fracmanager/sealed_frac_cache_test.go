@@ -271,7 +271,7 @@ func TestFracInfoSavedToCache(t *testing.T) {
 
 	const maxSize = 10000
 
-	fm, err := newFracManagerWithBackgroundStart(&Config{
+	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:     100,
 		TotalSize:    maxSize * 2,
 		ShouldReplay: false,
@@ -355,7 +355,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 
 	q := newEvictingQueue(maxSize)
 
-	fm, err := newFracManagerWithBackgroundStart(&Config{
+	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:     100,
 		TotalSize:    maxSize,
 		ShouldReplay: false,
@@ -390,8 +390,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 	sealWG := sync.WaitGroup{}
 	suicideWG := sync.WaitGroup{}
 	fm.maintenance(&sealWG, &suicideWG) // shrinkSizes should be called
-	sealWG.Wait()
-	suicideWG.Wait()
+	fm.Stop()
 
 	fracsOnDisk := []string{}
 	fracCacheFromDisk, err := loadFracCache(dataDir)
@@ -415,7 +414,7 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	const maxSize = 5500
 	const times = 10
 	// make some fractions
-	fm, err := newFracManagerWithBackgroundStart(&Config{
+	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:     100,
 		TotalSize:    maxSize,
 		ShouldReplay: false,
@@ -437,8 +436,7 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	sealWG := sync.WaitGroup{}
 	suicideWG := sync.WaitGroup{}
 	fm.maintenance(&sealWG, &suicideWG) // shrinkSizes should be called
-	sealWG.Wait()
-	suicideWG.Wait()
+	fm.Stop()
 
 	// remove the fraction files
 	files := []string{}
@@ -452,7 +450,7 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	}
 
 	// create a new fracmanager that will read the fraction cache file
-	fm2, err := newFracManagerWithBackgroundStart(&Config{
+	fm2, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:     100,
 		TotalSize:    maxSize,
 		ShouldReplay: false,
@@ -463,8 +461,7 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	sealWG2 := sync.WaitGroup{}
 	suicideWG2 := sync.WaitGroup{}
 	fm2.maintenance(&sealWG2, &suicideWG2) // shrinkSizes should be called
-	sealWG2.Wait()
-	suicideWG2.Wait()
+	fm2.Stop()
 
 	// make sure the missing files are removed from the fraction cache
 	fracCacheFromDisk, err := loadFracCacheContent(dataDir)

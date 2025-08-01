@@ -21,35 +21,34 @@ type Loader struct {
 	blockBuf   []byte
 }
 
-func (l *Loader) Load(frac *Sealed) {
+func (l *Loader) Load(state *State, info *Info, indexReader *storage.IndexReader) {
 	t := time.Now()
 
-	l.reader = &frac.indexReader
-
+	l.reader = indexReader
 	l.blockIndex = 1 // skipping info block that's already read
 
 	l.skipTokens()
 
 	var err error
 
-	if frac.idsTable, frac.BlocksOffsets, err = l.loadIDs(); err != nil {
+	if state.idsTable, state.BlocksOffsets, err = l.loadIDs(); err != nil {
 		logger.Fatal("load ids error", zap.Error(err))
 	}
 
-	if frac.lidsTable, err = l.loadLIDsBlocksTable(); err != nil {
+	if state.lidsTable, err = l.loadLIDsBlocksTable(); err != nil {
 		logger.Fatal("load lids error", zap.Error(err))
 	}
 
 	took := time.Since(t)
 
-	docsTotalK := float64(frac.info.DocsTotal) / 1000
-	indexOnDiskMb := util.SizeToUnit(frac.info.IndexOnDisk, "mb")
+	docsTotalK := float64(info.DocsTotal) / 1000
+	indexOnDiskMb := util.SizeToUnit(info.IndexOnDisk, "mb")
 	throughput := indexOnDiskMb / util.DurationToUnit(took, "s")
 	logger.Info("sealed fraction loaded",
-		zap.String("fraction", frac.BaseFileName),
-		util.ZapMsTsAsESTimeStr("creation_time", frac.info.CreationTime),
-		zap.String("from", frac.info.From.String()),
-		zap.String("to", frac.info.To.String()),
+		zap.String("fraction", info.Path),
+		util.ZapMsTsAsESTimeStr("creation_time", info.CreationTime),
+		zap.String("from", info.From.String()),
+		zap.String("to", info.To.String()),
 		util.ZapFloat64WithPrec("docs_k", docsTotalK, 1),
 		util.ZapDurationWithPrec("took_ms", took, "ms", 1),
 		util.ZapFloat64WithPrec("throughput_mb_sec", throughput, 1),

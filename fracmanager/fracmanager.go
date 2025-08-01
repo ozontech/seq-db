@@ -22,6 +22,7 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -31,15 +32,17 @@ const (
 )
 
 type FracManager struct {
+	ctx    context.Context
 	config *Config
 
 	cacheMaintainer *CacheMaintainer
 
 	fracCache *sealedFracCache
 
-	fracMu sync.RWMutex
-	fracs  []*fracRef
-	active activeRef
+	fracMu      sync.RWMutex
+	localFracs  []*fracRef
+	remoteFracs []*fracRef
+	active      activeRef
 
 	fracProvider *fractionProvider
 
@@ -50,6 +53,8 @@ type FracManager struct {
 	statWG  sync.WaitGroup
 	mntcWG  sync.WaitGroup
 	cacheWG *sync.WaitGroup
+
+	s3cli *s3.Client
 
 	ulidEntropy io.Reader
 }
@@ -63,7 +68,7 @@ type activeRef struct {
 	frac *proxyFrac
 }
 
-func NewFracManager(cfg *Config) *FracManager {
+func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracManager {
 	FillConfigWithDefault(cfg)
 
 	cacheMaintainer := NewCacheMaintainer(cfg.CacheSize, cfg.SortCacheSize, &CacheMaintainerMetrics{
@@ -88,6 +93,8 @@ func NewFracManager(cfg *Config) *FracManager {
 
 	fracManager := &FracManager{
 		config:          cfg,
+		ctx:             ctx,
+		s3cli:           s3cli,
 		mature:          atomic.Bool{},
 		cacheMaintainer: cacheMaintainer,
 		fracProvider:    newFractionProvider(&cfg.Fraction, cacheMaintainer, config.ReaderWorkers, config.IndexWorkers),
@@ -103,24 +110,33 @@ func (fm *FracManager) nextFractionID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), fm.ulidEntropy).String()
 }
 
-func (fm *FracManager) maintenance(sealWG, suicideWG *sync.WaitGroup) {
+func (fm *FracManager) maintenance(sealWg, cleanupWg *sync.WaitGroup) {
 	logger.Debug("maintenance started")
 
 	n := time.Now()
 	if fm.Active().Info().DocsOnDisk > fm.config.FracSize {
 		active := fm.rotate()
 
-		sealWG.Add(1)
+		sealWg.Add(1)
 		go func() {
 			fm.seal(active)
-			sealWG.Done()
+			sealWg.Done()
 		}()
 	}
 
-	fm.shrinkSizes(suicideWG)
+	fm.cleanupFractions(cleanupWg)
+	fm.removeStaleFractions(cleanupWg, fm.config.OffloadingRetention)
+
+	if oldestByCT := fm.GetFracs(FracTypeLocal | FracTypeRemote).GetOldestFrac(); oldestByCT != nil {
+		newOldestCT := oldestByCT.Info().CreationTime
+		prevOldestCT := fm.OldestCT.Swap(newOldestCT)
+		if newOldestCT != prevOldestCT {
+			logger.Info("new oldest by creation time", zap.Any("fraction", oldestByCT))
+		}
+	}
 
 	if err := fm.fracCache.SyncWithDisk(); err != nil {
-		logger.Error("can't sync frac cache", zap.Error(err))
+		logger.Error("can't sync frac-cache", zap.Error(err))
 	}
 
 	logger.Debug("maintenance finished", zap.Int64("took_ms", time.Since(n).Milliseconds()))
@@ -130,114 +146,233 @@ func (fm *FracManager) shiftFirstFrac() frac.Fraction {
 	fm.fracMu.Lock()
 	defer fm.fracMu.Unlock()
 
-	if len(fm.fracs) == 0 {
+	if len(fm.localFracs) == 0 {
 		return nil
 	}
 
-	outsider := fm.fracs[0].instance
-	fm.fracs[0] = nil
-	fm.fracs = fm.fracs[1:]
+	outsider := fm.localFracs[0].instance
+	fm.localFracs[0] = nil
+	fm.localFracs = fm.localFracs[1:]
 	return outsider
 }
 
-func (fm *FracManager) shrinkSizes(suicideWG *sync.WaitGroup) {
-	var outsiders []frac.Fraction
-	fracs := fm.GetAllFracs()
-	size := fracs.GetTotalSize()
+// removeStaleFractions removes [frac.Remote] fractions from external storage.
+// Decision is based on the retention period provided by user.
+func (fm *FracManager) removeStaleFractions(cleanupWg *sync.WaitGroup, retention time.Duration) {
+	// User did not provide retention period so keep all remote fractions alive.
+	// It's safe to do because we do not keep anything locally (but maybe we will eventually run out of inodes).
+	if retention <= 0 {
+		return
+	}
 
-	for size > fm.config.TotalSize {
+	cleanupWg.Add(1)
+	go func() {
+		defer cleanupWg.Done()
+
+		// FIXME(dkharms): Search queries might stuck because of this lock.
+		// For example when [frac.Remote.Suicide] will execute abnormally long.
+		// And generally it is not a good idea to hold a lock while doing network request.
+		fm.fracMu.Lock()
+		defer fm.fracMu.Unlock()
+
+		freshFractions := make([]*fracRef, 0, len(fm.remoteFracs))
+		for _, f := range fm.remoteFracs {
+			ct := time.UnixMilli(int64(f.instance.Info().CreationTime))
+
+			if time.Since(ct) < retention {
+				freshFractions = append(freshFractions, f)
+				continue
+			}
+
+			logger.Info(
+				"removing stale fraction",
+				zap.String("fraction", f.instance.Info().Name()),
+				zap.Time("creation_time", ct),
+				zap.String("retention", retention.String()),
+			)
+
+			fm.fracCache.RemoveFraction(f.instance.Info().Name())
+			f.instance.Suicide()
+		}
+
+		fm.remoteFracs = freshFractions
+	}()
+}
+
+func (fm *FracManager) determineOutsiders() []frac.Fraction {
+	var outsiders []frac.Fraction
+
+	localFracs := fm.GetFracs(FracTypeLocal)
+	occupiedSize := localFracs.GetTotalSize()
+
+	for occupiedSize > fm.config.TotalSize {
 		outsider := fm.shiftFirstFrac()
 		if outsider == nil {
 			break
 		}
 
+		localFracs = localFracs[1:]
 		outsiders = append(outsiders, outsider)
-		size -= outsider.Info().FullSize()
-		fracs = fracs[1:]
-
-		if !fm.Mature() {
-			fm.setMature()
-		}
-		fm.fracCache.RemoveFraction(outsider.Info().Name())
-		metric.MaintenanceTruncateTotal.Inc()
-		logger.Info("truncating last fraction", zap.Any("fraction", outsider))
+		occupiedSize -= outsider.Info().FullSize()
 	}
 
-	if len(outsiders) > 0 {
-		suicideWG.Add(len(outsiders))
+	if len(outsiders) > 0 && !fm.Mature() {
+		fm.setMature()
+	}
 
-		for _, outsider := range outsiders {
-			go func() {
-				defer suicideWG.Done()
+	return outsiders
+}
+
+func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
+	outsiders := fm.determineOutsiders()
+	if len(outsiders) == 0 {
+		return
+	}
+
+	for _, outsider := range outsiders {
+		cleanupWg.Add(1)
+		go func() {
+			defer cleanupWg.Done()
+
+			info := outsider.Info()
+			// Client for offloading is not configured.
+			// So just kill fraction.
+			if fm.s3cli == nil {
+				fm.fracCache.RemoveFraction(info.Name())
 				outsider.Suicide()
-			}()
-		}
-	}
+				return
+			}
 
-	if oldestByCT := fracs.GetOldestFrac(); oldestByCT != nil {
-		newOldestCT := oldestByCT.Info().CreationTime
-		prevOldestCT := fm.OldestCT.Swap(newOldestCT)
-		if newOldestCT != prevOldestCT {
-			logger.Info("new oldest by creation time", zap.Any("fraction", oldestByCT))
-		}
+			offloadStart := time.Now()
+			mustBeOffloaded, err := outsider.Offload(fm.ctx, s3.NewUploader(fm.s3cli))
+			if err != nil {
+				// While searching for outsiders we removed this fraction from list of local fractions.
+				// Now we need to return it back and try again to offload it later.
+
+				fm.fracMu.Lock()
+				// FIXME(dkharms): Here can be problems if two maintenance routines will run concurrently.
+				// We might add the same fraction twice.
+				fm.localFracs = append(fm.localFracs, &fracRef{outsider})
+				fm.fracMu.Unlock()
+
+				metric.OffloadingTotal.WithLabelValues("failure").Inc()
+				metric.OffloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
+
+				logger.Error(
+					"will skip fraction suicide: failed to offload fraction",
+					zap.String("fraction", info.Name()),
+					zap.Error(err),
+				)
+
+				return
+			}
+
+			if !mustBeOffloaded {
+				fm.fracCache.RemoveFraction(info.Name())
+				outsider.Suicide()
+				return
+			}
+
+			metric.OffloadingTotal.WithLabelValues("success").Inc()
+			metric.OffloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
+
+			logger.Info(
+				"successully offloaded fraction",
+				zap.String("fraction", info.Name()),
+				zap.String("took", time.Since(offloadStart).String()),
+			)
+
+			// Update storage type for offloaded fraction.
+			info.StorageType = storage.TypeRemote
+			remote := fm.fracProvider.NewRemote(fm.ctx, info.Path, info, fm.s3cli)
+
+			fm.fracMu.Lock()
+			fm.remoteFracs = append(fm.remoteFracs, &fracRef{remote})
+			fm.fracMu.Unlock()
+
+			outsider.Suicide()
+		}()
 	}
 }
 
-// GetAllFracs returns a list of known fracs. While working with this list,
-// it may become irrelevant (factions may, for example, be deleted).
-// This is a valid situation, because access to the data of these factions
-// (search and fetch) occurs under blocking (see DataProvider).
+type FracType int
+
+const (
+	FracTypeLocal FracType = 1 << iota
+	FracTypeRemote
+)
+
+// GetFracs returns a list of known fracs (local or remote).
+//
+// While working with this list, it may become irrelevant (factions may, for example, be deleted).
+// This is a valid situation, because access to the data of these factions (search and fetch) occurs under blocking (see DataProvider).
 // This way we avoid the race.
+//
 // Accessing the deleted faction data just will return an empty result.
-func (fm *FracManager) GetAllFracs() List {
+func (fm *FracManager) GetFracs(ft FracType) (fracs List) {
 	fm.fracMu.RLock()
 	defer fm.fracMu.RUnlock()
 
-	fracs := make(List, len(fm.fracs))
-	for i, f := range fm.fracs {
-		fracs[i] = f.instance
+	if ft&FracTypeLocal != 0 {
+		for _, f := range fm.localFracs {
+			fracs = append(fracs, f.instance)
+		}
 	}
-	return fracs
+
+	if ft&FracTypeRemote != 0 {
+		for _, f := range fm.remoteFracs {
+			fracs = append(fracs, f.instance)
+		}
+	}
+
+	return
 }
 
 func (fm *FracManager) processFracsStats() {
-	docsTotal := uint64(0)
-	docsRaw := uint64(0)
-	docsDisk := uint64(0)
-	index := uint64(0)
-	totalSize := uint64(0)
-
-	fracs := fm.GetAllFracs()
-
-	for _, f := range fracs {
-		info := f.Info()
-		totalSize += info.FullSize()
-		docsTotal += uint64(info.DocsTotal)
-		docsRaw += info.DocsRaw
-		docsDisk += info.DocsOnDisk
-		index += info.IndexOnDisk + info.MetaOnDisk
+	type fracStats struct {
+		docsTotal uint64
+		docsRaw   uint64
+		docsDisk  uint64
+		index     uint64
+		totalSize uint64
+		count     int
 	}
 
-	if len(fracs) > 0 {
-		logger.Info("last fraction details", zap.Any("fraction", fracs[0]))
+	calculate := func(fracs List) (st fracStats) {
+		for _, f := range fracs {
+			info := f.Info()
+			st.count += 1
+			st.totalSize += info.FullSize()
+			st.docsTotal += uint64(info.DocsTotal)
+			st.docsRaw += info.DocsRaw
+			st.docsDisk += info.DocsOnDisk
+			st.index += info.IndexOnDisk + info.MetaOnDisk
+		}
+		return
 	}
+
+	setMetrics := func(st string, ft fracStats) {
+		logger.Info("fraction stats",
+			zap.Int("count", ft.count),
+			zap.String("storage_type", st),
+			zap.Uint64("docs_k", ft.docsTotal/1000),
+			util.ZapUint64AsSizeStr("total_size", ft.totalSize),
+			util.ZapUint64AsSizeStr("docs_raw", ft.docsRaw),
+			util.ZapUint64AsSizeStr("docs_comp", ft.docsDisk),
+			util.ZapUint64AsSizeStr("index", ft.index),
+		)
+
+		metric.DataSizeTotal.WithLabelValues("total", st).Set(float64(ft.totalSize))
+		metric.DataSizeTotal.WithLabelValues("docs_raw", st).Set(float64(ft.docsRaw))
+		metric.DataSizeTotal.WithLabelValues("docs_on_disk", st).Set(float64(ft.docsDisk))
+		metric.DataSizeTotal.WithLabelValues("index", st).Set(float64(ft.index))
+	}
+
+	setMetrics("local", calculate(fm.GetFracs(FracTypeLocal)))
+	setMetrics("remote", calculate(fm.GetFracs(FracTypeRemote)))
 
 	oldestCT := fm.OldestCT.Load()
 
-	logger.Info("fraction stats",
-		zap.Int("count", len(fracs)),
-		zap.Uint64("docs_k", docsTotal/1000),
-		util.ZapUint64AsSizeStr("total_size", totalSize),
-		util.ZapUint64AsSizeStr("docs_raw", docsRaw),
-		util.ZapUint64AsSizeStr("docs_comp", docsDisk),
-		util.ZapUint64AsSizeStr("index", index),
-		util.ZapMsTsAsESTimeStr("oldest_ct", oldestCT),
-	)
-
-	metric.DataSizeTotal.WithLabelValues("total").Set(float64(totalSize))
-	metric.DataSizeTotal.WithLabelValues("docs_raw").Set(float64(docsRaw))
-	metric.DataSizeTotal.WithLabelValues("docs_on_disk").Set(float64(docsDisk))
-	metric.DataSizeTotal.WithLabelValues("index").Set(float64(index))
 	if oldestCT != 0 {
 		metric.OldestFracTime.Set((time.Duration(oldestCT) * time.Millisecond).Seconds())
 	}
@@ -248,13 +383,17 @@ func (fm *FracManager) runMaintenanceLoop(ctx context.Context) {
 	go func() {
 		defer fm.mntcWG.Done()
 
-		sealWG := sync.WaitGroup{}
-		suicideWG := sync.WaitGroup{}
+		var (
+			sealWg    sync.WaitGroup
+			cleanupWg sync.WaitGroup
+		)
+
 		util.RunEvery(ctx.Done(), fm.config.MaintenanceDelay, func() {
-			fm.maintenance(&sealWG, &suicideWG)
+			fm.maintenance(&sealWg, &cleanupWg)
 		})
-		sealWG.Wait()
-		suicideWG.Wait()
+
+		sealWg.Wait()
+		cleanupWg.Wait()
 	}()
 }
 
@@ -271,7 +410,7 @@ func (fm *FracManager) runStatsLoop(ctx context.Context) {
 
 func (fm *FracManager) Start() {
 	var ctx context.Context
-	ctx, fm.stopFn = context.WithCancel(context.Background())
+	ctx, fm.stopFn = context.WithCancel(fm.ctx)
 
 	fm.runStatsLoop(ctx)
 	fm.runMaintenanceLoop(ctx)
@@ -282,13 +421,13 @@ func (fm *FracManager) Load(ctx context.Context) error {
 	var err error
 	var notSealed []activeRef
 
-	l := NewLoader(fm.config, fm.fracProvider, fm.fracCache)
+	l := NewLoader(fm.config, fm.s3cli, fm.fracProvider, fm.fracCache)
 
-	if fm.fracs, notSealed, err = l.load(ctx); err != nil {
+	if fm.localFracs, fm.remoteFracs, notSealed, err = l.load(ctx); err != nil {
 		return err
 	}
 
-	if len(fm.fracs) == 0 { // no data, first run
+	if len(fm.localFracs)+len(fm.remoteFracs) == 0 { // no data, first run
 		if err := fm.setImmature(); err != nil {
 			return err
 		}
@@ -376,7 +515,7 @@ func (fm *FracManager) rotate() activeRef {
 	fm.fracMu.Lock()
 	prev := fm.active
 	fm.active = next
-	fm.fracs = append(fm.fracs, fm.active.ref)
+	fm.localFracs = append(fm.localFracs, fm.active.ref)
 	fm.fracMu.Unlock()
 
 	return prev
@@ -393,6 +532,13 @@ func (fm *FracManager) Stop() {
 	fm.statWG.Wait()
 	fm.mntcWG.Wait()
 	fm.cacheWG.Wait()
+
+	if err := fm.fracCache.SyncWithDisk(); err != nil {
+		logger.Error(
+			"failed to sync frac-cache on disk",
+			zap.Error(err),
+		)
+	}
 
 	needSealing := false
 	status := "frac too small to be sealed"

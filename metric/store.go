@@ -117,7 +117,7 @@ var (
 		Subsystem: "common",
 		Name:      "data_size_total",
 		Help:      "",
-	}, []string{"kind"})
+	}, []string{"kind", "storage_type"})
 
 	OldestFracTime = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
@@ -286,4 +286,18 @@ var (
 	SkippedIndexesBytesText    = skippedIndexesBytes.WithLabelValues("text")
 	SkippedIndexesBytesKeyword = skippedIndexesBytes.WithLabelValues("keyword")
 	SkippedIndexesBytesPath    = skippedIndexesBytes.WithLabelValues("path")
+
+	OffloadingTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "offloading",
+		Name:      "total",
+		Help:      "How many fractions were offloaded",
+	}, []string{"status"})
+	OffloadingDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "offloading",
+		Name:      "duration_seconds",
+		Help:      "How many seconds it took to offload fraction to remote storage",
+		Buckets:   SecondsBuckets,
+	})
 )

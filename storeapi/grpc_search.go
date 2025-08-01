@@ -18,6 +18,7 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/parser"
@@ -135,7 +136,11 @@ func (g *GrpcV1) doSearch(
 	}
 
 	searchTr := tr.NewChild("search iteratively")
-	qpr, err := g.searchData.searcher.SearchDocs(ctx, g.fracManager.GetAllFracs(), searchParams)
+	qpr, err := g.searchData.searcher.SearchDocs(
+		ctx,
+		g.fracManager.GetFracs(fracmanager.FracTypeLocal|fracmanager.FracTypeRemote),
+		searchParams,
+	)
 	searchTr.Done()
 	if err != nil {
 		if code, ok := parseStoreError(err); ok {

@@ -61,6 +61,8 @@ const (
 	IndexTmpFileSuffix = "._index"
 	IndexDelFileSuffix = ".index.del"
 
+	RemoteFractionSuffix = ".remote"
+
 	FracCacheFileSuffix = ".frac-cache"
 
 	// tracing

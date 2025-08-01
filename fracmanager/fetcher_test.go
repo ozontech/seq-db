@@ -21,7 +21,8 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 		ShouldReplay: false,
 		DataDir:      dataDir,
 	}
-	fm, err := newFracManagerWithBackgroundStart(config)
+
+	fm, err := newFracManagerWithBackgroundStart(t.Context(), config)
 	assert.NoError(t, err)
 	dp := frac.NewDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
@@ -37,7 +38,7 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 
 	ids := []seq.IDSource{id}
 
-	docs, err := fetcher.FetchDocs(context.TODO(), fm.GetAllFracs(), ids)
+	docs, err := fetcher.FetchDocs(t.Context(), fm.GetFracs(FracTypeLocal), ids)
 	assert.NoError(t, err)
 	for _, v := range docs {
 		assert.Equal(t, []byte("document"), v)
@@ -59,7 +60,7 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	}
 	ids = append(ids, newID)
 	counter := 0
-	docs, err = fetcher.FetchDocs(context.TODO(), fm.GetAllFracs(), ids)
+	docs, err = fetcher.FetchDocs(context.TODO(), fm.GetFracs(FracTypeLocal), ids)
 	assert.NoError(t, err)
 	for _, v := range docs {
 		counter++
