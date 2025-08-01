@@ -1,0 +1,151 @@
+# Cluster-Mode Architecture
+
+## Components overview
+
+In cluster mode, seq-db consists of two main components: seq-db store and seq-db proxy
+
+
+### seq-db store
+seq-db store is the stateful storage component, that keeps all the
+written documents and handles both reads and writes.
+All data written into seq-db eventually makes its way to one or multiple stores.
+
+
+#### Key characteristics
+- Deployed as k8s `Statefulset`
+- Share-nothing architecture: a seq-db store instance is unaware of any other stores.
+- Maintains in-memory and on-disk inverted indexes, allowing search on indexed fields. 
+
+
+#### File layout
+seq-db store keeps all document data in three file types:
+
+| File type | Purpose                                        |
+|-----------|------------------------------------------------|
+| `.docs`   | Stores compressed batches of raw log documents |
+| `.meta`   | Tokenized metadata stream (used for recovery)  |
+| `.index`  | On-disk inverted index                         | 
+
+
+Because the dataset is stored in these three file types, moving or restoring a
+shard is straightforward: simply `cp` / `rsync` the directory
+to the target node and start the pod.
+
+Read more about file types and their internal structure [here](./internal/fractions.md).
+
+#### Durability semantics
+A write is acknowledged only after the payload is safely persisted:
+
+```
+write, fsync   # .meta file
+write, fsync   # .data file
+```
+That is, two write system calls followed by two fsync
+calls—guaranteeing the data survives a node 
+crash or restart before the client receives a success response. 
+Indexing occurs asynchronously, so the newly written
+data becomes searchable shortly after the write is confirmed.
+
+
+### seq-db proxy
+seq-db proxy is a stateless coordinator for all read & write traffic. 
+It maintans a user-defined cluster topology, and allows changes in read-write 
+traffic distribution without changes to the stateful components
+
+
+#### Key characteristics
+- Deployed as k8s `Deployment`
+- Performs logical replication between stores
+- Routes traffic between storage tiers (hot/cold stores) 
+
+
+seq-db proxy tokenizes every incoming document (new 
+fields become searchable immediately) 
+and compresses batches with zstd / lz4 
+before sending batches to seq-db stores.
+
+### Read & write semantics (rf=2)
+
+
+Let's take a look at an example architecture with 4 seq-db shards and replication-factor=2 
+(each log must be stored in two separate seq-db stores). 
+Note that replicas of shard can be located in different availability zones.
+
+### Write semantics
+The write commits only after seq-db proxy receives an ack **from all replicas of the addressed shard**.
+
+```mermaid
+sequenceDiagram
+
+  participant Client
+  participant Proxy as seq-db proxy
+
+  box Shard1
+  participant A as seq-db store<br /> shard1 replica A
+  participant B as  seq-db store <br />shard1 replica B
+  end 
+  
+  box Shard2
+  participant C as seq-db store <br /> shard2 replica A
+  participant D as seq-db store <br /> shard2 replica B
+  end 
+
+  Note over Proxy,B: seq-db proxy chooses a random shard
+  Client->>Proxy: write(batch1)
+  Proxy->>A: write(batch1)
+  Proxy->>B: write(batch1)
+
+  A-->>Proxy: ack
+  B-->>Proxy: ack
+  Proxy-->>Client: ack
+  
+  Note over Proxy,B: the write is done if acks received <br/> from both replicas of a shard
+
+  Client->>Proxy: write(batch2)
+  Proxy->>C: write(batch2)
+  Proxy->>D: write(batch2)
+
+  C-->>Proxy: ack
+  D-->>Proxy: ack
+
+  Proxy-->>Client: ack
+```
+
+### Read semantics
+
+```mermaid
+sequenceDiagram
+
+  participant Client
+  participant Proxy as seq-db proxy
+
+  box Shard1
+  participant A as seq-db store<br /> shard1 replica A
+  participant B as  seq-db store <br />shard1 replica B
+  end 
+  
+  box Shard2
+  participant C as seq-db store <br /> shard2 replica A
+  participant D as seq-db store <br /> shard2 replica B
+  end 
+
+  Note over Proxy,C: seq-db proxy chooses <br /> a random  replica of each shard
+  Client->>Proxy: req1
+  Proxy->>A: req1
+  Proxy->>C: req1
+
+  A-->>Proxy: res1_A
+  C-->>Proxy: res1_C
+  Note over Proxy: seq-db proxy merges the returned responses
+  Proxy-->>Client: merge(res1_A, res1_C)
+    
+
+  Client->>Proxy: req2
+  Proxy->>B: req2
+  Proxy->>C: req2
+
+  C-->>Proxy: res2_C
+  D-->>Proxy: res2_D
+
+  Proxy-->>Client: merge(res2_C, res2_D)
+```
