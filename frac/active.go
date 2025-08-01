@@ -16,12 +16,16 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
+)
+
+var (
+	_ Fraction = (*Active)(nil)
 )
 
 type Active struct {
@@ -46,13 +50,13 @@ type Active struct {
 	DocsPositions *DocsPositions
 
 	docsFile   *os.File
-	docsReader disk.DocsReader
-	sortReader disk.DocsReader
+	docsReader storage.DocsReader
+	sortReader storage.DocsReader
 	docsCache  *cache.Cache[[]byte]
 	sortCache  *cache.Cache[[]byte]
 
 	metaFile   *os.File
-	metaReader disk.DocBlocksReader
+	metaReader storage.DocBlocksReader
 
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
@@ -71,7 +75,7 @@ var systemSeqID = seq.ID{
 func NewActive(
 	baseFileName string,
 	activeIndexer *ActiveIndexer,
-	readLimiter *disk.ReadLimiter,
+	readLimiter *storage.ReadLimiter,
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
 	cfg *Config,
@@ -89,11 +93,11 @@ func NewActive(
 		docsFile:   docsFile,
 		docsCache:  docsCache,
 		sortCache:  sortCache,
-		docsReader: disk.NewDocsReader(readLimiter, docsFile, docsCache),
-		sortReader: disk.NewDocsReader(readLimiter, docsFile, sortCache),
+		docsReader: storage.NewDocsReader(readLimiter, docsFile, docsCache),
+		sortReader: storage.NewDocsReader(readLimiter, docsFile, sortCache),
 
 		metaFile:   metaFile,
-		metaReader: disk.NewDocBlocksReader(readLimiter, metaFile),
+		metaReader: storage.NewDocBlocksReader(readLimiter, metaFile),
 
 		indexer: activeIndexer,
 		writer:  NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync),

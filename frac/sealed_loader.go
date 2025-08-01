@@ -5,16 +5,16 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
 type Loader struct {
-	reader     *disk.IndexReader
+	reader     *storage.IndexReader
 	blockIndex uint32
 	blockBuf   []byte
 }
@@ -61,7 +61,7 @@ func (l *Loader) nextIndexBlock() ([]byte, error) {
 	return data, err
 }
 
-func (l *Loader) skipBlock() disk.IndexBlockHeader {
+func (l *Loader) skipBlock() storage.IndexBlockHeader {
 	header, err := l.reader.GetBlockHeader(l.blockIndex)
 	if err != nil {
 		logger.Panic("error reading block header", zap.Error(err))

@@ -11,20 +11,20 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
 const savePeriod = 30 * time.Second
 
-var readLimiter *disk.ReadLimiter
+var readLimiter *storage.ReadLimiter
 
 func init() {
-	readLimiter = disk.NewReadLimiter(1, nil)
+	readLimiter = storage.NewReadLimiter(1, nil)
 }
 
 func printDistribution(dist *seq.MIDsDistribution) {
@@ -41,16 +41,16 @@ func getAllFracs(dataDir string) []string {
 	return files
 }
 
-func getReader(path string) (disk.IndexReader, *os.File) {
+func getReader(path string) (storage.IndexReader, *os.File) {
 	c := cache.NewCache[[]byte](nil, nil)
 	f, err := os.Open(path)
 	if err != nil {
 		panic(err)
 	}
-	return disk.NewIndexReader(readLimiter, f, c), f
+	return storage.NewIndexReader(readLimiter, f.Name(), f, c), f
 }
 
-func readBlock(reader disk.IndexReader, blockIndex uint32) ([]byte, error) {
+func readBlock(reader storage.IndexReader, blockIndex uint32) ([]byte, error) {
 	data, _, err := reader.ReadIndexBlock(blockIndex, nil)
 	if err != nil {
 		return nil, err

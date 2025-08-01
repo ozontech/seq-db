@@ -18,10 +18,10 @@ import (
 
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -341,7 +341,7 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 	return nil
 }
 
-func (fm *FracManager) Append(ctx context.Context, docs, metas disk.DocBlock) error {
+func (fm *FracManager) Append(ctx context.Context, docs, metas storage.DocBlock) error {
 	var err error
 	for {
 		select {

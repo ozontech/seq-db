@@ -10,14 +10,18 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
+)
+
+var (
+	_ Fraction = (*Sealed)(nil)
 )
 
 type Sealed struct {
@@ -32,11 +36,11 @@ type Sealed struct {
 
 	docsFile   *os.File
 	docsCache  *cache.Cache[[]byte]
-	docsReader disk.DocsReader
+	docsReader storage.DocsReader
 
 	indexFile   *os.File
 	indexCache  *IndexCache
-	indexReader disk.IndexReader
+	indexReader storage.IndexReader
 
 	idsTable      seqids.Table
 	lidsTable     *lids.Table
@@ -45,7 +49,7 @@ type Sealed struct {
 	loadMu   *sync.RWMutex
 	isLoaded bool
 
-	readLimiter *disk.ReadLimiter
+	readLimiter *storage.ReadLimiter
 
 	// shit for testing
 	PartialSuicideMode PSD
@@ -61,7 +65,7 @@ const (
 
 func NewSealed(
 	baseFile string,
-	readLimiter *disk.ReadLimiter,
+	readLimiter *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
 	info *Info,
@@ -100,7 +104,7 @@ func (f *Sealed) openIndex() {
 		if err != nil {
 			logger.Fatal("can't open index file", zap.String("file", name), zap.Error(err))
 		}
-		f.indexReader = disk.NewIndexReader(f.readLimiter, f.indexFile, f.indexCache.Registry)
+		f.indexReader = storage.NewIndexReader(f.readLimiter, f.indexFile.Name(), f.indexFile, f.indexCache.Registry)
 	}
 }
 
@@ -117,7 +121,7 @@ func (f *Sealed) openDocs() {
 				logger.Fatal("can't open sdocs file", zap.String("frac", f.BaseFileName), zap.Error(err))
 			}
 		}
-		f.docsReader = disk.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
+		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
 	}
 }
 
@@ -134,7 +138,7 @@ type PreloadedData struct {
 func NewSealedPreloaded(
 	baseFile string,
 	preloaded *PreloadedData,
-	rl *disk.ReadLimiter,
+	rl *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
 	config *Config,
@@ -146,11 +150,11 @@ func NewSealedPreloaded(
 
 		docsFile:   preloaded.docsFile,
 		docsCache:  docsCache,
-		docsReader: disk.NewDocsReader(rl, preloaded.docsFile, docsCache),
+		docsReader: storage.NewDocsReader(rl, preloaded.docsFile, docsCache),
 
 		indexFile:   preloaded.indexFile,
 		indexCache:  indexCache,
-		indexReader: disk.NewIndexReader(rl, preloaded.indexFile, indexCache.Registry),
+		indexReader: storage.NewIndexReader(rl, preloaded.indexFile.Name(), preloaded.indexFile, indexCache.Registry),
 
 		loadMu:   &sync.RWMutex{},
 		isLoaded: true,

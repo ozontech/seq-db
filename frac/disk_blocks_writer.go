@@ -5,25 +5,25 @@ import (
 	"time"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
 type DiskBlocksWriter struct {
 	buf    []byte
-	writer *disk.BlocksWriter
-	stats  disk.SealingStats
+	writer *storage.BlocksWriter
+	stats  storage.SealingStats
 
 	startOfIDsBlockIndex uint32
 }
 
 func NewSealedBlockWriter(ws io.WriteSeeker) *DiskBlocksWriter {
 	return &DiskBlocksWriter{
-		writer: disk.NewBlocksWriter(ws),
-		stats:  make(disk.SealingStats, 0),
+		writer: storage.NewBlocksWriter(ws),
+		stats:  make(storage.SealingStats, 0),
 	}
 }
 
@@ -32,8 +32,8 @@ func (w *DiskBlocksWriter) resetBuf(size int) []byte {
 	return w.buf
 }
 
-func (w *DiskBlocksWriter) NewBlockFormer(name string, size int) *disk.BlockFormer {
-	return disk.NewBlockFormer(name, w.writer, size, w.resetBuf(size))
+func (w *DiskBlocksWriter) NewBlockFormer(name string, size int) *storage.BlockFormer {
+	return storage.NewBlockFormer(name, w.writer, size, w.resetBuf(size))
 }
 
 func (w *DiskBlocksWriter) writeInfoBlock(block *BlockInfo) error {
@@ -44,7 +44,7 @@ func (w *DiskBlocksWriter) writeInfoBlock(block *BlockInfo) error {
 		return err
 	}
 
-	w.stats = append(w.stats, &disk.BlockStats{
+	w.stats = append(w.stats, &storage.BlockStats{
 		Name:     "info",
 		Raw:      uint64(len(w.buf)),
 		Comp:     uint64(n),
@@ -63,7 +63,7 @@ func (w *DiskBlocksWriter) writePositionsBlock(zstdCompressLevel int, block *Blo
 		return err
 	}
 
-	w.stats = append(w.stats, &disk.BlockStats{
+	w.stats = append(w.stats, &storage.BlockStats{
 		Name:     "positions",
 		Raw:      uint64(len(w.buf)),
 		Comp:     uint64(n),
@@ -77,7 +77,7 @@ func (w *DiskBlocksWriter) writePositionsBlock(zstdCompressLevel int, block *Blo
 func (w *DiskBlocksWriter) writeIDsBlocks(zstdLevel int, generateBlocks func(func(*idsBlock) error) error) ([]seq.ID, error) {
 	w.startOfIDsBlockIndex = w.writer.GetBlockIndex()
 
-	levelOpt := disk.WithZstdCompressLevel(zstdLevel)
+	levelOpt := storage.WithZstdCompressLevel(zstdLevel)
 
 	former := w.NewBlockFormer("ids", consts.IDsBlockSize)
 
@@ -85,7 +85,7 @@ func (w *DiskBlocksWriter) writeIDsBlocks(zstdLevel int, generateBlocks func(fun
 
 	push := func(block *idsBlock) error {
 		former.Buf = block.mids.Pack(former.Buf)
-		if err := former.FlushForced(disk.WithExt(block.GetExtForRegistry()), levelOpt); err != nil {
+		if err := former.FlushForced(storage.WithExt(block.GetExtForRegistry()), levelOpt); err != nil {
 			return err
 		}
 
@@ -118,7 +118,7 @@ func (w *DiskBlocksWriter) writeTokensBlocks(zstdCompressLevel int, generateBloc
 	var startIndex uint32
 	tokenTable := make(token.Table)
 
-	opts := []disk.FlushOption{disk.WithZstdCompressLevel(zstdCompressLevel)}
+	opts := []storage.FlushOption{storage.WithZstdCompressLevel(zstdCompressLevel)}
 
 	former := w.NewBlockFormer("tokens", consts.RegularBlockSize)
 
@@ -171,7 +171,7 @@ func (w *DiskBlocksWriter) writeTokensBlocks(zstdCompressLevel int, generateBloc
 func (w *DiskBlocksWriter) writeTokenTableBlocks(zstdCompressLevel int, generateBlocks func(func(token.TableBlock) error) error) error {
 	former := w.NewBlockFormer("token_table", consts.RegularBlockSize)
 
-	opts := []disk.FlushOption{disk.WithZstdCompressLevel(zstdCompressLevel)}
+	opts := []storage.FlushOption{storage.WithZstdCompressLevel(zstdCompressLevel)}
 
 	push := func(block token.TableBlock) error {
 		former.Buf = block.Pack(former.Buf)
@@ -201,11 +201,11 @@ func (w *DiskBlocksWriter) writeLIDsBlocks(zstdCompressLevel int, generateBlocks
 
 	former := w.NewBlockFormer("lids", consts.RegularBlockSize)
 
-	levelOpt := disk.WithZstdCompressLevel(zstdCompressLevel)
+	levelOpt := storage.WithZstdCompressLevel(zstdCompressLevel)
 
 	push := func(block *lidsBlock) error {
 		former.Buf = block.payload.Pack(former.Buf)
-		if err := former.FlushForced(disk.WithExt(block.getExtForRegistry()), levelOpt); err != nil {
+		if err := former.FlushForced(storage.WithExt(block.getExtForRegistry()), levelOpt); err != nil {
 			return err
 		}
 

@@ -33,6 +33,10 @@ var ErrSealingFractionSuicided = errors.New("sealing fraction is suicided")
  *  All other states are impossible.
  */
 
+var (
+	_ frac.Fraction = (*proxyFrac)(nil)
+)
+
 type proxyFrac struct {
 	fp *fractionProvider
 
