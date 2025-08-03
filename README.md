@@ -1,4 +1,7 @@
 # seq-db
+<!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
+[![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors-)
+<!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 ## Overview
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/ozontech/seq-db/graphs/commit-activity)
@@ -53,3 +56,24 @@ This project is licensed under the [Apache 2.0 License](https://github.com/ozont
 
 For any issues or feature requests, please open a ticket in
 our [GitHub Issues](https://github.com/ozontech/seq-db/issues).
+## Contributors ✨
+
+Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ssnd"><img src="https://avatars.githubusercontent.com/u/10348482?v=4?s=100" width="100px;" alt="Sandu C"/><br /><sub><b>Sandu C</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=ssnd" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=ssnd" title="Documentation">📖</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
