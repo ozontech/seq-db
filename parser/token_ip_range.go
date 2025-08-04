@@ -1,20 +1,21 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
 
-	"github.com/ozontech/seq-db/seq"
+	"go4.org/netipx"
 )
 
-type IpRange struct {
+type IPRange struct {
 	Field string
 	From  Term
 	To    Term
 }
 
-func (n *IpRange) Dump(builder *strings.Builder) {
+func (n *IPRange) Dump(builder *strings.Builder) {
 	builder.WriteString(quoteTokenIfNeeded(n.Field))
 	builder.WriteString(`:ip_range(`)
 
@@ -25,7 +26,7 @@ func (n *IpRange) Dump(builder *strings.Builder) {
 	builder.WriteString(`)`)
 }
 
-func (n *IpRange) DumpSeqQL(b *strings.Builder) {
+func (n *IPRange) DumpSeqQL(b *strings.Builder) {
 	b.WriteString(quoteTokenIfNeeded(n.Field))
 	b.WriteString(`:ip_range(`)
 
@@ -36,77 +37,72 @@ func (n *IpRange) DumpSeqQL(b *strings.Builder) {
 	b.WriteString(`)`)
 }
 
-// parseFilterIpRange parses 'ip_range' filter.
-// TODO
-// Filter 'in' is a logical OR of multiple Literal.
-// It supports all forms of seq-ql string literals.
+// parseFilterIPRange parses 'ip_range' filter.
+// It supports only either 2 ip addresses or ip address in CIDR notation.
 // Example queries:
 //
-//	service:in(auth-api, api-gateway, clickhouse-shard-*)
-//	phone:in(`+7 999 ** **`, '+995'*)
-func parseFilterIpRange(lex *lexer, fieldName string, t seq.TokenizerType, caseSensitive bool) (*IpRange, error) {
-	r := &IpRange{Field: fieldName}
+//	host_addr:ip_range(192.168.0.1, 192.168.0.255)
+//	host_addr:ip_range(192.168.0.0/24)
+func parseFilterIPRange(lex *lexer, fieldName string) (*IPRange, error) {
 	if !lex.IsKeyword("(") {
-		return r, fmt.Errorf("expect '(', got %q", lex.Token)
+		return nil, fmt.Errorf("expected '(', got %q", lex.Token)
 	}
 	lex.Next()
 
 	if lex.IsKeyword(")") {
-		return r, fmt.Errorf("empty 'ip_range' filter")
+		return nil, errors.New("empty 'ip_range' filter")
 	}
 
-	ipFrom, err := parseIpAddr(lex)
+	tok, err := parseCompositeToken(lex)
 	if err != nil {
-		return r, err
+		return nil, err
 	}
 
-	if !lex.IsKeywords(",") {
-		return r, fmt.Errorf("expected ',' keyword, got %q", lex.Token)
+	var r netipx.IPRange
+	if strings.ContainsRune(tok, '/') {
+		prefix, err := netip.ParsePrefix(tok)
+		if err != nil {
+			return nil, err
+		}
+		r = netipx.RangeOfPrefix(prefix)
+	} else {
+		from, err := netip.ParseAddr(tok)
+		if err != nil {
+			return nil, err
+		}
+
+		if !lex.IsKeywords(",") {
+			return nil, fmt.Errorf("expected ',' keyword, got %q", lex.Token)
+		}
+
+		lex.Next()
+
+		tok, err := parseCompositeToken(lex)
+		if err != nil {
+			return nil, err
+		}
+
+		to, err := netip.ParseAddr(tok)
+		if err != nil {
+			return nil, err
+		}
+
+		if from.Compare(to) >= 0 {
+			return nil, fmt.Errorf("first ip %q is greater or equal than second ip %q", from, to)
+		}
+
+		r = netipx.IPRangeFrom(from, to)
 	}
-
-	lex.Next()
-
-	ipTo, err := parseIpAddr(lex)
-	if err != nil {
-		return r, err
-	}
-
-	if ipFrom.Compare(ipTo) > 0 {
-		return r, fmt.Errorf("first ip must be less then second")
-	}
-
-	r.From = newTextTerm(ipFrom.String())
-	r.To = newTextTerm(ipTo.String())
-
-	//ipPrefix, err := netip.ParsePrefix(tok)
-	//if err != nil {
-	//	return nil, fmt.Errorf("expected ip address or mask in cidr notation, got %q", tok)
-	//}
-
-	//fmt.Println(ipPrefix.Bits())
-
-	// trying to parse ip address e.g. '192.168.1.1'
-	//ipFrom, err := netip.ParseAddr(tok)
-	//if err != nil {
-	//	// if failed to parse ip address, trying to parse ip prefix in cidr notation e.g. '192.168.1.1/24'
-	//
-	//
-	//	// todo
-	//}
 
 	if !lex.IsKeyword(")") {
-		return r, fmt.Errorf("expect ')', got %q", lex.Token)
+		return nil, fmt.Errorf("expected ')', got %q", lex.Token)
 	}
 
 	lex.Next()
-	return r, nil
-}
 
-func parseIpAddr(lex *lexer) (netip.Addr, error) {
-	ip, err := parseCompositeToken(lex)
-	if err != nil {
-		return netip.Addr{}, err
-	}
-
-	return netip.ParseAddr(ip)
+	return &IPRange{
+		Field: fieldName,
+		From:  newTextTerm(r.From().String()),
+		To:    newTextTerm(r.To().String()),
+	}, nil
 }

@@ -51,7 +51,7 @@ func parseSeqQLFieldFilter(lex *lexer, mapping seq.Mapping) (*ASTNode, error) {
 
 	if lex.IsKeyword("ip_range") {
 		lex.Next()
-		r, err := parseFilterIpRange(lex, fieldName, t, caseSensitive)
+		r, err := parseFilterIPRange(lex, fieldName)
 		if err != nil {
 			return nil, fmt.Errorf("parsing 'ip_range' filter: %s", err)
 		}
@@ -106,7 +106,7 @@ func parseFulltextSearchFilter(lex *lexer, fieldName string, t seq.TokenizerType
 //	phone:in(`+7 999 ** **`, '+995'*)
 func parseFilterIn(lex *lexer, fieldName string, t seq.TokenizerType, caseSensitive bool) (*ASTNode, error) {
 	if !lex.IsKeyword("(") {
-		return nil, fmt.Errorf("expect '(', got %q", lex.Token)
+		return nil, fmt.Errorf("expected '(', got %q", lex.Token)
 	}
 	lex.Next()
 
@@ -129,7 +129,7 @@ func parseFilterIn(lex *lexer, fieldName string, t seq.TokenizerType, caseSensit
 	}
 
 	if !lex.IsKeyword(")") {
-		return nil, fmt.Errorf("expect ')', got %q", lex.Token)
+		return nil, fmt.Errorf("expected ')', got %q", lex.Token)
 	}
 
 	lex.Next()
