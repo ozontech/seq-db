@@ -200,7 +200,7 @@ message DeleteAsyncSearchResponse {}
 
 message GetAsyncSearchesListRequest {
   optional AsyncSearchStatus status = 1;
-  repeated string ids = 4; 
+  repeated string ids = 2; 
 }
 
 message GetAsyncSearchesListResponse {
