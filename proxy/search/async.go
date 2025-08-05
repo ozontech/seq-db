@@ -84,8 +84,6 @@ type FetchAsyncSearchResultRequest struct {
 
 type FetchAsyncSearchResultResponse struct {
 	Status     fracmanager.AsyncSearchStatus
-	Done       bool
-	Expiration time.Time
 	QPR        seq.QPR
 	CanceledAt time.Time
 
@@ -394,7 +392,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 		}
 
 		if fracsDone != 0 {
-			search.Progress = float64(fracsDone+fracsInQueue) / float64(fracsDone)
+			search.Progress = float64(fracsDone) / float64(fracsDone+fracsInQueue)
 		}
 		if search.Status == fracmanager.AsyncSearchStatusDone {
 			search.Progress = 1

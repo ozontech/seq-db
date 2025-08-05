@@ -237,7 +237,7 @@ type formattedFetchAsyncSearchResultResponse struct {
 	CanceledAt *json.RawMessage `json:"canceled_at,omitempty"`
 }
 
-// MarshalJSON overrides oldest_time field with formatted string instead of google.protobuf.Timestamp.
+// MarshalJSON overrides timestamp fields and other fields with custom formatting for FetchAsyncSearchResultResponse.
 func (r *FetchAsyncSearchResultResponse) MarshalJSON() ([]byte, error) {
 	fetchResponse := &formattedFetchAsyncSearchResultResponse{
 		Status:                             json.RawMessage(strconv.Quote(r.Status.String())),
