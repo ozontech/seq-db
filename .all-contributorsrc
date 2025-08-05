@@ -1,0 +1,47 @@
+{
+  "files": [
+    "CONTRIBUTORS.md"
+  ],
+  "imageSize": 100,
+  "commit": false,
+  "commitType": "docs",
+  "commitConvention": "angular",
+  "contributors": [
+    {
+      "login": "vitkovskii",
+      "name": "Vitkovskii Vladimir",
+      "avatar_url": "https://avatars.githubusercontent.com/u/2269880?v=4",
+      "profile": "https://github.com/vitkovskii",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "leviska",
+      "name": "Iskandarov Lev",
+      "avatar_url": "https://avatars.githubusercontent.com/u/14099557?v=4",
+      "profile": "https://github.com/leviska",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "anuriq",
+      "name": "Azat Khadiev",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1053116?v=4",
+      "profile": "https://github.com/anuriq",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+  ],
+  "contributorsPerLine": 7,
+  "skipCi": true,
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "projectName": "seq-db",
+  "projectOwner": "ozontech"
+}
