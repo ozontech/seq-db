@@ -2,7 +2,7 @@
   "files": [
     "README.md"
   ],
-  "imageSize": 100,
+  "imageSize": 80,
   "commit": false,
   "commitType": "docs",
   "commitConvention": "angular",
@@ -138,7 +138,7 @@
       ]
     }
   ],
-  "contributorsPerLine": 5,
+  "contributorsPerLine": 7,
   "skipCi": true,
   "repoType": "github",
   "repoHost": "https://github.com",
