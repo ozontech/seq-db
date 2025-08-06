@@ -36,7 +36,7 @@ func (g *GrpcV1) StartAsyncSearch(
 		From:         seq.MID(r.From),
 		To:           seq.MID(r.To),
 		Limit:        limit,
-		WithTotal:    false,
+		WithTotal:    r.WithDocs, // return total if docs needed
 		Order:        seq.DocsOrderDesc,
 	}
 
