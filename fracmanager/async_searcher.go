@@ -37,6 +37,9 @@ const (
 	asyncSearchExtQPR       = ".qpr"
 	asyncSearchExtMergedQPR = ".mqpr"
 	asyncSearchTmpFile      = ".tmp"
+
+	minRetention = 5 * time.Minute
+	maxRetention = 90 * 24 * time.Hour // 90 days
 )
 
 var (
@@ -73,8 +76,6 @@ type AsyncSearcher struct {
 
 	mp MappingProvider
 
-	qprsMu *sync.RWMutex
-
 	requestsMu *sync.RWMutex
 	requests   map[string]asyncSearchInfo
 	rateLimit  chan struct{}
@@ -109,7 +110,6 @@ func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracs List) 
 	as := &AsyncSearcher{
 		config:        config,
 		mp:            mp,
-		qprsMu:        &sync.RWMutex{},
 		requestsMu:    &sync.RWMutex{},
 		requests:      asyncSearches,
 		rateLimit:     make(chan struct{}, workers),
@@ -237,13 +237,13 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs List) error {
 	r.Params.AST = ast.Root
 
 	now := timeNow()
-	if r.Retention < time.Minute*5 {
-		return fmt.Errorf("retention time should be at least 5 minutes, got %s", r.Retention)
+	if r.Retention < minRetention {
+		return fmt.Errorf("retention time should be at least %s, got %s", minRetention, r.Retention)
 	}
-	if now.Add(r.Retention).After(now.AddDate(5, 0, 0)) {
-		// Just check Retention is correct. Retention more than 5 years is not expected.
+	if now.Add(r.Retention).After(now.Add(maxRetention)) {
+		// Just check Retention is correct. Retention more than 90 days is not expected.
 		// More fine-grained validation by specific user/tenant/environment shouldn't be implemented in seq-db.
-		return fmt.Errorf("retention time should be less than 5 years, got %s", r.Retention)
+		return fmt.Errorf("retention time should be less than %s, got %s", maxRetention, r.Retention)
 	}
 
 	if ok := as.saveSearchInfo(r, fracs); !ok {
@@ -662,9 +662,6 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		return FetchSearchResultResponse{}, false
 	}
 
-	as.qprsMu.RLock()
-	defer as.qprsMu.RUnlock()
-
 	var qpr seq.QPR
 	var fracsDone, fracsInQueue int
 	if info.merged.Load() {
@@ -862,9 +859,6 @@ func (as *AsyncSearcher) removeExpiredResults(now time.Time) {
 	}
 	as.requestsMu.Unlock()
 
-	as.qprsMu.Lock()
-	defer as.qprsMu.Unlock()
-
 	for _, id := range toRemove {
 		qprPaths, err := as.findQPRs(id)
 		if err != nil {
@@ -986,15 +980,12 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 			fracsDone = len(info.Fractions)
 			fracsInQueue = 0
 		} else {
-			as.qprsMu.RLock()
 			p, err := as.findQPRs(id)
 			if err != nil {
-				as.qprsMu.RUnlock()
 				logger.Fatal("can't load async search result", zap.String("id", id), zap.Error(err))
 			}
 			fracsDone = len(p)
 			fracsInQueue = len(info.Fractions) - fracsDone
-			as.qprsMu.RUnlock()
 		}
 
 		items = append(items, &AsyncSearchesListItem{
