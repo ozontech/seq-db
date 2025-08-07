@@ -56,8 +56,7 @@ traffic distribution without changes to the stateful components
 #### Key characteristics
 - Deployed as k8s `Deployment`
 - Performs logical replication between stores
-- Routes traffic between storage tiers (hot/cold stores) 
-
+- Routes traffic between storage tiers (hot/cold stores)
 
 seq-db proxy tokenizes every incoming document (new 
 fields become searchable immediately) 
@@ -65,8 +64,6 @@ and compresses batches with zstd / lz4
 before sending batches to seq-db stores.
 
 ### Read & write semantics (rf=2)
-
-
 Let's take a look at an example architecture with 4 seq-db shards and replication-factor=2 
 (each log must be stored in two separate seq-db stores). 
 Note that replicas of shard can be located in different availability zones.
@@ -112,6 +109,9 @@ sequenceDiagram
 ```
 
 ### Read semantics
+While the written document must be acknowledged by all replicas
+of a shard, 
+a read is successful when **at least one replica of each shard** returns a response.
 
 ```mermaid
 sequenceDiagram
@@ -149,3 +149,14 @@ sequenceDiagram
 
   Proxy-->>Client: merge(res2_C, res2_D)
 ```
+
+## Notes about replication & consistency
+seq-db doesn't have any mechanism to keep replicas consistent between each other. 
+That is, if a write operation succeeds on a replica of a shard and fails on another replica, the replicas 
+would be out of sync and won't be (automatically) synced. 
+The only given guarantee  is that a write operation will succeed only having at least rf replicas saved on disk.
+This optimization allows seq-db to have a higher than alternatives ingestion throughput 
+with the obvious price of the possible inconsistencies of retrieval and aggregation queries. 
+seq-db was designed as a database for logs/traces with this tradeoff in mind. 
+It cannot be reliably used for financial calculations or any other operations 
+expected to have high-precision.
