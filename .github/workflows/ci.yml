@@ -15,14 +15,22 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-
-    services:
-      minio:
-        image: quay.io/minio/minio
-        ports:
-          - 9000:9000
-
     steps:
+      # GitHub Actions do not support passing arguments to containers (that are declared in the services section of a job),
+      # but MinIO depends on it (it needs `server` argument at least).
+      # When [this](https://github.com/actions/runner/pull/1152) will be merged we can get rid of this step.
+      - name: Setup MinIO
+        uses: addnab/docker-run-action@v3
+        with:
+          registry: quay.io
+          image: minio/minio:latest
+          options: |
+            --detach
+            --publish 9000:9000
+          run: |
+            minio \
+            server /data
+
       - name: Checkout code
         uses: actions/checkout@v5
 
@@ -39,7 +47,7 @@ jobs:
         env:
           GOFLAGS: ${{ matrix.flags }}
           LOG_LEVEL: error
-        run: go test -run="TestReader" -short -coverprofile=profile.out -covermode=atomic -coverpkg=./... ./...
+        run: go test -short -coverprofile=profile.out -covermode=atomic -coverpkg=./... ./...
 
       - name: Strip generated files from coverage
         run: |
