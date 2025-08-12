@@ -43,6 +43,7 @@ push-image: build-image
 
 .PHONY: test
 test:
+	@docker run -p 9000:9000 -p 9001:9001 quay.io/minio/minio server /data --console-address ":9001"
 	LOG_LEVEL=ERROR go test ./... -count 1
 
 .bin-deps: export GOBIN := $(LOCAL_BIN)

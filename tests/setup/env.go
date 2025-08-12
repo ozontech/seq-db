@@ -45,6 +45,10 @@ type TestingEnvConfig struct {
 
 	Mapping        seq.Mapping
 	IndexAllFields bool
+
+	OffloadingEnabled   bool
+	OffloadingForced    bool
+	OffloadingRetention time.Duration
 }
 
 type Stores [][]*storeapi.Store

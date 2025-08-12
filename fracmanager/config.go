@@ -28,6 +28,7 @@ type Config struct {
 	Fraction          frac.Config
 
 	OffloadingEnabled   bool
+	OffloadingForced    bool
 	OffloadingRetention time.Duration
 }
 

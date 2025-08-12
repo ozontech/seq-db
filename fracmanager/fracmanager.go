@@ -666,6 +666,19 @@ func (fm *FracManager) SealForcedForTests() {
 	}
 }
 
+func (fm *FracManager) OffloadForcedForTests() {
+	if !(fm.config.OffloadingEnabled && fm.config.OffloadingForced) {
+		panic("trying to force offloading when it is disabled")
+	}
+
+	// Offloading works only for sealed fractions.
+	fm.SealForcedForTests()
+
+	var wg sync.WaitGroup
+	fm.cleanupFractions(&wg)
+	wg.Wait()
+}
+
 func (fm *FracManager) ResetCacheForTests() {
 	fm.cacheMaintainer.Reset()
 }

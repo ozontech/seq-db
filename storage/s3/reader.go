@@ -43,7 +43,7 @@ func (r *reader) Read(p []byte) (int, error) {
 	out, err := r.c.cli.GetObject(r.ctx, &s3.GetObjectInput{
 		Bucket: aws.String(r.c.bucket),
 		Key:    aws.String(r.filename),
-		Range:  aws.String(r.rangeBytes(r.offset, int64(len(p)))),
+		Range:  aws.String(rangeBytes(r.offset, int64(len(p)))),
 	})
 	if err != nil {
 		return 0, fmt.Errorf(
@@ -114,7 +114,7 @@ func (r *reader) ReadAt(p []byte, off int64) (n int, err error) {
 	out, err := r.c.cli.GetObject(r.ctx, &s3.GetObjectInput{
 		Bucket: aws.String(r.c.bucket),
 		Key:    aws.String(r.filename),
-		Range:  aws.String(r.rangeBytes(off, int64(len(p)))),
+		Range:  aws.String(rangeBytes(off, int64(len(p)))),
 	})
 	if err != nil {
 		return 0, fmt.Errorf(
@@ -176,7 +176,10 @@ func (r *reader) Stat() (os.FileInfo, error) {
 
 // rangeBytes returns a valid content of a HTTP Range header.
 // See more information here: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Range
-func (r *reader) rangeBytes(start, length int64) string {
+func rangeBytes(start, length int64) string {
+	if length <= 0 {
+		panic("length must be positive")
+	}
 	return fmt.Sprintf("bytes=%d-%d", start, start+length-1)
 }
 

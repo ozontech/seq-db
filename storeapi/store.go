@@ -113,6 +113,10 @@ func (s *Store) SealAll() { // tests only
 	s.FracManager.SealForcedForTests()
 }
 
+func (s *Store) OffloadAll() { // tests only
+	s.FracManager.OffloadForcedForTests()
+}
+
 func (s *Store) ResetCache() { // tests only
 	s.FracManager.ResetCacheForTests()
 }
