@@ -39,7 +39,7 @@ const (
 	asyncSearchTmpFile      = ".tmp"
 
 	minRetention = 5 * time.Minute
-	maxRetention = 90 * 24 * time.Hour // 90 days
+	maxRetention = 30 * 24 * time.Hour // 30 days
 )
 
 var (
@@ -726,7 +726,7 @@ func (as *AsyncSearcher) loadSearchResult(qprsPaths []string, limit int, order s
 			logger.Fatal("can't unmarshal async search result", zap.String("path", qprPath), zap.Error(err))
 		}
 		if len(tail) > 0 {
-			logger.Fatal("unexpected tail when unmarshalling binary QPR", zap.String("path", qprPath))
+			logger.Fatal("unexpected tail when unmarshaling binary QPR", zap.String("path", qprPath))
 		}
 		seq.MergeQPRs(&qpr, []*seq.QPR{&tmp}, limit, 1, order)
 	}
@@ -737,6 +737,7 @@ var timeNow = time.Now
 
 func (as *AsyncSearcher) startMaintenance() {
 	for {
+		logger.Info("async search maintenance iteration")
 		now := timeNow()
 		as.removeExpiredResults(now)
 		as.merge()
@@ -752,21 +753,20 @@ func (as *AsyncSearcher) merge() {
 	as.requestsMu.RLock()
 	for id := range as.requests {
 		info := as.requests[id]
-		r := as.requests[id]
-		if !r.Finished || r.merged.Load() {
+		if !info.Finished || info.merged.Load() {
 			continue
 		}
-		if len(r.Fractions) < 2 {
+		if len(info.Fractions) < 2 {
 			// Nothing to merge
 			continue
 		}
-		if r.Expiration().Sub(now) < time.Minute*10 {
+		if info.Expiration().Sub(now) < time.Minute*10 {
 			// Do not merge QPRs that will be expired soon
 			continue
 		}
 		mergeJobs = append(mergeJobs, mergeJob{
 			ID:    id,
-			Fracs: r.Fractions,
+			Fracs: info.Fractions,
 			Info:  info,
 		})
 	}
@@ -807,7 +807,7 @@ func (as *AsyncSearcher) mergeQPRs(job mergeJob) {
 	}
 
 	job.Info.merged.Store(true)
-	job.Info.qprsSize.Add(int64(sizeAfter))
+	job.Info.qprsSize.Store(int64(sizeAfter))
 
 	for _, qprPath := range qprs {
 		// Remove unnecessary QPRs since we have merged QPR result

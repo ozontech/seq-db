@@ -51,8 +51,10 @@ func (si *Ingestor) StartAsyncSearch(ctx context.Context, r AsyncRequest) (Async
 		Aggs:              convertToAggsQuery(r.Aggregations),
 		HistogramInterval: int64(r.HistogramInterval),
 		Retention:         durationpb.New(r.Retention),
-		WithDocs:          r.WithDocs,
+		// TODO: enable WithDocs after we implement async searches' qprs merging in batches
+		WithDocs: false,
 	}
+
 	for i, shard := range searchStores.Shards {
 		var err error
 

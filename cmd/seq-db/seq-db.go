@@ -289,8 +289,8 @@ func startStore(
 				Async: fracmanager.AsyncSearcherConfig{
 					DataDir:           cfg.AsyncSearch.DataDir,
 					Workers:           cfg.AsyncSearch.Concurrency,
-					MaxSize:           cfg.AsyncSearch.MaxTotalSize,
-					MaxSizePerRequest: cfg.AsyncSearch.MaxSizePerRequest,
+					MaxSize:           int(cfg.AsyncSearch.MaxTotalSize),
+					MaxSizePerRequest: int(cfg.AsyncSearch.MaxSizePerRequest),
 				},
 			},
 			Fetch: storeapi.FetchConfig{
