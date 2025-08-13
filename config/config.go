@@ -2,6 +2,7 @@ package config
 
 import (
 	"cmp"
+	"path/filepath"
 	"time"
 
 	"github.com/alecthomas/units"
@@ -15,9 +16,17 @@ const (
 func Parse(path string) (Config, error) {
 	var c Config
 
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return Config{}, err
+	}
+
 	if err := fig.Load(
 		&c,
-		fig.File(path),
+		fig.File(filepath.Base(abs)),
+		// To find config file [fig] iterates over directories
+		// and concatenates filepath with each directory.
+		fig.Dirs(filepath.Dir(abs)),
 		fig.UseStrict(),
 		fig.Tag("config"),
 		fig.UseEnv("SEQDB"),
