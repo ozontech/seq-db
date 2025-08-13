@@ -502,7 +502,7 @@ func (s *SingleTestSuite) TestIndexingAllFields() {
 	}
 
 	docStrs := setup.DocsToStrings(docs)
-	// Just make sure that mapping is not overriden by something.
+	// Just make sure that mapping is not overridden by something.
 	require.Empty(s.T(), s.Ingestor().Config.Bulk.MappingProvider.GetMapping(), "mapping is not empty")
 
 	s.Bulk(docStrs)

@@ -47,6 +47,41 @@ Join our community for discussions, support, and contributions:
 See performance benchmarks and comparisons in
 our [Benchmark Reports](https://ozontech.github.io/seq-db-docs/ru/seq-db/benchmarks/).
 
+## Core Contributors 
+seq-db started as an internal project. To recognise everyone who has made
+a significant contribution, we list all contributors -- internal and public -- in the order of their first commit to the project. 
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/vitkovskii"><img src="https://avatars.githubusercontent.com/u/2269880?v=4?s=80" width="80px;" alt="Vitkovskii Vladimir"/><br /><sub><b>Vitkovskii Vladimir</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=vitkovskii" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=vitkovskii" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/leviska"><img src="https://avatars.githubusercontent.com/u/14099557?v=4?s=80" width="80px;" alt="Iskandarov Lev"/><br /><sub><b>Iskandarov Lev</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=leviska" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=leviska" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/anuriq"><img src="https://avatars.githubusercontent.com/u/1053116?v=4?s=80" width="80px;" alt="Azat Khadiev"/><br /><sub><b>Azat Khadiev</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=anuriq" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=anuriq" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/vano144"><img src="https://avatars.githubusercontent.com/u/10050741?v=4?s=80" width="80px;" alt="Ivan Romanov"/><br /><sub><b>Ivan Romanov</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=vano144" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=vano144" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ssnd"><img src="https://avatars.githubusercontent.com/u/10348482?v=4?s=80" width="80px;" alt="Sandu C"/><br /><sub><b>Sandu C</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=ssnd" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=ssnd" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/eguguchkin"><img src="https://avatars.githubusercontent.com/u/107068454?v=4?s=80" width="80px;" alt="Che"/><br /><sub><b>Che</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=eguguchkin" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=eguguchkin" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/HeadHunter483"><img src="https://avatars.githubusercontent.com/u/31502412?v=4?s=80" width="80px;" alt="Oleg Don"/><br /><sub><b>Oleg Don</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=HeadHunter483" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=HeadHunter483" title="Documentation">📖</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/DSmolonogov"><img src="https://avatars.githubusercontent.com/u/110113570?v=4?s=80" width="80px;" alt="DSmolonogov"/><br /><sub><b>DSmolonogov</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=DSmolonogov" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=DSmolonogov" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/vadimalekseev"><img src="https://avatars.githubusercontent.com/u/45711528?v=4?s=80" width="80px;" alt="Vadim Alekseev"/><br /><sub><b>Vadim Alekseev</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=vadimalekseev" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=vadimalekseev" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/izokina"><img src="https://avatars.githubusercontent.com/u/5451959?v=4?s=80" width="80px;" alt="Grigorii Nazarov"/><br /><sub><b>Grigorii Nazarov</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=izokina" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=izokina" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/forshev"><img src="https://avatars.githubusercontent.com/u/19464491?v=4?s=80" width="80px;" alt="Daniil Forshev"/><br /><sub><b>Daniil Forshev</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=forshev" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=forshev" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/moflotas"><img src="https://avatars.githubusercontent.com/u/42837378?v=4?s=80" width="80px;" alt="Timofey Sedov"/><br /><sub><b>Timofey Sedov</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=moflotas" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=moflotas" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/dkharms"><img src="https://avatars.githubusercontent.com/u/29202384?v=4?s=80" width="80px;" alt="Daniil"/><br /><sub><b>Daniil</b></sub></a><br /><a href="https://github.com/ozontech/seq-db/commits?author=dkharms" title="Code">💻</a> <a href="https://github.com/ozontech/seq-db/commits?author=dkharms" title="Documentation">📖</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+
 ## License
 
 This project is licensed under the [Apache 2.0 License](https://github.com/ozontech/seq-db/blob/main/LICENSE).

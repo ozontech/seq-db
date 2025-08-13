@@ -3,10 +3,10 @@ package frac
 import (
 	"sync"
 
+	"github.com/alecthomas/units"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/util"
 )
@@ -65,7 +65,7 @@ func (c *DocsMetasCompressor) DocsMetas() ([]byte, []byte) {
 
 func initBuf(buf []byte, size int) []byte {
 	if buf == nil { // first usage when dst is not allocated
-		const maxInitDocBlockSize = consts.MB
+		const maxInitDocBlockSize = int(units.MiB)
 		return util.EnsureSliceSize(buf, min(maxInitDocBlockSize, size))
 	}
 	return buf

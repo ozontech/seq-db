@@ -6,14 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
-
-	"github.com/ozontech/seq-db/consts"
 )
 
 func TestCacheSize(t *testing.T) {
-	const SIZE = 10 * consts.MB
+	const SIZE = int(10 * units.MiB)
 	cleaner := NewCleaner(0, nil)
 	c := NewCache[[]byte](cleaner, nil)
 
@@ -24,34 +23,34 @@ func TestCacheSize(t *testing.T) {
 }
 
 func TestClean(t *testing.T) {
-	const SizeTotal = 10 * consts.MB
-	const Size1 = 10 * consts.MB
-	const Size2 = 2 * consts.MB
-	const Size3 = 4 * consts.MB
-	const Size4 = 2 * consts.MB
+	const SizeTotal = 10 * units.MiB
+	const Size1 = 10 * units.MiB
+	const Size2 = 2 * units.MiB
+	const Size3 = 4 * units.MiB
+	const Size4 = 2 * units.MiB
 
-	cleaner := NewCleaner(SizeTotal, nil)
+	cleaner := NewCleaner(uint64(SizeTotal), nil)
 
 	c1 := NewCache[[]byte](cleaner, nil)
 	c2 := NewCache[[]byte](cleaner, nil)
 	c3 := NewCache[[]byte](cleaner, nil)
 
 	stat := &CleanStat{}
-	c1.Get(0, func() ([]byte, int) { return make([]byte, Size1), Size1 })
+	c1.Get(0, func() ([]byte, int) { return make([]byte, Size1), int(Size1) })
 
 	cleaner.Rotate()
 	cleaner.Cleanup(stat)
 
-	c1.Get(1, func() ([]byte, int) { return make([]byte, Size2), Size2 })
-	c2.Get(1, func() ([]byte, int) { return make([]byte, Size3), Size3 })
-	c3.Get(1, func() ([]byte, int) { return make([]byte, Size4), Size4 })
+	c1.Get(1, func() ([]byte, int) { return make([]byte, Size2), int(Size2) })
+	c2.Get(1, func() ([]byte, int) { return make([]byte, Size3), int(Size3) })
+	c3.Get(1, func() ([]byte, int) { return make([]byte, Size4), int(Size4) })
 
 	bytesTotal := cleaner.getSize()
 
-	assert.Equal(t, int(c1.entrySize+Size1), int(stat.BytesReleased), "wrong free buckets")
+	assert.Equal(t, int(c1.entrySize+uint64(Size1)), int(stat.BytesReleased), "wrong free buckets")
 	assert.Equal(t, 1, int(stat.BucketsCleaned), "wrong cleaned buckets")
 
-	actual := c1.entrySize + Size2 + c2.entrySize + Size3 + c3.entrySize + Size4
+	actual := c1.entrySize + uint64(Size2) + c2.entrySize + uint64(Size3) + c3.entrySize + uint64(Size4)
 	assert.Equal(t, int(actual), int(bytesTotal), "wrong cache size")
 }
 
@@ -89,7 +88,7 @@ func testStress(size, workers, records int, get func(*Cache[[]uint64], int)) {
 
 func TestStress(t *testing.T) {
 	const span = 100
-	testStress(10*consts.KB, 64, 100000, func(c *Cache[[]uint64], i int) {
+	testStress(10*int(units.KiB), 64, 100000, func(c *Cache[[]uint64], i int) {
 		j := rand.Intn(span) + i
 		key := uint32(j)
 		var err interface{}

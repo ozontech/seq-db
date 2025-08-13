@@ -2,13 +2,13 @@ package frac
 
 import (
 	"bytes"
+	"encoding/binary"
 	"sort"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/util"
 )
 
 type DiskBlocksProducer struct {
@@ -22,8 +22,8 @@ func NewDiskBlocksProducer() *DiskBlocksProducer {
 	}
 }
 
-func (g *DiskBlocksProducer) getInfoBlock(info *Info) *DiskInfoBlock {
-	return &DiskInfoBlock{info: info}
+func (g *DiskBlocksProducer) getInfoBlock(info *Info) *BlockInfo {
+	return &BlockInfo{Info: info}
 }
 
 func (g *DiskBlocksProducer) getPositionBlock(idsLen uint32, blocks []uint64) *DiskPositionsBlock {
@@ -33,15 +33,17 @@ func (g *DiskBlocksProducer) getPositionBlock(idsLen uint32, blocks []uint64) *D
 	}
 }
 
-func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, tokenTable token.Table) func(func(*DiskTokenTableBlock) error) error {
-	return func(push func(*DiskTokenTableBlock) error) error {
+func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, tokenTable token.Table) func(func(token.TableBlock) error) error {
+	return func(push func(token.TableBlock) error) error {
 		for _, field := range g.getFracSortedFields(tokenList) {
 			if fieldData, ok := tokenTable[field]; ok {
-				block := DiskTokenTableBlock{
-					field:   field,
-					entries: fieldData.Entries,
+				block := token.TableBlock{
+					FieldsTables: []token.FieldTable{{
+						Field:   field,
+						Entries: fieldData.Entries,
+					}},
 				}
-				if err := push(&block); err != nil {
+				if err := push(block); err != nil {
 					return err
 				}
 			}
@@ -50,34 +52,31 @@ func (g *DiskBlocksProducer) getTokenTableBlocksGenerator(tokenList *TokenList, 
 	}
 }
 
-func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPositions *DocsPositions, size int) func(func(*DiskIDsBlock) error) error {
-	return func(push func(*DiskIDsBlock) error) error {
-		pos := make([]uint64, 0, size)
-
+func (g *DiskBlocksProducer) getIDsBlocksGenerator(sortedSeqIDs []seq.ID, docsPositions *DocsPositions, size int) func(func(*idsBlock) error) error {
+	var block idsBlock
+	return func(push func(*idsBlock) error) error {
 		for len(sortedSeqIDs) > 0 {
 			right := min(size, len(sortedSeqIDs))
-			ids := sortedSeqIDs[:right]
-			sortedSeqIDs = sortedSeqIDs[right:]
-			pos = g.fillPos(docsPositions, ids, pos)
-			block := DiskIDsBlock{
-				ids: ids,
-				pos: pos,
-			}
+			g.fillIDsBlock(sortedSeqIDs[:right], docsPositions, &block)
 			if err := push(&block); err != nil {
 				return nil
 			}
+			sortedSeqIDs = sortedSeqIDs[right:]
 		}
 
 		return nil
 	}
 }
 
-func (g *DiskBlocksProducer) fillPos(positions *DocsPositions, ids []seq.ID, pos []uint64) []uint64 {
-	pos = pos[:len(ids)] // we assume that pos has enough capacity
-	for i, id := range ids {
-		pos[i] = uint64(positions.Get(id))
+func (g *DiskBlocksProducer) fillIDsBlock(ids []seq.ID, positions *DocsPositions, block *idsBlock) {
+	block.mids.Values = block.mids.Values[:0]
+	block.rids.Values = block.rids.Values[:0]
+	block.params.Values = block.params.Values[:0]
+	for _, id := range ids {
+		block.mids.Values = append(block.mids.Values, uint64(id.MID))
+		block.rids.Values = append(block.rids.Values, uint64(id.RID))
+		block.params.Values = append(block.params.Values, uint64(positions.Get(id)))
 	}
-	return pos
 }
 
 func (g *DiskBlocksProducer) getFracSortedFields(tokenList *TokenList) []string {
@@ -123,10 +122,10 @@ func (g *DiskBlocksProducer) getTIDsSortedByToken(tokenList *TokenList, field st
 	return tids
 }
 
-func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func(func(*DiskTokensBlock) error) error {
-	return func(push func(*DiskTokensBlock) error) error {
+func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func(func(*tokensBlock) error) error {
+	return func(push func(*tokensBlock) error) error {
 		var cur uint32 = 1
-		var tokens [][]byte
+		var payload token.Block
 
 		fieldSizes := tokenList.GetFieldSizes()
 
@@ -140,15 +139,15 @@ func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func
 
 			for len(tids) > 0 {
 				right := min(blockSize, len(tids))
-				tokens = g.fillTokens(tokenList, tids[:right], tokens)
+				g.fillTokens(tokenList, tids[:right], &payload)
 				tids = tids[right:]
 
-				block := DiskTokensBlock{
+				block := tokensBlock{
 					field:            field,
 					isStartOfField:   first,
 					totalSizeOfField: fieldSize,
 					startTID:         cur,
-					tokens:           tokens,
+					payload:          payload,
 				}
 
 				if err := push(&block); err != nil {
@@ -163,30 +162,33 @@ func (g *DiskBlocksProducer) getTokensBlocksGenerator(tokenList *TokenList) func
 	}
 }
 
-func (g *DiskBlocksProducer) fillTokens(tokenList *TokenList, tids []uint32, tokens [][]byte) [][]byte {
-	tokens = util.EnsureSliceSize(tokens, len(tids))
-	for i, tid := range tids {
-		tokens[i] = tokenList.tidToVal[tid]
+func (g *DiskBlocksProducer) fillTokens(tokenList *TokenList, tids []uint32, block *token.Block) {
+	block.Payload = block.Payload[:0]
+	block.Offsets = block.Offsets[:0]
+	for _, tid := range tids {
+		val := tokenList.tidToVal[tid]
+		block.Offsets = append(block.Offsets, uint32(len(block.Payload)))
+		block.Payload = binary.LittleEndian.AppendUint32(block.Payload, uint32(len(val)))
+		block.Payload = append(block.Payload, val...)
 	}
-	return tokens
 }
 
-func (g *DiskBlocksProducer) getLIDsBlockGenerator(tokenList *TokenList, oldToNewLIDsIndex []uint32, mids, rids *UInt64s, maxBlockSize int) func(func(*lids.Block) error) error {
+func (g *DiskBlocksProducer) getLIDsBlockGenerator(tokenList *TokenList, oldToNewLIDsIndex []uint32, mids, rids *UInt64s, maxBlockSize int) func(func(*lidsBlock) error) error {
 	var maxTID, lastMaxTID uint32
 
 	isContinued := false
 	offsets := []uint32{0} // first offset is always zero
 	blockLIDs := make([]uint32, 0, maxBlockSize)
 
-	newBlockFn := func(isLastLID bool) *lids.Block {
-		block := &lids.Block{
+	newBlockFn := func(isLastLID bool) *lidsBlock {
+		block := &lidsBlock{
 			// for continued block we will have minTID > maxTID
 			// this is not a bug, everything is according to plan for now
 			// TODO: But in future we want to get rid of this
-			MinTID:      lastMaxTID + 1,
-			MaxTID:      maxTID,
-			IsContinued: isContinued,
-			Chunks: lids.Chunks{
+			minTID:      lastMaxTID + 1,
+			maxTID:      maxTID,
+			isContinued: isContinued,
+			payload: lids.Block{
 				LIDs:      reassignLIDs(blockLIDs, oldToNewLIDsIndex),
 				Offsets:   offsets,
 				IsLastLID: isLastLID,
@@ -202,7 +204,7 @@ func (g *DiskBlocksProducer) getLIDsBlockGenerator(tokenList *TokenList, oldToNe
 		return block
 	}
 
-	return func(push func(*lids.Block) error) error {
+	return func(push func(*lidsBlock) error) error {
 		for _, field := range g.getFracSortedFields(tokenList) {
 			for _, tid := range g.getTIDsSortedByToken(tokenList, field) {
 				maxTID++

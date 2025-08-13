@@ -21,7 +21,8 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/ozontech/seq-db/consts"
+	"github.com/alecthomas/units"
+
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tracing"
@@ -232,14 +233,14 @@ func doSearch(ctx context.Context, client storeapi.StoreApiClient, req *storeapi
 	ctx, cancel := context.WithTimeout(ctx, reqTimeout)
 	defer cancel()
 
-	return client.Search(ctx, req, grpc.MaxCallRecvMsgSize(256*consts.MB), grpc.MaxCallSendMsgSize(256*consts.MB))
+	return client.Search(ctx, req, grpc.MaxCallRecvMsgSize(256*int(units.MiB)), grpc.MaxCallSendMsgSize(256*int(units.MiB)))
 }
 
 func doFetch(ctx context.Context, client storeapi.StoreApiClient, req *storeapi.FetchRequest) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, reqTimeout)
 	defer cancel()
 
-	stream, err := client.Fetch(ctx, req, grpc.MaxCallRecvMsgSize(256*consts.MB), grpc.MaxCallSendMsgSize(256*consts.MB))
+	stream, err := client.Fetch(ctx, req, grpc.MaxCallRecvMsgSize(256*int(units.MiB)), grpc.MaxCallSendMsgSize(256*int(units.MiB)))
 	if err != nil {
 		return 0, err
 	}

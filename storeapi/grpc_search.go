@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/ozontech/seq-db/conf"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
@@ -209,7 +209,7 @@ func useSeqQL(ctx context.Context) bool {
 	useSeqQLValues := md.Get("use-seq-ql")
 	if len(useSeqQLValues) == 0 {
 		// Header isn't set, so use default query language.
-		return conf.UseSeqQLByDefault
+		return config.UseSeqQLByDefault
 	}
 	val := useSeqQLValues[0]
 	useSeqQL, _ := strconv.ParseBool(val)

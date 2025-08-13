@@ -1,0 +1,147 @@
+{
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 80,
+  "commit": false,
+  "commitType": "docs",
+  "commitConvention": "angular",
+  "contributors": [
+    {
+      "login": "vitkovskii",
+      "name": "Vitkovskii Vladimir",
+      "avatar_url": "https://avatars.githubusercontent.com/u/2269880?v=4",
+      "profile": "https://github.com/vitkovskii",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "leviska",
+      "name": "Iskandarov Lev",
+      "avatar_url": "https://avatars.githubusercontent.com/u/14099557?v=4",
+      "profile": "https://github.com/leviska",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "anuriq",
+      "name": "Azat Khadiev",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1053116?v=4",
+      "profile": "https://github.com/anuriq",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "vano144",
+      "name": "Ivan Romanov",
+      "avatar_url": "https://avatars.githubusercontent.com/u/10050741?v=4",
+      "profile": "https://github.com/vano144",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "ssnd",
+      "name": "Sandu C",
+      "avatar_url": "https://avatars.githubusercontent.com/u/10348482?v=4",
+      "profile": "https://github.com/ssnd",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "eguguchkin",
+      "name": "Che",
+      "avatar_url": "https://avatars.githubusercontent.com/u/107068454?v=4",
+      "profile": "https://github.com/eguguchkin",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "HeadHunter483",
+      "name": "Oleg Don",
+      "avatar_url": "https://avatars.githubusercontent.com/u/31502412?v=4",
+      "profile": "https://github.com/HeadHunter483",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "DSmolonogov",
+      "name": "DSmolonogov",
+      "avatar_url": "https://avatars.githubusercontent.com/u/110113570?v=4",
+      "profile": "https://github.com/DSmolonogov",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "vadimalekseev",
+      "name": "Vadim Alekseev",
+      "avatar_url": "https://avatars.githubusercontent.com/u/45711528?v=4",
+      "profile": "https://github.com/vadimalekseev",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "izokina",
+      "name": "Grigorii Nazarov",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5451959?v=4",
+      "profile": "https://github.com/izokina",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "forshev",
+      "name": "Daniil Forshev",
+      "avatar_url": "https://avatars.githubusercontent.com/u/19464491?v=4",
+      "profile": "https://github.com/forshev",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "moflotas",
+      "name": "Timofey Sedov",
+      "avatar_url": "https://avatars.githubusercontent.com/u/42837378?v=4",
+      "profile": "https://github.com/moflotas",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    },
+    {
+      "login": "dkharms",
+      "name": "Daniil",
+      "avatar_url": "https://avatars.githubusercontent.com/u/29202384?v=4",
+      "profile": "https://github.com/dkharms",
+      "contributions": [
+        "code",
+        "doc"
+      ]
+    }
+  ],
+  "contributorsPerLine": 7,
+  "skipCi": true,
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "projectName": "seq-db",
+  "projectOwner": "ozontech"
+}

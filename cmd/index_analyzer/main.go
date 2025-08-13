@@ -9,9 +9,12 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/consts"
+	"github.com/alecthomas/units"
+
 	"github.com/ozontech/seq-db/disk"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 )
@@ -54,7 +57,7 @@ func main() {
 
 func getCacheMaintainer() (*fracmanager.CacheMaintainer, func()) {
 	done := make(chan struct{})
-	cm := fracmanager.NewCacheMaintainer(consts.GB, consts.MB*64, nil)
+	cm := fracmanager.NewCacheMaintainer(uint64(units.GiB), uint64(units.MiB*64), nil)
 	wg := cm.RunCleanLoop(done, time.Second, time.Second)
 	return cm, func() {
 		close(done)
@@ -89,8 +92,9 @@ func analyzeIndex(
 	}
 
 	// load info
-	info := unpackInfo(readBlock())
-	docsCount := int(info.DocsTotal)
+	b := frac.BlockInfo{}
+	_ = b.Unpack(readBlock())
+	docsCount := int(b.Info.DocsTotal)
 
 	// load tokens
 	tokens := [][]byte{}
@@ -99,18 +103,27 @@ func analyzeIndex(
 		if len(data) == 0 { // empty block - is section separator
 			break
 		}
-		tokens = unpackTokens(data, tokens)
+		block := token.Block{}
+		if err := block.Unpack(data); err != nil {
+			logger.Fatal("error unpacking tokens", zap.Error(err))
+		}
+		for i := range block.Len() {
+			tokens = append(tokens, block.GetToken(i))
+		}
 	}
 
 	// load tokens table
-	tokenTable := make(token.Table)
+	tokenTableBlocks := []token.TableBlock{}
 	for {
 		data := readBlock()
 		if len(data) == 0 { // empty block - is section separator
 			break
 		}
-		unpackTokenTable(data, tokenTable)
+		block := token.TableBlock{}
+		block.Unpack(data)
+		tokenTableBlocks = append(tokenTableBlocks, block)
 	}
+	tokenTable := token.TableFromBlocks(tokenTableBlocks)
 
 	// skip position
 	blockIndex++
@@ -130,23 +143,26 @@ func analyzeIndex(
 	lidsTotal := 0
 	lidsUniq := map[[16]byte]int{}
 	lidsLens := make([]int, len(tokens))
-	lids := []uint32{}
+	tokenLIDs := []uint32{}
 	for {
 		data := readBlock()
 		if len(data) == 0 { // empty block - is section separator
 			break
 		}
 
-		chunk := unpackLIDsChunks(data)
+		block := &lids.Block{}
+		if err := block.Unpack(data, &lids.UnpackBuffer{}); err != nil {
+			logger.Fatal("error unpacking lids block", zap.Error(err))
+		}
 
-		last := len(chunk.Offsets) - 2
+		last := len(block.Offsets) - 2
 		for i := 0; i <= last; i++ {
-			lids = append(lids, chunk.LIDs[chunk.Offsets[i]:chunk.Offsets[i+1]]...)
-			if i < last || chunk.IsLastLID { // the end of token lids
-				lidsTotal += len(lids)
-				lidsLens[tid] = len(lids)
-				lidsUniq[getLIDsHash(lids)] = len(lids)
-				lids = lids[:0]
+			tokenLIDs = append(tokenLIDs, block.LIDs[block.Offsets[i]:block.Offsets[i+1]]...)
+			if i < last || block.IsLastLID { // the end of token lids
+				lidsTotal += len(tokenLIDs)
+				lidsLens[tid] = len(tokenLIDs)
+				lidsUniq[getLIDsHash(tokenLIDs)] = len(tokenLIDs)
+				tokenLIDs = tokenLIDs[:0]
 				tid++
 			}
 		}
@@ -161,10 +177,10 @@ func analyzeIndex(
 	return newStats(mergedTokensUniq, allTokensValuesUniq, tokens, docsCount, lidsUniqCnt, lidsTotal)
 }
 
-func getLIDsHash(lids []uint32) [16]byte {
+func getLIDsHash(tokenLIDs []uint32) [16]byte {
 	hasher := fnv.New128a()
 	buf := make([]byte, 4)
-	for _, l := range lids {
+	for _, l := range tokenLIDs {
 		binary.LittleEndian.PutUint32(buf, l)
 		hasher.Write(buf)
 	}

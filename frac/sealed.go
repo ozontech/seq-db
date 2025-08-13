@@ -11,15 +11,14 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/disk"
-	"github.com/ozontech/seq-db/frac/lids"
-	"github.com/ozontech/seq-db/frac/token"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/seqids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
-
-const seqDBMagic = "SEQM"
 
 type Sealed struct {
 	Config *Config
@@ -39,7 +38,7 @@ type Sealed struct {
 	indexCache  *IndexCache
 	indexReader disk.IndexReader
 
-	idsTable      IDsTable
+	idsTable      seqids.Table
 	lidsTable     *lids.Table
 	BlocksOffsets []uint64
 
@@ -124,7 +123,7 @@ func (f *Sealed) openDocs() {
 
 type PreloadedData struct {
 	info          *Info
-	idsTable      IDsTable
+	idsTable      seqids.Table
 	lidsTable     *lids.Table
 	tokenTable    token.Table
 	blocksOffsets []uint64
@@ -185,23 +184,22 @@ func NewSealedPreloaded(
 func (f *Sealed) loadHeader() *Info {
 	block, _, err := f.indexReader.ReadIndexBlock(0, nil)
 	if err != nil {
-		logger.Panic("todo")
+		logger.Fatal("error reading info block from index", zap.String("file", f.indexFile.Name()), zap.Error(err))
 	}
-	if len(block) < 4 || string(block[:4]) != seqDBMagic {
-		logger.Fatal("seq-db index file header corrupted", zap.String("file", f.indexFile.Name()))
-	}
-	info := &Info{}
-	info.Load(block[4:])
 
+	// unpack
+	bi := BlockInfo{}
+	if err := bi.Unpack(block); err != nil {
+		logger.Fatal("error unpacking info block", zap.String("file", f.indexFile.Name()), zap.Error(err))
+	}
+	info := bi.Info
+
+	// set index size
 	stat, err := f.indexFile.Stat()
 	if err != nil {
 		logger.Fatal("can't stat index file", zap.String("file", f.indexFile.Name()), zap.Error(err))
 	}
-
-	info.MetaOnDisk = 0        // todo: make this correction on sealing
-	info.Path = f.BaseFileName // todo: make this correction on sealing
 	info.IndexOnDisk = uint64(stat.Size())
-
 	return info
 }
 
@@ -357,14 +355,20 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		config:           f.Config,
 		docsReader:       &f.docsReader,
 		blocksOffsets:    f.BlocksOffsets,
-		fracVersion:      f.info.BinaryDataVer,
-		midCache:         NewUnpackCache(),
-		ridCache:         NewUnpackCache(),
 		lidsTable:        f.lidsTable,
-		idsLoader:        NewIDsLoader(&f.indexReader, f.indexCache, f.idsTable),
 		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.indexReader, f.indexCache.TokenTable),
+
+		idsTable: &f.idsTable,
+		idsProvider: seqids.NewProvider(
+			&f.indexReader,
+			f.indexCache.MIDs,
+			f.indexCache.RIDs,
+			f.indexCache.Params,
+			&f.idsTable,
+			f.info.BinaryDataVer,
+		),
 	}
 }
 

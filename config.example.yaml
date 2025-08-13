@@ -1,0 +1,19 @@
+# DO NOT USE this configuration in production environments.
+# This configuration ONLY for demonstration purposes.
+
+address:
+  http: :9002
+  grpc: :9004
+  debug: :9200
+
+storage:
+  frac_size: 64MiB
+  total_size: 512MiB
+
+slow_logs:
+  bulk_threshold: 100ms
+  search_threshold: 20ms
+  fetch_threshold: 20ms
+
+mapping:
+  path: auto

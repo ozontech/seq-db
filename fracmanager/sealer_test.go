@@ -2,7 +2,9 @@ package fracmanager
 
 import (
 	"bufio"
+	"flag"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,113 +12,131 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alecthomas/units"
 	insaneJSON "github.com/ozontech/insane-json"
+	"github.com/pkg/profile"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
 
-func fillActiveFraction(active *frac.Active, wg *sync.WaitGroup) error {
+var (
+	cpuProfileFlag = flag.Bool("custom.cpuprofile", false, "Enable CPU profiling")
+	memProfileFlag = flag.Bool("custom.memprofile", false, "Enable Mem profiling")
+)
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	m.Run()
+}
+
+func fillActiveFraction(active *frac.Active) error {
 	const muliplier = 10
 
 	docRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(docRoot)
-
-	dp := frac.NewDocProvider()
 
 	file, err := os.Open(filepath.Join(common.TestDataDir, "k8s.logs"))
 	if err != nil {
 		return err
 	}
 	defer file.Close()
+
+	k := 0
+	wg := sync.WaitGroup{}
+	dp := frac.NewDocProvider()
 	for i := 0; i < muliplier; i++ {
 		dp.TryReset()
-		_, err := file.Seek(0, io.SeekStart)
-		if err != nil {
+
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
 			return err
 		}
+
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
+			k++
 			doc := scanner.Bytes()
-			err := docRoot.DecodeBytes(doc)
-			if err != nil {
+			if err := docRoot.DecodeBytes(doc); err != nil {
 				return err
 			}
-			tokens := seq.Tokens("_all_:", "service:100500", "k8s_pod:"+strconv.Itoa(i))
-			dp.Append(doc, docRoot, seq.SimpleID(0), tokens)
+
+			id := seq.NewID(time.Now(), uint64(rand.Int63()))
+			dp.Append(doc, docRoot, id, seq.Tokens(
+				"_all_:",
+				"service:service"+strconv.Itoa(rand.Intn(200)),
+				"k8s_pod1:"+strconv.Itoa(k%100000),
+				"k8s_pod2:"+strconv.Itoa(k%1000000),
+			))
 		}
 		docs, metas := dp.Provide()
 		wg.Add(1)
-		if err := active.Append(docs, metas, wg); err != nil {
+		if err := active.Append(docs, metas, &wg); err != nil {
 			return err
 		}
 	}
 
+	wg.Wait()
 	return nil
 }
 
-func getCacheMaintainer() (*CacheMaintainer, func()) {
-	done := make(chan struct{})
-	cm := NewCacheMaintainer(32*consts.MB, 24*consts.MB, nil)
-	wg := cm.RunCleanLoop(done, time.Second, time.Second)
-	return cm, func() {
-		close(done)
-		wg.Wait()
-	}
-}
-
-func BenchmarkSealing(b *testing.B) {
-	b.ResetTimer()
-	b.StopTimer()
-	b.ReportAllocs()
-
-	cm, stopFn := getCacheMaintainer()
-	defer stopFn()
-
-	dataDir := filepath.Join(b.TempDir(), "BenchmarkSealing")
-	common.RecreateDir(dataDir)
-
-	readLimiter := disk.NewReadLimiter(1, nil)
-
-	activeIndexer := frac.NewActiveIndexer(10, 10)
-
-	activeIndexer.Start()
-	defer activeIndexer.Stop()
-
-	const minZstdLevel = -5
-	defaultSealParams := frac.SealParams{
+func defaultSealingParams() frac.SealParams {
+	const minZstdLevel = 1
+	return frac.SealParams{
 		IDsZstdLevel:           minZstdLevel,
 		LIDsZstdLevel:          minZstdLevel,
 		TokenListZstdLevel:     minZstdLevel,
 		DocsPositionsZstdLevel: minZstdLevel,
 		TokenTableZstdLevel:    minZstdLevel,
 		DocBlocksZstdLevel:     minZstdLevel,
-		DocBlockSize:           consts.MB * 4,
+		DocBlockSize:           128 * int(units.KiB),
 	}
-	for i := 0; i < b.N; i++ {
-		wg := sync.WaitGroup{}
-		active := frac.NewActive(
-			filepath.Join(dataDir, "test_"+strconv.Itoa(i)),
-			activeIndexer,
-			readLimiter,
-			cm.CreateDocBlockCache(),
-			cm.CreateSortDocsCache(),
-			&frac.Config{},
-		)
-		err := fillActiveFraction(active, &wg)
+}
+
+func Benchmark_SealingNoSort(b *testing.B) {
+	runSealingBench(b, &frac.Config{SkipSortDocs: true})
+}
+
+func Benchmark_SealingWithSort(b *testing.B) {
+	runSealingBench(b, &frac.Config{})
+}
+
+func runSealingBench(b *testing.B, cfg *frac.Config) {
+	cm := NewCacheMaintainer(uint64(units.MiB)*64, uint64(units.MiB)*64, nil)
+	fp := newFractionProvider(cfg, cm, 1, 1)
+	defer fp.Stop()
+
+	dataDir := filepath.Join(b.TempDir(), "BenchmarkSealing")
+	common.RecreateDir(dataDir)
+
+	active := fp.NewActive(filepath.Join(dataDir, "test"))
+	err := fillActiveFraction(active)
+	assert.NoError(b, err)
+
+	params := defaultSealingParams()
+	// The first sealing will sort all the LIDs, so we take this load out of the measurement range
+	_, err = frac.Seal(active, params)
+	assert.NoError(b, err)
+
+	b.ReportAllocs()
+
+	if cpuProfileFlag != nil && *cpuProfileFlag {
+		defer profile.Start(
+			profile.CPUProfile,
+			profile.ProfilePath("../."),
+			profile.NoShutdownHook,
+		).Stop()
+	} else if memProfileFlag != nil && *memProfileFlag {
+		defer profile.Start(
+			profile.MemProfileHeap,
+			profile.ProfilePath("../."),
+			profile.NoShutdownHook,
+		).Stop()
+	}
+
+	for b.Loop() {
+		_, err = frac.Seal(active, params)
 		assert.NoError(b, err)
-
-		wg.Wait()
-		active.GetAllDocuments() // emulate search-pre-sorted LIDs
-
-		b.StartTimer()
-		_, err = frac.Seal(active, defaultSealParams)
-		assert.NoError(b, err)
-
-		b.StopTimer()
 	}
 }
