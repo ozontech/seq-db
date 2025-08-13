@@ -263,10 +263,10 @@ type rangeIpSearch struct {
 	to   netip.Addr
 }
 
-func newRangeIpSearch(base baseSearch, token *parser.IPRange) *rangeIpSearch {
+func newRangeIPSearch(base baseSearch, token *parser.IPRange) *rangeIpSearch {
 	// only creating text terms, other types are impossible
 	if token.From.Kind != parser.TermText || token.To.Kind != parser.TermText {
-		panic("wrong term kind in ip_range")
+		panic("BUG: wrong term kind in ip_range")
 	}
 
 	var err error
@@ -327,7 +327,7 @@ func newSearcher(token parser.Token, tp tokenProvider) searcher {
 		}
 		return newRangeTextSearch(base, t)
 	case *parser.IPRange:
-		return newRangeIpSearch(base, t)
+		return newRangeIPSearch(base, t)
 	}
 	panic(fmt.Sprintf("unknown token type: %T", token))
 }

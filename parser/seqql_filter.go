@@ -51,6 +51,10 @@ func parseSeqQLFieldFilter(lex *lexer, mapping seq.Mapping) (*ASTNode, error) {
 	}
 
 	if lex.IsKeyword("ip_range") {
+		if t != seq.TokenizerTypeKeyword {
+			return nil, fmt.Errorf("'ip_range' filter is supported only for keyword fields")
+		}
+
 		lex.Next()
 		r, err := parseFilterIPRange(lex, fieldName)
 		if err != nil {
