@@ -183,6 +183,10 @@ func (f *Remote) Suicide() {
 	}
 }
 
+func (f *Remote) String() string {
+	return fracToString(f, "remote")
+}
+
 func (f *Remote) createDataProvider(ctx context.Context) *sealedDataProvider {
 	return &sealedDataProvider{
 		ctx:              ctx,

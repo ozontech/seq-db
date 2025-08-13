@@ -41,9 +41,12 @@ run: build-binaries
 push-image: build-image
 	docker push ${IMAGE}:${VERSION}
 
+.PHONY: test-deps
+test-deps:
+	@docker compose -f tests/docker-compose.yml up -d
+
 .PHONY: test
-test:
-	@docker run -p 9000:9000 -p 9001:9001 quay.io/minio/minio server /data --console-address ":9001"
+test: test-deps
 	LOG_LEVEL=ERROR go test ./... -count 1
 
 .bin-deps: export GOBIN := $(LOCAL_BIN)
@@ -76,7 +79,7 @@ proto:
 
 # arg -count=1 is used to disable tests caching (it is necessary when we want reproduce bugs of broken test isolation)
 .PHONY: ci-tests
-ci-tests:
+ci-tests: test-deps
 	set -o pipefail ;\
 	go test -v -short -count=1 -coverpkg=github.com/ozontech/seq-db/... -covermode=atomic -coverprofile=cover-tmp.out ./... 2>&1 | \
 		tee /dev/stderr | go-junit-report -set-exit-code > junit.xml
@@ -84,7 +87,7 @@ ci-tests:
 	go tool cover -func=./cover.out
 
 .PHONY: ci-tests-race
-ci-tests-race:
+ci-tests-race: test-deps
 	set -o pipefail ;\
 	go test -short ./... -count=1 -race
 

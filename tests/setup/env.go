@@ -14,6 +14,11 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/alecthomas/units"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
@@ -27,6 +32,7 @@ import (
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
 	"github.com/ozontech/seq-db/seq"
+	seqs3 "github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/storeapi"
 	"github.com/ozontech/seq-db/tests/common"
 )
@@ -46,9 +52,7 @@ type TestingEnvConfig struct {
 	Mapping        seq.Mapping
 	IndexAllFields bool
 
-	OffloadingEnabled   bool
-	OffloadingForced    bool
-	OffloadingRetention time.Duration
+	S3Cli *seqs3.Client
 }
 
 type Stores [][]*storeapi.Store
@@ -80,11 +84,11 @@ func (cfg *TestingEnvConfig) GetHotFactor() int {
 }
 
 func (cfg *TestingEnvConfig) GetFracManagerConfig(replicaID string) fracmanager.Config {
-	config := cfg.FracManagerConfig
-	if config == nil {
+	c := cfg.FracManagerConfig
+	if c == nil {
 		// Fastest zstd compression, see: https://github.com/facebook/zstd/releases/tag/v1.3.4.
 		const fastestZstdLevel = -5
-		config = fracmanager.FillConfigWithDefault(&fracmanager.Config{
+		c = fracmanager.FillConfigWithDefault(&fracmanager.Config{
 			FracSize:  256 * uint64(units.MiB),
 			TotalSize: 1 * uint64(units.GiB),
 			SealParams: frac.SealParams{
@@ -98,8 +102,8 @@ func (cfg *TestingEnvConfig) GetFracManagerConfig(replicaID string) fracmanager.
 			},
 		})
 	}
-	config.DataDir = filepath.Join(cfg.DataDir, replicaID)
-	return *config
+	c.DataDir = filepath.Join(cfg.DataDir, replicaID)
+	return *c
 }
 
 func (cfg *TestingEnvConfig) GetStoreConfig(replicaID string, cold bool) storeapi.StoreConfig {
@@ -119,6 +123,37 @@ func (cfg *TestingEnvConfig) GetStoreConfig(replicaID string, cold bool) storeap
 			},
 		},
 	}
+}
+
+func createBucket() string {
+	credp := credentials.NewStaticCredentialsProvider("minioadmin", "minioadmin", "")
+
+	cfg, err := config.LoadDefaultConfig(
+		context.TODO(),
+		config.WithRegion("us-east-1"),
+		config.WithBaseEndpoint("http://localhost:9000/"),
+		config.WithCredentialsProvider(credp),
+		config.WithClientLogMode(aws.ClientLogMode(0)),
+	)
+
+	if err != nil {
+		panic(fmt.Errorf("cannot load S3 config: %w", err))
+	}
+
+	s3cli := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.UsePathStyle = true
+		o.DisableLogOutputChecksumValidationSkipped = true
+	})
+
+	bucket := uuid.NewString()
+	_, err = s3cli.CreateBucket(context.TODO(), &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return bucket
 }
 
 func NewTestingEnv(cfg *TestingEnvConfig) *TestingEnv {
@@ -143,6 +178,18 @@ func NewTestingEnv(cfg *TestingEnvConfig) *TestingEnv {
 
 	if len(cfg.Mapping) == 0 && !cfg.IndexAllFields {
 		cfg.Mapping = seq.TestMapping
+	}
+
+	if cfg.FracManagerConfig != nil && cfg.FracManagerConfig.OffloadingEnabled {
+		cli, err := seqs3.NewClient(
+			"http://localhost:9000/",
+			"minioadmin", "minioadmin",
+			"us-east-1", createBucket(),
+		)
+		if err != nil {
+			panic(err)
+		}
+		cfg.S3Cli = cli
 	}
 
 	hotStores, hotStoresList := MakeStores(cfg, cfg.GetHotFactor(), false)
@@ -208,7 +255,9 @@ func (cfg *TestingEnvConfig) GetColdStoresConfs() []storeapi.StoreConfig {
 	return cfgs
 }
 
-func (cfg *TestingEnvConfig) MakeStores(confs []storeapi.StoreConfig, replicas int) (Stores, [][]string) {
+func (cfg *TestingEnvConfig) MakeStores(
+	confs []storeapi.StoreConfig, replicas int, s3cli *seqs3.Client,
+) (Stores, [][]string) {
 	replicaSets := len(confs) / replicas
 	storesList := make(Stores, replicaSets)
 	storesAddrs := make([][]string, replicaSets)
@@ -226,7 +275,7 @@ func (cfg *TestingEnvConfig) MakeStores(confs []storeapi.StoreConfig, replicas i
 			logger.Fatal("can't create mapping", zap.Error(err))
 		}
 
-		store, err := storeapi.NewStore(context.Background(), confs[i], nil, mappingProvider)
+		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider)
 		if err != nil {
 			panic(err)
 		}
@@ -244,11 +293,11 @@ func (cfg *TestingEnvConfig) MakeStores(confs []storeapi.StoreConfig, replicas i
 func MakeStores(cfg *TestingEnvConfig, replicas int, cold bool) (Stores, [][]string) {
 	if cold {
 		confs := cfg.GetColdStoresConfs()
-		return cfg.MakeStores(confs, replicas)
+		return cfg.MakeStores(confs, replicas, cfg.S3Cli)
 	}
 
 	confs := cfg.GetHotStoresConfs()
-	return cfg.MakeStores(confs, replicas)
+	return cfg.MakeStores(confs, replicas, cfg.S3Cli)
 }
 
 func newNetworkStores(ips [][]string) *stores.Stores {
@@ -415,6 +464,12 @@ func (s Stores) SealAll() {
 	})
 }
 
+func (s Stores) OffloadAll() {
+	s.apply(func(s *storeapi.Store) {
+		s.OffloadAll()
+	})
+}
+
 func (s Stores) ResetCache() {
 	s.apply(func(s *storeapi.Store) {
 		s.ResetCache()
@@ -432,6 +487,11 @@ func (s Stores) CountInstances() int {
 func (t *TestingEnv) SealAll() {
 	t.HotStores.SealAll()
 	t.ColdStores.SealAll()
+}
+
+func (t *TestingEnv) OffloadAll() {
+	t.HotStores.OffloadAll()
+	t.ColdStores.OffloadAll()
 }
 
 func (t *TestingEnv) WaitIdle() {

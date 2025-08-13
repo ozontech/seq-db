@@ -761,7 +761,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 	// We have [timeBinsCount] intervals and each document will have timestamp
 	// that equals to some value in [timeBins].
 	//
-	// Each [nextBin] documents we are going to advance select time interval in one position
+	// Each [nextBin] documents we are going to advance selected time interval in one position
 	// to the right.
 	for i := 1; i < timeBinsCount; i++ {
 		timeBins = append(timeBins, timeBins[i-1].Add(time.Second*30))

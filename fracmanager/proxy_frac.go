@@ -3,6 +3,7 @@ package fracmanager
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -193,6 +194,10 @@ func (f *proxyFrac) Suicide() {
 	if sealed != nil {
 		sealed.Suicide()
 	}
+}
+
+func (f *proxyFrac) String() string {
+	return fmt.Sprintf("%s", f.cur())
 }
 
 func (f *proxyFrac) isActiveState() bool {

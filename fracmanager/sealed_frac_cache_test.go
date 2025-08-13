@@ -365,9 +365,6 @@ func TestExtraFractionsRemoved(t *testing.T) {
 	assert.NoError(t, err)
 
 	dp := frac.NewDocProvider()
-	metaRoot := insaneJSON.Spawn()
-	defer insaneJSON.Release(metaRoot)
-
 	infos := map[string]*frac.Info{}
 
 	for i := 1; i < times+1; i++ {
@@ -398,6 +395,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 
 	fracsOnDisk := []string{}
 	fracCacheFromDisk, err := loadFracCache(dataDir)
+
 	assert.NoError(t, err)
 	for k := range fracCacheFromDisk {
 		fracsOnDisk = append(fracsOnDisk, k)
