@@ -4,7 +4,7 @@ go 1.24
 
 require (
 	contrib.go.opencensus.io/exporter/jaeger v0.2.1
-	github.com/KimMachineGun/automemlimit v0.7.3
+	github.com/KimMachineGun/automemlimit v0.7.4
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/c2h5oh/datasize v0.0.0-20200112174442-28bbd4740fee
 	github.com/cep21/circuit/v3 v3.2.2
