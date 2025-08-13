@@ -19,9 +19,9 @@ func (n *IPRange) Dump(builder *strings.Builder) {
 	builder.WriteString(quoteTokenIfNeeded(n.Field))
 	builder.WriteString(`:ip_range(`)
 
-	n.From.DumpSeqQL(builder)
+	n.From.Dump(builder)
 	builder.WriteString(", ")
-	n.To.DumpSeqQL(builder)
+	n.To.Dump(builder)
 
 	builder.WriteString(`)`)
 }
@@ -53,7 +53,7 @@ func parseFilterIPRange(lex *lexer, fieldName string) (*IPRange, error) {
 		return nil, errors.New("empty 'ip_range' filter")
 	}
 
-	tok, err := parseCompositeToken(lex)
+	tok, err := parseCompositeToken(lex, '/')
 	if err != nil {
 		return nil, err
 	}

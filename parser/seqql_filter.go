@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"unicode"
@@ -157,18 +158,18 @@ var bytesBufferPool = sync.Pool{
 // List of non-composite tokens:
 //
 //	"foo bar", "$foo", "foo$", "f$$", "@gmail.com".
-func parseCompositeToken(lex *lexer) (string, error) {
+func parseCompositeToken(lex *lexer, addons ...rune) (string, error) {
 	if lex.IsKeyword("") {
 		return "", fmt.Errorf("unexpected end of query")
 	}
-	if !isCompositeToken(lex) {
+	if !isCompositeToken(lex, addons...) {
 		// Disallow unquoted tokens that starts with non-letter and non-number symbols.
 		return "", fmt.Errorf("unexpected symbol %q", lex.Token)
 	}
 
 	firstToken := lex.Token
 	lex.Next()
-	if lex.SpaceSkipped || !isCompositeToken(lex) {
+	if lex.SpaceSkipped || !isCompositeToken(lex, addons...) {
 		// Token is single word and not composite.
 		// Return it as is.
 		return firstToken, nil
@@ -180,13 +181,13 @@ func parseCompositeToken(lex *lexer) (string, error) {
 
 	// Join tokens to single composite token.
 	b.WriteString(firstToken)
-	for ; !lex.SpaceSkipped && isCompositeToken(lex); lex.Next() {
+	for ; !lex.SpaceSkipped && isCompositeToken(lex, addons...); lex.Next() {
 		b.WriteString(lex.Token)
 	}
 	return b.String(), nil
 }
 
-func isCompositeToken(lex *lexer) bool {
+func isCompositeToken(lex *lexer, addons ...rune) bool {
 	if lex.IsKeyword("") {
 		// End of query.
 		return false
@@ -204,7 +205,7 @@ func isCompositeToken(lex *lexer) bool {
 		return true
 	}
 
-	return isTokenRune(r) || r == '-' || r == '*' || r == wildcardRune
+	return isTokenRune(r) || r == '-' || r == '*' || r == wildcardRune || slices.Contains(addons, r)
 }
 
 func parseCompositeTokenReplaceWildcards(lex *lexer) (string, error) {

@@ -215,7 +215,7 @@ again:
 }
 
 func isTokenRune(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '.' || r == '/'
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '.'
 }
 
 // unquotePrefix returns unquoted string prefix and remaining string.
