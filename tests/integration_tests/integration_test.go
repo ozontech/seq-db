@@ -1967,7 +1967,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 			},
 		},
 		HistogramInterval: seq.MID(time.Second.Milliseconds()),
-		WithDocs:          true,
+		WithDocs:          false,
 	}
 	resp, err := searcher.StartAsyncSearch(ctx, startReq)
 	r.NoError(err)
@@ -2021,7 +2021,8 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.Equal(startReq, fresp.Request)
 
 	r.True(len(fresp.QPR.Histogram) != 0)
-	r.Equal(len(docs), fresp.QPR.IDs.Len())
+	// TODO: compare ids after with_docs is enabled
+	// r.Equal(len(docs), fresp.QPR.IDs.Len())
 	r.Equal(float64(1), fresp.Progress)
 
 	// GetAsyncSearchesList

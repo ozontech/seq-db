@@ -217,8 +217,8 @@ type Config struct {
 		// By default will be subdirectory in [Config.Storage.DataDir].
 		DataDir           string `config:"data_dir"`
 		Concurrency       int    `config:"concurrency"`
-		MaxTotalSize      int    `config:"max_total_size"`
-		MaxSizePerRequest int    `config:"max_size_per_request"`
+		MaxTotalSize      Bytes  `config:"max_total_size" default:"1GiB"`
+		MaxSizePerRequest Bytes  `config:"max_size_per_request" default:"100MiB"`
 	} `config:"async_search"`
 
 	API struct {
