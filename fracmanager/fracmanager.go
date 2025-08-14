@@ -173,27 +173,35 @@ func (fm *FracManager) removeStaleFractions(cleanupWg *sync.WaitGroup, retention
 		return
 	}
 
+	var (
+		staleFractions []*fracRef
+		freshFractions []*fracRef
+	)
+
+	fm.fracMu.Lock()
+
+	for _, f := range fm.remoteFracs {
+		ct := time.UnixMilli(int64(f.instance.Info().CreationTime))
+		if time.Since(ct) < retention {
+			freshFractions = append(freshFractions, f)
+			continue
+		}
+		staleFractions = append(staleFractions, f)
+	}
+
+	fm.remoteFracs = freshFractions
+
+	fm.fracMu.Unlock()
+
 	cleanupWg.Add(1)
 	go func() {
 		defer cleanupWg.Done()
 
-		// FIXME(dkharms): Search queries might stuck because of this lock.
-		// For example when [frac.Remote.Suicide] will execute abnormally long.
-		// And generally it is not a good idea to hold a lock while doing network request.
-		fm.fracMu.Lock()
-		defer fm.fracMu.Unlock()
-
-		freshFractions := make([]*fracRef, 0, len(fm.remoteFracs))
-		for _, f := range fm.remoteFracs {
+		for _, f := range staleFractions {
 			ct := time.UnixMilli(int64(f.instance.Info().CreationTime))
 
-			if time.Since(ct) < retention {
-				freshFractions = append(freshFractions, f)
-				continue
-			}
-
 			logger.Info(
-				"removing stale fraction",
+				"removing stale remote fraction",
 				zap.String("fraction", f.instance.Info().Name()),
 				zap.Time("creation_time", ct),
 				zap.String("retention", retention.String()),
@@ -202,8 +210,6 @@ func (fm *FracManager) removeStaleFractions(cleanupWg *sync.WaitGroup, retention
 			fm.fracCache.RemoveFraction(f.instance.Info().Name())
 			f.instance.Suicide()
 		}
-
-		fm.remoteFracs = freshFractions
 	}()
 }
 
@@ -256,10 +262,7 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 			if err != nil {
 				// While searching for outsiders we removed this fraction from list of local fractions.
 				// Now we need to return it back and try again to offload it later.
-
 				fm.fracMu.Lock()
-				// FIXME(dkharms): Here can be problems if two maintenance routines will run concurrently.
-				// We might add the same fraction twice.
 				fm.localFracs = append(fm.localFracs, &fracRef{outsider})
 				fm.fracMu.Unlock()
 
