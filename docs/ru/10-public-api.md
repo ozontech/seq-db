@@ -21,13 +21,13 @@ seq-db is compatible with Elasticsearch bulk API
 Returns a hardcoded ES response that specifies the Elasticsearch version used. This feature allows the usage of seq-db
 as an Elasticsearch output for logstash, filebeat, and other log shippers.
 
-#### Example request:
+Example request:
 
 ```bash
 curl -X GET http://localhost:9002/
 ```
 
-#### Example successful response:
+Example successful response:
 
 ```json
 {
@@ -42,7 +42,7 @@ curl -X GET http://localhost:9002/
 
 Receives body, parses it to docs and metas and writes to stores via internal API.
 
-#### Example request:
+Example request:
 
 ```bash
 curl -X POST http://localhost:9002/_bulk -d '
@@ -69,7 +69,7 @@ curl -X POST http://localhost:9002/_bulk -d '
 '
 ```
 
-#### Example successful response:
+Example successful response:
 
 ```json
 {
@@ -112,7 +112,7 @@ curl -v -X POST http://localhost:9002/_bulk -d '
 
 We get
 
-```
+```text
 processing doc: unexpected end of string near `", "request_time": "123`
                                                   ^
 ```
@@ -186,8 +186,7 @@ we get
 - через отдельный gRPC обработчик: [`GetAggregation`](#getaggregation)
 - вместе с поиском и гистограммами: [`ComplexSearch`](#complexsearch)
 
-> В примерах используется API `GetAggregation`, 
-которая по структуре запроса и ответа совпадает с `ComplexSearch`. 
+> В примерах используется API `GetAggregation`, которая по структуре запроса и ответа совпадает с `ComplexSearch`.
 
 Поддерживаемые функции агрегации:
 
@@ -347,8 +346,7 @@ we get
 
 ##### QUANTILE
 
-> Функцию агрегации QUANTILE также можно применять с группировкой по полю, 
-используя поле group_by.
+> Функцию агрегации QUANTILE также можно применять с группировкой по полю, используя поле group_by.
 
 **Запрос:**
 
@@ -736,3 +734,271 @@ Example successful response:
   }
 }
 ```
+
+## Async search gRPC API
+
+### `/StartAsyncSearch`
+
+Начать асинхронный поиск.
+
+Возвращает идентификатор, с помощью которого можно получить результат выполнения поиска, отменить и удалить поиск.
+
+Запрос похож на [`/ComplexSearch`](#complexsearch), но есть дополнительные поля:
+`retention` - определяет, как долго будут доступны данные поиска.
+И `with_docs` - определяет, будут ли найдены и сохранены идентификаторы документов, удовлетворяющих поисковому запросу.
+`with_total` будет автоматически установлен, если в запросе указан `with_docs: true`
+
+Пример запроса:
+
+```bash
+grpcurl -plaintext -d '
+{
+  "retention": "3600s",
+  "query": {
+    "from": "2025-07-01T05:20:00Z",
+    "to": "2025-09-01T05:21:00Z",
+    "query": "message:error | fields level, message"
+  },
+  "hist": {
+    "interval": "1ms"
+  },
+  "aggs": [
+    {
+      "group_by": "k8s_pod",
+      "field": "request_time",
+      "func": "AGG_FUNC_QUANTILE",
+      "quantiles": [
+        0.2,
+        0.8,
+        0.95
+      ]
+    }
+  ],
+  "with_docs": true
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/StartAsyncSearch
+```
+
+Пример успешного ответа:
+
+```json
+{
+  "search_id": "c28c97d1-117a-45dc-a0cf-d080f22b2a10"
+}
+```
+
+### `/FetchAsyncSearchResult`
+
+Получить результат выполнения асинхронного поиска.
+
+Возвращает результат выполнения, соответствующий поисковому запросу [`/StartAsyncSearch`](#startasyncsearch).
+Может быть возвращен результат частичного выполнения, если поиск еще не завершен. Поле `status` показывает текущий статус поиска.
+Возможные статусы: `AsyncSearchStatusInProgress`, `AsyncSearchStatusDone`, `AsyncSearchStatusCanceled`, `AsyncSearchStatusError`.
+
+Пример запроса:
+
+```bash
+grpcurl -plaintext -d '
+{
+  "search_id": "c28c97d1-117a-45dc-a0cf-d080f22b2a10",
+  "size": 2,
+  "offset": 0,
+  "order": 0
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/FetchAsyncSearchResult
+```
+
+Пример успешного ответа:
+
+```json
+{
+ "status": "AsyncSearchStatusDone",
+ "request": {
+  "retention": "3600s",
+  "query": {
+   "query": "message:peggy | fields level, message",
+   "from": "2025-08-01T05:20:00Z",
+   "to": "2025-09-01T05:21:00Z"
+  },
+  "hist": {
+    "interval": "1ms"
+  },
+  "aggs": [
+    {
+      "group_by": "k8s_pod",
+      "field": "request_time",
+      "func": "AGG_FUNC_QUANTILE",
+      "quantiles": [
+        0.2,
+        0.8,
+        0.95
+      ]
+    }
+  ],
+  "with_docs": true
+ },
+ "response": {
+  "total": 12,
+  "docs": [
+   {
+    "id": "c09e878998010000-9102a3cb83f156f2",
+    "data": {
+     "message": "some error",
+     "level": 3
+    },
+    "time": "2025-08-08T11:53:43.36Z"
+   },
+   {
+    "id": "c09e878998010000-91026cf9cf3386e3",
+    "data": {
+     "message": "error 2",
+     "level": 3
+    },
+    "time": "2025-08-08T11:53:43.36Z"
+   }
+  ],
+  "aggs": [
+    {
+      "buckets": [
+        {
+          "docCount": "6",
+          "key": "seq-proxy",
+          "value": 6,
+          "quantiles": [
+            6,
+            8,
+            9
+          ]
+        }
+      ]
+    }
+  ],
+  "hist": {
+    "buckets": [
+      {
+        "docCount": "1",
+        "ts": "2024-12-23T18:00:36.357Z"
+      },
+      {
+        "docCount": "4",
+        "ts": "2024-12-23T18:23:41.349Z"
+      }
+    ]
+  }
+ },
+ "progress": 1,
+ "disk_usage": "537",
+ "started_at": "2025-08-08T11:53:52.542336Z",
+ "expires_at": "2025-08-08T12:53:52.542336Z"
+}
+```
+
+> Поля `response.docs` и `response.total` будут сохранены и возвращены только если в запросе [`/StartAsyncSearch`](#startasyncsearch) было указано `with_docs: true`
+
+### `/GetAsyncSearchesList`
+
+Получить список асинхронных поисков.
+
+Возвращает список асинхронных поисков, отфильтрованный в соответствии с полями запроса.
+Пустой запрос вернет все доступные поиски.
+
+Пример запроса:
+
+```bash
+grpcurl -plaintext -d '
+{
+  "status": null,
+  "size": 2,
+  "offset": 0,
+  "ids": ["c28c97d1-117a-45dc-a0cf-d080f22b2a10", "8e68d3d7-8e85-44a9-9b09-8de248a3b414"]
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAsyncSearchesList
+```
+
+Пример успешного ответа:
+
+```json
+{
+ "searches": [
+  {
+   "searchId": "c28c97d1-117a-45dc-a0cf-d080f22b2a10",
+   "status": "AsyncSearchStatusInProgress",
+   "request": {
+    "retention": "3600s",
+    "query": {
+     "query": "message:error | fields level, message",
+     "from": "2025-07-01T05:20:00Z",
+     "to": "2025-08-01T05:21:00Z"
+    },
+    "aggs": [],
+    "with_docs": true
+   },
+   "startedAt": "2025-08-08T11:49:20.707200Z",
+   "expiresAt": "2025-08-08T12:49:20.707200Z",
+   "progress": 0.89,
+   "diskUsage": "282"
+  },
+  {
+   "searchId": "8e68d3d7-8e85-44a9-9b09-8de248a3b414",
+   "status": "AsyncSearchStatusDone",
+   "request": {
+    "retention": "3600s",
+    "query": {
+     "query": "message:error",
+     "from": "2025-07-01T05:20:00Z",
+     "to": "2025-08-01T05:21:00Z"
+    },
+    "aggs": [],
+    "with_docs": false
+   },
+   "startedAt": "2025-08-08T11:48:49.488244Z",
+   "expiresAt": "2025-08-08T12:48:49.488244Z",
+   "progress": 1,
+   "diskUsage": "283"
+  }
+ ]
+}
+```
+
+### `/CancelAsyncSearch`
+
+Отменить асинхронный поиск.
+
+Отменяет асинхронный поиск. Выполнение отмененного поиска будет остановлено. Нельзя отменить завершенный поиск.
+
+Пример запроса:
+
+```bash
+grpcurl -plaintext -d '
+{
+  "search_id": "c28c97d1-117a-45dc-a0cf-d080f22b2a10"
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/CancelAsyncSearch
+```
+
+Пример успешного ответа:
+
+```json
+{}
+```
+
+В случае успеха будет возвращен пустой ответ.
+
+### `/DeleteAsyncSearch`
+
+Удалить асинхронный поиск.
+
+Помечает поиск истекшим. Данные поиска будут удалены при следующей итерации обслуживания.
+
+Пример запроса:
+
+```bash
+grpcurl -plaintext -d '
+{
+  "search_id": "c28c97d1-117a-45dc-a0cf-d080f22b2a10"
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/DeleteAsyncSearch
+```
+
+Пример успешного ответа:
+
+```json
+{}
+```
+
+В случае успеха будет возвращен пустой ответ.

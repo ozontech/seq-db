@@ -21,13 +21,13 @@ seq-db is compatible with Elasticsearch bulk API
 Returns a hardcoded ES response that specifies the Elasticsearch version used. This feature allows the usage of seq-db
 as an Elasticsearch output for logstash, filebeat, and other log shippers.
 
-#### Example request:
+Example request:
 
 ```bash
 curl -X GET http://localhost:9002/
 ```
 
-#### Example successful response:
+Example successful response:
 
 ```json
 {
@@ -42,7 +42,7 @@ curl -X GET http://localhost:9002/
 
 Receives body, parses it to docs and metas and writes to stores via internal API.
 
-#### Example request:
+Example request:
 
 ```bash
 curl -X POST http://localhost:9002/_bulk -d '
@@ -69,7 +69,7 @@ curl -X POST http://localhost:9002/_bulk -d '
 '
 ```
 
-#### Example successful response:
+Example successful response:
 
 ```json
 {
@@ -112,7 +112,7 @@ curl -v -X POST http://localhost:9002/_bulk -d '
 
 We get
 
-```
+```text
 processing doc: unexpected end of string near `", "request_time": "123`
                                                   ^
 ```
@@ -734,3 +734,271 @@ Example successful response:
   }
 }
 ```
+
+## Async search gRPC API
+
+### `/StartAsyncSearch`
+
+Start an async search.
+
+Returns an ID that can later be used to fetch results, cancel, or delete the search.
+
+Similar to [`/ComplexSearch`](#complexsearch), but with additional fields: `retention` and `with_docs`.
+`retention` determines how long the data will be available.
+`with_docs` determines whether document IDs that match the query are found and saved.
+If `with_docs` is true, `with_total` is automatically set to true.
+
+Example request:
+
+```bash
+grpcurl -plaintext -d '
+{
+  "retention": "3600s",
+  "query": {
+    "from": "2025-07-01T05:20:00Z",
+    "to": "2025-09-01T05:21:00Z",
+    "query": "message:error | fields level, message"
+  },
+  "hist": {
+    "interval": "1ms"
+  },
+  "aggs": [
+    {
+      "group_by": "k8s_pod",
+      "field": "request_time",
+      "func": "AGG_FUNC_QUANTILE",
+      "quantiles": [
+        0.2,
+        0.8,
+        0.95
+      ]
+    }
+  ],
+  "with_docs": true
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/StartAsyncSearch
+```
+
+Example successful response:
+
+```json
+{
+  "search_id": "c28c97d1-117a-45dc-a0cf-d080f22b2a10"
+}
+```
+
+### `/FetchAsyncSearchResult`
+
+Fetch async search result.
+
+Returns execution result based on a search parameters from [`/StartAsyncSearch`](#startasyncsearch) request.
+A partial response can be returned if the search is not yet complete. The `status` field indicates the current status.
+Available statuses: `AsyncSearchStatusInProgress`, `AsyncSearchStatusDone`, `AsyncSearchStatusCanceled`, `AsyncSearchStatusError`.
+
+Example request:
+
+```bash
+grpcurl -plaintext -d '
+{
+  "search_id": "c28c97d1-117a-45dc-a0cf-d080f22b2a10",
+  "size": 2,
+  "offset": 0,
+  "order": 0
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/FetchAsyncSearchResult
+```
+
+Example successful response:
+
+```json
+{
+ "status": "AsyncSearchStatusDone",
+ "request": {
+  "retention": "3600s",
+  "query": {
+   "query": "message:peggy | fields level, message",
+   "from": "2025-08-01T05:20:00Z",
+   "to": "2025-09-01T05:21:00Z"
+  },
+  "hist": {
+    "interval": "1ms"
+  },
+  "aggs": [
+    {
+      "group_by": "k8s_pod",
+      "field": "request_time",
+      "func": "AGG_FUNC_QUANTILE",
+      "quantiles": [
+        0.2,
+        0.8,
+        0.95
+      ]
+    }
+  ],
+  "with_docs": true
+ },
+ "response": {
+  "total": 12,
+  "docs": [
+   {
+    "id": "c09e878998010000-9102a3cb83f156f2",
+    "data": {
+     "message": "some error",
+     "level": 3
+    },
+    "time": "2025-08-08T11:53:43.36Z"
+   },
+   {
+    "id": "c09e878998010000-91026cf9cf3386e3",
+    "data": {
+     "message": "error 2",
+     "level": 3
+    },
+    "time": "2025-08-08T11:53:43.36Z"
+   }
+  ],
+  "aggs": [
+    {
+      "buckets": [
+        {
+          "docCount": "6",
+          "key": "seq-proxy",
+          "value": 6,
+          "quantiles": [
+            6,
+            8,
+            9
+          ]
+        }
+      ]
+    }
+  ],
+  "hist": {
+    "buckets": [
+      {
+        "docCount": "1",
+        "ts": "2024-12-23T18:00:36.357Z"
+      },
+      {
+        "docCount": "4",
+        "ts": "2024-12-23T18:23:41.349Z"
+      }
+    ]
+  }
+ },
+ "progress": 1,
+ "disk_usage": "537",
+ "started_at": "2025-08-08T11:53:52.542336Z",
+ "expires_at": "2025-08-08T12:53:52.542336Z"
+}
+```
+
+> `response.docs` and `response.total` fields will be saved and returned only if `with_docs` is true in the [`/StartAsyncSearch`](#startasyncsearch) request
+
+### `/GetAsyncSearchesList`
+
+Get async searches list.
+
+Returns list of available async searches filtered out based on fields from request.
+Empty request `{}` returns all available at the moment searches.
+
+Example request:
+
+```bash
+grpcurl -plaintext -d '
+{
+  "status": null,
+  "size": 2,
+  "offset": 0,
+  "ids": ["c28c97d1-117a-45dc-a0cf-d080f22b2a10", "8e68d3d7-8e85-44a9-9b09-8de248a3b414"]
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAsyncSearchesList
+```
+
+Example successful response:
+
+```json
+{
+ "searches": [
+  {
+   "searchId": "c28c97d1-117a-45dc-a0cf-d080f22b2a10",
+   "status": "AsyncSearchStatusInProgress",
+   "request": {
+    "retention": "3600s",
+    "query": {
+     "query": "message:error | fields level, message",
+     "from": "2025-07-01T05:20:00Z",
+     "to": "2025-08-01T05:21:00Z"
+    },
+    "aggs": [],
+    "with_docs": true
+   },
+   "startedAt": "2025-08-08T11:49:20.707200Z",
+   "expiresAt": "2025-08-08T12:49:20.707200Z",
+   "progress": 0.89,
+   "diskUsage": "282"
+  },
+  {
+   "searchId": "8e68d3d7-8e85-44a9-9b09-8de248a3b414",
+   "status": "AsyncSearchStatusDone",
+   "request": {
+    "retention": "3600s",
+    "query": {
+     "query": "message:error",
+     "from": "2025-07-01T05:20:00Z",
+     "to": "2025-08-01T05:21:00Z"
+    },
+    "aggs": [],
+    "with_docs": false
+   },
+   "startedAt": "2025-08-08T11:48:49.488244Z",
+   "expiresAt": "2025-08-08T12:48:49.488244Z",
+   "progress": 1,
+   "diskUsage": "283"
+  }
+ ]
+}
+```
+
+### `/CancelAsyncSearch`
+
+Cancel async search.
+
+Cancels async search. Canceled search's execution will be stopped. Can't cancel finished request.
+
+Example request:
+
+```bash
+grpcurl -plaintext -d '
+{
+  "search_id": "c28c97d1-117a-45dc-a0cf-d080f22b2a10"
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/CancelAsyncSearch
+```
+
+Example successful response:
+
+```json
+{}
+```
+
+Empty response is successful.
+
+### `/DeleteAsyncSearch`
+
+Delete async search.
+
+Marks async search as expired, the data will be removed the next maintenance iteration.
+
+Example request:
+
+```bash
+grpcurl -plaintext -d '
+{
+  "search_id": "c28c97d1-117a-45dc-a0cf-d080f22b2a10"
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/DeleteAsyncSearch
+```
+
+Example successful response:
+
+```json
+{}
+```
+
+Empty response is successful.

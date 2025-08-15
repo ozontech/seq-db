@@ -186,7 +186,7 @@ services:
   seq-ui:
     image: ghcr.io/ozontech/seq-ui:v0.37.0
     volumes:
-      - ${PWD}/config.seq-ui.yaml:/seq-ui-server/config.yaml
+      - ${PWD}/config.seq-ui.yaml:/seq-ui/config.yaml
     ports:
       - "5555:5555" # Default HTTP port
       - "5556:5556" # Default gRPC port
