@@ -159,7 +159,7 @@ update
 
 **Pull request review requirements:**
 - **All automated checks** must pass (CI, linting, tests);
-- **At least two maintainer approval** required;
+- **At least two maintainer approvals** are required;
 - **Address all review feedback** before merge;
 - **Squash commits** during merge to maintain clean history.
 
