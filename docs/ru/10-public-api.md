@@ -443,26 +443,26 @@ we get
 
 ##### COUNT (с указанием интервала)
 
-**Request:**
+**Запрос:**
 
 ```sh
 {
   "query": {
     "from": "2000-01-01T00:00:00Z",
     "to": "2077-01-01T00:00:00Z",
-    "query":"*",
+    "query":"*"
   },
   "aggs": [
     {
       "func": "AGG_FUNC_COUNT",
-      "group_by": "service"
+      "group_by": "service",
       "interval": "30s"
     }
   ]
 } | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
-**Response:**
+**Ответ:**
 
 ```json
 {
