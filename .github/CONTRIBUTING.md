@@ -54,7 +54,7 @@ Commit scope is optional but encouraged for clarity.
 ### Commit Message Examples
 
 **Good examples:**
-```
+```text
 feat: add user authentication middleware
 fix: resolve buffer reuse race condition in single-node mode
 docs: update API documentation for v2.0
@@ -64,7 +64,7 @@ test: add integration tests for authentication flow
 ```
 
 **Bad examples:**
-```
+```text
 updated stuff
 fix bug
 changes
@@ -87,20 +87,20 @@ WIP
 
 Branch names **must** strictly follow this format:
 
-```
+```text
 {issue-number}-{branch-name}
 ```
 
 For branches not associated with any issue, **you must** use:
 
-```
+```text
 0-{branch-name}
 ```
 
 ### Branch Naming Examples
 
 **Good examples:**
-```
+```text
 123-fix-authentication-bug
 456-add-user-dashboard
 789-update-dependencies
@@ -108,7 +108,7 @@ For branches not associated with any issue, **you must** use:
 ```
 
 **Bad examples:**
-```
+```text
 feature-branch
 my-changes
 fix
