@@ -21,7 +21,7 @@ import (
 // Launch as:
 //
 // > go run ./cmd/index_analyzer/... ./data/*.index | tee ~/report.txt
-func main() {
+func mainold() {
 	if len(os.Args) < 2 {
 		fmt.Println("No args")
 		return

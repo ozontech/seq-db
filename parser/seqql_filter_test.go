@@ -226,6 +226,17 @@ service:"wms-svc-logistics-megasort" and level:"#"
 	test(`level:"in(one, t,wo)"`, `level:"in(one, t,wo)"`)
 	test(`level:error and k8s_namespace:in(default, kube-system) and k8s_pod:in(kube-proxy-*, kube-apiserver-*, kube-scheduler-*)`,
 		`((level:error and (k8s_namespace:default or k8s_namespace:kube-system)) and ((k8s_pod:kube-proxy-* or k8s_pod:kube-apiserver-*) or k8s_pod:kube-scheduler-*))`)
+
+	// Test filter 'ip_range'.
+	test(`keyword: ip_range(192.168.1.2, 192.168.1.3)`, `keyword:ip_range(192.168.1.2, 192.168.1.3)`)
+	test(`keyword: ip_range(192.168.1.2/0)`, `keyword:ip_range(0.0.0.0, 255.255.255.255)`)
+	test(`keyword: ip_range(192.168.1.2/8)`, `keyword:ip_range(192.0.0.0, 192.255.255.255)`)
+	test(`keyword: ip_range(192.168.1.2/31)`, `keyword:ip_range(192.168.1.2, 192.168.1.3)`)
+	test(`keyword:ip_range(10.0.0.1, 10.0.0.255) AND service:api`, `(keyword:ip_range(10.0.0.1, 10.0.0.255) and service:api)`)
+	test(`service:api OR keyword:ip_range(192.168.0.1/16)`, `(service:api or keyword:ip_range(192.168.0.0, 192.168.255.255))`)
+	test(`NOT keyword:ip_range(127.0.0.1/8)`, `(not keyword:ip_range(127.0.0.0, 127.255.255.255))`)
+	test(`(keyword:ip_range(10.0.0.1, 10.0.0.255) OR keyword:ip_range(192.168.1.1, 192.168.1.10)) AND service:db`, `((keyword:ip_range(10.0.0.1, 10.0.0.255) or keyword:ip_range(192.168.1.1, 192.168.1.10)) and service:db)`)
+	test(`keyword:ip_range(10.0.0.1, 10.0.0.255) OR (service:api AND level:3)`, `(keyword:ip_range(10.0.0.1, 10.0.0.255) or (service:api and level:3))`)
 }
 
 func TestSeqQLCaseSensitive(t *testing.T) {
@@ -359,15 +370,28 @@ func TestParseSeqQLError(t *testing.T) {
 	test(`NOT (:"abc")`, `parsing field name: unexpected symbol ":"`)
 
 	// Test filter 'in'.
-	test(`service:in`, `parsing 'in' filter: expect '(', got ""`)
+	test(`service:in`, `parsing 'in' filter: expected '(', got ""`)
 	test(`service:in()`, `parsing 'in' filter: empty 'in' filter`)
 	test(`service:in(1,)`, `parsing 'in' filter: parsing filter value for field "service": unexpected symbol ")"`)
-	test(`service:in)`, `parsing 'in' filter: expect '(', got ")"`)
-	test(`service:in(1`, `parsing 'in' filter: expect ')', got ""`)
-	test(`service:in(1,3^2)`, `parsing 'in' filter: expect ')', got "^"`)
+	test(`service:in)`, `parsing 'in' filter: expected '(', got ")"`)
+	test(`service:in(1`, `parsing 'in' filter: expected ')', got ""`)
+	test(`service:in(1,3^2)`, `parsing 'in' filter: expected ')', got "^"`)
 	test(`in(1):in(2)`, `missing ':' after "in"`)
-	test(`service:in(2, in(4, 8))`, `parsing 'in' filter: expect ')', got "("`)
+	test(`service:in(2, in(4, 8))`, `parsing 'in' filter: expected ')', got "("`)
 	test(`service:'in'(2, in(4, 8))`, `expected 'and', 'or', 'not', got: "("`)
+
+	// Test filter 'ip_range'.
+	test(`keyword:ip_range(300.0.0.1, 10.0.0.255)`, `parsing 'ip_range' filter: ParseAddr("300.0.0.1"): IPv4 field has value >255`)
+	test(`keyword:ip_range(10.0.0.1, 10.0.0.256)`, `parsing 'ip_range' filter: ParseAddr("10.0.0.256"): IPv4 field has value >255`)
+	test(`keyword:ip_range(10.0.0.1, "invalid")`, `parsing 'ip_range' filter: ParseAddr("invalid"): unable to parse IP`)
+	test(`keyword:ip_range(10.0.0.1/33)`, `parsing 'ip_range' filter: netip.ParsePrefix("10.0.0.1/33"): prefix length out of range`)
+	test(`keyword:ip_range(10.0.0.1, 10.0.0.0)`, `parsing 'ip_range' filter: first ip "10.0.0.1" is greater or equal than second ip "10.0.0.0"`)
+	test(`keyword:ip_range(192.168.1.2, 192.168.1.3`, `parsing 'ip_range' filter: expected ')', got ""`)
+	test(`keyword:ip_range(192.168.1.2/24`, `parsing 'ip_range' filter: expected ')', got ""`)
+	test(`keyword:ip_range(192.168.1.2 192.168.1.3)`, `parsing 'ip_range' filter: expected ',' keyword, got "192.168.1.3"`)
+	test(`keyword:ip_range(192.168.1.2,)`, `parsing 'ip_range' filter: unexpected symbol ")"`)
+	test(`keyword:ip_range(,192.168.1.3)`, `parsing 'ip_range' filter: unexpected symbol ","`)
+	test(`keyword:ip_range(192.168.1.2,,192.168.1.3)`, `parsing 'ip_range' filter: unexpected symbol ","`)
 
 	// Test pipes.
 	test(`message:--||`, `unknown pipe: |`)

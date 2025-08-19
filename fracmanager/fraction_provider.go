@@ -87,11 +87,3 @@ func (fp *fractionProvider) NewRemote(
 func (fp *fractionProvider) Stop() {
 	fp.activeIndexer.Stop()
 }
-
-func (fp *fractionProvider) newActiveRef(active *frac.Active) activeRef {
-	f := &proxyFrac{active: active, fp: fp}
-	return activeRef{
-		frac: f,
-		ref:  &fracRef{instance: f},
-	}
-}
