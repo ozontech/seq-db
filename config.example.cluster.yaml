@@ -1,0 +1,8 @@
+storage:
+  data_dir: "/seq-db-data"
+
+mapping:
+  path: auto
+
+cluster:
+  hot_stores: "seq-db-store:9002"
