@@ -10,14 +10,8 @@ concurrency:
 
 jobs:
   validate-pr-title:
-    # Only run on pull requests
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -43,7 +37,7 @@ jobs:
             const title = context.payload.pull_request.title;
 
             const comment = `❌ **PR Title Validation Failed**
-            Please refer to https://github.com/ozontech/seq-db/blob/main/.github/CONTRIBUTING.md`;
+            Please refer to [CONTRIBUTING.md](https://github.com/ozontech/seq-db/blob/main/.github/CONTRIBUTING.md)`;
 
             github.rest.issues.createComment({
               issue_number: context.payload.pull_request.number,
@@ -53,10 +47,7 @@ jobs:
             });
 
   validate-branch-name:
-    # Only run on pull requests
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-
     steps:
       - name: Validate branch name
         id: validate-branch
@@ -80,7 +71,7 @@ jobs:
             const branchName = context.payload.pull_request.head.ref;
 
             const comment = `❌ **Branch Name Validation Failed**
-            Please refer to https://github.com/ozontech/seq-db/blob/main/.github/CONTRIBUTING.md`;
+            Please refer to [CONTRIBUTING.md](https://github.com/ozontech/seq-db/blob/main/.github/CONTRIBUTING.md)`;
 
             github.rest.issues.createComment({
               issue_number: context.payload.pull_request.number,
