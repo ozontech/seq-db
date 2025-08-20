@@ -80,8 +80,6 @@ type Ingestor struct {
 
 	client StorageClient
 
-	rateLimit chan struct{}
-
 	tokenizers map[seq.TokenizerType]tokenizer.Tokenizer
 	procPool   *sync.Pool
 
@@ -101,15 +99,9 @@ func NewIngestor(c IngestorConfig, client StorageClient) *Ingestor {
 		seq.TokenizerTypeExists:  tokenizer.NewExistsTokenizer(),
 	}
 
-	rateLimit := make(chan struct{}, c.MaxInflightBulks)
-	for i := 0; i < c.MaxInflightBulks; i++ {
-		rateLimit <- struct{}{}
-	}
-
 	i := &Ingestor{
 		config:     c,
 		client:     client,
-		rateLimit:  rateLimit,
 		tokenizers: tokenizers,
 		inflight:   &atomic.Int64{},
 		bulks:      &atomic.Int64{},
@@ -197,7 +189,7 @@ func (i *Ingestor) ProcessDocuments(ctx context.Context, requestTime time.Time, 
 	compressor := frac.GetDocsMetasCompressor(i.config.DocsZSTDCompressLevel, i.config.MetasZSTDCompressLevel)
 	defer frac.PutDocMetasCompressor(compressor)
 
-	total, err := i.processDocsToCompressor(ctx, compressor, requestTime, readNext)
+	total, err := i.processDocsToCompressor(compressor, requestTime, readNext)
 	if err != nil {
 		return 0, err
 	}
@@ -235,20 +227,11 @@ var (
 	}
 )
 
-func (i *Ingestor) processDocsToCompressor(ctx context.Context, compressor *frac.DocsMetasCompressor, requestTime time.Time, readNext func() ([]byte, error)) (int, error) {
-	t := time.Now()
-	select {
-	case ticket, has := <-i.rateLimit:
-		if !has {
-			return 0, fmt.Errorf("rate limit channel closed")
-		}
-		defer func() {
-			i.rateLimit <- ticket
-		}()
-	case <-ctx.Done():
-		return 0, ctx.Err()
-	}
-	metric.IngestorBulkRequestPoolDurationSeconds.Observe(time.Since(t).Seconds())
+func (i *Ingestor) processDocsToCompressor(
+	compressor *frac.DocsMetasCompressor,
+	requestTime time.Time,
+	readNext func() ([]byte, error),
+) (int, error) {
 	parseDuration := time.Duration(0)
 
 	proc := i.getProcessor()

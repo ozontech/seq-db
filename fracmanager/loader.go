@@ -1,7 +1,6 @@
 package fracmanager
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,7 +43,7 @@ func NewLoader(config *Config, fracProvider *fractionProvider, fracCache *sealed
 	}
 }
 
-func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
+func (l *loader) load() ([]*frac.Active, []*frac.Sealed, error) {
 	fracIDs, infos := l.makeInfos(l.getFileList())
 	sort.Strings(fracIDs)
 
@@ -58,7 +57,7 @@ func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 	infosList := l.filterInfos(fracIDs, infos)
 	cnt := len(infosList)
 
-	fracs := make([]*fracRef, 0, cnt)
+	fracs := make([]*frac.Sealed, 0, cnt)
 	actives := make([]*frac.Active, 0)
 
 	diskFracCache := NewFracCacheFromDisk(filepath.Join(l.config.DataDir, consts.FracCacheFileSuffix))
@@ -73,13 +72,13 @@ func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 				removeFile(info.base + consts.DocsFileSuffix)
 			}
 			sealed := l.loadSealedFrac(diskFracCache, info)
-			fracs = append(fracs, &fracRef{instance: sealed})
+			fracs = append(fracs, sealed)
 		} else {
 			if info.hasMeta {
 				actives = append(actives, l.fracProvider.NewActive(info.base))
 			} else {
 				sealed := l.loadSealedFrac(diskFracCache, info)
-				fracs = append(fracs, &fracRef{instance: sealed})
+				fracs = append(fracs, sealed)
 			}
 		}
 
@@ -97,22 +96,7 @@ func (l *loader) load(ctx context.Context) ([]*fracRef, []activeRef, error) {
 
 	logger.Info("fractions list created", zap.Int("cached", l.cachedFracs), zap.Int("uncached", l.uncachedFracs))
 
-	logger.Info("replaying active fractions", zap.Int("count", len(actives)))
-	notSealed := make([]activeRef, 0)
-	for _, a := range actives {
-		if err := a.Replay(ctx); err != nil {
-			return nil, nil, fmt.Errorf("while replaying blocks: %w", err)
-		}
-		if a.Info().DocsTotal == 0 { // skip empty
-			removeFractionFiles(a.BaseFileName)
-			continue
-		}
-		activeRef := l.fracProvider.newActiveRef(a)
-		fracs = append(fracs, activeRef.ref)
-		notSealed = append(notSealed, activeRef)
-	}
-
-	return fracs, notSealed, nil
+	return actives, fracs, nil
 }
 
 func (l *loader) loadSealedFrac(diskFracCache *sealedFracCache, info *fracInfo) *frac.Sealed {

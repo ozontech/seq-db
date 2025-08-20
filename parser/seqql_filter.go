@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"unicode"
@@ -45,6 +46,19 @@ func parseSeqQLFieldFilter(lex *lexer, mapping seq.Mapping) (*ASTNode, error) {
 		r, err := parseSeqQLTokenRange(fieldName, lex, caseSensitive)
 		if err != nil {
 			return nil, fmt.Errorf("parsing range for field %q: %s", fieldName, err)
+		}
+		return &ASTNode{Value: r}, nil
+	}
+
+	if lex.IsKeyword("ip_range") {
+		if t != seq.TokenizerTypeKeyword {
+			return nil, fmt.Errorf("'ip_range' filter is supported only for keyword fields")
+		}
+
+		lex.Next()
+		r, err := parseFilterIPRange(lex, fieldName)
+		if err != nil {
+			return nil, fmt.Errorf("parsing 'ip_range' filter: %s", err)
 		}
 		return &ASTNode{Value: r}, nil
 	}
@@ -97,7 +111,7 @@ func parseFulltextSearchFilter(lex *lexer, fieldName string, t seq.TokenizerType
 //	phone:in(`+7 999 ** **`, '+995'*)
 func parseFilterIn(lex *lexer, fieldName string, t seq.TokenizerType, caseSensitive bool) (*ASTNode, error) {
 	if !lex.IsKeyword("(") {
-		return nil, fmt.Errorf("expect '(', got %q", lex.Token)
+		return nil, fmt.Errorf("expected '(', got %q", lex.Token)
 	}
 	lex.Next()
 
@@ -120,7 +134,7 @@ func parseFilterIn(lex *lexer, fieldName string, t seq.TokenizerType, caseSensit
 	}
 
 	if !lex.IsKeyword(")") {
-		return nil, fmt.Errorf("expect ')', got %q", lex.Token)
+		return nil, fmt.Errorf("expected ')', got %q", lex.Token)
 	}
 
 	lex.Next()
@@ -148,18 +162,18 @@ var bytesBufferPool = sync.Pool{
 // List of non-composite tokens:
 //
 //	"foo bar", "$foo", "foo$", "f$$", "@gmail.com".
-func parseCompositeToken(lex *lexer) (string, error) {
+func parseCompositeToken(lex *lexer, addons ...rune) (string, error) {
 	if lex.IsKeyword("") {
 		return "", fmt.Errorf("unexpected end of query")
 	}
-	if !isCompositeToken(lex) {
+	if !isCompositeToken(lex, addons...) {
 		// Disallow unquoted tokens that starts with non-letter and non-number symbols.
 		return "", fmt.Errorf("unexpected symbol %q", lex.Token)
 	}
 
 	firstToken := lex.Token
 	lex.Next()
-	if lex.SpaceSkipped || !isCompositeToken(lex) {
+	if lex.SpaceSkipped || !isCompositeToken(lex, addons...) {
 		// Token is single word and not composite.
 		// Return it as is.
 		return firstToken, nil
@@ -171,13 +185,13 @@ func parseCompositeToken(lex *lexer) (string, error) {
 
 	// Join tokens to single composite token.
 	b.WriteString(firstToken)
-	for ; !lex.SpaceSkipped && isCompositeToken(lex); lex.Next() {
+	for ; !lex.SpaceSkipped && isCompositeToken(lex, addons...); lex.Next() {
 		b.WriteString(lex.Token)
 	}
 	return b.String(), nil
 }
 
-func isCompositeToken(lex *lexer) bool {
+func isCompositeToken(lex *lexer, addons ...rune) bool {
 	if lex.IsKeyword("") {
 		// End of query.
 		return false
@@ -195,7 +209,7 @@ func isCompositeToken(lex *lexer) bool {
 		return true
 	}
 
-	return isTokenRune(r) || r == '-' || r == '*' || r == wildcardRune
+	return isTokenRune(r) || r == '-' || r == '*' || r == wildcardRune || slices.Contains(addons, r)
 }
 
 func parseCompositeTokenReplaceWildcards(lex *lexer) (string, error) {

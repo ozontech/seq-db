@@ -179,7 +179,7 @@ we get
 ### `/GetAggregation`
 
 Aggregations allow the computation of statistical values (sum, average, maximum, minimum, quantile, uniqueness, count) over document fields
-that match the query.
+that match the query. Also aggregations support computation of statistical values within different time intervals (also known as timeseries).
 
 Aggregations can be invoked in two ways:
 
@@ -195,7 +195,7 @@ Supported aggregation functions:
 - `AGG_FUNC_MIN` — minimum value of the field
 - `AGG_FUNC_MAX` — maximum value of the field
 - `AGG_FUNC_QUANTILE` — quantile computation for the field
-- `AGG_FUNC_UNIQUE` — computation of unique field values
+- `AGG_FUNC_UNIQUE` — computation of unique field values (not supported in timeseries)
 - `AGG_FUNC_COUNT` — count of documents per group
 
 #### Aggregation Examples
@@ -433,6 +433,55 @@ Sample documents:
         {"key": "svc1", "value": 2},
         {"key": "svc2", "value": 2},
         {"key": "svc3", "value": 1}
+      ]
+    }
+  ]
+}
+```
+
+##### COUNT (with interval)
+
+**Request:**
+
+```sh
+{
+  "query": {
+    "from": "2000-01-01T00:00:00Z",
+    "to": "2077-01-01T00:00:00Z",
+    "query":"*"
+  },
+  "aggs": [
+    {
+      "func": "AGG_FUNC_COUNT",
+      "group_by": "service",
+      "interval": "30s"
+    }
+  ]
+} | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+```
+
+**Response:**
+
+```json
+{
+  "aggs": [
+    {
+      "buckets": [
+        {
+          "key": "svc1",
+          "value": 2,
+          "ts": "2025-08-17T11:46:00Z"
+        },
+        {
+          "key": "svc2",
+          "value": 2,
+          "ts": "2025-08-17T11:46:30Z"
+        },
+        {
+          "key": "svc3",
+          "value": 2,
+          "ts": "2025-08-17T11:47:00Z"
+        }
       ]
     }
   ]

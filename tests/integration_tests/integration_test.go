@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
@@ -1868,45 +1869,44 @@ func (s *IntegrationTestSuite) TestAggregateFieldsWithMultipleTypes() {
 	)
 }
 
-// func (s *IntegrationTestSuite) TestTimeField() {
-//	config := *s.Config
-//	config.Mapping = map[string]seq.MappingTypes{
-//		"event":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-//		"message": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-//	}
-//
-//	env := setup.NewTestingEnv(&config)
-//	defer env.StopAll()
-//
-//	docs := []string{
-//		`{"level": "info","ts": "2000-01-13T17:36:10.593303253Z","logger": "fd.kubelet","message": "pipeline stats","stat": "interval=5s, active procs=0/4, events in use=0/256, out=0|0.0Mb, rate=0/s|0.0Mb/s, read ops=0/s, total=0|0.0Mb, avg size=0"}`,
-//		`{"level": "info","ts": "2000-01-13T17:36:12.790469375Z","logger": "fd.k8s.input.k8s","message": "file plugin stats for last 5 seconds: offsets saves=104111, jobs done=28, jobs total=28"}`,
-//		`{"level": "info","ts": "2000-01-13T17:36:14.715199225Z","logger": "fd.k8s.action.debug","message": "input event sample","offset": 40059539,"event": {"log": "{\"level\":\"info\",\"ts\":\"2025-01-13T17:36:08.729825704Z\",\"logger\":\"fd.dmesg\",\"message\":\"pipeline stats\",\"stat\":\"interval=5s, active procs=0/2, events in use=0/128, out=0|0.0Mb, rate=0/s|0.0Mb/s, read ops=0/s, total=100857|15.0Mb, avg size=1\"}\n","time": "2025-01-13T17:36:08.729920774Z","stream": "stderr","k8s_container_id": "52f2ab19fe0ba66f4f4e7910780da1e477be98015db58dc624a26c4a585e096b","app_label": "dmesg-reader-z504","pod_app": "dmesg-reader-z504-wjfh5@dmesg-reader-z504","k8s_pod": "dmesg-reader-z504-wjfh5","k8s_namespace": "logging","k8s_container": "dmesg-reader","k8s_node": "infrakuben87742z504","k8s_pod_label_app": "dmesg-reader-z504","k8s_node_label_topology.kubernetes.io/zone": "z504"}}`,
-//	}
-//
-//	setup.Bulk(s.T(), env.IngestorBulkAddr(), docs)
-//	env.WaitIdle()
-//
-//	r := require.New(s.T())
-//
-//	now := time.Now()
-//	resp := setup.SearchHTTP(s.T(), env.IngestorSearchAddr(), &seqproxyapi.SearchRequest{
-//		Query: &seqproxyapi.SearchQuery{
-//			Query:   "",
-//			From:    timestamppb.New(time.Now().Add(-time.Hour * 720)),
-//			To:      timestamppb.New(time.Now().Add(time.Hour * 720)),
-//			Explain: false,
-//		},
-//		Size:      10,
-//		Offset:    0,
-//		WithTotal: false,
-//	})
-//
-//	for _, d := range resp.Docs {
-//		diff := d.Time.AsTime().Sub(now).Abs()
-//		r.True(diff < 100*time.Millisecond)
-//	}
-// }
+// TestTimeField checks that if time in document exceeds PastDrift or FutureDrift
+// time field is replaced with time.Now()
+func (s *IntegrationTestSuite) TestTimeField() {
+	config := *s.Config
+	config.Mapping = map[string]seq.MappingTypes{
+		"event":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"message": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+	}
+
+	env := setup.NewTestingEnv(&config)
+	defer env.StopAll()
+
+	docs := []string{
+		`{"level": "info","ts": "2000-01-13T17:36:10.593303253Z","logger": "fd.kubelet","message": "pipeline stats","stat": "interval=5s, active procs=0/4, events in use=0/256, out=0|0.0Mb, rate=0/s|0.0Mb/s, read ops=0/s, total=0|0.0Mb, avg size=0"}`,
+		`{"level": "info","ts": "2000-01-13T17:36:12.790469375Z","logger": "fd.k8s.input.k8s","message": "file plugin stats for last 5 seconds: offsets saves=104111, jobs done=28, jobs total=28"}`,
+		`{"level": "info","ts": "3000-01-13T17:36:14.715199225Z","logger": "fd.k8s.action.debug","message": "input event sample","offset": 40059539,"event": {"log": "{\"level\":\"info\",\"ts\":\"2025-01-13T17:36:08.729825704Z\",\"logger\":\"fd.dmesg\",\"message\":\"pipeline stats\",\"stat\":\"interval=5s, active procs=0/2, events in use=0/128, out=0|0.0Mb, rate=0/s|0.0Mb/s, read ops=0/s, total=100857|15.0Mb, avg size=1\"}\n","time": "2025-01-13T17:36:08.729920774Z","stream": "stderr","k8s_container_id": "52f2ab19fe0ba66f4f4e7910780da1e477be98015db58dc624a26c4a585e096b","app_label": "dmesg-reader-z504","pod_app": "dmesg-reader-z504-wjfh5@dmesg-reader-z504","k8s_pod": "dmesg-reader-z504-wjfh5","k8s_namespace": "logging","k8s_container": "dmesg-reader","k8s_node": "infrakuben87742z504","k8s_pod_label_app": "dmesg-reader-z504","k8s_node_label_topology.kubernetes.io/zone": "z504"}}`,
+	}
+
+	setup.Bulk(s.T(), env.IngestorBulkAddr(), docs)
+	env.WaitIdle()
+
+	r := require.New(s.T())
+
+	now := time.Now()
+	resp := setup.SearchHTTP(s.T(), env.IngestorSearchAddr(), &seqproxyapi.SearchRequest{
+		Query: &seqproxyapi.SearchQuery{
+			Query:   "",
+			From:    timestamppb.New(now.Add(-time.Hour)),
+			To:      timestamppb.New(now.Add(time.Hour)),
+			Explain: false,
+		},
+		Size:      10,
+		Offset:    0,
+		WithTotal: false,
+	})
+
+	r.Equal(len(docs), len(resp.Docs))
+}
 
 func (s *IntegrationTestSuite) TestAsyncSearch() {
 	t := s.T()
@@ -1943,16 +1943,21 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	searcher := env.Ingestor().Ingestor.SearchIngestor
 
 	ctx := t.Context()
-	resp, err := searcher.StartAsyncSearch(ctx, search.AsyncRequest{
-		Query: "* | fields ip, method, uri",
-		From:  time.UnixMilli(0),
-		To:    time.Now().Add(time.Hour),
+
+	searchIDs := make([]string, 0)
+
+	// StartAsyncSearch
+
+	startReq := search.AsyncRequest{
+		Query:     "* | fields ip, method, uri",
+		From:      time.UnixMilli(0).UTC(),
+		To:        time.Now().UTC().Add(time.Hour).Truncate(time.Millisecond),
+		Retention: time.Minute * 5,
 		Aggregations: []search.AggQuery{
 			{
-				Field:     "size",
-				GroupBy:   "ip",
-				Func:      seq.AggFuncSum,
-				Quantiles: nil,
+				Field:   "size",
+				GroupBy: "ip",
+				Func:    seq.AggFuncSum,
 			},
 			{
 				Field:     "size",
@@ -1962,36 +1967,33 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 			},
 		},
 		HistogramInterval: seq.MID(time.Second.Milliseconds()),
-	})
+		WithDocs:          false,
+	}
+	resp, err := searcher.StartAsyncSearch(ctx, startReq)
 	r.NoError(err)
 	r.NotEmpty(resp.ID)
+	searchIDs = append(searchIDs, resp.ID)
 
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
+	// FetchAsyncSearchResult
 
-	fr := search.FetchAsyncSearchResultRequest{
-		ID:       resp.ID,
-		WithDocs: true,
-		Size:     100,
-		Offset:   0,
+	freq := search.FetchAsyncSearchResultRequest{
+		ID:     resp.ID,
+		Size:   100,
+		Offset: 0,
 	}
 
-	for ctx.Err() == nil {
-		fetchResp, err := searcher.FetchAsyncSearchResult(ctx, fr)
+	r.Eventually(func() bool {
+		resp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 		r.NoError(err)
-		if fetchResp.Done {
-			break
-		}
-		time.Sleep(time.Millisecond * 200)
-	}
+		return resp.Status == fracmanager.AsyncSearchStatusDone
+	}, 10*time.Second, 50*time.Millisecond)
 
-	r.NoError(ctx.Err())
-
-	fetchResp, err := searcher.FetchAsyncSearchResult(ctx, fr)
+	fresp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 	r.NoError(err)
 
-	r.True(fetchResp.Done)
-	r.True(fetchResp.Expiration.After(time.Now()))
+	r.Equalf(fracmanager.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
+	r.Equal([]seq.ErrorSource(nil), fresp.QPR.Errors)
+	r.True(fresp.ExpiresAt.After(time.Now().UTC()))
 	r.Equal([]seq.AggregationResult{
 		{
 			Buckets: []seq.AggregationBucket{
@@ -2015,8 +2017,48 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 				{Name: "put", Value: 5116, Quantiles: []float64{5116, 5116, 4334}},
 			},
 		},
-	}, fetchResp.AggResult)
+	}, fresp.AggResult)
+	r.Equal(startReq, fresp.Request)
 
-	r.True(len(fetchResp.QPR.Histogram) != 0)
-	r.Equal(len(docs), fetchResp.QPR.IDs.Len())
+	r.True(len(fresp.QPR.Histogram) != 0)
+	// TODO: compare ids after with_docs is enabled
+	// r.Equal(len(docs), fresp.QPR.IDs.Len())
+	r.Equal(float64(1), fresp.Progress)
+
+	// GetAsyncSearchesList
+
+	startResp, err := searcher.StartAsyncSearch(ctx, startReq)
+	r.NoError(err)
+	r.NotEmpty(startResp.ID)
+	searchIDs = append(searchIDs, startResp.ID)
+	freq.ID = startResp.ID
+
+	r.Eventually(func() bool {
+		resp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
+		r.NoError(err)
+		return resp.Status == fracmanager.AsyncSearchStatusDone
+	}, 10*time.Second, 50*time.Millisecond)
+
+	listResp, err := searcher.GetAsyncSearchesList(ctx, search.GetAsyncSearchesListRequest{})
+	r.NoError(err)
+	r.Len(listResp, 2)
+
+	for i, s := range listResp {
+		r.True(s.ID == searchIDs[len(searchIDs)-i-1]) // list is sorted by startedAt desc
+		r.Equal(fracmanager.AsyncSearchStatusDone, s.Status)
+		r.Equal(startReq, s.Request)
+		r.True(s.ExpiresAt.After(time.Now().UTC()))
+		r.Equal(float64(1), s.Progress)
+	}
+
+	// DeleteAsyncSearch
+
+	err = searcher.DeleteAsyncSearch(ctx, startResp.ID)
+	r.NoError(err)
+
+	r.Eventually(func() bool {
+		listResp, err := searcher.GetAsyncSearchesList(ctx, search.GetAsyncSearchesListRequest{})
+		r.NoError(err)
+		return len(listResp) == 1
+	}, 10*time.Second, 50*time.Millisecond)
 }

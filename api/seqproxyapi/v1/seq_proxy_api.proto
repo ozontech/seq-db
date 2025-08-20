@@ -76,7 +76,7 @@ service SeqProxyApi {
   // The server processes the request in the background and returns a search ID.
   rpc StartAsyncSearch(StartAsyncSearchRequest) returns (StartAsyncSearchResponse) {
     option (google.api.http) = {
-      post: "/async-search"
+      post: "/async-searches"
       body: "*"
     };
   }
@@ -85,15 +85,30 @@ service SeqProxyApi {
   // Clients should use the search ID returned by StartAsyncSearch.
   rpc FetchAsyncSearchResult(FetchAsyncSearchResultRequest) returns (FetchAsyncSearchResultResponse) {
     option (google.api.http) = {
-      get: "/async-search/{search_id}"
+      post: "/async-searches/fetch"
+      body: "*"
     };
   }
 
   // Cancels an ongoing asynchronous search operation if it hasn't completed yet.
-  // Useful for freeing up resources if the result is no longer needed.
   rpc CancelAsyncSearch(CancelAsyncSearchRequest) returns (CancelAsyncSearchResponse) {
     option (google.api.http) = {
-      delete: "/async-search/{search_id}"
+      post: "/async-searches/{search_id}/cancel"
+    };
+  }
+
+  // Frees up resources if the result is no longer needed.
+  rpc DeleteAsyncSearch(DeleteAsyncSearchRequest) returns (DeleteAsyncSearchResponse) {
+    option (google.api.http) = {
+      delete: "/async-searches/{search_id}"
+    };
+  }
+
+  // Fetch list of async searches.
+  rpc GetAsyncSearchesList(GetAsyncSearchesListRequest) returns (GetAsyncSearchesListResponse) {
+    option (google.api.http) = {
+      post: "/async-searches/list"
+      body: "*"
     };
   }
 }
@@ -229,28 +244,61 @@ message ComplexSearchResponse {
 }
 
 message StartAsyncSearchRequest {
+  // Duration to retain the result of an asynchronous query.
+  // After this period, the result will be deleted.
   google.protobuf.Duration retention = 1;
-  SearchQuery query = 2;        // Search query.
-  repeated AggQuery aggs = 3;   // List of aggregation queries.
-  optional HistQuery hist = 4;  // Histogram query.
-  Order order = 5;              // Document order ORDER_DESC/ORDER_ASC.
+  // Search query to execute.
+  SearchQuery query = 2;
+  // List of aggregation queries.
+  repeated AggQuery aggs = 3;
+  // Optional histogram query.
+  optional HistQuery hist = 4;
+  // Set this to true to enable document retrieval via FetchAsyncSearch.
+  // Note: enabling this may significantly increase disk space usage.
+  bool with_docs = 5;
 }
 
 message StartAsyncSearchResponse {
+  // Unique ID used to retrieve search results with FetchAsyncSearchResult.
   string search_id = 1;
 }
 
 message FetchAsyncSearchResultRequest {
   string search_id = 1;
-  bool with_docs = 2;
-  int32 size = 3;
-  int32 offset = 4;
+  // Maximum number of documents to fetch (pagination).
+  // Ignored if with_docs was set to false, since documents are not stored in that case.
+  int32 size = 2;
+  // Document offset (pagination).
+  // Ignored if with_docs was set to false, since documents are not stored in that case.
+  int32 offset = 3;
+  // Documents sort order.
+  Order order = 4;
+}
+
+enum AsyncSearchStatus {
+  // The asynchronous search is still in progress.
+  // See the 'progress' field for completion percentage.
+  AsyncSearchStatusInProgress = 0;
+  // The asynchronous search completed successfully.
+  AsyncSearchStatusDone = 1;
+  // The asynchronous search was canceled, possibly via the CancelAsyncSearch handler.
+  AsyncSearchStatusCanceled = 2;
+  // The asynchronous search encountered errors in some shards.
+  // See ComplexSearchResponse.Error for details.
+  AsyncSearchStatusError = 3;
 }
 
 message FetchAsyncSearchResultResponse {
-  bool done = 1;
-  google.protobuf.Timestamp expiration = 2;
+  AsyncSearchStatus status = 1;
+  StartAsyncSearchRequest request = 2;
   ComplexSearchResponse response = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  optional google.protobuf.Timestamp canceled_at = 6;
+  // Search progress in range [0, 1].
+  double progress = 7;
+  // The size of data stored on disk, in bytes.
+  uint64 disk_usage = 8;
 }
 
 message CancelAsyncSearchRequest{
@@ -258,6 +306,39 @@ message CancelAsyncSearchRequest{
 }
 
 message CancelAsyncSearchResponse{}
+
+message DeleteAsyncSearchRequest {
+  string search_id = 1;
+}
+
+message DeleteAsyncSearchResponse {}
+
+message GetAsyncSearchesListRequest {
+  optional AsyncSearchStatus status = 1;
+  // Maximum number of searches to fetch (pagination).
+  int32 size = 2;
+  // Searches offset (pagination).
+  int32 offset = 3;
+  // list of async search ids to filter out result
+  repeated string ids = 4; 
+}
+
+message GetAsyncSearchesListResponse {
+  repeated AsyncSearchesListItem searches = 1;
+}
+
+message AsyncSearchesListItem {
+  string search_id = 1;
+  AsyncSearchStatus status = 2;
+  StartAsyncSearchRequest request = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  optional google.protobuf.Timestamp canceled_at = 6;
+  // Search progress in range [0, 1].
+  double progress = 7;
+  // The size of data stored on disk, in bytes.
+  uint64 disk_usage = 8;
+}
 
 message GetAggregationRequest {
   SearchQuery query = 1;      // Search query.
