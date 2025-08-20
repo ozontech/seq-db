@@ -307,12 +307,13 @@ func (as *AsyncSearcher) createDataDir() {
 }
 
 func (as *AsyncSearcher) processRequest(asyncSearchID string, fracs List) {
+	defer as.processWg.Done()
+
 	as.rateLimit <- struct{}{}
 	defer func() { <-as.rateLimit }()
 
 	as.doSearch(asyncSearchID, fracs)
 	asyncSearchActiveSearches.Add(-1)
-	as.processWg.Done()
 }
 
 func (as *AsyncSearcher) doSearch(id string, fracs List) {
