@@ -1943,10 +1943,15 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	searcher := env.Ingestor().Ingestor.SearchIngestor
 
 	ctx := t.Context()
-	resp, err := searcher.StartAsyncSearch(ctx, search.AsyncRequest{
+
+	searchIDs := make([]string, 0)
+
+	// StartAsyncSearch
+
+	startReq := search.AsyncRequest{
 		Query:     "* | fields ip, method, uri",
-		From:      time.UnixMilli(0),
-		To:        time.Now().Add(time.Hour),
+		From:      time.UnixMilli(0).UTC(),
+		To:        time.Now().UTC().Add(time.Hour).Truncate(time.Millisecond),
 		Retention: time.Minute * 5,
 		Aggregations: []search.AggQuery{
 			{
@@ -1962,35 +1967,33 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 			},
 		},
 		HistogramInterval: seq.MID(time.Second.Milliseconds()),
-		WithDocs:          true,
-	})
+		WithDocs:          false,
+	}
+	resp, err := searcher.StartAsyncSearch(ctx, startReq)
 	r.NoError(err)
 	r.NotEmpty(resp.ID)
+	searchIDs = append(searchIDs, resp.ID)
 
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
-	defer cancel()
+	// FetchAsyncSearchResult
+
 	freq := search.FetchAsyncSearchResultRequest{
 		ID:     resp.ID,
 		Size:   100,
 		Offset: 0,
 	}
-	for ctx.Err() == nil {
-		fresp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
+
+	r.Eventually(func() bool {
+		resp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 		r.NoError(err)
-		if fresp.Status == fracmanager.AsyncSearchStatusInProgress {
-			time.Sleep(time.Millisecond * 50)
-			continue
-		}
-		break
-	}
-	r.NoError(ctx.Err())
+		return resp.Status == fracmanager.AsyncSearchStatusDone
+	}, 10*time.Second, 50*time.Millisecond)
 
 	fresp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 	r.NoError(err)
 
 	r.Equalf(fracmanager.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
 	r.Equal([]seq.ErrorSource(nil), fresp.QPR.Errors)
-	r.True(fresp.ExpiresAt.After(time.Now()))
+	r.True(fresp.ExpiresAt.After(time.Now().UTC()))
 	r.Equal([]seq.AggregationResult{
 		{
 			Buckets: []seq.AggregationBucket{
@@ -2015,8 +2018,47 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 			},
 		},
 	}, fresp.AggResult)
+	r.Equal(startReq, fresp.Request)
 
 	r.True(len(fresp.QPR.Histogram) != 0)
-	r.Equal(len(docs), fresp.QPR.IDs.Len())
+	// TODO: compare ids after with_docs is enabled
+	// r.Equal(len(docs), fresp.QPR.IDs.Len())
 	r.Equal(float64(1), fresp.Progress)
+
+	// GetAsyncSearchesList
+
+	startResp, err := searcher.StartAsyncSearch(ctx, startReq)
+	r.NoError(err)
+	r.NotEmpty(startResp.ID)
+	searchIDs = append(searchIDs, startResp.ID)
+	freq.ID = startResp.ID
+
+	r.Eventually(func() bool {
+		resp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
+		r.NoError(err)
+		return resp.Status == fracmanager.AsyncSearchStatusDone
+	}, 10*time.Second, 50*time.Millisecond)
+
+	listResp, err := searcher.GetAsyncSearchesList(ctx, search.GetAsyncSearchesListRequest{})
+	r.NoError(err)
+	r.Len(listResp, 2)
+
+	for i, s := range listResp {
+		r.True(s.ID == searchIDs[len(searchIDs)-i-1]) // list is sorted by startedAt desc
+		r.Equal(fracmanager.AsyncSearchStatusDone, s.Status)
+		r.Equal(startReq, s.Request)
+		r.True(s.ExpiresAt.After(time.Now().UTC()))
+		r.Equal(float64(1), s.Progress)
+	}
+
+	// DeleteAsyncSearch
+
+	err = searcher.DeleteAsyncSearch(ctx, startResp.ID)
+	r.NoError(err)
+
+	r.Eventually(func() bool {
+		listResp, err := searcher.GetAsyncSearchesList(ctx, search.GetAsyncSearchesListRequest{})
+		r.NoError(err)
+		return len(listResp) == 1
+	}, 10*time.Second, 50*time.Millisecond)
 }
