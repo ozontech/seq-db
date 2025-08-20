@@ -219,3 +219,42 @@ func (e *Error) MarshalJSON() ([]byte, error) {
 func (e *Error) UnmarshalJSON(data []byte) error {
 	return pbUnmarshaler.Unmarshal(data, e)
 }
+
+func (r *StartAsyncSearchRequest) MarshalJSON() ([]byte, error) {
+	return pbMarshaller.Marshal(r)
+}
+
+// TestFetchAsyncSearchResultResponse is FetchAsyncSearchResultResponse wrapper that is used to omit methods like MarshalJSON.
+// Need this marshaler to not conflict with Document's custom marshaler
+type TestFetchAsyncSearchResultResponse FetchAsyncSearchResultResponse
+
+type formattedFetchAsyncSearchResultResponse struct {
+	Status json.RawMessage `json:"status"`
+	*TestFetchAsyncSearchResultResponse
+	DiskUsage  json.RawMessage  `json:"disk_usage"`
+	StartedAt  json.RawMessage  `json:"started_at"`
+	ExpiresAt  json.RawMessage  `json:"expires_at"`
+	CanceledAt *json.RawMessage `json:"canceled_at,omitempty"`
+}
+
+// MarshalJSON overrides timestamp fields and other fields with custom formatting for FetchAsyncSearchResultResponse.
+func (r *FetchAsyncSearchResultResponse) MarshalJSON() ([]byte, error) {
+	fetchResponse := &formattedFetchAsyncSearchResultResponse{
+		Status:                             json.RawMessage(strconv.Quote(r.Status.String())),
+		TestFetchAsyncSearchResultResponse: (*TestFetchAsyncSearchResultResponse)(r),
+		DiskUsage:                          json.RawMessage(strconv.Quote(strconv.FormatUint(r.DiskUsage, 10))),
+		StartedAt:                          marshalTime(r.StartedAt),
+		ExpiresAt:                          marshalTime(r.ExpiresAt),
+	}
+
+	if r.CanceledAt != nil {
+		marshaledTime := marshalTime(r.CanceledAt)
+		fetchResponse.CanceledAt = &marshaledTime
+	}
+
+	return json.Marshal(fetchResponse)
+}
+
+func (i *AsyncSearchesListItem) MarshalJSON() ([]byte, error) {
+	return pbMarshaller.Marshal(i)
+}

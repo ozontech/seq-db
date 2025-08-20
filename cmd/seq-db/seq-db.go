@@ -287,8 +287,10 @@ func startStore(
 				RequestsLimit:         uint64(cfg.Limits.SearchRequests),
 				LogThreshold:          cfg.SlowLogs.SearchThreshold,
 				Async: fracmanager.AsyncSearcherConfig{
-					DataDir:     cfg.AsyncSearch.DataDir,
-					Parallelism: cfg.AsyncSearch.Concurrency,
+					DataDir:           cfg.AsyncSearch.DataDir,
+					Workers:           cfg.AsyncSearch.Concurrency,
+					MaxSize:           int(cfg.AsyncSearch.MaxTotalSize),
+					MaxSizePerRequest: int(cfg.AsyncSearch.MaxSizePerRequest),
 				},
 			},
 			Fetch: storeapi.FetchConfig{

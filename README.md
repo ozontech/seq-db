@@ -45,7 +45,7 @@ Join our community for discussions, support, and contributions:
 ## Benchmarks
 
 See performance benchmarks and comparisons in
-our [Benchmark Reports](https://ozontech.github.io/seq-db-docs/ru/seq-db/benchmarks/).
+our [Benchmark Reports](https://ozontech.github.io/seq-db-docs/seq-db/benchmarks/).
 
 ## Core Contributors 
 seq-db started as an internal project. To recognise everyone who has made

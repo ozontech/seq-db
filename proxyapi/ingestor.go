@@ -219,3 +219,7 @@ type humanReadableMarshaler struct {
 func (m humanReadableMarshaler) Marshal(v interface{}) ([]byte, error) {
 	return m.stdlibMarshaler.Marshal(v)
 }
+
+func (m humanReadableMarshaler) Unmarshal(data []byte, v interface{}) error {
+	return m.stdlibMarshaler.Unmarshal(data, v)
+}

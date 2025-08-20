@@ -1,6 +1,7 @@
 package pattern
 
 import (
+	"errors"
 	"math"
 	"math/rand"
 	"sort"
@@ -106,13 +107,27 @@ func searchAll(t *testing.T, tp testTokenProvider, req string, expect []string) 
 	search(t, tp.ordered, req, uniq(expect))
 }
 
+func parseSingleTokenForTests(query string) (parser.Token, error) {
+	ast, err := parser.ParseSeqQL(query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// returning only first token
+	if len(ast.Root.Children) > 0 {
+		return nil, errors.New("more than one token")
+	}
+
+	return ast.Root.Value, nil
+}
+
 func search(t *testing.T, tp *simpleTokenProvider, req string, expect []string) {
 	searchType := "full"
 	if tp.Ordered() {
 		searchType = "narrow"
 	}
 
-	token, err := parser.ParseSingleTokenForTests("m", req)
+	token, err := parseSingleTokenForTests("m:" + req)
 	require.NoError(t, err)
 	s := newSearcher(token, tp)
 
@@ -126,6 +141,17 @@ func search(t *testing.T, tp *simpleTokenProvider, req string, expect []string) 
 	sort.Strings(res)
 
 	assert.Equal(t, expect, res, "%s search request %q failed", searchType, req)
+}
+
+type testCase struct {
+	query  string
+	expect []string
+}
+
+func testAll(t *testing.T, tp testTokenProvider, tests []testCase) {
+	for _, test := range tests {
+		searchAll(t, tp, test.query, test.expect)
+	}
 }
 
 func TestPatternSimple(t *testing.T) {
@@ -142,21 +168,25 @@ func TestPatternSimple(t *testing.T) {
 		"zaaa",
 	})
 
-	searchAll(t, tp, "b*", []string{"bcfg", "bd"})
-	searchAll(t, tp, "f*", []string{})
-	searchAll(t, tp, "efg", []string{"efg"})
-	searchAll(t, tp, "ef", []string{})
-	searchAll(t, tp, "lk*", []string{"lka", "lkk"})
-	searchAll(t, tp, "a*", []string{"ab", "abc"})
-	searchAll(t, tp, "z*", []string{"zaaa"})
-	searchAll(t, tp, "ab", []string{"ab"})
-	searchAll(t, tp, "aa", []string{})
-	searchAll(t, tp, "zz", []string{})
-	searchAll(t, tp, "zaaa", []string{"zaaa"})
-	searchAll(t, tp, "b*g", []string{"bcfg"})
-	searchAll(t, tp, "b*d", []string{"bd"})
-	searchAll(t, tp, "z*a", []string{"zaaa"})
-	searchAll(t, tp, "x", []string{"x", "x"})
+	tests := []testCase{
+		{"b*", []string{"bcfg", "bd"}},
+		{"f*", []string{}},
+		{"efg", []string{"efg"}},
+		{"ef", []string{}},
+		{"lk*", []string{"lka", "lkk"}},
+		{"a*", []string{"ab", "abc"}},
+		{"z*", []string{"zaaa"}},
+		{"ab", []string{"ab"}},
+		{"aa", []string{}},
+		{"zz", []string{}},
+		{"zaaa", []string{"zaaa"}},
+		{"b*g", []string{"bcfg"}},
+		{"b*d", []string{"bd"}},
+		{"z*a", []string{"zaaa"}},
+		{"x", []string{"x", "x"}},
+	}
+
+	testAll(t, tp, tests)
 }
 
 func TestPatternPrefix(t *testing.T) {
@@ -180,33 +210,45 @@ func TestPatternPrefix(t *testing.T) {
 	}
 	tp := newTestTokenProvider(data)
 
-	searchAll(t, tp, "a*", data)
-	searchAll(t, tp, "ab*", []string{"aba", "abc", "abc"})
-	searchAll(t, tp, "ac*", []string{"aca", "acb", "acba", "acbb", "acbccc", "acbz", "acdd", "ace", "acff"})
-	searchAll(t, tp, "acb*", []string{"acb", "acba", "acbb", "acbccc", "acbz"})
-	searchAll(t, tp, "acb", []string{"acb"})
-	searchAll(t, tp, "acba*", []string{"acba"})
-	searchAll(t, tp, "acc*", []string{})
-	searchAll(t, tp, "acc", []string{})
-	searchAll(t, tp, "acz*", []string{})
+	tests := []testCase{
+		{"a*", data},
+		{"ab*", []string{"aba", "abc", "abc"}},
+		{"ac*", []string{"aca", "acb", "acba", "acbb", "acbccc", "acbz", "acdd", "ace", "acff"}},
+		{"acb*", []string{"acb", "acba", "acbb", "acbccc", "acbz"}},
+		{"acb", []string{"acb"}},
+		{"acba*", []string{"acba"}},
+		{"acc*", []string{}},
+		{"acc", []string{}},
+		{"acz*", []string{}},
+	}
+
+	testAll(t, tp, tests)
 }
 
 func TestPatternEmpty(t *testing.T) {
 	tp := newTestTokenProvider([]string{})
 
-	searchAll(t, tp, "a", []string{})
-	searchAll(t, tp, "abc", []string{})
-	searchAll(t, tp, "*", []string{})
+	tests := []testCase{
+		{"a", []string{}},
+		{"abc", []string{}},
+		{"*", []string{}},
+	}
+
+	testAll(t, tp, tests)
 }
 
 func TestPatternSingle(t *testing.T) {
 	tp := newTestTokenProvider([]string{"abacaba"})
 
-	searchAll(t, tp, "abacaba", []string{"abacaba"})
-	searchAll(t, tp, "*", []string{"abacaba"})
-	searchAll(t, tp, "a*", []string{"abacaba"})
-	searchAll(t, tp, "a", []string{})
-	searchAll(t, tp, "abc", []string{})
+	tests := []testCase{
+		{"abacaba", []string{"abacaba"}},
+		{"*", []string{"abacaba"}},
+		{"a*", []string{"abacaba"}},
+		{"a", []string{}},
+		{"abc", []string{}},
+	}
+
+	testAll(t, tp, tests)
 }
 
 func TestPatternSuffix(t *testing.T) {
@@ -221,13 +263,17 @@ func TestPatternSuffix(t *testing.T) {
 		"add:suf",
 	})
 
-	searchAll(t, tp, `acd*\:suf`, []string{`acdc:suf`, `acdfg:suf`})
-	searchAll(t, tp, `acd*`, []string{`acd`, `acdc:suf`, `acdd`, `acdd`, `acdfg:suf`})
-	searchAll(t, tp, `ac*\:suf`, []string{`acdc:suf`, `acdfg:suf`})
-	searchAll(t, tp, `ac*f`, []string{`acdc:suf`, `acdfg:suf`})
-	searchAll(t, tp, `ac*d`, []string{`acd`, `acdd`, `acdd`})
-	searchAll(t, tp, `acdc\:suf`, []string{`acdc:suf`})
-	searchAll(t, tp, `*\:suf`, []string{`acdc:suf`, `acdfg:suf`, `add:suf`})
+	tests := []testCase{
+		{`"acd*:suf"`, []string{`acdc:suf`, `acdfg:suf`}},
+		{`acd*`, []string{`acd`, `acdc:suf`, `acdd`, `acdd`, `acdfg:suf`}},
+		{`"ac*:suf"`, []string{`acdc:suf`, `acdfg:suf`}},
+		{`ac*f`, []string{`acdc:suf`, `acdfg:suf`}},
+		{`ac*d`, []string{`acd`, `acdd`, `acdd`}},
+		{`"acdc:suf"`, []string{`acdc:suf`}},
+		{`"*:suf"`, []string{`acdc:suf`, `acdfg:suf`, `add:suf`}},
+	}
+
+	testAll(t, tp, tests)
 }
 
 func TestPatternSuffix2(t *testing.T) {
@@ -238,13 +284,17 @@ func TestPatternSuffix2(t *testing.T) {
 		"caba",
 	})
 
-	searchAll(t, tp, "*", []string{"aba", "abac", "abacaba", "caba"})
-	searchAll(t, tp, "aba*", []string{"aba", "abac", "abacaba"})
-	searchAll(t, tp, "aba*aba", []string{"abacaba"})
-	searchAll(t, tp, "abac*aba", []string{"abacaba"})
-	searchAll(t, tp, "aba*caba", []string{"abacaba"})
-	searchAll(t, tp, "abac*caba", []string{})
-	searchAll(t, tp, "*caba", []string{"abacaba", "caba"})
+	tests := []testCase{
+		{"*", []string{"aba", "abac", "abacaba", "caba"}},
+		{"aba*", []string{"aba", "abac", "abacaba"}},
+		{"aba*aba", []string{"abacaba"}},
+		{"abac*aba", []string{"abacaba"}},
+		{"aba*caba", []string{"abacaba"}},
+		{"abac*caba", []string{}},
+		{"*caba", []string{"abacaba", "caba"}},
+	}
+
+	testAll(t, tp, tests)
 }
 
 func TestPatternMiddle(t *testing.T) {
@@ -256,13 +306,17 @@ func TestPatternMiddle(t *testing.T) {
 		"some:Data:hey",
 	})
 
-	searchAll(t, tp, `ab*c*ba`, []string{`abacaba`})
-	searchAll(t, tp, `a*b*a`, []string{`a:b:a`, `aba`, `abacaba`, `abracadabra`})
-	searchAll(t, tp, `a*c*a`, []string{`abacaba`, `abracadabra`})
-	searchAll(t, tp, `a*\:b\:*a`, []string{`a:b:a`})
-	searchAll(t, tp, `*acada*`, []string{`abracadabra`})
-	searchAll(t, tp, `*aba*`, []string{`aba`, `abacaba`})
-	searchAll(t, tp, `*ac*ca*`, []string{})
+	tests := []testCase{
+		{`ab*c*ba`, []string{`abacaba`}},
+		{`a*b*a`, []string{`a:b:a`, `aba`, `abacaba`, `abracadabra`}},
+		{`a*c*a`, []string{`abacaba`, `abracadabra`}},
+		{`"a*:b:*a"`, []string{`a:b:a`}},
+		{`*acada*`, []string{`abracadabra`}},
+		{`*aba*`, []string{`aba`, `abacaba`}},
+		{`*ac*ca*`, []string{}},
+	}
+
+	testAll(t, tp, tests)
 }
 
 func TestRange(t *testing.T) {
@@ -280,18 +334,22 @@ func TestRange(t *testing.T) {
 		"-15",
 	})
 
-	searchAll(t, tp, "[2 to 16]", []string{"12", "15"})
-	searchAll(t, tp, "[1 to 1]", []string{"1"})
-	searchAll(t, tp, "{1 to 1}", []string{})
-	searchAll(t, tp, "{44 to 46}", []string{"45"})
-	searchAll(t, tp, "[44 to 46}", []string{"44", "45"})
-	searchAll(t, tp, "{44 to 46]", []string{"45", "46"})
-	searchAll(t, tp, "[44 to 46]", []string{"44", "45", "46"})
-	searchAll(t, tp, "[-16 to -10]", []string{"-12", "-15"})
+	tests := []testCase{
+		{"[2 to 16]", []string{"12", "15"}},
+		{"[1 to 1]", []string{"1"}},
+		{"(1 to 1)", []string{}},
+		{"(44 to 46)", []string{"45"}},
+		{"[44 to 46)", []string{"44", "45"}},
+		{"(44 to 46]", []string{"45", "46"}},
+		{"[44 to 46]", []string{"44", "45", "46"}},
+		{"[-16 to -10]", []string{"-12", "-15"}},
 
-	// result is sorted as strings in test function. actual result is not sorted
-	searchAll(t, tp, "[1 to 34]", []string{"1", "12", "15", "34"})
-	searchAll(t, tp, "[16 to 2]", []string{})
+		// result is sorted as strings in test function. actual result is not sorted
+		{"[1 to 34]", []string{"1", "12", "15", "34"}},
+		{"[16 to 2]", []string{}},
+	}
+
+	testAll(t, tp, tests)
 }
 
 func TestRangeNumberWildcard(t *testing.T) {
@@ -317,25 +375,28 @@ func TestRangeNumberWildcard(t *testing.T) {
 		"a",
 	})
 
-	searchAll(t, tp, "[* to -8]", []string{"-8", minInt64})
-	searchAll(t, tp, "{* to -8]", []string{"-8", minInt64})
-	searchAll(t, tp, "[* to -8}", []string{minInt64})
-	searchAll(t, tp, "[* to 3]", []string{"-4", "-8", minInt64, "0", "3"})
-	searchAll(t, tp, "[* to 3}", []string{"-4", "-8", minInt64, "0"})
-	searchAll(t, tp, "[13 to *]", []string{"13", "402.0", maxInt64})
-	searchAll(t, tp, "{13 to *]", []string{"402.0", maxInt64})
-	searchAll(t, tp, "[402 to *]", []string{"402.0", maxInt64})
-	searchAll(t, tp, "[402 to *}", []string{"402.0", maxInt64})
-	searchAll(t, tp, "{402 to *]", []string{maxInt64})
-	searchAll(t, tp, "[* to *]", []string{"-4", "-8", minInt64, "0", "13", "3", "402.0", maxInt64})
-	searchAll(t, tp, "{* to *]", []string{"-4", "-8", minInt64, "0", "13", "3", "402.0", maxInt64})
-	searchAll(t, tp, "[* to *}", []string{"-4", "-8", minInt64, "0", "13", "3", "402.0", maxInt64})
-	searchAll(t, tp, "{* to *}", []string{"-4", "-8", minInt64, "0", "13", "3", "402.0", maxInt64})
-	searchAll(t, tp, "[402.0 to 402.0]", []string{"402.0"})
+	tests := []testCase{
+		{"[* to -8]", []string{"-8", minInt64}},
+		{"(* to -8]", []string{"-8", minInt64}},
+		{"[* to -8)", []string{minInt64}},
+		{"[* to 3]", []string{"-4", "-8", minInt64, "0", "3"}},
+		{"[* to 3)", []string{"-4", "-8", minInt64, "0"}},
+		{"[13 to *]", []string{"13", "402.0", maxInt64}},
+		{"(13 to *]", []string{"402.0", maxInt64}},
+		{"[402 to *]", []string{"402.0", maxInt64}},
+		{"[402 to *)", []string{"402.0", maxInt64}},
+		{"(402 to *]", []string{maxInt64}},
+		{"[* to *]", []string{"-4", "-8", minInt64, "0", "13", "3", "402.0", maxInt64}},
+		{"(* to *]", []string{"-4", "-8", minInt64, "0", "13", "3", "402.0", maxInt64}},
+		{"[* to *)", []string{"-4", "-8", minInt64, "0", "13", "3", "402.0", maxInt64}},
+		{"(* to *)", []string{"-4", "-8", minInt64, "0", "13", "3", "402.0", maxInt64}},
+		{"[402.0 to 402.0]", []string{"402.0"}},
+	}
+
+	testAll(t, tp, tests)
 }
 
 func TestRangeText(t *testing.T) {
-
 	tp := newTestTokenProvider([]string{
 		"ab",
 		"abc",
@@ -348,26 +409,29 @@ func TestRangeText(t *testing.T) {
 		"zaaa",
 	})
 
-	searchAll(t, tp, "[bd to efg]", []string{"bd", "efg"})
-	searchAll(t, tp, "[bd to efg}", []string{"bd"})
-	searchAll(t, tp, "{bd to efg}", []string{})
-	searchAll(t, tp, "{bd to efg]", []string{"efg"})
-	searchAll(t, tp, "[bb to efg]", []string{"bcfg", "bd", "efg"})
-	searchAll(t, tp, "{bb to efg]", []string{"bcfg", "bd", "efg"})
-	searchAll(t, tp, "[bb to efh]", []string{"bcfg", "bd", "efg"})
-	searchAll(t, tp, "[bb to efh}", []string{"bcfg", "bd", "efg"})
+	tests := []testCase{
+		{"[bd to efg]", []string{"bd", "efg"}},
+		{"[bd to efg)", []string{"bd"}},
+		{"(bd to efg)", []string{}},
+		{"(bd to efg]", []string{"efg"}},
+		{"[bb to efg]", []string{"bcfg", "bd", "efg"}},
+		{"(bb to efg]", []string{"bcfg", "bd", "efg"}},
+		{"[bb to efh]", []string{"bcfg", "bd", "efg"}},
+		{"[bb to efh)", []string{"bcfg", "bd", "efg"}},
 
-	searchAll(t, tp, "[* to ab]", []string{"ab"})
-	searchAll(t, tp, "{* to ab]", []string{"ab"})
-	searchAll(t, tp, "[* to ab}", []string{})
-	searchAll(t, tp, "[* to bd]", []string{"ab", "abc", "bcfg", "bd"})
-	searchAll(t, tp, "[* to bd}", []string{"ab", "abc", "bcfg"})
-	searchAll(t, tp, "[lkk to *]", []string{"lkk", "x", "zaaa"})
-	searchAll(t, tp, "{lkk to *]", []string{"x", "zaaa"})
-	searchAll(t, tp, "[zaaa to *]", []string{"zaaa"})
-	searchAll(t, tp, "[zaaa to *}", []string{"zaaa"})
-	searchAll(t, tp, "{zaaa to *]", []string{})
+		{"[* to ab]", []string{"ab"}},
+		{"(* to ab]", []string{"ab"}},
+		{"[* to ab)", []string{}},
+		{"[* to bd]", []string{"ab", "abc", "bcfg", "bd"}},
+		{"[* to bd)", []string{"ab", "abc", "bcfg"}},
+		{"[lkk to *]", []string{"lkk", "x", "zaaa"}},
+		{"(lkk to *]", []string{"x", "zaaa"}},
+		{"[zaaa to *]", []string{"zaaa"}},
+		{"[zaaa to *)", []string{"zaaa"}},
+		{"(zaaa to *]", []string{}},
+	}
 
+	testAll(t, tp, tests)
 }
 
 func TestPatternSymbols(t *testing.T) {
@@ -379,12 +443,42 @@ func TestPatternSymbols(t *testing.T) {
 		"val=***",
 	})
 
-	searchAll(t, tp, `\*`, []string{"*"})
-	searchAll(t, tp, `\**`, []string{"*", "**", "****"})
-	searchAll(t, tp, `\*\*`, []string{"**"})
-	searchAll(t, tp, `\*\**`, []string{"**", "****"})
-	searchAll(t, tp, `val=*`, []string{"val=*", "val=***"})
-	searchAll(t, tp, `val=\*`, []string{"val=*"})
-	searchAll(t, tp, `val=\**`, []string{"val=*", "val=***"})
-	searchAll(t, tp, `val=\*\*\*`, []string{"val=***"})
+	tests := []testCase{
+		{`"\*"`, []string{"*"}},
+		{`"\**"`, []string{"*", "**", "****"}},
+		{`"\*\*"`, []string{"**"}},
+		{`"\*\**"`, []string{"**", "****"}},
+		{`"val=*"`, []string{"val=*", "val=***"}},
+		{`"val=\*"`, []string{"val=*"}},
+		{`"val=\**"`, []string{"val=*", "val=***"}},
+		{`"val=\*\*\*"`, []string{"val=***"}},
+	}
+
+	testAll(t, tp, tests)
+}
+
+func TestPatternIPRange(t *testing.T) {
+	data := []string{
+		"192.168.1.1",
+		"192.168.1.2",
+		"192.168.1.3",
+		"192.168.1.4",
+		"192.168.1.5",
+	}
+
+	tp := newTestTokenProvider(data)
+
+	tests := []testCase{
+		{`ip_range(0.0.0.0, 255.255.255.255)`, data},
+		{`ip_range(192.168.1.2, 192.168.1.3)`, []string{"192.168.1.2", "192.168.1.3"}},
+		{`ip_range(192.168.1.5, 192.168.1.255)`, []string{"192.168.1.5"}},
+		{`ip_range(192.167.1.5, 192.167.1.255)`, []string{}},
+
+		{`ip_range(0.0.0.0/0)`, data},
+		{`ip_range(192.168.1.2/31)`, []string{"192.168.1.2", "192.168.1.3"}},
+		{`ip_range(192.168.1.0/31)`, []string{"192.168.1.1"}},
+		{`ip_range(192.167.1.0/31)`, []string{}},
+	}
+
+	testAll(t, tp, tests)
 }

@@ -17,6 +17,12 @@ service StoreApi {
 
   rpc FetchAsyncSearchResult(FetchAsyncSearchResultRequest) returns (FetchAsyncSearchResultResponse) {}
 
+  rpc CancelAsyncSearch(CancelAsyncSearchRequest) returns (CancelAsyncSearchResponse) {}
+
+  rpc DeleteAsyncSearch(DeleteAsyncSearchRequest) returns (DeleteAsyncSearchResponse) {}
+  
+  rpc GetAsyncSearchesList(GetAsyncSearchesListRequest) returns (GetAsyncSearchesListResponse) {}
+
   rpc Fetch(FetchRequest) returns (stream BinaryData) {}
 
   rpc Status(StatusRequest) returns (StatusResponse) {}
@@ -135,33 +141,90 @@ enum SearchErrorCode {
 
 message StartAsyncSearchRequest {
   string search_id = 1;
-
-  string query = 2;
-  int64 from = 3;
-  int64 to = 4;
-  repeated AggQuery aggs = 5;
-  int64 histogram_interval = 6;
-  Order order = 7;
+  google.protobuf.Duration retention = 2;
+  string query = 3;
+  int64 from = 4;
+  int64 to = 5;
+  repeated AggQuery aggs = 6;
+  int64 histogram_interval = 7;
+  bool with_docs = 8;
 }
 
 message StartAsyncSearchResponse {}
 
 message FetchAsyncSearchResultRequest {
   string search_id = 1;
-  bool with_docs = 2;
-  int32 size = 3;
-  int32 offset = 4;
+  int32 size = 2;
+  int32 offset = 3;
+  Order order = 4;
+}
+
+enum AsyncSearchStatus {
+  AsyncSearchStatusInProgress = 0;
+  AsyncSearchStatusDone = 1;
+  AsyncSearchStatusCanceled = 2;
+  AsyncSearchStatusError = 3;
 }
 
 message FetchAsyncSearchResultResponse {
-  bool done = 1;
-
+  AsyncSearchStatus status = 1;
   SearchResponse response = 2;
-  google.protobuf.Timestamp expiration = 3;
+  google.protobuf.Timestamp started_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  optional google.protobuf.Timestamp canceled_at = 5;
+  uint64 fracs_done = 6;
+  uint64 fracs_queue = 7;
+  uint64 disk_usage = 8;
 
-  repeated AggQuery aggs = 5;
-  int64 histogram_interval = 6;
-  Order order = 7;
+  repeated AggQuery aggs = 9;
+  int64 histogram_interval = 10;
+  
+  string query = 11;
+  google.protobuf.Timestamp from = 12;
+  google.protobuf.Timestamp to = 13;
+  google.protobuf.Duration retention = 14;
+  bool with_docs = 15;
+}
+
+message CancelAsyncSearchRequest{
+  string search_id = 1;
+}
+
+message CancelAsyncSearchResponse{}
+
+message DeleteAsyncSearchRequest {
+  string search_id = 1;
+}
+
+message DeleteAsyncSearchResponse {}
+
+message GetAsyncSearchesListRequest {
+  optional AsyncSearchStatus status = 1;
+  repeated string ids = 2; 
+}
+
+message GetAsyncSearchesListResponse {
+  repeated AsyncSearchesListItem searches = 1;
+}
+
+message AsyncSearchesListItem {
+  string search_id = 1;
+  AsyncSearchStatus status = 2;
+  google.protobuf.Timestamp started_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  optional google.protobuf.Timestamp canceled_at = 5;
+  uint64 fracs_done = 6;
+  uint64 fracs_queue = 7;
+  uint64 disk_usage = 8;
+
+  repeated AggQuery aggs = 9;
+  int64 histogram_interval = 10;
+  
+  string query = 11;
+  google.protobuf.Timestamp from = 12;
+  google.protobuf.Timestamp to = 13;
+  google.protobuf.Duration retention = 14;
+  bool with_docs = 15;
 }
 
 message IdWithHint {

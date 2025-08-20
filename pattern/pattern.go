@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/netip"
 	"strconv"
 
 	"github.com/ozontech/seq-db/parser"
@@ -201,7 +202,7 @@ type rangeNumberSearch struct {
 	includeTo   bool
 }
 
-func NewRangeNumberSearch(base baseSearch, token *parser.Range) *rangeNumberSearch {
+func newRangeNumberSearch(base baseSearch, token *parser.Range) *rangeNumberSearch {
 	var err error
 	s := &rangeNumberSearch{
 		baseSearch: base,
@@ -256,6 +257,45 @@ func (s *rangeNumberSearch) check(rawVal []byte) bool {
 	return true
 }
 
+type rangeIpSearch struct {
+	baseSearch
+	from netip.Addr
+	to   netip.Addr
+}
+
+func newRangeIPSearch(base baseSearch, token *parser.IPRange) *rangeIpSearch {
+	// only creating text terms, other types are impossible
+	if token.From.Kind != parser.TermText || token.To.Kind != parser.TermText {
+		panic("BUG: wrong term kind in ip_range")
+	}
+
+	var err error
+	s := &rangeIpSearch{
+		baseSearch: base,
+	}
+
+	s.from, err = netip.ParseAddr(token.From.Data)
+	if err != nil {
+		return nil
+	}
+
+	s.to, err = netip.ParseAddr(token.To.Data)
+	if err != nil {
+		return nil
+	}
+	return s
+}
+
+func (s *rangeIpSearch) check(rawVal []byte) bool {
+	val, err := netip.ParseAddr(string(rawVal))
+	if err != nil {
+		return false
+	}
+
+	// s.from <= val <= s.to
+	return s.from.Compare(val) <= 0 && val.Compare(s.to) <= 0
+}
+
 type searcher interface {
 	firstTID() uint32
 	lastTID() uint32
@@ -282,10 +322,12 @@ func newSearcher(token parser.Token, tp tokenProvider) searcher {
 		return s
 	case *parser.Range:
 		// try number search
-		if s := NewRangeNumberSearch(base, t); s != nil {
+		if s := newRangeNumberSearch(base, t); s != nil {
 			return s
 		}
 		return newRangeTextSearch(base, t)
+	case *parser.IPRange:
+		return newRangeIPSearch(base, t)
 	}
 	panic(fmt.Sprintf("unknown token type: %T", token))
 }
