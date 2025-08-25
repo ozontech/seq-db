@@ -3,7 +3,7 @@ package s3
 import (
 	"context"
 	"fmt"
-	"path"
+	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -28,7 +28,7 @@ func NewUploader(c *Client) *uploader {
 func (u *uploader) Upload(ctx context.Context, r storage.ImmutableFile) error {
 	_, err := u.manager.Upload(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(u.c.bucket),
-		Key:    aws.String(path.Base(r.Name())),
+		Key:    aws.String(filepath.Base(r.Name())),
 		Body:   r,
 	})
 

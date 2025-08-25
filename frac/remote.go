@@ -3,7 +3,7 @@ package frac
 import (
 	"context"
 	"fmt"
-	"path"
+	"path/filepath"
 	"sync"
 
 	"go.uber.org/zap"
@@ -84,17 +84,24 @@ func NewRemote(
 		s3cli: s3cli,
 	}
 
-	// fast path if fraction-info cache exists AND it has valid index size
+	// Fast path if fraction-info cache exists AND it has valid index size.
+	//
+	// Usually it means that this fraction was created by [fracmanager.FracManager] after offloading
+	// and info is already present. Or fraction's info was persisted in `.frac-cache`.
 	if info != nil && info.IndexOnDisk > 0 {
 		return f
 	}
 
+	// FIXME(dkharms): For now almost any availability issues with S3 will cause seq-db to panic during initialisation phase.
+	// I wrote a small proposal on how we can reduce impact of such events.
+	// https://github.com/ozontech/seq-db/issues/92
+
 	if err := f.openIndex(); err != nil {
 		logger.Error(
-			"cannot open index file",
-			zap.String("fraction", info.Name()),
+			"cannot open index file: any subsequent operation will fail",
+			zap.String("fraction", filepath.Base(f.BaseFileName)),
+			zap.Error(err),
 		)
-		return f
 	}
 
 	f.info = loadHeader(f.indexFile, f.indexReader)
@@ -161,9 +168,9 @@ func (f *Remote) Suicide() {
 	f.indexCache.Release()
 
 	files := []string{
-		path.Base(f.BaseFileName) + consts.DocsFileSuffix,
-		path.Base(f.BaseFileName) + consts.SdocsFileSuffix,
-		path.Base(f.BaseFileName) + consts.IndexFileSuffix,
+		filepath.Base(f.BaseFileName) + consts.DocsFileSuffix,
+		filepath.Base(f.BaseFileName) + consts.SdocsFileSuffix,
+		filepath.Base(f.BaseFileName) + consts.IndexFileSuffix,
 	}
 
 	err := f.s3cli.Remove(f.ctx, files...)
@@ -227,7 +234,7 @@ func (f *Remote) openIndex() error {
 		return nil
 	}
 
-	name := path.Base(f.BaseFileName) + consts.IndexFileSuffix
+	name := filepath.Base(f.BaseFileName) + consts.IndexFileSuffix
 
 	ok, err := f.s3cli.Exists(f.ctx, name)
 	if err != nil {
@@ -251,8 +258,8 @@ func (f *Remote) openDocs() error {
 		return nil
 	}
 
-	sortedName := path.Base(f.BaseFileName) + consts.SdocsFileSuffix
-	unsortedName := path.Base(f.BaseFileName) + consts.DocsFileSuffix
+	sortedName := filepath.Base(f.BaseFileName) + consts.SdocsFileSuffix
+	unsortedName := filepath.Base(f.BaseFileName) + consts.DocsFileSuffix
 
 	unsortedExists, err := f.s3cli.Exists(f.ctx, unsortedName)
 	if err != nil {
