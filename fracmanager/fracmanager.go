@@ -296,6 +296,10 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 			remote := fm.fracProvider.NewRemote(fm.ctx, info.Path, info)
 
 			fm.fracMu.Lock()
+			// FIXME(dkharms): We had previously shifted fraction from local fracs list (in [fm.determineOutsiders] via [fm.shiftFirstFrac])
+			// and therefore excluded it from search queries.
+			// But now we return that fraction back (well now it's a [frac.Remote] fraction but it still points to the same data)
+			// so user can face incosistent search results.
 			fm.remoteFracs = append(fm.remoteFracs, remote)
 			fm.fracMu.Unlock()
 
