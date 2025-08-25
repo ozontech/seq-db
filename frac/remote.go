@@ -2,6 +2,7 @@ package frac
 
 import (
 	"context"
+	"fmt"
 	"path"
 	"sync"
 
@@ -88,9 +89,15 @@ func NewRemote(
 		return f
 	}
 
-	f.openIndex()
-	f.info = loadHeader(f.indexFile, f.indexReader)
+	if err := f.openIndex(); err != nil {
+		logger.Error(
+			"cannot open index file",
+			zap.String("fraction", info.Name()),
+		)
+		return f
+	}
 
+	f.info = loadHeader(f.indexFile, f.indexReader)
 	return f
 }
 
@@ -114,9 +121,17 @@ func (f *Remote) DataProvider(ctx context.Context) (DataProvider, func()) {
 		}
 	}()
 
-	f.load()
-	dp := f.createDataProvider(ctx)
+	if err := f.load(); err != nil {
+		logger.Error(
+			"will create empty data provider: cannot load remote fraction",
+			zap.String("fraction", f.Info().Name()),
+			zap.Error(err),
+		)
+		f.useMu.RUnlock()
+		return EmptyDataProvider{}, func() {}
+	}
 
+	dp := f.createDataProvider(ctx)
 	return dp, func() {
 		dp.release()
 		f.useMu.RUnlock()
@@ -185,37 +200,87 @@ func (f *Remote) createDataProvider(ctx context.Context) *sealedDataProvider {
 	}
 }
 
-func (f *Remote) load() {
+func (f *Remote) load() error {
 	f.loadMu.Lock()
 	defer f.loadMu.Unlock()
 
-	if !f.isLoaded {
-		f.openDocs()
-		f.openIndex()
-
-		(&Loader{}).Load(&f.state, f.info, &f.indexReader)
-		f.isLoaded = true
+	if f.isLoaded {
+		return nil
 	}
+
+	if err := f.openDocs(); err != nil {
+		return err
+	}
+
+	if err := f.openIndex(); err != nil {
+		return err
+	}
+
+	(&Loader{}).Load(&f.state, f.info, &f.indexReader)
+	f.isLoaded = true
+
+	return nil
 }
 
-func (f *Remote) openIndex() {
-	if f.indexFile == nil {
-		name := path.Base(f.BaseFileName) + consts.IndexFileSuffix
+func (f *Remote) openIndex() error {
+	if f.indexFile != nil {
+		return nil
+	}
+
+	name := path.Base(f.BaseFileName) + consts.IndexFileSuffix
+
+	ok, err := f.s3cli.Exists(f.ctx, name)
+	if err != nil {
+		return fmt.Errorf(
+			"cannot check existence of %q file: %w",
+			consts.IndexFileSuffix, err,
+		)
+	}
+
+	if ok {
 		f.indexFile = s3.NewReader(f.ctx, f.s3cli, name)
 		f.indexReader = storage.NewIndexReader(f.readLimiter, f.indexFile.Name(), f.indexFile, f.indexCache.Registry)
+		return nil
 	}
+
+	return fmt.Errorf("missing %q file", consts.IndexFileSuffix)
 }
 
-func (f *Remote) openDocs() {
-	if f.docsFile == nil {
-		pickedName := path.Base(f.BaseFileName) + consts.DocsFileSuffix
-		sortedName := path.Base(f.BaseFileName) + consts.SdocsFileSuffix
-
-		if ok, _ := f.s3cli.Exists(f.ctx, pickedName); !ok {
-			pickedName = sortedName
-		}
-
-		f.docsFile = s3.NewReader(f.ctx, f.s3cli, pickedName)
-		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
+func (f *Remote) openDocs() error {
+	if f.docsFile != nil {
+		return nil
 	}
+
+	sortedName := path.Base(f.BaseFileName) + consts.SdocsFileSuffix
+	unsortedName := path.Base(f.BaseFileName) + consts.DocsFileSuffix
+
+	unsortedExists, err := f.s3cli.Exists(f.ctx, unsortedName)
+	if err != nil {
+		return fmt.Errorf(
+			"cannot check existence of %q file: %w",
+			consts.DocsFileSuffix, err,
+		)
+	}
+
+	if unsortedExists {
+		f.docsFile = s3.NewReader(f.ctx, f.s3cli, unsortedName)
+		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
+		return nil
+	}
+
+	sortedExists, err := f.s3cli.Exists(f.ctx, sortedName)
+	if err != nil {
+		return fmt.Errorf(
+			"cannot check existence of %q file: %w",
+			consts.SdocsFileSuffix, err,
+		)
+	}
+
+	if sortedExists {
+		f.docsFile = s3.NewReader(f.ctx, f.s3cli, sortedName)
+		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
+		return nil
+	}
+
+	return fmt.Errorf("missing %q and %q files", consts.DocsFileSuffix, consts.SdocsFileSuffix)
 }
