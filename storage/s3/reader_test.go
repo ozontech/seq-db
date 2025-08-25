@@ -94,14 +94,20 @@ func TestReader(t *testing.T) {
 	t.Run("seek-from-current-and-read", func(t *testing.T) {
 		reader := NewReader(t.Context(), s3cli, path.Base(f.Name()))
 
-		_, err := reader.Seek(int64(len(data)/2), io.SeekCurrent)
+		// Move offset to the 1/2 of file.
+		_, err := reader.Seek(int64(len(data)/2), io.SeekStart)
 		require.NoError(t, err)
 
-		readData := make([]byte, len(data)/2)
+		// Move offset to the 3/4 of file.
+		_, err = reader.Seek(int64(len(data)/4), io.SeekCurrent)
+		require.NoError(t, err)
+
+		// Read last 1/4 of file.
+		readData := make([]byte, len(data)/4)
 		_, err = reader.Read(readData)
 		require.NoError(t, err)
 
-		assert.Equal(t, data[len(data)/2:], readData)
+		assert.Equal(t, data[3*len(data)/4:], readData)
 	})
 
 	t.Run("seek-from-end-and-read", func(t *testing.T) {
