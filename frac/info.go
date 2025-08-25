@@ -12,7 +12,6 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/storage"
 )
 
 const DistributionMaxInterval = 24 * time.Hour
@@ -38,10 +37,6 @@ type Info struct {
 	CreationTime uint64                `json:"creation_time"`
 	SealingTime  uint64                `json:"sealing_time"`
 	Distribution *seq.MIDsDistribution `json:"distribution"`
-
-	// StorageType specifies storage where fraction is located.
-	// For now it can be either local storage or S3 storage.
-	StorageType storage.Type `json:"storage_type"`
 }
 
 func NewInfo(filename string, docsOnDisk, metaOnDisk uint64) *Info {
@@ -57,7 +52,6 @@ func NewInfo(filename string, docsOnDisk, metaOnDisk uint64) *Info {
 		ConstLIDBlockCap:      consts.LIDBlockCap,
 		DocsOnDisk:            docsOnDisk,
 		MetaOnDisk:            metaOnDisk,
-		StorageType:           storage.TypeLocal,
 	}
 }
 

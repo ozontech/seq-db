@@ -90,7 +90,6 @@ func NewRemote(
 
 	f.openIndex()
 	f.info = loadHeader(f.indexFile, f.indexReader)
-	f.info.StorageType = storage.TypeRemote
 
 	return f
 }

@@ -6,13 +6,6 @@ import (
 	"os"
 )
 
-type Type string
-
-const (
-	TypeLocal  Type = "local"
-	TypeRemote Type = "remote"
-)
-
 type ImmutableFile interface {
 	Name() string
 	Stat() (os.FileInfo, error)

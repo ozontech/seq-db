@@ -188,7 +188,6 @@ func NewSealedPreloaded(
 	)
 
 	f.info.MetaOnDisk = 0
-	f.info.StorageType = storage.TypeLocal
 
 	return f
 }

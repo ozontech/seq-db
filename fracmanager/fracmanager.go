@@ -291,8 +291,6 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 				zap.String("took", time.Since(offloadStart).String()),
 			)
 
-			// Update storage type for offloaded fraction.
-			info.StorageType = storage.TypeRemote
 			remote := fm.fracProvider.NewRemote(fm.ctx, info.Path, info)
 
 			fm.fracMu.Lock()
