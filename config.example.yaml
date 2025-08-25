@@ -7,8 +7,8 @@ address:
   debug: :9200
 
 storage:
-  frac_size: 1MiB
-  total_size: 10MiB
+  frac_size: 16MiB
+  total_size: 1GiB
 
 # For testing or developments purposes you can run MinIO S3 compatible object storage locally.
 #
