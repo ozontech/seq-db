@@ -38,7 +38,7 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 
 	ids := []seq.IDSource{id}
 
-	docs, err := fetcher.FetchDocs(t.Context(), fm.GetFracs(FracTypeLocal), ids)
+	docs, err := fetcher.FetchDocs(t.Context(), fm.GetAllFracs(), ids)
 	assert.NoError(t, err)
 	for _, v := range docs {
 		assert.Equal(t, []byte("document"), v)
@@ -60,7 +60,7 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	}
 	ids = append(ids, newID)
 	counter := 0
-	docs, err = fetcher.FetchDocs(context.TODO(), fm.GetFracs(FracTypeLocal), ids)
+	docs, err = fetcher.FetchDocs(context.TODO(), fm.GetAllFracs(), ids)
 	assert.NoError(t, err)
 	for _, v := range docs {
 		counter++

@@ -130,7 +130,7 @@ func TestMatureMode(t *testing.T) {
 	// second run
 	launchAndCheck(func(fm *FracManager) {
 		assert.Equal(t, false, fm.Mature(), "file .immature must exist")
-		for fm.GetFracs(FracTypeLocal).GetTotalSize() < fm.config.TotalSize {
+		for fm.GetAllFracs().GetTotalSize() < fm.config.TotalSize {
 			makeSealedFrac(fm, 10)
 		}
 		assert.Equal(t, false, fm.Mature(), "file .immature must still exist")

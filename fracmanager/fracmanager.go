@@ -41,7 +41,7 @@ type FracManager struct {
 
 	fracMu      sync.RWMutex
 	localFracs  []*fracRef
-	remoteFracs []*fracRef
+	remoteFracs []*frac.Remote
 	active      activeRef
 
 	fracProvider *fractionProvider
@@ -105,7 +105,7 @@ func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracMan
 		s3cli:           s3cli,
 		mature:          atomic.Bool{},
 		cacheMaintainer: cacheMaintainer,
-		fracProvider:    newFractionProvider(&cfg.Fraction, cacheMaintainer, config.ReaderWorkers, config.IndexWorkers),
+		fracProvider:    newFractionProvider(&cfg.Fraction, s3cli, cacheMaintainer, config.ReaderWorkers, config.IndexWorkers),
 		ulidEntropy:     ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
 		fracCache:       NewSealedFracCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix)),
 	}
@@ -135,7 +135,7 @@ func (fm *FracManager) maintenance(sealWg, cleanupWg *sync.WaitGroup) {
 	fm.cleanupFractions(cleanupWg)
 	fm.removeStaleFractions(cleanupWg, fm.config.OffloadingRetention)
 
-	if oldestByCT := fm.GetFracs(FracTypeLocal | FracTypeRemote).GetOldestFrac(); oldestByCT != nil {
+	if oldestByCT := fm.GetAllFracs().GetOldestFrac(); oldestByCT != nil {
 		newOldestCT := oldestByCT.Info().CreationTime
 		prevOldestCT := fm.OldestCT.Swap(newOldestCT)
 		if newOldestCT != prevOldestCT {
@@ -174,14 +174,14 @@ func (fm *FracManager) removeStaleFractions(cleanupWg *sync.WaitGroup, retention
 	}
 
 	var (
-		staleFractions []*fracRef
-		freshFractions []*fracRef
+		staleFractions []*frac.Remote
+		freshFractions []*frac.Remote
 	)
 
 	fm.fracMu.Lock()
 
 	for _, f := range fm.remoteFracs {
-		ct := time.UnixMilli(int64(f.instance.Info().CreationTime))
+		ct := time.UnixMilli(int64(f.Info().CreationTime))
 		if time.Since(ct) < retention {
 			freshFractions = append(freshFractions, f)
 			continue
@@ -198,17 +198,17 @@ func (fm *FracManager) removeStaleFractions(cleanupWg *sync.WaitGroup, retention
 		defer cleanupWg.Done()
 
 		for _, f := range staleFractions {
-			ct := time.UnixMilli(int64(f.instance.Info().CreationTime))
+			ct := time.UnixMilli(int64(f.Info().CreationTime))
 
 			logger.Info(
 				"removing stale remote fraction",
-				zap.String("fraction", f.instance.Info().Name()),
+				zap.String("fraction", f.Info().Name()),
 				zap.Time("creation_time", ct),
 				zap.String("retention", retention.String()),
 			)
 
-			fm.fracCache.RemoveFraction(f.instance.Info().Name())
-			f.instance.Suicide()
+			fm.fracCache.RemoveFraction(f.Info().Name())
+			f.Suicide()
 		}
 	}()
 }
@@ -216,7 +216,7 @@ func (fm *FracManager) removeStaleFractions(cleanupWg *sync.WaitGroup, retention
 func (fm *FracManager) determineOutsiders() []frac.Fraction {
 	var outsiders []frac.Fraction
 
-	localFracs := fm.GetFracs(FracTypeLocal)
+	localFracs := fm.getLocalFracs()
 	occupiedSize := localFracs.GetTotalSize()
 
 	for occupiedSize > fm.config.TotalSize {
@@ -249,9 +249,7 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 			defer cleanupWg.Done()
 
 			info := outsider.Info()
-			// Client for offloading is not configured.
-			// So just kill fraction.
-			if fm.s3cli == nil {
+			if !fm.config.OffloadingEnabled {
 				fm.fracCache.RemoveFraction(info.Name())
 				outsider.Suicide()
 				return
@@ -295,10 +293,10 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 
 			// Update storage type for offloaded fraction.
 			info.StorageType = storage.TypeRemote
-			remote := fm.fracProvider.NewRemote(fm.ctx, info.Path, info, fm.s3cli)
+			remote := fm.fracProvider.NewRemote(fm.ctx, info.Path, info)
 
 			fm.fracMu.Lock()
-			fm.remoteFracs = append(fm.remoteFracs, &fracRef{remote})
+			fm.remoteFracs = append(fm.remoteFracs, remote)
 			fm.fracMu.Unlock()
 
 			outsider.Suicide()
@@ -313,30 +311,39 @@ const (
 	FracTypeRemote
 )
 
-// GetFracs returns a list of known fracs (local or remote).
+// GetAllFracs returns a list of known fracs (local and remote).
 //
 // While working with this list, it may become irrelevant (factions may, for example, be deleted).
 // This is a valid situation, because access to the data of these factions (search and fetch) occurs under blocking (see DataProvider).
 // This way we avoid the race.
 //
 // Accessing the deleted faction data just will return an empty result.
-func (fm *FracManager) GetFracs(ft FracType) (fracs List) {
+func (fm *FracManager) GetAllFracs() (fracs List) {
+	return append(fm.getLocalFracs(), fm.getRemoteFracs()...)
+}
+
+func (fm *FracManager) getLocalFracs() List {
 	fm.fracMu.RLock()
 	defer fm.fracMu.RUnlock()
 
-	if ft&FracTypeLocal != 0 {
-		for _, f := range fm.localFracs {
-			fracs = append(fracs, f.instance)
-		}
+	fracs := make(List, 0, len(fm.localFracs))
+	for _, f := range fm.localFracs {
+		fracs = append(fracs, f.instance)
 	}
 
-	if ft&FracTypeRemote != 0 {
-		for _, f := range fm.remoteFracs {
-			fracs = append(fracs, f.instance)
-		}
+	return fracs
+}
+
+func (fm *FracManager) getRemoteFracs() List {
+	fm.fracMu.RLock()
+	defer fm.fracMu.RUnlock()
+
+	fracs := make(List, 0, len(fm.remoteFracs))
+	for _, f := range fm.remoteFracs {
+		fracs = append(fracs, f)
 	}
 
-	return
+	return fracs
 }
 
 func (fm *FracManager) processFracsStats() {
@@ -379,8 +386,8 @@ func (fm *FracManager) processFracsStats() {
 		metric.DataSizeTotal.WithLabelValues("index", st).Set(float64(ft.index))
 	}
 
-	setMetrics("local", calculate(fm.GetFracs(FracTypeLocal)))
-	setMetrics("remote", calculate(fm.GetFracs(FracTypeRemote)))
+	setMetrics("local", calculate(fm.getLocalFracs()))
+	setMetrics("remote", calculate(fm.getRemoteFracs()))
 
 	oldestCT := fm.OldestCT.Load()
 
@@ -429,7 +436,7 @@ func (fm *FracManager) Start() {
 }
 
 func (fm *FracManager) Load(ctx context.Context) error {
-	l := NewLoader(fm.config, fm.s3cli, fm.fracProvider, fm.fracCache)
+	l := NewLoader(fm.config, fm.fracProvider, fm.fracCache)
 
 	actives, sealed, remote, err := l.load(ctx)
 	if err != nil {
@@ -441,7 +448,7 @@ func (fm *FracManager) Load(ctx context.Context) error {
 	}
 
 	for _, s := range remote {
-		fm.remoteFracs = append(fm.remoteFracs, &fracRef{instance: s})
+		fm.remoteFracs = append(fm.remoteFracs, s)
 	}
 
 	if err := fm.replayAll(ctx, actives); err != nil {

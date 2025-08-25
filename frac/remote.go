@@ -51,7 +51,7 @@ type Remote struct {
 
 	loadMu   *sync.RWMutex
 	isLoaded bool
-	state    *State
+	state    sealedState
 
 	s3cli       *s3.Client
 	readLimiter *storage.ReadLimiter
@@ -70,7 +70,6 @@ func NewRemote(
 	f := &Remote{
 		ctx: ctx,
 
-		state:  &State{},
 		loadMu: &sync.RWMutex{},
 
 		readLimiter: readLimiter,
@@ -90,7 +89,7 @@ func NewRemote(
 	}
 
 	f.openIndex()
-	f.info = loadHeader(f.BaseFileName, f.indexFile, f.indexReader)
+	f.info = loadHeader(f.indexFile, f.indexReader)
 	f.info.StorageType = storage.TypeRemote
 
 	return f
@@ -195,7 +194,7 @@ func (f *Remote) load() {
 		f.openDocs()
 		f.openIndex()
 
-		(&Loader{}).Load(f.state, f.info, &f.indexReader)
+		(&Loader{}).Load(&f.state, f.info, &f.indexReader)
 		f.isLoaded = true
 	}
 }

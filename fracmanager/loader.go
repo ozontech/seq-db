@@ -14,7 +14,6 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/storage/s3"
 )
 
 type fracInfo struct {
@@ -30,8 +29,6 @@ type fracInfo struct {
 }
 
 type loader struct {
-	s3cli *s3.Client
-
 	config       *Config
 	fracProvider *fractionProvider
 	fracCache    *sealedFracCache
@@ -41,11 +38,10 @@ type loader struct {
 }
 
 func NewLoader(
-	config *Config, s3cli *s3.Client,
-	fracProvider *fractionProvider, fracCache *sealedFracCache,
+	config *Config, fracProvider *fractionProvider,
+	fracCache *sealedFracCache,
 ) *loader {
 	return &loader{
-		s3cli:        s3cli,
 		config:       config,
 		fracProvider: fracProvider,
 		fracCache:    fracCache,
@@ -134,7 +130,7 @@ func (l *loader) loadRemoteFrac(ctx context.Context, diskFracCache *sealedFracCa
 		l.uncachedFracs++
 	}
 
-	remote := l.fracProvider.NewRemote(ctx, info.base, listedInfo, l.s3cli)
+	remote := l.fracProvider.NewRemote(ctx, info.base, listedInfo)
 
 	stats := remote.Info()
 	l.fracCache.AddFraction(stats.Name(), stats)

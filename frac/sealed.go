@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"go.uber.org/zap"
@@ -45,7 +46,7 @@ type Sealed struct {
 
 	loadMu   *sync.RWMutex
 	isLoaded bool
-	state    *State
+	state    sealedState
 
 	readLimiter *storage.ReadLimiter
 
@@ -53,7 +54,7 @@ type Sealed struct {
 	PartialSuicideMode PSD
 }
 
-type State struct {
+type sealedState struct {
 	idsTable      seqids.Table
 	lidsTable     *lids.Table
 	BlocksOffsets []uint64
@@ -76,7 +77,6 @@ func NewSealed(
 	config *Config,
 ) *Sealed {
 	f := &Sealed{
-		state:  &State{},
 		loadMu: &sync.RWMutex{},
 
 		readLimiter: readLimiter,
@@ -96,7 +96,7 @@ func NewSealed(
 	}
 
 	f.openIndex()
-	f.info = loadHeader(f.BaseFileName, f.indexFile, f.indexReader)
+	f.info = loadHeader(f.indexFile, f.indexReader)
 
 	return f
 }
@@ -149,7 +149,7 @@ func NewSealedPreloaded(
 	config *Config,
 ) *Sealed {
 	f := &Sealed{
-		state: &State{
+		state: sealedState{
 			idsTable:      preloaded.idsTable,
 			lidsTable:     preloaded.lidsTable,
 			BlocksOffsets: preloaded.blocksOffsets,
@@ -202,7 +202,7 @@ func (f *Sealed) load() {
 		f.openDocs()
 		f.openIndex()
 
-		(&Loader{}).Load(f.state, f.info, &f.indexReader)
+		(&Loader{}).Load(&f.state, f.info, &f.indexReader)
 		f.isLoaded = true
 	}
 }
@@ -230,10 +230,14 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) 
 	}
 
 	remoteFracName := f.BaseFileName + consts.RemoteFractionSuffix
-	if _, err := os.Create(remoteFracName); err != nil {
+
+	file, err := os.Create(remoteFracName)
+	if err != nil {
 		return true, err
 	}
+	defer file.Close()
 
+	util.MustSyncPath(filepath.Dir(remoteFracName))
 	return true, nil
 }
 
@@ -405,7 +409,6 @@ func (f *Sealed) IsIntersecting(from, to seq.MID) bool {
 }
 
 func loadHeader(
-	baseFileName string,
 	indexFile storage.ImmutableFile,
 	indexReader storage.IndexReader,
 ) *Info {

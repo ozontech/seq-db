@@ -389,7 +389,11 @@ func TestExtraFractionsRemoved(t *testing.T) {
 
 	sealWG := sync.WaitGroup{}
 	suicideWG := sync.WaitGroup{}
+
 	fm.maintenance(&sealWG, &suicideWG) // shrinkSizes should be called
+	sealWG.Wait()
+	suicideWG.Wait()
+
 	fm.Stop()
 
 	fracsOnDisk := []string{}
@@ -435,7 +439,11 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	// make sure the disk is in sync with the in-memory fraction cache
 	sealWG := sync.WaitGroup{}
 	suicideWG := sync.WaitGroup{}
+
 	fm.maintenance(&sealWG, &suicideWG) // shrinkSizes should be called
+	sealWG.Wait()
+	suicideWG.Wait()
+
 	fm.Stop()
 
 	// remove the fraction files
@@ -460,7 +468,11 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 
 	sealWG2 := sync.WaitGroup{}
 	suicideWG2 := sync.WaitGroup{}
+
 	fm2.maintenance(&sealWG2, &suicideWG2) // shrinkSizes should be called
+	sealWG2.Wait()
+	suicideWG2.Wait()
+
 	fm2.Stop()
 
 	// make sure the missing files are removed from the fraction cache

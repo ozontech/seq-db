@@ -19,7 +19,7 @@ type Loader struct {
 	blockBuf   []byte
 }
 
-func (l *Loader) Load(state *State, info *Info, indexReader *storage.IndexReader) {
+func (l *Loader) Load(state *sealedState, info *Info, indexReader *storage.IndexReader) {
 	t := time.Now()
 
 	l.reader = indexReader

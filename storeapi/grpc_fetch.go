@@ -12,7 +12,6 @@ import (
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/pkg/storeapi"
@@ -69,7 +68,7 @@ func (g *GrpcV1) doFetch(ctx context.Context, req *storeapi.FetchRequest, stream
 	dp := acquireDocFieldsFilter(req.FieldsFilter)
 	defer releaseDocFieldsFilter(dp)
 
-	docsStream := newDocsStream(ctx, ids, g.fetchData.docFetcher, g.fracManager.GetFracs(fracmanager.FracTypeLocal|fracmanager.FracTypeRemote))
+	docsStream := newDocsStream(ctx, ids, g.fetchData.docFetcher, g.fracManager.GetAllFracs())
 	for _, id := range ids {
 		workTime := time.Now()
 		doc, err := docsStream.Next()

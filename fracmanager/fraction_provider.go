@@ -18,17 +18,22 @@ var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
 })
 
 type fractionProvider struct {
+	s3cli         *s3.Client
 	config        *frac.Config
 	cacheProvider *CacheMaintainer
 	activeIndexer *frac.ActiveIndexer
 	readLimiter   *storage.ReadLimiter
 }
 
-func newFractionProvider(c *frac.Config, cp *CacheMaintainer, readerWorkers, indexWorkers int) *fractionProvider {
+func newFractionProvider(
+	c *frac.Config, s3cli *s3.Client, cp *CacheMaintainer,
+	readerWorkers, indexWorkers int,
+) *fractionProvider {
 	ai := frac.NewActiveIndexer(indexWorkers, indexWorkers)
 	ai.Start() // first start indexWorkers to allow active frac replaying
 
 	return &fractionProvider{
+		s3cli:         s3cli,
 		config:        c,
 		cacheProvider: cp,
 		activeIndexer: ai,
@@ -70,7 +75,7 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *frac.
 }
 
 func (fp *fractionProvider) NewRemote(
-	ctx context.Context, name string, cachedInfo *frac.Info, s3cli *s3.Client,
+	ctx context.Context, name string, cachedInfo *frac.Info,
 ) *frac.Remote {
 	return frac.NewRemote(
 		ctx,
@@ -80,7 +85,7 @@ func (fp *fractionProvider) NewRemote(
 		fp.cacheProvider.CreateDocBlockCache(),
 		cachedInfo,
 		fp.config,
-		s3cli,
+		fp.s3cli,
 	)
 }
 

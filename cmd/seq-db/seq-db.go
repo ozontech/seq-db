@@ -302,26 +302,7 @@ func startStore(
 		},
 	}
 
-	var s3cli *s3.Client
-	if cfg.Offloading.Enabled {
-		cli, err := s3.NewClient(
-			cfg.Offloading.Endpoint,
-			cfg.Offloading.AccessKey,
-			cfg.Offloading.SecretKey,
-			cfg.Offloading.Region,
-			cfg.Offloading.Bucket,
-		)
-
-		if err != nil {
-			logger.Fatal(
-				"cannot create S3 client",
-				zap.Error(err),
-			)
-		}
-
-		s3cli = cli
-	}
-
+	s3cli := initS3Client(cfg)
 	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp)
 	if err != nil {
 		logger.Fatal("initializing store", zap.Error(err))
@@ -336,6 +317,29 @@ func startStore(
 	}
 
 	return store
+}
+
+func initS3Client(cfg config.Config) *s3.Client {
+	if !cfg.Offloading.Enabled {
+		return nil
+	}
+
+	cli, err := s3.NewClient(
+		cfg.Offloading.Endpoint,
+		cfg.Offloading.AccessKey,
+		cfg.Offloading.SecretKey,
+		cfg.Offloading.Region,
+		cfg.Offloading.Bucket,
+	)
+
+	if err != nil {
+		logger.Fatal(
+			"cannot create S3 client",
+			zap.Error(err),
+		)
+	}
+
+	return cli
 }
 
 func enableIndexingForAllFields(mappingPath string) bool {
