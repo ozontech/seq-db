@@ -165,7 +165,12 @@ func (f *proxyFrac) Offload(ctx context.Context, u storage.Uploader) (bool, erro
 	if f.isSealingState() {
 		f.useMu.RUnlock()
 		f.sealWg.Wait()
-		return f.cur().Offload(ctx, u)
+
+		if c := f.cur(); c != nil {
+			return c.Offload(ctx, u)
+		}
+
+		return false, nil
 	}
 
 	f.useMu.RUnlock()
