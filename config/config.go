@@ -219,7 +219,7 @@ type Config struct {
 		Retention time.Duration `config:"retention"`
 
 		// Endpoint configures S3 endpoint for S3 client.
-		Endpoint string `config:"endpoint" default:"http://s3.us-east-1.amazonaws.com/"`
+		Endpoint string `config:"endpoint" default:"https://s3.us-east-1.amazonaws.com/"`
 		// Bucket configures the name of S3 bucket where [frac.Remote] fractions will be stored.
 		Bucket string `config:"bucket"`
 		Region string `config:"region" default:"us-east-1"`
