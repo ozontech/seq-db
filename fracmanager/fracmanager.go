@@ -219,6 +219,7 @@ func (fm *FracManager) determineOutsiders() []frac.Fraction {
 	localFracs := fm.getLocalFracs()
 	occupiedSize := localFracs.GetTotalSize()
 
+	var truncated int
 	for occupiedSize > fm.config.TotalSize {
 		outsider := fm.shiftFirstFrac()
 		if outsider == nil {
@@ -228,12 +229,14 @@ func (fm *FracManager) determineOutsiders() []frac.Fraction {
 		localFracs = localFracs[1:]
 		outsiders = append(outsiders, outsider)
 		occupiedSize -= outsider.Info().FullSize()
+		truncated++
 	}
 
 	if len(outsiders) > 0 && !fm.Mature() {
 		fm.setMature()
 	}
 
+	metric.MaintenanceTruncateTotal.Add(float64(truncated))
 	return outsiders
 }
 
