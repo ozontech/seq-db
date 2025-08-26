@@ -185,6 +185,12 @@ func (l *loader) makeInfos(files []string) ([]string, map[string]*fracInfo) {
 			continue
 		}
 
+		// TODO(dkharms): Remove this condition in the following PR.
+		// https://github.com/ozontech/seq-db/pull/60/
+		if suffix == consts.RemoteFractionSuffix {
+			continue
+		}
+
 		info, ok := infos[fracID]
 		if !ok {
 			info = &fracInfo{base: base}
