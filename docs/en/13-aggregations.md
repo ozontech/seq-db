@@ -40,10 +40,10 @@ Calculation of the aforementioned aggregations requires:
 In general, this translates to the following sql query:
 
 ```sql
-SELECT <group_by_field>, AGG_FUNC(<aggregate_by_field>),
+SELECT <group_by_field>, AGG_FUNC(<aggregate_by_field>)
 FROM db
-GROUP BY <group_by_field>
 WHERE <filtering_query>
+GROUP BY <group_by_field>
 ```
 
 Considering real-world example, we may want to calculate average response time for services having `response_time`
@@ -52,7 +52,8 @@ field, then we will write the following query:
 ```sql
 SELECT service, AVG(response_time)
 FROM db
-GROUP BY service WHERE response_time:* -- meaning that `response_time` field exists in logs
+WHERE response_time:* -- meaning that `response_time` field exists in logs
+GROUP BY service
 ```
 
 ### Count, unique
@@ -66,8 +67,8 @@ Identical sql query for the `AGG_FUNC_COUNT` aggregation:
 ```sql
 SELECT <aggregate_by_field>, COUNT (*)
 FROM db
-GROUP BY <aggregate_by_field>
 WHERE <filtering_query>
+GROUP BY <aggregate_by_field>
 ```
 
 Considering real-world example, we may want to calculate number of logs for each logging level (`debug`, `info`, etc.)
@@ -77,12 +78,34 @@ the particular service, e.g. `seq-db`, then we can write the following query:
 ```sql
 SELECT level, COUNT(*)
 FROM db
-GROUP BY level WHERE service:seq-db
+WHERE service:seq-db
+GROUP BY level
 ```
 
 ## Histograms
 
-Histograms allow users to visually understand amount of logs in each sub-interval. E.g. visualize number of logs
-particular service for the given interval of time
+Histograms allow users to visually interpret the distribution of logs satisfying given query. E.g. number of logs of the
+particular service for the given interval of time.
 
-For the API of the functions, please refer to [public API](10-public-api.md#gethistogram)
+Histograms can be queried separately, using [GetHistogram](10-public-api.md#gethistogram) or with documents and
+functional aggregations using [ComplexSearch](10-public-api.md#complexsearch) gRPC handlers.
+
+For the detailed API and examples, please refer to [public API](10-public-api.md#gethistogram)
+
+## Timeseries
+
+Timeseries allow to calculate aggregations for intervals and visualize them. They are something in between histograms
+and functional aggregations: they allow to simultaneously calculate multiple histograms for the given aggregate
+functions.
+
+Consider the previous example of histograms, where we visualized number of logs over time only for one service at a
+time. Using the power of timeseries, we can calculate number of logs for each service simultaneously, using the
+`AGG_FUNC_COUNT` over `service` field.
+
+Another example of using timeseries is visualizing number of logs for each log-level over time. It may be exceptionally
+useful, when there is a need to debug real-time problems. We can simply visualize number of logs for each level and find
+unusual spikes and logs associated with them.
+
+Because timeseries are basically aggregations, they have the same API as aggregations, except a new `interval` field is
+present to calculate number of buckets to calculate aggregation on. For the details, please refer
+to [public API](10-public-api.md#aggregation-examples)
