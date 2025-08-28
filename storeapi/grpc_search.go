@@ -103,6 +103,32 @@ func (g *GrpcV1) doSearch(
 
 	parseQueryTr := tr.NewChild("parse query")
 	ast, err := g.parseQuery(ctx, req.Query)
+
+	fromTime := seq.MIDToTime(seq.MID(req.From))
+	toTime := seq.MIDToTime(seq.MID(req.To))
+
+	toTimeFilter := g.config.Filter.To
+	fromTimeFilter := g.config.Filter.From
+
+	if fromTime.Before(toTimeFilter) && fromTimeFilter.Before(toTime) {
+		logger.Info("patching query",
+			zap.Time("from_query", fromTime),
+			zap.Time("to_query", toTime),
+			zap.Time("from_filter", fromTimeFilter),
+			zap.Time("to_filter", toTimeFilter),
+			zap.String("query", req.Query),
+		)
+
+		parseQuery, err := g.parseQuery(ctx, g.config.Filter.Query)
+		if err != nil {
+			return nil, err
+		}
+		ast = &parser.ASTNode{
+			Children: []*parser.ASTNode{ast, parseQuery},
+			Value:    &parser.Logical{Operator: parser.LogicalAnd},
+		}
+	}
+
 	parseQueryTr.Done()
 	if err != nil {
 		if code, ok := parseStoreError(err); ok {

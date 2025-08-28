@@ -299,6 +299,11 @@ func startStore(
 			Fetch: storeapi.FetchConfig{
 				LogThreshold: cfg.SlowLogs.FetchThreshold,
 			},
+			Filter: storeapi.FilterConfig{
+				Query: cfg.Filtering.Query,
+				To:    cfg.Filtering.To,
+				From:  cfg.Filtering.From,
+			},
 		},
 	}
 

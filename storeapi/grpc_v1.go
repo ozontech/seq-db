@@ -43,11 +43,18 @@ type FetchConfig struct {
 	LogThreshold time.Duration
 }
 
+type FilterConfig struct {
+	Query string    `config:"query"`
+	From  time.Time `config:"from"`
+	To    time.Time `config:"to"`
+}
+
 type APIConfig struct {
 	StoreMode string
 	Bulk      BulkConfig
 	Search    SearchConfig
 	Fetch     FetchConfig
+	Filter    FilterConfig
 }
 
 func (c *APIConfig) setDefaults() error {
