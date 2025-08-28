@@ -103,6 +103,13 @@ func (g *GrpcV1) doSearch(
 
 	parseQueryTr := tr.NewChild("parse query")
 	ast, err := g.parseQuery(ctx, req.Query)
+	if err != nil {
+		parseQueryTr.Done()
+		if code, ok := parseStoreError(err); ok {
+			return &storeapi.SearchResponse{Code: code}, nil
+		}
+		return nil, err
+	}
 
 	fromTime := seq.MIDToTime(seq.MID(req.From))
 	toTime := seq.MIDToTime(seq.MID(req.To))
@@ -110,7 +117,9 @@ func (g *GrpcV1) doSearch(
 	toTimeFilter := g.config.Filter.To
 	fromTimeFilter := g.config.Filter.From
 
-	if fromTime.Before(toTimeFilter) && fromTimeFilter.Before(toTime) {
+	if g.config.Filter.Query != "" &&
+		(toTimeFilter.IsZero() || fromTime.Before(toTimeFilter)) &&
+		(fromTimeFilter.IsZero() || fromTimeFilter.Before(toTime)) {
 		logger.Info("patching query",
 			zap.Time("from_query", fromTime),
 			zap.Time("to_query", toTime),
@@ -121,6 +130,10 @@ func (g *GrpcV1) doSearch(
 
 		parseQuery, err := g.parseQuery(ctx, g.config.Filter.Query)
 		if err != nil {
+			parseQueryTr.Done()
+			if code, ok := parseStoreError(err); ok {
+				return &storeapi.SearchResponse{Code: code}, nil
+			}
 			return nil, err
 		}
 		ast = &parser.ASTNode{
@@ -130,13 +143,6 @@ func (g *GrpcV1) doSearch(
 	}
 
 	parseQueryTr.Done()
-	if err != nil {
-		if code, ok := parseStoreError(err); ok {
-			return &storeapi.SearchResponse{Code: code}, nil
-		}
-		return nil, err
-	}
-
 	if util.IsCancelled(ctx) {
 		return nil, fmt.Errorf("search cancelled before evaluating: reason=%w", ctx.Err())
 	}

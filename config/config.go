@@ -250,10 +250,10 @@ type Config struct {
 		SamplingRate float64 `config:"sampling_rate" default:"0.01"`
 	} `config:"tracing"`
 
-	// additional filtering options
+	// Additional filtering options
 	Filtering struct {
-		// If a search query time range has an intersection with [from; to] range
-		// the search query will include an additional predicate with the provided query expression
+		// If a search query time range overlaps with the [from; to] range
+		// the search query will be `AND`-ed with an additional predicate with the provided query expression
 		Query string    `config:"query"`
 		From  time.Time `config:"from"`
 		To    time.Time `config:"to"`
