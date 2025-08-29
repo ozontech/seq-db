@@ -5,7 +5,7 @@ docs=("documents-181998.json.bz2" "documents-191998.json.bz2" "documents-201998.
   
 for doc in ${docs[@]}; do
   trimmed=$(basename ${doc} .json.bz2)
-  if [ ! -f ${trimmed}.json ]; then
-    curl http://benchmarks.elasticsearch.org.s3.amazonaws.com/corpora/http_logs/${doc} | bzip2 --decompress -c > ${trimmed}.json
+  if [ ! -f ${trimmed}.log ]; then
+    curl http://benchmarks.elasticsearch.org.s3.amazonaws.com/corpora/http_logs/${doc} | bzip2 --decompress -c > ${trimmed}.log
   fi
 done

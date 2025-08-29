@@ -11,7 +11,7 @@ pipeline-input-settings: &pipeline-input-settings
   persistence_mode: 'async'
   paths:
     include:
-      - '/var/file.d/logs/*.json'
+      - '/var/file.d/logs/*.log'
 
 pipeline-output-settings: &pipeline-output-settings
   type: elasticsearch

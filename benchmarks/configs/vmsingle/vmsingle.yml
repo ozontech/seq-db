@@ -15,4 +15,4 @@ scrape_configs:
       - targets: [ 'filed:9000' ]
   - job_name: 'seq-db'
     static_configs:
-      - targets: [ 'seq-db:9200 ']
+      - targets: [ 'seq-db:9200' ]

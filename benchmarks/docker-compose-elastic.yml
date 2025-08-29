@@ -18,11 +18,13 @@ services:
           cpus: "4"
           memory: "8GB"
     image: elasticsearch:8.17.4
+    ports:
+      - '9200:9200'
     volumes:
       - ./configs/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
       - elastic-data:/usr/share/elasticsearch/data
     healthcheck:
-      test: [ "CMD-SHELL", "curl http://localhost:9200/_cat" ]
+      test: [ "CMD-SHELL", "curl -f -s http://localhost:9200/_cluster/health | grep 'green'" ]
       interval: 10s
       timeout: 5s
       retries: 5

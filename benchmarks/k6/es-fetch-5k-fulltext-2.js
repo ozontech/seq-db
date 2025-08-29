@@ -1,5 +1,5 @@
 import http from 'k6/http';
-import { sleep } from 'k6';
+import { check, sleep } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL;
 const PAGE_SIZE = 100;
@@ -27,6 +27,7 @@ export default function () {
     { headers: { 'Content-Type': 'application/json' } }
   );
 
+  check(res, { "200-ok": (res) => res.status == 200});
 
   sleep(0.2);
 }  
