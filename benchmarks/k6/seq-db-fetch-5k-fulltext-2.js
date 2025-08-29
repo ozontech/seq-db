@@ -16,7 +16,7 @@ export default function () {
 
   const query = JSON.stringify({
     query: {
-      query: "request: \"GET /english/images/top_stories.gif HTTP/1.0\"",
+      query: 'request: "GET /english/images/top_stories.gif HTTP/1.0"',
       from: "2000-01-01T00:00:00Z",
       to: "2050-01-01T00:00:00Z",
       explain: false,
