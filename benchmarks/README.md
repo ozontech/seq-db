@@ -29,7 +29,7 @@ It will start up necessary containers and then you can observe metrics on Grafan
 ## How it works?
 
 There are several the most important containers:
-- `seq-db` - seq-db container that processes logs (version `v0.49.1`);
+- `seq-db` - seq-db container that processes logs (version `v0.61.0`);
 - `elastic` - Elasticsearch container that processes logs (version `v8.17.4`);
 - `filed` - file.d log shipper which has two outputs pointing to `seq-db` and `elastic` containers;
 
