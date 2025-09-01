@@ -119,12 +119,12 @@ var (
 		Help:      "",
 	}, []string{"kind", "storage_type"})
 
-	OldestFracTime = promauto.NewGauge(prometheus.GaugeOpts{
+	OldestFracTime = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "common",
 		Name:      "oldest_frac_time",
 		Help:      "",
-	})
+	}, []string{"storage_type"})
 
 	BulkDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
