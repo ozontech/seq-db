@@ -2,8 +2,9 @@
 
 ## Components overview
 
-In cluster mode, seq-db consists of two main components: seq-db store and seq-db proxy
-
+In cluster mode, seq-db consists of two main components: 
+ - seq-db store (seq-db instance running with `--mode=store flag`)
+ - seq-db proxy (seq-db instance running with `--mode=proxy flag`).
 
 ### seq-db store
 seq-db store is the stateful storage component, that keeps all the
@@ -129,24 +130,24 @@ sequenceDiagram
   end 
 
   Note over Proxy,C: seq-db proxy chooses <br /> a random  replica of each shard
-  Client->>Proxy: req1
-  Proxy->>A: req1
-  Proxy->>C: req1
+  Client->>Proxy: request 1
+  Proxy->>A: request 1
+  Proxy->>C: request 1
 
-  A-->>Proxy: res1_A
-  C-->>Proxy: res1_C
+  A-->>Proxy: response 1 (shard1 replica A)
+  C-->>Proxy: response 1 (shard2 replica A)
   Note over Proxy: seq-db proxy merges the returned responses
-  Proxy-->>Client: merge(res1_A, res1_C)
+  Proxy-->>Client: merge(res1_s1rA, res1_s2rA)
     
 
-  Client->>Proxy: req2
-  Proxy->>B: req2
-  Proxy->>C: req2
+  Client->>Proxy: request 2
+  Proxy->>B: request 2
+  Proxy->>D: request 2
 
-  C-->>Proxy: res2_C
-  D-->>Proxy: res2_D
+  B-->>Proxy: response 2 (shard1 replica B)
+  D-->>Proxy: response 2 (shard2 replica B)
 
-  Proxy-->>Client: merge(res2_C, res2_D)
+  Proxy-->>Client: merge(res2_s1rB, res2_s2rB)
 ```
 
 ## Notes about replication & consistency

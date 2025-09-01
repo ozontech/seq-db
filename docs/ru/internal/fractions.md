@@ -33,7 +33,7 @@ The sealed fraction consists of 2 files:
 * Document file. The same as for the active .
 * Index file. This is a serialized representation of the index of the active .
 
-Sealing is the process of serializing the in-memory index of the active  into an index file. 
+Sealing is the process of serializing the in-memory index of the active fraction into an index file. 
 
 The structure of the index file is complex and is described [here](./format-index-file.md) 
 
