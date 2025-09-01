@@ -75,7 +75,7 @@ type wildcardSearch struct {
 	baseSearch
 	prefix    []byte
 	suffix    []byte
-	middle    []*substring
+	middle    [][]byte
 	middleLen int
 	narrowed  bool
 }
@@ -96,9 +96,9 @@ func newWildcardSearch(base baseSearch, token *parser.Literal) *wildcardSearch {
 	// all of the rest can be an asterix or a middle
 	for i := 1; i < len(terms)-1; i++ {
 		if terms[i].Kind == parser.TermText {
-			term := newSubstringPattern([]byte(terms[i].Data))
-			s.middle = append(s.middle, term)
-			s.middleLen += len(terms[i].Data)
+			val := util.StringToByteUnsafe(terms[i].Data)
+			s.middle = append(s.middle, val)
+			s.middleLen += len(val)
 		}
 	}
 	return s
