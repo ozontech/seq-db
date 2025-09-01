@@ -33,8 +33,8 @@ to the target node and start the pod.
 
 Read more about file types and their internal structure [here](./internal/fractions.md).
 
-#### Durability semantics
-A write is acknowledged only after the payload is safely persisted:
+#### Durability
+A write operation is acknowledged only after the payload is safely persisted:
 
 ```
 write, fsync   # .meta file
@@ -43,9 +43,9 @@ write, fsync   # .data file
 That is, two write system calls followed by two fsync
 calls—guaranteeing the data survives a node 
 crash or restart before the client receives a success response. 
-Indexing occurs asynchronously, so the newly written
-data becomes searchable shortly after the write is confirmed.
-
+Indexing occurs asynchronously, so it usually takes under 1 
+second before the newly written documents are available for search queries. 
+Note that this value may be slightly higher when bulk load spikes happen
 
 ### seq-db proxy
 seq-db proxy is a stateless coordinator for all read & write traffic. 
@@ -58,17 +58,16 @@ traffic distribution without changes to the stateful components
 - Performs logical replication between stores
 - Routes traffic between storage tiers (hot/cold stores)
 
-seq-db proxy tokenizes every incoming document (new 
-fields become searchable immediately) 
+seq-db proxy tokenizes every incoming document
 and compresses batches with zstd / lz4 
 before sending batches to seq-db stores.
 
-### Read & write semantics (rf=2)
+### Read-path & write-path (rf=2)
 Let's take a look at an example architecture with 4 seq-db shards and replication-factor=2 
 (each log must be stored in two separate seq-db stores). 
 Note that replicas of shard can be located in different availability zones.
 
-### Write semantics
+### Write-path
 The write commits only after seq-db proxy receives an ack **from all replicas of the addressed shard**.
 
 ```mermaid
@@ -108,7 +107,7 @@ sequenceDiagram
   Proxy-->>Client: ack
 ```
 
-### Read semantics
+### Read-path
 While the written document must be acknowledged by all replicas
 of a shard, 
 a read is successful when **at least one replica of each shard** returns a response.
@@ -154,9 +153,7 @@ sequenceDiagram
 seq-db doesn't have any mechanism to keep replicas consistent between each other. 
 That is, if a write operation succeeds on a replica of a shard and fails on another replica, the replicas 
 would be out of sync and won't be (automatically) synced. 
-The only given guarantee  is that a write operation will succeed only having at least rf replicas saved on disk.
+The only given guarantee is that a write operation will succeed only having at least RF replicas saved on disk.
 This optimization allows seq-db to have a higher than alternatives ingestion throughput 
 with the obvious price of the possible inconsistencies of retrieval and aggregation queries. 
 seq-db was designed as a database for logs/traces with this tradeoff in mind. 
-It cannot be reliably used for financial calculations or any other operations 
-expected to have high-precision.
