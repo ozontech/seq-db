@@ -3,6 +3,7 @@ package fracmanager
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -158,6 +160,24 @@ func (f *proxyFrac) trySetSuicided() (*frac.Active, *frac.Sealed, bool) {
 	return active, sealed, sealing
 }
 
+func (f *proxyFrac) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
+	f.useMu.RLock()
+
+	if f.isSealingState() {
+		f.useMu.RUnlock()
+		f.sealWg.Wait()
+
+		if c := f.cur(); c != nil {
+			return c.Offload(ctx, u)
+		}
+
+		return false, nil
+	}
+
+	f.useMu.RUnlock()
+	return f.cur().Offload(ctx, u)
+}
+
 func (f *proxyFrac) Suicide() {
 	active, sealed, sealing := f.trySetSuicided()
 	if sealing {
@@ -174,6 +194,10 @@ func (f *proxyFrac) Suicide() {
 	if sealed != nil {
 		sealed.Suicide()
 	}
+}
+
+func (f *proxyFrac) String() string {
+	return fmt.Sprintf("%s", f.cur())
 }
 
 func (f *proxyFrac) isActiveState() bool {

@@ -16,12 +16,16 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
+)
+
+var (
+	_ Fraction = (*Active)(nil)
 )
 
 type Active struct {
@@ -46,13 +50,13 @@ type Active struct {
 	DocsPositions *DocsPositions
 
 	docsFile   *os.File
-	docsReader disk.DocsReader
-	sortReader disk.DocsReader
+	docsReader storage.DocsReader
+	sortReader storage.DocsReader
 	docsCache  *cache.Cache[[]byte]
 	sortCache  *cache.Cache[[]byte]
 
 	metaFile   *os.File
-	metaReader disk.DocBlocksReader
+	metaReader storage.DocBlocksReader
 
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
@@ -71,7 +75,7 @@ var systemSeqID = seq.ID{
 func NewActive(
 	baseFileName string,
 	activeIndexer *ActiveIndexer,
-	readLimiter *disk.ReadLimiter,
+	readLimiter *storage.ReadLimiter,
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
 	cfg *Config,
@@ -89,11 +93,11 @@ func NewActive(
 		docsFile:   docsFile,
 		docsCache:  docsCache,
 		sortCache:  sortCache,
-		docsReader: disk.NewDocsReader(readLimiter, docsFile, docsCache),
-		sortReader: disk.NewDocsReader(readLimiter, docsFile, sortCache),
+		docsReader: storage.NewDocsReader(readLimiter, docsFile, docsCache),
+		sortReader: storage.NewDocsReader(readLimiter, docsFile, sortCache),
 
 		metaFile:   metaFile,
-		metaReader: disk.NewDocBlocksReader(readLimiter, metaFile),
+		metaReader: storage.NewDocBlocksReader(readLimiter, metaFile),
 
 		indexer: activeIndexer,
 		writer:  NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync),
@@ -133,12 +137,10 @@ func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
 func (f *Active) Replay(ctx context.Context) error {
 	logger.Info("start replaying...")
 
-	targetSize := f.info.MetaOnDisk
 	t := time.Now()
 
-	docsPos := uint64(0)
-	metaPos := uint64(0)
-	step := targetSize / 10
+	offset := uint64(0)
+	step := f.info.MetaOnDisk / 10
 	next := step
 
 	sw := stopwatch.New()
@@ -150,7 +152,7 @@ out:
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			meta, metaSize, err := f.metaReader.ReadDocBlock(int64(metaPos))
+			meta, metaSize, err := f.metaReader.ReadDocBlock(int64(offset))
 			if err == io.EOF {
 				if metaSize != 0 {
 					logger.Warn("last meta block is partially written, skipping it")
@@ -161,22 +163,17 @@ out:
 				return err
 			}
 
-			if metaPos > next {
+			if offset > next {
 				next += step
-				progress := float64(metaPos) / float64(targetSize) * 100
+				progress := float64(offset) / float64(f.info.MetaOnDisk) * 100
 				logger.Info("replaying batch, meta",
-					zap.Uint64("from", metaPos),
-					zap.Uint64("to", metaPos+metaSize),
-					zap.Uint64("target", targetSize),
+					zap.Uint64("from", offset),
+					zap.Uint64("to", offset+metaSize),
+					zap.Uint64("target", f.info.MetaOnDisk),
 					util.ZapFloat64WithPrec("progress_percentage", progress, 2),
 				)
 			}
-
-			docBlockLen := disk.DocBlock(meta).GetExt1()
-			disk.DocBlock(meta).SetExt2(docsPos) // todo: remove this on next release
-
-			docsPos += docBlockLen
-			metaPos += metaSize
+			offset += metaSize
 
 			wg.Add(1)
 			f.indexer.Index(f, meta, &wg, sw)
@@ -191,7 +188,7 @@ out:
 	logger.Info("active fraction replayed",
 		zap.String("name", f.info.Name()),
 		zap.Uint32("docs_total", f.info.DocsTotal),
-		util.ZapUint64AsSizeStr("docs_size", docsPos),
+		util.ZapUint64AsSizeStr("docs_size", f.info.DocsOnDisk),
 		util.ZapFloat64WithPrec("took_s", tookSeconds, 1),
 		util.ZapFloat64WithPrec("throughput_raw_mb_sec", throughputRaw, 1),
 		util.ZapFloat64WithPrec("throughput_meta_mb_sec", throughputMeta, 1),
@@ -334,6 +331,14 @@ func (f *Active) Release() {
 		// we use sorted docs in sealed fraction so we can remove original docs of active fraction
 		f.removeDocsFiles()
 	}
+}
+
+// Offload for [Active] fraction is no-op.
+//
+// Since search within [Active] fraction is too costly (we have to replay the whole index in memory),
+// we decided to support offloading only for [Sealed] fractions.
+func (f *Active) Offload(context.Context, storage.Uploader) (bool, error) {
+	return false, nil
 }
 
 func (f *Active) Suicide() {

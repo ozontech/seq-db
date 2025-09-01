@@ -3,8 +3,8 @@ package seqids
 import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 )
 
 type Provider struct {
@@ -16,7 +16,7 @@ type Provider struct {
 }
 
 func NewProvider(
-	indexReader *disk.IndexReader,
+	indexReader *storage.IndexReader,
 	cacheMIDs *cache.Cache[[]byte],
 	cacheRIDs *cache.Cache[[]byte],
 	cacheParams *cache.Cache[BlockParams],

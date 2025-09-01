@@ -1,8 +1,6 @@
 package frac
 
 import (
-	"encoding/binary"
-
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -42,22 +40,6 @@ func (e lidsBlock) getExtForRegistry() (uint64, uint64) {
 	}
 	ext2 = uint64(e.maxTID)<<32 | uint64(e.minTID)
 	return ext1, ext2
-}
-
-type DiskPositionsBlock struct {
-	totalIDs uint32
-	blocks   []uint64
-}
-
-func (b *DiskPositionsBlock) pack(dst []byte) []byte {
-	var prev uint64
-	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(b.blocks)))
-	dst = binary.LittleEndian.AppendUint32(dst, b.totalIDs)
-	for _, pos := range b.blocks {
-		dst = binary.AppendVarint(dst, int64(pos-prev))
-		prev = pos
-	}
-	return dst
 }
 
 type tokensBlock struct {

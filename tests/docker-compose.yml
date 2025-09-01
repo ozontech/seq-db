@@ -1,0 +1,12 @@
+services:
+  minio:
+    image: quay.io/minio/minio:latest
+    ports:
+      - 9000:9000  # API
+      - 9001:9001  # WebUI
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command: server /data --console-address ':9001'

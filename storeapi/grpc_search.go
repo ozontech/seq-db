@@ -103,14 +103,46 @@ func (g *GrpcV1) doSearch(
 
 	parseQueryTr := tr.NewChild("parse query")
 	ast, err := g.parseQuery(ctx, req.Query)
-	parseQueryTr.Done()
 	if err != nil {
+		parseQueryTr.Done()
 		if code, ok := parseStoreError(err); ok {
 			return &storeapi.SearchResponse{Code: code}, nil
 		}
 		return nil, err
 	}
 
+	fromTime := seq.MIDToTime(seq.MID(req.From))
+	toTime := seq.MIDToTime(seq.MID(req.To))
+
+	toTimeFilter := g.config.Filter.To
+	fromTimeFilter := g.config.Filter.From
+
+	if g.config.Filter.Query != "" &&
+		(toTimeFilter.IsZero() || fromTime.Before(toTimeFilter)) &&
+		(fromTimeFilter.IsZero() || fromTimeFilter.Before(toTime)) {
+		logger.Info("patching query",
+			zap.Time("from_query", fromTime),
+			zap.Time("to_query", toTime),
+			zap.Time("from_filter", fromTimeFilter),
+			zap.Time("to_filter", toTimeFilter),
+			zap.String("query", req.Query),
+		)
+
+		parseQuery, err := g.parseQuery(ctx, g.config.Filter.Query)
+		if err != nil {
+			parseQueryTr.Done()
+			if code, ok := parseStoreError(err); ok {
+				return &storeapi.SearchResponse{Code: code}, nil
+			}
+			return nil, err
+		}
+		ast = &parser.ASTNode{
+			Children: []*parser.ASTNode{ast, parseQuery},
+			Value:    &parser.Logical{Operator: parser.LogicalAnd},
+		}
+	}
+
+	parseQueryTr.Done()
 	if util.IsCancelled(ctx) {
 		return nil, fmt.Errorf("search cancelled before evaluating: reason=%w", ctx.Err())
 	}
@@ -135,7 +167,11 @@ func (g *GrpcV1) doSearch(
 	}
 
 	searchTr := tr.NewChild("search iteratively")
-	qpr, err := g.searchData.searcher.SearchDocs(ctx, g.fracManager.GetAllFracs(), searchParams)
+	qpr, err := g.searchData.searcher.SearchDocs(
+		ctx,
+		g.fracManager.GetAllFracs(),
+		searchParams,
+	)
 	searchTr.Done()
 	if err != nil {
 		if code, ok := parseStoreError(err); ok {

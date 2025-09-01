@@ -1,11 +1,14 @@
 package fracmanager
 
 import (
+	"context"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/storage/s3"
 )
 
 var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
@@ -15,21 +18,26 @@ var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
 })
 
 type fractionProvider struct {
+	s3cli         *s3.Client
 	config        *frac.Config
 	cacheProvider *CacheMaintainer
 	activeIndexer *frac.ActiveIndexer
-	readLimiter   *disk.ReadLimiter
+	readLimiter   *storage.ReadLimiter
 }
 
-func newFractionProvider(c *frac.Config, cp *CacheMaintainer, readerWorkers, indexWorkers int) *fractionProvider {
+func newFractionProvider(
+	c *frac.Config, s3cli *s3.Client, cp *CacheMaintainer,
+	readerWorkers, indexWorkers int,
+) *fractionProvider {
 	ai := frac.NewActiveIndexer(indexWorkers, indexWorkers)
 	ai.Start() // first start indexWorkers to allow active frac replaying
 
 	return &fractionProvider{
+		s3cli:         s3cli,
 		config:        c,
 		cacheProvider: cp,
 		activeIndexer: ai,
-		readLimiter:   disk.NewReadLimiter(readerWorkers, storeBytesRead),
+		readLimiter:   storage.NewReadLimiter(readerWorkers, storeBytesRead),
 	}
 }
 
@@ -66,14 +74,21 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *frac.
 	)
 }
 
-func (fp *fractionProvider) Stop() {
-	fp.activeIndexer.Stop()
+func (fp *fractionProvider) NewRemote(
+	ctx context.Context, name string, cachedInfo *frac.Info,
+) *frac.Remote {
+	return frac.NewRemote(
+		ctx,
+		name,
+		fp.readLimiter,
+		fp.cacheProvider.CreateIndexCache(),
+		fp.cacheProvider.CreateDocBlockCache(),
+		cachedInfo,
+		fp.config,
+		fp.s3cli,
+	)
 }
 
-func (fp *fractionProvider) newActiveRef(active *frac.Active) activeRef {
-	f := &proxyFrac{active: active, fp: fp}
-	return activeRef{
-		frac: f,
-		ref:  &fracRef{instance: f},
-	}
+func (fp *fractionProvider) Stop() {
+	fp.activeIndexer.Stop()
 }

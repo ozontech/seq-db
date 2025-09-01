@@ -1,7 +1,7 @@
-package disk
+package storage
 
 import (
-	"os"
+	"io"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -18,13 +18,13 @@ func NewReadLimiter(maxReadsNum int, counter prometheus.Counter) *ReadLimiter {
 	}
 }
 
-func (r *ReadLimiter) ReadAt(f *os.File, buf []byte, offset int64) (int, error) {
-	r.sem <- struct{}{}
-	n, err := f.ReadAt(buf, offset)
-	<-r.sem
+func (rl *ReadLimiter) ReadAt(r io.ReaderAt, buf []byte, offset int64) (int, error) {
+	rl.sem <- struct{}{}
+	n, err := r.ReadAt(buf, offset)
+	<-rl.sem
 
-	if r.metric != nil {
-		r.metric.Add(float64(n))
+	if rl.metric != nil {
+		rl.metric.Add(float64(n))
 	}
 	return n, err
 }

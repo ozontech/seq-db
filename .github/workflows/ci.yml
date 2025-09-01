@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
 name: CI
 
 on:
@@ -14,8 +16,23 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # GitHub Actions do not support passing arguments to containers (that are declared in the services section of a job),
+      # but MinIO depends on it (it needs `server` argument at least).
+      # When [this](https://github.com/actions/runner/pull/1152) will be merged we can get rid of this step.
+      - name: Setup MinIO
+        uses: addnab/docker-run-action@v3
+        with:
+          registry: quay.io
+          image: minio/minio:latest
+          options: |
+            --detach
+            --publish 9000:9000
+          run: |
+            minio \
+            server /data
+
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -50,10 +67,10 @@ jobs:
       - test
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: coverage
 
@@ -67,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -110,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Go
         uses: actions/setup-go@v5

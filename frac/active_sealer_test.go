@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 )
 
 func TestDocBlocksWriter(t *testing.T) {
@@ -42,8 +42,8 @@ func TestDocBlocksWriter(t *testing.T) {
 			blockIndex, docOffset := pos.Unpack()
 			blockOffset := bw.BlockOffsets[blockIndex]
 
-			blockHeader := disk.DocBlock(docBlocks[blockOffset:])
-			block := disk.DocBlock(docBlocks[blockOffset : blockOffset+blockHeader.FullLen()])
+			blockHeader := storage.DocBlock(docBlocks[blockOffset:])
+			block := storage.DocBlock(docBlocks[blockOffset : blockOffset+blockHeader.FullLen()])
 
 			binDocs, err := block.DecompressTo(nil)
 			r.NoError(err)
@@ -67,8 +67,8 @@ func assertBlocks(t *testing.T, docBlocks []byte, numBlocks int) {
 	t.Helper()
 	var n int
 	for ; len(docBlocks) > 0; n++ {
-		header := disk.DocBlock(docBlocks[:disk.DocBlockHeaderLen])
-		docBlock := disk.DocBlock(docBlocks[:header.FullLen()])
+		header := storage.DocBlock(docBlocks[:storage.DocBlockHeaderLen])
+		docBlock := storage.DocBlock(docBlocks[:header.FullLen()])
 		_, err := docBlock.DecompressTo(nil)
 		require.NoError(t, err)
 		docBlocks = docBlocks[docBlock.FullLen():]

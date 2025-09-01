@@ -29,9 +29,9 @@ It will start up necessary containers and then you can observe metrics on Grafan
 ## How it works?
 
 There are several the most important containers:
-- `seq-db` -- seq-db container that processes logs (version `v0.49.1`);
-- `elastic` -- Elasticsearch container that processes logs (version `v8.17.4`);
-- `filed` -- file.d log shipper which has two outputs pointing to `seq-db` and `elastic` containers;
+- `seq-db` - seq-db container that processes logs (version `v0.61.0`);
+- `elastic` - Elasticsearch container that processes logs (version `v8.17.4`);
+- `filed` - file.d log shipper which has two outputs pointing to `seq-db` and `elastic` containers;
 
 We decided to stick with file.d instead of Filebeat, Logstash or others for several reasons:
 - file.d is more [performant](https://github.com/ozontech/file.d-bench);
@@ -61,7 +61,7 @@ This directory has following layout which is explained in comments:
 ## Results
 
 We tested seq-db and Elasticsearch against synthetic dataset and our real production logs.
-You can find detailed information about results right [here](http://to.do).
+You can find detailed information about results right [here](https://ozontech.github.io/seq-db-docs/seq-db/benchmarks/).
 
 ---
 

@@ -26,6 +26,10 @@ type Config struct {
 	SealParams        frac.SealParams
 	SortCacheSize     uint64 // size for docs cache for active fraction
 	Fraction          frac.Config
+
+	OffloadingEnabled   bool
+	OffloadingForced    bool
+	OffloadingRetention time.Duration
 }
 
 func FillConfigWithDefault(config *Config) *Config {

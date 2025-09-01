@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/mappingprovider"
 	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 )
 
 func TestProcessDocuments(t *testing.T) {
@@ -420,7 +420,7 @@ func TestProcessDocuments(t *testing.T) {
 			r.Equal(len(payload.InDocs), total)
 			r.Equal(len(payload.InDocs), c.total)
 
-			binaryDocs, err := disk.DocBlock(c.docs).DecompressTo(nil)
+			binaryDocs, err := storage.DocBlock(c.docs).DecompressTo(nil)
 			require.NoError(t, err)
 
 			docsUnpacker := packer.NewBytesUnpacker(binaryDocs)
@@ -429,7 +429,7 @@ func TestProcessDocuments(t *testing.T) {
 				gotDocs = append(gotDocs, docsUnpacker.GetBinary())
 			}
 
-			binaryMetas, err := disk.DocBlock(c.metas).DecompressTo(nil)
+			binaryMetas, err := storage.DocBlock(c.metas).DecompressTo(nil)
 			require.NoError(t, err)
 			metasUnpacker := packer.NewBytesUnpacker(binaryMetas)
 			var gotMetas []frac.MetaData

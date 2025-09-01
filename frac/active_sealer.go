@@ -17,12 +17,12 @@ import (
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -218,7 +218,7 @@ func writeSealedFraction(f *Active, info *Info, indexFile io.WriteSeeker, params
 	}, nil
 }
 
-func writeDocsInOrder(pos *DocsPositions, blocks []uint64, docsReader disk.DocsReader, ids []seq.ID, bw *docBlocksWriter) error {
+func writeDocsInOrder(pos *DocsPositions, blocks []uint64, docsReader storage.DocsReader, ids []seq.ID, bw *docBlocksWriter) error {
 	// Skip system seq.ID.
 	if len(ids) == 0 {
 		panic(fmt.Errorf("BUG: ids is empty"))
@@ -234,7 +234,7 @@ func writeDocsInOrder(pos *DocsPositions, blocks []uint64, docsReader disk.DocsR
 	return nil
 }
 
-func writeDocBlocksInOrder(pos *DocsPositions, blocks []uint64, docsReader disk.DocsReader, ids []seq.ID, bw *docBlocksWriter) error {
+func writeDocBlocksInOrder(pos *DocsPositions, blocks []uint64, docsReader storage.DocsReader, ids []seq.ID, bw *docBlocksWriter) error {
 	var prevID seq.ID
 	for _, id := range ids {
 		if id == prevID {
@@ -357,7 +357,7 @@ func (w *docBlocksWriter) flushBlock() error {
 
 func (w *docBlocksWriter) compressWriteBlock() (int, error) {
 	w.blockBuf = w.blockBuf[:0]
-	w.blockBuf = disk.CompressDocBlock(w.docs, w.blockBuf, w.compressLevel)
+	w.blockBuf = storage.CompressDocBlock(w.docs, w.blockBuf, w.compressLevel)
 
 	if _, err := w.w.Write(w.blockBuf); err != nil {
 		return 0, err

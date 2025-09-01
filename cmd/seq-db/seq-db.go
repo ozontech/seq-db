@@ -32,6 +32,7 @@ import (
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
+	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/storeapi"
 	"github.com/ozontech/seq-db/tracing"
 )
@@ -273,6 +274,8 @@ func startStore(
 				SkipSortDocs: !cfg.DocsSorting.Enabled,
 				KeepMetaFile: false,
 			},
+			OffloadingEnabled:   cfg.Offloading.Enabled,
+			OffloadingRetention: cfg.Offloading.Retention,
 		},
 		API: storeapi.APIConfig{
 			StoreMode: configMode,
@@ -287,16 +290,25 @@ func startStore(
 				RequestsLimit:         uint64(cfg.Limits.SearchRequests),
 				LogThreshold:          cfg.SlowLogs.SearchThreshold,
 				Async: fracmanager.AsyncSearcherConfig{
-					DataDir:     cfg.AsyncSearch.DataDir,
-					Parallelism: cfg.AsyncSearch.Concurrency,
+					DataDir:           cfg.AsyncSearch.DataDir,
+					Workers:           cfg.AsyncSearch.Concurrency,
+					MaxSize:           int(cfg.AsyncSearch.MaxTotalSize),
+					MaxSizePerRequest: int(cfg.AsyncSearch.MaxSizePerRequest),
 				},
 			},
 			Fetch: storeapi.FetchConfig{
 				LogThreshold: cfg.SlowLogs.FetchThreshold,
 			},
+			Filter: storeapi.FilterConfig{
+				Query: cfg.Filtering.Query,
+				To:    cfg.Filtering.To,
+				From:  cfg.Filtering.From,
+			},
 		},
 	}
-	store, err := storeapi.NewStore(ctx, sconfig, mp)
+
+	s3cli := initS3Client(cfg)
+	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp)
 	if err != nil {
 		logger.Fatal("initializing store", zap.Error(err))
 	}
@@ -310,6 +322,29 @@ func startStore(
 	}
 
 	return store
+}
+
+func initS3Client(cfg config.Config) *s3.Client {
+	if !cfg.Offloading.Enabled {
+		return nil
+	}
+
+	cli, err := s3.NewClient(
+		cfg.Offloading.Endpoint,
+		cfg.Offloading.AccessKey,
+		cfg.Offloading.SecretKey,
+		cfg.Offloading.Region,
+		cfg.Offloading.Bucket,
+	)
+
+	if err != nil {
+		logger.Fatal(
+			"cannot create S3 client",
+			zap.Error(err),
+		)
+	}
+
+	return cli
 }
 
 func enableIndexingForAllFields(mappingPath string) bool {

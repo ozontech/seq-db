@@ -6,7 +6,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/metric"
@@ -14,6 +13,7 @@ import (
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 )
 
 var (
@@ -56,7 +56,7 @@ type activeDataProvider struct {
 
 	blocksOffsets []uint64
 	docsPositions *DocsPositions
-	docsReader    *disk.DocsReader
+	docsReader    *storage.DocsReader
 
 	idsIndex *activeIDsIndex
 }
@@ -245,7 +245,7 @@ func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint
 type activeFetchIndex struct {
 	blocksOffsets []uint64
 	docsPositions *DocsPositions
-	docsReader    *disk.DocsReader
+	docsReader    *storage.DocsReader
 }
 
 func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {

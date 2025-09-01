@@ -1,5 +1,5 @@
 // Package disk implements read write fraction routines
-package disk
+package storage
 
 import (
 	"time"

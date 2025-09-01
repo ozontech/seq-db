@@ -4,20 +4,26 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
+)
+
+var (
+	_ Fraction = (*Sealed)(nil)
 )
 
 type Sealed struct {
@@ -32,23 +38,26 @@ type Sealed struct {
 
 	docsFile   *os.File
 	docsCache  *cache.Cache[[]byte]
-	docsReader disk.DocsReader
+	docsReader storage.DocsReader
 
 	indexFile   *os.File
 	indexCache  *IndexCache
-	indexReader disk.IndexReader
-
-	idsTable      seqids.Table
-	lidsTable     *lids.Table
-	BlocksOffsets []uint64
+	indexReader storage.IndexReader
 
 	loadMu   *sync.RWMutex
 	isLoaded bool
+	state    sealedState
 
-	readLimiter *disk.ReadLimiter
+	readLimiter *storage.ReadLimiter
 
 	// shit for testing
 	PartialSuicideMode PSD
+}
+
+type sealedState struct {
+	idsTable      seqids.Table
+	lidsTable     *lids.Table
+	BlocksOffsets []uint64
 }
 
 type PSD int // emulates hard shutdown on different stages of fraction deletion, used for tests
@@ -61,7 +70,7 @@ const (
 
 func NewSealed(
 	baseFile string,
-	readLimiter *disk.ReadLimiter,
+	readLimiter *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
 	info *Info,
@@ -87,7 +96,7 @@ func NewSealed(
 	}
 
 	f.openIndex()
-	f.info = f.loadHeader()
+	f.info = loadHeader(f.indexFile, f.indexReader)
 
 	return f
 }
@@ -100,7 +109,7 @@ func (f *Sealed) openIndex() {
 		if err != nil {
 			logger.Fatal("can't open index file", zap.String("file", name), zap.Error(err))
 		}
-		f.indexReader = disk.NewIndexReader(f.readLimiter, f.indexFile, f.indexCache.Registry)
+		f.indexReader = storage.NewIndexReader(f.readLimiter, f.indexFile.Name(), f.indexFile, f.indexCache.Registry)
 	}
 }
 
@@ -117,7 +126,7 @@ func (f *Sealed) openDocs() {
 				logger.Fatal("can't open sdocs file", zap.String("frac", f.BaseFileName), zap.Error(err))
 			}
 		}
-		f.docsReader = disk.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
+		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
 	}
 }
 
@@ -134,23 +143,25 @@ type PreloadedData struct {
 func NewSealedPreloaded(
 	baseFile string,
 	preloaded *PreloadedData,
-	rl *disk.ReadLimiter,
+	rl *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
 	config *Config,
 ) *Sealed {
 	f := &Sealed{
-		idsTable:      preloaded.idsTable,
-		lidsTable:     preloaded.lidsTable,
-		BlocksOffsets: preloaded.blocksOffsets,
+		state: sealedState{
+			idsTable:      preloaded.idsTable,
+			lidsTable:     preloaded.lidsTable,
+			BlocksOffsets: preloaded.blocksOffsets,
+		},
 
 		docsFile:   preloaded.docsFile,
 		docsCache:  docsCache,
-		docsReader: disk.NewDocsReader(rl, preloaded.docsFile, docsCache),
+		docsReader: storage.NewDocsReader(rl, preloaded.docsFile, docsCache),
 
 		indexFile:   preloaded.indexFile,
 		indexCache:  indexCache,
-		indexReader: disk.NewIndexReader(rl, preloaded.indexFile, indexCache.Registry),
+		indexReader: storage.NewIndexReader(rl, preloaded.indexFile.Name(), preloaded.indexFile, indexCache.Registry),
 
 		loadMu:   &sync.RWMutex{},
 		isLoaded: true,
@@ -181,28 +192,6 @@ func NewSealedPreloaded(
 	return f
 }
 
-func (f *Sealed) loadHeader() *Info {
-	block, _, err := f.indexReader.ReadIndexBlock(0, nil)
-	if err != nil {
-		logger.Fatal("error reading info block from index", zap.String("file", f.indexFile.Name()), zap.Error(err))
-	}
-
-	// unpack
-	bi := BlockInfo{}
-	if err := bi.Unpack(block); err != nil {
-		logger.Fatal("error unpacking info block", zap.String("file", f.indexFile.Name()), zap.Error(err))
-	}
-	info := bi.Info
-
-	// set index size
-	stat, err := f.indexFile.Stat()
-	if err != nil {
-		logger.Fatal("can't stat index file", zap.String("file", f.indexFile.Name()), zap.Error(err))
-	}
-	info.IndexOnDisk = uint64(stat.Size())
-	return info
-}
-
 func (f *Sealed) load() {
 	f.loadMu.Lock()
 	defer f.loadMu.Unlock()
@@ -212,9 +201,43 @@ func (f *Sealed) load() {
 		f.openDocs()
 		f.openIndex()
 
-		(&Loader{}).Load(f)
+		(&Loader{}).Load(&f.state, f.info, &f.indexReader)
 		f.isLoaded = true
 	}
+}
+
+// Offload saves `.docs` (or `.sdocs`) and `.index` files into remote storage.
+// It does not free any of the occupied memory (nor on disk nor in memory).
+func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
+	f.useMu.Lock()
+	defer f.useMu.Unlock()
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		f.openDocs()
+		return u.Upload(gctx, f.docsFile)
+	})
+
+	g.Go(func() error {
+		f.openIndex()
+		return u.Upload(gctx, f.indexFile)
+	})
+
+	if err := g.Wait(); err != nil {
+		return true, err
+	}
+
+	remoteFracName := f.BaseFileName + consts.RemoteFractionSuffix
+
+	file, err := os.Create(remoteFracName)
+	if err != nil {
+		return true, err
+	}
+	defer file.Close()
+
+	util.MustSyncPath(filepath.Dir(remoteFracName))
+	return true, nil
 }
 
 func (f *Sealed) Suicide() {
@@ -354,19 +377,19 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		info:             f.info,
 		config:           f.Config,
 		docsReader:       &f.docsReader,
-		blocksOffsets:    f.BlocksOffsets,
-		lidsTable:        f.lidsTable,
+		blocksOffsets:    f.state.BlocksOffsets,
+		lidsTable:        f.state.lidsTable,
 		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.indexReader, f.indexCache.TokenTable),
 
-		idsTable: &f.idsTable,
+		idsTable: &f.state.idsTable,
 		idsProvider: seqids.NewProvider(
 			&f.indexReader,
 			f.indexCache.MIDs,
 			f.indexCache.RIDs,
 			f.indexCache.Params,
-			&f.idsTable,
+			&f.state.idsTable,
 			f.info.BinaryDataVer,
 		),
 	}
@@ -382,4 +405,41 @@ func (f *Sealed) Contains(id seq.MID) bool {
 
 func (f *Sealed) IsIntersecting(from, to seq.MID) bool {
 	return f.info.IsIntersecting(from, to)
+}
+
+func loadHeader(
+	indexFile storage.ImmutableFile,
+	indexReader storage.IndexReader,
+) *Info {
+	block, _, err := indexReader.ReadIndexBlock(0, nil)
+	if err != nil {
+		logger.Fatal(
+			"error reading info block from index",
+			zap.String("file", indexFile.Name()),
+			zap.Error(err),
+		)
+	}
+
+	var bi BlockInfo
+	if err := bi.Unpack(block); err != nil {
+		logger.Fatal(
+			"error unpacking info block",
+			zap.String("file", indexFile.Name()),
+			zap.Error(err),
+		)
+	}
+	info := bi.Info
+
+	// set index size
+	stat, err := indexFile.Stat()
+	if err != nil {
+		logger.Fatal(
+			"can't stat index file",
+			zap.String("file", indexFile.Name()),
+			zap.Error(err),
+		)
+	}
+
+	info.IndexOnDisk = uint64(stat.Size())
+	return info
 }

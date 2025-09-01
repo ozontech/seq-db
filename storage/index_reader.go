@@ -1,10 +1,9 @@
-package disk
+package storage
 
 import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/cache"
@@ -13,15 +12,22 @@ import (
 
 type IndexReader struct {
 	limiter *ReadLimiter
-	file    *os.File
-	cache   *cache.Cache[[]byte]
+
+	reader     io.ReaderAt
+	readerName string
+
+	cache *cache.Cache[[]byte]
 }
 
-func NewIndexReader(reader *ReadLimiter, file *os.File, registryCache *cache.Cache[[]byte]) IndexReader {
+func NewIndexReader(
+	limiter *ReadLimiter, readerName string,
+	reader io.ReaderAt, registryCache *cache.Cache[[]byte],
+) IndexReader {
 	return IndexReader{
-		limiter: reader,
-		file:    file,
-		cache:   registryCache,
+		limiter:    limiter,
+		reader:     reader,
+		readerName: readerName,
+		cache:      registryCache,
 	}
 }
 
@@ -33,14 +39,14 @@ func (r *IndexReader) GetBlockHeader(index uint32) (IndexBlockHeader, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if (uint64(index)+1)*IndexBlockHeaderSize > uint64(len(registry)) {
 		return nil, fmt.Errorf(
 			"too large index block in file %s, with index %d, registry size %d",
-			r.file.Name(),
-			index,
-			len(registry),
+			r.readerName, index, len(registry),
 		)
 	}
+
 	pos := index * IndexBlockHeaderSize
 	return registry[pos : pos+IndexBlockHeaderSize], nil
 }
@@ -48,7 +54,7 @@ func (r *IndexReader) GetBlockHeader(index uint32) (IndexBlockHeader, error) {
 func (r *IndexReader) readRegistry() ([]byte, error) {
 	numBuf := make([]byte, 16)
 
-	n, err := r.limiter.ReadAt(r.file, numBuf, 0)
+	n, err := r.limiter.ReadAt(r.reader, numBuf, 0)
 	if err != nil {
 		return nil, fmt.Errorf("can't read disk registry, %s", err.Error())
 	}
@@ -60,7 +66,7 @@ func (r *IndexReader) readRegistry() ([]byte, error) {
 	l := binary.LittleEndian.Uint64(numBuf[8:])
 	buf := make([]byte, l)
 
-	n, err = r.limiter.ReadAt(r.file, buf, int64(pos))
+	n, err = r.limiter.ReadAt(r.reader, buf, int64(pos))
 	if err != nil && err != io.EOF {
 		return nil, fmt.Errorf("can't read disk registry, %s", err.Error())
 	}
@@ -84,14 +90,14 @@ func (r *IndexReader) ReadIndexBlock(blockIndex uint32, dst []byte) ([]byte, uin
 
 	if header.Codec() == CodecNo {
 		dst = util.EnsureSliceSize(dst, int(header.Len()))
-		n, err := r.limiter.ReadAt(r.file, dst, int64(header.GetPos()))
+		n, err := r.limiter.ReadAt(r.reader, dst, int64(header.GetPos()))
 		return dst, uint64(n), err
 	}
 
 	buf := bytespool.AcquireLen(int(header.Len()))
 	defer bytespool.Release(buf)
 
-	n, err := r.limiter.ReadAt(r.file, buf.B, int64(header.GetPos()))
+	n, err := r.limiter.ReadAt(r.reader, buf.B, int64(header.GetPos()))
 	if err != nil {
 		return nil, uint64(n), err
 	}

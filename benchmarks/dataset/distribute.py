@@ -18,7 +18,7 @@ def rawcount(filename):
 
 def main():
     parser = argparse.ArgumentParser(description='Distribute NDJSON lines across multiple files')
-    parser.add_argument('directory', type=str, help='Path to directory containing .json files')
+    parser.add_argument('directory', type=str, help='Path to directory containing .log files')
     parser.add_argument('--num-files', '-n', type=int, required=True, help='Number of output files')
     args = parser.parse_args()
 
@@ -34,7 +34,7 @@ def main():
     input_count = 0
 
     for filename in os.listdir(args.directory):
-        if filename.endswith('.json'):
+        if filename.endswith('.log'):
             full_path = os.path.join(args.directory, filename)
             input_count += rawcount(full_path)
             input.append(open(full_path, 'r'))
@@ -51,7 +51,7 @@ def main():
     for i in range(args.num_files):
         written = 0
 
-        output = open(f"docs-{i}.json", "w+")
+        output = open(f"docs-{i}.log", "w+")
         file = input[index]
 
         while written < base_chunk_size:

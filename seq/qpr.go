@@ -2,13 +2,10 @@ package seq
 
 import (
 	"cmp"
-	"encoding/json"
 	"fmt"
 	"math"
 	"slices"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/valyala/fastrand"
 
@@ -108,73 +105,14 @@ const (
 	AggFuncUnique
 )
 
-const AggBinSeparator = "|"
-
 type AggBin struct {
 	MID   MID
 	Token string
 }
 
-func (tb *AggBin) toKey() string {
-	mid := strconv.Itoa(int(tb.MID))
-	return mid + AggBinSeparator + tb.Token
-}
-
-func (tb *AggBin) fromKey(k string) {
-	smid, token, found := strings.Cut(k, AggBinSeparator)
-	if !found {
-		panic("BUG: AggBin missing separator")
-	}
-
-	mid, err := strconv.Atoi(smid)
-	if err != nil {
-		panic("BUG: AggBin key contains invalid MID")
-	}
-
-	tb.Token = token
-	tb.MID = MID(mid)
-}
-
 type AggregatableSamples struct {
 	SamplesByBin map[AggBin]*SamplesContainer
 	NotExists    int64
-}
-
-// aggregatableSamples is used for marshaling/unmarshaling to/from [AggregatableSamples].
-type aggregatableSamples struct {
-	SamplesByBin map[string]*SamplesContainer
-	NotExists    int64
-}
-
-func (q *AggregatableSamples) MarshalJSON() ([]byte, error) {
-	qh := aggregatableSamples{
-		SamplesByBin: make(map[string]*SamplesContainer),
-		NotExists:    q.NotExists,
-	}
-
-	for bin, hist := range q.SamplesByBin {
-		qh.SamplesByBin[bin.toKey()] = hist
-	}
-
-	return json.Marshal(qh)
-}
-
-func (q *AggregatableSamples) UnmarshalJSON(b []byte) error {
-	var qh aggregatableSamples
-	if err := json.Unmarshal(b, &qh); err != nil {
-		return err
-	}
-
-	q.SamplesByBin = make(map[AggBin]*SamplesContainer, len(qh.SamplesByBin))
-	q.NotExists = qh.NotExists
-
-	for bKey, hist := range qh.SamplesByBin {
-		var tb AggBin
-		tb.fromKey(bKey)
-		q.SamplesByBin[tb] = hist
-	}
-
-	return nil
 }
 
 type AggregationBucket struct {
@@ -431,7 +369,7 @@ func MergeQPRs(dst *QPR, qprs []*QPR, limit int, histInterval MID, order DocsOrd
 			dst.Histogram[time] += count
 		}
 
-		if qpr.Aggs != nil && dst.Aggs == nil {
+		if len(qpr.Aggs) != 0 && len(dst.Aggs) == 0 {
 			dst.Aggs = make([]AggregatableSamples, len(qpr.Aggs))
 		}
 		for i := range qpr.Aggs {

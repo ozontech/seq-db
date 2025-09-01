@@ -92,7 +92,7 @@ func documentDelayed(docDelay, drift, futureDrift time.Duration) bool {
 		delays.Inc()
 		delayed = true
 	}
-	if docDelay < 0 && -docDelay > futureDrift {
+	if docDelay < 0 && docDelay.Abs() > futureDrift {
 		futureDelays.Inc()
 		delayed = true
 	}

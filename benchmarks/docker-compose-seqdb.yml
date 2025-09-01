@@ -7,22 +7,15 @@ services:
         limits:
           cpus: "4"
           memory: "8GB"
-    image: ghcr.io/ozontech/seq-db:v0.49.1
+    image: ghcr.io/ozontech/seq-db:v0.61.0
     ports:
       - '9002:9002'
     volumes:
       - ./configs/seqdb:/configs
       - seq-db-data:/seq-db-data
-    command: ./seq-db
+    command:
       --mode=single
-      --hot-stores=seq-db:9002
-      --max-token-size=1024
-      --data-dir=/seq-db-data
-      --frac-size=64MB
-      --total-size=10GB 
-      --cache-size=2GB
-      --requests-limit=128
-      --mapping=/configs/mapping.yaml
+      --config=/configs/config.yaml
 
   filed:
     image: 'ghcr.io/ozontech/file.d:v0.58.1-alpine'

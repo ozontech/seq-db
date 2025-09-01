@@ -1,0 +1,77 @@
+name: Guidelines Compliance
+
+on:
+  pull_request:
+    types: [ opened, edited, synchronize, reopened ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install commitlint
+        run: |
+          npm install --save-dev @commitlint/cli @commitlint/config-conventional
+
+      - name: Create commitlint config
+        run: |
+          echo "module.exports = { extends: ['@commitlint/config-conventional'] };" > commitlint.config.js
+
+      - name: Validate PR title
+        run: |
+          echo "${{ github.event.pull_request.title }}" | npx commitlint
+
+      - name: Comment on PR if validation fails
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = `❌ **PR Title Validation Failed**
+            Please refer to [CONTRIBUTING.md](https://github.com/ozontech/seq-db/blob/main/.github/CONTRIBUTING.md)`;
+
+            github.rest.issues.createComment({
+              issue_number: context.payload.pull_request.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  validate-branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch name
+        id: validate-branch
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          
+          # Pattern: {issue-number}-{branch-name}
+          # Issue number must be 0 or positive integer
+          BRANCH_PATTERN="^(0|[1-9][0-9]*)-[a-z0-9]+(-[a-z0-9]+)*$"
+          
+          if [[ ! "$BRANCH_NAME" =~ $BRANCH_PATTERN ]]; then
+            echo "validation_failed=true" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Comment on PR if validation fails
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = `❌ **Branch Name Validation Failed**
+            Please refer to [CONTRIBUTING.md](https://github.com/ozontech/seq-db/blob/main/.github/CONTRIBUTING.md)`;
+
+            github.rest.issues.createComment({
+              issue_number: context.payload.pull_request.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

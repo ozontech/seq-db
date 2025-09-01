@@ -104,7 +104,7 @@ func Benchmark_SealingWithSort(b *testing.B) {
 
 func runSealingBench(b *testing.B, cfg *frac.Config) {
 	cm := NewCacheMaintainer(uint64(units.MiB)*64, uint64(units.MiB)*64, nil)
-	fp := newFractionProvider(cfg, cm, 1, 1)
+	fp := newFractionProvider(cfg, nil, cm, 1, 1)
 	defer fp.Stop()
 
 	dataDir := filepath.Join(b.TempDir(), "BenchmarkSealing")

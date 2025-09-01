@@ -1,0 +1,16 @@
+storage:
+  data_dir: /seq-db-data
+  frac_size: 64MiB
+  total_size: 10GiB
+
+mapping:
+  path: /configs/mapping.yaml
+
+resources:
+  cache_size: 2GiB
+
+limits:
+  query_rate: 1024
+  search_requests: 1024
+  bulk_requests: 128
+  inflight_bulks: 128

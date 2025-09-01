@@ -7,8 +7,21 @@ address:
   debug: :9200
 
 storage:
-  frac_size: 64MiB
-  total_size: 512MiB
+  frac_size: 16MiB
+  total_size: 1GiB
+
+# For testing or developments purposes you can run MinIO S3 compatible object storage locally.
+#
+#  docker run -p 9000:9000 -p 9001:9001 \
+#    quay.io/minio/minio server /data --console-address ":9001"
+
+offloading:
+  enabled: true
+  retention: 5m
+  endpoint: http://localhost:9000/
+  bucket: remote-storage
+  access_key: minioadmin
+  secret_key: minioadmin
 
 slow_logs:
   bulk_threshold: 100ms

@@ -2,6 +2,7 @@ package config
 
 import (
 	"cmp"
+	"path/filepath"
 	"time"
 
 	"github.com/alecthomas/units"
@@ -15,9 +16,17 @@ const (
 func Parse(path string) (Config, error) {
 	var c Config
 
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return Config{}, err
+	}
+
 	if err := fig.Load(
 		&c,
-		fig.File(path),
+		fig.File(filepath.Base(abs)),
+		// To find config file [fig] iterates over directories
+		// and concatenates filepath with each directory.
+		fig.Dirs(filepath.Dir(abs)),
 		fig.UseStrict(),
 		fig.Tag("config"),
 		fig.UseEnv("SEQDB"),
@@ -203,11 +212,33 @@ type Config struct {
 		DocBlockSize Bytes `config:"doc_block_size"`
 	} `config:"docs_sorting"`
 
+	Offloading struct {
+		Enabled bool `config:"enabled"`
+		// Retention sets TTL for [frac.Remote] fractions.
+		// By default no retention is configured and all [frac.Remote] fractions are kept forever.
+		Retention time.Duration `config:"retention"`
+
+		// Endpoint configures S3 endpoint for S3 client.
+		Endpoint string `config:"endpoint" default:"https://s3.us-east-1.amazonaws.com/"`
+		// Bucket configures the name of S3 bucket where [frac.Remote] fractions will be stored.
+		Bucket string `config:"bucket"`
+		Region string `config:"region" default:"us-east-1"`
+
+		// AccessKey configures S3 Access Key for S3 client.
+		// You can learn more about access keys [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html).
+		AccessKey string `config:"access_key"`
+		// SecretKey configures S3 Secret Key for S3 client.
+		// You can learn more about secret keys [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html).
+		SecretKey string `config:"secret_key"`
+	} `config:"offloading"`
+
 	AsyncSearch struct {
 		// DataDir specifies directory that contains data for asynchronous searches.
 		// By default will be subdirectory in [Config.Storage.DataDir].
-		DataDir     string `config:"data_dir"`
-		Concurrency int    `config:"concurrency"`
+		DataDir           string `config:"data_dir"`
+		Concurrency       int    `config:"concurrency"`
+		MaxTotalSize      Bytes  `config:"max_total_size" default:"1GiB"`
+		MaxSizePerRequest Bytes  `config:"max_size_per_request" default:"100MiB"`
 	} `config:"async_search"`
 
 	API struct {
@@ -218,6 +249,15 @@ type Config struct {
 	Tracing struct {
 		SamplingRate float64 `config:"sampling_rate" default:"0.01"`
 	} `config:"tracing"`
+
+	// Additional filtering options
+	Filtering struct {
+		// If a search query time range overlaps with the [from; to] range
+		// the search query will be `AND`-ed with an additional predicate with the provided query expression
+		Query string    `config:"query"`
+		From  time.Time `config:"from"`
+		To    time.Time `config:"to"`
+	} `config:"filtering"`
 }
 
 type Bytes units.Base2Bytes

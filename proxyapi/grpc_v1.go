@@ -30,7 +30,10 @@ type SearchIngestor interface {
 	Documents(ctx context.Context, r search.FetchRequest) (search.DocsIterator, error)
 	Status(ctx context.Context) *search.IngestorStatus
 	StartAsyncSearch(context.Context, search.AsyncRequest) (search.AsyncResponse, error)
-	FetchAsyncSearchResult(context.Context, search.FetchAsyncSearchResultRequest) (search.FetchAsyncSearchResultResponse, error)
+	FetchAsyncSearchResult(context.Context, search.FetchAsyncSearchResultRequest) (search.FetchAsyncSearchResultResponse, search.DocsIterator, error)
+	CancelAsyncSearch(ctx context.Context, id string) error
+	DeleteAsyncSearch(ctx context.Context, id string) error
+	GetAsyncSearchesList(context.Context, search.GetAsyncSearchesListRequest) ([]*search.AsyncSearchesListItem, error)
 }
 
 type MappingProvider interface {

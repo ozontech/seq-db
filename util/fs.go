@@ -4,6 +4,7 @@
 package util
 
 import (
+	"errors"
 	"os"
 
 	"go.uber.org/zap"
@@ -23,5 +24,15 @@ func MustSyncPath(path string) {
 
 	if err = d.Close(); err != nil {
 		logger.Panic("cannot close path", zap.String("path", path), zap.Error(err))
+	}
+}
+
+func MustRemoveFileByPath(path string) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Panic(
+			"cannot remove file by path",
+			zap.String("path", path),
+			zap.Error(err),
+		)
 	}
 }

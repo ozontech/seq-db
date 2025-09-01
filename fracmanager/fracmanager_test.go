@@ -13,13 +13,12 @@ import (
 )
 
 // newFracManagerWithBackgroundStart only used from tests
-func newFracManagerWithBackgroundStart(config *Config) (*FracManager, error) {
-	fracManager := NewFracManager(config)
-	if err := fracManager.Load(context.Background()); err != nil {
+func newFracManagerWithBackgroundStart(ctx context.Context, config *Config) (*FracManager, error) {
+	fracManager := NewFracManager(ctx, config, nil)
+	if err := fracManager.Load(ctx); err != nil {
 		return nil, err
 	}
 	fracManager.Start()
-
 	return fracManager, nil
 }
 
@@ -51,7 +50,7 @@ func TestCleanUp(t *testing.T) {
 	common.RecreateDir(dataDir)
 	defer common.RemoveDir(dataDir)
 
-	fm, err := newFracManagerWithBackgroundStart(&Config{
+	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:     1000,
 		TotalSize:    100000,
 		ShouldReplay: false,
@@ -62,11 +61,11 @@ func TestCleanUp(t *testing.T) {
 
 	MakeSomeFractions(t, fm)
 
-	first := fm.fracs[0].instance.(*frac.Sealed)
+	first := fm.localFracs[0].instance.(*frac.Sealed)
 	first.PartialSuicideMode = frac.HalfRename
 	first.Suicide()
 
-	second := fm.fracs[1].instance.(*frac.Sealed)
+	second := fm.localFracs[1].instance.(*frac.Sealed)
 	second.PartialSuicideMode = frac.HalfRemove
 	second.Suicide()
 	info := fm.active.frac.Info()
@@ -77,7 +76,7 @@ func TestCleanUp(t *testing.T) {
 		t.Error("active fraction should be empty after rotation and sealing")
 	}
 
-	fm, err = newFracManagerWithBackgroundStart(&Config{
+	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:     100,
 		TotalSize:    100000,
 		ShouldReplay: false,
@@ -88,7 +87,7 @@ func TestCleanUp(t *testing.T) {
 
 	defer fm.Stop()
 
-	assert.Equal(t, 1, len(fm.fracs), "wrong frac count")
+	assert.Equal(t, 1, len(fm.localFracs), "wrong frac count")
 }
 
 func TestMatureMode(t *testing.T) {
@@ -97,12 +96,12 @@ func TestMatureMode(t *testing.T) {
 	defer common.RemoveDir(dataDir)
 
 	launchAndCheck := func(checkFn func(fm *FracManager)) {
-		fm := NewFracManager(&Config{
+		fm := NewFracManager(context.Background(), &Config{
 			FracSize:     500,
 			TotalSize:    5000,
 			ShouldReplay: false,
 			DataDir:      dataDir,
-		})
+		}, nil)
 		assert.NoError(t, fm.Load(context.Background()))
 
 		checkFn(fm)
@@ -149,7 +148,7 @@ func TestMatureMode(t *testing.T) {
 }
 
 func TestNewULID(t *testing.T) {
-	fm := NewFracManager(&Config{})
+	fm := NewFracManager(context.Background(), &Config{}, nil)
 	ulid1 := fm.nextFractionID()
 	ulid2 := fm.nextFractionID()
 	assert.NotEqual(t, ulid1, ulid2, "ULIDs should be different")

@@ -16,7 +16,6 @@ import (
 
 const defaultFilePermission = 0o660
 
-// sealedFracCache is a
 type sealedFracCache struct {
 	dataDir  string
 	fullPath string
@@ -49,7 +48,7 @@ func NewFracCacheFromDisk(filePath string) *sealedFracCache {
 	return fc
 }
 
-// LoadFromDisk loads the contents of the fraction cache file to the in-memory map
+// LoadFromDisk loads the contents of the fraction cache file to the in-memory map.
 func (fc *sealedFracCache) LoadFromDisk(fileName string) {
 	content, err := os.ReadFile(fileName)
 	if err != nil {
@@ -62,20 +61,19 @@ func (fc *sealedFracCache) LoadFromDisk(fileName string) {
 
 	err = json.Unmarshal(content, &fc.fracCache)
 	if err != nil {
-		logger.Warn("can't unmarshal frac cache, new frac cache will be created later on",
+		logger.Warn("can't unmarshal frac-cache, new frac-cache will be created later on",
 			zap.Error(err),
 		)
-
 		return
 	}
 
-	logger.Info("frac cache loaded from disk",
+	logger.Info("frac-cache loaded from disk",
 		zap.String("filename", fileName),
 		zap.Int("cache_entries", len(fc.fracCache)),
 	)
 }
 
-// AddFraction adds a new entry to the in-memory FracCache
+// AddFraction adds a new entry to the in-memory [sealedFracCache].
 func (fc *sealedFracCache) AddFraction(name string, info *frac.Info) {
 	fc.fracCacheMu.Lock()
 	defer fc.fracCacheMu.Unlock()
@@ -84,8 +82,8 @@ func (fc *sealedFracCache) AddFraction(name string, info *frac.Info) {
 	fc.fracCache[name] = info
 }
 
-// RemoveFraction removes a fraction from FracCache
-// The data is synced with the disk on SyncWithDisk call
+// RemoveFraction removes a fraction from [sealedFracCache].
+// The data is synced with the disk on [sealedFracCache.SyncWithDisk] call.
 func (fc *sealedFracCache) RemoveFraction(name string) {
 	fc.fracCacheMu.Lock()
 	defer fc.fracCacheMu.Unlock()
@@ -95,7 +93,7 @@ func (fc *sealedFracCache) RemoveFraction(name string) {
 }
 
 // GetFracInfo returns fraction info and a flag that indicates
-// whether the data is present in the map
+// whether the data is present in the map.
 func (fc *sealedFracCache) GetFracInfo(name string) (*frac.Info, bool) {
 	fc.fracCacheMu.RLock()
 	defer fc.fracCacheMu.RUnlock()
@@ -120,11 +118,11 @@ func (fc *sealedFracCache) getContentWithVersion() (uint64, []byte, error) {
 }
 
 // SyncWithDisk synchronizes the contents of the in-memory map
-// with the file on the disk, if any changes were made (fractions added/deleted)
+// with the file on the disk, if any changes were made (fractions added/deleted).
 func (fc *sealedFracCache) SyncWithDisk() error {
 	curVersion, content, err := fc.getContentWithVersion()
 	if err != nil {
-		return fmt.Errorf("can't get frac cache content: %w", err)
+		return fmt.Errorf("can't get frac-cache content: %w", err)
 	}
 
 	if curVersion == 0 { // not need to save
@@ -132,7 +130,7 @@ func (fc *sealedFracCache) SyncWithDisk() error {
 	}
 
 	if err := fc.SaveCacheToDisk(curVersion, content); err != nil {
-		return fmt.Errorf("can't save frac cache: %w", err)
+		return fmt.Errorf("can't save frac-cache: %w", err)
 	}
 
 	return nil
@@ -144,7 +142,7 @@ func (fc *sealedFracCache) SaveCacheToDisk(version uint64, content []byte) error
 
 	savedVersion := fc.savedVersion.Load()
 	if version <= savedVersion {
-		logger.Info("cache already saved",
+		logger.Info("frac-cache already saved",
 			zap.Uint64("version_to_save", version),
 			zap.Uint64("saved_version", savedVersion))
 		return nil
@@ -156,24 +154,24 @@ func (fc *sealedFracCache) SaveCacheToDisk(version uint64, content []byte) error
 	//  * and to avoid race when writing (we can have several independent writers running at the same time, see tools/distribution/distribution.go)
 	tmp, err := os.CreateTemp(fc.dataDir, fc.fileName+".")
 	if err != nil {
-		return fmt.Errorf("can't save frac cache: %w", err)
+		return fmt.Errorf("can't save frac-cache: %w", err)
 	}
 
 	err = tmp.Chmod(defaultFilePermission)
 	if err != nil {
-		return fmt.Errorf("can't change frac cache file permission: %w", err)
+		return fmt.Errorf("can't change frac-cache file permission: %w", err)
 	}
 
 	if _, err = tmp.Write(content); err != nil {
-		return fmt.Errorf("can't save frac cache: %w", err)
+		return fmt.Errorf("can't save frac-cache: %w", err)
 	}
 
 	if err = os.Rename(tmp.Name(), fc.fullPath); err != nil {
-		return fmt.Errorf("can't rename tmp to actual frac cache: %w", err)
+		return fmt.Errorf("can't rename tmp to actual frac-cache: %w", err)
 	}
 
 	fc.savedVersion.Store(version)
-	logger.Info("frac cache saved to disk",
+	logger.Info("frac-cache saved to disk",
 		zap.String("filepath", fc.fullPath),
 		zap.Uint64("version", version))
 	return nil

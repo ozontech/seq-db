@@ -26,10 +26,10 @@ func (g *DiskBlocksProducer) getInfoBlock(info *Info) *BlockInfo {
 	return &BlockInfo{Info: info}
 }
 
-func (g *DiskBlocksProducer) getPositionBlock(idsLen uint32, blocks []uint64) *DiskPositionsBlock {
-	return &DiskPositionsBlock{
-		totalIDs: idsLen,
-		blocks:   blocks,
+func (g *DiskBlocksProducer) getPositionBlock(idsLen uint32, blocks []uint64) *BlockOffsets {
+	return &BlockOffsets{
+		IDsTotal: idsLen,
+		Offsets:  blocks,
 	}
 }
 

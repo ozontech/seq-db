@@ -9,8 +9,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/disk"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/storage"
 )
 
 const sizeOfUint32 = uint32(unsafe.Sizeof(uint32(0)))
@@ -66,10 +66,10 @@ func (b *Block) GetToken(index int) []byte {
 type BlockLoader struct {
 	fracName string
 	cache    *cache.Cache[*Block]
-	reader   *disk.IndexReader
+	reader   *storage.IndexReader
 }
 
-func NewBlockLoader(fracName string, reader *disk.IndexReader, c *cache.Cache[*Block]) *BlockLoader {
+func NewBlockLoader(fracName string, reader *storage.IndexReader, c *cache.Cache[*Block]) *BlockLoader {
 	return &BlockLoader{
 		fracName: fracName,
 		cache:    c,
