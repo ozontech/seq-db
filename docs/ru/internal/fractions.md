@@ -30,8 +30,8 @@ Regular sealing also occurs when the active fraction exceeds the maximum size. T
 
 The sealed fraction consists of 2 files:
 
-* Document file. The same as for the active .
-* Index file. This is a serialized representation of the index of the active .
+* Document file. The same as for the active fraction.
+* Index file. This is a serialized representation of the index of the active fraction.
 
 Sealing is the process of serializing the in-memory index of the active fraction into an index file. 
 
