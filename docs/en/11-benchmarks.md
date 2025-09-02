@@ -4,13 +4,12 @@ id: benchmarks
 
 # Benchmarks
 
-## Synthetic Data
-### Methodology
+## Methodology
 
 We prepared a set of benchmarks designed to be as reproducible and deterministic as possible.  
 The dataset used during benchmarks is deterministic and consists of 40GiB (219 million) structured JSON logs.  
-Example log:
 
+Example log:
 ```json
 {
   "@timestamp": 897484581,
@@ -20,6 +19,10 @@ Example log:
   "size": 1504
 }
 ```
+
+All benchmarks were run against this dataset. The only thing that was changing - computational resources and cluster size.
+
+## Local Deploy
 
 Tests were run on an AWS host `c6a.4xlarge`, with the following configuration:
 
@@ -41,10 +44,10 @@ Local cluster configuration:
 
 In the synthetic tests we obtained the following results:
 
-| Container     | Avg Logs/sec | Avg Throughput | Avg CPU Usage | Avg RAM Usage |
-|---------------|--------------|----------------|---------------|---------------|
-| seq‑db        | 370,000      | 48MiB/s        | 3.3vCPU       | 1.8GiB        |
-| elasticsearch | 110,000      | 14MiB/s        | 1.9vCPU       | 2.4GiB        |
+| Container     | Avg. Logs/sec | Avg. Throughput | Avg. CPU Usage | Avg. RAM Usage |
+|---------------|---------------|-----------------|----------------|----------------|
+| seq‑db        | 370,000       | 48MiB/s         | 3.3vCPU        | 1.8GiB         |
+| elasticsearch | 110,000       | 14MiB/s         | 1.9vCPU        | 2.4GiB         |
 
 Thus, with comparable resource usage, seq‑db demonstrated on average 3.4× higher throughput than Elasticsearch.
 
@@ -116,133 +119,102 @@ Parameters: 20 threads, 10s, random page [1–50], 100 documents per page.
 | seq‑db        | 406.09ms | 385.13ms | 509.05ms |
 | elasticsearch | 22.75ms  | 18.06ms  | 64.61ms  |
 
-## Real (production) Data
-### Methodology
+## K8S Deploy
 
-In addition to synthetic tests, we also seq‑db and Elasticsearch on real logs from our production services. We prepared several benchmark scenarios showing performance for a single instance and for a medium‑sized cluster:
+Cluster computation resources description:
 
-- Throughput test of a single instance of seq‑db and Elasticsearch (`1x1` configuration)
-- Throughput test of 6 instances of seq‑db and Elasticsearch with RF=2 (`6x6` configuration)
-
-Real production log datasets (~280GiB total) were pre-processed to minimize CPU use during ingestion via file.d to seq‑db or Elasticsearch. 
-This ensured determinism and independence from delivery systems (e.g., Apache Kafka).
-
-The high level write pipeline:
-```
-┌──────────────┐        ┌───────────┐  
-│ ┌──────┐     │        │           │  
-│ │ file ├──┐  │    ┌──►│  elastic  │  
-│ └──────┘  │  │    │   │           │  
-│ ┌─────────▼┐ │    │   └───────────┘  
-│ │          ├─┼────┘   ┌───────────┐  
-│ │  file.d  │ │        │           │  
-│ │          ├─┼───────►│  seq-db   │  
-│ └──────────┘ │        │           │  
-└──────────────┘        └───────────┘  
-```
-
-Cluster configuration:
-
-| Container                       | CPU                       | RAM          | Disk                      |
-|---------------------------------|---------------------------|--------------|---------------------------|
-| seq‑db (`--mode store`)         | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | RAID10, 4×SSD             |
-| seq‑db (`--mode ingestor`)      | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | –                         |
-| elasticsearch (master/data)     | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | RAID10, 4×SSD             |
-| file.d                          | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | –                         |
+| Container                   | CPU                       | RAM          | Disk          |
+|-----------------------------|---------------------------|--------------|---------------|
+| seq‑db (`--mode store`)     | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | RAID10, 4×SSD |
+| seq‑db (`--mode ingestor`)  | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | –             |
+| elasticsearch (master/data) | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | RAID10, 4×SSD |
+| file.d                      | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | –             |
 
 We selected a baseline set of fields to index. Elasticsearch was set up with index `k8s-logs-index` to index only those fields.
 
-#### Configuration `1x1`
+### Configuration `1x1`
 
-Index settings (same applied to seq‑db):
+Index settings (same applied to seq‑db including durability guarantees):
 
 ```bash
 curl -X PUT "http://localhost:9200/k8s-logs-index/" -H 'Content-Type: application/json' -d'
 {
   "settings": {
-    "index": { "codec": "best_compression" },
-    "number_of_replicas": 0,
-    "number_of_shards": 6,
+    "index": {
+      "number_of_shards": "6",
+      "refresh_interval": "1s",
+      "number_of_replicas": "0",
+      "codec": "best_compression",
+      "merge.scheduler.max_thread_count": "2",
+      "translog": { "durability": "request" }
+    }
   },
   "mappings": {
     "dynamic": "false",
     "properties": {
-      "k8s_cluster": { "type": "keyword" },
-      "k8s_container": { "type": "keyword" },
-      "k8s_group": { "type": "keyword" },
-      "k8s_label_jobid": { "type": "keyword" },
-      "k8s_namespace": { "type": "keyword" },
-      "k8s_node": { "type": "keyword" },
-      "k8s_pod": { "type": "keyword" },
-      "k8s_pod_label_cron": { "type": "keyword" },
-      "client_ip": { "type": "keyword" },
-      "http_code": { "type": "integer" },
-      "http_method": { "type": "keyword" },
-      "message": { "type": "text" }
+      "request": { "type": "text" },
+      "size": { "type": "keyword" },
+      "status": { "type": "keyword" },
+      "clientip": { "type": "keyword" }
     }
   }
 }'
 ```
 
-##### Results
+#### Results
 
-| Container               | CPU Limit | RAM Limit | Avg CPU | Avg RAM |
-|-------------------------|-----------|-----------|---------|---------|
-| seq‑db (`--mode store`) | 8         | 16GiB     | 6.5     | 7GiB    |
-| seq‑db (`--mode proxy`) | 8         | 8GiB      | 7       | 3GiB    |
-| elasticsearch (master)  | 2         | 4GiB      | 0       | 0GiB    |
-| elasticsearch (data)    | 16        | 32GiB     | 15.8    | 30GiB   |
+| Container               | CPU Limit | RAM Limit | Avg. CPU | Avg. RAM |
+|-------------------------|-----------|-----------|----------|----------|
+| seq‑db (`--mode store`) | 10        | 16GiB     | 8.81     | 3.2GB    |
+| seq‑db (`--mode proxy`) | 6         | 8GiB      | 4.92     | 4.9 GiB  |
+| elasticsearch (data)    | 16        | 32GiB     | 15.18    | 13GB     |
 
-| Container      | Avg Throughput | Logs/sec |
-|----------------|----------------|----------|
-| seq‑db         | 520MiB/s       | 162,000  |
-| elasticsearch  | 195MiB/s       | 62,000   |
+| Container     | Avg. Throughput | Logs/sec  |
+|---------------|-----------------|-----------|
+| seq‑db        | 181MiB/s        | 1,403,514 |
+| elasticsearch | 61MiB/s         | 442,924   |
 
-Here, seq‑db achieved ~2.6x higher throughput under similar resource constraints.
+Here, seq‑db achieved ~2.9x higher throughput with fewer resources usage.
 
-#### Configuration `6x6`
+### Configuration `6x6`
 
-Six seq‑db nodes in `--mode proxy` and six in `--mode store`. 
+Six seq‑db instances with `--mode proxy` and six with `--mode store`. 
 Elasticsearch indexing settings stayed the same except `number_of_replicas=1`:
+
 ```bash
 curl -X PUT "http://localhost:9200/k8s-logs-index/" -H 'Content-Type: application/json' -d'
 {
   "settings": {
-    "index": { "codec": "best_compression" },
-    "number_of_replicas": 1,
-    "number_of_shards": 6,
+    "index": {
+      "number_of_shards": "6",
+      "refresh_interval": "1s",
+      "number_of_replicas": "1",
+      "codec": "best_compression",
+      "merge.scheduler.max_thread_count": "2",
+      "translog": { "durability": "request" }
+    }
   },
   "mappings": {
     "dynamic": "false",
     "properties": {
-      "k8s_cluster": { "type": "keyword" },
-      "k8s_container": { "type": "keyword" },
-      "k8s_group": { "type": "keyword" },
-      "k8s_label_jobid": { "type": "keyword" },
-      "k8s_namespace": { "type": "keyword" },
-      "k8s_node": { "type": "keyword" },
-      "k8s_pod": { "type": "keyword" },
-      "k8s_pod_label_cron": { "type": "keyword" },
-      "client_ip": { "type": "keyword" },
-      "http_code": { "type": "integer" },
-      "http_method": { "type": "keyword" },
-      "message": { "type": "text" }
+      "request": { "type": "text" },
+      "size": { "type": "keyword" },
+      "status": { "type": "keyword" },
+      "clientip": { "type": "keyword" }
     }
   }
 }'
 ```
 
-We have also tweaked the `index.merge.scheduler.max_thread_count` to increase the bulk throughput.
+#### Results
 
-##### Results
+| Container                | CPU Limit | RAM Limit | Replicas | Avg. CPU (per instance) | Avg. RAM (per instance) |
+|--------------------------|-----------|-----------|----------|-------------------------|-------------------------|
+| seq‑db (`--mode proxy`)  | 3         | 8GiB      | 6        | 1.87                    | 2.2GiB                  |
+| seq‑db (`--mode store`)  | 10        | 16GiB     | 6        | 7.40                    | 2.5GiB                  |
+| elasticsearch (data)     | 13        | 32GiB     | 6        | 7.34                    | 8.8GiB                  |
 
-| Container                | CPU Limit | RAM Limit | Replicas | Avg CPU (per instance) | Avg RAM (per instance) |
-|--------------------------|-----------|-----------|----------|------------------------|------------------------|
-| seq‑db (`--mode proxy`)  | 5         | 8GiB      | 6        | 3.6                    | 1.5GiB                 |
-| seq‑db (`--mode store`)  | 8         | 16GiB     | 6        | 6.1                    | 6.3GiB                 |
-| elasticsearch (data)     | 13        | 32GiB     | 6        | 4.5                    | 13GiB                  |
-
-| Container     | Avg Throughput | Logs/sec       |
-|---------------|----------------|----------------|
-| seq‑db        | 1.3GiB/s       | 585,139 docs/s |
-| elasticsearch | 113.58MiB/s    | 37,658 docs/s  |
+| Container     | Avg. Throughput | Avg. Logs/sec  |
+|---------------|-----------------|----------------|
+| seq‑db        | 436MiB/s        | 3,383,724      |
+| elasticsearch | 62MiB/s         | 482,596        |
