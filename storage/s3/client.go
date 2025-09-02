@@ -25,7 +25,10 @@ type Client struct {
 //   - MaxIdleConnsPerHost;
 //
 // And maybe we should add tracing support as well.
-func NewClient(endpoint, accessKey, secretKey, region, bucket string) (*Client, error) {
+func NewClient(
+	endpoint, accessKey, secretKey, region, bucket string,
+	maxRetryAttempts int,
+) (*Client, error) {
 	credp := credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
 
 	cfg, err := config.LoadDefaultConfig(
@@ -43,6 +46,7 @@ func NewClient(endpoint, accessKey, secretKey, region, bucket string) (*Client, 
 	s3cli := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.UsePathStyle = true
 		o.DisableLogOutputChecksumValidationSkipped = true
+		o.RetryMaxAttempts = maxRetryAttempts
 	})
 
 	return &Client{s3cli, bucket}, nil
@@ -77,4 +81,8 @@ func (c *Client) Remove(ctx context.Context, filenames ...string) error {
 	})
 
 	return err
+}
+
+func (c *Client) MaxRetryAttempts() int {
+	return c.cli.Options().RetryMaxAttempts
 }

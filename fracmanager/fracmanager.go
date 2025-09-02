@@ -261,20 +261,18 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 			offloadStart := time.Now()
 			mustBeOffloaded, err := outsider.Offload(fm.ctx, s3.NewUploader(fm.s3cli))
 			if err != nil {
-				// While searching for outsiders we removed this fraction from list of local fractions.
-				// Now we need to return it back and try again to offload it later.
-				fm.fracMu.Lock()
-				fm.localFracs = append(fm.localFracs, &fracRef{outsider})
-				fm.fracMu.Unlock()
-
 				metric.OffloadingTotal.WithLabelValues("failure").Inc()
 				metric.OffloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
 
 				logger.Error(
-					"will skip fraction suicide: failed to offload fraction",
+					"will call Suicide() on fraction: failed to offload fraction",
 					zap.String("fraction", info.Name()),
+					zap.Int("retry_count", fm.s3cli.MaxRetryAttempts()),
 					zap.Error(err),
 				)
+
+				fm.fracCache.RemoveFraction(info.Name())
+				outsider.Suicide()
 
 				return
 			}
