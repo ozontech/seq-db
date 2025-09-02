@@ -1,0 +1,32 @@
+# DO NOT USE this configuration in production environments.
+# This configuration ONLY for demonstration purposes.
+
+address:
+  http: :9002
+  grpc: :9004
+  debug: :9200
+
+storage:
+  data_dir: ./data
+  frac_size: 16MiB
+  total_size: 1GiB
+
+cluster:
+  hot_stores:
+    - seq-db-store:9004
+
+offloading:
+  enabled: true
+  retention: 5m
+  endpoint: http://minio:9000/
+  bucket: remote-storage
+  access_key: minioadmin
+  secret_key: minioadmin
+
+slow_logs:
+  bulk_threshold: 100ms
+  search_threshold: 20ms
+  fetch_threshold: 20ms
+
+mapping:
+  path: /seq-db/mappings/logging-new.yaml
