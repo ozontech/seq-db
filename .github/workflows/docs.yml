@@ -16,7 +16,7 @@ jobs:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
       - name: Your step
         run: |
-          curl -L \                                                                                                                                                                                      ✔  13:58:31
+          curl -L  
             -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $secrets.DOCS_REPO_TOKEN" \
