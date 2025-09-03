@@ -15,7 +15,7 @@ Welcome to the seq-db quickstart guide! In just a few minutes, you'll learn how 
 
 ### Single node mode
 
-Before launch you need to create a config file:
+Before launch you need to create config file:
 
 config.yaml:
 
