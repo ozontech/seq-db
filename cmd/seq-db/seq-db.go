@@ -77,6 +77,10 @@ func main() {
 		logger.Fatal("cannot parse config file", zap.Error(err))
 	}
 
+	if err := cfg.Validate(*flagMode); err != nil {
+		logger.Fatal("config validation failed", zap.Error(err))
+	}
+
 	config.ReaderWorkers = cfg.Resources.ReaderWorkers
 	config.CaseSensitive = cfg.Indexing.CaseSensitive
 	config.SkipFsync = cfg.Resources.SkipFsync
