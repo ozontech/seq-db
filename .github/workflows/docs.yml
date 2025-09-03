@@ -3,6 +3,8 @@ name:  Deploy docs
 on:
   pull_request:
     branches: [ main ]
+    paths:
+      - "docs/**"
 
 jobs:
   do_stuff:
