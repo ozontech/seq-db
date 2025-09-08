@@ -13,6 +13,9 @@ jobs:
     if: github.event.pull_request.merged == true
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Check out the merge commit on the base branch
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
       - name: Send trigger for remote website deploy
         env:
           DOCS_REPO_TOKEN: ${{ secrets.DOCS_REPO_TOKEN }}
