@@ -8,15 +8,15 @@ on:
       - "docs/**"
 
 jobs:
-  do_stuff:
+  trigger_docs_website_deploy:
     runs-on: ubuntu-latest
     if: github.event.pull_request.merged == true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Check out the merge commit on the base branch
           ref: ${{ github.event.pull_request.merge_commit_sha }}
-      - name: Your step
+      - name: Send trigger for remote website deploy
         run: |
           curl -L  \
             -X POST \
