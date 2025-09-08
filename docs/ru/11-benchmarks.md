@@ -4,12 +4,11 @@ id: benchmarks
 
 # Бенчмарки
 
-## Синтетические данные
-
-### Методология
+## Методология
 
 Мы подготовили набор бенчмарков, которые постарались сделать максимально воспроизводимыми и детерминированными.
 Датасет, который использовался во время бенчмарков, детерминирован и состоит из 40 гигабайт (219 млн) структурированных логов в формате json.
+
 Пример лога: 
 ```json
 {
@@ -20,6 +19,8 @@ id: benchmarks
     "size": 1504
 }
 ```
+
+## Local Deploy
 
 Тесты запускались на AWS хосте `c6a.4xlarge`, который имеет следующую конфигурацию:
 
@@ -41,10 +42,10 @@ id: benchmarks
 
 На синтетических тестах у нас получились следующие числа:
 
-| Container     | Average Logs Per Second | Average Throughput | Average CPU Usage | Average RAM Usage |
-|---------------|-------------------------|--------------------|-------------------|-------------------|
-| seq-db        | 370_000                 | 48 MiB/s           | 3.3               | 1.8 GiB           |
-| elasticsearch | 110_000                 | 14 MiB/s           | 1.9               | 2.4 GiB           |
+| Container     | Avg. Logs/sec | Avg. Throughput | Avg. CPU Usage | Avg. RAM Usage |
+|---------------|---------------|-----------------|----------------|----------------|
+| seq‑db        | 370,000       | 48MiB/s         | 3.3vCPU        | 1.8GiB         |
+| elasticsearch | 110,000       | 14MiB/s         | 1.9vCPU        | 2.4GiB         |
 
 Отсюда видно, что при сопоставимых значений используемых ресурсов, seq-db показала пропускную способность, которая в среднем 3.4 раз выше, чем пропускная способность у Elasticsearch.
 
@@ -70,7 +71,7 @@ id: benchmarks
 | elasticsearch | 6.06ms   | 5.11ms   | 11.8ms  |
 
 
-### Сценарий `status: in(500,400,403)`
+#### Сценарий `status: in(500,400,403)`
 Параметры: 20 looping VUs for 10s
 
 | DB            | Avg       | P50           | P95      |
@@ -79,7 +80,7 @@ id: benchmarks
 | elasticsearch | 21.68ms   | 18.91ms       | 29.84ms  |
 
 
-### Сценарий `request: GET /english/images/top_stories.gif HTTP/1.0`
+#### Сценарий `request: GET /english/images/top_stories.gif HTTP/1.0`
 Параметры: 20 looping VUs for 10s
 
 | DB            | Avg      | P50      | P95      |
@@ -124,74 +125,44 @@ SQL-аналог: `SELECT status, MIN(size) GROUP BY status`.
 | elasticsearch | 22.75ms  | 18.06ms  | 64.61ms  |
 
 
-## Реальные (production) данные
-
-### Методология
-
-Помимо синтетических тестов, нам также необходимо было проверить, как seq-db и Elasticsearch показывают себя на реальных данных - логах, которые собираются со всех наших production сервисов.
-Мы подготовили несколько сценариев бенчмарков, которые показывают перформанс характеристики в рамках одного инстанса и в рамках среднего по размеру по кластера:
-- Тестирование пропускной способности одного инстанса seq-db и Elasticsearch (Конфигурация `1x1`);
-- Тестирование пропускной способности 6 инстансов seq-db и Elasticsearch с RF=2 (Конфигурация `6x6`);
-
-Также для всех тестов мы заранее подготовили датасеты, которые были собраны из production логов, и произвели над ними все необходимые [трансформации](https://ozontech.github.io/file.d/#/plugin/action/), чтобы минимизировать потребление CPU при непосредственной транспортировки логов из file.d в `seq-db` или Elasticsearch. Суммарный размер датасета равен 280 GiB.
-
-Таким образом мы получили:
-- Детерминированность в рамках датасета;
-- Избавление от внешних зависимостей для доставки логов до file.d (конкретно в нашем случае - Apache Kafka);
-
-
-Верхнеуровнево схема записи выглядит следующим образом:
-```
-┌──────────────┐        ┌───────────┐  
-│ ┌──────┐     │        │           │  
-│ │ file ├──┐  │    ┌──►│  elastic  │  
-│ └──────┘  │  │    │   │           │  
-│ ┌─────────▼┐ │    │   └───────────┘  
-│ │          ├─┼────┘   ┌───────────┐  
-│ │  file.d  │ │        │           │  
-│ │          ├─┼───────►│  seq-db   │  
-│ └──────────┘ │        │           │  
-└──────────────┘        └───────────┘  
-```
+## K8S Deploy
 
 Ниже представлена информация о конфигурации кластера:
-| Container                  | CPU                                       | RAM           | Disk                            |
-|----------------------------|-------------------------------------------|---------------|---------------------------------|
-| seq-db `(--mode store)`    | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | DDR4 3200 MHz | RAID 10 4x SSD MZILT7T6HALA/007 |
-| seq-db `(--mode ingestor)` | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | DDR4 3200 MHz | -                               |
-| elasticsearch (master)     | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | DDR4 3200 MHz | RAID 10 4x SSD MZILT7T6HALA/007 |
-| elasticsearch (data)       | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | DDR4 3200 MHz | RAID 10 4x SSD MZILT7T6HALA/007 |
-| file.d                     | Intel(R) Xeon(R) Gold 6240R CPU @ 2.40GHz | DDR4 3200 MHz | -                               |
+
+| Container                   | CPU                       | RAM          | Disk          |
+|-----------------------------|---------------------------|--------------|---------------|
+| seq‑db (`--mode store`)     | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | RAID10, 4×SSD |
+| seq‑db (`--mode ingestor`)  | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | –             |
+| elasticsearch (master/data) | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | RAID10, 4×SSD |
+| file.d                      | Xeon Gold 6240R @ 2.40GHz | DDR4 3200MHz | –             |
 
 Далее мы выделили базовый набор полей, которые мы будем индексировать.
 Так как Elasticsearch по умолчанию индексирует все поля, мы создали индекс `k8s-logs-index`, который индексирует только ранее выбранное нами множество полей.
 
-#### Конфигурация `1x1`
+### Конфигурация `1x1`
 
 В данной конфигурации использовались следующие настройки индексов:
+
 ```bash
 curl -X PUT "http://localhost:9200/k8s-logs-index/" -H 'Content-Type: application/json' -d'
 {
   "settings": {
-    "index": { "codec": "best_compression" },
-    "number_of_replicas": 0,
-    "number_of_shards": 6,
+    "index": {
+      "number_of_shards": "6",
+      "refresh_interval": "1s",
+      "number_of_replicas": "0",
+      "codec": "best_compression",
+      "merge.scheduler.max_thread_count": "2",
+      "translog": { "durability": "request" }
+    }
   },
   "mappings": {
     "dynamic": "false",
     "properties": {
-      "k8s_cluster": { "type": "keyword" },
-      "k8s_container": { "type": "keyword" },
-      "k8s_group": { "type": "keyword" },
-      "k8s_label_jobid": { "type": "keyword" },
-      "k8s_namespace": { "type": "keyword" },
-      "k8s_node": { "type": "keyword" },
-      "k8s_pod": { "type": "keyword" },
-      "k8s_pod_label_cron": { "type": "keyword" },
-      "client_ip": { "type": "keyword" },
-      "http_code": { "type": "integer" },
-      "http_method": { "type": "keyword" },
-      "message": { "type": "text" }
+      "request": { "type": "text" },
+      "size": { "type": "keyword" },
+      "status": { "type": "keyword" },
+      "clientip": { "type": "keyword" }
     }
   }
 }'
@@ -199,69 +170,61 @@ curl -X PUT "http://localhost:9200/k8s-logs-index/" -H 'Content-Type: applicatio
 
 Ровно такую же конфигурацию индексирования и репликации мы задали и для seq-db.
 
-##### Результат
+#### Результат
 
-| Container               | CPU Limit | RAM Limit | Average CPU Usage | Average RAM Usage |
-|-------------------------|-----------|-----------|-------------------|-------------------|
-| seq-db `(--mode store)` | 8         | 16 GiB    | 6.5               | 7 GiB             |
-| seq-db `(--mode proxy)` | 8         | 8 GiB     | 7                 | 3 GiB             |
-| elasticsearch (master)  | 2         | 4 GiB     | 0                 | 0 GiB             |
-| elasticsearch (data)    | 16        | 32 GiB    | 15.8              | 30 GiB            |
+| Container               | CPU Limit | RAM Limit | Avg. CPU | Avg. RAM |
+|-------------------------|-----------|-----------|----------|----------|
+| seq‑db (`--mode store`) | 10        | 16GiB     | 8.81     | 3.2GB    |
+| seq‑db (`--mode proxy`) | 6         | 8GiB      | 4.92     | 4.9 GiB  |
+| elasticsearch (data)    | 16        | 32GiB     | 15.18    | 13GB     |
 
-| Container            | Average Throughput | Average Logs Per Second |
-|----------------------|--------------------|-------------------------|
-| seq-db               | 520 MiB/s          | 162_000                 |
-| elasticsearch        | 195 MiB/s          | 62_000                  |
+| Container     | Avg. Throughput | Logs/sec  |
+|---------------|-----------------|-----------|
+| seq‑db        | 181MiB/s        | 1,403,514 |
+| elasticsearch | 61MiB/s         | 442,924   |
 
-Отсюда видно, что при сопоставимых значений используемых ресурсов, seq-db показала пропускную способность, которая в среднем 2.6 раза выше, чем пропускная способность у Elasticsearch.
+Отсюда видно, что при сопоставимых значений используемых ресурсов, seq-db показала пропускную способность, которая в среднем ~2.9 раза выше, чем пропускная способность у Elasticsearch.
 
-#### Конфигурация `6x6`
+### Конфигурация `6x6`
 
 Для данной конфигурации было поднято 6 нод seq-db в режиме `--mode proxy` и 6 нод в режиме `--mode store`.
 
 Настройки индексов сохранились такими же, за исключением `number_of_replicas=1`:
+
 ```bash
 curl -X PUT "http://localhost:9200/k8s-logs-index/" -H 'Content-Type: application/json' -d'
 {
   "settings": {
-    "index": { "codec": "best_compression" },
-    "number_of_replicas": 1,
-    "number_of_shards": 6,
+    "index": {
+      "number_of_shards": "6",
+      "refresh_interval": "1s",
+      "number_of_replicas": "1",
+      "codec": "best_compression",
+      "merge.scheduler.max_thread_count": "2",
+      "translog": { "durability": "request" }
+    }
   },
   "mappings": {
     "dynamic": "false",
     "properties": {
-      "k8s_cluster": { "type": "keyword" },
-      "k8s_container": { "type": "keyword" },
-      "k8s_group": { "type": "keyword" },
-      "k8s_label_jobid": { "type": "keyword" },
-      "k8s_namespace": { "type": "keyword" },
-      "k8s_node": { "type": "keyword" },
-      "k8s_pod": { "type": "keyword" },
-      "k8s_pod_label_cron": { "type": "keyword" },
-      "client_ip": { "type": "keyword" },
-      "http_code": { "type": "integer" },
-      "http_method": { "type": "keyword" },
-      "message": { "type": "text" }
+      "request": { "type": "text" },
+      "size": { "type": "keyword" },
+      "status": { "type": "keyword" },
+      "clientip": { "type": "keyword" }
     }
   }
 }'
 ```
 
+#### Results
 
-Также твикали index.merge.scheduler.max_thread_count, при уменьшении увеличивалась пропускная способность.
-Ровно такую же конфигурацию индексирования и репликации мы задали и для seq-db.
+| Container                | CPU Limit | RAM Limit | Replicas | Avg. CPU (per instance) | Avg. RAM (per instance) |
+|--------------------------|-----------|-----------|----------|-------------------------|-------------------------|
+| seq‑db (`--mode proxy`)  | 3         | 8GiB      | 6        | 1.87                    | 2.2GiB                  |
+| seq‑db (`--mode store`)  | 10        | 16GiB     | 6        | 7.40                    | 2.5GiB                  |
+| elasticsearch (data)     | 13        | 32GiB     | 6        | 7.34                    | 8.8GiB                  |
 
-
-##### Результат
-
-| Container               | CPU Limit | RAM Limit | Replicas | Average CPU Usage (per instance) | Average RAM Usage (per instance) |
-|-------------------------|-----------|-----------|----------|----------------------------------|----------------------------------|
-| seq-db `(--mode proxy)` | 5         | 8 GiB     | 6        | 3.6                              | 1.5 GiB                          |
-| seq-db `(--mode store)` | 8         | 16 GiB    | 6        | 6.1                              | 6.3 GiB                          |
-| elasticsearch (data)    | 13        | 32 GiB    | 6        | 4.5                              | 13 GIB                           |
-
-| Container            | Average Throughput | Average Logs Per Second | 
-|----------------------|--------------------|-------------------------|
-| seq-db               | 1.3 GiB/s          | 585,139 docs/sec        |
-| elasticsearch        | 113.58 MiB/s       | 37,658 docs/sec         |
+| Container     | Avg. Throughput | Avg. Logs/sec  |
+|---------------|-----------------|----------------|
+| seq‑db        | 436MiB/s        | 3,383,724      |
+| elasticsearch | 62MiB/s         | 482,596        |

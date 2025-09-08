@@ -26,7 +26,7 @@ func TestReader(t *testing.T) {
 	s3cli, err := NewClient(
 		"http://localhost:9000/",
 		"minioadmin", "minioadmin",
-		"us-east-1", bucket,
+		"us-east-1", bucket, 0,
 	)
 	require.NoError(t, err)
 

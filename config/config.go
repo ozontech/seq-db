@@ -230,6 +230,9 @@ type Config struct {
 		// SecretKey configures S3 Secret Key for S3 client.
 		// You can learn more about secret keys [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html).
 		SecretKey string `config:"secret_key"`
+		// RetryCount sets [RetryMaxAttempts] for S3 client which is applied for all API calls.
+		// Be aware that fraction is suicided when offloading attempts exceeds [RetryCount].
+		RetryCount int `config:"retry_count" default:"5"`
 	} `config:"offloading"`
 
 	AsyncSearch struct {

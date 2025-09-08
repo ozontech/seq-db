@@ -184,7 +184,7 @@ func NewTestingEnv(cfg *TestingEnvConfig) *TestingEnv {
 		cli, err := seqs3.NewClient(
 			"http://localhost:9000/",
 			"minioadmin", "minioadmin",
-			"us-east-1", createBucket(),
+			"us-east-1", createBucket(), 0,
 		)
 		if err != nil {
 			panic(err)
