@@ -84,7 +84,7 @@ The language supports the following symbols:
 - `*` — replaces any number of characters.
 
 These symbols can be used to search within tokens or parts of tokens.
-For example, a query on the [keyword](03-index-types.md#keyword) index `source_type:access*` will match all documents starting
+For example, a query on the [keyword](03-index-types.md) index `source_type:access*` will match all documents starting
 with `access`.
 
 ## Filter `range`

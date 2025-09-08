@@ -32,7 +32,7 @@ Because the dataset is stored in these three file types, moving or restoring a
 shard is straightforward: simply `cp` / `rsync` the directory
 to the target node and start the pod.
 
-Read more about file types and their internal structure [here](./internal/fractions.md).
+Read more about file types and their internal structure [here](internal/fractions.md).
 
 #### Durability
 A write operation is acknowledged only after the payload is safely persisted:
