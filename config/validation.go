@@ -15,12 +15,12 @@ func (c *Config) Validate(mode string) error {
 
 	switch mode {
 	case "store":
-		validations = append(validations, c.validateStore()...)
+		validations = append(validations, c.storeValidations()...)
 	case "proxy":
-		validations = append(validations, c.validateProxy()...)
+		validations = append(validations, c.proxyValidations()...)
 	case "single":
-		validations = append(validations, c.validateProxy()...)
-		validations = append(validations, c.validateStore()...)
+		validations = append(validations, c.proxyValidations()...)
+		validations = append(validations, c.storeValidations()...)
 	default:
 		panic("unknown mode")
 	}
@@ -34,10 +34,10 @@ func (c *Config) Validate(mode string) error {
 	return nil
 }
 
-func (c *Config) validateProxy() []validateFn {
+func (c *Config) proxyValidations() []validateFn {
 	return []validateFn{
-		greaterThan("compression.docs_zstd_compression_level", 0, c.Compression.DocsZstdCompressionLevel),
-		greaterThan("compression.metas_zstd_compression_level", 0, c.Compression.MetasZstdCompressionLevel),
+		inRange("compression.docs_zstd_compression_level", -7, 22, c.Compression.DocsZstdCompressionLevel),
+		inRange("compression.metas_zstd_compression_level", -7, 22, c.Compression.MetasZstdCompressionLevel),
 
 		greaterThan("limits.query_rate", 0, c.Limits.QueryRate),
 		greaterThan("limits.inflight_bulks", 0, c.Limits.InflightBulks),
@@ -45,7 +45,7 @@ func (c *Config) validateProxy() []validateFn {
 	}
 }
 
-func (c *Config) validateStore() []validateFn {
+func (c *Config) storeValidations() []validateFn {
 	validations := []validateFn{
 		notEmpty("storage.data_dir", c.Storage.DataDir),
 		greaterThan("storage.frac_size", 0, c.Storage.FracSize),
@@ -64,8 +64,8 @@ func (c *Config) validateStore() []validateFn {
 		greaterThan("resources.search_workers", 0, c.Resources.SearchWorkers),
 		greaterThan("resources.cache_size", 0, c.Resources.CacheSize),
 
-		greaterThan("compression.sealed_zstd_compression_level", 0, c.Compression.SealedZstdCompressionLevel),
-		greaterThan("compression.doc_block_zstd_compression_level", 0, c.Compression.DocBlockZstdCompressionLevel),
+		inRange("compression.sealed_zstd_compression_level", -7, 22, c.Compression.SealedZstdCompressionLevel),
+		inRange("compression.doc_block_zstd_compression_level", -7, 22, c.Compression.DocBlockZstdCompressionLevel),
 	}
 
 	if c.Offloading.Enabled {
