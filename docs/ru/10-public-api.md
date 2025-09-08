@@ -1,33 +1,33 @@
-# Public API
+# Публичное API
 
-## Introduction
+## Введение
 
-seq-db consists of 2 components - proxy and store:
+seq-db состоит из двух компонентов - proxy и store:
 
-- seq-db proxy and seq-db store communicate via
-  *internal* [seq-db store gRPC API](https://github.com/ozontech/seq-db/tree/main/api/storeapi).
-- Querying logs is done via [seq-db proxy gRPC API](https://github.com/ozontech/seq-db/tree/main/api/seqproxyapi/v1).
-- Ingesting logs is done via [Elasticsearch compatible HTTP API](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html)
-- For debugging purposes, seq-db proxy has `HTTP API` similar to `gRPC API`
+- seq-db proxy и seq-db store взаимодействуют через
+  *внутреннее* [seq-db store gRPC API](https://github.com/ozontech/seq-db/tree/main/api/storeapi).
+- Поиск логов происходит при помощи [seq-db proxy gRPC API](https://github.com/ozontech/seq-db/tree/main/api/seqproxyapi/v1).
+- Прием логов происходит при помощи [Elasticsearch совместимого HTTP API](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html)
+- Для целей отладки seq-db proxy имеет `HTTP API`, похожее на `gRPC API`
 
-This document describes `seq-db ingestion API` and `seq-db search API`
+В этом документе описаны `seq-db ingestion API` и `seq-db search API`
 
 ## Bulk HTTP API
 
-seq-db is compatible with Elasticsearch bulk API
+seq-db совместима с Elasticsearch bulk API
 
 ### `/`
 
-Returns a hardcoded ES response that specifies the Elasticsearch version used. This feature allows the usage of seq-db
-as an Elasticsearch output for logstash, filebeat, and other log shippers.
+Возвращает захардкоженный ответ, указывающий на версию используемого Elasticsearch. Это позволяет использовать seq-db
+в качестве Elasticsearch вывода для logstash, filebeat и других инструментов доставки логов.
 
-Example request:
+Пример запроса:
 
 ```bash
 curl -X GET http://localhost:9002/
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json
 {
@@ -40,9 +40,9 @@ Example successful response:
 
 ### `/_bulk`
 
-Receives body, parses it to docs and metas and writes to stores via internal API.
+Принимает тело запроса, разбирает его на документы и метаданные, затем записывает в хранилища через внутренний API.
 
-Example request:
+Пример запроса:
 
 ```bash
 curl -X POST http://localhost:9002/_bulk -d '
@@ -69,7 +69,7 @@ curl -X POST http://localhost:9002/_bulk -d '
 '
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json
 {
@@ -90,18 +90,18 @@ Example successful response:
 }
 ```
 
-One can notice that `index` field is left empty. seq-db ignores data passed in this field, since it uses mapping
-for field indexing. You can find more information about mapping in [relevant document](03-index-types.md)
+Можно заметить, что в поле `index` нет данных: seq-db игнорирует это поле, потому что использует маппинг для индексации полей.
+Больше о маппинге и индексах можно прочитать в [документации](03-index-types.md)
 
-#### Example rate-limited response
+Пример ответа при превышении лимита запросов:
 
-There should not be more than `consts.IngestorMaxInflightBulks` requests at the same time (32 by default), otherwise
-request is rate-limited and seq-db will response with [`429`](https://developer.mozilla.org/ru/docs/Web/HTTP/Reference/Status/429) status code.
+Не должно быть более `consts.IngestorMaxInflightBulks` (по умолчанию 32) одновременных запросов, в противном случае  
+запрос будет ограничен по частоте, и seq-db ответит кодом ответа `429`.
 
-#### Example error response
+Пример ответа с ошибкой:
 
-In case of error seq-db returns `500` status code and the error message.
-E.g. if we try to ingest corrupted json
+В случае ошибки, seq-db вернет код ответа `500` и сообщение об ошибке.
+Например, при попытке вставить некорректный json:
 
 ```bash
 curl -v -X POST http://localhost:9002/_bulk -d '
@@ -110,7 +110,7 @@ curl -v -X POST http://localhost:9002/_bulk -d '
 '
 ```
 
-We get
+мы получим
 
 ```text
 processing doc: unexpected end of string near `", "request_time": "123`
@@ -121,9 +121,9 @@ processing doc: unexpected end of string near `", "request_time": "123`
 
 ### `/Search`
 
-Document search method by request. Takes in query in seq-ql format and returns list of satisfying documents.
+Метод поиска документов. Принимает поисковый запрос в формате seq-ql и возвращает документы, удовлетворяющие поисковому запросу.
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext -d '
@@ -138,7 +138,7 @@ grpcurl -plaintext -d '
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/Search
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json
 {
@@ -161,13 +161,13 @@ Example successful response:
 }
 ```
 
-`data` field contains original document in base64 format. If we try to decode it
+Поле `data` содержит оригинальный документ, закодированный в base64. Если декодировать его,
 
 ```bash
 echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
 ```
 
-we get
+то получится
 
 ```json
 {
@@ -490,9 +490,9 @@ we get
 
 ### `/GetHistogram`
 
-Method of getting histograms by query
+Метод построения гистограмм.
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext -d '
@@ -507,7 +507,7 @@ grpcurl -plaintext -d '
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetHistogram
 ```
 
-Example successful response
+Пример успешного ответа:
 
 ```json
 {
@@ -532,10 +532,10 @@ Example successful response
 
 ### `/ComplexSearch`
 
-Search request combining fetch of [documents](#search), [aggregations](#getaggregation)
-and [histograms](#gethistogram)
+Запрос, позволяющий получить сразу [документы](#search), [агрегации](#getaggregation)
+и [гистограммы](#gethistogram)
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext -d '
@@ -565,7 +565,7 @@ grpcurl -plaintext -d '
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/ComplexSearch
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json
 {
@@ -606,9 +606,9 @@ Example successful response:
 
 ### `/Fetch`
 
-Method returning stream of documents by passed seq-id's
+Возвращает поток документов по переданному в запросе списку seq-id
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext -d '
@@ -620,7 +620,7 @@ grpcurl -plaintext -d '
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/Fetch
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json lines
 {
@@ -637,15 +637,15 @@ Example successful response:
 
 #### `/Mapping`
 
-Method returning mapping seq-db working with
+Возвращает используемый в seq-db маппинг.
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext localhost:9004 seqproxyapi.v1.SeqProxyApi/Mapping
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json
 {
@@ -653,7 +653,7 @@ Example successful response:
 }
 ```
 
-decoding base64 results in:
+после декодирования base64:
 
 ```json
 {
@@ -673,15 +673,15 @@ decoding base64 results in:
 
 #### `/Status`
 
-Method returning detailed information about seq-db stores seq-db proxy working with
+Возвращает подробную информацию о всех seq-db store, используемых seq-db proxy
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext localhost:9004 seqproxyapi.v1.SeqProxyApi/Status
 ```
 
-Example successful response
+Пример успешного ответа:
 
 ```json
 {
@@ -700,9 +700,9 @@ Example successful response
 
 #### `/Export`
 
-Same method as a [`/Search`](#search), but streaming
+То же самое, что и [`/Search`](#search), но потоковый
 
-Example request:
+Пример запроса:
 
 ```bash
 grpcurl -plaintext -d '
@@ -716,7 +716,7 @@ grpcurl -plaintext -d '
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/Export
 ```
 
-Example successful response:
+Пример успешного ответа:
 
 ```json lines
 {
