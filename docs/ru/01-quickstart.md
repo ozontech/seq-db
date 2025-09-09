@@ -3,19 +3,21 @@ id: quickstart
 slug: /
 ---
 
-# Quickstart
+# Быстрый запуск
 
-Welcome to the seq-db quickstart guide! In just a few minutes, you'll learn how to:
+Добро пожаловать в руководство по быстрому запуску seq-db! Всего через несколько минут вы узнаете, как:
 
-- Quickly spin up a seq-db instance
-- Write and store sample log messages
-- Query and retrieve messages using search filters
+- Быстро запустить seq-db
+- Записывать логи
+- Выполнять поисковые запросы
 
-## Running seq-db
+## Запуск seq-db
 
-### Single node mode
+### Запуск в единственном экземпляре
 
-Before launch you need to create config file:
+seq-db можно быстро запустить в docker-контейнере:
+
+Перед запуском нужно удостовериться, что создан файл конфигурации:
 
 config.yaml:
 
@@ -27,7 +29,7 @@ mapping:
   path: auto
 ```
 
-seq-db can be quickly launched in a docker container. Pull seq-db image from Docker hub and create a container:
+Следующая команда скачает образ seq-db из GitHub Container Registry (GHCR) и запустит контейнер:
 
 ```bash
 docker run --rm \
@@ -35,20 +37,24 @@ docker run --rm \
   -p 9004:9004 \
   -p 9200:9200 \
   -v "$(pwd)"/config.yaml:/seq-db/config.yaml \
-  -it ghcr.io/ozontech/seq-db:v0.61.0 --mode single --config=config.yaml
+  -it ghcr.io/ozontech/seq-db:latest --mode single --config=config.yaml
 ```
 
-Note that in this example we use a default mapping file (built into the docker image) as seq-db doesn't index any fields by default.
-The example uses the `--mode single` flag to run both seq-db in a single binary, rather than in cluster mode.
-Field indexing is configured via `mapping.path: auto` in config.yaml to index all fields as `keyword`.
+Обратите внимание, что флаг `--mode single` запускает seq-db в единственном исполняемом файле, а не в кластерном режиме.
+И настройка `mapping.path: auto` позволяет автоматически индексировать все поля документа как `keyword` тип.
 
-### Cluster mode
+Чтобы узнать больше о поддерживаемых видах индексов, смотрите [документацию](./03-index-types.md).
 
-seq-db can be launched in a cluster mode, two main components are `seq-db-proxy` and `seq-db-store`: `seq-db-proxy` proxies requests to configured stores and `seq-db-store` actually stores the data.
+### Кластерный режим
 
-Use `--mode` flag to select specific mode: `proxy` or `store`.
+Seq-db можно запустить в кластерном режиме, используя два основных компонента:
 
-Before launch you need to create config files:
+- seq-db proxy - принимает запросы и маршрутизирует их согласно конфигурации кластера
+- seq-db store - отвечает за хранение и получение данных
+
+Используйте флаг `--mode`, чтобы выбрать определенный способ запуска: `proxy` или `store`.
+
+Перед запуском нужно создать файл конфигурации:
 
 config.yaml:
 
@@ -61,13 +67,13 @@ mapping:
   path: auto
 ```
 
-Here is the minimal docker compose example:
+Далее нужно запустить docker compose пример:
 
 ```yaml
 services:
   
   seq-db-proxy:
-    image: ghcr.io/ozontech/seq-db:v0.61.0
+    image: ghcr.io/ozontech/seq-db:latest
     volumes:
       - ${PWD}/config.yaml:/seq-db/config.yaml
     ports:
@@ -79,23 +85,25 @@ services:
       - seq-db-store
   
   seq-db-store:
-    image: ghcr.io/ozontech/seq-db:v0.61.0
+    image: ghcr.io/ozontech/seq-db:latest
     volumes:
       - ${PWD}/config.yaml:/seq-db/config.yaml
     command: --mode store --config=config.yaml
 ```
 
-Read [clustering flags](02-flags.md#clustering-flags) and [long term store](07-long-term-store.md) for more info about possible configurations.
+Также можно запустить файл `docker-compose.yaml` из директории `quickstart`, который содержит примерно такую же конфигурацию.
 
-Be aware that we set `--mapping` to `auto` for easier quickstart but this option is not production friendly.
-So we encourage you to read more about [mappings and how we index fields](03-index-types.md) and seq-db architecture and operating modes (single/cluster).
+Смотрите [настройки кластера](02-configuration.md#cluster-configuration) и [долгосрочное хранилище](07-long-term-store.md),
+чтобы узнать больше о возможных способах конфигурации seq-db.
 
-## Write documents to seq-db
+Обратите внимание, что мы установили настройку `mapping.path: auto`, это сделано для упрощения запуска, эта настройка не предназначена для использования в продакшене.
+Поэтому мы рекомендуем прочитать больше о [маппингах и индексации полей](03-index-types.md) и [архитектуре](13-architecture.md)
 
-### Writing documents using `curl`
+## Запись документов в seq-db
 
-seq-db supports elasticsearch `bulk` API, so, given a seq-db single instance is listening on port 9002,
-a single document can be added like this:
+### Запись документов при помощи `curl`
+
+seq-db поддерживает elasticsearch `bulk` API, поэтому вставить документы в seq-db, запущенную на порту 9002, можно следующим образом:
 
 ```bash
 curl --request POST \
@@ -110,12 +118,9 @@ curl --request POST \
 '
 ```
 
-## Search for documents
+## Поиск документов
 
-We'll wrap up this guide with a simple search query
-that filters the ingested logs by the `message` field.
-
-Note: make sure `curl` and `jq` are installed to run this example.
+И в конце выполним простой поисковый запрос, который фильтрует записанные логи по полю `message`.
 
 ```bash
 curl --request POST   \
@@ -134,11 +139,11 @@ curl --request POST   \
   }'
 ```
 
-## Running seq-db with seq-ui server
+## Запуск seq-db вместе с seq-ui
 
-seq-ui is a backend for user interface.
+seq-ui это бэкенд для пользовательского интерфейса.
 
-To launch seq-db with seq-ui you need to add minimal configuration file for seq-ui, config.seq-ui.yaml:
+Чтобы запустить seq-db в связке с seq-ui, нужно создать файл конфигурации для seq-ui, config.seq-ui.yaml:
 
 ```yaml
 server:
@@ -167,7 +172,7 @@ handlers:
     max_aggregations_per_request: 3
 ```
 
-Don't forget to include seq-db configuration file, config.yaml:
+Также нужен файл конфигурации для seq-db, config.yaml:
 
 ```yaml
 cluster:
@@ -178,13 +183,13 @@ mapping:
   path: auto
 ```
 
-And then launch using this minimal docker compose example:
+Далее нужно запустить этот docker compose пример:
 
 ```yaml
 services:
 
   seq-ui:
-    image: ghcr.io/ozontech/seq-ui:v0.37.0
+    image: ghcr.io/ozontech/seq-ui:latest
     volumes:
       - ${PWD}/config.seq-ui.yaml:/seq-ui/config.yaml
     ports:
@@ -194,7 +199,7 @@ services:
     command: --config config.yaml
   
   seq-db-proxy:
-    image: ghcr.io/ozontech/seq-db:v0.61.0
+    image: ghcr.io/ozontech/seq-db:latest
     volumes:
       - ${PWD}/config.yaml:/seq-db/config.yaml
     ports:
@@ -206,19 +211,19 @@ services:
       - seq-db-store
   
   seq-db-store:
-    image: ghcr.io/ozontech/seq-db:v0.61.0
+    image: ghcr.io/ozontech/seq-db:latest
     volumes:
       - ${PWD}/config.yaml:/seq-db/config.yaml
     command: --mode store --config=config.yaml
 ```
 
-See seq-ui documentation for more details on how to interact with seq-ui.
+Чтобы узнать больше о seq-ui, смотрите соответствующую документацию.
 
-## What's next
+## Что дальше
 
-seq-db offers many more useful features for working with logs. Here's a couple:
+seq-db имеет множество других полезных функций для работы с логами. Вот несколько примеров:
 
-- A custom query language - [seq-ql](05-seq-ql.md) - that supports pipes, range queries, wildcards and more.
-- Built-in support for various types of aggregations: sum, avg, quantiles etc. TODO add aggregation doc?
-- The ability to combine multiple aggregations into a single request using complex-search TODO add link
-- Document-ID based retrieval can be [fetched](10-public-api.md#fetch)
+- Собственный язык запросов - [seq-ql](05-seq-ql.md) - поддерживает конвейеры (pipes), запросы диапазонов, подстановочные символы (*) и другое.
+- Поддержка построения различных агрегаций: сумма, среднее, квантили и так далее - [aggregations](13-aggregations.md)
+- Возможность объединить в один запрос получение документов, агрегаций и гистограмм - [complex-search](10-public-api.md#complexsearch)
+- Получение документов по ID - [fetch](10-public-api.md#fetch)
