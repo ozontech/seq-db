@@ -3,14 +3,20 @@ id: index-types
 ---
 
 # Index types and mappings
+
 seq-db doesn't index any fields from the ingested data by default.
 Instead, indexing is controlled through a special file called the *mapping file*.
 The mapping file specifies the indexed fields and the used index types.
 
+If you want to automatically index all the fields, there is `mapping.path: auto` setting that will index all document's fields as `keyword`.
+But this this setting is not production friendly, so use it only on demonstration or testing purposes.
+
 ## Index types
+
 Below is a description of mapping types seq-db currently supports. There are several index types with different behaviors.
 
 ### `keyword` mapping type
+
 The `keyword` mapping type treats the whole value as a single token, without breaking it up.
 Usually used for content like statuses, namespaces, tags or any other data where a full match search is required.
 Note that `keyword` index should be used with care with high-cardinality values like `trace_id`, `span_id` or
@@ -25,6 +31,7 @@ mapping-list:
 ```
 
 ### `path` mapping type
+
 This mapping type indexes hierarchical path-like values.
 It is very similar to the
 elasticsearch's [path tokenizer](https://www.elastic.co/guide/en/elasticsearch/reference/current/analysis-pathhierarchy-tokenizer.html).
@@ -32,6 +39,7 @@ When a field is indexed with the `path` index, its value is broken
 into hierarchical terms.
 
 Used for searching by beginning of a path or full path. For example, the following documents will match query `uri:"/my/path"`:
+
 ```json
 [
   {"uri": "/my/path"},
@@ -65,14 +73,13 @@ mapping-list:
     type: text
 ```
 
-
 ### `exists` mapping type
 
-Used when the presence of the field is important and not the value.
+Used when the **presence** of the field is important and not the value.
 
 This mapping type should be used when a field might or might not be
 present in a message.
-For example, for query `_exists_:service` all documents that have a `service` field will be found regardless of the field value.
+For example, for query `_exists_:service` all documents that have a `service` field will be found *regardless of the field value*.
 
 Note that the `_exists_` query will work on other types of mapping as well.
 
@@ -86,15 +93,16 @@ mapping-list:
 
 ## Configuration parameters
 
-* `--partial-indexing` - if true, will index only the first part of long fields, otherwise will skip entry if length of field value is greater than threshold.
+* `indexing.partial_field_indexing` - if true, will index only the first part of long fields, otherwise will skip entry if length of field value is greater than threshold.
 
-* `--max-token-size` - max size of a single token, default is 72.
+* `indexing.max_token_size` - max size of a single token, default is 72.
 
-* `--case-sensitive` - if false, will convert values to lower case.
+* `indexing.case_sensitive` - if false, will convert values to lower case.
 
 * constant `consts.MaxTextFieldValueLength` - limits maximum length of the text field value. Current threshold is 32768 bytes.
 
 ## Object indexing
+
 seq-db can also index logs containing nested structured data.
 In this case, the parent field should have the `object` index type,
 and contain a `mapping-list` object inside, that would specify
@@ -131,7 +139,6 @@ mapping-list:
   - user.name: keyword
 ```
 
-
 ## Multiple indexes on a single field
 
 A single field can be indexed with multiple types at the same time.
@@ -160,7 +167,6 @@ In this case, the type with empty `title` will be default one.
 For types with `title` new "implicit" fields will be created: `message.keyword` in our case. Use `message.keyword` to search over message as keyword and `message` to search as text.
 
 The title of implicit field consists of values of `name` and `title` joined together with a dot between them.
-
 
 ## Illustrated mapping example
 
@@ -191,8 +197,7 @@ There is also a `size` field that allows you to specify the maximum size of the 
 
 If `size` is not set, the [default](#configuration-parameters) will be used.
 
-
-## Indexing internals
+### Indexing internals
 
 Let's write a document using [mapping](#illustrated-mapping-example) (ID of document will be ```id = N```):
 

@@ -1,18 +1,31 @@
-# Index types and mappings
-seq-db doesn't index any fields from the ingested data by default.
-Instead, indexing is controlled through a special file called the *mapping file*.
-The mapping file specifies the indexed fields and the used index types.
+---
+id: index-types
+---
 
-## Index types
-Below is a description of mapping types seq-db currently supports. There are several index types with different behaviors.
+# Типы индексов и маппинги
 
-### `keyword` mapping type
-The `keyword` mapping type treats the whole value as a single token, without breaking it up.
-Usually used for content like statuses, namespaces, tags or any other data where a full match search is required.
-Note that `keyword` index should be used with care with high-cardinality values like `trace_id`, `span_id` or
-other unique request identifiers, as the indexing of these fields might blow up the index.
+По умолчанию, seq-db не индексирует поля из записываемых данных, вместо этого есть специальный *файл маппинга*,
+в котором указаны индексируемые поля и используемые типы индексов.
 
-Example of a mapping for a keyword field:
+Если же вам нужно автоматически индексировать все поля документа, то есть настройка `mapping.path: auto`,
+благодаря которой все поля документа будут проиндексированы как `keyword` тип.
+
+**Внимание:** эта опция не подходит для продакшена (может резко увеличить размер индекса и стоимость запросов); используйте её только для демо и тестов.
+
+## Типы индексов
+
+Ниже описаны типы индексов, поддерживаемые seq-db.
+На данный момент есть несколько видов индексов с разным поведением.
+
+### `keyword` тип
+
+Тип поля `keyword` считает, что все значение поля это один токен, значение поля никак не разбивается на части.
+Обычно используется для таких данных как статусы, пространства имен, теги или любые другие данные, где при поиске нужно полное совпадение.
+Обратите внимание, что `keyword` индекс нужно использовать с осторожностью для высококардинальных полей,
+таких как идентификаторы трейсов и спанов или любые другие уникальные идентификаторы,
+потому что индексация высококардинальных полей способствует росту индекса.
+
+Пример маппинга для поля с типом `keyword`:
 
 ```yaml
 mapping-list:
@@ -20,14 +33,14 @@ mapping-list:
     type: keyword
 ```
 
-### `path` mapping type
-This mapping type indexes hierarchical path-like values.
-It is very similar to the
-elasticsearch's [path tokenizer](https://www.elastic.co/guide/en/elasticsearch/reference/current/analysis-pathhierarchy-tokenizer.html).
-When a field is indexed with the `path` index, its value is broken
-into hierarchical terms.
+### `path` тип
 
-Used for searching by beginning of a path or full path. For example, the following documents will match query `uri:"/my/path"`:
+Этот тип индексирует иерархические данные, такие как пути в файловой системе или url.
+Похож на [path tokenizer](https://www.elastic.co/guide/en/elasticsearch/reference/current/analysis-pathhierarchy-tokenizer.html) в elasticsearch.
+Когда у поля тип `path`, во время индексации его значение разбивается на токены согласно иерархии поля.
+
+Используется для поиска по началу пути или по полному пути. Например, все следующие документы будут удовлетворять запросу `uri:"/my/path"`:
+
 ```json
 [
   {"uri": "/my/path"},
@@ -37,7 +50,7 @@ Used for searching by beginning of a path or full path. For example, the followi
 ]
 ```
 
-Example of a mapping for a path field:
+Пример маппинга для `path` поля:
 
 ```yaml
 mapping-list:
@@ -45,15 +58,14 @@ mapping-list:
     type: path
 ```
 
-### `text` mapping type
+### `text` тип
 
-Index for content like error messages or request bodies where full-text search is required.
-This mapping type is used to index fields containing unstructured, natural language text, as well as human-written messages, descriptions,
-error messages and other free-text fields.
+Индекс для таких данных, где необходим полнотекстовый поиск: сообщения об ошибках или тела запросов.
+Этот тип индексирования используется для полей, содержащих неструктурированный текст на естественном языке, а также сообщения, написанные людьми, описания, сообщения об ошибках и другие текстовые поля в свободном виде.
 
-For example, the search query `message:"error"` will emit all the documents that contain token `error`. And query `message:"error code"` will emit all the documents that contain both `error` and `code`.
+Например, запрос `message:"error"` вернёт все документы, содержащие токен `error`. А запрос `message:"error code"` вернёт все документы, содержащие оба токена: `error` и `code`.
 
-Example of a mapping for a text field:
+Пример маппинга текстового поля:
 
 ```yaml
 mapping-list:
@@ -61,18 +73,16 @@ mapping-list:
     type: text
 ```
 
+### `exists` тип
 
-### `exists` mapping type
+Используется, когда важна **наличие поля**, а не его значение.  
+Этот тип маппинга следует применять, когда поле **может присутствовать или отсутствовать** в сообщении.  
 
-Used when the presence of the field is important and not the value.
+Например, для запроса `_exists_:service` будут найдены все документы, содержащие поле `service`, *независимо от его значения*.  
 
-This mapping type should be used when a field might or might not be
-present in a message.
-For example, for query `_exists_:service` all documents that have a `service` field will be found regardless of the field value.
+Обратите внимание: запрос `_exists_` будет работать и с другими типами полей.  
 
-Note that the `_exists_` query will work on other types of mapping as well.
-
-Example of a mapping for an exists field:
+Пример маппинга для `exists` поля:
 
 ```yaml
 mapping-list:
@@ -80,42 +90,39 @@ mapping-list:
     type: exists
 ```
 
-## Configuration parameters
+## Параметры конфигурации
 
-* `--partial-indexing` - if true, will index only the first part of long fields, otherwise will skip entry if length of field value is greater than threshold.
+* `indexing.partial_field_indexing` - если true, то будет проиндексирована только первая часть поля, если длина поля больше лимита, если false - при превышении лимита по размеру поле будет пропущено.
+* `indexing.max_token_size` - максимальный размер токена,по умолчанию 72.
+* `indexing.case_sensitive` - если false, то все значения будут приведены к нижнему регистру.
+* constant `consts.MaxTextFieldValueLength` - ограничивает максимальную длину текстового поля, текущий порог 32768 байт.
 
-* `--max-token-size` - max size of a single token, default is 72.
+## Индексирование объектов
 
-* `--case-sensitive` - if false, will convert values to lower case.
+seq-db также может индексировать логи, содержащие вложенные структурированные данные.
+В этом случае родительское поле должно иметь тип индекса `object` и содержать внутри объект `mapping-list`, который определяет,
+как именно должны индексироваться вложенные поля.
 
-* constant `consts.MaxTextFieldValueLength` - limits maximum length of the text field value. Current threshold is 32768 bytes.
-
-## Object indexing
-seq-db can also index logs containing nested structured data.
-In this case, the parent field should have the `object` index type,
-and contain a `mapping-list` object inside, that would specify
-how exactly its nested fields should be indexed.
-
-For example:
+Например:
 
 ```yaml
 mapping-list:
-  - name: "myobject" # key that contains nested json data
+  - name: "myobject" # название поле, которое содержит вложенные json данные
     type: "object"
-    mapping-list: # mapping for the nested fields
+    mapping-list: # маппинг для вложенных полей
       - type: "keyword"
         name: "nested"
       - type: "text"
         name: "nestedtext"
 ```
 
-### Field names containing dots and nested objects
+### Вложенные объекты и названия полей, содержащие точки
 
-seq-db doesn't differentiate between fields indexed
-in a nested object and fields containing a dot in their name.
-For example, the mapping displayed below, will index both `name`
-keys nested inside the object with the key `user`, and the `user.name` field
-inside the root log.
+seq-db не делает различий между полями, которые индексируются внутри вложенного объекта,
+и полями, содержащими точку в имени.
+
+Например, при использовании представленного ниже маппинга, будут проиндексированы как поле `name`,
+вложенное в объект с ключом `user`, так и поле `user.name` в корне лога.
 
 ```yaml
 mapping-list:
@@ -127,19 +134,18 @@ mapping-list:
   - user.name: keyword
 ```
 
+## Индексация одного поля несколькими способами
 
-## Multiple indexes on a single field
+Одно поле может быть проиндексировано несколькими способами одновременно.
+Это позволяет комбинировать различные стратегии индексирования для обеспечения более гибких возможностей поиска.
 
-A single field can be indexed with multiple types at the same time.
-This allows to combine multiple indexing strategies enabling more flexible
-search capabilities.
+Например, поле можно индексировать одновременно как `keyword` и `text`,
+что позволяет выполнять как полнотекстовый поиск, так и поиск по полному совпадению.
 
-For instance, a field can be indexed as both `keyword` and `text`,
-allowing both full-text search and exact filtering.
+Если для поля используются несколько индексов, то дополнительный тип должен иметь **название**,
+которое будет использоваться при поиске данных.  
 
-If multiple indexing types are used, the additional indexing
-type should have titles, that will be used during data search.
-Say we have this mapping:
+Пример маппинга:
 
 ```yaml
 mapping-list:
@@ -151,19 +157,19 @@ mapping-list:
         size: 18
 ```
 
-In this case, the type with empty `title` will be default one.
+В этом случае, поле с пустым `title` будет полем по умолчанию.
 
-For types with `title` new "implicit" fields will be created: `message.keyword` in our case. Use `message.keyword` to search over message as keyword and `message` to search as text.
+Для полей с не пустым `title` будет создано "неявное" поле - в нашем случае `message.keyword`.
+Используйте `message.keyword` для поиска по полному совпадению и `message` для полнотекстового поиска.
 
-The title of implicit field consists of values of `name` and `title` joined together with a dot between them.
+Названия "неявного" поля состоит из значений `name` и `title`, соединенных точкой между ними.
 
+## Пример маппинга
 
-## Illustrated mapping example
+Рассмотрим конкретный пример.
+Определим маппинг и посмотрим, как будет проиндексирован тестовый документ.
 
-Let's walk through a practical example.
-We'll define a mapping and analyze how seq-db would index a sample document.
-
-Say we have this example mapping with explicit field types: `text`, `keyword`, `path`, `exists`.
+Представим, что у нас есть следующий маппинг с явно указанными типами полей: `text`, `keyword`, `path`, `exists`.
 
 ```yaml
 mapping-list:
@@ -183,14 +189,12 @@ mapping-list:
       type: path
 ```
 
-There is also a `size` field that allows you to specify the maximum size of the input data.
+Также есть `size`, которое позволяет указать максимальный размер значения поля.
+Если поле `size` не указано, будет использовано значение [по умолчанию](#параметры-конфигурации).
 
-If `size` is not set, the [default](#configuration-parameters) will be used.
+### Детали реализации индексирования
 
-
-## Indexing internals
-
-Let's write a document using [mapping](#illustrated-mapping-example) (ID of document will be ```id = N```):
+Запишем документ используя [маппинг](#пример-маппинга) (ID документа будет следующим: ```id = N```):
 
 ```json
 {
@@ -203,7 +207,7 @@ Let's write a document using [mapping](#illustrated-mapping-example) (ID of docu
 }
 ```
 
-Following metadata will be created:
+Следующие метаданные будут созданы:
 
 ```json
 {
@@ -226,11 +230,11 @@ Following metadata will be created:
 }
 ```
 
-Note that:
+Заметим, что:
 
-* There are additional `_exists_` tokens for each field.
-* There are tokens for `message.keyword` field, which wasn't present in the original document, but was in mapping as "implicit" type for `message` field.
-* `foo` field has only `_exists_` token.
-* Data in the `bar` field indexed as single token because it is `keyword` field.
-* There are multiple tokens for `uri` field, a token for each segment of the path.
-* Field `some_number` is not indexed, because it is not in the mapping.
+* Для каждого поля были созданы дополнительные `_exists_` токены.
+* Есть токены для поля `message.keyword`, которого нет в оригинальном документе, но оно указано в маппинге в качестве "неявного" типа для поля `message`.
+* У поля `foo` есть только `_exists_` токен.
+* Значение поля `bar` проиндексировано как один токен, так как это `keyword` поле.
+* Для поля `uri` есть несколько токенов, по одному на каждый сегмент пути.
+* Поле `some_number` не проиндексировано, потому что оно не указано в маппинге.
