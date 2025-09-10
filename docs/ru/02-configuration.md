@@ -150,6 +150,8 @@ id: configuration
 |----------|-----|----------------------|-----------|
 | `async_search.data_dir` | string | поддиректория в storage.data_dir | Директория, содержащая данные для асинхронных поисков. По умолчанию будет поддиректорией в `storage.data_dir` |
 | `async_search.concurrency` | int | - | Уровень параллелизма для асинхронных поисков |
+| `async_search.max_total_size` | Bytes | `1GiB` | - |
+| `async_search.max_size_per_request` | Bytes | `100MiB` | - |
 
 ## Конфигурация API
 

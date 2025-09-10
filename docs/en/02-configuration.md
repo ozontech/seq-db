@@ -150,6 +150,8 @@ Configuration for asynchronous search operations.
 |-------|------|---------|-------------|
 | `async_search.data_dir` | string | subdirectory in storage.data_dir | Directory that contains data for asynchronous searches. By default will be subdirectory in `storage.data_dir` |
 | `async_search.concurrency` | int | - | Concurrency level for async searches |
+| `async_search.max_total_size` | Bytes | `1GiB` | - |
+| `async_search.max_size_per_request` | Bytes | `100MiB` | - |
 
 ## API Configuration
 
