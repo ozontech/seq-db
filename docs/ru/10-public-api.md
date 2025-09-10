@@ -215,6 +215,7 @@ echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
 **Запрос:**
 
 ```sh
+grpcurl -plaintext -d '
 {
   "query": {
     "from": "2000-01-01T00:00:00Z",
@@ -239,7 +240,7 @@ echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
       "func": "AGG_FUNC_MAX"
     }
   ]
-} | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 **Ответ:**
@@ -276,6 +277,7 @@ echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
 **Запрос:**
 
 ```sh
+grpcurl -plaintext -d '
 {
   "query": {
     "from": "2000-01-01T00:00:00Z",
@@ -304,7 +306,7 @@ echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
       "group_by": "service"
     }
   ]
-} | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 **Ответ:**
@@ -351,7 +353,7 @@ echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
 **Запрос:**
 
 ```sh
-{
+grpcurl -plaintext -d '{
   "query": {
     "from": "2000-01-01T00:00:00Z",
     "to": "2077-01-01T00:00:00Z",
@@ -367,7 +369,7 @@ echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
       ]
     }
   ]
-} | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 **Ответ:**
@@ -397,7 +399,7 @@ echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
 **Запрос:**
 
 ```sh
-{
+grpcurl -plaintext -d '{
   "query": {
     "from": "2000-01-01T00:00:00Z",
     "to": "2077-01-01T00:00:00Z",
@@ -413,7 +415,7 @@ echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
       "group_by": "service"
     }
   ]
-} | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 **Ответ:**
@@ -444,7 +446,7 @@ echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
 **Запрос:**
 
 ```sh
-{
+grpcurl -plaintext -d '{
   "query": {
     "from": "2000-01-01T00:00:00Z",
     "to": "2077-01-01T00:00:00Z",
@@ -457,7 +459,7 @@ echo 'eyJrOHNfcG9kIjoic2VxLWRiIiwgInJlcXVlc3RfdGltZSI6ICIxMyJ9' | base64 -d | jq
       "interval": "30s"
     }
   ]
-} | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 **Ответ:**

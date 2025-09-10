@@ -21,7 +21,7 @@ seq-db supports various aggregation functions:
 - `AGG_FUNC_MAX` — maximum value of the field
 - `AGG_FUNC_QUANTILE` — quantile value for the field
 - `AGG_FUNC_UNIQUE` — computation of unique field values (not supported in timeseries)
-- `AGG_FUNC_COUNT` — number of documents for each value of the field
+- `AGG_FUNC_COUNT` — number of documents for each unique value of the field
 
 For the API of the functions, please refer to [public API](10-public-api.md#aggregation-examples)
 
@@ -33,17 +33,37 @@ Calculation of the aforementioned aggregations requires:
 
 - `AGG_FUNC` which is one of `AGG_FUNC_SUM`, `AGG_FUNC_AVG`, `AGG_FUNC_MIN`, `AGG_FUNC_MAX`, `AGG_FUNC_QUANTILE`,
 - `aggregate_by_field` - the field on which aggregation will be applied
-- `group_by_field` - the field by which values will be grouped
+- `group_by_field` - the field by which values will be grouped (used in not all aggregations)
 - `filtering_query`- query to filter only relevant logs for the aggregation
 - `quantile` - only for the `AGG_FUNC_QUANTILE`
 
-In general, this translates to the following sql query:
+In general, this translates to the following SQL query:
 
 ```sql
 SELECT <group_by_field>, AGG_FUNC(<aggregate_by_field>)
 FROM db
 WHERE <filtering_query>
 GROUP BY <group_by_field>
+```
+
+Translating to our API:
+
+```sh
+grpcurl -plaintext -d '
+{
+  "query": {
+    "from": "2000-01-01T00:00:00Z",
+    "to": "2077-01-01T00:00:00Z",
+    "query": "<filtering_query>"
+  },
+  "aggs": [
+    {
+      "field": "<aggregate_by_field>",
+      "func": "AGG_FUNC",
+      "group_by": "<group_by_field>"
+    }
+  ]
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 Considering real-world example, we may want to calculate average response time for services having `response_time`
@@ -56,19 +76,57 @@ WHERE response_time:* -- meaning that `response_time` field exists in logs
 GROUP BY service
 ```
 
+Using our API:
+
+```sh
+grpcurl -plaintext -d '
+{
+  "query": {
+    "from": "2000-01-01T00:00:00Z",
+    "to": "2077-01-01T00:00:00Z",
+    "query": "response_time:*"
+  },
+  "aggs": [
+    {
+      "field": "response_time",
+      "func": "AGG_FUNC_AVG",
+      "group_by": "service"
+    }
+  ]
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+```
+
 ### Count, unique
 
 Count and unique aggregations are very similar to the above examples, except for those aggregation there is no need to
-have an
-additional `group_by_field`, since we are already grouping by `aggregate_by_field`.
+have an additional `group_by_field`, since we are already grouping by `aggregate_by_field`.
 
-Identical sql query for the `AGG_FUNC_COUNT` aggregation:
+SQL query for the `AGG_FUNC_COUNT` aggregation:
 
 ```sql
 SELECT <aggregate_by_field>, COUNT (*)
 FROM db
 WHERE <filtering_query>
 GROUP BY <aggregate_by_field>
+```
+
+Translating to our API:
+
+```sh
+grpcurl -plaintext -d '
+{
+  "query": {
+    "from": "2000-01-01T00:00:00Z",
+    "to": "2077-01-01T00:00:00Z",
+    "query": "<filtering_query>"
+  },
+  "aggs": [
+    {
+      "field": "<aggregate_by_field>",
+      "func": "AGG_FUNC_COUNT",
+    }
+  ]
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 Considering real-world example, we may want to calculate number of logs for each logging level (`debug`, `info`, etc.)
@@ -82,15 +140,34 @@ WHERE service:seq-db
 GROUP BY level
 ```
 
+Using our API:
+
+```sh
+grpcurl -plaintext -d '
+{
+  "query": {
+    "from": "2000-01-01T00:00:00Z",
+    "to": "2077-01-01T00:00:00Z",
+    "query": "service:seq-db"
+  },
+  "aggs": [
+    {
+      "field": "level",
+      "func": "AGG_FUNC_COUNT",
+    }
+  ]
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+```
+
 ## Histograms
 
 Histograms allow users to visually interpret the distribution of logs satisfying given query. E.g. number of logs of the
 particular service for the given interval of time.
 
 Histograms can be queried separately, using [GetHistogram](10-public-api.md#gethistogram) or with documents and
-functional aggregations using [ComplexSearch](10-public-api.md#complexsearch) gRPC handlers.
+functional aggregations using [ComplexSearch](10-public-api.md#complexsearch).
 
-For the detailed API and examples, please refer to [public API](10-public-api.md#gethistogram)
+For the more detailed API and examples, please refer to [public API](10-public-api.md#gethistogram)
 
 ## Timeseries
 
