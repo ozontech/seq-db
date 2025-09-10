@@ -1,0 +1,80 @@
+{{- if .Values.sequi.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "seq-ui.fullname" . }}
+  labels:
+    {{- include "seq-ui.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.sequi.autoscaling.enabled }}
+  replicas: {{ .Values.sequi.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "seq-ui.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.sequi.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "seq-ui.labels" . | nindent 8 }}
+        {{- with .Values.sequi.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.sequi.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "seq-ui.serviceAccountName" . }}
+      {{- with .Values.sequi.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- with .Values.sequi.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.sequi.image.repository }}:{{ .Values.sequi.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.sequi.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.sequi.service.port }}
+              protocol: TCP
+          {{- with .Values.sequi.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.sequi.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.sequi.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.sequi.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.sequi.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sequi.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sequi.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sequi.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
