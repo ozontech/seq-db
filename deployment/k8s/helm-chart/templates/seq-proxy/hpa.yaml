@@ -1,0 +1,32 @@
+{{- if .Values.seqproxy.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "seq-proxy.fullname" . }}
+  labels:
+    {{- include "seq-proxy.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "seq-proxy.fullname" . }}
+  minReplicas: {{ .Values.seqproxy.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.seqproxy.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.seqproxy.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.seqproxy.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.seqproxy.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.seqproxy.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}

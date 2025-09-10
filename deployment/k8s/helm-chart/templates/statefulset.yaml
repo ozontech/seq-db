@@ -11,12 +11,22 @@ spec:
   selector:
     matchLabels:
       {{- include "seq-db.selectorLabels" . | nindent 6 }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: {{ .Values.persistence.storageClass | default "" }}
+      resources:
+        requests:
+          storage: {{ .Values.persistence.size | default "10Gi" }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+      {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
+        checksum/config: {{ include (print .Template.BasePath "/configmap.yaml") . | sha256sum }}
       labels:
         {{- include "seq-db.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
@@ -50,6 +60,9 @@ spec:
             - name: debug
               containerPort: {{ .Values.service.debugPort }}
               protocol: TCP
+          args:
+            - --mode=store
+            - --config=/configs/config.yaml
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -62,12 +75,20 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.volumeMounts }}
           volumeMounts:
+            - name: "{{ template "seq-db.fullname" . }}-config"
+              mountPath: "/configs"
+              readOnly: true
+            - mountPath: /data
+              name: data
+          {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- with .Values.volumes }}
       volumes:
+        - name: {{ template "seq-db.fullname" . }}-config
+          configMap:
+            name: {{ template "seq-db.fullname" . }}-config
+      {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.nodeSelector }}

@@ -1,0 +1,4 @@
+replicaCount: 2
+
+sequi:
+  enabled: true

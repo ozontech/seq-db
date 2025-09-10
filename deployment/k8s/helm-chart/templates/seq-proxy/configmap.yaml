@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "seq-proxy.fullname" . }}-config
+  labels:
+    app: "{{ template "seq-proxy.fullname" . }}"
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    heritage: {{ .Release.Service | quote }}
+    release: {{ .Release.Name | quote }}
+data:
+  config.yaml: |
+    storage:
+      data_dir: /data
+    cluster:
+      replicas: {{ .Values.seqproxy.cluster.replicas }}
+      shuffle_replicas: {{ .Values.seqproxy.cluster.shuffle_replicas }}
+      hot_stores:
+        {{- if .Values.seqproxy.cluster.hotStores }}
+        {{- toYaml .Values.seqproxy.cluster.hotStores | nindent 8 }}
+        {{- else }}
+        {{- range $i := until (.Values.replicaCount | int) }}
+        - {{ $.Release.Name }}-{{ $i }}.{{ $.Release.Name }}.{{ $.Release.Namespace }}.svc.cluster.local.:9004
+        {{- end }}
+        {{- end }}
+    mapping:
+      path: auto

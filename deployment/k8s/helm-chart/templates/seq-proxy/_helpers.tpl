@@ -1,8 +1,8 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "seq-ui.name" -}}
-{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}-sequi
+{{- define "seq-proxy.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}-proxy
 {{- end }}
 
 {{/*
@@ -10,15 +10,15 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "seq-ui.fullname" -}}
+{{- define "seq-proxy.fullname" -}}
 {{- if .Values.fullnameOverride }}
-{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}-sequi
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}-proxy
 {{- else }}
 {{- $name := default .Chart.Name .Values.nameOverride }}
 {{- if contains $name .Release.Name }}
-{{- .Release.Name | trunc 63 | trimSuffix "-" }}-sequi
+{{- .Release.Name | trunc 63 | trimSuffix "-" }}-proxy
 {{- else }}
-{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}-proxy
 {{- end }}
 {{- end }}
 {{- end }}
@@ -26,16 +26,16 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "seq-ui.chart" -}}
+{{- define "seq-proxy.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "seq-ui.labels" -}}
-helm.sh/chart: {{ include "seq-ui.chart" . }}
-{{ include "seq-ui.selectorLabels" . }}
+{{- define "seq-proxy.labels" -}}
+helm.sh/chart: {{ include "seq-proxy.chart" . }}
+{{ include "seq-proxy.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -45,17 +45,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "seq-ui.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "seq-ui.name" . }}
+{{- define "seq-proxy.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "seq-proxy.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "seq-ui.serviceAccountName" -}}
+{{- define "seq-proxy.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "seq-ui.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "seq-proxy.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
