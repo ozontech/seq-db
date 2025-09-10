@@ -26,6 +26,5 @@ such requests by message ID. This is implemented in
 `search_proxy.go`.
 
 ## How to enable the rate limiter
-The rate limiter can be enabled on launch using the `query-rate-limit` flag 
+The rate limiter can be enabled on launch using the `limits.query_rate` option 
 followed by a number -- the maximum number of queries allowed per second. 
-The default value for this flag is `2.0`.

@@ -6,7 +6,7 @@ SeqDB stores the indexed data in special structures named *fractions*, each frac
 A fraction that is currently being written to is called an **active fraction**.  
 A **sealed fraction** is a read-only fraction, that is not going to be modified by the database in any kind. A sealed fraction is only going to be read from.  
 
-When an *active* fraction reaches a certain size (configured by the `frac-size` flag), the *active* fraction is turned into a *sealed* one, this process is named **sealing**. The database must have **only one active fraction** at any given time. (TBD link to sealing)
+When an *active* fraction reaches a certain size (configured by the `storage.frac_size` option), the *active* fraction is turned into a *sealed* one, this process is named **sealing**. The database must have **only one active fraction** at any given time. (TBD link to sealing)
 
 Both sealed and active fractions have the following *metadata*:
 - `Name`  - fraction name
