@@ -151,6 +151,17 @@ func (s *wildcardSearch) checkMiddle(val []byte) bool {
 	return findSequence(val[len(s.prefix):len(val)-len(s.suffix)], s.middle) == len(s.middle)
 }
 
+func findSequence(haystack []byte, needles [][]byte) int {
+	for cur, val := range needles {
+		start := bytes.Index(haystack, val)
+		if start == -1 {
+			return cur
+		}
+		haystack = haystack[start+len(val):]
+	}
+	return len(needles)
+}
+
 func (s *wildcardSearch) check(val []byte) bool {
 	return s.checkPrefix(val) && s.checkSuffix(val) && s.checkMiddle(val)
 }
