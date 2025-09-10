@@ -13,7 +13,7 @@ the [index types](03-index-types.md) documentation.
 When performing a full-text search, the system automatically selects results that match the specified text.
 
 Search queries are case-insensitive by default.
-To change this behavior, use the `--case-sensitive` flag, but it affects only new documents.
+To change this behavior, use the `indexing.case_sensitive` option, but it affects only new documents.
 
 ### String Literals
 

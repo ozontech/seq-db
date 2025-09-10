@@ -41,9 +41,9 @@ CPU time.
 
 ### Reduce the frac-size
 
-The `frac-size` parameter defines the maximum amount of memory that seq-db will store before sealing the active
+The `storage.frac_size` parameter defines the maximum amount of memory that seq-db will store before sealing the active
 fraction. Reducing this parameter can help lower memory consumption but may increase query times. See more details
-about `frac-size` in the [configuration documentation](02-flags.md#data-configuration-flags).
+about `storage.frac_size` in the [configuration documentation](02-configuration.md#storage-configuration).
 
 ## Issue: Slow Search Queries
 
