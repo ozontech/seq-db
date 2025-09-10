@@ -8,14 +8,12 @@ services:
       - "5556:5556" # Default gRPC port
       - "5557:5557" # Default debug port
     command: --config config.yaml
-  
+
   seq-db-proxy:
-    build:
-      context: ../
-      dockerfile: build/package/Dockerfile
+    image: ghcr.io/ozontech/seq-db:latest
     volumes:
       - "./config.quickstart.yaml:/seq-db/config.yaml"
-      - "../tests/data/mappings/:/seq-db/mappings/"
+      - "./mappings.yaml:/seq-db/mappings.yaml"
     ports:
       - "9002:9002" # Default HTTP port
       - "9004:9004" # Default gRPC port
@@ -23,15 +21,13 @@ services:
     command: --mode proxy --config=config.yaml
     depends_on:
       - seq-db-store
-  
+
   seq-db-store:
-    build:
-      context: ../
-      dockerfile: build/package/Dockerfile
+    image: ghcr.io/ozontech/seq-db:latest
     volumes:
       - "./config.quickstart.yaml:/seq-db/config.yaml"
-      - "../data/:/seq-db/data/"
-      - "../tests/data/mappings/:/seq-db/mappings/"
+      - "./data/:/seq-db/data/"
+      - "./mappings.yaml:/seq-db/mappings.yaml"
     command: --mode store --config=config.yaml
 
   minio:
