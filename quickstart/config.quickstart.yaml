@@ -29,4 +29,4 @@ slow_logs:
   fetch_threshold: 20ms
 
 mapping:
-  path: /seq-db/mappings/logging-new.yaml
+  path: /seq-db/mappings.yaml
