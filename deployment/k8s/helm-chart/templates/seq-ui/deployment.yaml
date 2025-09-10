@@ -63,6 +63,9 @@ spec:
           {{- end }}
       {{- with .Values.sequi.volumes }}
       volumes:
+        - name: {{ template "seq-ui.fullname" . }}-config
+          configMap:
+            name: {{ template "seq-ui.fullname" . }}-config
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.sequi.nodeSelector }}

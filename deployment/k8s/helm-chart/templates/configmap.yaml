@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "seq-db.fullname" . }}-config
+  labels:
+    app: "{{ template "seq-db.fullname" . }}"
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    heritage: {{ .Release.Service | quote }}
+    release: {{ .Release.Name | quote }}
+data:
+  config.yaml: |
+    storage:
+      data_dir: /data
+      frac_size: 256MiB
+      total_size: 10GiB
+    mapping:
+      path: auto
