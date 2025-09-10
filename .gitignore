@@ -23,4 +23,5 @@ cover.out
 junit.xml
 /go.work*
 /data
+/quickstart/data
 .immature
