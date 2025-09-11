@@ -14,4 +14,6 @@ data:
       frac_size: 256MiB
       total_size: 10GiB
     mapping:
-      path: auto
+      enable_updates: {{ .Values.mapping.enable_updates }}
+      path: /mappings/mappings.yaml
+      update_period: {{ .Values.mapping.update_period }}
