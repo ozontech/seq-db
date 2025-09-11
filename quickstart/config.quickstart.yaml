@@ -15,18 +15,8 @@ cluster:
   hot_stores:
     - seq-db-store:9004
 
-offloading:
-  enabled: true
-  retention: 5m
-  endpoint: http://minio:9000/
-  bucket: remote-storage
-  access_key: minioadmin
-  secret_key: minioadmin
-
 slow_logs:
-  bulk_threshold: 100ms
-  search_threshold: 20ms
-  fetch_threshold: 20ms
+  bulk_threshold: 1s
 
 mapping:
   path: /seq-db/mappings.yaml
