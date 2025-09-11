@@ -124,6 +124,12 @@ tolerations: []
 
 affinity: {}
 
+
+mapping:
+  enable_updates: false
+  update_period: 5s
+  mapping_list: []
+
 seqproxy:
   enabled: true
   # Default values for seq-proxy.

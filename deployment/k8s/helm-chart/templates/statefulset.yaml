@@ -80,6 +80,9 @@ spec:
             - name: "{{ template "seq-db.fullname" . }}-config"
               mountPath: "/configs"
               readOnly: true
+            - name: "{{ template "seq-db.fullname" . }}-mappings"
+              mountPath: "/mappings"
+              readOnly: true
             - mountPath: /data
               name: data
           {{- with .Values.volumeMounts }}
@@ -89,6 +92,9 @@ spec:
         - name: {{ template "seq-db.fullname" . }}-config
           configMap:
             name: {{ template "seq-db.fullname" . }}-config
+        - name: {{ template "seq-db.fullname" . }}-mappings
+          configMap:
+            name: {{ template "seq-db.fullname" . }}-mappings
       {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}

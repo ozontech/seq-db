@@ -71,6 +71,9 @@ spec:
             - name: "{{ template "seq-proxy.fullname" . }}-config"
               mountPath: "/configs"
               readOnly: true
+            - name: "{{ template "seq-proxy.fullname" . }}-mappings"
+              mountPath: "/mappings"
+              readOnly: true
           {{- with .Values.seqproxy.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -78,6 +81,9 @@ spec:
         - name: {{ template "seq-proxy.fullname" . }}-config
           configMap:
             name: {{ template "seq-proxy.fullname" . }}-config
+        - name: {{ template "seq-proxy.fullname" . }}-mappings
+          configMap:
+            name: {{ template "seq-db.fullname" . }}-mappings
       {{- with .Values.seqproxy.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}

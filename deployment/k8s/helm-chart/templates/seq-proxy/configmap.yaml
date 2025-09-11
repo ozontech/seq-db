@@ -23,4 +23,6 @@ data:
         {{- end }}
         {{- end }}
     mapping:
-      path: auto
+      enable_updates: {{ .Values.mapping.enable_updates }}
+      path: /mappings/mappings.yaml
+      update_period: {{ .Values.mapping.update_period }}
