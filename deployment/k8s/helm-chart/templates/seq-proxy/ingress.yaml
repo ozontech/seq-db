@@ -37,7 +37,7 @@ spec:
               service:
                 name: {{ include "seq-proxy.fullname" $ }}
                 port:
-                  number: {{ $.Values.seqproxy.service.port }}
+                  number: {{ $.Values.seqproxy.service.httpPort }}
           {{- end }}
     {{- end }}
 {{- end }}
