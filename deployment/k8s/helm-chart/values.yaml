@@ -74,10 +74,10 @@ resources: {}
   #   memory: 128Mi
 
 # This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
-# livenessProbe:
-#   httpGet:
-#     path: /live
-#     port: http
+livenessProbe:
+  httpGet:
+    path: /live
+    port: debug
 readinessProbe:
   httpGet:
     path: /ready
@@ -113,6 +113,8 @@ mapping:
   enable_updates: false
   update_period: 5s
   mapping_list: []
+
+storage: {}
 
 seqproxy:
   enabled: true
@@ -211,10 +213,10 @@ seqproxy:
     #   memory: 128Mi
 
   # This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
-  # livenessProbe:
-  #   httpGet:
-  #     path: /live
-  #     port: http
+  livenessProbe:
+    httpGet:
+      path: /live
+      port: debug
   readinessProbe:
     httpGet:
       path: /ready

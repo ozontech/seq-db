@@ -30,3 +30,7 @@ data:
       path: /mappings/mappings.yaml
       {{- end }}
       update_period: {{ .Values.mapping.update_period }}
+    slow_logs:
+      bulk_threshold: 0ms
+      fetch_threshold: 3s
+      search_threshold: 3s
