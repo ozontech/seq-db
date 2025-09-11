@@ -93,12 +93,12 @@ resources: {}
 # This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
 # livenessProbe:
 #   httpGet:
-#     path: /
+#     path: /live
 #     port: http
-# readinessProbe:
-#   httpGet:
-#     path: /
-#     port: http
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 9200
 
 # Additional volumes on the output Deployment definition.
 volumes: []
@@ -221,14 +221,14 @@ seqproxy:
     #   memory: 128Mi
 
   # This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
-  livenessProbe:
-    httpGet:
-      path: /
-      port: http
+  # livenessProbe:
+  #   httpGet:
+  #     path: /live
+  #     port: http
   readinessProbe:
     httpGet:
-      path: /
-      port: http
+      path: /ready
+      port: 9200
 
   # This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
   autoscaling:
@@ -354,12 +354,12 @@ sequi:
   # This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
   livenessProbe:
     httpGet:
-      path: /
-      port: http
+      path: /live
+      port: 5557
   readinessProbe:
     httpGet:
-      path: /
-      port: http
+      path: /ready
+      port: 5557
 
   # This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
   autoscaling:

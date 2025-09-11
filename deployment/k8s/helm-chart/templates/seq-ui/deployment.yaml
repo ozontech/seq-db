@@ -49,6 +49,8 @@ spec:
             - name: grpc
               containerPort: {{ .Values.sequi.service.grpcPort }}
               protocol: TCP
+          args:
+            - -config=/configs/config.yaml
           {{- with .Values.sequi.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -63,18 +65,18 @@ spec:
           {{- end }}
           volumeMounts:
             - name: "{{ template "seq-ui.fullname" . }}-config"
-                mountPath: "/configs"
-                readOnly: true
-          {{- with .Values.sequi.volumeMounts }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+              mountPath: "/configs"
+              readOnly: true
+            {{- with .Values.sequi.volumeMounts }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
       volumes:
         - name: {{ template "seq-ui.fullname" . }}-config
           configMap:
             name: {{ template "seq-ui.fullname" . }}-config
-      {{- with .Values.sequi.volumes }}
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- with .Values.sequi.volumes }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- with .Values.sequi.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

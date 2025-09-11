@@ -9,7 +9,7 @@ metadata:
     heritage: {{ .Release.Service | quote }}
     release: {{ .Release.Name | quote }}
 data:
-  config.seq-ui.yaml: |
+  config.yaml: |
     server:
       http_addr: "0.0.0.0:5555"
       grpc_addr: "0.0.0.0:5556"
