@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   seq-db-proxy:
-    image: ghcr.io/ozontech/seq-db:v0.61.0
+    image: ghcr.io/ozontech/seq-db:latest
     ports:
       - "9002:9002" # Default HTTP port
       - "9004:9004" # Default gRPC port
@@ -16,7 +16,7 @@ services:
       - ./config-cluster.yaml:/configs/config.yaml
       - ./mappings.yaml:/configs/mappings.yaml
   seq-db-store:
-    image: ghcr.io/ozontech/seq-db:v0.61.0
+    image: ghcr.io/ozontech/seq-db:latest
     command:
       --mode=store
       --config=/configs/config.yaml
