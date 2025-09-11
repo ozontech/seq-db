@@ -1,0 +1,24 @@
+mapping-list:
+  - type: "keyword"
+    name: "k8s_pod"
+  - type: "keyword"
+    name: "k8s_namespace"
+  - type: "keyword"
+    name: "k8s_container"
+  - type: "text"
+    name: "request"
+  - type: "path"
+    name: "request_uri"
+  - name: "message"
+    types:
+      - type: "text"
+      - title: "keyword"
+        type: "keyword"
+        size: 18
+  - type: "object"
+    name: "someobj"
+    mapping-list:
+      - type: "keyword"
+        name: "nested"
+      - type:  "text"
+        name: "nestedtext"

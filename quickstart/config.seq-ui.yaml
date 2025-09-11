@@ -1,0 +1,11 @@
+server:
+  http_addr: "0.0.0.0:5555"
+  grpc_addr: "0.0.0.0:5556"
+  debug_addr: "0.0.0.0:5557"
+clients:
+  seq_db_addrs:
+    - "seq-db-proxy:9004"
+  seq_db_timeout: 15s
+handlers:
+  seq_api:
+    max_search_limit: 100

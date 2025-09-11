@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/felixge/fgprof"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -53,6 +54,9 @@ func initHandler(ready *atomic.Bool) http.Handler {
 	mux.HandleFunc("/live", liveness)
 	mux.HandleFunc("/ready", readiness(ready))
 	mux.Handle("/log/level", logger.Handler())
+	// fgprof can collect CPU profile even for Off-CPU goroutines.
+	// It's useful for measurement for any operations that force goroutines to block.
+	mux.Handle("/debug/fgprof", fgprof.Handler())
 
 	return mux
 }

@@ -1,75 +1,61 @@
-# Cluster-Mode Architecture
+# Архитектура кластерного режима
 
-## Components overview
+## Обзор компонентов
 
-In cluster mode, seq-db consists of two main components: 
- - seq-db store (seq-db instance running with `--mode=store flag`)
- - seq-db proxy (seq-db instance running with `--mode=proxy flag`).
+В кластерном режиме seq-db состоит из двух основных компонентов:
+- seq-db store (экземпляр seq-db, запущенный с флагом `--mode=store`)
+- seq-db proxy (экземпляр seq-db, запущенный с флагом `--mode=proxy`).
 
 ### seq-db store
-seq-db store is the stateful storage component, that keeps all the
-written documents and handles both reads and writes.
-All data written into seq-db eventually makes its way to one or multiple stores.
+seq-db store — это stateful-компонент, который хранит все записанные документы и обрабатывает как чтение, так и запись.
+Все данные, записанные в seq-db, в конечном итоге попадают в один или несколько store'ов.
 
+#### Ключевые характеристики
+- Развертывается как k8s `Statefulset`
+- Архитектура без общего состояния (share-nothing): экземпляр seq-db store не знает о других store'ах.
+- Поддерживает обратный индекс в памяти и на диске, что позволяет осуществлять поиск по индексированным полям.
 
-#### Key characteristics
-- Deployed as k8s `Statefulset`
-- Share-nothing architecture: a seq-db store instance is unaware of any other stores.
-- Maintains in-memory and on-disk inverted indexes, allowing search on indexed fields. 
+#### Структура файлов
+seq-db store хранит все данные документов в трех типах файлов:
 
+| Тип файла | Назначение                                             |
+|-----------|--------------------------------------------------------|
+| `.docs`   | Хранит сжатые батчи сырых документов логов             |
+| `.meta`   | Токенизированный поток метаданных (для восстановления) |
+| `.index`  | Дисковый обратный индекс.                              |
 
-#### File layout
-seq-db store keeps all document data in three file types:
+Поскольку набор данных хранится в этих трех типах файлов, перемещение или восстановление шарда выполняется просто: достаточно скопировать (`cp` / `rsync`) директорию на целевой узел и запустить под.
 
-| File type | Purpose                                        |
-|-----------|------------------------------------------------|
-| `.docs`   | Stores compressed batches of raw log documents |
-| `.meta`   | Tokenized metadata stream (used for recovery)  |
-| `.index`  | On-disk inverted index                         | 
+Подробнее о типах файлов и их внутренней структуре читайте [здесь](internal/fractions.md).
 
-
-Because the dataset is stored in these three file types, moving or restoring a
-shard is straightforward: simply `cp` / `rsync` the directory
-to the target node and start the pod.
-
-Read more about file types and their internal structure [here](internal/fractions.md).
-
-#### Durability
-A write operation is acknowledged only after the payload is safely persisted:
+#### Durability (обеспечение надежности)
+Операция записи подтверждается только после того, как полезная нагрузка гарантированно сохранена:
 
 ```
-write, fsync   # .meta file
-write, fsync   # .data file
+write, fsync   # файл .meta
+write, fsync   # файл .data
 ```
-That is, two write system calls followed by two fsync
-calls—guaranteeing the data survives a node 
-crash or restart before the client receives a success response. 
-Indexing occurs asynchronously, so it usually takes under 1 
-second before the newly written documents are available for search queries. 
-Note that this value may be slightly higher when bulk load spikes happen
+То есть, два системных вызова `write`, за которыми следуют два вызова `fsync` — это гарантирует, что данные переживут аварию узла или его перезапуск до того, как клиент получит ответ об успехе.
+Индексация происходит асинхронно, поэтому обычно проходит менее 1 секунды, прежде чем вновь записанные документы становятся доступны для поисковых запросов.
+Примечание: это значение может быть немного выше в периоды пиковой нагрузки.
 
 ### seq-db proxy
-seq-db proxy is a stateless coordinator for all read & write traffic. 
-It maintans a user-defined cluster topology, and allows changes in read-write 
-traffic distribution without changes to the stateful components
+seq-db proxy — это stateless-координатор всего трафика чтения и записи.
+Он поддерживает заданную пользователем топологию кластера и позволяет изменять распределение read-write трафика без изменений stateful-компонентов.
 
+#### Ключевые характеристики
+- Развертывается как k8s `Deployment`
+- Выполняет логическую репликацию между store'ами
+- Маршрутизирует трафик между уровнями хранения (hot/cold stores)
 
-#### Key characteristics
-- Deployed as k8s `Deployment`
-- Performs logical replication between stores
-- Routes traffic between storage tiers (hot/cold stores)
+seq-db proxy токенизирует каждый входящий документ и сжимает батчи с помощью zstd / lz4 перед отправкой батчей в seq-db stores.
 
-seq-db proxy tokenizes every incoming document
-and compresses batches with zstd / lz4 
-before sending batches to seq-db stores.
+### Read-path & write-path (коэффициент репликации rf=2)
+Давайте рассмотрим пример архитектуры с 4 шардами seq-db и коэффициентом репликации (replication-factor)=2 (каждый лог должен храниться в двух отдельных seq-db stores).
+Обратите внимание, что реплики шарда могут располагаться в разных зонах доступности (availability zones).
 
-### Read-path & write-path (rf=2)
-Let's take a look at an example architecture with 4 seq-db shards and replication-factor=2 
-(each log must be stored in two separate seq-db stores). 
-Note that replicas of shard can be located in different availability zones.
-
-### Write-path
-The write commits only after seq-db proxy receives an ack **from all replicas of the addressed shard**.
+### Write-path (путь записи)
+Запись фиксируется (commit) только после того, как seq-db proxy получает подтверждение (ack) **от всех реплик целевого шарда**.
 
 ```mermaid
 sequenceDiagram
@@ -78,16 +64,16 @@ sequenceDiagram
   participant Proxy as seq-db proxy
 
   box Shard1
-  participant A as seq-db store<br /> shard1 replica A
-  participant B as  seq-db store <br />shard1 replica B
+  participant A as seq-db store<br />шард1 реплика A
+  participant B as seq-db store<br />шард1 реплика B
   end 
   
   box Shard2
-  participant C as seq-db store <br /> shard2 replica A
-  participant D as seq-db store <br /> shard2 replica B
+  participant C as seq-db store<br />шард2 реплика A
+  participant D as seq-db store<br />шард2 реплика B
   end 
 
-  Note over Proxy,B: seq-db proxy chooses a random shard
+  Note over Proxy,B: seq-db proxy выбирает случайный шард
   Client->>Proxy: write(batch1)
   Proxy->>A: write(batch1)
   Proxy->>B: write(batch1)
@@ -96,7 +82,7 @@ sequenceDiagram
   B-->>Proxy: ack
   Proxy-->>Client: ack
   
-  Note over Proxy,B: the write is done if acks received <br/> from both replicas of a shard
+  Note over Proxy,B: запись завершена, если подтверждения получены<br/>от обеих реплик шарда
 
   Client->>Proxy: write(batch2)
   Proxy->>C: write(batch2)
@@ -108,10 +94,8 @@ sequenceDiagram
   Proxy-->>Client: ack
 ```
 
-### Read-path
-While the written document must be acknowledged by all replicas
-of a shard, 
-a read is successful when **at least one replica of each shard** returns a response.
+### Read-path (путь чтения)
+В то время как записанный документ должен быть подтвержден всеми репликами шарда, чтение считается успешным, когда **хотя бы одна реплика каждого шарда** возвращает ответ.
 
 ```mermaid
 sequenceDiagram
@@ -120,41 +104,40 @@ sequenceDiagram
   participant Proxy as seq-db proxy
 
   box Shard1
-  participant A as seq-db store<br /> shard1 replica A
-  participant B as  seq-db store <br />shard1 replica B
+  participant A as seq-db store<br />шард1 реплика A
+  participant B as seq-db store<br />шард1 реплика B
   end 
   
   box Shard2
-  participant C as seq-db store <br /> shard2 replica A
-  participant D as seq-db store <br /> shard2 replica B
+  participant C as seq-db store<br />шард2 реплика A
+  participant D as seq-db store<br />шард2 реплика B
   end 
 
-  Note over Proxy,C: seq-db proxy chooses <br /> a random  replica of each shard
-  Client->>Proxy: request 1
-  Proxy->>A: request 1
-  Proxy->>C: request 1
+  Note over Proxy,C: seq-db proxy выбирает<br />случайную реплику каждого шарда
+  Client->>Proxy: запрос 1
+  Proxy->>A: запрос 1
+  Proxy->>C: запрос 1
 
-  A-->>Proxy: response 1 (shard1 replica A)
-  C-->>Proxy: response 1 (shard2 replica A)
-  Note over Proxy: seq-db proxy merges the returned responses
-  Proxy-->>Client: merge(res1_s1rA, res1_s2rA)
+  A-->>Proxy: ответ 1 (шард1 реплика A)
+  C-->>Proxy: ответ 1 (шард2 реплика A)
+  Note over Proxy: seq-db proxy объединяет (merge) полученные ответы
+  Proxy-->>Client: merge(ответ1_ш1рA, ответ1_ш2рA)
     
+  Client->>Proxy: запрос 2
+  Proxy->>B: запрос 2
+  Proxy->>D: запрос 2
 
-  Client->>Proxy: request 2
-  Proxy->>B: request 2
-  Proxy->>D: request 2
+  B-->>Proxy: ответ 2 (шард1 реплика B)
+  D-->>Proxy: ответ 2 (шард2 реплика B)
 
-  B-->>Proxy: response 2 (shard1 replica B)
-  D-->>Proxy: response 2 (shard2 replica B)
-
-  Proxy-->>Client: merge(res2_s1rB, res2_s2rB)
+  Proxy-->>Client: merge(ответ2_ш1рB, ответ2_ш2рB)
 ```
 
-## Notes about replication & consistency
-seq-db doesn't have any mechanism to keep replicas consistent between each other. 
-That is, if a write operation succeeds on a replica of a shard and fails on another replica, the replicas 
-would be out of sync and won't be (automatically) synced. 
-The only given guarantee is that a write operation will succeed only having at least RF replicas saved on disk.
-This optimization allows seq-db to have a higher than alternatives ingestion throughput 
-with the obvious price of the possible inconsistencies of retrieval and aggregation queries. 
-seq-db was designed as a database for logs/traces with this tradeoff in mind. 
+## Примечания о репликации и согласованности (consistency)
+seq-db не имеет каких-либо механизмов для поддержания согласованности реплик между собой.
+То есть, если операция записи завершилась успешно на одной реплике шарда и завершилась ошибкой на другой, реплики окажутся 
+в рассогласованном состоянии и не будут автоматически синхронизированы. Единственная предоставляемая гарантия 
+заключается в том, что операция записи завершится успехом, только если как минимум RF реплик сохранили данные на диск.
+Эта оптимизация позволяет seq-db иметь более высокую пропускную способность приема данных по сравнению с аналогами,
+за очевидную цену — возможной несогласованности результатов запросов на получение гистограмм и агрегации.
+seq-db был разработан как база данных для логов/трейсов с учетом этого компромисса.

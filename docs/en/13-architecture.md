@@ -156,5 +156,5 @@ That is, if a write operation succeeds on a replica of a shard and fails on anot
 would be out of sync and won't be (automatically) synced. 
 The only given guarantee is that a write operation will succeed only having at least RF replicas saved on disk.
 This optimization allows seq-db to have a higher than alternatives ingestion throughput 
-with the obvious price of the possible inconsistencies of retrieval and aggregation queries. 
+with the obvious price of the possible inconsistencies of histogram and aggregation queries. 
 seq-db was designed as a database for logs/traces with this tradeoff in mind. 
