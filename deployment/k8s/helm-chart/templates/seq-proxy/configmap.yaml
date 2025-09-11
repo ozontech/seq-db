@@ -24,5 +24,9 @@ data:
         {{- end }}
     mapping:
       enable_updates: {{ .Values.mapping.enable_updates }}
+      {{- if .Values.mapping.auto }}
+      path: auto
+      {{- else }}
       path: /mappings/mappings.yaml
+      {{- end }}
       update_period: {{ .Values.mapping.update_period }}
