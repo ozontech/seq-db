@@ -6,12 +6,16 @@ metadata:
   labels:
     {{- include "seq-ui.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  type: {{ .Values.sequi.service.type }}
   ports:
-    - port: {{ .Values.service.port }}
+    - port: {{ .Values.sequi.service.httpPort }}
       targetPort: http
       protocol: TCP
       name: http
+    - port: {{ .Values.sequi.service.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
   selector:
     {{- include "seq-ui.selectorLabels" . | nindent 4 }}
 {{- end }}

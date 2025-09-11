@@ -14,10 +14,11 @@ spec:
       {{- include "seq-ui.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.sequi.podAnnotations }}
       annotations:
+      {{- with .Values.sequi.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
+        checksum/config: {{ include (print .Template.BasePath "/seq-ui/configmap.yaml") . | sha256sum }}
       labels:
         {{- include "seq-ui.labels" . | nindent 8 }}
         {{- with .Values.sequi.podLabels }}
@@ -43,7 +44,10 @@ spec:
           imagePullPolicy: {{ .Values.sequi.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ .Values.sequi.service.port }}
+              containerPort: {{ .Values.sequi.service.httpPort }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.sequi.service.grpcPort }}
               protocol: TCP
           {{- with .Values.sequi.livenessProbe }}
           livenessProbe:
@@ -57,15 +61,18 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.sequi.volumeMounts }}
           volumeMounts:
+            - name: "{{ template "seq-ui.fullname" . }}-config"
+                mountPath: "/configs"
+                readOnly: true
+          {{- with .Values.sequi.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- with .Values.sequi.volumes }}
       volumes:
         - name: {{ template "seq-ui.fullname" . }}-config
           configMap:
             name: {{ template "seq-ui.fullname" . }}-config
+      {{- with .Values.sequi.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.sequi.nodeSelector }}
