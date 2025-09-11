@@ -61,23 +61,6 @@ service:
   grpcPort: 9004
   debugPort: 9200
 
-# This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
-ingress:
-  enabled: false
-  className: ""
-  annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
-  hosts:
-    - host: chart-example.local
-      paths:
-        - path: /
-          pathType: ImplementationSpecific
-  tls: []
-  #  - secretName: chart-example-tls
-  #    hosts:
-  #      - chart-example.local
-
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
   # choice for the user. This also increases chances charts run on environments with little
@@ -98,7 +81,7 @@ resources: {}
 readinessProbe:
   httpGet:
     path: /ready
-    port: 9200
+    port: debug
 
 # Additional volumes on the output Deployment definition.
 volumes: []
@@ -206,14 +189,14 @@ seqproxy:
       # kubernetes.io/ingress.class: nginx
       # kubernetes.io/tls-acme: "true"
     hosts:
-      - host: chart-example.local
+      - host: seq-proxy.local
         paths:
           - path: /
             pathType: ImplementationSpecific
     tls: []
     #  - secretName: chart-example-tls
     #    hosts:
-    #      - chart-example.local
+    #      - seq-proxy.local
 
   resources: {}
     # We usually recommend not to specify default resources and to leave this as a conscious
@@ -235,7 +218,7 @@ seqproxy:
   readinessProbe:
     httpGet:
       path: /ready
-      port: 9200
+      port: debug
 
   # This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
   autoscaling:
@@ -337,14 +320,14 @@ sequi:
       # kubernetes.io/ingress.class: nginx
       # kubernetes.io/tls-acme: "true"
     hosts:
-      - host: chart-example.local
+      - host: sequi.local
         paths:
           - path: /
             pathType: ImplementationSpecific
     tls: []
     #  - secretName: chart-example-tls
     #    hosts:
-    #      - chart-example.local
+    #      - sequi.local
 
   resources: {}
     # We usually recommend not to specify default resources and to leave this as a conscious
@@ -362,11 +345,11 @@ sequi:
   livenessProbe:
     httpGet:
       path: /live
-      port: 5557
+      port: debug
   readinessProbe:
     httpGet:
       path: /ready
-      port: 5557
+      port: debug
 
   # This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
   autoscaling:

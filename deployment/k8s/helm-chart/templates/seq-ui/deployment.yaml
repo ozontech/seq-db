@@ -49,6 +49,9 @@ spec:
             - name: grpc
               containerPort: {{ .Values.sequi.service.grpcPort }}
               protocol: TCP
+            - name: debug
+              containerPort: {{ .Values.sequi.service.debugPort }}
+              protocol: TCP
           args:
             - -config=/configs/config.yaml
           {{- with .Values.sequi.livenessProbe }}
