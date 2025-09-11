@@ -2,7 +2,7 @@
 id: aggregations
 ---
 
-# Аггрегации
+# Агрегации
 
 seq-db поддерживает различные типы агрегаций: функциональные агрегации, гистограммы и таймсерии (временные ряды). Каждый
 из этих типов опирается на использование обратного индекса, поэтому для вычисления агрегаций по полям поле должно быть
@@ -123,7 +123,7 @@ grpcurl -plaintext -d '
   "aggs": [
     {
       "field": "<aggregate_by_field>",
-      "func": "AGG_FUNC_COUNT",
+      "func": "AGG_FUNC_COUNT"
     }
   ]
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
@@ -152,13 +152,13 @@ grpcurl -plaintext -d '
   "aggs": [
     {
       "field": "level",
-      "func": "AGG_FUNC_COUNT",
+      "func": "AGG_FUNC_COUNT"
     }
   ]
 }' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
-## Histograms
+## Гистограммы
 
 Гистограммы позволяют пользователям визуально интерпретировать распределение логов, удовлетворяющих заданному запросу.
 Например, количество логов определенного сервиса за заданный интервал времени.
