@@ -11,8 +11,12 @@ data:
   config.yaml: |
     storage:
       data_dir: /data
-      frac_size: 256MiB
-      total_size: 10GiB
+      {{- if .Values.storage.frac_size }}
+      frac_size: {{ .Values.storage.frac_size }}
+      {{- end }}
+      {{- if .Values.storage.total_size }}
+      total_size: {{ .Values.storage.total_size }}
+      {{- end }}
     mapping:
       enable_updates: {{ .Values.mapping.enable_updates }}
       {{- if .Values.mapping.auto }}
@@ -21,3 +25,7 @@ data:
       path: /mappings/mappings.yaml
       {{- end }}
       update_period: {{ .Values.mapping.update_period }}
+    slow_logs:
+      bulk_threshold: 0ms
+      fetch_threshold: 3s
+      search_threshold: 3s

@@ -20,3 +20,7 @@ mapping:
         - title: "keyword"
           type: "keyword"
           size: 18
+
+storage:
+  frac_size: "256MiB"
+  total_size: "10GiB"
