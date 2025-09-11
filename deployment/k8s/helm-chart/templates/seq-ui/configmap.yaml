@@ -17,21 +17,21 @@ data:
     clients:
       seq_db_addrs:
         - {{ $.Release.Name }}-proxy.{{ $.Release.Namespace }}.svc.cluster.local.:9004
-      seq_db_timeout: 15s
-      seq_db_avg_doc_size: 100
-      request_retries: 3
-      proxy_client_mode: "grpc"
+      seq_db_timeout: {{ .Values.sequi.config.clients.seq_db_timeout | default "15s" }}
+      seq_db_avg_doc_size: {{ .Values.sequi.config.clients.seq_db_avg_doc_size | default 100 }}
+      request_retries: {{ .Values.sequi.config.clients.request_retries | default 3 }}
+      proxy_client_mode: {{ .Values.sequi.config.clients.proxy_client_mode | default "grpc" | quote }}
       grpc_keepalive_params:
-        time: 10s
-        timeout: 10s
-        permit_without_stream: true
+        time: {{ .Values.sequi.config.clients.grpc_keepalive_params.time | default "10s" }}
+        timeout: {{ .Values.sequi.config.clients.grpc_keepalive_params.timeout | default "10s" }}
+        permit_without_stream: {{ .Values.sequi.config.clients.grpc_keepalive_params.permit_without_stream | default true }}
     handlers:
       seq_api:
-        seq_cli_max_search_limit: 10000
-        max_search_limit: 1000
-        max_search_total_limit: 100000
-        max_search_offset_limit: 100000
-        max_export_limit: 10000
-        max_parallel_export_requests: 1
-        max_aggregations_per_request: 3
+        seq_cli_max_search_limit: {{ .Values.sequi.config.handlers.seq_api.seq_cli_max_search_limit | default 10000 }}
+        max_search_limit: {{ .Values.sequi.config.handlers.seq_api.max_search_limit | default 1000 }}
+        max_search_total_limit: {{ .Values.sequi.config.handlers.seq_api.max_search_total_limit | default 100000 }}
+        max_search_offset_limit: {{ .Values.sequi.config.handlers.seq_api.max_search_offset_limit | default 100000 }}
+        max_export_limit: {{ .Values.sequi.config.handlers.seq_api.max_export_limit | default 10000 }}
+        max_parallel_export_requests: {{ .Values.sequi.config.handlers.seq_api.max_parallel_export_requests | default 1 }}
+        max_aggregations_per_request: {{ .Values.sequi.config.handlers.seq_api.max_aggregations_per_request | default 3 }}
 {{- end }}
