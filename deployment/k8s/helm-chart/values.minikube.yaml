@@ -1,6 +1,7 @@
 replicaCount: 2
 
 mapping:
+  auto: false
   enable_updates: true
   mapping_list:
     - type: "keyword"

@@ -126,6 +126,7 @@ affinity: {}
 
 
 mapping:
+  auto: true
   enable_updates: false
   update_period: 5s
   mapping_list: []
