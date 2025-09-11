@@ -11,6 +11,7 @@ spec:
   selector:
     matchLabels:
       {{- include "seq-db.selectorLabels" . | nindent 6 }}
+  serviceName: {{ include "seq-db.fullname" . }}
   volumeClaimTemplates:
   - metadata:
       name: data
