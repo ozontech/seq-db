@@ -6,7 +6,7 @@ id: aggregations
 
 seq-db support various types of aggregations: functional aggregations, histograms and timeseries. Each of the types
 relies on the usage of the inverted-index, therefore to calculate aggregations for the fields, the field must be
-indexed. However, because of that, seq-db can very quickly retrieve and aggregate data.
+indexed.
 
 ## Function aggregations
 
