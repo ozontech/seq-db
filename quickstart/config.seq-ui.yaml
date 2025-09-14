@@ -11,7 +11,7 @@ server:
       - "GET"
       - "POST"
       - "PUT"
-      - "UPDATE"
+      - "PATCH"
       - "DELETE"
     allowed_headers:
       - "*"
