@@ -143,7 +143,7 @@ curl --request POST   \
 
 seq-ui это бэкенд для пользовательского интерфейса.
 
-Чтобы запустить seq-db в связке с seq-ui, нужно создать файл конфигурации для seq-ui, config.seq-ui.yaml:
+Чтобы запустить seq-db в связке с seq-ui, нужно создать файл конфигурации для seq-ui, [config.seq-ui.yaml](https://github.com/ozontech/seq-db/blob/main/quickstart/config.seq-ui.yaml):
 
 ```yaml
 server:
@@ -183,7 +183,7 @@ mapping:
   path: auto
 ```
 
-Далее нужно запустить этот docker compose пример:
+Далее нужно запустить этот [docker compose пример](https://github.com/ozontech/seq-db/blob/main/quickstart/docker-compose.seq-ui.yaml):
 
 ```yaml
 services:
@@ -197,6 +197,11 @@ services:
       - "5556:5556" # Default gRPC port
       - "5557:5557" # Default debug port
     command: --config config.yaml
+  
+  seq-ui-fe:
+    image: ghcr.io/ozontech/seq-ui-fe:latest
+    ports:
+      - "5173:80"
   
   seq-db-proxy:
     image: ghcr.io/ozontech/seq-db:latest
