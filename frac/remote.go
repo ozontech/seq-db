@@ -189,7 +189,9 @@ func (f *Remote) String() string {
 
 func (f *Remote) createDataProvider(ctx context.Context) *sealedDataProvider {
 	return &sealedDataProvider{
-		ctx:              ctx,
+		ctx:               ctx,
+		fractionTypeLabel: "remote",
+
 		info:             f.info,
 		config:           f.Config,
 		docsReader:       &f.docsReader,

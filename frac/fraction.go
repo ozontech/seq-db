@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 )
@@ -24,6 +28,33 @@ type Fraction interface {
 	Offload(ctx context.Context, u storage.Uploader) (bool, error)
 	Suicide()
 }
+
+var (
+	fetcherStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "fraction_stages_seconds",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage", "fraction_type"})
+	fractionAggSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "tracer_fraction_agg_search_sec",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage", "fraction_type"})
+	fractionHistSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "tracer_fraction_hist_search_sec",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage", "fraction_type"})
+	fractionRegSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "tracer_fraction_reg_search_sec",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage", "fraction_type"})
+)
 
 func fracToString(f Fraction, fracType string) string {
 	info := f.Info()

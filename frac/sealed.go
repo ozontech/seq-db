@@ -373,7 +373,9 @@ func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func()) {
 
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 	return &sealedDataProvider{
-		ctx:              ctx,
+		ctx:               ctx,
+		fractionTypeLabel: "sealed",
+
 		info:             f.info,
 		config:           f.Config,
 		docsReader:       &f.docsReader,
