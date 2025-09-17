@@ -83,7 +83,7 @@ func (l *BlockLoader) Load(index uint32) *Block {
 		if err != nil {
 			logger.Panic("error reading tokens block", // todo: get rid of panic here
 				zap.Error(err),
-				zap.Any("index", index),
+				zap.Uint32("index", index),
 				zap.String("frac", l.fracName),
 			)
 		}

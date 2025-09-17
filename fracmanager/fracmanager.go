@@ -153,21 +153,30 @@ func (fm *FracManager) GetOldestCT() uint64 {
 }
 
 func (fm *FracManager) updateOldestCT() {
-	fm.updateOldestCTFor(fm.getLocalFracs(), &fm.oldestCTLocal)
-	fm.updateOldestCTFor(fm.getRemoteFracs(), &fm.oldestCTRemote)
+	fm.updateOldestCTFor(fm.getLocalFracs(), &fm.oldestCTLocal, "local")
+	fm.updateOldestCTFor(fm.getRemoteFracs(), &fm.oldestCTRemote, "remote")
 }
 
-func (fm *FracManager) updateOldestCTFor(fracs List, v *atomic.Uint64) {
-	if oldestByCT := fracs.GetOldestFrac(); oldestByCT != nil {
-		newOldestCT := oldestByCT.Info().CreationTime
-		prevOldestCT := v.Swap(newOldestCT)
-		if newOldestCT != prevOldestCT {
-			logger.Info(
-				"new oldest by creation time",
-				zap.Any("fraction", oldestByCT.Info().Name()),
-				zap.Time("creation_time", time.UnixMilli(int64(newOldestCT))),
-			)
-		}
+func (fm *FracManager) updateOldestCTFor(
+	fracs List, v *atomic.Uint64, storageType string,
+) {
+	oldestByCT := fracs.GetOldestFrac()
+
+	if oldestByCT == nil {
+		v.Store(0)
+		return
+	}
+
+	newOldestCT := oldestByCT.Info().CreationTime
+	prevOldestCT := v.Swap(newOldestCT)
+
+	if newOldestCT != prevOldestCT {
+		logger.Info(
+			"new oldest by creation time",
+			zap.String("fraction", oldestByCT.Info().Name()),
+			zap.String("storage_type", storageType),
+			zap.Time("creation_time", time.UnixMilli(int64(newOldestCT))),
+		)
 	}
 }
 
@@ -492,6 +501,7 @@ func (fm *FracManager) Load(ctx context.Context) error {
 		_ = fm.rotate() // make new empty active
 	}
 
+	fm.updateOldestCT()
 	return nil
 }
 
