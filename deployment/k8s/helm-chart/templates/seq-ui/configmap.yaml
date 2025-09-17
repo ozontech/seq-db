@@ -14,6 +14,19 @@ data:
       http_addr: "0.0.0.0:5555"
       grpc_addr: "0.0.0.0:5556"
       debug_addr: "0.0.0.0:5557"
+      cors:
+        allowed_headers:
+          - Content-Type
+          - Authorization
+        allowed_methods:
+          - HEAD
+          - GET
+          - POST
+          - PATCH
+          - DELETE
+        allowed_origins:
+          - '*'
+        max_age: 300  
     clients:
       seq_db_addrs:
         - {{ $.Release.Name }}-proxy.{{ $.Release.Namespace }}.svc.cluster.local.:9004

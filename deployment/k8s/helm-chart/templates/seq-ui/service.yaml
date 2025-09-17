@@ -12,6 +12,10 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+    - port: {{ .Values.sequi.front.service.httpPort }}
+      targetPort: fronthttp
+      protocol: TCP
+      name: fronthttp
     - port: {{ .Values.sequi.service.grpcPort }}
       targetPort: grpc
       protocol: TCP
