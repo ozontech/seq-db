@@ -2,44 +2,43 @@ package fracmanager
 
 import (
 	"context"
+	"io"
+	"math/rand"
+	"path/filepath"
+	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/oklog/ulid/v2"
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
+	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 )
 
-var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
-	Namespace: "seq_db_store",
-	Subsystem: "common",
-	Name:      "bytes_read",
-})
+const fileBasePattern = "seq-db-"
 
 type fractionProvider struct {
 	s3cli         *s3.Client
-	config        *frac.Config
+	config        *Config
 	cacheProvider *CacheMaintainer
 	activeIndexer *frac.ActiveIndexer
 	readLimiter   *storage.ReadLimiter
+	ulidEntropy   io.Reader
 }
 
 func newFractionProvider(
-	c *frac.Config, s3cli *s3.Client, cp *CacheMaintainer,
-	readerWorkers, indexWorkers int,
+	cfg *Config, s3cli *s3.Client, cp *CacheMaintainer,
+	readLimiter *storage.ReadLimiter, indexer *frac.ActiveIndexer,
 ) *fractionProvider {
-	ai := frac.NewActiveIndexer(indexWorkers, indexWorkers)
-	ai.Start() // first start indexWorkers to allow active frac replaying
-
 	return &fractionProvider{
 		s3cli:         s3cli,
-		config:        c,
+		config:        cfg,
 		cacheProvider: cp,
-		activeIndexer: ai,
-		readLimiter:   storage.NewReadLimiter(readerWorkers, storeBytesRead),
+		activeIndexer: indexer,
+		readLimiter:   readLimiter,
+		ulidEntropy:   ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
 	}
 }
 
@@ -50,7 +49,7 @@ func (fp *fractionProvider) NewActive(name string) *frac.Active {
 		fp.readLimiter,
 		fp.cacheProvider.CreateDocBlockCache(),
 		fp.cacheProvider.CreateSortDocsCache(),
-		fp.config,
+		&fp.config.Fraction,
 	)
 }
 
@@ -61,7 +60,7 @@ func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *fra
 		fp.cacheProvider.CreateIndexCache(),
 		fp.cacheProvider.CreateDocBlockCache(),
 		cachedInfo,
-		fp.config,
+		&fp.config.Fraction,
 	)
 }
 
@@ -72,13 +71,11 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *seale
 		fp.readLimiter,
 		fp.cacheProvider.CreateIndexCache(),
 		fp.cacheProvider.CreateDocBlockCache(),
-		fp.config,
+		&fp.config.Fraction,
 	)
 }
 
-func (fp *fractionProvider) NewRemote(
-	ctx context.Context, name string, cachedInfo *common.Info,
-) *frac.Remote {
+func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedInfo *common.Info) *frac.Remote {
 	return frac.NewRemote(
 		ctx,
 		name,
@@ -86,11 +83,44 @@ func (fp *fractionProvider) NewRemote(
 		fp.cacheProvider.CreateIndexCache(),
 		fp.cacheProvider.CreateDocBlockCache(),
 		cachedInfo,
-		fp.config,
+		&fp.config.Fraction,
 		fp.s3cli,
 	)
 }
 
-func (fp *fractionProvider) Stop() {
-	fp.activeIndexer.Stop()
+// This method is not thread safe. Use consciously to avoid race
+func (fp *fractionProvider) nextFractionID() string {
+	return ulid.MustNew(ulid.Timestamp(time.Now()), fp.ulidEntropy).String()
+}
+
+func (fp *fractionProvider) GenerateActive() *frac.Active {
+	filePath := fileBasePattern + fp.nextFractionID()
+	baseFilePath := filepath.Join(fp.config.DataDir, filePath)
+	return fp.NewActive(baseFilePath)
+}
+
+func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
+	src, err := frac.NewActiveSealingSource(active, fp.config.SealParams)
+	if err != nil {
+		return nil, nil
+	}
+	preloaded, err := sealing.Seal(src, fp.config.SealParams)
+	if err != nil {
+		return nil, nil
+	}
+	sealed := fp.NewSealedPreloaded(active.BaseFileName, preloaded)
+
+	return sealed, nil
+}
+
+func (fp *fractionProvider) Offload(ctx context.Context, sealed *frac.Sealed) (*frac.Remote, error) {
+	mustBeOffloaded, err := sealed.Offload(ctx, s3.NewUploader(fp.s3cli))
+	if err != nil {
+		return nil, err
+	}
+	if !mustBeOffloaded {
+		return nil, nil
+	}
+	info := sealed.Info()
+	return fp.NewRemote(ctx, info.Path, info), nil
 }

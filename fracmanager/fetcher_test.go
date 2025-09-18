@@ -16,19 +16,20 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	common.RecreateDir(dataDir)
 	defer common.RemoveDir(dataDir)
 	config := &Config{
-		FracSize:     1000,
-		TotalSize:    100000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:  1000,
+		TotalSize: 100000,
+		DataDir:   dataDir,
 	}
 
-	fm, err := newFracManagerWithBackgroundStart(t.Context(), config)
+	fm, stop, err := New(t.Context(), config, nil)
 	assert.NoError(t, err)
+	defer stop()
+
 	dp := frac.NewDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
-	fm.WaitIdle()
-	info := fm.Active().Info()
+	fm.Writer().WaitWriteIdle()
 
+	info := fm.Active().Info()
 	id := seq.IDSource{
 		ID: seq.SimpleID(1),
 	}
@@ -38,20 +39,19 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 
 	ids := []seq.IDSource{id}
 
-	docs, err := fetcher.FetchDocs(t.Context(), fm.GetAllFracs(), ids)
+	docs, err := fetcher.FetchDocs(t.Context(), fm.Fractions(), ids)
 	assert.NoError(t, err)
 	for _, v := range docs {
 		assert.Equal(t, []byte("document"), v)
 	}
 
 	fm.SealForcedForTests()
-	fm.WaitIdle()
+
 	dp.TryReset()
 	addDummyDoc(t, fm, dp, seq.SimpleID(2))
-	fm.WaitIdle()
+	fm.Writer().WaitWriteIdle()
 
 	info = fm.Active().Info()
-
 	newID := seq.IDSource{
 		ID: seq.SimpleID(2),
 	}
@@ -60,7 +60,7 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	}
 	ids = append(ids, newID)
 	counter := 0
-	docs, err = fetcher.FetchDocs(context.TODO(), fm.GetAllFracs(), ids)
+	docs, err = fetcher.FetchDocs(context.TODO(), fm.Fractions(), ids)
 	assert.NoError(t, err)
 	for _, v := range docs {
 		counter++

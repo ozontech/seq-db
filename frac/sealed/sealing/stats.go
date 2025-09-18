@@ -23,7 +23,7 @@ func startStats() blocksStats {
 func (s *blocksStats) takeStock(block indexBlock) {
 	s.blocksCount++
 	s.len += len(block.payload)
-	s.rawLen += block.rawLen
+	s.rawLen += int(block.rawLen)
 }
 
 func (s *blocksStats) log(name string, endTime time.Time) {

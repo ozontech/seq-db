@@ -120,7 +120,7 @@ func NewGrpcV1(cfg APIConfig, fracManager *fracmanager.FracManager, mappingProvi
 		},
 		asyncSearcher: fracmanager.MustStartAsync(
 			cfg.Search.Async, mappingProvider,
-			fracManager.GetAllFracs(),
+			fracManager.Fractions(),
 		),
 	}
 

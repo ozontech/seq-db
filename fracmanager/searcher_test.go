@@ -24,8 +24,12 @@ func (t *testFakeFrac) IsIntersecting(_, _ seq.MID) bool {
 	return true
 }
 
-func (t *testFakeFrac) DataProvider(_ context.Context) (frac.DataProvider, func()) {
-	return frac.EmptyDataProvider{}, func() {}
+func (f *testFakeFrac) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+	return nil, nil
+}
+
+func (f *testFakeFrac) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
+	return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, nil
 }
 
 func (t *testFakeFrac) Info() *common.Info {

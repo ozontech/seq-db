@@ -1,7 +1,6 @@
 package fracmanager
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -16,26 +15,12 @@ import (
 )
 
 type fakeFrac struct {
-	frac.Fraction
+	emptyFraction
 	info common.Info
-	dp   fakeDP
 }
 
 func (f *fakeFrac) Info() *common.Info {
 	return &f.info
-}
-
-func (f *fakeFrac) DataProvider(_ context.Context) (frac.DataProvider, func()) {
-	return &f.dp, func() {}
-}
-
-type fakeDP struct {
-	frac.DataProvider
-	qpr seq.QPR
-}
-
-func (f *fakeDP) Search(processor.SearchParams) (*seq.QPR, error) {
-	return &f.qpr, nil
 }
 
 func TestAsyncSearcherMaintain(t *testing.T) {

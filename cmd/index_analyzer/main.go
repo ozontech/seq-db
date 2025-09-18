@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/alecthomas/units"
@@ -57,7 +58,15 @@ func main() {
 func getCacheMaintainer() (*fracmanager.CacheMaintainer, func()) {
 	done := make(chan struct{})
 	cm := fracmanager.NewCacheMaintainer(uint64(units.GiB), uint64(units.MiB*64), nil)
-	wg := cm.RunCleanLoop(done, time.Second, time.Second)
+
+	wg := sync.WaitGroup{}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		cm.RunCleanLoop(done, time.Second, time.Second)
+	}()
+
 	return cm, func() {
 		close(done)
 		wg.Wait()

@@ -52,7 +52,7 @@ func NewIndexSealer(params common.SealParams) *IndexSealer {
 type indexBlock struct {
 	codec   storage.Codec // Compression codec used (No compression or ZSTD)
 	payload []byte        // The actual block data (may be compressed)
-	rawLen  int           // Original uncompressed data length
+	rawLen  uint32        // Original uncompressed data length
 	ext1    uint64        // Extended metadata field 1 (block-specific usage)
 	ext2    uint64        // Extended metadata field 2 (block-specific usage)
 }
@@ -66,7 +66,7 @@ type indexBlock struct {
 //   - storage.IndexBlockHeader: The block header with metadata
 //   - []byte: The payload data to write
 func (i indexBlock) Bin(pos int64) (storage.IndexBlockHeader, []byte) {
-	header := storage.NewIndexBlockHeader(pos, i.ext1, i.ext2, len(i.payload), i.rawLen, i.codec)
+	header := storage.NewIndexBlockHeader(pos, i.ext1, i.ext2, uint32(len(i.payload)), i.rawLen, i.codec)
 	return header, i.payload
 }
 
@@ -297,7 +297,7 @@ func (s *IndexSealer) indexBlocks(src Source) iter.Seq[indexBlock] {
 func newIndexBlock(raw []byte) indexBlock {
 	return indexBlock{
 		codec:   storage.CodecNo,
-		rawLen:  len(raw),
+		rawLen:  uint32(len(raw)),
 		payload: raw,
 	}
 }
@@ -310,7 +310,7 @@ func (s *IndexSealer) newIndexBlockZSTD(raw []byte, level int) indexBlock {
 	if len(s.buf2) < len(raw) {
 		return indexBlock{
 			codec:   storage.CodecZSTD,
-			rawLen:  len(raw),
+			rawLen:  uint32(len(raw)),
 			payload: s.buf2,
 		}
 	}

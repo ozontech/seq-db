@@ -13,12 +13,12 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
@@ -34,9 +34,6 @@ type Sealed struct {
 	BaseFileName string
 
 	info *common.Info
-
-	useMu    sync.RWMutex
-	suicided bool
 
 	docsFile   *os.File
 	docsCache  *cache.Cache[[]byte]
@@ -188,18 +185,18 @@ func (f *Sealed) load() {
 // Offload saves `.docs` (or `.sdocs`) and `.index` files into remote storage.
 // It does not free any of the occupied memory (nor on disk nor in memory).
 func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
-	f.useMu.Lock()
-	defer f.useMu.Unlock()
-
 	g, gctx := errgroup.WithContext(ctx)
 
+	f.loadMu.Lock()
+	f.openDocs()
+	f.openIndex()
+	f.loadMu.Unlock()
+
 	g.Go(func() error {
-		f.openDocs()
 		return u.Upload(gctx, f.docsFile)
 	})
 
 	g.Go(func() error {
-		f.openIndex()
 		return u.Upload(gctx, f.indexFile)
 	})
 
@@ -220,11 +217,17 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) 
 }
 
 func (f *Sealed) Suicide() {
-	f.useMu.Lock()
-	f.suicided = true
-	f.useMu.Unlock()
+	if err := f.docsFile.Close(); err != nil {
+		logger.Error("can't close docs file",
+			zap.String("frac", f.BaseFileName),
+			zap.Error(err))
+	}
 
-	f.close("suicide")
+	if err := f.indexFile.Close(); err != nil {
+		logger.Error("can't close index file",
+			zap.String("frac", f.BaseFileName),
+			zap.Error(err))
+	}
 
 	f.docsCache.Release()
 	f.indexCache.Release()
@@ -293,64 +296,20 @@ func (f *Sealed) Suicide() {
 	}
 }
 
-func (f *Sealed) close(hint string) {
-	f.loadMu.Lock()
-	defer f.loadMu.Unlock()
-
-	if !f.isLoaded {
-		return
-	}
-
-	if f.docsFile != nil { // docs file may not be opened since it's loaded lazily
-		if err := f.docsFile.Close(); err != nil {
-			logger.Error("can't close docs file",
-				zap.String("frac", f.BaseFileName),
-				zap.String("type", "sealed"),
-				zap.String("hint", hint),
-				zap.Error(err))
-		}
-	}
-
-	if err := f.indexFile.Close(); err != nil {
-		logger.Error("can't close index file",
-			zap.String("frac", f.BaseFileName),
-			zap.String("type", "sealed"),
-			zap.String("hint", hint),
-			zap.Error(err))
-	}
-}
-
 func (f *Sealed) String() string {
 	return fracToString(f, "sealed")
 }
 
-func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func()) {
-	f.useMu.RLock()
+func (f *Sealed) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+	return f.createDataProvider(ctx).Fetch(ids)
+}
 
-	if f.suicided {
-		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
-		f.useMu.RUnlock()
-		return EmptyDataProvider{}, func() {}
-	}
-
-	defer func() {
-		if panicData := recover(); panicData != nil {
-			f.useMu.RUnlock()
-			panic(panicData)
-		}
-	}()
-
-	f.load()
-
-	dp := f.createDataProvider(ctx)
-
-	return dp, func() {
-		dp.release()
-		f.useMu.RUnlock()
-	}
+func (f *Sealed) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
+	return f.createDataProvider(ctx).Search(params)
 }
 
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
+	f.load()
 	return &sealedDataProvider{
 		ctx:              ctx,
 		info:             f.info,

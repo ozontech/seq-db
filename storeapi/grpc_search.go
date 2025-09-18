@@ -86,7 +86,7 @@ func (g *GrpcV1) doSearch(
 
 	// in store mode hot we return error in case request wants data, that we've already rotated
 	if g.config.StoreMode == StoreModeHot {
-		if g.fracManager.Mature() && g.earlierThanOldestFrac(uint64(from)) {
+		if g.fracManager.IsCapacityExceeded() && g.earlierThanOldestFrac(uint64(from)) {
 			metric.RejectedRequests.WithLabelValues("search", "old_data").Inc()
 			return &storeapi.SearchResponse{Code: storeapi.SearchErrorCode_INGESTOR_QUERY_WANTS_OLD_DATA}, nil
 		}
@@ -169,7 +169,7 @@ func (g *GrpcV1) doSearch(
 	searchTr := tr.NewChild("search iteratively")
 	qpr, err := g.searchData.searcher.SearchDocs(
 		ctx,
-		g.fracManager.GetAllFracs(),
+		g.fracManager.Fractions(),
 		searchParams,
 	)
 	searchTr.Done()
@@ -253,7 +253,7 @@ func useSeqQL(ctx context.Context) bool {
 }
 
 func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {
-	oldestCt := g.fracManager.OldestCT.Load()
+	oldestCt := g.fracManager.Oldest()
 	return oldestCt == 0 || oldestCt > from
 }
 
