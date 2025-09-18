@@ -20,7 +20,6 @@ type Config struct {
 	CacheSize uint64
 
 	FracLoadLimit     uint64 // how many sealed fractions should fracmanager load, if 0 then loads all
-	ShouldReplay      bool
 	MaintenanceDelay  time.Duration
 	CacheCleanupDelay time.Duration
 	CacheGCDelay      time.Duration
@@ -30,7 +29,9 @@ type Config struct {
 
 	OffloadingEnabled   bool
 	OffloadingForced    bool
+	OffloadingSize      uint64
 	OffloadingRetention time.Duration
+	OffloadRetryDelay   time.Duration
 }
 
 func FillConfigWithDefault(config *Config) *Config {

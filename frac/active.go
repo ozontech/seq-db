@@ -17,6 +17,7 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -33,10 +34,6 @@ type Active struct {
 	Config *Config
 
 	BaseFileName string
-
-	useMu    sync.RWMutex
-	suicided bool
-	released bool
 
 	infoMu sync.RWMutex
 	info   *common.Info
@@ -266,23 +263,19 @@ func (f *Active) String() string {
 	return fracToString(f, "active")
 }
 
-func (f *Active) DataProvider(ctx context.Context) (DataProvider, func()) {
-	f.useMu.RLock()
-
-	if f.suicided || f.released || f.Info().DocsTotal == 0 { // it is empty active fraction state
-		if f.suicided {
-			metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
-		}
-		f.useMu.RUnlock()
-		return EmptyDataProvider{}, func() {}
+func (f *Active) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		return nil, nil
 	}
+	return f.createDataProvider(ctx).Fetch(ids)
+}
 
-	// it is ordinary active fraction state
-	dp := f.createDataProvider(ctx)
-	return dp, func() {
-		dp.release()
-		f.useMu.RUnlock()
+func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()
+		return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, nil
 	}
+	return f.createDataProvider(ctx).Search(params)
 }
 
 func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
@@ -318,10 +311,6 @@ func (f *Active) IsIntersecting(from, to seq.MID) bool {
 }
 
 func (f *Active) Release() {
-	f.useMu.Lock()
-	f.released = true
-	f.useMu.Unlock()
-
 	f.releaseMem()
 
 	if !f.Config.KeepMetaFile {
@@ -330,35 +319,6 @@ func (f *Active) Release() {
 
 	if !f.Config.SkipSortDocs {
 		// we use sorted docs in sealed fraction so we can remove original docs of active fraction
-		f.removeDocsFiles()
-	}
-}
-
-// Offload for [Active] fraction is no-op.
-//
-// Since search within [Active] fraction is too costly (we have to replay the whole index in memory),
-// we decided to support offloading only for [Sealed] fractions.
-func (f *Active) Offload(context.Context, storage.Uploader) (bool, error) {
-	return false, nil
-}
-
-func (f *Active) Suicide() {
-	f.useMu.Lock()
-	released := f.released
-	f.suicided = true
-	f.released = true
-	f.useMu.Unlock()
-
-	if released { // fraction can be suicided after release
-		if f.Config.KeepMetaFile {
-			f.removeMetaFile() // meta was not removed while release
-		}
-		if f.Config.SkipSortDocs {
-			f.removeDocsFiles() // docs was not removed while release
-		}
-	} else { // was not release
-		f.releaseMem()
-		f.removeMetaFile()
 		f.removeDocsFiles()
 	}
 }

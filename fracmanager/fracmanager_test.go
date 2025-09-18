@@ -12,16 +12,6 @@ import (
 	"github.com/ozontech/seq-db/tests/common"
 )
 
-// newFracManagerWithBackgroundStart only used from tests
-func newFracManagerWithBackgroundStart(ctx context.Context, config *Config) (*FracManager, error) {
-	fracManager := NewFracManager(ctx, config, nil)
-	if err := fracManager.Load(ctx); err != nil {
-		return nil, err
-	}
-	fracManager.Start()
-	return fracManager, nil
-}
-
 func addDummyDoc(t *testing.T, fm *FracManager, dp *frac.DocProvider, seqID seq.ID) {
 	doc := []byte("document")
 	dp.Append(doc, nil, seqID, seq.Tokens("service:100500", "k8s_pod", "_all_:"))
@@ -33,12 +23,12 @@ func addDummyDoc(t *testing.T, fm *FracManager, dp *frac.DocProvider, seqID seq.
 func MakeSomeFractions(t *testing.T, fm *FracManager) {
 	dp := frac.NewDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
-	fm.seal(fm.rotate())
+	fm.SealForcedForTests()
 
 	dp.TryReset()
 
 	addDummyDoc(t, fm, dp, seq.SimpleID(2))
-	fm.seal(fm.rotate())
+	fm.SealForcedForTests()
 
 	dp.TryReset()
 	addDummyDoc(t, fm, dp, seq.SimpleID(3))
@@ -50,63 +40,54 @@ func TestCleanUp(t *testing.T) {
 	common.RecreateDir(dataDir)
 	defer common.RemoveDir(dataDir)
 
-	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     1000,
-		TotalSize:    100000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
-	})
+	fm, stop, err := New(t.Context(), &Config{
+		FracSize:  1000,
+		TotalSize: 100000,
+		DataDir:   dataDir,
+	}, nil)
 
 	assert.NoError(t, err)
 
 	MakeSomeFractions(t, fm)
 
-	first := fm.localFracs[0].instance.(*frac.Sealed)
+	first := fm.lm.registry.locals[0].instance
 	first.PartialSuicideMode = frac.HalfRename
 	first.Suicide()
 
-	second := fm.localFracs[1].instance.(*frac.Sealed)
+	second := fm.lm.registry.locals[1].instance
 	second.PartialSuicideMode = frac.HalfRemove
 	second.Suicide()
-	info := fm.active.frac.Info()
-	shouldSealOnExit := info.FullSize() > fm.minFracSizeToSeal()
 
-	fm.Stop()
-	if shouldSealOnExit && info.DocsTotal > 0 {
-		t.Error("active fraction should be empty after rotation and sealing")
-	}
+	stop()
 
-	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100,
-		TotalSize:    100000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
-	})
+	fm, stop, err = New(t.Context(), &Config{
+		FracSize:  100,
+		TotalSize: 100000,
+		DataDir:   dataDir,
+	}, nil)
+	defer stop()
 
 	assert.NoError(t, err)
 
-	defer fm.Stop()
-
-	assert.Equal(t, 1, len(fm.localFracs), "wrong frac count")
+	assert.Equal(t, 1, len(fm.Fractions()), "we suicided 2 sealed fractions and only one active must leave")
+	assert.Greater(t, fm.Fractions()[0].Info().DocsTotal, uint32(0), "active fractions must be non empty")
 }
 
-func TestMatureMode(t *testing.T) {
+func TestCapacityExceededMode(t *testing.T) {
 	dataDir := common.GetTestTmpDir(t)
 	common.RecreateDir(dataDir)
 	defer common.RemoveDir(dataDir)
 
-	launchAndCheck := func(checkFn func(fm *FracManager)) {
-		fm := NewFracManager(context.Background(), &Config{
-			FracSize:     500,
-			TotalSize:    5000,
-			ShouldReplay: false,
-			DataDir:      dataDir,
-		}, nil)
-		assert.NoError(t, fm.Load(context.Background()))
-
-		checkFn(fm)
-
-		fm.fracProvider.Stop()
+	launchAndCheck := func(checkFn func(*FracManager, Config)) {
+		cfg := Config{
+			FracSize:  500,
+			TotalSize: 5000,
+			DataDir:   dataDir,
+		}
+		fm, stop, err := New(context.Background(), &cfg, nil)
+		assert.NoError(t, err)
+		checkFn(fm, cfg)
+		stop()
 	}
 
 	id := 1
@@ -116,42 +97,31 @@ func TestMatureMode(t *testing.T) {
 			addDummyDoc(t, fm, dp, seq.SimpleID(id))
 			id++
 		}
-		fm.seal(fm.rotate())
+		fm.SealForcedForTests()
 		dp.TryReset()
 	}
 
 	// first run
-	launchAndCheck(func(fm *FracManager) {
-		assert.Equal(t, false, fm.Mature(), "expect data dir is empty")
+	launchAndCheck(func(fm *FracManager, _ Config) {
+		assert.Equal(t, false, fm.IsCapacityExceeded(), "expect data dir is empty")
 		makeSealedFrac(fm, 10)
-		assert.Equal(t, false, fm.Mature(), "file .immature must still exist")
+		assert.Equal(t, false, fm.IsCapacityExceeded(), "file .immature must still exist")
 	})
 
 	// second run
-	launchAndCheck(func(fm *FracManager) {
-		assert.Equal(t, false, fm.Mature(), "file .immature must exist")
-		for fm.GetAllFracs().GetTotalSize() < fm.config.TotalSize {
+	launchAndCheck(func(fm *FracManager, cfg Config) {
+		assert.Equal(t, false, fm.IsCapacityExceeded(), "file .immature must exist")
+		for fm.Fractions().GetTotalSize() < cfg.TotalSize {
 			makeSealedFrac(fm, 10)
 		}
-		assert.Equal(t, false, fm.Mature(), "file .immature must still exist")
-		sealWG := sync.WaitGroup{}
-		suicideWG := sync.WaitGroup{}
-		fm.maintenance(&sealWG, &suicideWG)
-		assert.Equal(t, true, fm.Mature(), "file .immature have to be removed")
+		assert.Equal(t, false, fm.IsCapacityExceeded(), "file .immature must still exist")
+		wg := sync.WaitGroup{}
+		fm.lm.Maintain(context.Background(), &wg)
+		assert.Equal(t, true, fm.IsCapacityExceeded(), "file .immature have to be removed")
 	})
 
 	// third run
-	launchAndCheck(func(fm *FracManager) {
-		assert.Equal(t, true, fm.Mature(), "the data directory is not empty at startup and the .immature file must be missing")
+	launchAndCheck(func(fm *FracManager, _ Config) {
+		assert.Equal(t, true, fm.IsCapacityExceeded(), "the data directory is not empty at startup and the .immature file must be missing")
 	})
-
-}
-
-func TestNewULID(t *testing.T) {
-	fm := NewFracManager(context.Background(), &Config{}, nil)
-	ulid1 := fm.nextFractionID()
-	ulid2 := fm.nextFractionID()
-	assert.NotEqual(t, ulid1, ulid2, "ULIDs should be different")
-	assert.Equal(t, 26, len(ulid1), "ULID should have length 26")
-	assert.Greater(t, ulid2, ulid1)
 }
