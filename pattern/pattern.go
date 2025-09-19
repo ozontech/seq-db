@@ -75,7 +75,7 @@ type wildcardSearch struct {
 	baseSearch
 	prefix    []byte
 	suffix    []byte
-	middle    []*substring
+	middle    [][]byte
 	middleLen int
 	narrowed  bool
 }
@@ -96,9 +96,9 @@ func newWildcardSearch(base baseSearch, token *parser.Literal) *wildcardSearch {
 	// all of the rest can be an asterix or a middle
 	for i := 1; i < len(terms)-1; i++ {
 		if terms[i].Kind == parser.TermText {
-			term := newSubstringPattern([]byte(terms[i].Data))
-			s.middle = append(s.middle, term)
-			s.middleLen += len(terms[i].Data)
+			val := util.StringToByteUnsafe(terms[i].Data)
+			s.middle = append(s.middle, val)
+			s.middleLen += len(val)
 		}
 	}
 	return s
@@ -149,6 +149,17 @@ func (s *wildcardSearch) checkMiddle(val []byte) bool {
 		return false
 	}
 	return findSequence(val[len(s.prefix):len(val)-len(s.suffix)], s.middle) == len(s.middle)
+}
+
+func findSequence(haystack []byte, needles [][]byte) int {
+	for cur, val := range needles {
+		start := bytes.Index(haystack, val)
+		if start == -1 {
+			return cur
+		}
+		haystack = haystack[start+len(val):]
+	}
+	return len(needles)
 }
 
 func (s *wildcardSearch) check(val []byte) bool {

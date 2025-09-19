@@ -8,6 +8,10 @@ services:
       - "5556:5556" # Default gRPC port
       - "5557:5557" # Default debug port
     command: --config config.yaml
+  seq-ui-fe:
+    image: ghcr.io/ozontech/seq-ui-fe:latest
+    ports:
+      - "5173:80"
 
   seq-db-proxy:
     image: ghcr.io/ozontech/seq-db:latest
