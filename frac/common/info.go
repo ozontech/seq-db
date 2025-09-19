@@ -2,7 +2,6 @@ package common
 
 import (
 	"fmt"
-	"iter"
 	"math"
 	"path"
 	"time"
@@ -71,12 +70,12 @@ func (s *Info) Name() string {
 	return path.Base(s.Path)
 }
 
-func (s *Info) BuildDistribution(ids iter.Seq[seq.ID]) {
+func (s *Info) BuildDistribution(mids []uint64) {
 	if !s.InitEmptyDistribution() {
 		return
 	}
-	for id := range ids {
-		s.Distribution.Add(id.MID)
+	for _, mid := range mids {
+		s.Distribution.Add(seq.MID(mid))
 	}
 }
 

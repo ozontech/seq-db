@@ -161,11 +161,15 @@ func createTokenTableEntry(entryStartTID, fieldMaxTID, blockIndex uint32, block 
 //   - iter.Seq[lidsSealBlock]: Sequence of sealed LID blocks
 func (bb *blocksBuilder) BuildLIDsBlocks(tokenLIDs iter.Seq[[]uint32], blockCapacity int) iter.Seq[lidsSealBlock] {
 	return func(yield func(lidsSealBlock) bool) {
+		if blockCapacity <= 0 {
+			bb.lastErr = errors.New("sealing: LID block size must be > 0")
+			return
+		}
 		var (
-			currentTID    uint32        // Current TID being processed
-			currentBlock  lidsSealBlock // Current block under construction
-			isEndOfToken  bool          // Flag for end of current token's LIDs
-			continuesNext bool          // Flag for block continuation
+			currentTID   uint32        // Current TID being processed
+			currentBlock lidsSealBlock // Current block under construction
+			isEndOfToken bool          // Flag for end of current token's LIDs
+			isContinued  bool          // Flag for block continuation
 		)
 
 		// Initialize first block
@@ -181,9 +185,9 @@ func (bb *blocksBuilder) BuildLIDsBlocks(tokenLIDs iter.Seq[[]uint32], blockCapa
 				// Add final offset for current token if not already done
 				currentBlock.payload.Offsets = append(currentBlock.payload.Offsets, uint32(len(currentBlock.payload.LIDs)))
 			}
-			currentBlock.payload.IsLastLID = isEndOfToken // TODO: Remove legacy field
-			currentBlock.ext.isContinued = continuesNext  // TODO: Remove legacy field
-			continuesNext = !isEndOfToken
+			currentBlock.payload.IsLastLID = isEndOfToken // TODO(eguguchkin): Remove legacy field
+			currentBlock.ext.isContinued = isContinued    // TODO(eguguchkin): Remove legacy field
+			isContinued = !isEndOfToken
 			return yield(currentBlock)
 		}
 

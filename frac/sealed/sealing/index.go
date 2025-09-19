@@ -101,7 +101,7 @@ func (s *IndexSealer) WriteIndex(ws io.WriteSeeker, src Source) error {
 	defer bytespool.ReleaseWriter(bw)
 
 	// Write all index blocks and collect headers
-	if err := s.writeBocks(prefixSize, bw, hw, src); err != nil {
+	if err := s.writeBlocks(prefixSize, bw, hw, src); err != nil {
 		return err
 	}
 	if err := bw.Flush(); err != nil {
@@ -137,7 +137,7 @@ func (s *IndexSealer) WriteIndex(ws io.WriteSeeker, src Source) error {
 	return nil
 }
 
-// writeBocks processes all index blocks from the source and writes them to the output.
+// writeBlocks processes all index blocks from the source and writes them to the output.
 // It simultaneously writes payload data to one writer and headers to another.
 // Parameters:
 //   - pos: Starting position for the first block
@@ -147,7 +147,7 @@ func (s *IndexSealer) WriteIndex(ws io.WriteSeeker, src Source) error {
 //
 // Returns:
 //   - error: Any error encountered during processing
-func (s *IndexSealer) writeBocks(pos int, payloadWriter, headersWriter io.Writer, src Source) error {
+func (s *IndexSealer) writeBlocks(pos int, payloadWriter, headersWriter io.Writer, src Source) error {
 	// Process each index block from the source
 	for block := range s.indexBlocks(src) {
 		header, payload := block.Bin(int64(pos))
@@ -299,6 +299,9 @@ func (s *IndexSealer) indexBlocks(src Source) iter.Seq[indexBlock] {
 // collapseOrderedFieldsTables merges field tables with identical field names
 // Assumes the input array is already sorted by the Field property
 func collapseOrderedFieldsTables(src []token.FieldTable) []token.FieldTable {
+	if len(src) == 0 {
+		return nil
+	}
 	current := src[0]
 	dst := []token.FieldTable{}
 	for _, ft := range src[1:] {
@@ -422,7 +425,7 @@ func (s *IndexSealer) packLIDsBlock(block lidsSealBlock) indexBlock {
 
 	// Packing block
 	s.buf1 = block.payload.Pack(s.buf1[:0])
-	b := s.newIndexBlockZSTD(s.buf1, s.params.IDsZstdLevel)
+	b := s.newIndexBlockZSTD(s.buf1, s.params.LIDsZstdLevel)
 	b.ext1 = ext1                                                    // Legacy continuation flag
 	b.ext2 = uint64(block.ext.maxTID)<<32 | uint64(block.ext.minTID) // TID range
 	return b

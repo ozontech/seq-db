@@ -61,6 +61,8 @@ func readBlock(reader storage.IndexReader, blockIndex uint32) ([]byte, error) {
 
 func loadInfo(path string) *common.Info {
 	indexReader, f := getReader(path)
+	defer f.Close()
+
 	result, err := readBlock(indexReader, 0)
 	if err != nil {
 		logger.Fatal("error reading block", zap.String("file", path), zap.Error(err))
@@ -86,7 +88,8 @@ func loadInfo(path string) *common.Info {
 }
 
 func buildDist(dist *seq.MIDsDistribution, path string, _ *common.Info) {
-	blocksReader, _ := getReader(path)
+	blocksReader, f := getReader(path)
+	defer f.Close()
 
 	// skip tokens
 	blockIndex := uint32(1)
