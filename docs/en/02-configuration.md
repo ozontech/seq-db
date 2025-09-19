@@ -152,6 +152,7 @@ Configuration for asynchronous search operations.
 | `async_search.concurrency` | int | - | Concurrency level for async searches |
 | `async_search.max_total_size` | Bytes | `1GiB` | - |
 | `async_search.max_size_per_request` | Bytes | `100MiB` | - |
+| `async_search.max_documents_per_request` | int | `100000` | - |
 
 ## API Configuration
 

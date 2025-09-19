@@ -371,6 +371,7 @@ func (m *StartAsyncSearchRequest) CloneVT() *StartAsyncSearchRequest {
 	r.Query = m.Query.CloneVT()
 	r.Hist = m.Hist.CloneVT()
 	r.WithDocs = m.WithDocs
+	r.Size = m.Size
 	if rhs := m.Aggs; rhs != nil {
 		tmpContainer := make([]*AggQuery, len(rhs))
 		for k, v := range rhs {
@@ -1395,6 +1396,9 @@ func (this *StartAsyncSearchRequest) EqualVT(that *StartAsyncSearchRequest) bool
 		return false
 	}
 	if this.WithDocs != that.WithDocs {
+		return false
+	}
+	if this.Size != that.Size {
 		return false
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
@@ -3558,6 +3562,11 @@ func (m *StartAsyncSearchRequest) MarshalToSizedBufferVT(dAtA []byte) (int, erro
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Size != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Size))
+		i--
+		dAtA[i] = 0x30
 	}
 	if m.WithDocs {
 		i--
@@ -5781,6 +5790,11 @@ func (m *StartAsyncSearchRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.Size != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Size))
+		i--
+		dAtA[i] = 0x30
+	}
 	if m.WithDocs {
 		i--
 		if m.WithDocs {
@@ -7449,6 +7463,9 @@ func (m *StartAsyncSearchRequest) SizeVT() (n int) {
 	}
 	if m.WithDocs {
 		n += 2
+	}
+	if m.Size != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.Size))
 	}
 	n += len(m.unknownFields)
 	return n
@@ -10312,6 +10329,25 @@ func (m *StartAsyncSearchRequest) UnmarshalVT(dAtA []byte) error {
 				}
 			}
 			m.WithDocs = bool(v != 0)
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Size", wireType)
+			}
+			m.Size = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Size |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -15606,6 +15642,25 @@ func (m *StartAsyncSearchRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 				}
 			}
 			m.WithDocs = bool(v != 0)
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Size", wireType)
+			}
+			m.Size = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Size |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

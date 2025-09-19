@@ -256,6 +256,9 @@ message StartAsyncSearchRequest {
   // Set this to true to enable document retrieval via FetchAsyncSearch.
   // Note: enabling this may significantly increase disk space usage.
   bool with_docs = 5;
+  // Maximum number of documents to find. Doesn't affect aggs and hist.
+  // Ignored if with_docs was set to false.
+  int64 size = 6;
 }
 
 message StartAsyncSearchResponse {

@@ -17,7 +17,8 @@ type APIConfig struct {
 	QueryRateLimit float64
 	EsVersion      string
 	// GatewayAddr is grpc-gateway client address. Used for debugging purposes.
-	GatewayAddr string
+	GatewayAddr                       string
+	AsyncSearchMaxDocumentsPerRequest int64
 }
 
 type IngestorConfig struct {

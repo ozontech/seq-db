@@ -178,11 +178,12 @@ func startProxy(
 
 	pconfig := proxyapi.IngestorConfig{
 		API: proxyapi.APIConfig{
-			SearchTimeout:  consts.DefaultSearchTimeout,
-			ExportTimeout:  consts.DefaultExportTimeout,
-			QueryRateLimit: cfg.Limits.QueryRate,
-			EsVersion:      cfg.API.ESVersion,
-			GatewayAddr:    cfg.Address.GRPC,
+			SearchTimeout:                     consts.DefaultSearchTimeout,
+			ExportTimeout:                     consts.DefaultExportTimeout,
+			QueryRateLimit:                    cfg.Limits.QueryRate,
+			EsVersion:                         cfg.API.ESVersion,
+			GatewayAddr:                       cfg.Address.GRPC,
+			AsyncSearchMaxDocumentsPerRequest: cfg.AsyncSearch.MaxDocumentsPerRequest,
 		},
 		Search: search.Config{
 			HotStores:       hotStores,
