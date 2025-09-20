@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+name: Continuous Benchmarks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+  deployments: write
+  pull-requests: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Download previous benchmark data
+        uses: actions/cache@v4
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark
+
+      - name: Run benchmarks
+        run: LOG_LEVEL=FATAL go test -run='^$' -bench=. ./... | tee benchmarks.txt
+
+      # This step will run benchmarks for pull requests
+      # targeting `main` and providing summary for benchmarks.
+      - name: Store benchmark result
+        if: github.ref_name != 'main'
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Benchmarks
+          tool: 'go'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          output-file-path: benchmarks.txt
+          external-data-json-path: ./cache/benchmark-data.json
+
+          comment-always: true
+          summary-always: true
+
+      # This step will run and store benchmarks results ONLY when
+      # pull request was merged to `main`.
+      - name: Store benchmark result
+        if: github.ref_name == 'main'
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Benchmarks
+          tool: 'go'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Push and deploy GitHub pages branch automatically
+          auto-push: true
+          output-file-path: benchmarks.txt
