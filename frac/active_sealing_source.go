@@ -3,9 +3,11 @@ package frac
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
 	"iter"
 	"os"
+	"path/filepath"
 	"slices"
 	"time"
 	"unsafe"
@@ -158,8 +160,15 @@ func (src *ActiveSealingSource) Info() *common.Info {
 // Each block contains up to blockSize bytes of data for efficient writing.
 func (src *ActiveSealingSource) TokenBlocks(blockSize int) iter.Seq[[][]byte] {
 	const tokenLengthSize = int(unsafe.Sizeof(uint32(0)))
-
 	return func(yield func([][]byte) bool) {
+		if len(src.tids) == 0 {
+			return
+		}
+		if blockSize <= 0 {
+			src.lastErr = errors.New("sealing: token block size must be > 0")
+			return
+		}
+
 		actualSize := 0
 		block := make([][]byte, 0, blockSize)
 
@@ -287,7 +296,7 @@ func (src *ActiveSealingSource) Docs() iter.Seq2[seq.ID, []byte] {
 		for ids, pos := range src.IDsBlocks(consts.IDsPerBlock) {
 			for i, id := range ids {
 				if id == systemSeqID {
-					curDoc = nil // System document
+					curDoc = nil // reserved system document (no payload)
 				} else if id != prev {
 					// If ID changed, read new document
 					if curDoc, src.lastErr = src.doc(pos[i]); src.lastErr != nil {
@@ -361,10 +370,13 @@ func (src *ActiveSealingSource) SortDocs() error {
 	if err := sdocsFile.Sync(); err != nil {
 		return err
 	}
+	if err := sdocsFile.Close(); err != nil {
+		return err
+	}
 	if err := os.Rename(sdocsFile.Name(), src.info.Path+consts.SdocsFileSuffix); err != nil {
 		return err
 	}
-	if err := sdocsFile.Close(); err != nil {
+	if err := util.SyncPath(filepath.Dir(src.info.Path)); err != nil {
 		return err
 	}
 
