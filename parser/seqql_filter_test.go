@@ -442,21 +442,21 @@ func TestSeqQLParserFuzz(t *testing.T) {
 }
 
 // TODO(moflotas): understand why different values are dumped
-//func TestSeqQLParsingASTStress(t *testing.T) {
-//	t.Parallel()
-//	iterations := 50
-//	for i := 0; i < iterations; i++ {
-//		exp := &ASTNode{}
-//		for i := 0; i < 100; i++ {
-//			addOperator(exp, 2*i)
-//
-//			q := exp.SeqQLString()
-//			query, err := ParseSeqQL(q, nil)
-//			require.NoError(t, err)
-//			require.Equal(t, q, query.Root.SeqQLString())
-//		}
-//	}
-//}
+func TestSeqQLParsingASTStress(t *testing.T) {
+	t.Parallel()
+	iterations := 50
+	for i := 0; i < iterations; i++ {
+		exp := &ASTNode{}
+		for i := 0; i < 100; i++ {
+			addOperator(exp, 2*i)
+
+			q := exp.SeqQLString()
+			query, err := parse(q, nil)
+			require.NoError(t, err)
+			require.Equal(t, q, query.Root.SeqQLString())
+		}
+	}
+}
 
 func BenchmarkSeqQLParsing(b *testing.B) {
 	var query SeqQLQuery

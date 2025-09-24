@@ -3,7 +3,6 @@ package parser
 import (
 	"fmt"
 	"strings"
-	"unicode"
 
 	"github.com/ozontech/seq-db/seq"
 )
@@ -11,14 +10,6 @@ import (
 type Literal struct {
 	Field string
 	Terms []Term
-}
-
-func (n *Literal) Dump(builder *strings.Builder) {
-	builder.WriteString(n.Field)
-	builder.WriteString(`:`)
-	for _, term := range n.Terms {
-		term.Dump(builder)
-	}
 }
 
 func (n *Literal) DumpSeqQL(o *strings.Builder) {
@@ -31,12 +22,6 @@ func (n *Literal) DumpSeqQL(o *strings.Builder) {
 	for _, term := range n.Terms {
 		term.DumpSeqQL(o)
 	}
-}
-
-func (n *Literal) String() string {
-	builder := &strings.Builder{}
-	n.Dump(builder)
-	return builder.String()
 }
 
 func (n *Literal) appendTerm(term Term, sensitive bool) {
@@ -58,26 +43,6 @@ type Term struct {
 	Data string
 }
 
-func (t Term) Dump(builder *strings.Builder) {
-	switch t.Kind {
-	case TermText:
-		if t.Data == "" {
-			builder.WriteString(`""`)
-			return
-		}
-		for _, c := range t.Data {
-			if specialSymbol[c] || unicode.IsSpace(c) {
-				builder.WriteByte('\\')
-			}
-			builder.WriteRune(c)
-		}
-	case TermSymbol:
-		builder.WriteString(t.Data)
-	default:
-		panic("unknown term kind")
-	}
-}
-
 func (t Term) IsWildcard() bool {
 	return t.Kind == TermSymbol && t.Data == "*"
 }
@@ -88,30 +53,6 @@ func (t Term) DumpSeqQL(b *strings.Builder) {
 		return
 	}
 	b.WriteString(quoteTokenIfNeeded(t.Data))
-}
-
-var specialSymbol = map[rune]bool{
-	'(':  true,
-	')':  true,
-	'{':  true,
-	'}':  true,
-	'[':  true,
-	']':  true,
-	'*':  true,
-	'"':  true,
-	'\\': true,
-	':':  true,
-}
-
-var graylogEscapedSymbol = map[rune]bool{
-	'-': true,
-	'/': true,
-}
-
-var quoteEscapedSymbol = map[rune]bool{
-	'"':  true,
-	'\\': true,
-	'*':  true,
 }
 
 func GetField(token Token) string {

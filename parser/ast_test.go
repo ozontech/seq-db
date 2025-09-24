@@ -3,28 +3,32 @@ package parser
 import (
 	"fmt"
 	"math/rand"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-// TODO(moflotas): understand, why fails
-//func TestBuildingTree(t *testing.T) {
-//	query, err := ParseSeqQL(`a:a OR b:b AND NOT c:c`, nil)
-//	assert.NoError(t, err)
-//	fmt.Println(query.SeqQLString())
-//
-//	act := query.Root
-//	assert.Equal(t, LogicalOr, act.Value.(*Logical).Operator)
-//	assert.Equal(t, 2, len(act.Children))
-//	assert.Equal(t, "a:a", act.Children[0].Value.(*Literal).String())
-//	assert.Equal(t, 0, len(act.Children[0].Children))
-//	assert.Equal(t, LogicalAnd, act.Children[1].Value.(*Logical).Operator)
-//	assert.Equal(t, 2, len(act.Children[1].Children))
-//	assert.Equal(t, "b:b", act.Children[1].Children[0].Value.(*Literal).String())
-//	assert.Equal(t, 0, len(act.Children[1].Children[0].Children))
-//	assert.Equal(t, LogicalNot, act.Children[1].Children[1].Value.(*Logical).Operator)
-//	assert.Equal(t, 1, len(act.Children[1].Children[1].Children))
-//	assert.Equal(t, "c:c", act.Children[1].Children[1].Children[0].Value.(*Literal).String())
-//	assert.Equal(t, 0, len(act.Children[1].Children[1].Children[0].Children))
-//}
+func TestBuildingTree(t *testing.T) {
+	a := assert.New(t)
+
+	query, err := parse(`a:a OR b:b AND NOT c:c`, nil)
+	a.NoError(err)
+	fmt.Println(query.SeqQLString())
+
+	act := query.Root
+	a.Equal(LogicalOr, act.Value.(*Logical).Operator)
+	a.Equal(2, len(act.Children))
+	a.Equal("a:a", act.Children[0].SeqQLString())
+	a.Equal(0, len(act.Children[0].Children))
+	a.Equal(LogicalAnd, act.Children[1].Value.(*Logical).Operator)
+	a.Equal(2, len(act.Children[1].Children))
+	a.Equal("b:b", act.Children[1].Children[0].SeqQLString())
+	a.Equal(0, len(act.Children[1].Children[0].Children))
+	a.Equal(LogicalNot, act.Children[1].Children[1].Value.(*Logical).Operator)
+	a.Equal(1, len(act.Children[1].Children[1].Children))
+	a.Equal("c:c", act.Children[1].Children[1].Children[0].SeqQLString())
+	a.Equal(0, len(act.Children[1].Children[1].Children[0].Children))
+}
 
 func tLogical(t logicalKind) Token {
 	return &Logical{Operator: t}

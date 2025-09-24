@@ -2,6 +2,7 @@ package processor
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,7 +40,9 @@ func (p *staticProvider) provide(token string) ([]uint32, error) {
 }
 
 func (p *staticProvider) newStatic(literal *parser.Literal) (node.Node, error) {
-	data, err := p.provide(literal.String())
+	builder := &strings.Builder{}
+	literal.DumpSeqQL(builder)
+	data, err := p.provide(builder.String())
 	if err != nil {
 		return nil, err
 	}
