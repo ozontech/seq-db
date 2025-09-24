@@ -51,7 +51,7 @@ jobs:
         env:
           GOFLAGS: ${{ matrix.flags }}
           LOG_LEVEL: error
-        run: go test -short -coverprofile=profile${{ matrix.flags }}.out -covermode=atomic -coverpkg=./... ./...
+        run: go test -timeout=30m -short -coverprofile=profile${{ matrix.flags }}.out -covermode=atomic -coverpkg=./... ./...
 
       - name: Strip generated files from coverage
         run: |
@@ -61,9 +61,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: coverage
-          path: |
-            profile.out.clean
-            profile-race.out.clean
+          path: profile${{ matrix.flags }}.out.clean
           if-no-files-found: error
           retention-days: 1
 
