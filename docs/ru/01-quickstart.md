@@ -22,9 +22,6 @@ seq-db можно быстро запустить в docker-контейнере
 config.yaml:
 
 ```yaml
-storage:
-  data_dir: /seq-db-data
-
 mapping:
   path: auto
 ```
