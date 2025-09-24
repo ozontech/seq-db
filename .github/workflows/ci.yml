@@ -15,6 +15,10 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        flags: [ '', '-race' ]
     steps:
       # GitHub Actions do not support passing arguments to containers (that are declared in the services section of a job),
       # but MinIO depends on it (it needs `server` argument at least).
@@ -47,17 +51,19 @@ jobs:
         env:
           GOFLAGS: ${{ matrix.flags }}
           LOG_LEVEL: error
-        run: go test -short -coverprofile=profile.out -covermode=atomic -coverpkg=./... ./...
+        run: go test -short -coverprofile=profile${{ matrix.flags }}.out -covermode=atomic -coverpkg=./... ./...
 
       - name: Strip generated files from coverage
         run: |
-          grep -v -e ".pb.go:" -e ".pb.gw.go:" -e ".mock.go:" -e "/mock/" profile.out > profile.out.clean
+          grep -v -e ".pb.go:" -e ".pb.gw.go:" -e ".mock.go:" -e "/mock/" profile${{ matrix.flags }}.out > profile${{ matrix.flags }}.out.clean
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
           name: coverage
-          path: profile.out.clean
+          path: |
+            profile.out.clean
+            profile-race.out.clean
           if-no-files-found: error
           retention-days: 1
 
@@ -78,7 +84,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: profile.out.clean
+          files: profile.out.clean, profile-race.out.clean
 
   lint:
     runs-on: ubuntu-latest
