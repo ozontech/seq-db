@@ -144,7 +144,7 @@ func (fm *FracManager) maintenance(sealWg, cleanupWg *sync.WaitGroup) {
 	logger.Debug("maintenance finished", zap.Int64("took_ms", time.Since(n).Milliseconds()))
 }
 
-func (fm *FracManager) GetOldestCT() uint64 {
+func (fm *FracManager) OldestCT() uint64 {
 	local, remote := fm.oldestCTLocal.Load(), fm.oldestCTRemote.Load()
 	if local != 0 && remote != 0 {
 		return min(local, remote)

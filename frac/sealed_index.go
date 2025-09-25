@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/frac/processor"
@@ -103,7 +102,7 @@ func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	sw := stopwatch.New()
 
 	defer sw.Export(
-		getSealedSearchMetric(params),
+		fractionSearchMetric(params),
 		stopwatch.SetLabel("fraction_type", dp.fractionTypeLabel),
 	)
 
@@ -116,16 +115,6 @@ func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	t.Stop()
 
 	return qpr, nil
-}
-
-func getSealedSearchMetric(params processor.SearchParams) *prometheus.HistogramVec {
-	if params.HasAgg() {
-		return fractionAggSearchSec
-	}
-	if params.HasHist() {
-		return fractionHistSearchSec
-	}
-	return fractionRegSearchSec
 }
 
 type sealedIDsIndex struct {

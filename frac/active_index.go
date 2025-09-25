@@ -3,8 +3,6 @@ package frac
 import (
 	"context"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -107,7 +105,7 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	sw := stopwatch.New()
 
 	defer sw.Export(
-		getActiveSearchMetric(params),
+		fractionSearchMetric(params),
 		stopwatch.SetLabel("fraction_type", "active"),
 	)
 
@@ -135,16 +133,6 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	t.Stop()
 
 	return res, nil
-}
-
-func getActiveSearchMetric(params processor.SearchParams) *prometheus.HistogramVec {
-	if params.HasAgg() {
-		return fractionAggSearchSec
-	}
-	if params.HasHist() {
-		return fractionHistSearchSec
-	}
-	return fractionRegSearchSec
 }
 
 type activeIDsIndex struct {

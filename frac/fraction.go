@@ -56,6 +56,18 @@ var (
 	}, []string{"stage", "fraction_type"})
 )
 
+func fractionSearchMetric(
+	params processor.SearchParams,
+) *prometheus.HistogramVec {
+	if params.HasAgg() {
+		return fractionAggSearchSec
+	}
+	if params.HasHist() {
+		return fractionHistSearchSec
+	}
+	return fractionRegSearchSec
+}
+
 func fracToString(f Fraction, fracType string) string {
 	info := f.Info()
 	s := fmt.Sprintf(

@@ -180,11 +180,10 @@ func TestOldestCT(t *testing.T) {
 		}
 
 		fm.updateOldestCT()
-		fm.processFracsStats()
 
 		require.Equal(t, uint64(0), fm.oldestCTRemote.Load())
 		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.oldestCTLocal.Load())
-		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.GetOldestCT())
+		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.OldestCT())
 	})
 
 	t.Run("local-and-remote", func(t *testing.T) {
@@ -218,10 +217,9 @@ func TestOldestCT(t *testing.T) {
 		}
 
 		fm.updateOldestCT()
-		fm.processFracsStats()
 
 		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.oldestCTRemote.Load())
 		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.oldestCTLocal.Load())
-		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.GetOldestCT())
+		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.OldestCT())
 	})
 }

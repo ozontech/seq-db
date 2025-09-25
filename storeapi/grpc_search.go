@@ -253,7 +253,7 @@ func useSeqQL(ctx context.Context) bool {
 }
 
 func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {
-	oldestCt := g.fracManager.GetOldestCT()
+	oldestCt := g.fracManager.OldestCT()
 	return oldestCt == 0 || oldestCt > from
 }
 
