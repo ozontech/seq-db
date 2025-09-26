@@ -125,7 +125,7 @@ func (g *GrpcV1) doSearch(
 			zap.String("query", req.Query),
 		)
 
-		parseQuery, err := g.parseQuery(ctx, g.config.Filter.Query)
+		parseQuery, err := g.parseQuery(g.config.Filter.Query)
 		if err != nil {
 			parseQueryTr.Done()
 			if code, ok := parseStoreError(err); ok {
