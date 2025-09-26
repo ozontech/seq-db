@@ -25,7 +25,7 @@ require (
 	github.com/pkg/profile v1.7.0
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10
 	github.com/prometheus/client_golang v1.23.0
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/valyala/fastrand v1.1.0
 	github.com/valyala/gozstd v1.22.0
 	go.opencensus.io v0.24.0
