@@ -16,7 +16,7 @@ require (
 	github.com/felixge/fgprof v0.9.5
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.6.0
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2
 	github.com/kkyr/fig v0.5.0
 	github.com/klauspost/compress v1.18.0
 	github.com/oklog/ulid/v2 v2.1.1
@@ -35,8 +35,8 @@ require (
 	go.uber.org/zap v1.27.0
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba
 	golang.org/x/sync v0.16.0
-	google.golang.org/genproto/googleapis/api v0.0.0-20250603155806-513f23925822
-	google.golang.org/grpc v1.74.2
+	google.golang.org/genproto/googleapis/api v0.0.0-20250818200422-3122310a409c
+	google.golang.org/grpc v1.75.0
 	google.golang.org/protobuf v1.36.9
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
@@ -76,8 +76,8 @@ require (
 	github.com/uber/jaeger-client-go v2.25.0+incompatible // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/text v0.26.0 // indirect
+	golang.org/x/text v0.28.0 // indirect
 	google.golang.org/api v0.230.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250818200422-3122310a409c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
