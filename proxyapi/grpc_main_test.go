@@ -103,7 +103,6 @@ func TestMain(m *testing.M) {
 }
 
 func runGRPCServerWithClient(apiServer seqproxyapi.SeqProxyApiServer) (seqproxyapi.SeqProxyApiClient, func()) {
-	ctx := context.Background()
 	lis := bufconn.Listen(10 * 1024 * 1024)
 	server := grpc.NewServer(
 		grpc.StatsHandler(&tracing.ServerHandler{}),
@@ -121,8 +120,7 @@ func runGRPCServerWithClient(apiServer seqproxyapi.SeqProxyApiServer) (seqproxya
 		}
 		server.Stop()
 	}
-	conn, err := grpc.DialContext(
-		ctx,
+	conn, err := grpc.NewClient(
 		"",
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 			return lis.Dial()

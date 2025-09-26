@@ -90,16 +90,6 @@ func RandomWord() string {
 	return randomStringFromPool(words)
 }
 
-var fields = []string{
-	"service", "message", "trace_id", "source",
-	"zone", "level", "timestamp", "requestObject",
-	"", // will be random
-}
-
-func RandomField() string {
-	return randomStringFromPool(fields)
-}
-
 func RandomSymbol() byte {
 	symbols := "!@#$%^&*(){}[]:?/\\~;"
 	return symbols[frand.Intn(len(symbols))]
@@ -212,17 +202,6 @@ func DocsToStrings(docs []ExampleDoc) []string {
 		docStr = append(docStr, string(b))
 	}
 	return docStr
-}
-
-func DocsFromStrings(docStr []string) []ExampleDoc {
-	docs := make([]ExampleDoc, len(docStr))
-	for i, doc := range docStr {
-		err := json.Unmarshal([]byte(doc), &docs[i])
-		if err != nil {
-			panic(err)
-		}
-	}
-	return docs
 }
 
 func splitRange(size int, callback func(from int, to int)) {
