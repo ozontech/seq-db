@@ -131,7 +131,7 @@ func TestReplayFracs(t *testing.T) {
 
 	assert.Equal(t, len(fracs), len(replayedFracs), "should replay same number of fractions")
 
-	// all fracs should match exactly (no empty)
+	// all fracs should match exactly (no empty) in same order
 	for i := 0; i < 11; i++ {
 		assert.Equal(t, fracs[i].Name(), replayedFracs[i].Info().Name(), "fraction %d should have same name", i)
 		assert.Equal(t, fracs[i].DocsOnDisk, replayedFracs[i].Info().DocsOnDisk, "fraction %d should have same doc count", i)
