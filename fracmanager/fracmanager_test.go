@@ -253,6 +253,8 @@ func TestReplayFractionsWithMultipleEmptyFracs(t *testing.T) {
 		assert.Equal(t, nonEmptyFracs[i].DocsOnDisk, replayedFracs[i].Info().DocsOnDisk, "fraction %d should have same doc count", i)
 		assert.Greater(t, replayedFracs[i].Info().SealingTime, uint64(0), "replayed frac %d must be sealed", i)
 	}
+
+	fm.Stop()
 }
 
 func addDocs(t *testing.T, fm *FracManager, docCount int) {

@@ -518,54 +518,75 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 		return nil
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	replaySem := semaphore.NewWeighted(4)
+	var fracRefs = make([]*fracRef, len(actives)-1)
 
-	var mu sync.Mutex
-	var localFracs []*fracRef
-	var activeRef *activeRef
+	if len(actives) > 1 {
+		g, ctx := errgroup.WithContext(ctx)
+		replaySem := semaphore.NewWeighted(4)
+		var mu sync.Mutex
 
-	for i, a := range actives {
-		g.Go(func() error {
-			if err := replaySem.Acquire(ctx, 1); err != nil {
-				return err
-			}
-			defer replaySem.Release(1)
+		for i := 0; i < len(actives)-1; i++ {
+			active := actives[i]
 
-			if err := a.Replay(ctx); err != nil {
-				return err
-			}
+			g.Go(func() error {
+				if err := replaySem.Acquire(ctx, 1); err != nil {
+					return err
+				}
+				defer replaySem.Release(1)
 
-			if a.Info().DocsTotal == 0 {
-				a.Suicide()
+				if err := active.Replay(ctx); err != nil {
+					return err
+				}
+
+				if active.Info().DocsTotal == 0 {
+					active.Suicide()
+					return nil
+				}
+
+				ref := fm.newActiveRef(active)
+
+				mu.Lock()
+				fracRefs[i] = ref.ref
+				mu.Unlock()
+
+				fm.seal(ref)
+
 				return nil
-			}
+			})
+		}
 
-			r := fm.newActiveRef(a)
-
-			mu.Lock()
-			localFracs = append(localFracs, r.ref)
-			if i == len(actives)-1 {
-				activeRef = &r
-			}
-			mu.Unlock()
-
-			fm.seal(r)
-
-			return nil
-		})
+		if err := g.Wait(); err != nil {
+			return err
+		}
 	}
 
-	if err := g.Wait(); err != nil {
+	// The last frac is only replayed, not sealed
+	lastActive := actives[len(actives)-1]
+	if err := lastActive.Replay(ctx); err != nil {
 		return err
 	}
 
-	fm.fracMu.Lock()
-	fm.localFracs = append(fm.localFracs, localFracs...)
-	if activeRef != nil {
-		fm.active = *activeRef
+	var active *activeRef
+
+	if lastActive.Info().DocsTotal == 0 {
+		lastActive.Suicide()
+	} else {
+		newActiveRef := fm.newActiveRef(lastActive)
+		active = &newActiveRef
 	}
-	fm.fracMu.Unlock()
+
+	var localFracs []*fracRef
+	for _, ref := range fracRefs {
+		if ref != nil {
+			localFracs = append(localFracs, ref)
+		}
+	}
+
+	fm.localFracs = append(fm.localFracs, localFracs...)
+	if active != nil {
+		fm.active = *active
+		fm.localFracs = append(fm.localFracs, active.ref)
+	}
 
 	return nil
 }
@@ -599,9 +620,9 @@ var (
 )
 
 func (fm *FracManager) seal(activeRef activeRef) {
-	if fm.firstStart {
-		time.Sleep(40 * time.Second)
-	}
+	//if fm.firstStart {
+	//	time.Sleep(40 * time.Second)
+	//}
 	//	logger.Info("start sealing", zap.String("fraction", activeRef.fra))
 	sealsTotal.Inc()
 	now := time.Now()
