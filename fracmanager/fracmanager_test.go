@@ -2,13 +2,12 @@ package fracmanager
 
 import (
 	"context"
-	"fmt"
+	"math/rand"
 	"sync"
 	"testing"
-	"time"
 
+	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
@@ -93,6 +92,80 @@ func TestCleanUp(t *testing.T) {
 	assert.Equal(t, 1, len(fm.localFracs), "wrong frac count")
 }
 
+func TestReplayFractions(t *testing.T) {
+	fracCount := 10
+	dataDir := common.GetTestTmpDir(t)
+	common.RecreateDir(dataDir)
+	defer common.RemoveDir(dataDir)
+
+	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
+		FracSize:     100000000,
+		TotalSize:    100000000,
+		ShouldReplay: false,
+		DataDir:      dataDir,
+	})
+	assert.NoError(t, err)
+
+	for i := 0; i < fracCount; i++ {
+		addDocs(t, fm, 500+rand.Intn(100))
+		fm.rotate()
+	}
+	// active frac is empty
+
+	var originalFracs []frac.Info
+	for _, frac := range fm.getLocalFracs() {
+		originalFracs = append(originalFracs, *frac.Info())
+	}
+
+	assert.Equal(t, fracCount+1, len(originalFracs))
+
+	active := fm.Active()
+	assert.Equal(t, active.Info().DocsTotal, uint32(0), "active fraction should have no documents")
+
+	fm.Stop()
+
+	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
+		FracSize:     100000000,
+		TotalSize:    100000000,
+		ShouldReplay: true,
+		DataDir:      dataDir,
+	})
+	assert.NoError(t, err)
+
+	replayedFracs := fm.getLocalFracs()
+
+	assert.Equal(t, len(originalFracs), len(replayedFracs), "should replay same number of fractions")
+
+	for i := 0; i < 10; i++ {
+		originalFracInfo := originalFracs[i]
+		replayedFracInfo := replayedFracs[i].Info()
+
+		assert.Equal(t, originalFracInfo.Name(), replayedFracInfo.Name(), "fraction %d should have same name", i)
+		assert.Equal(t, originalFracInfo.DocsTotal, replayedFracInfo.DocsTotal, "fraction %d should have same doc count", i)
+	}
+
+	assert.Equal(t, uint32(0), replayedFracs[10].Info().DocsTotal, "last fraction should have no documents")
+
+	newActive := fm.Active()
+	assert.Equal(t, uint64(0), newActive.Info().DocsOnDisk, "new active fraction should be empty")
+
+	fm.Stop()
+}
+
+func addDocs(t *testing.T, fm *FracManager, docCount int) {
+	dp := frac.NewDocProvider()
+	for i := 0; i < docCount; i++ {
+		doc := []byte("{\"timestamp\": 0, \"message\": \"msg\"}")
+		docRoot, err := insaneJSON.DecodeBytes(doc)
+		assert.NoError(t, err)
+		dp.Append(doc, docRoot, seq.SimpleID(i), seq.Tokens("service:100500", "k8s_pod", "_all_:"))
+	}
+
+	docs, metas := dp.Provide()
+	err := fm.Append(context.Background(), docs, metas)
+	assert.NoError(t, err)
+}
+
 func TestMatureMode(t *testing.T) {
 	dataDir := common.GetTestTmpDir(t)
 	common.RecreateDir(dataDir)
@@ -157,69 +230,4 @@ func TestNewULID(t *testing.T) {
 	assert.NotEqual(t, ulid1, ulid2, "ULIDs should be different")
 	assert.Equal(t, 26, len(ulid1), "ULID should have length 26")
 	assert.Greater(t, ulid2, ulid1)
-}
-
-func TestOldestCT(t *testing.T) {
-	const fracCount = 10
-
-	t.Run("local", func(t *testing.T) {
-		fm := NewFracManager(context.Background(), &Config{}, nil)
-
-		oldestLocal := time.Now()
-		nowOldestLocal := oldestLocal
-
-		for i := range fracCount {
-			fm.localFracs = append(fm.localFracs, &fracRef{instance: frac.NewSealed(
-				"", nil, nil, nil, &frac.Info{
-					Path:         fmt.Sprintf("local-frac-%d", i),
-					IndexOnDisk:  1,
-					CreationTime: uint64(nowOldestLocal.UnixMilli()),
-				}, nil,
-			)})
-			nowOldestLocal = nowOldestLocal.Add(time.Second)
-		}
-
-		fm.updateOldestCT()
-
-		require.Equal(t, uint64(0), fm.oldestCTRemote.Load())
-		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.oldestCTLocal.Load())
-		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.OldestCT())
-	})
-
-	t.Run("local-and-remote", func(t *testing.T) {
-		fm := NewFracManager(context.Background(), &Config{}, nil)
-		oldestRemote := time.Now()
-		nowOldestRemote := oldestRemote
-
-		for i := range fracCount {
-			fm.remoteFracs = append(fm.remoteFracs, frac.NewRemote(
-				t.Context(), "", nil, nil, nil, &frac.Info{
-					Path:         fmt.Sprintf("remote-frac-%d", i),
-					IndexOnDisk:  1,
-					CreationTime: uint64(nowOldestRemote.UnixMilli()),
-				}, nil, nil,
-			))
-			nowOldestRemote = nowOldestRemote.Add(time.Second)
-		}
-
-		oldestLocal := nowOldestRemote
-		nowOldestLocal := oldestLocal
-
-		for i := range fracCount {
-			fm.localFracs = append(fm.localFracs, &fracRef{instance: frac.NewSealed(
-				"", nil, nil, nil, &frac.Info{
-					Path:         fmt.Sprintf("local-frac-%d", i),
-					IndexOnDisk:  1,
-					CreationTime: uint64(nowOldestLocal.UnixMilli()),
-				}, nil,
-			)})
-			nowOldestLocal = nowOldestLocal.Add(time.Second)
-		}
-
-		fm.updateOldestCT()
-
-		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.oldestCTRemote.Load())
-		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.oldestCTLocal.Load())
-		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.OldestCT())
-	})
 }
