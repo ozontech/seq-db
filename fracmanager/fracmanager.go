@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
@@ -58,6 +60,7 @@ type FracManager struct {
 	s3cli *s3.Client
 
 	ulidEntropy io.Reader
+	firstStart  bool
 }
 
 type fracRef struct {
@@ -109,6 +112,7 @@ func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracMan
 		fracProvider:    newFractionProvider(&cfg.Fraction, s3cli, cacheMaintainer, config.ReaderWorkers, config.IndexWorkers),
 		ulidEntropy:     ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
 		fracCache:       NewSealedFracCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix)),
+		firstStart:      false,
 	}
 
 	return fracManager
@@ -475,6 +479,10 @@ func (fm *FracManager) Load(ctx context.Context) error {
 		return err
 	}
 
+	if len(actives) < 2 {
+		fm.firstStart = true
+	}
+
 	for _, s := range sealed {
 		fm.localFracs = append(fm.localFracs, &fracRef{instance: s})
 	}
@@ -506,26 +514,58 @@ func (fm *FracManager) Load(ctx context.Context) error {
 }
 
 func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) error {
-	for i, a := range actives {
-		if err := a.Replay(ctx); err != nil {
-			return err
-		}
-
-		if a.Info().DocsTotal == 0 {
-			a.Suicide() // remove empty
-			continue
-		}
-
-		r := fm.newActiveRef(a)
-		fm.localFracs = append(fm.localFracs, r.ref)
-
-		if i == len(actives)-1 { // last and not empty
-			fm.active = r
-			continue
-		}
-
-		fm.seal(r)
+	if len(actives) == 0 {
+		return nil
 	}
+
+	g, ctx := errgroup.WithContext(ctx)
+	replaySem := semaphore.NewWeighted(4)
+
+	var mu sync.Mutex
+	var localFracs []*fracRef
+	var activeRef *activeRef
+
+	for i, a := range actives {
+		g.Go(func() error {
+			if err := replaySem.Acquire(ctx, 1); err != nil {
+				return err
+			}
+			defer replaySem.Release(1)
+
+			if err := a.Replay(ctx); err != nil {
+				return err
+			}
+
+			if a.Info().DocsTotal == 0 {
+				a.Suicide()
+				return nil
+			}
+
+			r := fm.newActiveRef(a)
+
+			mu.Lock()
+			localFracs = append(localFracs, r.ref)
+			if i == len(actives)-1 {
+				activeRef = &r
+			}
+			mu.Unlock()
+
+			fm.seal(r)
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	fm.fracMu.Lock()
+	fm.localFracs = append(fm.localFracs, localFracs...)
+	if activeRef != nil {
+		fm.active = *activeRef
+	}
+	fm.fracMu.Unlock()
 
 	return nil
 }
@@ -559,6 +599,10 @@ var (
 )
 
 func (fm *FracManager) seal(activeRef activeRef) {
+	if fm.firstStart {
+		time.Sleep(40 * time.Second)
+	}
+	//	logger.Info("start sealing", zap.String("fraction", activeRef.fra))
 	sealsTotal.Inc()
 	now := time.Now()
 	defer func() {
