@@ -1,6 +1,6 @@
 storage:
   data_dir: /seq-db-data
-  frac_size: 64MiB
+  frac_size: 16MiB
   total_size: 10GiB
 
 mapping:
@@ -14,3 +14,4 @@ limits:
   search_requests: 1024
   bulk_requests: 128
   inflight_bulks: 128
+  doc_size: 1MiB
