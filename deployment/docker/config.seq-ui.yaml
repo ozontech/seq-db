@@ -13,8 +13,8 @@ server:
       - PATCH
       - DELETE
     allowed_origins:
-      - '*'
-    max_age: 300 
+      - "*"
+    max_age: 300
 clients:
   seq_db_addrs:
     - "seq-db-proxy:9004"

@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   seq-db-proxy:
@@ -7,8 +7,7 @@ services:
       - "9002:9002" # Default HTTP port
       - "9004:9004" # Default gRPC port
       - "9200:9200" # Default debug port
-    command:
-      --mode=proxy
+    command: --mode=proxy
       --config=/configs/config.yaml
     depends_on:
       - seq-db-store
@@ -17,8 +16,7 @@ services:
       - ./mappings.yaml:/configs/mappings.yaml
   seq-db-store:
     image: ghcr.io/ozontech/seq-db:latest
-    command:
-      --mode=store
+    command: --mode=store
       --config=/configs/config.yaml
     volumes:
       - ./config-cluster.yaml:/configs/config.yaml
@@ -39,6 +37,8 @@ services:
   seq-ui-fe:
     image: ghcr.io/ozontech/seq-ui-fe:latest
     ports:
-      - "5173:80"  
+      - "5173:80"
+    volumes:
+      - ./seq-ui-fe-config.json:/usr/share/nginx/html/config.json
 volumes:
   seqdbdata: {}

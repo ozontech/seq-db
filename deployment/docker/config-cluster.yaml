@@ -14,9 +14,6 @@ cluster:
   # write_stores:
   #   - seq-db-store:9004
 
-
-
-
 mapping:
   enable_updates: true
   path: /configs/mappings.yaml
