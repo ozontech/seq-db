@@ -620,9 +620,9 @@ var (
 )
 
 func (fm *FracManager) seal(activeRef activeRef) {
-	if fm.firstStart {
-		time.Sleep(40 * time.Second)
-	}
+	//if fm.firstStart {
+	//	time.Sleep(40 * time.Second)
+	//}
 	sealsTotal.Inc()
 	now := time.Now()
 	defer func() {

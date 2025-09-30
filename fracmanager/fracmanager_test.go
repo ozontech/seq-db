@@ -92,7 +92,77 @@ func TestCleanUp(t *testing.T) {
 	assert.Equal(t, 1, len(fm.localFracs), "wrong frac count")
 }
 
-func TestReplayFracs(t *testing.T) {
+func TestReplaySingleEmptyFrac(t *testing.T) {
+	dataDir := common.GetTestTmpDir(t)
+	common.RecreateDir(dataDir)
+	defer common.RemoveDir(dataDir)
+
+	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
+		FracSize:     100000000, // maintenance will not seal fracs
+		TotalSize:    100000000,
+		ShouldReplay: false,
+		DataDir:      dataDir,
+	})
+	assert.NoError(t, err)
+
+	fracInfo := fm.localFracs[0].instance.Info()
+
+	fm.Stop()
+
+	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
+		FracSize:     100000000,
+		TotalSize:    100000000,
+		ShouldReplay: true,
+		DataDir:      dataDir,
+	})
+	assert.NoError(t, err)
+
+	replayedFracs := fm.getLocalFracs()
+	assert.Equal(t, 1, len(replayedFracs), "should replay exactly one frac")
+	active := fm.Active() // replayed frac is active
+	assert.Equal(t, uint64(0), active.Info().DocsOnDisk, "no docs")
+	assert.NotEqual(t, fracInfo.Name(), active.Info().Name(), "should create a new frac")
+
+	fm.Stop()
+}
+
+func TestReplaySingleNonEmptyFrac(t *testing.T) {
+	dataDir := common.GetTestTmpDir(t)
+	common.RecreateDir(dataDir)
+	defer common.RemoveDir(dataDir)
+
+	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
+		FracSize:     100000000, // maintenance will not seal fracs
+		TotalSize:    100000000,
+		ShouldReplay: false,
+		DataDir:      dataDir,
+	})
+	assert.NoError(t, err)
+
+	addDocs(t, fm, 500+rand.Intn(100))
+	fracInfo := fm.localFracs[0].instance.Info()
+
+	assert.Equal(t, 1, len(fm.localFracs), "should have exactly one frac")
+
+	fm.Stop()
+
+	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
+		FracSize:     100000000,
+		TotalSize:    100000000,
+		ShouldReplay: true,
+		DataDir:      dataDir,
+	})
+	assert.NoError(t, err)
+
+	replayedFracs := fm.getLocalFracs()
+	assert.Equal(t, 1, len(replayedFracs), "should replay exactly one frac")
+	active := fm.Active() // replayed frac is active
+	assert.Equal(t, fracInfo.DocsOnDisk, active.Info().DocsOnDisk, "should have same doc count for replayed frac")
+
+	fm.Stop()
+}
+
+func TestReplayMultipleFracs(t *testing.T) {
 	fracCount := 10
 	dataDir := common.GetTestTmpDir(t)
 	common.RecreateDir(dataDir)
