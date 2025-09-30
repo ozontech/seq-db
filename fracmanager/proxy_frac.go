@@ -114,7 +114,7 @@ func (f *proxyFrac) Seal(params frac.SealParams) (*frac.Sealed, error) {
 	}
 	if !f.isActiveState() {
 		f.useMu.Unlock()
-		return nil, errors.New(fmt.Sprintf("sealing fraction is not active %s", f.active.BaseFileName))
+		return nil, errors.New("sealing fraction is not active")
 	}
 	f.readonly = true
 	active := f.active
