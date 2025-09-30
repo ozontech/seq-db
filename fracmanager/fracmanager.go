@@ -512,12 +512,12 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 		return nil
 	}
 
+	// Goroutines access different indices, no need for locks
 	var fracRefs = make([]*fracRef, len(actives)-1)
 
 	if len(actives) > 1 {
 		g, ctx := errgroup.WithContext(ctx)
 		replaySem := semaphore.NewWeighted(int64(fm.config.ReplayWorkers))
-		var mu sync.Mutex
 
 		for i := 0; i < len(actives)-1; i++ {
 			active := actives[i]
@@ -538,10 +538,7 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 				}
 
 				ref := fm.newActiveRef(active)
-
-				mu.Lock()
 				fracRefs[i] = ref.ref
-				mu.Unlock()
 
 				fm.seal(ref)
 
