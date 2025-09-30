@@ -60,7 +60,6 @@ type FracManager struct {
 	s3cli *s3.Client
 
 	ulidEntropy io.Reader
-	firstStart  bool
 }
 
 type fracRef struct {
@@ -112,7 +111,6 @@ func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracMan
 		fracProvider:    newFractionProvider(&cfg.Fraction, s3cli, cacheMaintainer, config.ReaderWorkers, config.IndexWorkers),
 		ulidEntropy:     ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
 		fracCache:       NewSealedFracCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix)),
-		firstStart:      false,
 	}
 
 	return fracManager
@@ -479,10 +477,6 @@ func (fm *FracManager) Load(ctx context.Context) error {
 		return err
 	}
 
-	if len(actives) < 2 {
-		fm.firstStart = true
-	}
-
 	for _, s := range sealed {
 		fm.localFracs = append(fm.localFracs, &fracRef{instance: s})
 	}
@@ -620,9 +614,6 @@ var (
 )
 
 func (fm *FracManager) seal(activeRef activeRef) {
-	//if fm.firstStart {
-	//	time.Sleep(40 * time.Second)
-	//}
 	sealsTotal.Inc()
 	now := time.Now()
 	defer func() {
