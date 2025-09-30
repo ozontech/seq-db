@@ -106,7 +106,7 @@ func TestReplaySingleEmptyFrac(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	fracInfo := fm.localFracs[0].instance.Info()
+	fractionInfo := fm.localFracs[0].instance.Info()
 
 	fm.Stop()
 
@@ -122,7 +122,7 @@ func TestReplaySingleEmptyFrac(t *testing.T) {
 	assert.Equal(t, 1, len(replayedFracs), "should replay exactly one frac")
 	active := fm.Active() // replayed frac is active
 	assert.Equal(t, uint64(0), active.Info().DocsOnDisk, "no docs")
-	assert.NotEqual(t, fracInfo.Name(), active.Info().Name(), "should create a new frac")
+	assert.NotEqual(t, fractionInfo.Name(), active.Info().Name(), "should create a new frac")
 
 	fm.Stop()
 }
@@ -147,7 +147,8 @@ func TestReplayContextCancel(t *testing.T) {
 
 	fm.Stop()
 
-	ctx, _ := context.WithTimeout(t.Context(), time.Nanosecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Microsecond)
+	defer cancel()
 
 	fm, err = newFracManagerWithBackgroundStart(ctx, &Config{
 		FracSize:     100000000,
@@ -175,7 +176,7 @@ func TestReplaySingleNonEmptyFrac(t *testing.T) {
 	assert.NoError(t, err)
 
 	addDocs(t, fm, 500+rand.Intn(100))
-	fracInfo := fm.localFracs[0].instance.Info()
+	fractionInfo := fm.localFracs[0].instance.Info()
 
 	assert.Equal(t, 1, len(fm.localFracs), "should have exactly one frac")
 
@@ -192,13 +193,13 @@ func TestReplaySingleNonEmptyFrac(t *testing.T) {
 	replayedFracs := fm.getLocalFracs()
 	assert.Equal(t, 1, len(replayedFracs), "should replay exactly one frac")
 	active := fm.Active() // replayed frac is active
-	assert.Equal(t, fracInfo.DocsOnDisk, active.Info().DocsOnDisk, "should have same doc count for replayed frac")
+	assert.Equal(t, fractionInfo.DocsOnDisk, active.Info().DocsOnDisk, "should have same doc count for replayed frac")
 
 	fm.Stop()
 }
 
 func TestReplayMultipleFracs(t *testing.T) {
-	fracCount := 10
+	fracCount := 50
 	dataDir := common.GetTestTmpDir(t)
 	common.RecreateDir(dataDir)
 	defer common.RemoveDir(dataDir)
@@ -237,11 +238,11 @@ func TestReplayMultipleFracs(t *testing.T) {
 	assert.Equal(t, len(fracs), len(replayedFracs), "should replay same number of fractions")
 
 	// all fracs should match exactly (no empty) in same order
-	for i := 0; i < 11; i++ {
+	for i := 0; i < 51; i++ {
 		assert.Equal(t, fracs[i].Name(), replayedFracs[i].Info().Name(), "fraction %d should have same name", i)
 		assert.Equal(t, fracs[i].DocsOnDisk, replayedFracs[i].Info().DocsOnDisk, "fraction %d should have same doc count", i)
 
-		if i != 10 {
+		if i != 50 {
 			assert.Greater(t, replayedFracs[i].Info().SealingTime, uint64(0), "replayed frac %d must be sealed", i)
 		} else {
 			assert.Equal(t, replayedFracs[i].Info().SealingTime, uint64(0), "replayed frac %d must not be sealed", i)
@@ -255,7 +256,6 @@ func TestReplayMultipleFracs(t *testing.T) {
 }
 
 func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
-	fracCount := 10
 	dataDir := common.GetTestTmpDir(t)
 	common.RecreateDir(dataDir)
 	defer common.RemoveDir(dataDir)
@@ -268,7 +268,7 @@ func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	for i := 0; i < fracCount; i++ {
+	for i := 0; i < 50; i++ {
 		addDocs(t, fm, 500+rand.Intn(100))
 		fm.rotate()
 	}
@@ -293,14 +293,14 @@ func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
 
 	assert.Equal(t, len(fracs), len(replayedFracs), "should replay same number of fractions")
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 50; i++ {
 		assert.Equal(t, fracs[i].Name(), replayedFracs[i].Info().Name(), "fraction %d should have same name", i)
 		assert.Equal(t, fracs[i].DocsOnDisk, replayedFracs[i].Info().DocsOnDisk, "fraction %d should have same doc count", i)
 		assert.Greater(t, replayedFracs[i].Info().SealingTime, uint64(0), "replayed frac %d must be sealed", i)
 	}
 
-	assert.NotEqual(t, fracs[10].Name(), replayedFracs[10].Info().Name(), "should create new empty active frac")
-	assert.Equal(t, uint64(0), replayedFracs[10].Info().DocsOnDisk, "last fraction should have no documents")
+	assert.NotEqual(t, fracs[50].Name(), replayedFracs[50].Info().Name(), "should create new empty active frac")
+	assert.Equal(t, uint64(0), replayedFracs[50].Info().DocsOnDisk, "last fraction should have no documents")
 
 	newActive := fm.Active()
 	assert.Equal(t, uint64(0), newActive.Info().DocsOnDisk, "new active fraction should be empty")
