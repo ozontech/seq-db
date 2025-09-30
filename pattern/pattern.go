@@ -351,7 +351,7 @@ func Search(ctx context.Context, t parser.Token, tp tokenProvider) ([]uint32, er
 	tids := []uint32{}
 	s := newSearcher(t, tp)
 	for tid := s.firstTID(); tid <= s.lastTID(); tid++ {
-		if util.IsCancelled(ctx) {
+		if tid%1000 == 0 && util.IsCancelled(ctx) {
 			return nil, ctx.Err()
 		}
 		if s.check(tp.GetToken(tid)) {

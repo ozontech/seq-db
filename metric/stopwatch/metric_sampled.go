@@ -50,6 +50,7 @@ func newStopwatchMetricSampled(sw *Stopwatch, parent *metricSampled) *metricSamp
 }
 
 func (m *metricSampled) start() {
+	m.sw.metric = m
 	m.stopped = false
 	m.parent.unstopped++
 	if m.needSkip() {

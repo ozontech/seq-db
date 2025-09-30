@@ -49,9 +49,7 @@ func (sw *Stopwatch) Reset() {
 }
 
 func (sw *Stopwatch) Start(name string) Metric {
-	m := sw.metric.startNested(name)
-	sw.metric = m
-	return m
+	return sw.metric.startNested(name)
 }
 
 func (sw *Stopwatch) GetValues() map[string]time.Duration {
@@ -99,4 +97,22 @@ func (sw *Stopwatch) ExportValuesAndCounts(mv, mc *prometheus.HistogramVec, opti
 		mc.With(labels).Observe(float64(cnt))
 	}
 	sw.Reset()
+}
+
+type Timer struct {
+	nested *metricSampled
+}
+
+func (t *Timer) Start() {
+	t.nested.start()
+}
+
+func (t *Timer) Stop() {
+	t.nested.Stop()
+}
+
+func (sw *Stopwatch) Timer(name string) *Timer {
+	return &Timer{
+		nested: sw.metric.nested(name),
+	}
 }
