@@ -512,7 +512,7 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 		return nil
 	}
 
-	// Goroutines access different indices, no need for locks
+	// goroutines access different indices, no need for lock protection for fracRefs
 	var fracRefs = make([]*fracRef, len(actives)-1)
 
 	if len(actives) > 1 {
