@@ -60,3 +60,17 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{- define "seq-ui.url" -}}
+  {{- if .Values.sequi.ingress.enabled -}}
+    {{- $protocol := "http" -}}
+    {{- if .Values.sequi.ingress.tls -}}
+      {{- $protocol = "https" -}}
+    {{- end -}}
+    {{- $host := (index .Values.sequi.ingress.hosts 0).host -}}
+    {{- $path := (index (index .Values.sequi.ingress.hosts 0).paths 0).path -}}
+    {{- printf "%s://%s%s" $protocol $host $path -}}
+  {{- else -}}
+    {{- .Values.sequi.front.SEQ_UI_URL -}}
+  {{- end -}}
+{{- end -}}

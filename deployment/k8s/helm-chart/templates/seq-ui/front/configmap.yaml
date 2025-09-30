@@ -11,6 +11,6 @@ metadata:
 data:
   config.json: |
     {
-      'SEQ_UI_URL': 'http://sequi.local/'
+      'SEQ_UI_URL': {{ include "seq-ui.url" . | quote }}
     }
 {{- end }}

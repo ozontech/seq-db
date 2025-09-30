@@ -318,7 +318,7 @@ sequi:
       # kubernetes.io/ingress.class: nginx
       # kubernetes.io/tls-acme: "true"
     hosts:
-      - host: sequi.local
+      - host: sequi-server.local
         paths:
           - path: /
             pathType: ImplementationSpecific
@@ -404,6 +404,8 @@ sequi:
       # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
       httpPort: 80
 
+    SEQ_UI_URL: ""
+
     # This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
     ingress:
       enabled: false
@@ -412,7 +414,7 @@ sequi:
         # kubernetes.io/ingress.class: nginx
         # kubernetes.io/tls-acme: "true"
       hosts:
-        - host: logging.local
+        - host: sequi.local
           paths:
             - path: /
               pathType: ImplementationSpecific

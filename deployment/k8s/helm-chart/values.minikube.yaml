@@ -25,6 +25,10 @@ storage:
   frac_size: "256MiB"
   total_size: "10GiB"
 
+seqproxy:
+  ingress:
+    enabled: true
+
 sequi:
   ingress:
     enabled: true

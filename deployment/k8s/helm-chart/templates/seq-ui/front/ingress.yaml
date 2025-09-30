@@ -2,7 +2,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "seq-ui-front.fullname" . }}-front
+  name: {{ include "seq-ui-front.fullname" . }}
   labels:
     {{- include "seq-ui-front.labels" . | nindent 4 }}
   {{- with .Values.sequi.front.ingress.annotations }}
