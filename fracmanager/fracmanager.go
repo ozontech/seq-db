@@ -522,7 +522,7 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 
 	if len(actives) > 1 {
 		g, ctx := errgroup.WithContext(ctx)
-		replaySem := semaphore.NewWeighted(4)
+		replaySem := semaphore.NewWeighted(int64(fm.config.ReplayWorkers))
 		var mu sync.Mutex
 
 		for i := 0; i < len(actives)-1; i++ {
@@ -539,7 +539,7 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 				}
 
 				if active.Info().DocsTotal == 0 {
-					active.Suicide()
+					active.Suicide() // remove empty
 					return nil
 				}
 
@@ -620,10 +620,9 @@ var (
 )
 
 func (fm *FracManager) seal(activeRef activeRef) {
-	//if fm.firstStart {
-	//	time.Sleep(40 * time.Second)
-	//}
-	//	logger.Info("start sealing", zap.String("fraction", activeRef.fra))
+	if fm.firstStart {
+		time.Sleep(40 * time.Second)
+	}
 	sealsTotal.Inc()
 	now := time.Now()
 	defer func() {
