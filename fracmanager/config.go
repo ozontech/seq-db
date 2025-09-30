@@ -20,6 +20,7 @@ type Config struct {
 
 	FracLoadLimit     uint64 // how many sealed fractions should fracmanager load, if 0 then loads all
 	ShouldReplay      bool
+	ReplayWorkers     int
 	MaintenanceDelay  time.Duration
 	CacheCleanupDelay time.Duration
 	CacheGCDelay      time.Duration
@@ -60,6 +61,9 @@ func FillConfigWithDefault(config *Config) *Config {
 	}
 	if config.SealParams.TokenTableZstdLevel == 0 {
 		config.SealParams.TokenTableZstdLevel = zstdDefaultLevel
+	}
+	if config.ReplayWorkers == 0 {
+		config.ReplayWorkers = consts.DefaultReplayWorkers
 	}
 
 	if config.SortCacheSize == 0 {

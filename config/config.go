@@ -169,6 +169,9 @@ type Config struct {
 		// SearchWorkers specifies number of workers for searchers pool.
 		// By default this setting is equal to [runtime.GOMAXPROCS].
 		SearchWorkers int `config:"search_workers"`
+		// ReplayWorkers specifies number of workers.
+		// By default this setting is equal to 8.
+		ReplayWorkers int `config:"replay_workers" default:"8"`
 		// CacheSize specifies maxium size of cache.
 		// By default this setting is equal to 30% of available RAM.
 		CacheSize         Bytes `config:"cache_size"`
