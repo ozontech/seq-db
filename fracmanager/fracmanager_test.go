@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
+	"time"
 
 	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
@@ -124,6 +125,40 @@ func TestReplaySingleEmptyFrac(t *testing.T) {
 	assert.NotEqual(t, fracInfo.Name(), active.Info().Name(), "should create a new frac")
 
 	fm.Stop()
+}
+
+func TestReplayContextCancel(t *testing.T) {
+	dataDir := common.GetTestTmpDir(t)
+	common.RecreateDir(dataDir)
+	defer common.RemoveDir(dataDir)
+
+	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
+		FracSize:     100000000, // maintenance will not seal fracs
+		TotalSize:    100000000,
+		ShouldReplay: false,
+		DataDir:      dataDir,
+	})
+	assert.NoError(t, err)
+
+	for i := 0; i < 20; i++ {
+		addDocs(t, fm, 1000+rand.Intn(100))
+		fm.rotate()
+	}
+
+	fm.Stop()
+
+	ctx, _ := context.WithTimeout(t.Context(), time.Nanosecond)
+
+	fm, err = newFracManagerWithBackgroundStart(ctx, &Config{
+		FracSize:     100000000,
+		TotalSize:    100000000,
+		ShouldReplay: true,
+		DataDir:      dataDir,
+	})
+
+	assert.Error(t, err)
+	assert.Equal(t, err, context.DeadlineExceeded)
+	assert.Equal(t, context.DeadlineExceeded, ctx.Err())
 }
 
 func TestReplaySingleNonEmptyFrac(t *testing.T) {
