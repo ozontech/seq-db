@@ -24,3 +24,10 @@ mapping:
 storage:
   frac_size: "256MiB"
   total_size: "10GiB"
+
+sequi:
+  ingress:
+    enabled: true
+  front:
+    ingress:
+      enabled: true

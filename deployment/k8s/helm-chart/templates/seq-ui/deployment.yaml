@@ -73,24 +73,6 @@ spec:
             {{- with .Values.sequi.volumeMounts }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-        - name: front
-          {{- with .Values.sequi.securityContext }}
-          securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          image: "{{ .Values.sequi.front.image.repository }}:{{ .Values.sequi.front.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.sequi.image.pullPolicy }}
-          env:
-            - name: SEQ_UI_URL
-              value: http://localhost:5555/
-          ports:
-            - name: fronthttp
-              containerPort: {{ .Values.sequi.front.service.httpPort }}
-              protocol: TCP
-          {{- with .Values.sequi.front.resources }}
-          resources:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
       volumes:
         - name: {{ template "seq-ui.fullname" . }}-config
           configMap:

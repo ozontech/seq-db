@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "seq-ui.fullname" . }}-front
+  name: {{ include "seq-ui-front.fullname" . }}-front
   labels:
-    {{- include "seq-ui.labels" . | nindent 4 }}
+    {{- include "seq-ui-front.labels" . | nindent 4 }}
   {{- with .Values.sequi.front.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -35,9 +35,9 @@ spec:
             {{- end }}
             backend:
               service:
-                name: {{ include "seq-ui.fullname" $ }}
+                name: {{ include "seq-ui-front.fullname" $ }}
                 port:
-                  number: {{ $.Values.sequi.service.front.httpPort }}
+                  number: {{ $.Values.sequi.front.service.httpPort }}
           {{- end }}
     {{- end }}
 {{- end }}

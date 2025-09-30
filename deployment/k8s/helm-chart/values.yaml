@@ -107,7 +107,6 @@ tolerations: []
 
 affinity: {}
 
-
 mapping:
   auto: true
   enable_updates: false
@@ -249,9 +248,6 @@ seqproxy:
 
   affinity: {}
 
-
-
-
 sequi:
   enabled: true
   # Default values for seq-ui.
@@ -263,7 +259,7 @@ sequi:
 
   # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
   image:
-    repository: ghcr.io/ozontech/seq-ui 
+    repository: ghcr.io/ozontech/seq-ui
     # This sets the pull policy for images.
     pullPolicy: IfNotPresent
     # Overrides the image tag whose default is the chart appVersion.
@@ -361,7 +357,6 @@ sequi:
     targetCPUUtilizationPercentage: 80
     # targetMemoryUtilizationPercentage: 80
 
-
   config:
     clients:
       seq_db_timeout: "15s"
@@ -391,8 +386,9 @@ sequi:
 
   affinity: {}
   front:
+    enabled: true
     image:
-      repository: ghcr.io/ozontech/seq-ui-fe 
+      repository: ghcr.io/ozontech/seq-ui-fe
       # This sets the pull policy for images.
       pullPolicy: IfNotPresent
       # Overrides the image tag whose default is the chart appVersion.
@@ -400,7 +396,7 @@ sequi:
 
     # This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
     imagePullSecrets: []
-    
+
     # This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
     service:
       # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
@@ -416,7 +412,7 @@ sequi:
         # kubernetes.io/ingress.class: nginx
         # kubernetes.io/tls-acme: "true"
       hosts:
-        - host: sequi-front.local
+        - host: logging.local
           paths:
             - path: /
               pathType: ImplementationSpecific
@@ -437,4 +433,15 @@ sequi:
       #   cpu: 100m
       #   memory: 128Mi
 
-   
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 100
+      targetCPUUtilizationPercentage: 80
+      # targetMemoryUtilizationPercentage: 80
+
+    nodeSelector: {}
+
+    tolerations: []
+
+    affinity: {}
