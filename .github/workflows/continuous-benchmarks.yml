@@ -14,53 +14,47 @@ permissions:
   pull-requests: write
 
 jobs:
-  benchmark:
+  ci-benchmarks:
     runs-on: ubuntu-latest
+    name: Job to run example benchmarks
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Install Go
+      - name: Setup Golang
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
           cache: true
 
-      - name: Download previous benchmark data
-        uses: actions/cache@v4
+      - name: Run Golang benchmarks
+        shell: bash
+        run: go test -run='$^' -bench=. -benchmem | tee ${{ runner.temp }}/gotool.txt
+
+      # Add GitHub job summary for pull requests.
+      - name: Summarize benchmarks results
+        if: ${{ success() && github.event_name == 'pull_request' }}
+        uses: dkharms/chronos@v0.0.1
         with:
-          path: ./cache
-          key: ${{ runner.os }}-benchmark
+          github-token: ${{ github.token }}
+          benchmarks-file-path: ${{ runner.temp }}/gotool.txt
+          action-to-perform: summarize
 
-      - name: Run benchmarks
-        run: LOG_LEVEL=FATAL go test -run='^$' -bench=. ./... | tee benchmarks.txt
-
-      # This step will run benchmarks for pull requests
-      # targeting `main` and providing summary for benchmarks.
-      - name: Store benchmark result
-        if: github.ref_name != 'main'
-        uses: benchmark-action/github-action-benchmark@v1
+      # Save benchmarks results only when branch
+      # was merged to main and previous job was successful.
+      - name: Save benchmarks results
+        if: ${{ success() && github.ref_name == 'main' }}
+        uses: dkharms/chronos@v0.0.1
         with:
-          name: Benchmarks
-          tool: 'go'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
+          benchmarks-file-path: ${{ runner.temp }}/gotool.txt
+          action-to-perform: save
 
-          output-file-path: benchmarks.txt
-          external-data-json-path: ./cache/benchmark-data.json
-
-          comment-always: true
-          summary-always: true
-
-      # This step will run and store benchmarks results ONLY when
-      # pull request was merged to `main`.
-      - name: Store benchmark result
-        if: github.ref_name == 'main'
-        uses: benchmark-action/github-action-benchmark@v1
+      # Publish benchmarks results to GitHub pages only when branch
+      # was merged to main and previous job was successful.
+      - name: Publish benchmarks results
+        if: ${{ success() && github.ref_name == 'main' }}
+        uses: dkharms/chronos@v0.0.1
         with:
-          name: Benchmarks
-          tool: 'go'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-          # Push and deploy GitHub pages branch automatically
-          auto-push: true
-          output-file-path: benchmarks.txt
+          github-token: ${{ github.token }}
+          action-to-perform: publish
