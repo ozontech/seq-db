@@ -29,12 +29,12 @@ jobs:
 
       - name: Run Golang benchmarks
         shell: bash
-        run: go test -run='$^' -bench=. -benchmem ./... | tee ${{ runner.temp }}/gotool.txt
+        run: LOG_LEVEL=FATAL go test -run='$^' -bench=. -benchmem ./... | tee ${{ runner.temp }}/gotool.txt
 
       # Add GitHub job summary for pull requests.
       - name: Summarize benchmarks results
         if: ${{ success() && github.event_name == 'pull_request' }}
-        uses: dkharms/chronos@v0.0.1
+        uses: dkharms/chronos@v0.0.2
         with:
           github-token: ${{ github.token }}
           benchmarks-file-path: ${{ runner.temp }}/gotool.txt
