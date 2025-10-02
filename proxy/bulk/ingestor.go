@@ -254,7 +254,7 @@ func (i *Ingestor) processDocsToCompressor(
 			break
 		}
 
-		poolDoc := bytespool.AcquireReset(len(originalDoc))
+		poolDoc := bytespool.Acquire(len(originalDoc))
 		poolDoc.B = append(poolDoc.B, originalDoc...)
 
 		parseStart := time.Now()
