@@ -3,12 +3,9 @@ package frac
 import (
 	"context"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
-	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
@@ -16,38 +13,10 @@ import (
 	"github.com/ozontech/seq-db/storage"
 )
 
-var (
-	fetcherActiveStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetcher",
-		Name:      "active_stages_seconds",
-		Buckets:   metric.SecondsBuckets,
-	}, []string{"stage"})
-
-	activeAggSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_active_agg_search_sec",
-		Buckets:   metric.SecondsBuckets,
-	}, []string{"stage"})
-	activeHistSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_active_hist_search_sec",
-		Buckets:   metric.SecondsBuckets,
-	}, []string{"stage"})
-	activeRegSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_active_reg_search_sec",
-		Buckets:   metric.SecondsBuckets,
-	}, []string{"stage"})
-)
-
 type activeDataProvider struct {
 	ctx    context.Context
 	config *Config
-	info   *Info
+	info   *common.Info
 
 	mids *UInt64s
 	rids *UInt64s
@@ -96,7 +65,11 @@ func (dp *activeDataProvider) getTokenIndex() *activeTokenIndex {
 
 func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	sw := stopwatch.New()
-	defer sw.Export(fetcherActiveStagesSeconds)
+
+	defer sw.Export(
+		fetcherStagesSeconds,
+		stopwatch.SetLabel("fraction_type", "active"),
+	)
 
 	res := make([][]byte, len(ids))
 
@@ -131,7 +104,11 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	aggLimits := processor.AggLimits(dp.config.Search.AggLimits)
 
 	sw := stopwatch.New()
-	defer sw.Export(getActiveSearchMetric(params))
+
+	defer sw.Export(
+		fractionSearchMetric(params),
+		stopwatch.SetLabel("fraction_type", "active"),
+	)
 
 	t := sw.Start("total")
 
@@ -157,16 +134,6 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	t.Stop()
 
 	return res, nil
-}
-
-func getActiveSearchMetric(params processor.SearchParams) *prometheus.HistogramVec {
-	if params.HasAgg() {
-		return activeAggSearchSec
-	}
-	if params.HasHist() {
-		return activeHistSearchSec
-	}
-	return activeRegSearchSec
 }
 
 type activeIDsIndex struct {

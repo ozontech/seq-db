@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -19,6 +21,11 @@ func (g *grpcV1) StartAsyncSearch(
 	ctx context.Context,
 	r *seqproxyapi.StartAsyncSearchRequest,
 ) (*seqproxyapi.StartAsyncSearchResponse, error) {
+	if g.config.AsyncSearchMaxDocumentsPerRequest > 0 && r.Size > g.config.AsyncSearchMaxDocumentsPerRequest {
+		return nil, status.Errorf(codes.InvalidArgument, "too many documents are requested: count=%d, max=%d",
+			r.Size, g.config.AsyncSearchMaxDocumentsPerRequest)
+	}
+
 	aggs, err := convertAggsQuery(r.Aggs)
 	if err != nil {
 		return nil, err
@@ -40,6 +47,7 @@ func (g *grpcV1) StartAsyncSearch(
 		Aggregations:      aggs,
 		HistogramInterval: seq.MID(histInterval.Milliseconds()),
 		WithDocs:          r.WithDocs,
+		Size:              r.Size,
 	})
 	if err != nil {
 		return nil, err
@@ -79,6 +87,7 @@ func (g *grpcV1) FetchAsyncSearchResult(
 		},
 		Aggs:     makeProtoRequestAggregations(resp.Request.Aggregations),
 		WithDocs: resp.Request.WithDocs,
+		Size:     resp.Request.Size,
 	}
 	if resp.Request.HistogramInterval > 0 {
 		searchReq.Hist = &seqproxyapi.HistQuery{
@@ -109,14 +118,14 @@ func (g *grpcV1) GetAsyncSearchesList(
 	ctx context.Context,
 	r *seqproxyapi.GetAsyncSearchesListRequest,
 ) (*seqproxyapi.GetAsyncSearchesListResponse, error) {
-	var status *fracmanager.AsyncSearchStatus
+	var searchStatus *fracmanager.AsyncSearchStatus
 	if r.Status != nil {
 		s := r.Status.MustAsyncSearchStatus()
-		status = &s
+		searchStatus = &s
 	}
 
 	req := search.GetAsyncSearchesListRequest{
-		Status: status,
+		Status: searchStatus,
 		Size:   int(r.Size),
 		Offset: int(r.Offset),
 		IDs:    r.Ids,
@@ -182,6 +191,7 @@ func makeProtoAsyncSearchesList(in []*search.AsyncSearchesListItem) []*seqproxya
 			},
 			Aggs:     makeProtoRequestAggregations(s.Request.Aggregations),
 			WithDocs: s.Request.WithDocs,
+			Size:     s.Request.Size,
 		}
 		if s.Request.HistogramInterval > 0 {
 			searchReq.Hist = &seqproxyapi.HistQuery{

@@ -22,9 +22,6 @@ Before launch you need to create a config file:
 config.yaml:
 
 ```yaml
-storage:
-  data_dir: /seq-db-data
-
 mapping:
   path: auto
 ```

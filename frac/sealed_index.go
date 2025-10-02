@@ -5,16 +5,14 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
@@ -24,37 +22,9 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-var (
-	fetcherSealedStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetcher",
-		Name:      "sealed_stages_seconds",
-		Buckets:   metric.SecondsBuckets,
-	}, []string{"stage"})
-
-	sealedAggSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_sealed_agg_search_sec",
-		Buckets:   metric.SecondsBuckets,
-	}, []string{"stage"})
-	sealedHistSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_sealed_hist_search_sec",
-		Buckets:   metric.SecondsBuckets,
-	}, []string{"stage"})
-	sealedRegSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tracer_sealed_reg_search_sec",
-		Buckets:   metric.SecondsBuckets,
-	}, []string{"stage"})
-)
-
 type sealedDataProvider struct {
 	ctx    context.Context
-	info   *Info
+	info   *common.Info
 	config *Config
 
 	idsTable    *seqids.Table
@@ -68,6 +38,10 @@ type sealedDataProvider struct {
 
 	blocksOffsets []uint64
 	docsReader    *storage.DocsReader
+
+	// fractionTypeLabel can be either 'sealed' or 'remote'.
+	// This value is used in metrics to distinguish between operations over local and remote fractions.
+	fractionTypeLabel string
 }
 
 func (dp *sealedDataProvider) getIDsIndex() *sealedIDsIndex {
@@ -109,11 +83,16 @@ func (dp *sealedDataProvider) release() {
 
 func (dp *sealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	sw := stopwatch.New()
+
+	defer sw.Export(
+		fetcherStagesSeconds,
+		stopwatch.SetLabel("fraction_type", dp.fractionTypeLabel),
+	)
+
 	res := make([][]byte, len(ids))
 	if err := processor.IndexFetch(ids, sw, dp.getFetchIndex(), res); err != nil {
 		return nil, err
 	}
-	sw.Export(fetcherSealedStagesSeconds)
 
 	return res, nil
 }
@@ -122,7 +101,11 @@ func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	aggLimits := processor.AggLimits(dp.config.Search.AggLimits)
 
 	sw := stopwatch.New()
-	defer sw.Export(getSealedSearchMetric(params))
+
+	defer sw.Export(
+		fractionSearchMetric(params),
+		stopwatch.SetLabel("fraction_type", dp.fractionTypeLabel),
+	)
 
 	t := sw.Start("total")
 	qpr, err := processor.IndexSearch(dp.ctx, params, dp.getSearchIndex(), aggLimits, sw)
@@ -133,16 +116,6 @@ func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	t.Stop()
 
 	return qpr, nil
-}
-
-func getSealedSearchMetric(params processor.SearchParams) *prometheus.HistogramVec {
-	if params.HasAgg() {
-		return sealedAggSearchSec
-	}
-	if params.HasHist() {
-		return sealedHistSearchSec
-	}
-	return sealedRegSearchSec
 }
 
 type sealedIDsIndex struct {

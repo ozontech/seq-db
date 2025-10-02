@@ -10,6 +10,7 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
@@ -27,8 +28,8 @@ func (t *testFakeFrac) DataProvider(_ context.Context) (frac.DataProvider, func(
 	return frac.EmptyDataProvider{}, func() {}
 }
 
-func (t *testFakeFrac) Info() *frac.Info {
-	return frac.NewInfo("test", 0, 0)
+func (t *testFakeFrac) Info() *common.Info {
+	return common.NewInfo("test", 0, 0)
 }
 
 func TestFracsLimit(t *testing.T) {

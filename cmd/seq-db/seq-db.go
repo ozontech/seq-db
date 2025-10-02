@@ -22,6 +22,7 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/mappingprovider"
@@ -178,11 +179,12 @@ func startProxy(
 
 	pconfig := proxyapi.IngestorConfig{
 		API: proxyapi.APIConfig{
-			SearchTimeout:  consts.DefaultSearchTimeout,
-			ExportTimeout:  consts.DefaultExportTimeout,
-			QueryRateLimit: cfg.Limits.QueryRate,
-			EsVersion:      cfg.API.ESVersion,
-			GatewayAddr:    cfg.Address.GRPC,
+			SearchTimeout:                     consts.DefaultSearchTimeout,
+			ExportTimeout:                     consts.DefaultExportTimeout,
+			QueryRateLimit:                    cfg.Limits.QueryRate,
+			EsVersion:                         cfg.API.ESVersion,
+			GatewayAddr:                       cfg.Address.GRPC,
+			AsyncSearchMaxDocumentsPerRequest: cfg.AsyncSearch.MaxDocumentsPerRequest,
 		},
 		Search: search.Config{
 			HotStores:       hotStores,
@@ -258,7 +260,7 @@ func startStore(
 			MaintenanceDelay:  0,
 			CacheGCDelay:      0,
 			CacheCleanupDelay: 0,
-			SealParams: frac.SealParams{
+			SealParams: common.SealParams{
 				IDsZstdLevel:           cfg.Compression.SealedZstdCompressionLevel,
 				LIDsZstdLevel:          cfg.Compression.SealedZstdCompressionLevel,
 				TokenListZstdLevel:     cfg.Compression.SealedZstdCompressionLevel,

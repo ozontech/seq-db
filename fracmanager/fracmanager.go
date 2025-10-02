@@ -46,8 +46,9 @@ type FracManager struct {
 
 	fracProvider *fractionProvider
 
-	OldestCT atomic.Uint64
-	mature   atomic.Bool
+	oldestCTLocal  atomic.Uint64
+	oldestCTRemote atomic.Uint64
+	mature         atomic.Bool
 
 	stopFn  func()
 	statWG  sync.WaitGroup
@@ -69,7 +70,7 @@ type activeRef struct {
 }
 
 func (fm *FracManager) newActiveRef(active *frac.Active) activeRef {
-	f := &proxyFrac{active: active, fp: fm.fracProvider}
+	f := newProxyFrac(active, fm.fracProvider)
 	return activeRef{
 		frac: f,
 		ref:  &fracRef{instance: f},
@@ -134,20 +135,49 @@ func (fm *FracManager) maintenance(sealWg, cleanupWg *sync.WaitGroup) {
 
 	fm.cleanupFractions(cleanupWg)
 	fm.removeStaleFractions(cleanupWg, fm.config.OffloadingRetention)
-
-	if oldestByCT := fm.GetAllFracs().GetOldestFrac(); oldestByCT != nil {
-		newOldestCT := oldestByCT.Info().CreationTime
-		prevOldestCT := fm.OldestCT.Swap(newOldestCT)
-		if newOldestCT != prevOldestCT {
-			logger.Info("new oldest by creation time", zap.Any("fraction", oldestByCT))
-		}
-	}
+	fm.updateOldestCT()
 
 	if err := fm.fracCache.SyncWithDisk(); err != nil {
 		logger.Error("can't sync frac-cache", zap.Error(err))
 	}
 
 	logger.Debug("maintenance finished", zap.Int64("took_ms", time.Since(n).Milliseconds()))
+}
+
+func (fm *FracManager) OldestCT() uint64 {
+	local, remote := fm.oldestCTLocal.Load(), fm.oldestCTRemote.Load()
+	if local != 0 && remote != 0 {
+		return min(local, remote)
+	}
+	return local
+}
+
+func (fm *FracManager) updateOldestCT() {
+	fm.updateOldestCTFor(fm.getLocalFracs(), &fm.oldestCTLocal, "local")
+	fm.updateOldestCTFor(fm.getRemoteFracs(), &fm.oldestCTRemote, "remote")
+}
+
+func (fm *FracManager) updateOldestCTFor(
+	fracs List, v *atomic.Uint64, storageType string,
+) {
+	oldestByCT := fracs.GetOldestFrac()
+
+	if oldestByCT == nil {
+		v.Store(0)
+		return
+	}
+
+	newOldestCT := oldestByCT.Info().CreationTime
+	prevOldestCT := v.Swap(newOldestCT)
+
+	if newOldestCT != prevOldestCT {
+		logger.Info(
+			"new oldest by creation time",
+			zap.String("fraction", oldestByCT.Info().Name()),
+			zap.String("storage_type", storageType),
+			zap.Time("creation_time", time.UnixMilli(int64(newOldestCT))),
+		)
+	}
 }
 
 func (fm *FracManager) shiftFirstFrac() frac.Fraction {
@@ -372,7 +402,7 @@ func (fm *FracManager) processFracsStats() {
 		return
 	}
 
-	setMetrics := func(st string, ft fracStats) {
+	setMetrics := func(st string, oldest uint64, ft fracStats) {
 		logger.Info("fraction stats",
 			zap.Int("count", ft.count),
 			zap.String("storage_type", st),
@@ -387,16 +417,15 @@ func (fm *FracManager) processFracsStats() {
 		metric.DataSizeTotal.WithLabelValues("docs_raw", st).Set(float64(ft.docsRaw))
 		metric.DataSizeTotal.WithLabelValues("docs_on_disk", st).Set(float64(ft.docsDisk))
 		metric.DataSizeTotal.WithLabelValues("index", st).Set(float64(ft.index))
+
+		if oldest != 0 {
+			metric.OldestFracTime.WithLabelValues(st).
+				Set((time.Duration(oldest) * time.Millisecond).Seconds())
+		}
 	}
 
-	setMetrics("local", calculate(fm.getLocalFracs()))
-	setMetrics("remote", calculate(fm.getRemoteFracs()))
-
-	oldestCT := fm.OldestCT.Load()
-
-	if oldestCT != 0 {
-		metric.OldestFracTime.Set((time.Duration(oldestCT) * time.Millisecond).Seconds())
-	}
+	setMetrics("local", fm.oldestCTLocal.Load(), calculate(fm.getLocalFracs()))
+	setMetrics("remote", fm.oldestCTRemote.Load(), calculate(fm.getRemoteFracs()))
 }
 
 func (fm *FracManager) runMaintenanceLoop(ctx context.Context) {
@@ -472,6 +501,7 @@ func (fm *FracManager) Load(ctx context.Context) error {
 		_ = fm.rotate() // make new empty active
 	}
 
+	fm.updateOldestCT()
 	return nil
 }
 

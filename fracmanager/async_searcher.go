@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -134,6 +133,7 @@ type AsyncSearchRequest struct {
 	Params    processor.SearchParams
 	Query     string
 	Retention time.Duration
+	WithDocs  bool
 }
 
 type fracSearchState struct {
@@ -655,6 +655,7 @@ type FetchSearchResultResponse struct {
 	To        seq.MID
 	Retention time.Duration
 	WithDocs  bool
+	Size      int64
 }
 
 func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSearchResultResponse, bool) {
@@ -702,7 +703,8 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		From:         info.Request.Params.From,
 		To:           info.Request.Params.To,
 		Retention:    info.Request.Retention,
-		WithDocs:     info.Request.Params.Limit == math.MaxInt,
+		WithDocs:     info.Request.WithDocs,
+		Size:         int64(info.Request.Params.Limit),
 	}, true
 }
 
@@ -794,7 +796,7 @@ func (as *AsyncSearcher) mergeQPRs(job mergeJob) {
 		qprPath := path.Join(as.config.DataDir, qprFilename)
 		qprs = append(qprs, qprPath)
 	}
-	qpr, sizeBefore := as.loadSearchResult(qprs, math.MaxInt, seq.DocsOrderDesc)
+	qpr, sizeBefore := as.loadSearchResult(qprs, job.Info.Request.Params.Limit, seq.DocsOrderDesc)
 
 	var sizeAfter int
 	storeMQPR := func(compressed []byte) error {
@@ -949,6 +951,7 @@ type AsyncSearchesListItem struct {
 	To           seq.MID
 	Retention    time.Duration
 	WithDocs     bool
+	Size         int64
 }
 
 func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*AsyncSearchesListItem {
@@ -1004,7 +1007,8 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 			From:         info.Request.Params.From,
 			To:           info.Request.Params.To,
 			Retention:    info.Request.Retention,
-			WithDocs:     info.Request.Params.Limit == math.MaxInt,
+			WithDocs:     info.Request.WithDocs,
+			Size:         int64(info.Request.Params.Limit),
 		})
 	}
 

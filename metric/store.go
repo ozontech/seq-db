@@ -6,14 +6,6 @@ import (
 )
 
 var (
-	BulkDiskSyncTasksCount = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "bulk",
-		Name:      "disk_sync_tasks_count",
-		Help:      "",
-		Buckets:   prometheus.LinearBuckets(1, 16, 16),
-	})
-
 	CacheOldest = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "cache",
@@ -119,12 +111,12 @@ var (
 		Help:      "",
 	}, []string{"kind", "storage_type"})
 
-	OldestFracTime = promauto.NewGauge(prometheus.GaugeOpts{
+	OldestFracTime = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "common",
 		Name:      "oldest_frac_time",
 		Help:      "",
-	})
+	}, []string{"storage_type"})
 
 	BulkDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
@@ -180,13 +172,6 @@ var (
 		Help:      "",
 		Buckets:   SecondsBuckets,
 	})
-	SearchTreeDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tree_duration_seconds",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	})
 
 	SearchRangesSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
@@ -229,18 +214,6 @@ var (
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(256, 4, 32),
 	})
-	FetchActiveStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetch",
-		Name:      "active_stages_seconds",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
-	FetchSealedStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetch",
-		Name:      "sealed_stages_seconds",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
 	MaintenanceTruncateTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "maintenance",

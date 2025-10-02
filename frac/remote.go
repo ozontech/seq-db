@@ -10,6 +10,8 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -37,7 +39,7 @@ type Remote struct {
 
 	BaseFileName string
 
-	info *Info
+	info *common.Info
 
 	useMu    sync.RWMutex
 	suicided bool
@@ -50,9 +52,9 @@ type Remote struct {
 	indexCache  *IndexCache
 	indexReader storage.IndexReader
 
-	loadMu   *sync.RWMutex
-	isLoaded bool
-	state    sealedState
+	loadMu     *sync.RWMutex
+	isLoaded   bool
+	blocksData sealed.BlocksData
 
 	s3cli       *s3.Client
 	readLimiter *storage.ReadLimiter
@@ -64,7 +66,7 @@ func NewRemote(
 	readLimiter *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
-	info *Info,
+	info *common.Info,
 	config *Config,
 	s3cli *s3.Client,
 ) *Remote {
@@ -145,7 +147,7 @@ func (f *Remote) DataProvider(ctx context.Context) (DataProvider, func()) {
 	}
 }
 
-func (f *Remote) Info() *Info {
+func (f *Remote) Info() *common.Info {
 	return f.info
 }
 
@@ -189,23 +191,25 @@ func (f *Remote) String() string {
 
 func (f *Remote) createDataProvider(ctx context.Context) *sealedDataProvider {
 	return &sealedDataProvider{
-		ctx:              ctx,
+		ctx:               ctx,
+		fractionTypeLabel: "remote",
+
 		info:             f.info,
 		config:           f.Config,
 		docsReader:       &f.docsReader,
-		blocksOffsets:    f.state.BlocksOffsets,
-		lidsTable:        f.state.lidsTable,
+		blocksOffsets:    f.blocksData.BlocksOffsets,
+		lidsTable:        f.blocksData.LIDsTable,
 		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.indexReader, f.indexCache.TokenTable),
 
-		idsTable: &f.state.idsTable,
+		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
 			&f.indexReader,
 			f.indexCache.MIDs,
 			f.indexCache.RIDs,
 			f.indexCache.Params,
-			&f.state.idsTable,
+			&f.blocksData.IDsTable,
 			f.info.BinaryDataVer,
 		),
 	}
@@ -227,7 +231,7 @@ func (f *Remote) load() error {
 		return err
 	}
 
-	(&Loader{}).Load(&f.state, f.info, &f.indexReader)
+	(&Loader{}).Load(&f.blocksData, f.info, &f.indexReader)
 	f.isLoaded = true
 
 	return nil

@@ -10,7 +10,7 @@ import (
 	"github.com/alecthomas/units"
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -91,8 +91,11 @@ func analyzeIndex(
 	}
 
 	// load info
-	b := frac.BlockInfo{}
-	_ = b.Unpack(readBlock())
+	var b sealed.BlockInfo
+	if err := b.Unpack(readBlock()); err != nil {
+		logger.Fatal("error unpacking block info", zap.Error(err))
+	}
+
 	docsCount := int(b.Info.DocsTotal)
 
 	// load tokens

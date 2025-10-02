@@ -2,7 +2,6 @@ package storeapi
 
 import (
 	"context"
-	"math"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -26,7 +25,7 @@ func (g *GrpcV1) StartAsyncSearch(
 
 	limit := 0
 	if r.WithDocs {
-		limit = math.MaxInt
+		limit = int(r.Size)
 	}
 
 	params := processor.SearchParams{
@@ -45,6 +44,7 @@ func (g *GrpcV1) StartAsyncSearch(
 		Query:     r.Query,
 		Params:    params,
 		Retention: r.Retention.AsDuration(),
+		WithDocs:  r.WithDocs,
 	}
 	fracs := g.fracManager.GetAllFracs().FilterInRange(seq.MID(r.From), seq.MID(r.To))
 	if err := g.asyncSearcher.StartSearch(req, fracs); err != nil {
@@ -90,6 +90,7 @@ func (g *GrpcV1) FetchAsyncSearchResult(
 		To:                timestamppb.New(fr.To.Time()),
 		Retention:         durationpb.New(fr.Retention),
 		WithDocs:          fr.WithDocs,
+		Size:              fr.Size,
 	}, nil
 }
 
@@ -172,6 +173,7 @@ func convertAsyncSearchesToProto(in []*fracmanager.AsyncSearchesListItem) []*sto
 			To:                timestamppb.New(s.To.Time()),
 			Retention:         durationpb.New(s.Retention),
 			WithDocs:          s.WithDocs,
+			Size:              s.Size,
 		})
 	}
 

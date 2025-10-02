@@ -29,6 +29,7 @@ type AsyncRequest struct {
 	Aggregations      []AggQuery
 	HistogramInterval seq.MID
 	WithDocs          bool
+	Size              int64
 }
 
 type AsyncResponse struct {
@@ -51,8 +52,8 @@ func (si *Ingestor) StartAsyncSearch(ctx context.Context, r AsyncRequest) (Async
 		Aggs:              convertToAggsQuery(r.Aggregations),
 		HistogramInterval: int64(r.HistogramInterval),
 		Retention:         durationpb.New(r.Retention),
-		// TODO: enable WithDocs after we implement async searches' qprs merging in batches
-		WithDocs: false,
+		WithDocs:          r.WithDocs,
+		Size:              r.Size,
 	}
 
 	for i, shard := range searchStores.Shards {
@@ -245,6 +246,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 				Aggregations:      buildRequestAggs(storeResp.Aggs),
 				HistogramInterval: histInterval,
 				WithDocs:          storeResp.WithDocs,
+				Size:              storeResp.Size,
 			}
 		}
 	}
@@ -389,6 +391,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 					Aggregations:      buildRequestAggs(s.Aggs),
 					HistogramInterval: seq.MID(s.HistogramInterval),
 					WithDocs:          s.WithDocs,
+					Size:              s.Size,
 				}
 			}
 		}
