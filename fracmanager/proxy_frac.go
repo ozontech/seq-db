@@ -11,6 +11,7 @@ import (
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -63,10 +64,17 @@ func (f *proxyFrac) cur() frac.Fraction {
 	f.useMu.RLock()
 	defer f.useMu.RUnlock()
 
-	if f.sealed == nil {
+	if f.active != nil {
 		return f.active
 	}
-	return f.sealed
+
+	if f.sealed != nil {
+		metric.CountersTotal.WithLabelValues("use_sealed_from_active").Inc()
+		return f.sealed
+	}
+
+	metric.CountersTotal.WithLabelValues("use_empty_from_active").Inc()
+	return frac.EmptyFraction
 }
 
 func (f *proxyFrac) IsIntersecting(from, to seq.MID) bool {
@@ -81,20 +89,12 @@ func (f *proxyFrac) Info() *common.Info {
 	return f.cur().Info()
 }
 
-func (f *proxyFrac) DataProvider(ctx context.Context) (frac.DataProvider, func()) {
-	f.useMu.RLock()
-	defer f.useMu.RUnlock()
+func (f *proxyFrac) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+	return f.cur().Fetch(ctx, ids)
+}
 
-	if f.active != nil {
-		return f.active.DataProvider(ctx)
-	}
-
-	if f.sealed != nil {
-		metric.CountersTotal.WithLabelValues("use_sealed_from_active").Inc()
-		return f.sealed.DataProvider(ctx)
-	}
-
-	return frac.EmptyDataProvider{}, func() {}
+func (f *proxyFrac) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
+	return f.cur().Search(ctx, params)
 }
 
 func (f *proxyFrac) Append(docs, meta []byte) error {

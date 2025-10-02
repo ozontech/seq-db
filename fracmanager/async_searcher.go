@@ -408,10 +408,7 @@ func compressQPR(qpr *seq.QPR, cb func(compressed []byte) error) error {
 }
 
 func (as *AsyncSearcher) processFrac(f frac.Fraction, info asyncSearchInfo) error {
-	ctx := info.ctx
-	dp, release := f.DataProvider(ctx)
-	qpr, err := dp.Search(info.Request.Params)
-	release()
+	qpr, err := f.Search(info.ctx, info.Request.Params)
 	if err != nil {
 		return err
 	}
