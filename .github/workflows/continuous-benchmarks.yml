@@ -16,7 +16,6 @@ permissions:
 jobs:
   ci-benchmarks:
     runs-on: ubuntu-latest
-    name: Job to run example benchmarks
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
