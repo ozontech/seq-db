@@ -11,7 +11,8 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
@@ -58,8 +59,10 @@ func readBlock(reader storage.IndexReader, blockIndex uint32) ([]byte, error) {
 	return data, nil
 }
 
-func loadInfo(path string) *frac.Info {
+func loadInfo(path string) *common.Info {
 	indexReader, f := getReader(path)
+	defer f.Close()
+
 	result, err := readBlock(indexReader, 0)
 	if err != nil {
 		logger.Fatal("error reading block", zap.String("file", path), zap.Error(err))
@@ -69,7 +72,7 @@ func loadInfo(path string) *frac.Info {
 		logger.Fatal("seq-db index file header corrupted", zap.String("file", path))
 	}
 
-	b := frac.BlockInfo{}
+	b := sealed.BlockInfo{}
 	err = b.Unpack(result)
 	if err != nil {
 		logger.Fatal("can't unpack info bloc of index file", zap.String("file", path), zap.Error(err))
@@ -84,8 +87,9 @@ func loadInfo(path string) *frac.Info {
 	return b.Info
 }
 
-func buildDist(dist *seq.MIDsDistribution, path string, _ *frac.Info) {
-	blocksReader, _ := getReader(path)
+func buildDist(dist *seq.MIDsDistribution, path string, _ *common.Info) {
+	blocksReader, f := getReader(path)
+	defer f.Close()
 
 	// skip tokens
 	blockIndex := uint32(1)

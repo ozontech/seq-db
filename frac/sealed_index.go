@@ -7,6 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
@@ -23,7 +24,7 @@ import (
 
 type sealedDataProvider struct {
 	ctx    context.Context
-	info   *Info
+	info   *common.Info
 	config *Config
 
 	idsTable    *seqids.Table
