@@ -37,7 +37,7 @@ type FracManager struct {
 
 	cacheMaintainer *CacheMaintainer
 
-	fracCache *sealedFracCache
+	fracCache *fracInfoCache
 
 	fracMu      sync.RWMutex
 	localFracs  []*fracRef
@@ -108,7 +108,7 @@ func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracMan
 		cacheMaintainer: cacheMaintainer,
 		fracProvider:    newFractionProvider(&cfg.Fraction, s3cli, cacheMaintainer, config.ReaderWorkers, config.IndexWorkers),
 		ulidEntropy:     ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
-		fracCache:       NewSealedFracCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix)),
+		fracCache:       NewFracInfoCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix)),
 	}
 
 	return fracManager
@@ -237,7 +237,7 @@ func (fm *FracManager) removeStaleFractions(cleanupWg *sync.WaitGroup, retention
 				zap.String("retention", retention.String()),
 			)
 
-			fm.fracCache.RemoveFraction(f.Info().Name())
+			fm.fracCache.Remove(f.Info().Name())
 			f.Suicide()
 		}
 	}()
@@ -283,7 +283,7 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 
 			info := outsider.Info()
 			if !fm.config.OffloadingEnabled {
-				fm.fracCache.RemoveFraction(info.Name())
+				fm.fracCache.Remove(info.Name())
 				outsider.Suicide()
 				return
 			}
@@ -301,14 +301,14 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 					zap.Error(err),
 				)
 
-				fm.fracCache.RemoveFraction(info.Name())
+				fm.fracCache.Remove(info.Name())
 				outsider.Suicide()
 
 				return
 			}
 
 			if !mustBeOffloaded {
-				fm.fracCache.RemoveFraction(info.Name())
+				fm.fracCache.Remove(info.Name())
 				outsider.Suicide()
 				return
 			}
@@ -576,7 +576,7 @@ func (fm *FracManager) seal(activeRef activeRef) {
 	}
 
 	info := sealed.Info()
-	fm.fracCache.AddFraction(info.Name(), info)
+	fm.fracCache.Add(info)
 
 	fm.fracMu.Lock()
 	activeRef.ref.instance = sealed

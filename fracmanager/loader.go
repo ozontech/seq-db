@@ -31,7 +31,7 @@ type fracInfo struct {
 type loader struct {
 	config       *Config
 	fracProvider *fractionProvider
-	fracCache    *sealedFracCache
+	fracCache    *fracInfoCache
 
 	cachedFracs   int
 	uncachedFracs int
@@ -39,7 +39,7 @@ type loader struct {
 
 func NewLoader(
 	config *Config, fracProvider *fractionProvider,
-	fracCache *sealedFracCache,
+	fracCache *fracInfoCache,
 ) *loader {
 	return &loader{
 		config:       config,
@@ -66,7 +66,7 @@ func (l *loader) load(ctx context.Context) ([]*frac.Active, []*frac.Sealed, []*f
 	remote := make([]*frac.Remote, 0, cnt)
 	sealed := make([]*frac.Sealed, 0, cnt)
 
-	diskFracCache := NewFracCacheFromDisk(filepath.Join(l.config.DataDir, consts.FracCacheFileSuffix))
+	diskFracCache := NewFracInfoCacheFromDisk(filepath.Join(l.config.DataDir, consts.FracCacheFileSuffix))
 	ts := time.Now()
 
 	for i, info := range infosList {
@@ -107,8 +107,8 @@ func (l *loader) load(ctx context.Context) ([]*frac.Active, []*frac.Sealed, []*f
 	return actives, sealed, remote, nil
 }
 
-func (l *loader) loadSealedFrac(diskFracCache *sealedFracCache, info *fracInfo) *frac.Sealed {
-	listedInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
+func (l *loader) loadSealedFrac(diskFracCache *fracInfoCache, info *fracInfo) *frac.Sealed {
+	listedInfo, ok := diskFracCache.Get(filepath.Base(info.base))
 	if ok {
 		l.cachedFracs++
 	} else {
@@ -118,12 +118,12 @@ func (l *loader) loadSealedFrac(diskFracCache *sealedFracCache, info *fracInfo) 
 	sealed := l.fracProvider.NewSealed(info.base, listedInfo)
 
 	stats := sealed.Info()
-	l.fracCache.AddFraction(stats.Name(), stats)
+	l.fracCache.Add(stats)
 	return sealed
 }
 
-func (l *loader) loadRemoteFrac(ctx context.Context, diskFracCache *sealedFracCache, info *fracInfo) *frac.Remote {
-	listedInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
+func (l *loader) loadRemoteFrac(ctx context.Context, diskFracCache *fracInfoCache, info *fracInfo) *frac.Remote {
+	listedInfo, ok := diskFracCache.Get(filepath.Base(info.base))
 	if ok {
 		l.cachedFracs++
 	} else {
@@ -133,7 +133,7 @@ func (l *loader) loadRemoteFrac(ctx context.Context, diskFracCache *sealedFracCa
 	remote := l.fracProvider.NewRemote(ctx, info.base, listedInfo)
 
 	stats := remote.Info()
-	l.fracCache.AddFraction(stats.Name(), stats)
+	l.fracCache.Add(stats)
 
 	return remote
 }
