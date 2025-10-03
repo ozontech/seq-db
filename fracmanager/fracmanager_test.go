@@ -2,6 +2,7 @@ package fracmanager
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"sync"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
@@ -133,10 +135,11 @@ func TestReplayContextCancel(t *testing.T) {
 	defer common.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100000000, // maintenance will not seal fracs
-		TotalSize:    100000000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:      100000000, // maintenance will not seal fracs
+		TotalSize:     100000000,
+		ShouldReplay:  false,
+		ReplayWorkers: 10,
+		DataDir:       dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -151,10 +154,11 @@ func TestReplayContextCancel(t *testing.T) {
 	defer cancel()
 
 	fm, err = newFracManagerWithBackgroundStart(ctx, &Config{
-		FracSize:     100000000,
-		TotalSize:    100000000,
-		ShouldReplay: true,
-		DataDir:      dataDir,
+		FracSize:      100000000,
+		TotalSize:     100000000,
+		ShouldReplay:  true,
+		ReplayWorkers: 10,
+		DataDir:       dataDir,
 	})
 
 	assert.Error(t, err)
@@ -168,10 +172,11 @@ func TestReplaySingleNonEmptyFrac(t *testing.T) {
 	defer common.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100000000, // maintenance will not seal fracs
-		TotalSize:    100000000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:      100000000, // maintenance will not seal fracs
+		TotalSize:     100000000,
+		ShouldReplay:  false,
+		ReplayWorkers: 10,
+		DataDir:       dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -183,10 +188,11 @@ func TestReplaySingleNonEmptyFrac(t *testing.T) {
 	fm.Stop()
 
 	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100000000,
-		TotalSize:    100000000,
-		ShouldReplay: true,
-		DataDir:      dataDir,
+		FracSize:      100000000,
+		TotalSize:     100000000,
+		ShouldReplay:  true,
+		ReplayWorkers: 10,
+		DataDir:       dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -205,10 +211,11 @@ func TestReplayMultipleFracs(t *testing.T) {
 	defer common.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100000000, // maintenance will not seal fracs
-		TotalSize:    100000000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:      100000000, // maintenance will not seal fracs
+		TotalSize:     100000000,
+		ShouldReplay:  false,
+		ReplayWorkers: 8,
+		DataDir:       dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -226,10 +233,11 @@ func TestReplayMultipleFracs(t *testing.T) {
 	fm.Stop()
 
 	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100000000,
-		TotalSize:    100000000,
-		ShouldReplay: true,
-		DataDir:      dataDir,
+		FracSize:      100000000,
+		TotalSize:     100000000,
+		ShouldReplay:  true,
+		ReplayWorkers: 10,
+		DataDir:       dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -261,10 +269,11 @@ func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
 	defer common.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100000000, // maintenance will not seal fracs
-		TotalSize:    100000000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:      100000000, // maintenance will not seal fracs
+		TotalSize:     100000000,
+		ShouldReplay:  false,
+		ReplayWorkers: 10,
+		DataDir:       dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -282,10 +291,11 @@ func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
 	fm.Stop()
 
 	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100000000,
-		TotalSize:    100000000,
-		ShouldReplay: true,
-		DataDir:      dataDir,
+		FracSize:      100000000,
+		TotalSize:     100000000,
+		ShouldReplay:  true,
+		ReplayWorkers: 10,
+		DataDir:       dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -315,10 +325,11 @@ func TestReplayFractionsWithMultipleEmptyFracs(t *testing.T) {
 	defer common.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100000000, // maintenance will not seal fracs
-		TotalSize:    100000000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:      100000000, // maintenance will not seal fracs
+		TotalSize:     100000000,
+		ShouldReplay:  false,
+		ReplayWorkers: 10,
+		DataDir:       dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -341,10 +352,11 @@ func TestReplayFractionsWithMultipleEmptyFracs(t *testing.T) {
 	fm.Stop()
 
 	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100000000,
-		TotalSize:    100000000,
-		ShouldReplay: true,
-		DataDir:      dataDir,
+		FracSize:      100000000,
+		TotalSize:     100000000,
+		ShouldReplay:  true,
+		ReplayWorkers: 10,
+		DataDir:       dataDir,
 	})
 
 	assert.NoError(t, err)
@@ -440,4 +452,69 @@ func TestNewULID(t *testing.T) {
 	assert.NotEqual(t, ulid1, ulid2, "ULIDs should be different")
 	assert.Equal(t, 26, len(ulid1), "ULID should have length 26")
 	assert.Greater(t, ulid2, ulid1)
+}
+
+func TestOldestCT(t *testing.T) {
+	const fracCount = 10
+
+	t.Run("local", func(t *testing.T) {
+		fm := NewFracManager(context.Background(), &Config{}, nil)
+
+		oldestLocal := time.Now()
+		nowOldestLocal := oldestLocal
+
+		for i := range fracCount {
+			fm.localFracs = append(fm.localFracs, &fracRef{instance: frac.NewSealed(
+				"", nil, nil, nil, &frac.Info{
+					Path:         fmt.Sprintf("local-frac-%d", i),
+					IndexOnDisk:  1,
+					CreationTime: uint64(nowOldestLocal.UnixMilli()),
+				}, nil,
+			)})
+			nowOldestLocal = nowOldestLocal.Add(time.Second)
+		}
+
+		fm.updateOldestCT()
+
+		require.Equal(t, uint64(0), fm.oldestCTRemote.Load())
+		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.oldestCTLocal.Load())
+		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.OldestCT())
+	})
+
+	t.Run("local-and-remote", func(t *testing.T) {
+		fm := NewFracManager(context.Background(), &Config{}, nil)
+		oldestRemote := time.Now()
+		nowOldestRemote := oldestRemote
+
+		for i := range fracCount {
+			fm.remoteFracs = append(fm.remoteFracs, frac.NewRemote(
+				t.Context(), "", nil, nil, nil, &frac.Info{
+					Path:         fmt.Sprintf("remote-frac-%d", i),
+					IndexOnDisk:  1,
+					CreationTime: uint64(nowOldestRemote.UnixMilli()),
+				}, nil, nil,
+			))
+			nowOldestRemote = nowOldestRemote.Add(time.Second)
+		}
+
+		oldestLocal := nowOldestRemote
+		nowOldestLocal := oldestLocal
+
+		for i := range fracCount {
+			fm.localFracs = append(fm.localFracs, &fracRef{instance: frac.NewSealed(
+				"", nil, nil, nil, &frac.Info{
+					Path:         fmt.Sprintf("local-frac-%d", i),
+					IndexOnDisk:  1,
+					CreationTime: uint64(nowOldestLocal.UnixMilli()),
+				}, nil,
+			)})
+			nowOldestLocal = nowOldestLocal.Add(time.Second)
+		}
+
+		fm.updateOldestCT()
+
+		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.oldestCTRemote.Load())
+		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.oldestCTLocal.Load())
+		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.OldestCT())
+	})
 }

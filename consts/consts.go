@@ -47,7 +47,7 @@ const (
 
 	IngestorMaxInflightBulks = 32
 
-	DefaultReplayWorkers = 8
+	DefaultReplayWorkers = 2
 
 	// known extensions
 	MetaFileSuffix = ".meta"
