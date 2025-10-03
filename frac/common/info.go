@@ -1,4 +1,4 @@
-package frac
+package common
 
 import (
 	"fmt"
@@ -70,12 +70,12 @@ func (s *Info) Name() string {
 	return path.Base(s.Path)
 }
 
-func (s *Info) BuildDistribution(ids []seq.ID) {
+func (s *Info) BuildDistribution(mids []uint64) {
 	if !s.InitEmptyDistribution() {
 		return
 	}
-	for _, id := range ids {
-		s.Distribution.Add(id.MID)
+	for _, mid := range mids {
+		s.Distribution.Add(seq.MID(mid))
 	}
 }
 

@@ -72,7 +72,7 @@ type activeRef struct {
 }
 
 func (fm *FracManager) newActiveRef(active *frac.Active) activeRef {
-	f := &proxyFrac{active: active, fp: fm.fracProvider}
+	f := newProxyFrac(active, fm.fracProvider)
 	return activeRef{
 		frac: f,
 		ref:  &fracRef{instance: f},
