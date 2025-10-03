@@ -97,9 +97,9 @@ func TestCleanUp(t *testing.T) {
 }
 
 func TestReplaySingleEmptyFrac(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	dataDir := testscommon.GetTestTmpDir(t)
+	testscommon.RecreateDir(dataDir)
+	defer testscommon.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:     100000000, // maintenance will not seal fracs
@@ -131,9 +131,9 @@ func TestReplaySingleEmptyFrac(t *testing.T) {
 }
 
 func TestReplayContextCancel(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	dataDir := testscommon.GetTestTmpDir(t)
+	testscommon.RecreateDir(dataDir)
+	defer testscommon.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000, // maintenance will not seal fracs
@@ -168,9 +168,9 @@ func TestReplayContextCancel(t *testing.T) {
 }
 
 func TestReplaySingleNonEmptyFrac(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	dataDir := testscommon.GetTestTmpDir(t)
+	testscommon.RecreateDir(dataDir)
+	defer testscommon.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000, // maintenance will not seal fracs
@@ -207,9 +207,9 @@ func TestReplaySingleNonEmptyFrac(t *testing.T) {
 
 func TestReplayMultipleFracs(t *testing.T) {
 	fracCount := 50
-	dataDir := common.GetTestTmpDir(t)
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	dataDir := testscommon.GetTestTmpDir(t)
+	testscommon.RecreateDir(dataDir)
+	defer testscommon.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000, // maintenance will not seal fracs
@@ -226,7 +226,7 @@ func TestReplayMultipleFracs(t *testing.T) {
 	}
 	addDocs(t, fm, 5)
 
-	var fracs []frac.Info
+	var fracs []common.Info
 	for _, fraction := range fm.getLocalFracs() {
 		fracs = append(fracs, *fraction.Info())
 	}
@@ -265,9 +265,9 @@ func TestReplayMultipleFracs(t *testing.T) {
 }
 
 func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	dataDir := testscommon.GetTestTmpDir(t)
+	testscommon.RecreateDir(dataDir)
+	defer testscommon.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000, // maintenance will not seal fracs
@@ -284,7 +284,7 @@ func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
 	}
 	// active frac is now empty
 
-	var fracs []frac.Info
+	var fracs []common.Info
 	for _, fraction := range fm.getLocalFracs() {
 		fracs = append(fracs, *fraction.Info())
 	}
@@ -321,9 +321,9 @@ func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
 
 func TestReplayFractionsWithMultipleEmptyFracs(t *testing.T) {
 	fracCount := 10
-	dataDir := common.GetTestTmpDir(t)
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	dataDir := testscommon.GetTestTmpDir(t)
+	testscommon.RecreateDir(dataDir)
+	defer testscommon.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000, // maintenance will not seal fracs
@@ -341,7 +341,7 @@ func TestReplayFractionsWithMultipleEmptyFracs(t *testing.T) {
 		fm.rotate()
 	}
 
-	var nonEmptyFracs []frac.Info
+	var nonEmptyFracs []common.Info
 	for _, fraction := range fm.getLocalFracs() {
 		if fraction.Info().DocsOnDisk > 0 {
 			nonEmptyFracs = append(nonEmptyFracs, *fraction.Info())
