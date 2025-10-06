@@ -10,7 +10,9 @@ import (
 	"github.com/alecthomas/units"
 	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
@@ -30,7 +32,7 @@ type FractionTestSuite struct {
 
 	fraction Fraction
 
-	insertDocuments func(doc string) []seq.ID
+	insertDocuments func(docs ...string) []seq.ID
 }
 
 func (s *FractionTestSuite) SetupSuite() {
@@ -74,11 +76,13 @@ func (s *FractionTestSuite) SetupSuite() {
 }
 
 func (s *FractionTestSuite) TearDownTest() {
-	active, ok := s.fraction.(*Active)
-	if ok {
-		active.Release()
+	if s.fraction != nil {
+		active, ok := s.fraction.(*Active)
+		if ok {
+			active.Release()
+		}
+		s.fraction.Suicide()
 	}
-	s.fraction.Suicide()
 
 	err := os.RemoveAll(s.tmpDir)
 	s.NoError(err, "Failed to remove tmp dir")
@@ -148,6 +152,22 @@ func (s *FractionTestSuite) TestInsertSingleDocument() {
 }
 
 /*
+func (s *FractionTestSuite) TestInsertMultipleDocuments() {
+	docs := []string{
+		`{"time":14589329034, "message":"first test document","level":"info","service":"test-service","status":"ok"}`,
+		`{"time":14589329035, "message":"second test document","level":"error","service":"test-service","status":"fail"}`,
+		`{"time":14589329036, "message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
+	}
+
+	ids := s.insertDocuments(docs...)
+
+	s.Len(ids, 3, "Should return 3 document IDs")
+	s.True(s.fraction.Contains(ids[0].MID), "Fraction should contain first document")
+	s.True(s.fraction.Contains(ids[1].MID), "Fraction should contain second document")
+	s.True(s.fraction.Contains(ids[2].MID), "Fraction should contain third document")
+}
+*/
+
 func (s *FractionTestSuite) checkContains(fraction Fraction, ids []seq.ID) {
 	info := fraction.Info()
 	s.Equal(uint32(len(ids)), info.DocsTotal, "Fraction should contain %d documents", len(ids))
@@ -160,13 +180,16 @@ func (s *FractionTestSuite) checkContains(fraction Fraction, ids []seq.ID) {
 			"Fraction should intersect with document range")
 	}
 }
-*/
 
 type ActiveFractionSuite struct {
 	FractionTestSuite
 }
 
 func (s *ActiveFractionSuite) SetupTest() {
+	// TODO setup test
+	err := os.MkdirAll(s.tmpDir, 0755)
+	s.Require().NoError(err, "Failed to create tmp dir")
+
 	baseName := filepath.Join(s.tmpDir, "test_fraction")
 	indexer := NewActiveIndexer(4, 10)
 	indexer.Start()
@@ -181,8 +204,8 @@ func (s *ActiveFractionSuite) SetupTest() {
 	)
 
 	s.fraction = active
-	s.insertDocuments = func(doc string) []seq.ID {
-		return s.InsertIntoActive(active, doc)
+	s.insertDocuments = func(docs ...string) []seq.ID {
+		return s.InsertIntoActive(active, docs...)
 	}
 }
 
@@ -195,7 +218,11 @@ type SealedFractionSuite struct {
 }
 
 func (s *SealedFractionSuite) SetupTest() {
-	s.insertDocuments = func(doc string) []seq.ID {
+	// Ensure tmpDir exists
+	err := os.MkdirAll(s.tmpDir, 0755)
+	s.Require().NoError(err, "Failed to create tmp dir")
+
+	s.insertDocuments = func(docs ...string) []seq.ID {
 		baseFile := filepath.Join(s.tmpDir, "test_fraction")
 		indexer := NewActiveIndexer(4, 10)
 		indexer.Start()
@@ -209,9 +236,15 @@ func (s *SealedFractionSuite) SetupTest() {
 			s.config,
 		)
 
-		ids := s.InsertIntoActive(active, doc)
+		ids := s.InsertIntoActive(active, docs...)
 
-		sealParams := SealParams{
+		if len(ids) == 0 {
+			// TODO fail test?
+			active.Release()
+			return ids
+		}
+
+		sealParams := common.SealParams{
 			IDsZstdLevel:           3,
 			LIDsZstdLevel:          3,
 			TokenListZstdLevel:     3,
@@ -221,8 +254,12 @@ func (s *SealedFractionSuite) SetupTest() {
 			DocBlockSize:           1024 * 1024,
 		}
 
-		preloaded, err := Seal(active, sealParams)
-		s.Require().NoError(err, "Sealing should succeed")
+		time.Sleep(100 * time.Millisecond)
+
+		activeSealingSource, err := NewActiveSealingSource(active, sealParams)
+		s.Require().NoError(err, "Sealing source creation failed")
+		preloaded, err := sealing.Seal(activeSealingSource, sealParams)
+		s.Require().NoError(err, "Sealing failed")
 
 		sealed := NewSealedPreloaded(
 			baseFile,
@@ -233,7 +270,7 @@ func (s *SealedFractionSuite) SetupTest() {
 			s.config,
 		)
 		s.fraction = sealed
-		active.Release()
+		// active.Release()
 		return ids
 	}
 }
