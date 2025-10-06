@@ -1,6 +1,8 @@
 package frac
 
 import (
+	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,10 +13,12 @@ import (
 	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
+	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/stretchr/testify/suite"
@@ -36,6 +40,15 @@ type FractionTestSuite struct {
 }
 
 func (s *FractionTestSuite) SetupSuite() {
+	s.mapping = seq.Mapping{
+		"k8s_pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"k8s_namespace": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"k8s_container": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"message":       seq.NewSingleType(seq.TokenizerTypeText, "", 0),
+		"level":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"service":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+	}
 }
 
 func (s *FractionTestSuite) SetupTest() {
@@ -69,7 +82,7 @@ func (s *FractionTestSuite) InsertIntoActive(active *Active, docs ...string) []s
 	var wg sync.WaitGroup
 	wg.Add(1)
 	err := active.Append(docsBlock, metasBlock, &wg)
-	s.Require().NoError(err, "Append should succeed")
+	s.Require().NoError(err, "append to active failed")
 
 	wg.Wait()
 	return ids
@@ -104,27 +117,75 @@ func (s *FractionTestSuite) extractTokens(root *insaneJSON.Root) []seq.Token {
 	return tokens
 }
 
-func (s *FractionTestSuite) TestInsertSingleDocument() {
-	doc := `{"time":14589329034, "message":"single test document","level":"info","service":"test-service","status":"ok"}`
+func (s *FractionTestSuite) AssertSearch(query string, originalDocs []string, indexes []int) {
+	seqql, err := parser.ParseSeqQL(query, s.mapping)
+	s.Require().NoError(err, "failed to parse query: %s", query)
 
-	ids := s.insertDocuments(doc)
+	dp, release := s.fraction.DataProvider(context.Background())
+	defer release()
 
-	s.True(s.fraction.Contains(ids[0].MID))
+	params := processor.SearchParams{
+		AST:   seqql.Root,
+		From:  seq.MID(0),
+		To:    seq.MID(math.MaxUint64),
+		Limit: math.MaxInt32,
+	}
+
+	qpr, err := dp.Search(params)
+	s.Require().NoError(err, "search failed for query: %s", query)
+
+	s.Require().Equal(len(indexes), qpr.IDs.Len(),
+		"expected %d documents but found %d for query: %s", len(indexes), qpr.IDs.Len(), query)
+
+	docs, err := dp.Fetch(qpr.IDs.IDs())
+	s.Require().NoError(err, "failed to fetch documents for IDs: %v", qpr.IDs.IDs())
+
+	fetchedDocs := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		fetchedDocs = append(fetchedDocs, string(doc))
+	}
+
+	for i, fetchedDoc := range fetchedDocs {
+		if i < len(indexes) {
+			expectedDoc := originalDocs[indexes[i]]
+			s.Require().Equal(expectedDoc, fetchedDoc,
+				"document at index %d doesn't match expected document at original index %d for query: %s",
+				i, indexes[i], query)
+		}
+	}
 }
 
-func (s *FractionTestSuite) TestInsertMultipleDocuments() {
+func (s *FractionTestSuite) TestContainsDocuments() {
 	docs := []string{
-		`{"time":14589329034, "message":"first test document","level":"info","service":"test-service","status":"ok"}`,
-		`{"time":14589329035, "message":"second test document","level":"error","service":"test-service","status":"fail"}`,
-		`{"time":14589329036, "message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
+		`{"time":100, "message":"first test document","level":"info","service":"test-service","status":"ok"}`,
+		`{"time":101, "message":"second test document","level":"error","service":"test-service","status":"fail"}`,
+		`{"time":102, "message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
 	}
 
 	ids := s.insertDocuments(docs...)
 
 	s.Len(ids, 3, "Should return 3 document IDs")
-	s.True(s.fraction.Contains(ids[0].MID), "Fraction should contain first document")
-	s.True(s.fraction.Contains(ids[1].MID), "Fraction should contain second document")
-	s.True(s.fraction.Contains(ids[2].MID), "Fraction should contain third document")
+	s.True(s.fraction.Contains(ids[0].MID))
+	s.True(s.fraction.Contains(ids[1].MID))
+	s.True(s.fraction.Contains(ids[2].MID))
+}
+
+func (s *FractionTestSuite) TestSearchKeyword() {
+	docs := []string{
+		`{"time":100, "message":"first test document","level":"info","service":"test-service","status":"ok"}`,
+		`{"time":101, "message":"second test document","level":"error","service":"test-service","status":"fail"}`,
+		`{"time":102, "message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
+	}
+
+	ids := s.insertDocuments(docs...)
+	s.Len(ids, 3, "Should return 3 document IDs")
+
+	s.AssertSearch("level:info", docs, []int{0})
+	s.AssertSearch("level:error", docs, []int{1})
+	s.AssertSearch("level:debug", docs, []int{2})
+
+	s.AssertSearch("service:test-service", docs, []int{1, 0})
+	s.AssertSearch("service:another-service", docs, []int{2})
 }
 
 func (s *FractionTestSuite) checkContains(fraction Fraction, ids []seq.ID) {
@@ -169,15 +230,6 @@ func (s *ActiveFractionSuite) SetupTest() {
 		Registry:   cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
 	}
 	s.readLimiter = storage.NewReadLimiter(2, NopCounter{})
-	s.mapping = seq.Mapping{
-		"k8s_pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_namespace": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_container": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"message":       seq.NewSingleType(seq.TokenizerTypeText, "", 0),
-		"level":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"service":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-	}
 
 	// TODO setup test
 	var err error
@@ -245,17 +297,9 @@ func (s *SealedFractionSuite) SetupTest() {
 		Registry:   cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
 	}
 	s.readLimiter = storage.NewReadLimiter(2, NopCounter{})
-	s.mapping = seq.Mapping{
-		"k8s_pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_namespace": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_container": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"message":       seq.NewSingleType(seq.TokenizerTypeText, "", 0),
-		"level":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"service":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-	}
 
 	// Ensure tmpDir exists
+	// TODO here?
 	var err error
 	s.tmpDir, err = os.MkdirTemp("", "fraction_test_*")
 	s.Require().NoError(err)
