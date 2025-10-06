@@ -28,6 +28,19 @@ storage:
 seqproxy:
   ingress:
     enabled: true
+  config:
+    slow_logs:
+      bulk_threshold: 0ms
+      fetch_threshold: 3s
+      search_threshold: 3s
+    limits:
+      query_rate: 2.0
+      search_requests: 32
+      bulk_requests: 32
+      inflight_bulks: 32
+      fraction_hits: 6000
+      search_docs: 100000
+      doc_size: "128KiB"
 
 sequi:
   ingress:
@@ -35,3 +48,11 @@ sequi:
   front:
     ingress:
       enabled: true
+
+config:
+  compression:
+    docs_zstd_compression_level: -1
+    metas_zstd_compression_level: -1
+  docs_sorting:
+    doc_block_size: "1MiB"
+    enabled: false

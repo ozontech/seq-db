@@ -115,6 +115,8 @@ mapping:
 
 storage: {}
 
+config: {}
+
 seqproxy:
   enabled: true
   # Default values for seq-proxy.
@@ -137,6 +139,8 @@ seqproxy:
   # This is to override the chart name.
   nameOverride: ""
   fullnameOverride: ""
+
+  config: {}
 
   cluster:
     replicas: 1
