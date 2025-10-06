@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tests/common"
 )
@@ -24,7 +24,7 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), config)
 	assert.NoError(t, err)
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
 	fm.WaitIdle()
 	info := fm.Active().Info()

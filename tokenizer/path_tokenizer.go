@@ -3,7 +3,6 @@ package tokenizer
 import (
 	"bytes"
 
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/metric"
 )
 
@@ -29,7 +28,7 @@ func NewPathTokenizer(
 	}
 }
 
-func (t *PathTokenizer) Tokenize(tokens []frac.MetaToken, name, value []byte, maxTokenSize int) []frac.MetaToken {
+func (t *PathTokenizer) Tokenize(tokens []MetaToken, name, value []byte, maxTokenSize int) []MetaToken {
 	if maxTokenSize == 0 {
 		maxTokenSize = t.defaultMaxTokenSize
 	}
@@ -57,13 +56,13 @@ func (t *PathTokenizer) Tokenize(tokens []frac.MetaToken, name, value []byte, ma
 		}
 		i += sepIndex
 
-		tokens = append(tokens, frac.MetaToken{
+		tokens = append(tokens, MetaToken{
 			Key:   name,
 			Value: toLowerIfCaseInsensitive(t.caseSensitive, value[:i]),
 		})
 	}
 
-	tokens = append(tokens, frac.MetaToken{
+	tokens = append(tokens, MetaToken{
 		Key:   name,
 		Value: toLowerIfCaseInsensitive(t.caseSensitive, value),
 	})
