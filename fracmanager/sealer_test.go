@@ -21,6 +21,7 @@ import (
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
+	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/seq"
 	testscommon "github.com/ozontech/seq-db/tests/common"
 )
@@ -49,7 +50,7 @@ func fillActiveFraction(active *frac.Active) error {
 
 	k := 0
 	wg := sync.WaitGroup{}
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	for i := 0; i < muliplier; i++ {
 		dp.TryReset()
 
@@ -66,12 +67,12 @@ func fillActiveFraction(active *frac.Active) error {
 			}
 
 			id := seq.NewID(time.Now(), uint64(rand.Int63()))
-			dp.Append(doc, docRoot, id, seq.Tokens(
+			dp.Append(doc, docRoot, id,
 				"_all_:",
 				"service:service"+strconv.Itoa(rand.Intn(200)),
 				"k8s_pod1:"+strconv.Itoa(k%100000),
 				"k8s_pod2:"+strconv.Itoa(k%1000000),
-			))
+			)
 		}
 		docs, metas := dp.Provide()
 		wg.Add(1)
