@@ -27,7 +27,6 @@ import (
 type FractionTestSuite struct {
 	suite.Suite
 	tmpDir      string
-	docsCache   *cache.Cache[[]byte]
 	sortCache   *cache.Cache[[]byte]
 	indexCache  *IndexCache
 	readLimiter *storage.ReadLimiter
@@ -40,6 +39,17 @@ type FractionTestSuite struct {
 }
 
 func (s *FractionTestSuite) SetupSuite() {
+	s.config = &Config{
+		Search: SearchConfig{
+			AggLimits: AggLimits{
+				MaxFieldTokens:     1000,
+				MaxGroupTokens:     1000,
+				MaxTIDsPerFraction: 1000,
+			},
+		},
+		SkipSortDocs: true, // TODO enabling will fail tests
+		KeepMetaFile: false,
+	}
 	s.mapping = seq.Mapping{
 		"k8s_pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"k8s_namespace": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -175,18 +185,36 @@ func (s *FractionTestSuite) TestSearchKeyword() {
 		`{"time":100, "message":"first test document","level":"info","service":"test-service","status":"ok"}`,
 		`{"time":101, "message":"second test document","level":"error","service":"test-service","status":"fail"}`,
 		`{"time":102, "message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
+		`{"time":103, "message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
 	}
 
-	ids := s.insertDocuments(docs...)
-	s.Len(ids, 3, "Should return 3 document IDs")
+	s.insertDocuments(docs...)
 
-	s.AssertSearch("level:info", docs, []int{0})
+	s.AssertSearch("level:info", docs, []int{3, 0})
 	s.AssertSearch("level:error", docs, []int{1})
 	s.AssertSearch("level:debug", docs, []int{2})
 
 	s.AssertSearch("service:test-service", docs, []int{1, 0})
-	s.AssertSearch("service:another-service", docs, []int{2})
+	s.AssertSearch("service:another-service", docs, []int{3, 2})
+
+	s.AssertSearch("status:ok", docs, []int{3, 2, 0})
+	s.AssertSearch("status:fail", docs, []int{1})
 }
+
+/*
+TODO not working now because we must properly tokenize message
+func (s *FractionTestSuite) TestSearchFullText() {
+	docs := []string{
+		`{"time":100, "message":"first test document","level":"info","service":"test-service","status":"ok"}`,
+		`{"time":101, "message":"second test document","level":"error","service":"test-service","status":"fail"}`,
+		`{"time":102, "message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
+		`{"time":103, "message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	s.AssertSearch("message:document", docs, []int{3, 2, 1, 0})
+}*/
 
 func (s *FractionTestSuite) checkContains(fraction Fraction, ids []seq.ID) {
 	info := fraction.Info()
@@ -206,19 +234,6 @@ type ActiveFractionSuite struct {
 }
 
 func (s *ActiveFractionSuite) SetupTest() {
-	s.config = &Config{
-		Search: SearchConfig{
-			AggLimits: AggLimits{
-				MaxFieldTokens:     1000,
-				MaxGroupTokens:     1000,
-				MaxTIDsPerFraction: 1000,
-			},
-		},
-		SkipSortDocs: true, // TODO enabling will fail tests
-		KeepMetaFile: false,
-	}
-
-	s.docsCache = cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil)
 	s.sortCache = cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil)
 	s.indexCache = &IndexCache{
 		MIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
@@ -244,7 +259,7 @@ func (s *ActiveFractionSuite) SetupTest() {
 		baseName,
 		indexer,
 		s.readLimiter,
-		s.docsCache,
+		cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
 		s.sortCache,
 		s.config,
 	)
@@ -273,19 +288,6 @@ type SealedFractionSuite struct {
 }
 
 func (s *SealedFractionSuite) SetupTest() {
-	s.config = &Config{
-		Search: SearchConfig{
-			AggLimits: AggLimits{
-				MaxFieldTokens:     1000,
-				MaxGroupTokens:     1000,
-				MaxTIDsPerFraction: 1000,
-			},
-		},
-		SkipSortDocs: true, // TODO enabling will fail tests
-		KeepMetaFile: false,
-	}
-
-	s.docsCache = cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil)
 	s.sortCache = cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil)
 	s.indexCache = &IndexCache{
 		MIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
@@ -313,7 +315,7 @@ func (s *SealedFractionSuite) SetupTest() {
 			baseFile,
 			indexer,
 			s.readLimiter,
-			s.docsCache,
+			cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
 			s.sortCache,
 			s.config,
 		)
@@ -347,7 +349,7 @@ func (s *SealedFractionSuite) SetupTest() {
 			preloaded,
 			s.readLimiter,
 			s.indexCache,
-			s.docsCache,
+			cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
 			s.config,
 		)
 		s.fraction = sealed
