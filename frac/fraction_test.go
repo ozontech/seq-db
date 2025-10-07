@@ -48,7 +48,7 @@ func (s *FractionTestSuite) SetupSuite() {
 				MaxTIDsPerFraction: 1000,
 			},
 		},
-		SkipSortDocs: true, // TODO enabling will fail tests
+		SkipSortDocs: true, // TODO enabling sorting will fail tests
 		KeepMetaFile: false,
 	}
 	s.mapping = seq.Mapping{
@@ -91,12 +91,12 @@ func (s *FractionTestSuite) InsertIntoActive(active *Active, docs ...string) {
 		return d, nil
 	}
 
-	_, rawDocs, rawMeta, err := p.ProcessBulk(time.Now(), nil, nil, readNext)
+	_, binaryDocs, binaryMeta, err := p.ProcessBulk(time.Now(), nil, nil, readNext)
 	s.Require().NoError(err, "processing bulk failed")
 
 	compressor := indexer.GetDocsMetasCompressor(3, 3)
 	defer indexer.PutDocMetasCompressor(compressor)
-	compressor.CompressDocsAndMetas(rawDocs, rawMeta)
+	compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
 	docsBlock, metasBlock := compressor.DocsMetas()
 
 	var wg sync.WaitGroup
@@ -170,23 +170,12 @@ func (s *FractionTestSuite) AssertSearchQuery(query *SearchQuery, originalDocs [
 	}
 }
 
-/*
-	func (s *FractionTestSuite) TestContainsDocuments() {
-		docs := []string{
-			`{"time":100, "message":"first test document","level":"info","service":"test-service","status":"ok"}`,
-			`{"time":101, "message":"second test document","level":"error","service":"test-service","status":"fail"}`,
-			`{"time":102, "message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
-		}
-
-		s.insertDocuments(docs...)
-	}
-*/
 func (s *FractionTestSuite) TestSearchKeyword() {
 	docs := []string{
-		`{"time":100, "message":"first test document","level":"info","service":"test-service","status":"ok"}`,
-		`{"time":101, "message":"second test document","level":"error","service":"test-service","status":"fail"}`,
-		`{"time":102, "message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
-		`{"time":103, "message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:00Z", "message":"first test document","level":"info","service":"test-service","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:01Z", "message":"second test document","level":"error","service":"test-service","status":"fail"}`,
+		`{"timestamp":"2000-01-01T13:00:02Z", "message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:03Z", "message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
 	}
 
 	s.insertDocuments(docs...)
@@ -204,10 +193,10 @@ func (s *FractionTestSuite) TestSearchKeyword() {
 
 func (s *FractionTestSuite) TestBasicSearch() {
 	docs := []string{
-		`{"timestamp":110,"service":"service_a","message":"first message some text","trace_id":"abcdef","source":"prod01","level":"1"}`,
-		`{"timestamp":130,"service":"service_b","message":"second message other text","trace_id":"abcdef","source":"prod01","level":"1"}`,
-		`{"timestamp":140,"service":"service_c","message":"third message other text","trace_id":"aaaaaa","source":"prod02","level":"2"}`,
-		`{"timestamp":120,"service":"service_a","message":"fourth message some text","trace_id":"bbbbbb","source":"prod01","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message some text","trace_id":"abcdef","source":"prod01","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:32Z","service":"service_b","message":"second message other text","trace_id":"abcdef","source":"prod01","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:43Z","service":"service_c","message":"third message other text","trace_id":"aaaaaa","source":"prod02","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:53Z","service":"service_a","message":"fourth message some text","trace_id":"bbbbbb","source":"prod01","level":"1"}`,
 	}
 	s.insertDocuments(docs...)
 
@@ -226,12 +215,12 @@ func (s *FractionTestSuite) TestBasicSearch() {
 
 func (s *FractionTestSuite) TestSearchNot() {
 	docs := []string{
-		`{"timestamp":100,"message":"bad","level":"1","service":"srv_1","status":"ok"}`,
-		`{"timestamp":101,"message":"good","level":"2","service":"srv_2","status":"ok"}`,
-		`{"timestamp":102,"message":"bad","level":"3","service":"srv_3","status":"ok"}`,
-		`{"timestamp":103,"message":"good","level":"4","service":"srv_4","status":"ok"}`,
-		`{"timestamp":104,"message":"bad","level":"5","service":"srv_5","status":"ok"}`,
-		`{"timestamp":105,"message":"good","level":"6","service":"srv_6","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:25Z","message":"bad","level":"1","service":"srv_1","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:26Z","message":"good","level":"2","service":"srv_2","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:27Z","message":"bad","level":"3","service":"srv_3","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:28Z","message":"good","level":"4","service":"srv_4","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:29Z","message":"bad","level":"5","service":"srv_5","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:30Z","message":"good","level":"6","service":"srv_6","status":"ok"}`,
 	}
 	s.insertDocuments(docs...)
 
@@ -258,10 +247,10 @@ func (s *FractionTestSuite) TestSearchNot() {
 
 func (s *FractionTestSuite) TestWildcardSymbols() {
 	docs := []string{
-		`{"timestamp":110,"service":"first_value","level":"info"}`,
-		`{"timestamp":120,"service":"second_value","level":"error"}`,
-		`{"timestamp":130,"service":"third_value","level":"debug"}`,
-		`{"timestamp":140,"service":"fourth","level":"warn"}`,
+		`{"timestamp":"2000-01-01T13:00:27Z","service":"first_value","level":"info"}`,
+		`{"timestamp":"2000-01-01T13:00:28Z","service":"second_value","level":"error"}`,
+		`{"timestamp":"2000-01-01T13:00:29Z","service":"third_value","level":"debug"}`,
+		`{"timestamp":"2000-01-01T13:00:30Z","service":"fourth","level":"warn"}`,
 	}
 	s.insertDocuments(docs...)
 
@@ -319,10 +308,10 @@ func (s *FractionTestSuite) TestWildcardSymbols() {
 
 func (s *FractionTestSuite) TestSearchFullText() {
 	docs := []string{
-		`{"timestamp":100,"message":"first test document","level":"info","service":"test-service","status":"ok"}`,
-		`{"timestamp":101,"message":"second test document","level":"error","service":"test-service","status":"fail"}`,
-		`{"timestamp":102,"message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
-		`{"timestamp":103,"message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:30Z","message":"first test document","level":"info","service":"test-service","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:31Z","message":"second test document","level":"error","service":"test-service","status":"fail"}`,
+		`{"timestamp":"2000-01-01T13:00:32Z","message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:33Z","message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
 	}
 
 	s.insertDocuments(docs...)
@@ -338,15 +327,18 @@ func (s *FractionTestSuite) TestSearchFullText() {
 
 func (s *FractionTestSuite) TestSearchFromTo() {
 	docs := []string{
-		`{"timestamp":100,"message":"first test document","level":"info","service":"test-service","status":"ok"}`,
-		`{"timestamp":101,"message":"second test document","level":"error","service":"test-service","status":"fail"}`,
-		`{"timestamp":102,"message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
-		`{"timestamp":103,"message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:35Z","message":"first test document","level":"info","service":"test-service","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:36Z","message":"second test document","level":"error","service":"test-service","status":"fail"}`,
+		`{"timestamp":"2000-01-01T13:00:37Z","message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:38Z","message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
 	}
 
 	s.insertDocuments(docs...)
 
-	s.AssertSearchQuery(query("level:info").From(0).To(200), docs, []int{3, 0})
+	from, _ := time.Parse(time.RFC3339, "2000-01-01T13:00:35Z")
+	to, _ := time.Parse(time.RFC3339, "2000-01-01T13:00:38Z")
+
+	s.AssertSearchQuery(query("message:document").From(uint64(from.UnixNano()/int64(time.Millisecond))).To(uint64(to.UnixNano()/int64(time.Millisecond))), docs, []int{3, 2, 1, 0})
 }
 
 type SearchQuery struct {
