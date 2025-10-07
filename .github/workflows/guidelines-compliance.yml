@@ -30,7 +30,7 @@ jobs:
           echo "${{ github.event.pull_request.title }}" | npx commitlint
 
       - name: Comment on PR if validation fails
-        if: failure()
+        if: true
         uses: actions/github-script@v8
         with:
           script: |
