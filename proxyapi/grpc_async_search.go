@@ -26,6 +26,11 @@ func (g *grpcV1) StartAsyncSearch(
 			r.Size, g.config.AsyncSearchMaxDocumentsPerRequest)
 	}
 
+	// reject "empty" request: no docs, no aggs, no hist
+	if r.WithDocs == false && len(r.Aggs) == 0 && r.Hist == nil {
+		return nil, status.Error(codes.InvalidArgument, "can't serve empty request: fill aggs, hist or withDocs")
+	}
+
 	aggs, err := convertAggsQuery(r.Aggs)
 	if err != nil {
 		return nil, err
