@@ -48,6 +48,7 @@ jobs:
             });
 
   validate-branch-name:
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Validate branch name
