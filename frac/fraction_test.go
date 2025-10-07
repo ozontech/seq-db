@@ -107,69 +107,6 @@ func (s *FractionTestSuite) InsertIntoActive(active *Active, docs ...string) {
 	wg.Wait()
 }
 
-func (s *FractionTestSuite) AssertSearch(queryString string, originalDocs []string, indexes []int) {
-	s.AssertSearchQuery(query(queryString), originalDocs, indexes)
-}
-
-func (s *FractionTestSuite) AssertSearchQuery(query *SearchQuery, originalDocs []string, indexes []int) {
-	var queryStr string
-	var from, to seq.MID
-	var limit int
-
-	queryStr = query.query
-	if query.from != nil {
-		from = *query.from
-	} else {
-		from = seq.MID(0)
-	}
-	if query.to != nil {
-		to = *query.to
-	} else {
-		to = seq.MID(math.MaxUint64)
-	}
-	if query.limit != nil {
-		limit = *query.limit
-	} else {
-		limit = math.MaxInt32
-	}
-
-	seqql, err := parser.ParseSeqQL(queryStr, s.mapping)
-	s.Require().NoError(err, "failed to parse query: %s", queryStr)
-
-	dp, release := s.fraction.DataProvider(context.Background())
-	defer release()
-
-	params := processor.SearchParams{
-		AST:   seqql.Root,
-		From:  from,
-		To:    to,
-		Limit: limit,
-	}
-
-	qpr, err := dp.Search(params)
-	s.Require().NoError(err, "search failed for query: %s", queryStr)
-
-	s.Require().Equal(len(indexes), qpr.IDs.Len(),
-		"expected %d documents but found %d for query: %s", len(indexes), qpr.IDs.Len(), queryStr)
-
-	docs, err := dp.Fetch(qpr.IDs.IDs())
-	s.Require().NoError(err, "failed to fetch documents for IDs: %v", qpr.IDs.IDs())
-
-	fetchedDocs := make([]string, 0, len(docs))
-	for _, doc := range docs {
-		fetchedDocs = append(fetchedDocs, string(doc))
-	}
-
-	for i, fetchedDoc := range fetchedDocs {
-		if i < len(indexes) {
-			expectedDoc := originalDocs[indexes[i]]
-			s.Require().Equal(expectedDoc, fetchedDoc,
-				"document at index %d doesn't match expected document at original index %d for query: %s",
-				i, indexes[i], queryStr)
-		}
-	}
-}
-
 func (s *FractionTestSuite) TestSearchKeyword() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:00Z", "message":"first test document","level":"info","service":"test-service","status":"ok"}`,
@@ -222,6 +159,7 @@ func (s *FractionTestSuite) TestSearchNot() {
 		`{"timestamp":"2000-01-01T13:00:29Z","message":"bad","level":"5","service":"srv_5","status":"ok"}`,
 		`{"timestamp":"2000-01-01T13:00:30Z","message":"good","level":"6","service":"srv_6","status":"ok"}`,
 	}
+
 	s.insertDocuments(docs...)
 
 	s.AssertSearch("NOT level:1", docs, []int{5, 4, 3, 2, 1})
@@ -266,46 +204,6 @@ func (s *FractionTestSuite) TestWildcardSymbols() {
 	s.AssertSearch("level:warn", docs, []int{3})
 }
 
-/*func (s *FractionTestSuite) TestFetch() {
-	docs := []string{
-		`{"timestamp":100,"message":"bad","level":"1","trace_id":"0","service":"0","status":"ok"}`,
-		`{"timestamp":101,"message":"good","level":"2","trace_id":"0","service":"1","status":"ok"}`,
-		`{"timestamp":102,"message":"bad","level":"3","trace_id":"0","service":"2","status":"ok"}`,
-		`{"timestamp":103,"message":"good","level":"4","trace_id":"1","service":"0","status":"ok"}`,
-		`{"timestamp":104,"message":"bad","level":"5","trace_id":"1","service":"1","status":"ok"}`,
-		`{"timestamp":105,"message":"good","level":"6","trace_id":"1","service":"2","status":"ok"}`,
-		`{"timestamp":106,"message":"bad","level":"7","trace_id":"2","service":"0","status":"ok"}`,
-		`{"timestamp":107,"message":"good","level":"8","trace_id":"2","service":"1","status":"ok"}`,
-	}
-
-	ids := s.insertDocuments(docs...)
-	s.Require().Equal(8, len(ids))
-
-	// Test fetching all documents using a simple query
-	dp, release := s.fraction.DataProvider(context.Background())
-	defer release()
-
-	// Use a simple query that matches all documents
-	seqql, err := parser.ParseSeqQL("_all_:*", s.mapping)
-	s.Require().NoError(err)
-
-	params := processor.SearchParams{
-		AST:   seqql.Root,
-		From:  seq.MID(0),
-		To:    seq.MID(math.MaxUint64),
-		Limit: math.MaxInt32,
-	}
-
-	qpr, err := dp.Search(params)
-	s.Require().NoError(err)
-	s.Require().Equal(8, qpr.IDs.Len())
-
-	// Test fetching documents by IDs
-	fetchedDocs, err := dp.Fetch(qpr.IDs.IDs())
-	s.Require().NoError(err)
-	s.Require().Equal(len(qpr.IDs.IDs()), len(fetchedDocs))
-}*/
-
 func (s *FractionTestSuite) TestSearchFullText() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:30Z","message":"first test document","level":"info","service":"test-service","status":"ok"}`,
@@ -335,44 +233,98 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 
 	s.insertDocuments(docs...)
 
-	from, _ := time.Parse(time.RFC3339, "2000-01-01T13:00:35Z")
-	to, _ := time.Parse(time.RFC3339, "2000-01-01T13:00:38Z")
-
-	s.AssertSearchQuery(query("message:document").From(uint64(from.UnixNano()/int64(time.Millisecond))).To(uint64(to.UnixNano()/int64(time.Millisecond))), docs, []int{3, 2, 1, 0})
+	s.AssertSearch(s.query("message:document", withFrom("2000-01-01T13:00:35Z"), withTo("2000-01-01T13:00:38Z")), docs, []int{3, 2, 1, 0})
+	s.AssertSearch(s.query("message:document", withFrom("2000-01-01T13:00:35Z"), withTo("2000-01-01T13:00:37Z")), docs, []int{2, 1, 0})
+	s.AssertSearch(s.query("message:document", withFrom("2000-01-01T13:00:36Z"), withTo("2000-01-01T13:00:37Z")), docs, []int{2, 1})
 }
 
-type SearchQuery struct {
-	query  string
-	from   *seq.MID
-	to     *seq.MID
-	offset *int
-	limit  *int
+type searchOption func(*processor.SearchParams) error
+
+func (s *FractionTestSuite) query(queryString string, options ...searchOption) *processor.SearchParams {
+	seqql, err := parser.ParseSeqQL(queryString, s.mapping)
+	s.Require().NoError(err, "failed to parse query: %s", queryString)
+
+	params := &processor.SearchParams{
+		AST:   seqql.Root,
+		From:  seq.MID(0),
+		To:    seq.MID(math.MaxUint64),
+		Limit: math.MaxInt32,
+	}
+
+	for _, option := range options {
+		err := option(params)
+		s.Require().NoError(err, "option can not be applied")
+	}
+
+	return params
 }
 
-func query(q string) *SearchQuery {
-	return &SearchQuery{query: q}
+func withFrom(from string) searchOption {
+	return func(p *processor.SearchParams) error {
+		time, err := time.Parse(time.RFC3339, from)
+		if err != nil {
+			return err
+		}
+		p.From = seq.TimeToMID(time)
+		return nil
+	}
 }
 
-func (sq *SearchQuery) From(timestamp uint64) *SearchQuery {
-	mid := seq.MID(timestamp)
-	sq.from = &mid
-	return sq
+func withTo(to string) searchOption {
+	return func(p *processor.SearchParams) error {
+		time, err := time.Parse(time.RFC3339, to)
+		if err != nil {
+			return err
+		}
+		p.To = seq.TimeToMID(time)
+		return nil
+	}
 }
 
-func (sq *SearchQuery) To(timestamp uint64) *SearchQuery {
-	mid := seq.MID(timestamp)
-	sq.to = &mid
-	return sq
+func withLimit(limit int) searchOption {
+	return func(p *processor.SearchParams) error {
+		p.Limit = limit
+		return nil
+	}
 }
 
-func (sq *SearchQuery) Offset(offset int) *SearchQuery {
-	sq.offset = &offset
-	return sq
+func (s *FractionTestSuite) AssertSearch(queryObject interface{}, originalDocs []string, indexes []int) {
+	switch q := queryObject.(type) {
+	case string:
+		s.AssertSearchWithSearchParams(s.query(q), originalDocs, indexes)
+	case *processor.SearchParams:
+		s.AssertSearchWithSearchParams(q, originalDocs, indexes)
+	default:
+		s.Require().Fail("type for query object not supported")
+	}
 }
 
-func (sq *SearchQuery) Limit(limit int) *SearchQuery {
-	sq.limit = &limit
-	return sq
+func (s *FractionTestSuite) AssertSearchWithSearchParams(params *processor.SearchParams, originalDocs []string, indexes []int) {
+	dp, release := s.fraction.DataProvider(context.Background())
+	defer release()
+
+	qpr, err := dp.Search(*params)
+	s.Require().NoError(err, "search failed for query")
+
+	s.Require().Equal(len(indexes), qpr.IDs.Len(),
+		"expected %d documents but found %d", len(indexes), qpr.IDs.Len())
+
+	docs, err := dp.Fetch(qpr.IDs.IDs())
+	s.Require().NoError(err, "failed to fetch documents for IDs: %v", qpr.IDs.IDs())
+
+	fetchedDocs := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		fetchedDocs = append(fetchedDocs, string(doc))
+	}
+
+	for i, fetchedDoc := range fetchedDocs {
+		if i < len(indexes) {
+			expectedDoc := originalDocs[indexes[i]]
+			s.Require().Equal(expectedDoc, fetchedDoc,
+				"document at index %d doesn't match expected document at original index %d",
+				i, indexes[i])
+		}
+	}
 }
 
 type ActiveFractionSuite struct {
@@ -426,7 +378,7 @@ func (s *ActiveFractionSuite) TearDownTest() {
 	}
 
 	err := os.RemoveAll(s.tmpDir)
-	s.NoError(err, "Failed to remove tmp dir")
+	s.NoError(err, "failed to remove tmp dir")
 }
 
 type SealedFractionSuite struct {
