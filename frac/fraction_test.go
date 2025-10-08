@@ -211,6 +211,7 @@ func (s *FractionTestSuite) TestWildcardSymbolsSearch() {
 		`{"timestamp":"2000-01-01T13:00:00.030Z","message":"third value****"}`,
 		`{"timestamp":"2000-01-01T13:00:00.040Z","message":"fourth ****"}`,
 	}
+
 	s.insertDocuments(docs...)
 
 	s.AssertSearch(`message:*`, docs, []int{3, 2, 1, 0})
@@ -350,12 +351,12 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 
 	s.insertDocuments(docs...)
 
-	assertSearch := func(query string, fromOffset, toOffset int, indexes []int) {
+	assertSearch := func(query string, fromOffset, toOffset int, expectedIndexes []int) {
 		s.AssertSearch(s.query(
 			query,
 			withFrom(fmt.Sprintf("2000-01-01T13:00:00.%03dZ", fromOffset)),
 			withTo(fmt.Sprintf("2000-01-01T13:00:00.%03dZ", toOffset))),
-			docs, indexes)
+			docs, expectedIndexes)
 	}
 
 	assertSearch(`message:good`, 0, 7, []int{7, 5, 3, 1})
@@ -386,6 +387,41 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 
 	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 0, 10, []int{5, 4, 3})
 	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 3, 5, []int{5, 4, 3})
+}
+
+func (s *FractionTestSuite) TestAgg() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","message":"bad","level":"3","trace_id":"0","service":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:03.000Z","message":"good","level":"4","trace_id":"1","service":"0"}`,
+		`{"timestamp":"2000-01-01T13:00:04.000Z","message":"bad","level":"5","trace_id":"1","service":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:05.000Z","message":"good","level":"6","trace_id":"1","service":"2"}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	assertSearch := func(query string, agg string, expected []map[string]uint64) {
+		searchParams := s.query(query)
+
+		err := withAgg(agg)(searchParams)
+		s.Require().NoError(err, "agg setting up failed")
+
+		dp, release := s.fraction.DataProvider(context.Background())
+		defer release()
+
+		qpr, err := dp.Search(*searchParams)
+		s.Require().NoError(err, "search failed")
+
+		s.Require().Equal(len(expected), len(qpr.Aggs))
+		//for i := range expected {
+		//	for bin, hist := range qpr.Aggs[i].SamplesByBin {
+		//		r.Equalf(int64(expected[i][bin.Token]), hist.Total, "failed for token %s", bin)
+		//	}
+		//}
+	}
+
+	assertSearch("message:*", "service", []map[string]uint64{})
 }
 
 type searchOption func(*processor.SearchParams) error
@@ -434,6 +470,31 @@ func withTo(to string) searchOption {
 func withLimit(limit int) searchOption {
 	return func(p *processor.SearchParams) error {
 		p.Limit = limit
+		return nil
+	}
+}
+
+func withAgg(aggQueries ...any) searchOption {
+	aggs := make([]processor.AggQuery, 0, len(aggQueries))
+	for _, aggQuery := range aggQueries {
+		switch aggQuery := aggQuery.(type) {
+		case string:
+			//searchAll := []parser.Term{{
+			//	Kind: parser.TermSymbol, Data: "*",
+			//}}
+			groupBy := &parser.Literal{
+				Field: aggQuery,
+				Terms: []parser.Term{},
+			}
+			aggs = append(aggs, processor.AggQuery{Field: groupBy, Func: seq.AggFuncCount})
+		case processor.AggQuery:
+			aggs = append(aggs, aggQuery)
+		default:
+			panic("unknown query type")
+		}
+	}
+	return func(sp *processor.SearchParams) error {
+		sp.AggQ = append(sp.AggQ, aggs...)
 		return nil
 	}
 }
