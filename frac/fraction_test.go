@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -34,6 +35,7 @@ type FractionTestSuite struct {
 	readLimiter *storage.ReadLimiter
 	config      *Config
 	mapping     seq.Mapping
+	tokenizers  map[seq.TokenizerType]tokenizer.Tokenizer
 
 	fraction Fraction
 
@@ -51,6 +53,11 @@ func (s *FractionTestSuite) SetupSuite() {
 		},
 		SkipSortDocs: true, // TODO enabling sorting will fail tests
 		KeepMetaFile: false,
+	}
+	s.tokenizers = map[seq.TokenizerType]tokenizer.Tokenizer{
+		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(20, false, true),
+		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 100),
+		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(512, false, true),
 	}
 	s.mapping = seq.Mapping{
 		"k8s_pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -90,14 +97,9 @@ func (s *FractionTestSuite) SetupTestCommon() {
 }
 
 func (s *FractionTestSuite) InsertIntoActive(active *Active, docs ...string) {
-	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
-		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(512, false, true),
-		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 4096),
-		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(512, false, true),
-	}
 
 	// drift and futureDrift are 0, we can process docs at any timestamps
-	p := indexer.NewProcessor(s.mapping, tokenizers, 0, 0, 0)
+	processor := indexer.NewProcessor(s.mapping, s.tokenizers, 0, 0, 0)
 
 	idx := 0
 	readNext := func() ([]byte, error) {
@@ -109,7 +111,7 @@ func (s *FractionTestSuite) InsertIntoActive(active *Active, docs ...string) {
 		return d, nil
 	}
 
-	_, binaryDocs, binaryMeta, err := p.ProcessBulk(time.Now(), nil, nil, readNext)
+	_, binaryDocs, binaryMeta, err := processor.ProcessBulk(time.Now(), nil, nil, readNext)
 	s.Require().NoError(err, "processing bulk failed")
 
 	compressor := indexer.GetDocsMetasCompressor(3, 3)
@@ -275,6 +277,46 @@ func (s *FractionTestSuite) TestSearchPath() {
 	s.AssertSearch("request_uri:*/three", docs, []int{10, 9, 8, 7, 6, 5, 2})
 }
 
+func (s *FractionTestSuite) TestSearchANDOR() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"apple","level":"info","service":"svc_a","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"apple","level":"error","service":"svc_b","status":"fail"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"banana","level":"info","service":"svc_a","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"banana","level":"error","service":"svc_b","status":"fail"}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"cherry","level":"info","service":"svc_c","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:00.005Z","message":"cherry","level":"warn","service":"svc_c","status":"ok"}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	s.AssertSearch("message:apple AND level:info", docs, []int{0})
+	s.AssertSearch("message:banana AND service:svc_a", docs, []int{2})
+	s.AssertSearch("message:cherry AND level:warn", docs, []int{5})
+	s.AssertSearch("level:info AND status:ok", docs, []int{4, 2, 0})
+	s.AssertSearch("service:svc_a AND status:ok", docs, []int{2, 0})
+
+	s.AssertSearch("message:apple OR message:banana", docs, []int{3, 2, 1, 0})
+	s.AssertSearch("level:error OR level:warn", docs, []int{5, 3, 1})
+	s.AssertSearch("service:svc_a OR service:svc_b", docs, []int{3, 2, 1, 0})
+	s.AssertSearch("status:fail OR level:warn", docs, []int{5, 3, 1})
+
+	s.AssertSearch("(message:apple OR message:banana) AND level:info", docs, []int{2, 0})
+	s.AssertSearch("message:cherry AND (level:info OR level:warn)", docs, []int{5, 4})
+	s.AssertSearch("(service:svc_a OR service:svc_b) AND level:info", docs, []int{2, 0})
+	s.AssertSearch("(service:svc_a OR service:svc_b) AND (level:info OR level:error)", docs, []int{3, 2, 1, 0})
+
+	s.AssertSearch("(message:apple AND level:info) OR (message:banana AND level:error)", docs, []int{3, 0})
+	s.AssertSearch("(message:apple OR message:cherry) AND (level:info OR level:error)", docs, []int{4, 1, 0})
+	s.AssertSearch("message:* AND (level:info OR level:error) AND status:ok", docs, []int{4, 2, 0})
+
+	s.AssertSearch("message:apple OR message:notfound", docs, []int{1, 0})
+	s.AssertSearch("message:notfound OR message:banana", docs, []int{3, 2})
+
+	s.AssertSearch("message:apple AND message:banana", docs, []int{})
+	s.AssertSearch("level:info AND level:error", docs, []int{})
+	s.AssertSearch("service:svc_a AND service:svc_b", docs, []int{})
+}
+
 func (s *FractionTestSuite) TestSearchNested() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:00.000Z","spans":[{"span_id":"1"},{"span_id":"2"}]}`,
@@ -285,6 +327,7 @@ func (s *FractionTestSuite) TestSearchNested() {
 
 	s.insertDocuments(docs...)
 
+	// Each AssertSearch now tests both desc and asc order
 	s.AssertSearch("spans.span_id:*", docs, []int{3, 2, 1, 0})
 	s.AssertSearch("spans.span_id:1", docs, []int{2, 0})
 	s.AssertSearch("spans.span_id:2", docs, []int{1, 0})
@@ -407,30 +450,39 @@ func (s *FractionTestSuite) AssertSearch(queryObject interface{}, originalDocs [
 }
 
 func (s *FractionTestSuite) AssertSearchWithSearchParams(params *processor.SearchParams, originalDocs []string, indexes []int) {
-	dp, release := s.fraction.DataProvider(context.Background())
-	defer release()
+	for _, order := range []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc} {
+		params.Order = order
 
-	qpr, err := dp.Search(*params)
-	s.Require().NoError(err, "search failed for query")
+		dp, release := s.fraction.DataProvider(context.Background())
 
-	s.Require().Equal(len(indexes), qpr.IDs.Len(),
-		"expected %d documents but found %d", len(indexes), qpr.IDs.Len())
+		qpr, err := dp.Search(*params)
+		s.Require().NoError(err, "search failed for query with order=%v", order)
 
-	docs, err := dp.Fetch(qpr.IDs.IDs())
-	s.Require().NoError(err, "failed to fetch documents for IDs: %v", qpr.IDs.IDs())
+		s.Require().Equal(len(indexes), qpr.IDs.Len(),
+			"expected %d docs but found %d with order=%v", len(indexes), qpr.IDs.Len(), order)
 
-	fetchedDocs := make([]string, 0, len(docs))
-	for _, doc := range docs {
-		fetchedDocs = append(fetchedDocs, string(doc))
-	}
+		docs, err := dp.Fetch(qpr.IDs.IDs())
+		s.Require().NoError(err, "failed to fetch docs for IDs: %v", qpr.IDs.IDs())
 
-	for i, fetchedDoc := range fetchedDocs {
-		if i < len(indexes) {
-			expectedDoc := originalDocs[indexes[i]]
-			s.Require().Equal(expectedDoc, fetchedDoc,
-				"document at index %d doesn't match expected document at original index %d",
-				i, indexes[i])
+		if order.IsReverse() {
+			slices.Reverse(docs)
 		}
+
+		fetchedDocs := make([]string, 0, len(docs))
+		for _, doc := range docs {
+			fetchedDocs = append(fetchedDocs, string(doc))
+		}
+
+		for i, fetchedDoc := range fetchedDocs {
+			if i < len(indexes) {
+				expectedDoc := originalDocs[indexes[i]]
+				s.Require().Equal(expectedDoc, fetchedDoc,
+					"doc at index %d doesn't match expected doc at original index %d with order=%v",
+					i, indexes[i], order)
+			}
+		}
+
+		release()
 	}
 }
 

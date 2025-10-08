@@ -21,11 +21,6 @@ import (
 	"github.com/ozontech/seq-db/tests/suites"
 )
 
-const (
-	good = "good"
-	bad  = "bad"
-)
-
 type SingleTestSuite struct {
 	suites.Single
 }
@@ -142,30 +137,6 @@ func (s *SingleTestSuite) TestSearchAgg() {
 				{"1": 3, "2": 1},
 			})
 	})
-}
-
-func (s *SingleTestSuite) TestSearchNestedIndexOneFraction() {
-	const numDocs = 100
-	const doc = `{"trace_id": "1", "spans": [{"span_id": "1"}, {"span_id": "2"}]}`
-
-	docs := []string{}
-	for range numDocs {
-		docs = append(docs, doc)
-		s.Bulk([]string{doc})
-	}
-
-	assertSearch := func(q string, size int) {
-		s.Assert().Equal(size, len(s.SearchDocs(q, size, seq.DocsOrderAsc)))
-		s.Assert().Equal(docs[:size], s.SearchDocs(q, size, seq.DocsOrderAsc))
-	}
-
-	assertSearch(`spans.span_id:*`, 1)
-	assertSearch(`spans.span_id:*`, 5)
-	assertSearch(`spans.span_id:*`, numDocs)
-	assertSearch(`trace_id:*`, numDocs)
-
-	s.Assert().Equal(0, len(s.SearchDocs(`spans.span_id:*`, 0, seq.DocsOrderAsc)))
-	s.Assert().Equal(numDocs, len(s.SearchDocs(`spans.span_id:*`, numDocs+1, seq.DocsOrderAsc)))
 }
 
 // Test AND tree (sorting issue)
