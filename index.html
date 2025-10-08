@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chronos Benchmark Results</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        body {
+            margin: 0;
+            padding: 24px max(24px, 5%);
+            background-color: hsl(0 0% 100%);
+            color: hsl(222.2 84% 4.9%);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        h1 {
+            color: hsl(222.2 84% 4.9%);
+            margin-bottom: 32px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 30px;
+            letter-spacing: -0.025em;
+        }
+        .filter-section {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding: 8px 0;
+        }
+        .filter-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            min-width: 280px;
+            max-width: 400px;
+        }
+        .filter-icon {
+            position: absolute;
+            left: 12px;
+            color: hsl(215.4 16.3% 46.9%);
+            font-size: 16px;
+            pointer-events: none;
+        }
+        .filter-label {
+            font-weight: 500;
+            font-size: 14px;
+            color: hsl(222.2 84% 4.9%);
+            white-space: nowrap;
+        }
+        .filter-input {
+            width: 100%;
+            padding: 8px 40px 8px 40px;
+            border: 1px solid hsl(214.3 31.8% 91.4%);
+            border-radius: 6px;
+            font-size: 14px;
+            background: hsl(0 0% 100%);
+            color: hsl(222.2 84% 4.9%);
+            transition: all 0.2s ease;
+        }
+        .filter-input:focus {
+            outline: none;
+            border-color: hsl(221.2 83.2% 53.3%);
+            box-shadow: 0 0 0 2px hsl(221.2 83.2% 53.3% / 0.1);
+        }
+        .filter-input:not(:placeholder-shown) + .clear-button {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .clear-button {
+            position: absolute;
+            right: 8px;
+            background: none;
+            border: none;
+            color: hsl(215.4 16.3% 46.9%);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.2s ease;
+            border-radius: 4px;
+        }
+        .clear-button:hover {
+            background: hsl(210 40% 95%);
+            color: hsl(222.2 84% 4.9%);
+        }
+        .charts-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 550px), 1fr));
+            gap: 24px;
+        }
+        .chart-card {
+            border: 1px solid hsl(214.3 31.8% 91.4%);
+            border-radius: 8px;
+            padding: 24px;
+            background: hsl(0 0% 100%);
+            box-shadow: 0 1px 3px 0 hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+        }
+        .chart-title {
+            margin: 0 0 20px 0;
+            color: hsl(222.2 84% 4.9%);
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.025em;
+            border-bottom: 1px solid hsl(214.3 31.8% 91.4%);
+            padding-bottom: 12px;
+        }
+        .unit-tab {
+            background: hsl(0 0% 100%);
+            border: 1px solid hsl(214.3 31.8% 91.4%);
+            border-radius: 6px;
+            padding: 8px 16px;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: -0.01em;
+            display: inline-block;
+            color: hsl(222.2 84% 4.9%);
+            transition: all 0.2s ease;
+        }
+        .unit-tab:hover {
+            background: hsl(210 40% 98%);
+            border-color: hsl(217.2 32.6% 17.5%);
+        }
+        .unit-tab.active {
+            background: hsl(222.2 47.4% 11.2%);
+            color: hsl(210 40% 98%);
+            border-color: hsl(222.2 47.4% 11.2%);
+        }
+        .tab-container {
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid hsl(214.3 31.8% 91.4%);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+        .tabs-group {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .buttons-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        .screenshot-button {
+            background: hsl(0 0% 100%);
+            border: 1px solid hsl(214.3 31.8% 91.4%);
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            color: hsl(222.2 84% 4.9%);
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .screenshot-button:hover {
+            background: hsl(210 40% 98%);
+            border-color: hsl(217.2 32.6% 17.5%);
+        }
+        .compare-button {
+            background: hsl(0 0% 100%);
+            border: 1px solid hsl(214.3 31.8% 91.4%);
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            color: hsl(222.2 84% 4.9%);
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .compare-button:hover {
+            background: hsl(210 40% 98%);
+            border-color: hsl(217.2 32.6% 17.5%);
+        }
+        .compare-button.active {
+            background: hsl(221.2 83.2% 53.3%);
+            color: hsl(0 0% 100%);
+            border-color: hsl(221.2 83.2% 53.3%);
+        }
+        .comparison-info {
+            margin-top: 12px;
+            padding: 12px;
+            background: hsl(210 40% 98%);
+            border: 1px solid hsl(214.3 31.8% 91.4%);
+            border-radius: 6px;
+            font-size: 13px;
+            display: none;
+        }
+        .stats-info {
+            margin-top: 0px;
+        }
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            color: hsl(222.2 84% 4.9%);
+            background: hsl(0 0% 100%);
+            border: 1px solid hsl(214.3 31.8% 91.4%);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .stats-table th,
+        .stats-table td {
+            padding: 8px 12px;
+            text-align: center;
+            border-right: 1px solid hsl(214.3 31.8% 91.4%);
+        }
+        .stats-table th:last-child,
+        .stats-table td:last-child {
+            border-right: none;
+        }
+        .stats-table th {
+            background: hsl(210 40% 98%);
+            font-weight: 600;
+            font-size: 11px;
+            color: hsl(215.4 16.3% 46.9%);
+            border-bottom: 1px solid hsl(214.3 31.8% 91.4%);
+        }
+        .stats-table td {
+            font-weight: 500;
+        }
+        .chart-wrapper {
+						display: flex;
+						width: 100%;
+            height: 350px;
+        }
+        .no-results {
+            text-align: center;
+            color: hsl(215.4 16.3% 46.9%);
+            font-size: 14px;
+            padding: 48px;
+            background: hsl(0 0% 100%);
+            border: 1px solid hsl(214.3 31.8% 91.4%);
+            border-radius: 8px;
+            box-shadow: 0 1px 3px 0 hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+        }
+        .loading {
+            text-align: center;
+            padding: 48px;
+            font-size: 14px;
+            color: hsl(215.4 16.3% 46.9%);
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <div class="filter-section">
+            <span class="filter-label">Filter benchmarks:</span>
+            <div class="filter-wrapper">
+                <span class="filter-icon">🔍</span>
+                <input type="text" id="benchmarkFilter" class="filter-input" placeholder="Type here...">
+                <button id="clearFilter" class="clear-button">✕</button>
+            </div>
+        </div>
+
+        <div id="chartsContainer" class="charts-container">
+            <div class="loading">Loading benchmark data...</div>
+        </div>
+    </div>
+
+    <script>
+
+        
+        window.BENCHMARK_DATA = [{"name":"BucketClean-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":27366},{"unit":"ns/op","value":43205},{"unit":"B/op","value":48},{"unit":"allocs/op","value":1}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":23071},{"unit":"ns/op","value":43943},{"unit":"B/op","value":48},{"unit":"allocs/op","value":1}]}]},{"name":"MutexListAppend-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":51},{"unit":"ns/op","value":20263111},{"unit":"MB/s","value":789.61},{"unit":"B/op","value":65443740},{"unit":"allocs/op","value":53}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":51},{"unit":"ns/op","value":21154748},{"unit":"MB/s","value":756.33},{"unit":"B/op","value":65443743},{"unit":"allocs/op","value":53}]}]},{"name":"SeqListAppend-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":25},{"unit":"ns/op","value":42049037},{"unit":"MB/s","value":380.51},{"unit":"B/op","value":65443632},{"unit":"allocs/op","value":51}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":24},{"unit":"ns/op","value":44875492},{"unit":"MB/s","value":356.54},{"unit":"B/op","value":65443498},{"unit":"allocs/op","value":50}]}]},{"name":"AggDeep-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":51365418},{"unit":"ns/op","value":23.63},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":54252706},{"unit":"ns/op","value":22.18},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"AggWide-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":8374893},{"unit":"ns/op","value":164.3},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":8007741},{"unit":"ns/op","value":156.8},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"Sealing_NoSort-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":3},{"unit":"ns/op","value":480857371},{"unit":"B/op","value":26638885},{"unit":"allocs/op","value":5921}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":3},{"unit":"ns/op","value":496165816},{"unit":"B/op","value":27024834},{"unit":"allocs/op","value":5926}]}]},{"name":"Sealing_WithSort-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":1},{"unit":"ns/op","value":1176990064},{"unit":"B/op","value":44025816},{"unit":"allocs/op","value":6006}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":1},{"unit":"ns/op","value":1179569529},{"unit":"B/op","value":42592264},{"unit":"allocs/op","value":6001}]}]},{"name":"Copy-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":1000000000},{"unit":"ns/op","value":0.186},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":1000000000},{"unit":"ns/op","value":0.1716},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"Iterate-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":1000000000},{"unit":"ns/op","value":0.3848},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":1000000000},{"unit":"ns/op","value":0.3818},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"Static-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":494838646},{"unit":"ns/op","value":2.429},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":494453598},{"unit":"ns/op","value":2.432},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"Not-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":34357438},{"unit":"ns/op","value":34.62},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":33692282},{"unit":"ns/op","value":34.41},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"NotEmpty-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":159325056},{"unit":"ns/op","value":7.526},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":159446846},{"unit":"ns/op","value":7.52},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"Or-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":65978865},{"unit":"ns/op","value":18.67},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":66067434},{"unit":"ns/op","value":18.79},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"And-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":71567817},{"unit":"ns/op","value":17.04},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":70838252},{"unit":"ns/op","value":16.77},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"NAnd-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":71849244},{"unit":"ns/op","value":16.72},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":71526596},{"unit":"ns/op","value":16.81},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"AndTree-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":14501955},{"unit":"ns/op","value":81.11},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":14466103},{"unit":"ns/op","value":82.21},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"OrTree-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":6522906},{"unit":"ns/op","value":185.8},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":6478488},{"unit":"ns/op","value":182.6},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"Complex-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":13997212},{"unit":"ns/op","value":85.4},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":13903369},{"unit":"ns/op","value":84.55},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"Parsing-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":881962},{"unit":"ns/op","value":1308},{"unit":"B/op","value":816},{"unit":"allocs/op","value":25}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":905935},{"unit":"ns/op","value":1303},{"unit":"B/op","value":816},{"unit":"allocs/op","value":25}]}]},{"name":"ParsingLong-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":116796},{"unit":"ns/op","value":10527},{"unit":"B/op","value":6008},{"unit":"allocs/op","value":224}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":119928},{"unit":"ns/op","value":9872},{"unit":"B/op","value":6008},{"unit":"allocs/op","value":224}]}]},{"name":"SeqQLParsing-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":994359},{"unit":"ns/op","value":1101},{"unit":"B/op","value":328},{"unit":"allocs/op","value":10}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":1000000},{"unit":"ns/op","value":1089},{"unit":"B/op","value":328},{"unit":"allocs/op","value":10}]}]},{"name":"SeqQLParsingLong-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":128779},{"unit":"ns/op","value":9197},{"unit":"B/op","value":2952},{"unit":"allocs/op","value":107}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":131395},{"unit":"ns/op","value":9073},{"unit":"B/op","value":2952},{"unit":"allocs/op","value":107}]}]},{"name":"FindSequence_Deterministic/regular-cases-0-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":81262758},{"unit":"ns/op","value":14.05},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":84483112},{"unit":"ns/op","value":14.04},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"FindSequence_Deterministic/regular-cases-1-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":100000000},{"unit":"ns/op","value":10.46},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":100000000},{"unit":"ns/op","value":10.28},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"FindSequence_Deterministic/corner-cases-0-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":26081020},{"unit":"ns/op","value":41.94},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":28694430},{"unit":"ns/op","value":41.78},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"FindSequence_Deterministic/corner-cases-1-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":24973435},{"unit":"ns/op","value":48.02},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":25027399},{"unit":"ns/op","value":47.96},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"FindSequence_Deterministic/corner-cases-2-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":4973068},{"unit":"ns/op","value":241.5},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":4977259},{"unit":"ns/op","value":241},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"FindSequence_Deterministic/corner-cases-3-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":374954},{"unit":"ns/op","value":3195},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":374631},{"unit":"ns/op","value":3186},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"FindSequence_Random/tiny-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":52730366},{"unit":"ns/op","value":22.97},{"unit":"MB/s","value":2786.68},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":51749878},{"unit":"ns/op","value":23.04},{"unit":"MB/s","value":2777.38},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"FindSequence_Random/small-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":28212006},{"unit":"ns/op","value":42.05},{"unit":"MB/s","value":6088.39},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":25532176},{"unit":"ns/op","value":46.81},{"unit":"MB/s","value":5468.74},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"FindSequence_Random/medium-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":10717116},{"unit":"ns/op","value":112.4},{"unit":"MB/s","value":9112.19},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":9816675},{"unit":"ns/op","value":123.3},{"unit":"MB/s","value":8303.67},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"FindSequence_Random/large-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":1377667},{"unit":"ns/op","value":871},{"unit":"MB/s","value":18810.12},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":1557025},{"unit":"ns/op","value":769.8},{"unit":"MB/s","value":21284.05},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"FindSequence_Random/extra-large-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":13042},{"unit":"ns/op","value":92050},{"unit":"MB/s","value":11391.36},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":13094},{"unit":"ns/op","value":91515},{"unit":"MB/s","value":11457.96},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"ProcessDocuments-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":334},{"unit":"ns/op","value":3551342},{"unit":"MB/s","value":116.58},{"unit":"B/op","value":26005},{"unit":"allocs/op","value":4}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":334},{"unit":"ns/op","value":3549461},{"unit":"MB/s","value":116.64},{"unit":"B/op","value":358},{"unit":"allocs/op","value":4}]}]},{"name":"ParseESTime/es_stdlib-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":7442361},{"unit":"ns/op","value":166.1},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":7414298},{"unit":"ns/op","value":161.8},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"ParseESTime/handwritten-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":36113970},{"unit":"ns/op","value":33.08},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":36292516},{"unit":"ns/op","value":33.1},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"ParseESTime/rfc3339-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":25516047},{"unit":"ns/op","value":47.92},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":25533517},{"unit":"ns/op","value":47.03},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]},{"name":"ESBulk-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":20847},{"unit":"ns/op","value":56859},{"unit":"MB/s","value":5663.15},{"unit":"B/op","value":369},{"unit":"allocs/op","value":9}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":23326},{"unit":"ns/op","value":51060},{"unit":"MB/s","value":6306.26},{"unit":"B/op","value":342},{"unit":"allocs/op","value":9}]}]},{"name":"MergeQPRs_ReusingQPR-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":524},{"unit":"ns/op","value":2265495},{"unit":"B/op","value":46084},{"unit":"allocs/op","value":303}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":526},{"unit":"ns/op","value":2273467},{"unit":"B/op","value":46084},{"unit":"allocs/op","value":303}]}]},{"name":"RandomJSON-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":17925},{"unit":"ns/op","value":65742},{"unit":"B/op","value":33550},{"unit":"allocs/op","value":805}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":18156},{"unit":"ns/op","value":66613},{"unit":"B/op","value":33552},{"unit":"allocs/op","value":805}]}]},{"name":"RandomDoc-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":253356},{"unit":"ns/op","value":4658},{"unit":"B/op","value":1881},{"unit":"allocs/op","value":69}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":256473},{"unit":"ns/op","value":4664},{"unit":"B/op","value":1881},{"unit":"allocs/op","value":69}]}]},{"name":"GenerateDocs-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":1026471},{"unit":"ns/op","value":1152},{"unit":"B/op","value":598},{"unit":"allocs/op","value":17}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":1021188},{"unit":"ns/op","value":1145},{"unit":"B/op","value":597},{"unit":"allocs/op","value":17}]}]},{"name":"GenerateDocsJSON-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":660117},{"unit":"ns/op","value":1732},{"unit":"B/op","value":810},{"unit":"allocs/op","value":20}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":684930},{"unit":"ns/op","value":1718},{"unit":"B/op","value":810},{"unit":"allocs/op","value":20}]}]},{"name":"GenerateDocsJSONFields-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":329851},{"unit":"ns/op","value":3293},{"unit":"B/op","value":2344},{"unit":"allocs/op","value":44}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":363072},{"unit":"ns/op","value":3264},{"unit":"B/op","value":2344},{"unit":"allocs/op","value":44}]}]},{"name":"Bitmask-4","measurements":[{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":6},{"unit":"ns/op","value":191962336},{"unit":"B/op","value":2},{"unit":"allocs/op","value":0}]},{"commit_hash":"2daa556cc4cc2cf401e9e398c4c54b6517ef8fe2","metrics":[{"unit":"iterations","value":6},{"unit":"ns/op","value":191967417},{"unit":"B/op","value":0},{"unit":"allocs/op","value":0}]}]}];
+
+        class BenchmarkVisualizer {
+            constructor() {
+                this.data = [];
+                this.filteredData = [];
+                this.charts = new Map();
+                this.comparisonState = new Map(); 
+                this.colors = [
+                    'hsl(221.2 83.2% 53.3%)', 
+                    'hsl(142.1 76.2% 36.3%)', 
+                    'hsl(346.8 77.2% 49.8%)', 
+                    'hsl(258.3 89.5% 66.3%)', 
+                    'hsl(24.6 95% 53.1%)', 
+                    'hsl(262.1 83.3% 57.8%)', 
+                    'hsl(173.4 58.9% 39.1%)', 
+                    'hsl(43.3 96.4% 56.3%)', 
+                    'hsl(197.4 71.4% 73.3%)', 
+                    'hsl(20.5 90.2% 48.2%)' 
+                ];
+            }
+
+            init() {
+                this.loadData();
+                this.setupEventListeners();
+                this.filteredData = [...this.data];
+                this.renderCharts();
+            }
+
+            loadData() {
+                try {
+                    this.data = window.BENCHMARK_DATA || [];
+                } catch (error) {
+                    console.error('Failed to load benchmark data:', error);
+                    this.data = [];
+                    document.getElementById('chartsContainer').innerHTML =
+                        '<div class="no-results">Failed to load benchmark data.</div>';
+                }
+            }
+
+            setupEventListeners() {
+                const filterInput = document.getElementById('benchmarkFilter');
+                const clearButton = document.getElementById('clearFilter');
+
+                filterInput.addEventListener('input', (e) => {
+                    this.filterBenchmarks(e.target.value);
+                });
+
+                clearButton.addEventListener('click', () => {
+                    filterInput.value = '';
+                    this.filterBenchmarks('');
+                });
+
+                window.addEventListener('resize', () => {
+                    this.charts.forEach(chart => {
+                        chart.resize();
+                    });
+                });
+            }
+
+            filterBenchmarks(query) {
+                if (!query.trim()) {
+                    this.filteredData = [...this.data];
+                } else {
+                    const lowerQuery = query.toLowerCase();
+                    this.filteredData = this.data.filter(series =>
+                        series.name.toLowerCase().includes(lowerQuery)
+                    );
+                }
+                this.renderCharts();
+            }
+
+            renderCharts() {
+                const container = document.getElementById('chartsContainer');
+                container.innerHTML = '';
+                this.charts.clear();
+
+                if (this.filteredData.length === 0) {
+                    if (this.data.length === 0) {
+                        container.innerHTML = '<div class="no-results">No benchmark data available.</div>';
+                    } else {
+                        container.innerHTML = '<div class="no-results">No benchmarks found matching the filter.</div>';
+                    }
+                    return;
+                }
+
+                this.filteredData.forEach((series, index) => {
+                    this.createBenchmarkChart(series, container, index);
+                });
+            }
+
+            createBenchmarkChart(series, container, index) {
+                const chartDiv = document.createElement('div');
+                chartDiv.className = 'chart-card';
+
+                const units = this.getUnitsForSeries(series);
+                const tabsHtml = units.map((unit, tabIndex) =>
+                    `<button class="unit-tab ${tabIndex === 0 ? 'active' : ''}" data-unit="${unit}">
+                        ${this.formatUnitName(unit)}
+                    </button>`
+                ).join('');
+
+                chartDiv.innerHTML = `
+                    <h2 class="chart-title">${series.name}</h2>
+                    <div class="tab-container">
+                        <div class="tabs-group">
+                            ${tabsHtml}
+                        </div>
+                        <div class="buttons-group">
+                            <button class="screenshot-button" data-chart="${series.name}">
+                                📷 Save PNG
+                            </button>
+                            <button class="compare-button" data-chart="${series.name}">
+                                📊 Compare
+                            </button>
+                        </div>
+                    </div>
+                    <div class="comparison-info" id="comparison-${series.name}"></div>
+                    <div class="chart-wrapper"></div>
+                    <div class="stats-info" id="stats-${series.name}"></div>
+                `;
+
+                container.appendChild(chartDiv);
+
+                
+                setTimeout(() => {
+                    const chartWrapper = chartDiv.querySelector('.chart-wrapper');
+                    const chart = echarts.init(chartWrapper);
+                    this.charts.set(series.name, chart);
+
+                    this.setupTabSwitching(chartDiv, series, chart, index);
+                    this.renderChartForUnit(series, units[0], chart, index);
+                }, 10);
+            }
+
+            getUnitsForSeries(series) {
+                const units = new Set();
+                series.measurements.forEach(measurement => {
+                    measurement.metrics.forEach(metric => {
+                        units.add(metric.unit);
+                    });
+                });
+                return Array.from(units).sort();
+            }
+
+            formatUnitName(unit) {
+                return unit;
+            }
+
+            getRepositoryUrl() {
+                
+                
+                const hostname = window.location.hostname;
+                if (hostname.endsWith('.github.io')) {
+                    const parts = hostname.split('.');
+                    if (parts.length >= 3) {
+                        const username = parts[0];
+                        const repoName = window.location.pathname.split('/')[1] || parts[1];
+                        return `https://github.com/${username}/${repoName}`;
+                    }
+                }
+
+                
+                if (window.location.href.includes('github.com')) {
+                    const match = window.location.href.match(/github\.com\/([^\/]+\/[^\/]+)/);
+                    if (match) {
+                        return `https://github.com/${match[1]}`;
+                    }
+                }
+
+                
+                
+                return 'https://github.com/dkharms/chronos'; 
+            }
+
+            setupTabSwitching(chartDiv, series, chart, index) {
+                const tabs = chartDiv.querySelectorAll('.unit-tab');
+                tabs.forEach(tab => {
+                    tab.addEventListener('click', (e) => {
+                        const unit = e.target.dataset.unit;
+
+                        tabs.forEach(t => t.classList.remove('active'));
+                        e.target.classList.add('active');
+
+                        this.renderChartForUnit(series, unit, chart, index);
+                    });
+                });
+
+                
+                const screenshotButton = chartDiv.querySelector('.screenshot-button');
+                screenshotButton.addEventListener('click', () => {
+                    this.downloadChartScreenshot(chart, series.name);
+                });
+
+                
+                const compareButton = chartDiv.querySelector('.compare-button');
+                compareButton.addEventListener('click', () => {
+                    this.toggleComparisonMode(series.name, compareButton);
+                });
+            }
+
+            downloadChartScreenshot(chart, chartName) {
+                try {
+                    
+                    const chartDataURL = chart.getDataURL({
+                        type: 'png',
+                        pixelRatio: 2,
+                        backgroundColor: '#ffffff'
+                    });
+
+                    
+                    const statsTable = document.getElementById(`stats-${chartName}`).querySelector('.stats-table');
+
+                    
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+
+                    
+                    const chartImg = new Image();
+                    chartImg.onload = () => {
+                        
+                        const tableHeight = 80; 
+                        const spacing = 10; 
+                        canvas.width = chartImg.width;
+                        canvas.height = chartImg.height + tableHeight + spacing;
+
+                        
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                        
+                        ctx.drawImage(chartImg, 0, 0);
+
+                        
+                        this.drawTableToCanvas(ctx, statsTable, 0, chartImg.height + spacing, canvas.width, tableHeight)
+                            .then(() => {
+                                
+                                const link = document.createElement('a');
+                                link.download = `${chartName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_chart.png`;
+                                link.href = canvas.toDataURL('image/png');
+                                link.click();
+                            });
+                    };
+                    chartImg.src = chartDataURL;
+
+                } catch (error) {
+                    console.error('Failed to download chart screenshot:', error);
+                    alert('Failed to save screenshot. Please try again.');
+                }
+            }
+
+            async drawTableToCanvas(ctx, table, x, y, width, height) {
+                return new Promise((resolve) => {
+                    
+                    const tempDiv = document.createElement('div');
+                    tempDiv.style.position = 'absolute';
+                    tempDiv.style.left = '-9999px';
+                    tempDiv.style.width = width + 'px';
+                    tempDiv.appendChild(table.cloneNode(true));
+                    document.body.appendChild(tempDiv);
+
+                    
+                    const rows = table.querySelectorAll('tr');
+                    const cellData = [];
+
+                    rows.forEach(row => {
+                        const cells = row.querySelectorAll('th, td');
+                        const rowData = Array.from(cells).map(cell => ({
+                            text: cell.textContent.trim(),
+                            isHeader: cell.tagName === 'TH'
+                        }));
+                        cellData.push(rowData);
+                    });
+
+                    document.body.removeChild(tempDiv);
+
+                    
+                    const cellWidth = width / cellData[0].length;
+                    const cellHeight = height / cellData.length;
+
+                    
+                    ctx.strokeStyle = '#e2e8f0';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x, y, width, height);
+
+                    
+                    cellData.forEach((row, rowIndex) => {
+                        row.forEach((cell, colIndex) => {
+                            const cellX = x + colIndex * cellWidth;
+                            const cellY = y + rowIndex * cellHeight;
+
+                            
+                            if (cell.isHeader) {
+                                ctx.fillStyle = '#f8fafc';
+                                ctx.fillRect(cellX, cellY, cellWidth, cellHeight);
+                            }
+
+                            
+                            ctx.strokeStyle = '#e2e8f0';
+                            ctx.strokeRect(cellX, cellY, cellWidth, cellHeight);
+
+                            
+                            ctx.fillStyle = cell.isHeader ? '#64748b' : '#0f172a';
+                            ctx.font = cell.isHeader ? '600 11px "JetBrains Mono", monospace' : '500 12px "JetBrains Mono", monospace';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+
+                            const textX = cellX + cellWidth / 2;
+                            const textY = cellY + cellHeight / 2;
+                            ctx.fillText(cell.text, textX, textY);
+                        });
+                    });
+
+                    resolve();
+                });
+            }
+
+            toggleComparisonMode(chartName, button) {
+                const state = this.comparisonState.get(chartName) || { active: false, selectedPoints: [], currentUnit: null };
+
+                if (state.active) {
+                    
+                    this.exitComparisonMode(chartName, button);
+                } else {
+                    
+                    this.enterComparisonMode(chartName, button);
+                }
+            }
+
+            enterComparisonMode(chartName, button) {
+                const state = { active: true, selectedPoints: [], currentUnit: null };
+                this.comparisonState.set(chartName, state);
+
+                button.classList.add('active');
+                button.textContent = '❌ Cancel Compare';
+
+                const comparisonInfo = document.getElementById(`comparison-${chartName}`);
+                comparisonInfo.style.display = 'block';
+                comparisonInfo.innerHTML = '<strong>Comparison Mode:</strong> Click on two data points to compare them.';
+            }
+
+            exitComparisonMode(chartName, button) {
+                this.comparisonState.delete(chartName);
+
+                button.classList.remove('active');
+                button.textContent = '📊 Compare';
+
+                const comparisonInfo = document.getElementById(`comparison-${chartName}`);
+                comparisonInfo.style.display = 'none';
+
+                
+                const chart = this.charts.get(chartName);
+                if (chart) {
+                    const option = chart.getOption();
+                    option.series[0].markPoint = undefined;
+                    chart.setOption(option);
+                }
+            }
+
+            handleComparisonClick(chartName, params, unit, sortedData, sortedHashes) {
+                const state = this.comparisonState.get(chartName);
+                if (!state || !state.active) return false;
+
+                state.currentUnit = unit;
+                const pointData = {
+                    index: params.dataIndex,
+                    commit: params.name,
+                    fullCommit: sortedHashes[params.dataIndex],
+                    value: params.value[1]
+                };
+
+                if (state.selectedPoints.length === 0) {
+                    
+                    state.selectedPoints.push(pointData);
+                    this.updateComparisonDisplay(chartName, state, 'first');
+                } else if (state.selectedPoints.length === 1) {
+                    
+                    state.selectedPoints.push(pointData);
+                    this.showComparison(chartName, state, unit);
+                } else {
+                    
+                    state.selectedPoints = [pointData];
+                    this.updateComparisonDisplay(chartName, state, 'first');
+                }
+
+                this.highlightSelectedPoints(chartName, state, sortedData);
+                return true; 
+            }
+
+            updateComparisonDisplay(chartName, state, mode) {
+                const comparisonInfo = document.getElementById(`comparison-${chartName}`);
+                if (mode === 'first') {
+                    const point = state.selectedPoints[0];
+                    comparisonInfo.innerHTML = `<strong>Point 1 selected:</strong> ${point.commit} (${point.value.toLocaleString()} ${state.currentUnit})<br/><em>Click another point to compare.</em>`;
+                }
+            }
+
+            showComparison(chartName, state, unit) {
+                const [point1, point2] = state.selectedPoints;
+                const diff = point2.value - point1.value;
+                const percentChange = ((diff) / point1.value * 100);
+                const changeSign = diff > 0 ? '+' : '';
+
+                const comparisonInfo = document.getElementById(`comparison-${chartName}`);
+                comparisonInfo.innerHTML = `
+                    <strong>Comparison Results:</strong><br/>
+                    <strong>Point 1:</strong> ${point1.commit} → ${point1.value.toLocaleString()} ${unit}<br/>
+                    <strong>Point 2:</strong> ${point2.commit} → ${point2.value.toLocaleString()} ${unit}<br/>
+                    <strong>Difference:</strong> ${changeSign}${diff.toLocaleString()} ${unit} (${changeSign}${percentChange.toFixed(2)}%)
+                `;
+            }
+
+            highlightSelectedPoints(chartName, state, sortedData) {
+                const chart = this.charts.get(chartName);
+                if (!chart) return;
+
+                const markPoints = state.selectedPoints.map((point, index) => ({
+                    coord: [point.index, point.value],
+                    symbol: 'pin',
+                    symbolSize: 30,
+                    itemStyle: {
+                        color: index === 0 ? '#3b82f6' : '#ef4444'
+                    },
+                    label: {
+                        show: true,
+                        position: 'top',
+                        formatter: `Point ${index + 1}`,
+                        color: '#000'
+                    }
+                }));
+
+                const option = chart.getOption();
+                option.series[0].markPoint = {
+                    data: markPoints
+                };
+                chart.setOption(option);
+            }
+
+            renderChartForUnit(series, unit, chart, index) {
+                const data = [];
+                const commitHashes = [];
+
+                series.measurements.forEach(measurement => {
+                    const metric = measurement.metrics.find(m => m.unit === unit);
+                    if (metric) {
+                        data.push([measurement.commit_hash.substring(0, 8), metric.value]);
+                        commitHashes.push(measurement.commit_hash);
+                    }
+                });
+
+                
+                const sortedData = data;
+                const sortedHashes = commitHashes;
+
+                const color = this.colors[index % this.colors.length];
+                const option = {
+                    animation: true,
+                    tooltip: {
+                        trigger: 'item',
+                        backgroundColor: 'hsl(0 0% 100%)',
+                        borderColor: 'hsl(214.3 31.8% 91.4%)',
+                        borderWidth: 1,
+                        textStyle: {
+                            color: 'hsl(222.2 84% 4.9%)',
+                            fontSize: 12,
+                            fontFamily: 'JetBrains Mono, monospace'
+                        },
+                        formatter: (params) => {
+                            const currentValue = params.value[1];
+                            const dataIndex = params.dataIndex;
+
+                            let tooltip = `Commit: ${params.name}<br/>Value: ${currentValue.toLocaleString()} ${unit}`;
+
+                            
+                            if (dataIndex > 0) {
+                                const previousValue = sortedData[dataIndex - 1][1];
+                                const percentChange = ((currentValue - previousValue) / previousValue * 100);
+                                const changeSign = percentChange > 0 ? '+' : '';
+                                tooltip += `<br/><span style="font-weight: 500;">
+                                    ${changeSign}${percentChange.toFixed(2)}% from previous
+                                </span>`;
+                            }
+
+                            return tooltip;
+                        }
+                    },
+                    xAxis: {
+                        type: 'category',
+                        axisLine: {
+                            lineStyle: {
+                                color: 'hsl(214.3 31.8% 91.4%)'
+                            }
+                        },
+                        axisTick: {
+                            lineStyle: {
+                                color: 'hsl(214.3 31.8% 91.4%)'
+                            }
+                        },
+                        axisLabel: {
+                            rotate: 45,
+                            fontSize: 11,
+                            color: 'hsl(215.4 16.3% 46.9%)',
+                            fontFamily: 'JetBrains Mono, monospace'
+                        }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        scale: true,
+                        axisLine: {
+                            lineStyle: {
+                                color: 'hsl(214.3 31.8% 91.4%)'
+                            }
+                        },
+                        axisTick: {
+                            lineStyle: {
+                                color: 'hsl(214.3 31.8% 91.4%)'
+                            }
+                        },
+                        axisLabel: {
+                            color: 'hsl(215.4 16.3% 46.9%)',
+                            fontSize: 11,
+                            fontFamily: 'JetBrains Mono, monospace',
+                            formatter: (value) => {
+                                if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
+                                if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
+								return value.toLocaleString();
+                            }
+                        },
+                        splitLine: {
+                            lineStyle: {
+                                color: 'hsl(214.3 31.8% 91.4%)',
+                                type: 'dashed'
+                            }
+                        },
+						name: unit,
+						nameLocation: 'middle',
+						nameTextStyle: {
+							color: 'hsl(215.4 16.3% 46.9%)',
+							fontFamily: 'JetBrains Mono, monospace'
+						},
+						nameGap: 40,
+					},
+                    grid: {
+                        left: '5%',
+                        right: '5%',
+                        top: '15px',
+                        bottom: '15px',
+                        containLabel: true
+                    },
+                    series: [{
+                        name: series.name,
+                        type: 'line',
+                        data: sortedData,
+                        symbol: 'circle',
+                        symbolSize: 7,
+                        smooth: true,
+                        lineStyle: {
+                            width: 2,
+                            color: color
+                        },
+                        itemStyle: {
+                            color: color
+                        },
+                        emphasis: {
+                            disabled: true
+                        },
+                        blur: {
+                            disabled: true
+                        },
+                        select: {
+                            disabled: true
+                        },
+                        markLine: undefined
+                    }]
+                }
+
+                chart.setOption(option, true);
+
+                
+                this.updateStatistics(series.name, sortedData, unit);
+
+                
+                chart.off('click'); 
+                chart.on('click', (params) => {
+                    if (params.componentType === 'series' && params.seriesType === 'line') {
+                        
+                        const comparisonHandled = this.handleComparisonClick(series.name, params, unit, sortedData, sortedHashes);
+
+                        if (!comparisonHandled) {
+                            
+                            const commitHash = sortedHashes[params.dataIndex];
+                            const repoUrl = this.getRepositoryUrl();
+                            if (repoUrl && commitHash) {
+                                const commitUrl = `${repoUrl}/commit/${commitHash}`;
+                                window.open(commitUrl, '_blank');
+                            }
+                        }
+                    }
+                });
+            }
+
+            updateStatistics(seriesName, sortedData, unit) {
+                const statsDiv = document.getElementById(`stats-${seriesName}`);
+                if (!statsDiv || sortedData.length === 0) return;
+
+                const values = sortedData.map(item => item[1]);
+                const min = Math.min(...values);
+                const max = Math.max(...values);
+                const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+                const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+                const stdDev = Math.sqrt(variance);
+
+                const formatValue = (value) => {
+                    if (value >= 1000000) return (value / 1000000).toFixed(2) + 'M';
+                    if (value >= 1000) return (value / 1000).toFixed(2) + 'K';
+                    return value.toLocaleString();
+                };
+
+                const coefficientOfVariation = (stdDev / mean) * 100;
+
+                statsDiv.innerHTML = `
+                    <table class="stats-table">
+                        <thead>
+                            <tr>
+                                <th>Min</th>
+                                <th>Max</th>
+                                <th>Mean</th>
+                                <th>Std Dev</th>
+                                <th>CV %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>${formatValue(min)} ${unit}</td>
+                                <td>${formatValue(max)} ${unit}</td>
+                                <td>${formatValue(mean)} ${unit}</td>
+                                <td>${formatValue(stdDev)} ${unit}</td>
+                                <td>${coefficientOfVariation.toFixed(1)}%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                `;
+            }
+        }
+
+        
+        function initializeWhenReady() {
+            if (typeof echarts !== 'undefined' && document.readyState === 'complete') {
+                const visualizer = new BenchmarkVisualizer();
+                visualizer.init();
+            } else {
+                setTimeout(initializeWhenReady, 50);
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeWhenReady);
+        } else {
+            initializeWhenReady();
+        }
+    </script>
+</body>
+</html>
