@@ -279,32 +279,6 @@ func (s *SingleTestSuite) TestFetchHints() {
 	})
 }
 
-func (s *SingleTestSuite) TestFetch() {
-	n := 8
-	docs := setup.GenerateDocs(n, func(i int, doc *setup.ExampleDoc) {
-		doc.Message = good
-		if i%2 == 0 {
-			doc.Message = bad
-		}
-		doc.Level = i + 1 // zero will not write
-		doc.TraceID = fmt.Sprintf("%d", i/3)
-		doc.Service = fmt.Sprintf("%d", i%3)
-	})
-	docStrs := setup.DocsToStrings(docs)
-	s.Bulk(docStrs)
-
-	qpr, _, _, err := s.Env.Search("_all_:*", math.MaxInt32, setup.WithTotal(false), setup.NoFetch())
-	s.Assert().NoError(err)
-	s.Assert().Equal(n, len(qpr.IDs))
-
-	ids := qpr.IDs.IDs()
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		docs, err := s.Env.Fetch(ids)
-		s.Assert().NoError(err)
-		s.Assert().Equal(len(ids), len(docs))
-	})
-}
-
 func (s *SingleTestSuite) TestIndexingAllFields() {
 	defer func(m seq.Mapping, enabled bool) {
 		s.Config.Mapping = m

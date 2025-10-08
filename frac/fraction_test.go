@@ -62,21 +62,38 @@ func (s *FractionTestSuite) SetupSuite() {
 		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"source":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"trace_id":      seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"spans":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"request_uri":   seq.NewSingleType(seq.TokenizerTypePath, "", 0),
+		"spans":         seq.NewSingleType(seq.TokenizerTypeNested, "", 0),
+		"spans.span_id": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"process":       seq.NewSingleType(seq.TokenizerTypeObject, "", 0),
+		"process.tags":  seq.NewSingleType(seq.TokenizerTypeTags, "", 0),
+		"tags":          seq.NewSingleType(seq.TokenizerTypeTags, "", 0),
 	}
 }
 
-func (s *FractionTestSuite) SetupTest() {
-	// TODO doesn't work. check
-	// var err error
-	// s.tmpDir, err = os.MkdirTemp("", "fraction_test_*")
-	// s.Require().NoError(err)
+func (s *FractionTestSuite) SetupTestCommon() {
+	var err error
+	s.tmpDir, err = os.MkdirTemp("", "fraction_test_*")
+	s.Require().NoError(err)
+
+	s.sortCache = cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil)
+	s.indexCache = &IndexCache{
+		MIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		RIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		Params:     cache.NewCache[seqids.BlockParams](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		LIDs:       cache.NewCache[*lids.Block](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		Tokens:     cache.NewCache[*token.Block](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		TokenTable: cache.NewCache[token.Table](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		Registry:   cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+	}
+	s.readLimiter = storage.NewReadLimiter(2, NopCounter{})
 }
 
 func (s *FractionTestSuite) InsertIntoActive(active *Active, docs ...string) {
 	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(512, false, true),
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 4096),
+		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(512, false, true),
 	}
 
 	// drift and futureDrift are 0, we can process docs at any timestamps
@@ -149,6 +166,7 @@ func (s *FractionTestSuite) TestBasicSearch() {
 	s.AssertSearch("trace_id:a*f", docs, []int{1, 0})
 	s.AssertSearch("trace_id:a*a", docs, []int{2})
 	s.AssertSearch("service:service*a", docs, []int{3, 0})
+	s.AssertSearch("_all_:*", docs, []int{3, 2, 1, 0})
 }
 
 func (s *FractionTestSuite) TestSearchNot() {
@@ -184,7 +202,7 @@ func (s *FractionTestSuite) TestSearchNot() {
 	s.AssertSearch("message:bad AND NOT message:good", docs, []int{4, 2, 0})
 }
 
-func (s *FractionTestSuite) TestWildcardSymbols() {
+func (s *FractionTestSuite) TestWildcardSymbolsSearch() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:00.010Z","message":"first value:****"}`,
 		`{"timestamp":"2000-01-01T13:00:00.020Z","message":"second value:*******"}`,
@@ -225,6 +243,54 @@ func (s *FractionTestSuite) TestSearchFullText() {
 	s.AssertSearch("message:third", docs, []int{2})
 	s.AssertSearch("message:fourth", docs, []int{3})
 	s.AssertSearch("message:fifth", docs, []int{})
+}
+
+func (s *FractionTestSuite) TestSearchPath() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"a","request_uri":"/one"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","service":"a","request_uri":"/one/two"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","service":"a","request_uri":"/one/two/three"}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","service":"a","request_uri":"/one/two.three/four"}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","service":"a","request_uri":"/one/two.three/five"}`,
+		`{"timestamp":"2000-01-01T13:00:00.005Z","service":"a","request_uri":"/one/two/three/"}`,
+		`{"timestamp":"2000-01-01T13:00:00.006Z","service":"a","request_uri":"/one/two/three/1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.007Z","service":"a","request_uri":"/one/two/three/2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.008Z","service":"a","request_uri":"/one/two/three/3/four/"}`,
+		`{"timestamp":"2000-01-01T13:00:00.009Z","service":"a","request_uri":"/one/four/three/3/"}`,
+		`{"timestamp":"2000-01-01T13:00:00.010Z","service":"a","request_uri":"/two/one/three/2"}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	s.AssertSearch("request_uri:/one", docs, []int{9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
+	s.AssertSearch("request_uri:/two", docs, []int{10})
+	s.AssertSearch("request_uri:/one/two", docs, []int{8, 7, 6, 5, 2, 1})
+	s.AssertSearch("request_uri:/one/two/three", docs, []int{8, 7, 6, 5, 2})
+	s.AssertSearch("request_uri:/one/two/three/1", docs, []int{6})
+	s.AssertSearch("request_uri:/one/two.three", docs, []int{4, 3})
+	s.AssertSearch("request_uri:/one/two.three/four", docs, []int{3})
+	s.AssertSearch("request_uri:/one/*/three", docs, []int{9, 8, 7, 6, 5, 2})
+	s.AssertSearch("request_uri:/two/*/three", docs, []int{10})
+	s.AssertSearch("request_uri:*/three/", docs, []int{5})
+	s.AssertSearch("request_uri:*/three", docs, []int{10, 9, 8, 7, 6, 5, 2})
+}
+
+func (s *FractionTestSuite) TestSearchNested() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","spans":[{"span_id":"1"},{"span_id":"2"}]}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","spans":[{"span_id":"2"},{"span_id":"3"}]}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","spans":[{"span_id":"1"},{"span_id":"3"}]}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","spans":[{"span_id":"4"},{"span_id":"5"}]}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	s.AssertSearch("spans.span_id:*", docs, []int{3, 2, 1, 0})
+	s.AssertSearch("spans.span_id:1", docs, []int{2, 0})
+	s.AssertSearch("spans.span_id:2", docs, []int{1, 0})
+	s.AssertSearch("spans.span_id:3", docs, []int{2, 1})
+	s.AssertSearch("spans.span_id:4", docs, []int{3})
+	s.AssertSearch("spans.span_id:5", docs, []int{3})
 }
 
 func (s *FractionTestSuite) TestSearchFromTo() {
@@ -373,22 +439,7 @@ type ActiveFractionSuite struct {
 }
 
 func (s *ActiveFractionSuite) SetupTest() {
-	s.sortCache = cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil)
-	s.indexCache = &IndexCache{
-		MIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		RIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		Params:     cache.NewCache[seqids.BlockParams](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		LIDs:       cache.NewCache[*lids.Block](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		Tokens:     cache.NewCache[*token.Block](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		TokenTable: cache.NewCache[token.Table](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		Registry:   cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-	}
-	s.readLimiter = storage.NewReadLimiter(2, NopCounter{})
-
-	// TODO setup test
-	var err error
-	s.tmpDir, err = os.MkdirTemp("", "fraction_test_*")
-	s.Require().NoError(err)
+	s.SetupTestCommon()
 
 	baseName := filepath.Join(s.tmpDir, "test_fraction")
 	indexer := NewActiveIndexer(4, 10)
@@ -427,23 +478,7 @@ type SealedFractionSuite struct {
 }
 
 func (s *SealedFractionSuite) SetupTest() {
-	s.sortCache = cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil)
-	s.indexCache = &IndexCache{
-		MIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		RIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		Params:     cache.NewCache[seqids.BlockParams](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		LIDs:       cache.NewCache[*lids.Block](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		Tokens:     cache.NewCache[*token.Block](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		TokenTable: cache.NewCache[token.Table](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		Registry:   cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-	}
-	s.readLimiter = storage.NewReadLimiter(2, NopCounter{})
-
-	// Ensure tmpDir exists
-	// TODO here?
-	var err error
-	s.tmpDir, err = os.MkdirTemp("", "fraction_test_*")
-	s.Require().NoError(err)
+	s.SetupTestCommon()
 
 	s.insertDocuments = func(docs ...string) {
 		baseFile := filepath.Join(s.tmpDir, "test_fraction")
@@ -491,6 +526,7 @@ func (s *SealedFractionSuite) SetupTest() {
 }
 
 func (s *SealedFractionSuite) TearDownTest() {
+	// TODO if tear down is same as in active, then move it to FractionSuite
 	if s.fraction != nil {
 		s.fraction.Suicide()
 	}
