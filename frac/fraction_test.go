@@ -2,6 +2,7 @@ package frac
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -185,23 +186,26 @@ func (s *FractionTestSuite) TestSearchNot() {
 
 func (s *FractionTestSuite) TestWildcardSymbols() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:27Z","service":"first_value","level":"info"}`,
-		`{"timestamp":"2000-01-01T13:00:28Z","service":"second_value","level":"error"}`,
-		`{"timestamp":"2000-01-01T13:00:29Z","service":"third_value","level":"debug"}`,
-		`{"timestamp":"2000-01-01T13:00:30Z","service":"fourth","level":"warn"}`,
+		`{"timestamp":"2000-01-01T13:00:00.010Z","message":"first value:****"}`,
+		`{"timestamp":"2000-01-01T13:00:00.020Z","message":"second value:*******"}`,
+		`{"timestamp":"2000-01-01T13:00:00.030Z","message":"third value****"}`,
+		`{"timestamp":"2000-01-01T13:00:00.040Z","message":"fourth ****"}`,
 	}
 	s.insertDocuments(docs...)
 
-	s.AssertSearch("service:*", docs, []int{3, 2, 1, 0})
-	s.AssertSearch("service:first_value", docs, []int{0})
-	s.AssertSearch("service:second_value", docs, []int{1})
-	s.AssertSearch("service:third_value", docs, []int{2})
-	s.AssertSearch("service:fourth", docs, []int{3})
-	s.AssertSearch("level:*", docs, []int{3, 2, 1, 0})
-	s.AssertSearch("level:info", docs, []int{0})
-	s.AssertSearch("level:error", docs, []int{1})
-	s.AssertSearch("level:debug", docs, []int{2})
-	s.AssertSearch("level:warn", docs, []int{3})
+	s.AssertSearch(`message:*`, docs, []int{3, 2, 1, 0})
+	s.AssertSearch(`message:value`, docs, []int{1, 0})
+	s.AssertSearch(`message:value*`, docs, []int{2, 1, 0})
+	s.AssertSearch(`message:value\*`, docs, []int{})
+	s.AssertSearch(`message:value\**`, docs, []int{2})
+	s.AssertSearch(`message:*\**`, docs, []int{3, 2, 1, 0})
+	s.AssertSearch(`message:*e\**`, docs, []int{2})
+	s.AssertSearch(`message:\**`, docs, []int{3, 1, 0})
+	s.AssertSearch(`message:\*\*\*\*`, docs, []int{3, 0})
+	s.AssertSearch(`message:\*\*\*\**`, docs, []int{3, 1, 0})
+	s.AssertSearch(`message:value* AND message:\*\**`, docs, []int{1, 0})
+	s.AssertSearch(`message:value* OR message:\*\**`, docs, []int{3, 2, 1, 0})
+
 }
 
 func (s *FractionTestSuite) TestSearchFullText() {
@@ -220,32 +224,69 @@ func (s *FractionTestSuite) TestSearchFullText() {
 	s.AssertSearch("message:second", docs, []int{1})
 	s.AssertSearch("message:third", docs, []int{2})
 	s.AssertSearch("message:fourth", docs, []int{3})
-	s.AssertSearch("message:fivth", docs, []int{})
+	s.AssertSearch("message:fifth", docs, []int{})
 }
 
 func (s *FractionTestSuite) TestSearchFromTo() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:35Z","message":"first test document","level":"info","service":"test-service","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:36Z","message":"second test document","level":"error","service":"test-service","status":"fail"}`,
-		`{"timestamp":"2000-01-01T13:00:37Z","message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:38Z","message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"bad","level":"3","trace_id":"0","service":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"good","level":"4","trace_id":"1","service":"0"}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"bad","level":"5","trace_id":"1","service":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.005Z","message":"good","level":"6","trace_id":"1","service":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.006Z","message":"bad","level":"7","trace_id":"2","service":"0"}`,
+		`{"timestamp":"2000-01-01T13:00:00.007Z","message":"good","level":"8","trace_id":"2","service":"1"}`,
 	}
 
 	s.insertDocuments(docs...)
 
-	s.AssertSearch(s.query("message:document", withFrom("2000-01-01T13:00:35Z"), withTo("2000-01-01T13:00:38Z")), docs, []int{3, 2, 1, 0})
-	s.AssertSearch(s.query("message:document", withFrom("2000-01-01T13:00:35Z"), withTo("2000-01-01T13:00:37Z")), docs, []int{2, 1, 0})
-	s.AssertSearch(s.query("message:document", withFrom("2000-01-01T13:00:36Z"), withTo("2000-01-01T13:00:37Z")), docs, []int{2, 1})
+	assertSearch := func(query string, fromOffset, toOffset int, indexes []int) {
+		s.AssertSearch(s.query(
+			query,
+			withFrom(fmt.Sprintf("2000-01-01T13:00:00.%03dZ", fromOffset)),
+			withTo(fmt.Sprintf("2000-01-01T13:00:00.%03dZ", toOffset))),
+			docs, indexes)
+	}
+
+	assertSearch(`message:good`, 0, 7, []int{7, 5, 3, 1})
+	assertSearch(`message:bad`, 0, 7, []int{6, 4, 2, 0})
+	assertSearch(`message:good`, 0, 6, []int{5, 3, 1})
+	assertSearch(`message:bad`, 1, 7, []int{6, 4, 2})
+
+	assertSearch(`message:good OR message:bad`, 2, 6, []int{6, 5, 4, 3, 2})
+	assertSearch(`message:good OR message:bad`, 3, 3, []int{3})
+
+	assertSearch(`NOT message:notexists`, 0, 7, []int{7, 6, 5, 4, 3, 2, 1, 0})
+	assertSearch(`NOT message:notexists`, 0, 6, []int{6, 5, 4, 3, 2, 1, 0})
+	assertSearch(`NOT message:notexists`, 1, 7, []int{7, 6, 5, 4, 3, 2, 1})
+	assertSearch(`NOT message:notexists`, 1, 6, []int{6, 5, 4, 3, 2, 1})
+
+	assertSearch(`NOT message:notexists AND message:*`, 1, 6, []int{6, 5, 4, 3, 2, 1})
+	assertSearch(`NOT message:notexists AND (message:* OR message:*)`, 1, 6, []int{6, 5, 4, 3, 2, 1})
+	assertSearch(`NOT message:notexists AND (message:good OR message:bad)`, 1, 6, []int{6, 5, 4, 3, 2, 1})
+	assertSearch(`NOT message:notexists AND message:good`, 1, 6, []int{5, 3, 1})
+
+	assertSearch(`NOT (message:good OR message:bad)`, 0, 7, []int{})
+	assertSearch(`NOT (message:good OR message:bad)`, 1, 6, []int{})
+
+	assertSearch(`NOT trace_id:0`, 0, 2, []int{})
+	assertSearch(`NOT trace_id:0`, 0, 3, []int{3})
+	assertSearch(`NOT trace_id:1`, 3, 5, []int{})
+	assertSearch(`NOT trace_id:1`, 2, 6, []int{6, 2})
+
+	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 0, 10, []int{5, 4, 3})
+	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 3, 5, []int{5, 4, 3})
 }
 
 type searchOption func(*processor.SearchParams) error
 
 func (s *FractionTestSuite) query(queryString string, options ...searchOption) *processor.SearchParams {
-	seqql, err := parser.ParseSeqQL(queryString, s.mapping)
+	queryAst, err := parser.ParseQuery(queryString, s.mapping)
 	s.Require().NoError(err, "failed to parse query: %s", queryString)
 
 	params := &processor.SearchParams{
-		AST:   seqql.Root,
+		AST:   queryAst,
 		From:  seq.MID(0),
 		To:    seq.MID(math.MaxUint64),
 		Limit: math.MaxInt32,
@@ -261,22 +302,22 @@ func (s *FractionTestSuite) query(queryString string, options ...searchOption) *
 
 func withFrom(from string) searchOption {
 	return func(p *processor.SearchParams) error {
-		time, err := time.Parse(time.RFC3339, from)
+		t, err := time.Parse(time.RFC3339, from)
 		if err != nil {
 			return err
 		}
-		p.From = seq.TimeToMID(time)
+		p.From = seq.TimeToMID(t)
 		return nil
 	}
 }
 
 func withTo(to string) searchOption {
 	return func(p *processor.SearchParams) error {
-		time, err := time.Parse(time.RFC3339, to)
+		t, err := time.Parse(time.RFC3339, to)
 		if err != nil {
 			return err
 		}
-		p.To = seq.TimeToMID(time)
+		p.To = seq.TimeToMID(t)
 		return nil
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
-	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -18,7 +17,6 @@ import (
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tests/setup"
 	"github.com/ozontech/seq-db/tests/suites"
 )
@@ -76,19 +74,6 @@ func simpleCases(startTS time.Time) []setup.ExampleDoc {
 	return docs
 }
 
-func (s *SingleTestSuite) TestBasicSearch() {
-	startTS := time.Now()
-	docs := simpleCases(startTS)
-	docStrs := setup.DocsToStrings(docs)
-	// order of docs is "2, 1, 3, 0"
-	// first: order is reversed
-	// second: doc #3 has smaller timestamp, than #1 and #2,
-	// so it will be reordered
-	s.Bulk(docStrs)
-
-	s.assertSearch(docStrs)
-}
-
 func (s *SingleTestSuite) TestBasicSearchHotRead() {
 	startTS := time.Now()
 	docs := simpleCases(startTS)
@@ -105,7 +90,26 @@ func (s *SingleTestSuite) TestBasicSearchHotRead() {
 		Shards: [][]string{},
 		Vers:   []string{},
 	}
-	s.assertSearch(docStrs)
+
+	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
+		s.AssertSearch(`service: service_a`, docStrs, []int{3, 0})
+		s.AssertSearch(`traceID:abcdef`, docStrs, []int{1, 0})
+		s.AssertSearch(`level: 1`, docStrs, []int{1, 3, 0})
+
+		s.AssertSearch(`message: "message text"`, docStrs, []int{2, 1, 3, 0})
+		s.AssertSearch(`message: "other text"`, docStrs, []int{2, 1})
+
+		s.AssertSearch(`traceID: abcd*`, docStrs, []int{1, 0})
+		s.AssertSearch(`traceID: a*`, docStrs, []int{2, 1, 0})
+		s.AssertSearch(`traceID: a*f`, docStrs, []int{1, 0})
+		s.AssertSearch(`traceID: a*a`, docStrs, []int{2})
+		s.AssertSearch(`service: service*a`, docStrs, []int{3, 0})
+		s.AssertSearch(`message: message\ som*`, docStrs, []int{3, 0})
+
+		// test limit
+		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderAsc))
+		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderDesc))
+	})
 }
 
 func (s *SingleTestSuite) TestSearchAgg() {
@@ -137,28 +141,6 @@ func (s *SingleTestSuite) TestSearchAgg() {
 				{"service_a": 2, "service_b": 1, "service_c": 1},
 				{"1": 3, "2": 1},
 			})
-	})
-}
-
-func (s *SingleTestSuite) assertSearch(docStrs []string) {
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		s.AssertSearch(`service: service_a`, docStrs, []int{3, 0})
-		s.AssertSearch(`traceID:abcdef`, docStrs, []int{1, 0})
-		s.AssertSearch(`level: 1`, docStrs, []int{1, 3, 0})
-
-		s.AssertSearch(`message: "message text"`, docStrs, []int{2, 1, 3, 0})
-		s.AssertSearch(`message: "other text"`, docStrs, []int{2, 1})
-
-		s.AssertSearch(`traceID: abcd*`, docStrs, []int{1, 0})
-		s.AssertSearch(`traceID: a*`, docStrs, []int{2, 1, 0})
-		s.AssertSearch(`traceID: a*f`, docStrs, []int{1, 0})
-		s.AssertSearch(`traceID: a*a`, docStrs, []int{2})
-		s.AssertSearch(`service: service*a`, docStrs, []int{3, 0})
-		s.AssertSearch(`message: message\ som*`, docStrs, []int{3, 0})
-
-		// test limit
-		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderAsc))
-		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderDesc))
 	})
 }
 
@@ -220,41 +202,6 @@ func (s *SingleTestSuite) TestSearchNestedWithAND() {
 			q := fmt.Sprintf("trace_id:%d AND spans.span_id:%d", traceID, spanID)
 			s.Assert().Equal(docs[traceID:traceID+1], s.SearchDocs(q, 10, seq.DocsOrderDesc), q)
 		}
-	})
-}
-
-func (s *SingleTestSuite) TestSearchNot() {
-	docs := setup.GenerateDocs(6, func(i int, doc *setup.ExampleDoc) {
-		doc.Message = good
-		if i%2 == 0 {
-			doc.Message = bad
-		}
-		doc.Level = i + 1 // zero will not write
-		doc.Service = fmt.Sprintf("srv_%d", i+1)
-	})
-	docStrs := setup.DocsToStrings(docs)
-	s.Bulk(docStrs)
-
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		s.AssertSearch(`NOT level:1`, docStrs, []int{5, 4, 3, 2, 1})
-		s.AssertSearch(`NOT level:2`, docStrs, []int{5, 4, 3, 2, 0})
-		s.AssertSearch(`NOT level:5`, docStrs, []int{5, 3, 2, 1, 0})
-		s.AssertSearch(`NOT level:6`, docStrs, []int{4, 3, 2, 1, 0})
-
-		s.AssertSearch(`NOT message:notfound`, docStrs, []int{5, 4, 3, 2, 1, 0})
-		s.AssertSearch(`NOT service:srv_*`, docStrs, []int{})
-
-		s.AssertSearch(`NOT message:bad`, docStrs, []int{5, 3, 1})
-		s.AssertSearch(`NOT message:good`, docStrs, []int{4, 2, 0})
-
-		s.AssertSearch(`NOT message:"good bad"`, docStrs, []int{5, 4, 3, 2, 1, 0})
-		s.AssertSearch(`NOT (message:good AND message:bad)`, docStrs, []int{5, 4, 3, 2, 1, 0})
-		s.AssertSearch(`NOT (message:good OR message:bad)`, docStrs, []int{})
-
-		s.AssertSearch(`NOT message:bad AND message:bad`, docStrs, []int{})
-		s.AssertSearch(`NOT message:bad AND message:good`, docStrs, []int{5, 3, 1})
-		s.AssertSearch(`message:good AND NOT message:good`, docStrs, []int{})
-		s.AssertSearch(`message:bad AND NOT message:good`, docStrs, []int{4, 2, 0})
 	})
 }
 
@@ -332,82 +279,6 @@ func (s *SingleTestSuite) TestFetchHints() {
 	})
 }
 
-func (s *SingleTestSuite) TestSearchFromTo() {
-	docs := setup.GenerateDocs(8, func(i int, doc *setup.ExampleDoc) {
-		doc.Message = good
-		if i%2 == 0 {
-			doc.Message = bad
-		}
-		doc.Level = i + 1 // zero will not write
-		doc.TraceID = fmt.Sprintf("%d", i/3)
-		doc.Service = fmt.Sprintf("%d", i%3)
-	})
-	start := docs[0].Timestamp
-	docStrs := setup.DocsToStrings(docs)
-	s.Bulk(docStrs)
-
-	assertSearch := func(query string, from int, to int, indexes []int) {
-		fromMID := seq.TimeToMID(start.Add(time.Millisecond * time.Duration(from)))
-		toMID := seq.TimeToMID(start.Add(time.Millisecond * time.Duration(to)))
-
-		for _, withTotal := range []bool{true, false} {
-			for _, o := range []seq.DocsOrder{seq.DocsOrderAsc, seq.DocsOrderDesc} {
-				_, docsStream, _, err := s.Ingestor().SearchIngestor.Search(
-					context.Background(),
-					&search.SearchRequest{
-						Explain:     false,
-						Q:           []byte(query),
-						Offset:      0,
-						Size:        math.MaxUint32,
-						Interval:    0,
-						From:        fromMID,
-						To:          toMID,
-						WithTotal:   withTotal,
-						ShouldFetch: true,
-						Order:       o,
-					},
-					nil,
-				)
-				s.Require().NoError(err)
-				foundDocs := common.ToStringSlice(search.ReadAll(docsStream))
-				if o.IsReverse() {
-					slices.Reverse(foundDocs)
-				}
-				s.AssertDocsEqual(docStrs, indexes, foundDocs)
-			}
-		}
-	}
-
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		assertSearch(`message:good`, 0, 7, []int{7, 5, 3, 1})
-		assertSearch(`message:bad`, 0, 7, []int{6, 4, 2, 0})
-		assertSearch(`message:good`, 0, 6, []int{5, 3, 1})
-		assertSearch(`message:bad`, 1, 7, []int{6, 4, 2})
-
-		assertSearch(`message:good OR message:bad`, 2, 6, []int{6, 5, 4, 3, 2})
-		assertSearch(`message:good OR message:bad`, 3, 3, []int{3})
-		assertSearch(`NOT message:notexists`, 0, 7, []int{7, 6, 5, 4, 3, 2, 1, 0})
-		assertSearch(`NOT message:notexists`, 0, 6, []int{6, 5, 4, 3, 2, 1, 0})
-
-		assertSearch(`NOT message:notexists`, 1, 7, []int{7, 6, 5, 4, 3, 2, 1})
-		assertSearch(`NOT message:notexists`, 1, 6, []int{6, 5, 4, 3, 2, 1})
-		assertSearch(`NOT message:notexists AND message:*`, 1, 6, []int{6, 5, 4, 3, 2, 1})
-		assertSearch(`NOT message:notexists AND (message:* OR message:*)`, 1, 6, []int{6, 5, 4, 3, 2, 1})
-
-		assertSearch(`NOT message:notexists AND (message:good OR message:bad)`, 1, 6, []int{6, 5, 4, 3, 2, 1})
-		assertSearch(`NOT message:notexists AND message:good`, 1, 6, []int{5, 3, 1})
-		assertSearch(`NOT (message:good OR message:bad)`, 0, 7, []int{})
-		assertSearch(`NOT (message:good OR message:bad)`, 1, 6, []int{})
-
-		assertSearch(`NOT traceID:0`, 0, 2, []int{})
-		assertSearch(`NOT traceID:0`, 0, 3, []int{3})
-		assertSearch(`NOT traceID:1`, 3, 5, []int{})
-		assertSearch(`NOT traceID:1`, 2, 6, []int{6, 2})
-		assertSearch(`NOT traceID:0 AND NOT traceID:2`, 0, 10, []int{5, 4, 3})
-		assertSearch(`NOT traceID:0 AND NOT traceID:2`, 3, 5, []int{5, 4, 3})
-	})
-}
-
 func (s *SingleTestSuite) TestFetch() {
 	n := 8
 	docs := setup.GenerateDocs(n, func(i int, doc *setup.ExampleDoc) {
@@ -431,45 +302,6 @@ func (s *SingleTestSuite) TestFetch() {
 		docs, err := s.Env.Fetch(ids)
 		s.Assert().NoError(err)
 		s.Assert().Equal(len(ids), len(docs))
-	})
-}
-
-func (s *SingleTestSuite) TestWildcardSymbols() {
-	startTS := time.Now()
-	docs := []setup.ExampleDoc{
-		{
-			Message:   "first value:****",
-			Timestamp: startTS.Add(time.Millisecond * 10),
-		},
-		{
-			Message:   "second value:*******",
-			Timestamp: startTS.Add(time.Millisecond * 20),
-		},
-		{
-			Message:   "third value****",
-			Timestamp: startTS.Add(time.Millisecond * 30),
-		},
-		{
-			Message:   "fourth ****",
-			Timestamp: startTS.Add(time.Millisecond * 40),
-		},
-	}
-	docStrs := setup.DocsToStrings(docs)
-	s.Bulk(docStrs)
-
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		s.AssertSearch(`message:*`, docStrs, []int{3, 2, 1, 0})
-		s.AssertSearch(`message:value`, docStrs, []int{1, 0})
-		s.AssertSearch(`message:value*`, docStrs, []int{2, 1, 0})
-		s.AssertSearch(`message:value\*`, docStrs, []int{})
-		s.AssertSearch(`message:value\**`, docStrs, []int{2})
-		s.AssertSearch(`message:*\**`, docStrs, []int{3, 2, 1, 0})
-		s.AssertSearch(`message:*e\**`, docStrs, []int{2})
-		s.AssertSearch(`message:\**`, docStrs, []int{3, 1, 0})
-		s.AssertSearch(`message:\*\*\*\*`, docStrs, []int{3, 0})
-		s.AssertSearch(`message:\*\*\*\**`, docStrs, []int{3, 1, 0})
-		s.AssertSearch(`message:value* AND message:\*\**`, docStrs, []int{1, 0})
-		s.AssertSearch(`message:value* OR message:\*\**`, docStrs, []int{3, 2, 1, 0})
 	})
 }
 
