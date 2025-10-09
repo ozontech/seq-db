@@ -97,35 +97,9 @@ func (s *FractionTestSuite) SetupTestCommon() {
 	s.readLimiter = storage.NewReadLimiter(2, NopCounter{})
 }
 
-func (s *FractionTestSuite) InsertIntoActive(active *Active, docs ...string) {
-
-	// drift and futureDrift are 0, we can process docs at any timestamps
-	processor := indexer.NewProcessor(s.mapping, s.tokenizers, 0, 0, 0)
-
-	idx := 0
-	readNext := func() ([]byte, error) {
-		if idx >= len(docs) {
-			return nil, nil
-		}
-		d := []byte(docs[idx])
-		idx++
-		return d, nil
-	}
-
-	_, binaryDocs, binaryMeta, err := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-	s.Require().NoError(err, "processing bulk failed")
-
-	compressor := indexer.GetDocsMetasCompressor(3, 3)
-	defer indexer.PutDocMetasCompressor(compressor)
-	compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
-	docsBlock, metasBlock := compressor.DocsMetas()
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	err = active.Append(docsBlock, metasBlock, &wg)
-	s.Require().NoError(err, "append to active failed")
-
-	wg.Wait()
+func (s *FractionTestSuite) TearDownTestCommon() {
+	err := os.RemoveAll(s.tmpDir)
+	s.NoError(err, "Failed to remove tmp dir")
 }
 
 func (s *FractionTestSuite) TestSearchKeyword() {
@@ -978,6 +952,83 @@ func (s *FractionTestSuite) AssertAggregation(
 	}
 }
 
+func (s *FractionTestSuite) newActive(docs ...string) *Active {
+	baseName := filepath.Join(s.tmpDir, "test_fraction")
+	activeIndexer := NewActiveIndexer(4, 10)
+	activeIndexer.Start()
+
+	active := NewActive(
+		baseName,
+		activeIndexer,
+		s.readLimiter,
+		cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		s.sortCache,
+		s.config,
+	)
+
+	proc := indexer.NewProcessor(s.mapping, s.tokenizers, 0, 0, 0)
+
+	idx := 0
+	readNext := func() ([]byte, error) {
+		if idx >= len(docs) {
+			return nil, nil
+		}
+		d := []byte(docs[idx])
+		idx++
+		return d, nil
+	}
+
+	_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
+	s.Require().NoError(err, "processing bulk failed")
+
+	compressor := indexer.GetDocsMetasCompressor(3, 3)
+	defer indexer.PutDocMetasCompressor(compressor)
+	compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
+	docsBlock, metasBlock := compressor.DocsMetas()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	err = active.Append(docsBlock, metasBlock, &wg)
+	s.Require().NoError(err, "append to active failed")
+
+	wg.Wait()
+	return active
+}
+
+func (s *FractionTestSuite) newSealed(docs ...string) *Sealed {
+	active := s.newActive(docs...)
+
+	sealParams := common.SealParams{
+		IDsZstdLevel:           1, // min comression level
+		LIDsZstdLevel:          1,
+		TokenListZstdLevel:     1,
+		DocsPositionsZstdLevel: 1,
+		TokenTableZstdLevel:    1,
+		DocBlocksZstdLevel:     1,
+		DocBlockSize:           128 * int(units.KiB),
+	}
+
+	activeSealingSource, err := NewActiveSealingSource(active, sealParams)
+	s.Require().NoError(err, "Sealing source creation failed")
+
+	preloaded, err := sealing.Seal(activeSealingSource, sealParams)
+	s.Require().NoError(err, "Sealing failed")
+
+	sealed := NewSealedPreloaded(
+		active.BaseFileName,
+		preloaded,
+		s.readLimiter,
+		s.indexCache,
+		cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		s.config,
+	)
+	active.Release()
+	return sealed
+}
+
+/*
+ActiveFractionSuite TODO
+*/
 type ActiveFractionSuite struct {
 	FractionTestSuite
 }
@@ -985,22 +1036,8 @@ type ActiveFractionSuite struct {
 func (s *ActiveFractionSuite) SetupTest() {
 	s.SetupTestCommon()
 
-	baseName := filepath.Join(s.tmpDir, "test_fraction")
-	indexer := NewActiveIndexer(4, 10)
-	indexer.Start()
-
-	active := NewActive(
-		baseName,
-		indexer,
-		s.readLimiter,
-		cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		s.sortCache,
-		s.config,
-	)
-
-	s.fraction = active
 	s.insertDocuments = func(docs ...string) {
-		s.InsertIntoActive(active, docs...)
+		s.fraction = s.newActive(docs...)
 	}
 }
 
@@ -1013,10 +1050,12 @@ func (s *ActiveFractionSuite) TearDownTest() {
 		s.fraction.Suicide()
 	}
 
-	err := os.RemoveAll(s.tmpDir)
-	s.NoError(err, "failed to remove tmp dir")
+	s.TearDownTestCommon()
 }
 
+/*
+SealedFractionSuite tests TODO comment
+*/
 type SealedFractionSuite struct {
 	FractionTestSuite
 }
@@ -1025,58 +1064,16 @@ func (s *SealedFractionSuite) SetupTest() {
 	s.SetupTestCommon()
 
 	s.insertDocuments = func(docs ...string) {
-		baseFile := filepath.Join(s.tmpDir, "test_fraction")
-		indexer := NewActiveIndexer(4, 10)
-		indexer.Start()
-
-		active := NewActive(
-			baseFile,
-			indexer,
-			s.readLimiter,
-			cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-			s.sortCache,
-			s.config,
-		)
-
-		s.InsertIntoActive(active, docs...)
-
-		sealParams := common.SealParams{
-			IDsZstdLevel:           3,
-			LIDsZstdLevel:          3,
-			TokenListZstdLevel:     3,
-			DocsPositionsZstdLevel: 3,
-			TokenTableZstdLevel:    3,
-			DocBlocksZstdLevel:     3,
-			DocBlockSize:           1024 * 1024,
-		}
-
-		activeSealingSource, err := NewActiveSealingSource(active, sealParams)
-		s.Require().NoError(err, "Sealing source creation failed")
-
-		preloaded, err := sealing.Seal(activeSealingSource, sealParams)
-		s.Require().NoError(err, "Sealing failed")
-
-		sealed := NewSealedPreloaded(
-			baseFile,
-			preloaded,
-			s.readLimiter,
-			s.indexCache,
-			cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-			s.config,
-		)
-		s.fraction = sealed
-		active.Release()
+		// TODO check if fraction is nil
+		s.fraction = s.newSealed(docs...)
 	}
 }
 
 func (s *SealedFractionSuite) TearDownTest() {
-	// TODO if tear down is same as in active, then move it to FractionSuite
 	if s.fraction != nil {
 		s.fraction.Suicide()
 	}
-
-	err := os.RemoveAll(s.tmpDir)
-	s.NoError(err, "Failed to remove tmp dir")
+	s.TearDownTestCommon()
 }
 
 func TestFractionSuites(t *testing.T) {
