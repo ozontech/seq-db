@@ -3,14 +3,11 @@ package fracmanager
 import (
 	"context"
 	"errors"
-	"io"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
@@ -44,6 +41,7 @@ type FracManager struct {
 	remoteFracs []*frac.Remote
 	active      activeRef
 
+	indexer      *frac.ActiveIndexer
 	fracProvider *fractionProvider
 
 	oldestCTLocal  atomic.Uint64
@@ -56,8 +54,6 @@ type FracManager struct {
 	cacheWG sync.WaitGroup
 
 	s3cli *s3.Client
-
-	ulidEntropy io.Reader
 }
 
 type fracRef struct {
@@ -82,23 +78,22 @@ func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracMan
 
 	cacheMaintainer := NewCacheMaintainer(cfg.CacheSize, cfg.SortCacheSize, newDefaultCacheMetrics())
 
+	readLimiter := storage.NewReadLimiter(config.ReaderWorkers, storeBytesRead)
+	indexer := frac.NewActiveIndexer(config.IndexWorkers, config.IndexWorkers)
+	indexer.Start()
+
 	fracManager := &FracManager{
 		config:          cfg,
 		ctx:             ctx,
 		s3cli:           s3cli,
 		mature:          atomic.Bool{},
 		cacheMaintainer: cacheMaintainer,
-		fracProvider:    newFractionProvider(&cfg.Fraction, s3cli, cacheMaintainer, config.ReaderWorkers, config.IndexWorkers),
-		ulidEntropy:     ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
+		indexer:         indexer,
+		fracProvider:    newFractionProvider(cfg, s3cli, cacheMaintainer, readLimiter, indexer),
 		fracCache:       NewFracInfoCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix)),
 	}
 
 	return fracManager
-}
-
-// This method is not thread safe. Use consciously to avoid race
-func (fm *FracManager) nextFractionID() string {
-	return ulid.MustNew(ulid.Timestamp(time.Now()), fm.ulidEntropy).String()
 }
 
 func (fm *FracManager) maintenance(sealWg, cleanupWg *sync.WaitGroup) {
@@ -271,7 +266,7 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 			}
 
 			offloadStart := time.Now()
-			mustBeOffloaded, err := outsider.Offload(fm.ctx, s3.NewUploader(fm.s3cli))
+			remote, err := fm.fracProvider.Offload(fm.ctx, outsider)
 			if err != nil {
 				metric.OffloadingTotal.WithLabelValues("failure").Inc()
 				metric.OffloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
@@ -289,7 +284,7 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 				return
 			}
 
-			if !mustBeOffloaded {
+			if remote == nil {
 				fm.fracCache.Remove(info.Name())
 				outsider.Suicide()
 				return
@@ -303,8 +298,6 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 				zap.String("fraction", info.Name()),
 				zap.String("took", time.Since(offloadStart).String()),
 			)
-
-			remote := fm.fracProvider.NewRemote(fm.ctx, info.Path, info)
 
 			fm.fracMu.Lock()
 			// FIXME(dkharms): We had previously shifted fraction from local fracs list (in [fm.determineOutsiders] via [fm.shiftFirstFrac])
@@ -556,11 +549,7 @@ var (
 func (fm *FracManager) seal(activeRef activeRef) {
 	sealsTotal.Inc()
 	now := time.Now()
-	defer func() {
-		sealsDoneSeconds.Observe(time.Since(now).Seconds())
-	}()
-
-	sealed, err := activeRef.frac.Seal(fm.config.SealParams)
+	sealed, err := activeRef.frac.Seal()
 	if err != nil {
 		if errors.Is(err, ErrSealingFractionSuicided) {
 			// the faction is suicided, this means that it has already pushed out of the list of factions,
@@ -569,6 +558,14 @@ func (fm *FracManager) seal(activeRef activeRef) {
 		}
 		logger.Fatal("sealing error", zap.Error(err))
 	}
+	sealingTime := time.Since(now)
+	sealsDoneSeconds.Observe(sealingTime.Seconds())
+
+	logger.Info(
+		"fraction sealed",
+		zap.String("fraction", filepath.Dir(sealed.Info().Path)),
+		zap.Float64("time_spent_s", util.DurationToUnit(sealingTime, "s")),
+	)
 
 	info := sealed.Info()
 	fm.fracCache.Add(info)
@@ -579,17 +576,15 @@ func (fm *FracManager) seal(activeRef activeRef) {
 }
 
 func (fm *FracManager) rotate() activeRef {
-	filePath := fileBasePattern + fm.nextFractionID()
-	baseFilePath := filepath.Join(fm.config.DataDir, filePath)
-	logger.Info("creating new fraction", zap.String("filepath", baseFilePath))
-
-	next := fm.newActiveRef(fm.fracProvider.NewActive(baseFilePath))
+	next := fm.newActiveRef(fm.fracProvider.CreateActive())
 
 	fm.fracMu.Lock()
 	prev := fm.active
 	fm.active = next
 	fm.localFracs = append(fm.localFracs, fm.active.ref)
 	fm.fracMu.Unlock()
+
+	logger.Info("new fraction created", zap.String("filepath", next.frac.active.BaseFileName))
 
 	return prev
 }
@@ -599,7 +594,7 @@ func (fm *FracManager) minFracSizeToSeal() uint64 {
 }
 
 func (fm *FracManager) Stop() {
-	fm.fracProvider.Stop()
+	fm.indexer.Stop()
 	fm.stopFn()
 
 	fm.statWG.Wait()

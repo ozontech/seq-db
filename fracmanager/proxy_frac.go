@@ -12,7 +12,6 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
-	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
@@ -118,7 +117,7 @@ func (f *proxyFrac) WaitWriteIdle() {
 	logger.Info("write is stopped", zap.String("name", f.name), zap.Float64("time_wait_s", waitTime))
 }
 
-func (f *proxyFrac) Seal(params common.SealParams) (*frac.Sealed, error) {
+func (f *proxyFrac) Seal() (*frac.Sealed, error) {
 	f.useMu.Lock()
 	if f.isSuicidedState() {
 		f.useMu.Unlock()
@@ -135,16 +134,10 @@ func (f *proxyFrac) Seal(params common.SealParams) (*frac.Sealed, error) {
 
 	f.WaitWriteIdle()
 
-	src, err := frac.NewActiveSealingSource(active, params)
+	sealed, err := f.fp.Seal(active)
 	if err != nil {
 		return nil, err
 	}
-	preloaded, err := sealing.Seal(src, params)
-	if err != nil {
-		return nil, err
-	}
-
-	sealed := f.fp.NewSealedPreloaded(active.BaseFileName, preloaded)
 
 	f.useMu.Lock()
 	f.sealed = sealed
