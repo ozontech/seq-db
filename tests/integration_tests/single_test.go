@@ -107,38 +107,6 @@ func (s *SingleTestSuite) TestBasicSearchHotRead() {
 	})
 }
 
-func (s *SingleTestSuite) TestSearchAgg() {
-	startTS := time.Now()
-	docs := simpleCases(startTS)
-	docStrs := setup.DocsToStrings(docs)
-	s.Bulk(docStrs)
-
-	assertAgg := func(query string, aggQ []any, expected []map[string]uint64) {
-		r := s.Require()
-		qpr, _, _, err := s.Env.Search(query, math.MaxInt32, setup.WithAggQuery(aggQ...), setup.WithTotal(false))
-		r.NoError(err)
-		r.Equal(len(expected), len(qpr.Aggs))
-		for i := range expected {
-			for bin, hist := range qpr.Aggs[i].SamplesByBin {
-				r.Equalf(int64(expected[i][bin.Token]), hist.Total, "failed for token %s", bin)
-			}
-		}
-	}
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		assertAgg("message:message", []any{"service"}, []map[string]uint64{
-			{"service_a": 2, "service_b": 1, "service_c": 1},
-		})
-		assertAgg("message:message", []any{"level"}, []map[string]uint64{
-			{"1": 3, "2": 1},
-		})
-		assertAgg("message:message", []any{"service", "level"},
-			[]map[string]uint64{
-				{"service_a": 2, "service_b": 1, "service_c": 1},
-				{"1": 3, "2": 1},
-			})
-	})
-}
-
 // Test AND tree (sorting issue)
 func (s *SingleTestSuite) TestSearchNestedWithAND() {
 	const (

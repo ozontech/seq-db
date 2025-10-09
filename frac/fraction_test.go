@@ -464,24 +464,19 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 3, 5, []int{5, 4, 3})
 }
 
-/*func (s *FractionTestSuite) TestAgg() {
+func (s *FractionTestSuite) TestBasicAggregation() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
-		`{"timestamp":"2000-01-01T13:00:01.000Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:01.000Z","message":"bad","level":"3","trace_id":"0","service":"2"}`,
-		`{"timestamp":"2000-01-01T13:00:03.000Z","message":"good","level":"4","trace_id":"1","service":"0"}`,
-		`{"timestamp":"2000-01-01T13:00:04.000Z","message":"bad","level":"5","trace_id":"1","service":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:05.000Z","message":"good","level":"6","trace_id":"1","service":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"proxy"}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","message":"good","level":"2","trace_id":"0","service":"gateway"}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","message":"bad","level":"3","trace_id":"0","service":"scheduler"}`,
+		`{"timestamp":"2000-01-01T13:00:03.000Z","message":"good","level":"1","trace_id":"1","service":"proxy"}`,
+		`{"timestamp":"2000-01-01T13:00:04.000Z","message":"bad","level":"1","trace_id":"1","service":"gateway"}`,
+		`{"timestamp":"2000-01-01T13:00:05.000Z","message":"good","level":"1","trace_id":"1","service":"gateway"}`,
 	}
 
 	s.insertDocuments(docs...)
 
-	assertSearch := func(query string, agg string, expected []map[string]uint64) {
-		searchParams := s.query(query)
-
-		err := withAggBy(agg)(searchParams)
-		s.Require().NoError(err, "agg setting up failed")
-
+	assertAggSearch := func(searchParams *processor.SearchParams, expected []map[string]uint64) {
 		dp, release := s.fraction.DataProvider(context.Background())
 		defer release()
 
@@ -489,15 +484,44 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 		s.Require().NoError(err, "search failed")
 
 		s.Require().Equal(len(expected), len(qpr.Aggs))
-		//for i := range expected {
-		//	for bin, hist := range qpr.Aggs[i].SamplesByBin {
-		//		r.Equalf(int64(expected[i][bin.Token]), hist.Total, "failed for token %s", bin)
-		//	}
-		//}
+		for i := range expected {
+			for bin, hist := range qpr.Aggs[i].SamplesByBin {
+				s.Require().Equalf(int64(expected[i][bin.Token]), hist.Total, "failed for token %s", bin)
+			}
+		}
 	}
 
-	assertSearch("message:*", "service", []map[string]uint64{})
-}*/
+	assertAggSearch(
+		s.query(
+			"message:*",
+			withAggQuery(processor.AggQuery{GroupBy: aggField("service")})),
+		[]map[string]uint64{
+			{"gateway": 3, "proxy": 2, "scheduler": 1},
+		})
+	assertAggSearch(
+		s.query(
+			"message:good",
+			withAggQuery(processor.AggQuery{GroupBy: aggField("service")})),
+		[]map[string]uint64{
+			{"gateway": 2, "proxy": 1},
+		})
+	assertAggSearch(
+		s.query(
+			"message:*",
+			withAggQuery(processor.AggQuery{GroupBy: aggField("level")})),
+		[]map[string]uint64{
+			{"1": 4, "2": 1, "3": 1},
+		})
+	assertAggSearch(
+		s.query(
+			"message:*",
+			withAggQuery(processor.AggQuery{GroupBy: aggField("service")}),
+			withAggQuery(processor.AggQuery{GroupBy: aggField("level")})),
+		[]map[string]uint64{
+			{"gateway": 3, "proxy": 2, "scheduler": 1},
+			{"1": 4, "2": 1, "3": 1},
+		})
+}
 
 type searchOption func(*processor.SearchParams) error
 
@@ -564,6 +588,48 @@ func withTo(to string) searchOption {
 func withLimit(limit int) searchOption {
 	return func(p *processor.SearchParams) error {
 		p.Limit = limit
+		return nil
+	}
+}
+
+func withAgg(aggQueries ...any) searchOption {
+	aggs := make([]processor.AggQuery, 0, len(aggQueries))
+	for _, aggQuery := range aggQueries {
+		switch aggQuery := aggQuery.(type) {
+		case string:
+			searchAll := []parser.Term{{
+				Kind: parser.TermSymbol, Data: "*",
+			}}
+			groupBy := &parser.Literal{
+				Field: aggQuery,
+				Terms: searchAll,
+			}
+			aggs = append(aggs, processor.AggQuery{GroupBy: groupBy, Func: seq.AggFuncCount})
+		case processor.AggQuery:
+			aggs = append(aggs, aggQuery)
+		default:
+			panic("unknown query type")
+		}
+	}
+	return func(sp *processor.SearchParams) error {
+		sp.AggQ = append(sp.AggQ, aggs...)
+		return nil
+	}
+}
+
+func aggField(field string) *parser.Literal {
+	searchAll := []parser.Term{{
+		Kind: parser.TermSymbol, Data: "*",
+	}}
+	return &parser.Literal{
+		Field: field,
+		Terms: searchAll,
+	}
+}
+
+func withAggQuery(aggQuery processor.AggQuery) searchOption {
+	return func(sp *processor.SearchParams) error {
+		sp.AggQ = append(sp.AggQ, aggQuery)
 		return nil
 	}
 }
