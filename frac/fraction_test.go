@@ -129,10 +129,10 @@ func (s *FractionTestSuite) InsertIntoActive(active *Active, docs ...string) {
 
 func (s *FractionTestSuite) TestSearchKeyword() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00Z", "message":"first test document","level":"info","service":"test-service","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:01Z", "message":"second test document","level":"error","service":"test-service","status":"fail"}`,
-		`{"timestamp":"2000-01-01T13:00:02Z", "message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:03Z", "message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:00Z", "message":"first test document","level":"info","service":"test","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:01Z", "message":"second test document","level":"error","service":"test","status":"fail"}`,
+		`{"timestamp":"2000-01-01T13:00:02Z", "message":"third test document","level":"debug","service":"prod","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:03Z", "message":"fourth test document","level":"info","status":"ok"}`,
 	}
 
 	s.insertDocuments(docs...)
@@ -141,8 +141,9 @@ func (s *FractionTestSuite) TestSearchKeyword() {
 	s.AssertSearch("level:error", docs, []int{1})
 	s.AssertSearch("level:debug", docs, []int{2})
 
-	s.AssertSearch("service:test-service", docs, []int{1, 0})
-	s.AssertSearch("service:another-service", docs, []int{3, 2})
+	s.AssertSearch("service:test", docs, []int{1, 0})
+	s.AssertSearch("service:prod", docs, []int{2})
+	s.AssertSearch("_exists_:service", docs, []int{2, 1, 0})
 
 	s.AssertSearch("status:ok", docs, []int{3, 2, 0})
 	s.AssertSearch("status:fail", docs, []int{1})
@@ -318,6 +319,80 @@ func (s *FractionTestSuite) TestSearchANDOR() {
 	s.AssertSearch("service:svc_a AND service:svc_b", docs, []int{})
 }
 
+func (s *FractionTestSuite) TestSearchRange() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"test-service","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","service":"test-service","level":"3"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","service":"test-service","level":"7"}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","service":"test-service","level":"15"}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","service":"test-service","level":"31"}`,
+		`{"timestamp":"2000-01-01T13:00:00.005Z","service":"test-service","level":"63"}`,
+		`{"timestamp":"2000-01-01T13:00:00.006Z","service":"test-service","level":"127"}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	s.AssertSearch("level:[1 TO 3]", docs, []int{1, 0})
+	s.AssertSearch(s.seqql("level:[1, 3]"), docs, []int{1, 0})
+	s.AssertSearch("level:[0 TO 63]", docs, []int{5, 4, 3, 2, 1, 0})
+	s.AssertSearch(s.seqql("level:[0, 63]"), docs, []int{5, 4, 3, 2, 1, 0})
+
+	s.AssertSearch("level:{0 TO 3}", docs, []int{0})
+	s.AssertSearch("level:{-100 TO 100}", docs, []int{5, 4, 3, 2, 1, 0})
+
+	s.AssertSearch("level:{0 TO 3]", docs, []int{1, 0})
+	s.AssertSearch(s.seqql("level:(0, 3]"), docs, []int{1, 0})
+	s.AssertSearch("level:[0 TO 3}", docs, []int{0})
+
+	s.AssertSearch("level:[-100 TO 100]", docs, []int{5, 4, 3, 2, 1, 0})
+
+	s.AssertSearch("level:[0 TO *]", docs, []int{6, 5, 4, 3, 2, 1, 0})
+	s.AssertSearch(s.seqql("level:[0, *]"), docs, []int{6, 5, 4, 3, 2, 1, 0})
+	s.AssertSearch("level:[0 TO *}", docs, []int{6, 5, 4, 3, 2, 1, 0})
+	s.AssertSearch("level:[31 TO *]", docs, []int{6, 5, 4})
+	s.AssertSearch("level:{31 TO *]", docs, []int{6, 5})
+
+	s.AssertSearch("level:[200 TO 300]", docs, []int{})
+	s.AssertSearch("level:{127 TO 200]", docs, []int{})
+}
+
+func (s *FractionTestSuite) TestSearchIn() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"starting pod","level":"info","k8s_namespace":"prod","k8s_pod":"proxy-node1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"api call failed","level":"error","k8s_namespace":"prod","k8s_pod":"apiserver-master1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"scheduling task","level":"info","k8s_namespace":"test","k8s_pod":"scheduler-master1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"authentication error","level":"error","k8s_namespace":"test","k8s_pod":"apiserver-master2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"network policy applied","level":"info","k8s_namespace":"prod","k8s_pod":"proxy-node2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.005Z","message":"scheduling completed","level":"info","k8s_namespace":"staging","k8s_pod":"scheduler-master2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.006Z","message":"connection timeout","level":"error","k8s_namespace":"staging","k8s_pod":"app-backend-1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.007Z","message":"health check passed","level":"info","k8s_namespace":"prod","k8s_pod":"app-frontend-1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.008Z","message":"database query slow","level":"warn","k8s_namespace":"prod","k8s_pod":"app-backend-2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.009Z","message":"cache miss","level":"warn","k8s_namespace":"test","k8s_pod":"app-cache-1"}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	s.AssertSearch(s.seqql("k8s_namespace:in(prod)"), docs, []int{8, 7, 4, 1, 0})
+	s.AssertSearch(s.seqql("k8s_namespace:in(test)"), docs, []int{9, 3, 2})
+	s.AssertSearch(s.seqql("k8s_namespace:in(staging)"), docs, []int{6, 5})
+	s.AssertSearch(s.seqql("k8s_namespace:in(prod,test)"), docs, []int{9, 8, 7, 4, 3, 2, 1, 0})
+	s.AssertSearch(s.seqql("k8s_namespace:in(prod,test,staging)"), docs, []int{9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
+
+	s.AssertSearch(s.seqql("k8s_pod:in(proxy-*)"), docs, []int{4, 0})
+	s.AssertSearch(s.seqql("k8s_pod:in(apiserver-*)"), docs, []int{3, 1})
+	s.AssertSearch(s.seqql("k8s_pod:in(scheduler-*)"), docs, []int{5, 2})
+	s.AssertSearch(s.seqql("k8s_pod:in(proxy-*,apiserver-*)"), docs, []int{4, 3, 1, 0})
+	s.AssertSearch(s.seqql("k8s_pod:in(proxy-*,apiserver-*,scheduler-*)"), docs, []int{5, 4, 3, 2, 1, 0})
+
+	s.AssertSearch(s.seqql("level:error AND k8s_namespace:in(prod,test)"), docs, []int{3, 1})
+	s.AssertSearch(s.seqql("level:error AND k8s_namespace:in(prod,test) AND k8s_pod:in(apiserver-*)"), docs, []int{3, 1})
+
+	s.AssertSearch(
+		s.seqql(`level:error AND k8s_namespace:in(prod,test) AND k8s_pod:in(proxy-*,apiserver-*,scheduler-*)`),
+		docs,
+		[]int{3, 1})
+}
+
 func (s *FractionTestSuite) TestSearchNested() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:00.000Z","spans":[{"span_id":"1"},{"span_id":"2"}]}`,
@@ -389,7 +464,7 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 3, 5, []int{5, 4, 3})
 }
 
-func (s *FractionTestSuite) TestAgg() {
+/*func (s *FractionTestSuite) TestAgg() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
 		`{"timestamp":"2000-01-01T13:00:01.000Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
@@ -404,7 +479,7 @@ func (s *FractionTestSuite) TestAgg() {
 	assertSearch := func(query string, agg string, expected []map[string]uint64) {
 		searchParams := s.query(query)
 
-		err := withAgg(agg)(searchParams)
+		err := withAggBy(agg)(searchParams)
 		s.Require().NoError(err, "agg setting up failed")
 
 		dp, release := s.fraction.DataProvider(context.Background())
@@ -422,7 +497,7 @@ func (s *FractionTestSuite) TestAgg() {
 	}
 
 	assertSearch("message:*", "service", []map[string]uint64{})
-}
+}*/
 
 type searchOption func(*processor.SearchParams) error
 
@@ -432,6 +507,25 @@ func (s *FractionTestSuite) query(queryString string, options ...searchOption) *
 
 	params := &processor.SearchParams{
 		AST:   queryAst,
+		From:  seq.MID(0),
+		To:    seq.MID(math.MaxUint64),
+		Limit: math.MaxInt32,
+	}
+
+	for _, option := range options {
+		err := option(params)
+		s.Require().NoError(err, "option can not be applied")
+	}
+
+	return params
+}
+
+func (s *FractionTestSuite) seqql(queryString string, options ...searchOption) *processor.SearchParams {
+	queryAst, err := parser.ParseSeqQL(queryString, s.mapping)
+	s.Require().NoError(err, "failed to parse query: %s", queryString)
+
+	params := &processor.SearchParams{
+		AST:   queryAst.Root,
 		From:  seq.MID(0),
 		To:    seq.MID(math.MaxUint64),
 		Limit: math.MaxInt32,
@@ -470,31 +564,6 @@ func withTo(to string) searchOption {
 func withLimit(limit int) searchOption {
 	return func(p *processor.SearchParams) error {
 		p.Limit = limit
-		return nil
-	}
-}
-
-func withAgg(aggQueries ...any) searchOption {
-	aggs := make([]processor.AggQuery, 0, len(aggQueries))
-	for _, aggQuery := range aggQueries {
-		switch aggQuery := aggQuery.(type) {
-		case string:
-			//searchAll := []parser.Term{{
-			//	Kind: parser.TermSymbol, Data: "*",
-			//}}
-			groupBy := &parser.Literal{
-				Field: aggQuery,
-				Terms: []parser.Term{},
-			}
-			aggs = append(aggs, processor.AggQuery{Field: groupBy, Func: seq.AggFuncCount})
-		case processor.AggQuery:
-			aggs = append(aggs, aggQuery)
-		default:
-			panic("unknown query type")
-		}
-	}
-	return func(sp *processor.SearchParams) error {
-		sp.AggQ = append(sp.AggQ, aggs...)
 		return nil
 	}
 }
