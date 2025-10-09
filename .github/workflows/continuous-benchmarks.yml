@@ -11,7 +11,9 @@ on:
 permissions:
   contents: write
   deployments: write
-  pull-requests: write
+
+env:
+  CHRONOS_VERSION: v0.0.5
 
 jobs:
   ci-benchmarks:
@@ -33,7 +35,7 @@ jobs:
       # Add GitHub job summary for pull requests.
       - name: Summarize benchmarks results
         if: ${{ success() && github.event_name == 'pull_request' }}
-        uses: dkharms/chronos@v0.0.5
+        uses: dkharms/chronos@${{ env.CHRONOS_VERSION }}
         with:
           github-token: ${{ github.token }}
           benchmarks-file-path: ${{ runner.temp }}/gotool.txt
@@ -43,7 +45,7 @@ jobs:
       # was merged to main and previous job was successful.
       - name: Save benchmarks results
         if: ${{ success() && github.ref_name == 'main' }}
-        uses: dkharms/chronos@v0.0.5
+        uses: dkharms/chronos@${{ env.CHRONOS_VERSION }}
         with:
           github-token: ${{ github.token }}
           benchmarks-file-path: ${{ runner.temp }}/gotool.txt
@@ -53,7 +55,7 @@ jobs:
       # was merged to main and previous job was successful.
       - name: Publish benchmarks results
         if: ${{ success() && github.ref_name == 'main' }}
-        uses: dkharms/chronos@v0.0.5
+        uses: dkharms/chronos@${{ env.CHRONOS_VERSION }}
         with:
           github-token: ${{ github.token }}
           action-to-perform: publish
