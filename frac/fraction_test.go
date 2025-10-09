@@ -75,6 +75,7 @@ func (s *FractionTestSuite) SetupSuite() {
 		"process":       seq.NewSingleType(seq.TokenizerTypeObject, "", 0),
 		"process.tags":  seq.NewSingleType(seq.TokenizerTypeTags, "", 0),
 		"tags":          seq.NewSingleType(seq.TokenizerTypeTags, "", 0),
+		"v":             seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 	}
 }
 
@@ -227,7 +228,6 @@ func (s *FractionTestSuite) TestWildcardSymbolsSearch() {
 	s.AssertSearch(`message:\*\*\*\**`, docs, []int{3, 1, 0})
 	s.AssertSearch(`message:value* AND message:\*\**`, docs, []int{1, 0})
 	s.AssertSearch(`message:value* OR message:\*\**`, docs, []int{3, 2, 1, 0})
-
 }
 
 func (s *FractionTestSuite) TestSearchFullText() {
@@ -521,6 +521,73 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 			{"gateway": 3, "proxy": 2, "scheduler": 1},
 			{"1": 4, "2": 1, "3": 1},
 		})
+}
+
+func (s *FractionTestSuite) TestAggSum() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","service":"some_log","v":2}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","service":"sum1","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","service":"sum1","v":-1}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","service":"sum1","v":-0}`,
+		`{"timestamp":"2000-01-01T13:00:00.005Z","service":"sum1","v":+0}`,
+		`{"timestamp":"2000-01-01T13:00:00.006Z","service":"sum1","v":0}`,
+		`{"timestamp":"2000-01-01T13:00:00.007Z","service":"sum1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.008Z","service":"sum2","v":-1}`,
+		`{"timestamp":"2000-01-01T13:00:00.009Z","service":"sum2","v":-3}`,
+		`{"timestamp":"2000-01-01T13:00:00.010Z","service":"sum2","v":-4}`,
+		`{"timestamp":"2000-01-01T13:00:00.011Z","service":"sum3","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.012Z","service":"sum4","v":99}`,
+		`{"timestamp":"2000-01-01T13:00:00.013Z","service":"sum4","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.014Z","service":"sum4","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.015Z","service":"sum4","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.016Z","service":"sum4","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.017Z","service":"sum4","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.018Z","service":"sum5","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.019Z","service":"sum5"}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	dp, release := s.fraction.DataProvider(context.Background())
+	defer release()
+
+	searchParams := s.query(
+		"service:sum*",
+		withAggQuery(processor.AggQuery{
+			Field:   aggField("v"),
+			GroupBy: aggField("service"),
+			Func:    seq.AggFuncSum,
+		}))
+
+	qpr, err := dp.Search(*searchParams)
+	s.Require().NoError(err, "search failed")
+
+	aggResults := qpr.Aggregate([]seq.AggregateArgs{{Func: seq.AggFuncSum}})
+	s.Require().Equal(1, len(aggResults))
+
+	expectedBuckets := []seq.AggregationBucket{
+		{Name: "sum4", Value: 104, NotExists: 0},
+		{Name: "sum1", Value: 1, NotExists: 1},
+		{Name: "sum3", Value: 1, NotExists: 0},
+		{Name: "sum5", Value: 1, NotExists: 1},
+		{Name: "sum2", Value: -8, NotExists: 0},
+	}
+
+	s.Require().Equal(len(expectedBuckets), len(aggResults[0].Buckets), "wrong number of buckets")
+
+	for _, expectedBucket := range expectedBuckets {
+		found := false
+		for _, gotBucket := range aggResults[0].Buckets {
+			if gotBucket.Name == expectedBucket.Name {
+				s.Require().Equal(expectedBucket.Value, gotBucket.Value, "wrong value for bucket %s", expectedBucket.Name)
+				s.Require().Equal(expectedBucket.NotExists, gotBucket.NotExists, "wrong NotExists for bucket %s", expectedBucket.Name)
+				found = true
+				break
+			}
+		}
+		s.Require().True(found, "bucket %s not found in results", expectedBucket.Name)
+	}
 }
 
 type searchOption func(*processor.SearchParams) error
