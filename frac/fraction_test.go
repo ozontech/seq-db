@@ -403,8 +403,7 @@ func (s *FractionTestSuite) TestSearchNested() {
 
 	s.insertDocuments(docs...)
 
-	// Each AssertSearch now tests both desc and asc order
-	s.AssertSearch("spans.span_id:*", docs, []int{3, 2, 1, 0})
+	s.AssertSearchIgnoreTotal("spans.span_id:*", docs, []int{3, 2, 1, 0})
 	s.AssertSearch("spans.span_id:1", docs, []int{2, 0})
 	s.AssertSearch("spans.span_id:2", docs, []int{1, 0})
 	s.AssertSearch("spans.span_id:3", docs, []int{2, 1})
@@ -876,51 +875,71 @@ func withAggQuery(aggQuery processor.AggQuery) searchOption {
 	}
 }
 
+func (s *FractionTestSuite) AssertSearchIgnoreTotal(query string, originalDocs []string, expectedIndexes []int) {
+	s.AssertSearchWithSearchParams(s.query(query), originalDocs, expectedIndexes, false)
+}
+
 func (s *FractionTestSuite) AssertSearch(queryObject interface{}, originalDocs []string, expectedIndexes []int) {
 	switch q := queryObject.(type) {
 	case string:
-		s.AssertSearchWithSearchParams(s.query(q), originalDocs, expectedIndexes)
+		s.AssertSearchWithSearchParams(s.query(q), originalDocs, expectedIndexes, true)
 	case *processor.SearchParams:
-		s.AssertSearchWithSearchParams(q, originalDocs, expectedIndexes)
+		s.AssertSearchWithSearchParams(q, originalDocs, expectedIndexes, true)
 	default:
 		s.Require().Fail("type for query object not supported")
 	}
 }
 
-func (s *FractionTestSuite) AssertSearchWithSearchParams(params *processor.SearchParams, originalDocs []string, expectedIndexes []int) {
+func (s *FractionTestSuite) AssertSearchWithSearchParams(params *processor.SearchParams, originalDocs []string, expectedIndexes []int, checkTotal bool) {
+	var withTotals = []bool{false}
+	if checkTotal {
+		withTotals = append(withTotals, true)
+	}
+
 	for _, order := range []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc} {
-		params.Order = order
+		for _, withTotal := range withTotals {
+			params.Order = order
+			params.WithTotal = withTotal
 
-		dp, release := s.fraction.DataProvider(context.Background())
+			dp, release := s.fraction.DataProvider(context.Background())
 
-		qpr, err := dp.Search(*params)
-		s.Require().NoError(err, "search failed for query with order=%v", order)
-
-		s.Require().Equal(len(expectedIndexes), qpr.IDs.Len(),
-			"expected %d docs but found %d with order=%v", len(expectedIndexes), qpr.IDs.Len(), order)
-
-		docs, err := dp.Fetch(qpr.IDs.IDs())
-		s.Require().NoError(err, "failed to fetch docs for IDs: %v", qpr.IDs.IDs())
-
-		if order.IsReverse() {
-			slices.Reverse(docs)
-		}
-
-		fetchedDocs := make([]string, 0, len(docs))
-		for _, doc := range docs {
-			fetchedDocs = append(fetchedDocs, string(doc))
-		}
-
-		for i, fetchedDoc := range fetchedDocs {
-			if i < len(expectedIndexes) {
-				expectedDoc := originalDocs[expectedIndexes[i]]
-				s.Require().Equal(expectedDoc, fetchedDoc,
-					"doc at index %d doesn't match expected doc at original index %d with order=%v",
-					i, expectedIndexes[i], order)
+			qpr, err := dp.Search(*params)
+			s.Require().NoError(err, "search failed for query with order=%v", order)
+			if withTotal {
+				s.Require().Equal(
+					uint64(len(expectedIndexes)),
+					qpr.Total,
+					"total doesn't match. expected: %d, actual: %d", len(expectedIndexes), qpr.Total)
+			} else {
+				s.Require().Equal(uint64(0), qpr.Total, "qpr has total but not expected to have")
 			}
-		}
 
-		release()
+			s.Require().Equal(len(expectedIndexes), qpr.IDs.Len(),
+				"expected %d docs but found %d with order=%v", len(expectedIndexes), qpr.IDs.Len(), order)
+
+			docs, err := dp.Fetch(qpr.IDs.IDs())
+			s.Require().NoError(err, "failed to fetch docs for IDs: %v", qpr.IDs.IDs())
+
+			if order.IsReverse() {
+				slices.Reverse(docs)
+			}
+
+			fetchedDocs := make([]string, 0, len(docs))
+			for _, doc := range docs {
+				fetchedDocs = append(fetchedDocs, string(doc))
+			}
+
+			for i, fetchedDoc := range fetchedDocs {
+				if i < len(expectedIndexes) {
+					expectedDoc := originalDocs[expectedIndexes[i]]
+					s.Require().Equal(expectedDoc, fetchedDoc,
+						"doc at index %d doesn't match expected doc at original index %d with order=%v",
+						i, expectedIndexes[i], order)
+				}
+			}
+
+			release()
+		}
 	}
 }
 

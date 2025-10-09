@@ -255,37 +255,6 @@ func (s *IntegrationTestSuite) TestSearchNothing() {
 	assert.Equal(s.T(), uint64(0), qpr.Total, "wrong doc count")
 }
 
-func (s *IntegrationTestSuite) TestSearchBackwards() {
-	now := time.Now()
-	before := now.Add(-5 * time.Hour)
-	origDocs := []string{
-		fmt.Sprintf(`{"service":"a","xxxx":"yyyy","time":%q}`, now.Format(time.RFC3339)),
-		fmt.Sprintf(`{"service":"a","yyyy":"xxxx","time":%q}`, before.Format(time.RFC3339)),
-	}
-
-	env := setup.NewTestingEnv(s.Config)
-	defer env.StopAll()
-
-	setup.Bulk(s.T(), env.IngestorBulkAddr(), origDocs)
-	env.WaitIdle()
-
-	for _, o := range []seq.DocsOrder{seq.DocsOrderAsc, seq.DocsOrderDesc} {
-		for _, withTotal := range []bool{true, false} {
-			qpr, docs, _, err := env.Search(`service:a`, 1000, setup.WithTotal(withTotal), setup.WithOrder(o))
-
-			if o.IsReverse() {
-				slices.Reverse(docs)
-			}
-
-			assert.NoError(s.T(), err, "should be no errors")
-			assert.Len(s.T(), qpr.IDs, 2, "wrong doc count")
-			assert.Equal(s.T(), origDocs[0], string(docs[0]), "wrong doc content")
-			assert.Equal(s.T(), origDocs[1], string(docs[1]), "wrong doc content")
-			assert.Equal(s.T(), getTotal(2, withTotal), qpr.Total, "wrong doc count")
-		}
-	}
-}
-
 func (s *IntegrationTestSuite) TestSearchSequence() {
 	docTemplate := `{"service":"a","time":"%s"}`
 	bulks := 16
