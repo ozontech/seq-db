@@ -180,6 +180,46 @@ func (s *FractionTestSuite) TestSearchNot() {
 	s.AssertSearch("message:bad AND NOT message:good", docs, []int{4, 2, 0})
 }
 
+func (s *FractionTestSuite) TestSearchAndOr() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"apple","level":"info","service":"svc_a","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"apple","level":"error","service":"svc_b","status":"fail"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"banana","level":"info","service":"svc_a","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"banana","level":"error","service":"svc_b","status":"fail"}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"cherry","level":"info","service":"svc_c","status":"ok"}`,
+		`{"timestamp":"2000-01-01T13:00:00.005Z","message":"cherry","level":"warn","service":"svc_c","status":"ok"}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	s.AssertSearch("message:apple AND level:info", docs, []int{0})
+	s.AssertSearch("message:banana AND service:svc_a", docs, []int{2})
+	s.AssertSearch("message:cherry AND level:warn", docs, []int{5})
+	s.AssertSearch("level:info AND status:ok", docs, []int{4, 2, 0})
+	s.AssertSearch("service:svc_a AND status:ok", docs, []int{2, 0})
+
+	s.AssertSearch("message:apple OR message:banana", docs, []int{3, 2, 1, 0})
+	s.AssertSearch("level:error OR level:warn", docs, []int{5, 3, 1})
+	s.AssertSearch("service:svc_a OR service:svc_b", docs, []int{3, 2, 1, 0})
+	s.AssertSearch("status:fail OR level:warn", docs, []int{5, 3, 1})
+
+	s.AssertSearch("(message:apple OR message:banana) AND level:info", docs, []int{2, 0})
+	s.AssertSearch("message:cherry AND (level:info OR level:warn)", docs, []int{5, 4})
+	s.AssertSearch("(service:svc_a OR service:svc_b) AND level:info", docs, []int{2, 0})
+	s.AssertSearch("(service:svc_a OR service:svc_b) AND (level:info OR level:error)", docs, []int{3, 2, 1, 0})
+
+	s.AssertSearch("(message:apple AND level:info) OR (message:banana AND level:error)", docs, []int{3, 0})
+	s.AssertSearch("(message:apple OR message:cherry) AND (level:info OR level:error)", docs, []int{4, 1, 0})
+	s.AssertSearch("message:* AND (level:info OR level:error) AND status:ok", docs, []int{4, 2, 0})
+
+	s.AssertSearch("message:apple OR message:notfound", docs, []int{1, 0})
+	s.AssertSearch("message:notfound OR message:banana", docs, []int{3, 2})
+
+	s.AssertSearch("message:apple AND message:banana", docs, []int{})
+	s.AssertSearch("level:info AND level:error", docs, []int{})
+	s.AssertSearch("service:svc_a AND service:svc_b", docs, []int{})
+}
+
 func (s *FractionTestSuite) TestWildcardSymbolsSearch() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:00.010Z","message":"first value:****"}`,
@@ -251,46 +291,6 @@ func (s *FractionTestSuite) TestSearchPath() {
 	s.AssertSearch("request_uri:/two/*/three", docs, []int{10})
 	s.AssertSearch("request_uri:*/three/", docs, []int{5})
 	s.AssertSearch("request_uri:*/three", docs, []int{10, 9, 8, 7, 6, 5, 2})
-}
-
-func (s *FractionTestSuite) TestSearchAndOr() {
-	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"apple","level":"info","service":"svc_a","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"apple","level":"error","service":"svc_b","status":"fail"}`,
-		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"banana","level":"info","service":"svc_a","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"banana","level":"error","service":"svc_b","status":"fail"}`,
-		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"cherry","level":"info","service":"svc_c","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:00.005Z","message":"cherry","level":"warn","service":"svc_c","status":"ok"}`,
-	}
-
-	s.insertDocuments(docs...)
-
-	s.AssertSearch("message:apple AND level:info", docs, []int{0})
-	s.AssertSearch("message:banana AND service:svc_a", docs, []int{2})
-	s.AssertSearch("message:cherry AND level:warn", docs, []int{5})
-	s.AssertSearch("level:info AND status:ok", docs, []int{4, 2, 0})
-	s.AssertSearch("service:svc_a AND status:ok", docs, []int{2, 0})
-
-	s.AssertSearch("message:apple OR message:banana", docs, []int{3, 2, 1, 0})
-	s.AssertSearch("level:error OR level:warn", docs, []int{5, 3, 1})
-	s.AssertSearch("service:svc_a OR service:svc_b", docs, []int{3, 2, 1, 0})
-	s.AssertSearch("status:fail OR level:warn", docs, []int{5, 3, 1})
-
-	s.AssertSearch("(message:apple OR message:banana) AND level:info", docs, []int{2, 0})
-	s.AssertSearch("message:cherry AND (level:info OR level:warn)", docs, []int{5, 4})
-	s.AssertSearch("(service:svc_a OR service:svc_b) AND level:info", docs, []int{2, 0})
-	s.AssertSearch("(service:svc_a OR service:svc_b) AND (level:info OR level:error)", docs, []int{3, 2, 1, 0})
-
-	s.AssertSearch("(message:apple AND level:info) OR (message:banana AND level:error)", docs, []int{3, 0})
-	s.AssertSearch("(message:apple OR message:cherry) AND (level:info OR level:error)", docs, []int{4, 1, 0})
-	s.AssertSearch("message:* AND (level:info OR level:error) AND status:ok", docs, []int{4, 2, 0})
-
-	s.AssertSearch("message:apple OR message:notfound", docs, []int{1, 0})
-	s.AssertSearch("message:notfound OR message:banana", docs, []int{3, 2})
-
-	s.AssertSearch("message:apple AND message:banana", docs, []int{})
-	s.AssertSearch("level:info AND level:error", docs, []int{})
-	s.AssertSearch("service:svc_a AND service:svc_b", docs, []int{})
 }
 
 func (s *FractionTestSuite) TestSearchRange() {
@@ -1076,7 +1076,45 @@ func (s *SealedFractionSuite) TearDownTest() {
 	s.TearDownTestCommon()
 }
 
+/*
+SealedLoadedFractionSuite
+*/
+type SealedLoadedFractionSuite struct {
+	FractionTestSuite
+}
+
+func (s *SealedLoadedFractionSuite) SetupTest() {
+	s.SetupTestCommon()
+
+	s.insertDocuments = func(docs ...string) {
+		s.fraction = s.newSealedLoaded(docs...)
+	}
+}
+
+func (s *SealedLoadedFractionSuite) newSealedLoaded(docs ...string) *Sealed {
+	sealed := s.newSealed(docs...)
+	sealed.close("closed")
+
+	sealed = NewSealed(
+		sealed.BaseFileName,
+		s.readLimiter,
+		s.indexCache,
+		cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		nil,
+		s.config)
+	s.fraction = sealed
+	return sealed
+}
+
+func (s *SealedLoadedFractionSuite) TearDownTest() {
+	if s.fraction != nil {
+		s.fraction.Suicide()
+	}
+	s.TearDownTestCommon()
+}
+
 func TestFractionSuites(t *testing.T) {
 	suite.Run(t, new(ActiveFractionSuite))
 	suite.Run(t, new(SealedFractionSuite))
+	suite.Run(t, new(SealedLoadedFractionSuite))
 }
