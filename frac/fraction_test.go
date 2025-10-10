@@ -856,12 +856,13 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(params *processor.Searc
 		withTotals = append(withTotals, true)
 	}
 
+	dp, release := s.fraction.DataProvider(context.Background())
+	defer release()
+
 	for _, order := range []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc} {
 		for _, withTotal := range withTotals {
 			params.Order = order
 			params.WithTotal = withTotal
-
-			dp, release := s.fraction.DataProvider(context.Background())
 
 			qpr, err := dp.Search(*params)
 			s.Require().NoError(err, "search failed for query with order=%v", order)
@@ -897,8 +898,6 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(params *processor.Searc
 						i, expectedIndexes[i], order)
 				}
 			}
-
-			release()
 		}
 	}
 }
