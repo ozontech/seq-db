@@ -84,15 +84,15 @@ func (s *FractionTestSuite) SetupTestCommon() {
 	s.tmpDir, err = os.MkdirTemp("", "fraction_test_*")
 	s.Require().NoError(err)
 
-	s.sortCache = cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil)
+	s.sortCache = cache.NewCache[[]byte](cache.NewCleaner(uint64(units.KiB), nil), nil)
 	s.indexCache = &IndexCache{
-		MIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		RIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		Params:     cache.NewCache[seqids.BlockParams](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		LIDs:       cache.NewCache[*lids.Block](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		Tokens:     cache.NewCache[*token.Block](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		TokenTable: cache.NewCache[token.Table](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
-		Registry:   cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		MIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(units.KiB), nil), nil),
+		RIDs:       cache.NewCache[[]byte](cache.NewCleaner(uint64(units.KiB), nil), nil),
+		Params:     cache.NewCache[seqids.BlockParams](cache.NewCleaner(uint64(units.KiB), nil), nil),
+		LIDs:       cache.NewCache[*lids.Block](cache.NewCleaner(uint64(units.KiB), nil), nil),
+		Tokens:     cache.NewCache[*token.Block](cache.NewCleaner(uint64(units.KiB), nil), nil),
+		TokenTable: cache.NewCache[token.Table](cache.NewCleaner(uint64(units.KiB), nil), nil),
+		Registry:   cache.NewCache[[]byte](cache.NewCleaner(uint64(units.KiB), nil), nil),
 	}
 	s.readLimiter = storage.NewReadLimiter(2, NopCounter{})
 }
@@ -104,32 +104,11 @@ func (s *FractionTestSuite) TearDownTestCommon() {
 
 func (s *FractionTestSuite) TestSearchKeyword() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00Z", "message":"first test document","level":"info","service":"test","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:01Z", "message":"second test document","level":"error","service":"test","status":"fail"}`,
-		`{"timestamp":"2000-01-01T13:00:02Z", "message":"third test document","level":"debug","service":"prod","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:03Z", "message":"fourth test document","level":"info","status":"ok"}`,
-	}
-
-	s.insertDocuments(docs...)
-
-	s.AssertSearch("level:info", docs, []int{3, 0})
-	s.AssertSearch("level:error", docs, []int{1})
-	s.AssertSearch("level:debug", docs, []int{2})
-
-	s.AssertSearch("service:test", docs, []int{1, 0})
-	s.AssertSearch("service:prod", docs, []int{2})
-	s.AssertSearch("_exists_:service", docs, []int{2, 1, 0})
-
-	s.AssertSearch("status:ok", docs, []int{3, 2, 0})
-	s.AssertSearch("status:fail", docs, []int{1})
-}
-
-func (s *FractionTestSuite) TestBasicSearch() {
-	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message some text","trace_id":"abcdef","source":"prod01","level":"1"}`,
 		`{"timestamp":"2000-01-01T13:00:32Z","service":"service_b","message":"second message other text","trace_id":"abcdef","source":"prod01","level":"1"}`,
 		`{"timestamp":"2000-01-01T13:00:43Z","service":"service_c","message":"third message other text","trace_id":"aaaaaa","source":"prod02","level":"2"}`,
 		`{"timestamp":"2000-01-01T13:00:53Z","service":"service_a","message":"fourth message some text","trace_id":"bbbbbb","source":"prod01","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:54Z","service":"service_c","message":"apple","source":"prod03"}`,
 	}
 	s.insertDocuments(docs...)
 
@@ -144,7 +123,10 @@ func (s *FractionTestSuite) TestBasicSearch() {
 	s.AssertSearch("trace_id:a*f", docs, []int{1, 0})
 	s.AssertSearch("trace_id:a*a", docs, []int{2})
 	s.AssertSearch("service:service*a", docs, []int{3, 0})
-	s.AssertSearch("_all_:*", docs, []int{3, 2, 1, 0})
+	s.AssertSearch("_all_:*", docs, []int{4, 3, 2, 1, 0})
+
+	s.AssertSearch("_exists_:message", docs, []int{4, 3, 2, 1, 0})
+	s.AssertSearch("_exists_:level", docs, []int{3, 2, 1, 0})
 }
 
 func (s *FractionTestSuite) TestSearchNot() {
@@ -261,6 +243,10 @@ func (s *FractionTestSuite) TestSearchFullText() {
 	s.AssertSearch("message:third", docs, []int{2})
 	s.AssertSearch("message:fourth", docs, []int{3})
 	s.AssertSearch("message:fifth", docs, []int{})
+
+	s.AssertSearch(`message:"first test"`, docs, []int{0})
+	s.AssertSearch(`message:"first document"`, docs, []int{0})
+	s.AssertSearch(`message:"test document"`, docs, []int{3, 2, 1, 0})
 }
 
 func (s *FractionTestSuite) TestSearchPath() {
@@ -961,7 +947,7 @@ func (s *FractionTestSuite) newActive(docs ...string) *Active {
 		baseName,
 		activeIndexer,
 		s.readLimiter,
-		cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		cache.NewCache[[]byte](cache.NewCleaner(uint64(units.KiB), nil), nil),
 		s.sortCache,
 		s.config,
 	)
@@ -1019,7 +1005,7 @@ func (s *FractionTestSuite) newSealed(docs ...string) *Sealed {
 		preloaded,
 		s.readLimiter,
 		s.indexCache,
-		cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		cache.NewCache[[]byte](cache.NewCleaner(uint64(units.KiB), nil), nil),
 		s.config,
 	)
 	active.Release()
@@ -1027,7 +1013,7 @@ func (s *FractionTestSuite) newSealed(docs ...string) *Sealed {
 }
 
 /*
-ActiveFractionSuite TODO
+ActiveFractionSuite run tests for active fraction
 */
 type ActiveFractionSuite struct {
 	FractionTestSuite
@@ -1054,7 +1040,7 @@ func (s *ActiveFractionSuite) TearDownTest() {
 }
 
 /*
-SealedFractionSuite tests TODO comment
+SealedFractionSuite run tests for sealed fraction. Active fraction is created first and then sealed.
 */
 type SealedFractionSuite struct {
 	FractionTestSuite
@@ -1077,7 +1063,8 @@ func (s *SealedFractionSuite) TearDownTest() {
 }
 
 /*
-SealedLoadedFractionSuite
+SealedLoadedFractionSuite run tests for sealed fraction. Active fraction is created first and then sealed.
+Sealed fraction is then loaded with sealed.NewSealed call
 */
 type SealedLoadedFractionSuite struct {
 	FractionTestSuite
@@ -1099,7 +1086,7 @@ func (s *SealedLoadedFractionSuite) newSealedLoaded(docs ...string) *Sealed {
 		sealed.BaseFileName,
 		s.readLimiter,
 		s.indexCache,
-		cache.NewCache[[]byte](cache.NewCleaner(uint64(10*units.MiB), nil), nil),
+		cache.NewCache[[]byte](cache.NewCleaner(uint64(units.KiB), nil), nil),
 		nil,
 		s.config)
 	s.fraction = sealed
