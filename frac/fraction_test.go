@@ -110,6 +110,7 @@ func (s *FractionTestSuite) TestSearchKeyword() {
 		`{"timestamp":"2000-01-01T13:00:53Z","service":"service_a","message":"fourth message some text","trace_id":"bbbbbb","source":"prod01","level":"1"}`,
 		`{"timestamp":"2000-01-01T13:00:54Z","service":"service_c","message":"apple","source":"prod03"}`,
 	}
+
 	s.insertDocuments(docs...)
 
 	s.AssertSearch("service:service_a", docs, []int{3, 0})
@@ -1022,6 +1023,9 @@ func (s *ActiveFractionSuite) SetupTest() {
 	s.SetupTestCommon()
 
 	s.insertDocuments = func(docs ...string) {
+		if s.fraction != nil {
+			s.Require().Fail("can insert docs only once in each test")
+		}
 		s.fraction = s.newActive(docs...)
 	}
 }
@@ -1031,8 +1035,11 @@ func (s *ActiveFractionSuite) TearDownTest() {
 		active, ok := s.fraction.(*Active)
 		if ok {
 			active.Release()
+		} else {
+			s.Require().Fail("fraction is not of Active type")
 		}
 		s.fraction.Suicide()
+		s.fraction = nil
 	}
 
 	s.TearDownTestCommon()
@@ -1049,7 +1056,9 @@ func (s *SealedFractionSuite) SetupTest() {
 	s.SetupTestCommon()
 
 	s.insertDocuments = func(docs ...string) {
-		// TODO check if fraction is nil
+		if s.fraction != nil {
+			s.Require().Fail("can insert docs only once in each test")
+		}
 		s.fraction = s.newSealed(docs...)
 	}
 }
@@ -1057,6 +1066,7 @@ func (s *SealedFractionSuite) SetupTest() {
 func (s *SealedFractionSuite) TearDownTest() {
 	if s.fraction != nil {
 		s.fraction.Suicide()
+		s.fraction = nil
 	}
 	s.TearDownTestCommon()
 }
@@ -1073,6 +1083,9 @@ func (s *SealedLoadedFractionSuite) SetupTest() {
 	s.SetupTestCommon()
 
 	s.insertDocuments = func(docs ...string) {
+		if s.fraction != nil {
+			s.Require().Fail("can insert docs only once in each test")
+		}
 		s.fraction = s.newSealedLoaded(docs...)
 	}
 }
@@ -1095,6 +1108,7 @@ func (s *SealedLoadedFractionSuite) newSealedLoaded(docs ...string) *Sealed {
 func (s *SealedLoadedFractionSuite) TearDownTest() {
 	if s.fraction != nil {
 		s.fraction.Suicide()
+		s.fraction = nil
 	}
 	s.TearDownTestCommon()
 }
