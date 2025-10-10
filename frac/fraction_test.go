@@ -48,7 +48,7 @@ func (s *FractionTestSuite) SetupSuite() {
 				MaxTIDsPerFraction: 1000,
 			},
 		},
-		SkipSortDocs: true, // TODO enabling sorting will fail tests
+		SkipSortDocs: false,
 		KeepMetaFile: false,
 	}
 	s.tokenizers = map[seq.TokenizerType]tokenizer.Tokenizer{
@@ -755,7 +755,7 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	// these checks should not break without a reason
 	// but if compression/marshalling has changed, expected values can be updated accordingly
 	s.Require().Equal(uint32(5), info.DocsTotal, "doc total doesn't match")
-	s.Require().Equal(uint64(234), info.DocsOnDisk, "doc total doesn't match")
+	s.Require().Equal(uint64(235), info.DocsOnDisk, "doc total doesn't match")
 	s.Require().Equal(uint64(573), info.DocsRaw, "doc total doesn't match")
 	s.Require().Equal(seq.MID(946731625000), info.From, "from doesn't match")
 	s.Require().Equal(seq.MID(946731654000), info.To, "from doesn't match")
