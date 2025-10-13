@@ -16,7 +16,6 @@ import (
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
 
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
@@ -517,31 +516,23 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 
 	if len(actives) > 1 {
 		g, ctx := errgroup.WithContext(ctx)
-		replaySem := semaphore.NewWeighted(int64(fm.config.ReplayWorkers))
+		g.SetLimit(fm.config.ReplayWorkers)
 
-		for i := 0; i < len(actives)-1; i++ {
-			active := actives[i]
-
+		for i, f := range actives[:len(actives)-1] {
 			g.Go(func() error {
-				if err := replaySem.Acquire(ctx, 1); err != nil {
-					return err
-				}
-				defer replaySem.Release(1)
-
-				if err := active.Replay(ctx); err != nil {
+				if err := f.Replay(ctx); err != nil {
 					return err
 				}
 
-				if active.Info().DocsTotal == 0 {
-					active.Suicide() // remove empty
+				if f.Info().DocsTotal == 0 {
+					f.Suicide() // remove empty
 					return nil
 				}
 
-				ref := fm.newActiveRef(active)
+				ref := fm.newActiveRef(f)
 				fracRefs[i] = ref.ref
 
 				fm.seal(ref)
-
 				return nil
 			})
 		}
@@ -552,19 +543,13 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 	}
 
 	// The last frac is only replayed, not sealed
-	lastActive := actives[len(actives)-1]
-	if err := lastActive.Replay(ctx); err != nil {
+	last := actives[len(actives)-1]
+	if err := last.Replay(ctx); err != nil {
 		return err
 	}
 
-	var active *activeRef
-
-	if lastActive.Info().DocsTotal == 0 {
-		lastActive.Suicide()
-	} else {
-		newActiveRef := fm.newActiveRef(lastActive)
-		active = &newActiveRef
-	}
+	newActiveRef := fm.newActiveRef(last)
+	active := &newActiveRef
 
 	var localFracs []*fracRef
 	for _, ref := range fracRefs {
@@ -574,10 +559,8 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 	}
 
 	fm.localFracs = append(fm.localFracs, localFracs...)
-	if active != nil {
-		fm.active = *active
-		fm.localFracs = append(fm.localFracs, active.ref)
-	}
+	fm.active = *active
+	fm.localFracs = append(fm.localFracs, active.ref)
 
 	return nil
 }
