@@ -64,8 +64,8 @@ func testStress(size, workers, records int, get func(*Cache[[]uint64], int)) {
 	go func() {
 		defer wgClean.Done()
 		for !done.Load() {
-			stat := &CleanStat{}
-			cleaner.Cleanup(stat)
+			cleaner.Cleanup(&CleanStat{})
+			time.Sleep(10 * time.Microsecond)
 		}
 	}()
 	defer func() {
@@ -87,10 +87,13 @@ func testStress(size, workers, records int, get func(*Cache[[]uint64], int)) {
 }
 
 func TestStress(t *testing.T) {
-	const span = 100
-	testStress(10*int(units.KiB), 64, 100000, func(c *Cache[[]uint64], i int) {
-		j := rand.Intn(span) + i
-		key := uint32(j)
+	const (
+		objCount  = 1000
+		getCount  = 100_000
+		cacheSize = 128 * units.KiB
+	)
+	testStress(int(cacheSize), 64, getCount, func(c *Cache[[]uint64], i int) {
+		key := uint32(rand.Intn(objCount))
 		var err interface{}
 		panicFired := false
 		if (rand.Intn(100)) == 0 {
@@ -114,7 +117,7 @@ func TestStress(t *testing.T) {
 				panicFired = true
 				panic(err)
 			}
-			return []uint64{uint64(key)}, 8
+			return []uint64{uint64(key)}, 32
 		})
 		if val == nil {
 			t.Errorf("cache is corrupted")

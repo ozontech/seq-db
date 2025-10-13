@@ -1,4 +1,6 @@
-name:  Deploy docs
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+name: Deploy docs
 
 on:
   pull_request:

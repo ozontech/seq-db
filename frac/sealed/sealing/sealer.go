@@ -90,12 +90,13 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	util.MustSyncPath(filepath.Dir(info.Path))
 
 	// Build preloaded data structure for fast query access
+	lidsTable := indexSealer.LIDsTable()
 	preloaded := sealed.PreloadedData{
 		Info:       info,
 		TokenTable: indexSealer.TokenTable(),
 		BlocksData: sealed.BlocksData{
 			IDsTable:      indexSealer.IDsTable(),
-			LIDsTable:     indexSealer.LIDsTable(),
+			LIDsTable:     &lidsTable,
 			BlocksOffsets: src.BlocksOffsets(),
 		},
 	}
