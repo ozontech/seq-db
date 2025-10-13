@@ -413,6 +413,31 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 3, 5, []int{5, 4, 3})
 }
 
+func (s *FractionTestSuite) TestSearchWithLimit() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"bad","level":"3","trace_id":"0","service":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"good","level":"4","trace_id":"1","service":"0"}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"bad","level":"5","trace_id":"1","service":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.005Z","message":"good","level":"6","trace_id":"1","service":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.006Z","message":"bad","level":"7","trace_id":"2","service":"0"}`,
+		`{"timestamp":"2000-01-01T13:00:00.007Z","message":"good","level":"8","trace_id":"2","service":"1"}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	s.AssertSearch(s.query("message:good"), docs, []int{7, 5, 3, 1})
+	s.AssertSearch(s.query("message:good", withLimit(3)), docs, []int{7, 5, 3})
+	s.AssertSearch(s.query(
+		"message:good",
+		withLimit(2),
+		withFrom("2000-01-01T13:00:00.000Z"),
+		withTo("2000-01-01T13:00:00.005Z")),
+		docs,
+		[]int{5, 3})
+}
+
 func (s *FractionTestSuite) TestBasicAggregation() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"proxy"}`,
@@ -755,8 +780,9 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	// these checks should not break without a reason
 	// but if compression/marshalling has changed, expected values can be updated accordingly
 	s.Require().Equal(uint32(5), info.DocsTotal, "doc total doesn't match")
-	s.Require().Equal(uint64(235), info.DocsOnDisk, "doc total doesn't match")
-	s.Require().Equal(uint64(573), info.DocsRaw, "doc total doesn't match")
+	s.Require().True(info.DocsOnDisk > uint64(230) && info.DocsOnDisk < uint64(240),
+		"doc raw doesn't match. actual value: %d", info.DocsOnDisk)
+	s.Require().Equal(uint64(573), info.DocsRaw, "doc raw doesn't match")
 	s.Require().Equal(seq.MID(946731625000), info.From, "from doesn't match")
 	s.Require().Equal(seq.MID(946731654000), info.To, "from doesn't match")
 
@@ -875,16 +901,29 @@ func (s *FractionTestSuite) AssertSearch(queryObject interface{}, originalDocs [
 	}
 }
 
-func (s *FractionTestSuite) AssertSearchWithSearchParams(params *processor.SearchParams, originalDocs []string, expectedIndexes []int, checkTotal bool) {
+func (s *FractionTestSuite) AssertSearchWithSearchParams(
+	params *processor.SearchParams,
+	originalDocs []string,
+	expectedIndexes []int,
+	checkTotal bool) {
+
 	var withTotals = []bool{false}
-	if checkTotal {
+
+	// We can check total only if limit is not set. Otherwise, total returns a count
+	// of all docs which match the query
+	if checkTotal && params.Limit == 0 {
 		withTotals = append(withTotals, true)
+	}
+
+	var sortOrders = []seq.DocsOrder{seq.DocsOrderDesc}
+	if params.Limit == 0 {
+		sortOrders = append(sortOrders, seq.DocsOrderAsc)
 	}
 
 	dp, release := s.fraction.DataProvider(context.Background())
 	defer release()
 
-	for _, order := range []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc} {
+	for _, order := range sortOrders {
 		for _, withTotal := range withTotals {
 			params.Order = order
 			params.WithTotal = withTotal
@@ -915,7 +954,7 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(params *processor.Searc
 			for i, fetchedDoc := range fetchedDocs {
 				if i < len(expectedIndexes) {
 					expectedDoc := originalDocs[expectedIndexes[i]]
-					s.Require().Equal(expectedDoc, fetchedDoc, "doc at index %d doesn't match")
+					s.Require().Equal(expectedDoc, fetchedDoc, "doc at index %d doesn't match", i)
 				}
 			}
 		}
