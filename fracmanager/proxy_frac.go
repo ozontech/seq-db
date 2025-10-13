@@ -159,8 +159,14 @@ func (f *proxyFrac) trySetSuicided() (*frac.Active, *frac.Sealed, bool) {
 	sealed := f.sealed
 	active := f.active
 
+	// If the object is in active state, switch to read-only mode
+	if f.isActiveState() {
+		f.readonly = true
+	}
+
 	isSealing := f.isSealingState()
 
+	// If sealing is not in progress, we can safely clear the state
 	if !isSealing {
 		f.sealed = nil
 		f.active = nil
@@ -189,6 +195,7 @@ func (f *proxyFrac) Offload(ctx context.Context, u storage.Uploader) (bool, erro
 
 func (f *proxyFrac) Suicide() {
 	active, sealed, isSealing := f.trySetSuicided()
+
 	if isSealing {
 		f.sealWg.Wait()
 		// we can get `sealing` == true only once here
@@ -197,6 +204,8 @@ func (f *proxyFrac) Suicide() {
 	}
 
 	if active != nil {
+		// Wait for write operations to complete before suiciding
+		f.WaitWriteIdle()
 		active.Suicide()
 	}
 
