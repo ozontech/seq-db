@@ -7,7 +7,7 @@ require (
 	github.com/KimMachineGun/automemlimit v0.7.4
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/aws/aws-sdk-go-v2 v1.39.2
-	github.com/aws/aws-sdk-go-v2/config v1.29.17
+	github.com/aws/aws-sdk-go-v2/config v1.31.12
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.16
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.84
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.88.3
