@@ -451,10 +451,8 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 	s.insertDocuments(docs...)
 
 	assertAggSearch := func(searchParams *processor.SearchParams, expected []map[string]uint64) {
-		dp, release := s.fraction.DataProvider(context.Background())
-		defer release()
 
-		qpr, err := dp.Search(*searchParams)
+		qpr, err := s.fraction.Search(context.Background(), *searchParams)
 		s.Require().NoError(err, "search failed")
 
 		s.Require().Equal(len(expected), len(qpr.Aggs))
@@ -920,15 +918,12 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 		sortOrders = append(sortOrders, seq.DocsOrderAsc)
 	}
 
-	dp, release := s.fraction.DataProvider(context.Background())
-	defer release()
-
 	for _, order := range sortOrders {
 		for _, withTotal := range withTotals {
 			params.Order = order
 			params.WithTotal = withTotal
 
-			qpr, err := dp.Search(*params)
+			qpr, err := s.fraction.Search(context.Background(), *params)
 			s.Require().NoError(err, "search failed for query with order=%v", order)
 
 			if withTotal {
@@ -939,7 +934,7 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 
 			s.Require().Equal(len(expectedIndexes), qpr.IDs.Len(), "doc count doesn't match")
 
-			docs, err := dp.Fetch(qpr.IDs.IDs())
+			docs, err := s.fraction.Fetch(context.Background(), qpr.IDs.IDs())
 			s.Require().NoError(err, "failed to fetch docs")
 
 			if order.IsReverse() {
@@ -966,10 +961,7 @@ func (s *FractionTestSuite) AssertAggregation(
 	aggregate seq.AggregateArgs,
 	expectedBuckets []seq.AggregationBucket) {
 
-	dp, release := s.fraction.DataProvider(context.Background())
-	defer release()
-
-	qpr, err := dp.Search(*searchParams)
+	qpr, err := s.fraction.Search(context.Background(), *searchParams)
 	s.Require().NoError(err, "search failed")
 
 	aggResults := qpr.Aggregate([]seq.AggregateArgs{aggregate})
