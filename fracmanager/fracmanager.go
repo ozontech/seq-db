@@ -53,7 +53,7 @@ type FracManager struct {
 	stopFn  func()
 	statWG  sync.WaitGroup
 	mntcWG  sync.WaitGroup
-	cacheWG *sync.WaitGroup
+	cacheWG sync.WaitGroup
 
 	s3cli *s3.Client
 
@@ -80,25 +80,7 @@ func (fm *FracManager) newActiveRef(active *frac.Active) activeRef {
 func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracManager {
 	FillConfigWithDefault(cfg)
 
-	cacheMaintainer := NewCacheMaintainer(cfg.CacheSize, cfg.SortCacheSize, &CacheMaintainerMetrics{
-		HitsTotal:       metric.CacheHitsTotal,
-		MissTotal:       metric.CacheMissTotal,
-		PanicsTotal:     metric.CachePanicsTotal,
-		LockWaitsTotal:  metric.CacheLockWaitsTotal,
-		WaitsTotal:      metric.CacheWaitsTotal,
-		ReattemptsTotal: metric.CacheReattemptsTotal,
-		SizeRead:        metric.CacheSizeRead,
-		SizeOccupied:    metric.CacheSizeOccupied,
-		SizeReleased:    metric.CacheSizeReleased,
-		MapsRecreated:   metric.CacheMapsRecreated,
-		MissLatency:     metric.CacheMissLatencySec,
-
-		Oldest:            metric.CacheOldest,
-		AddBuckets:        metric.CacheAddBuckets,
-		DelBuckets:        metric.CacheDelBuckets,
-		CleanGenerations:  metric.CacheCleanGenerations,
-		ChangeGenerations: metric.CacheChangeGenerations,
-	})
+	cacheMaintainer := NewCacheMaintainer(cfg.CacheSize, cfg.SortCacheSize, newDefaultCacheMetrics())
 
 	fracManager := &FracManager{
 		config:          cfg,
@@ -464,7 +446,20 @@ func (fm *FracManager) Start() {
 
 	fm.runStatsLoop(ctx)
 	fm.runMaintenanceLoop(ctx)
-	fm.cacheWG = fm.cacheMaintainer.RunCleanLoop(ctx.Done(), fm.config.CacheCleanupDelay, fm.config.CacheGCDelay)
+	startCacheWorker(ctx, fm.config, fm.cacheMaintainer, &fm.cacheWG)
+}
+
+// startCacheWorker starts background cache garbage collection
+func startCacheWorker(ctx context.Context, cfg *Config, cache *CacheMaintainer, wg *sync.WaitGroup) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		logger.Info("cache cleanup loop is started")
+		// Run cache cleanup with specified intervals
+		cache.RunCleanLoop(ctx.Done(), cfg.CacheCleanupDelay, cfg.CacheGCDelay)
+		logger.Info("cache cleanup loop is stopped")
+	}()
 }
 
 func (fm *FracManager) Load(ctx context.Context) error {
