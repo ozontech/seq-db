@@ -16,16 +16,12 @@ import (
 	"github.com/ozontech/seq-db/storage"
 )
 
-type DataProvider interface {
-	Fetch([]seq.ID) ([][]byte, error)
-	Search(processor.SearchParams) (*seq.QPR, error)
-}
-
 type Fraction interface {
 	Info() *common.Info
 	IsIntersecting(from seq.MID, to seq.MID) bool
 	Contains(mid seq.MID) bool
-	DataProvider(context.Context) (DataProvider, func())
+	Fetch(context.Context, []seq.ID) ([][]byte, error)
+	Search(context.Context, processor.SearchParams) (*seq.QPR, error)
 	Offload(ctx context.Context, u storage.Uploader) (bool, error)
 	Suicide()
 }
