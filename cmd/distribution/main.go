@@ -164,7 +164,7 @@ func main() {
 		}
 	}
 
-	fc := fracmanager.NewSealedFracCache(filePathDist)
+	fc := fracmanager.NewFracInfoCache(filePathDist)
 
 	lastSavedTime := time.Now()
 	for _, path := range getAllFracs(dataDir) {
@@ -173,7 +173,7 @@ func main() {
 
 		logger.Info("start process", zap.String("name", key))
 
-		info, ok := fc.GetFracInfo(key)
+		info, ok := fc.Get(key)
 		if ok {
 			logger.Info("found in frac-cache", zap.String("key", key))
 		} else {
@@ -201,7 +201,7 @@ func main() {
 		}
 
 		buildDist(info.Distribution, path, info)
-		fc.AddFraction(key, info)
+		fc.Add(info)
 		logger.Info("built distribution", zap.Int("affected_minutes", len(info.Distribution.GetDist())))
 		printDistribution(info.Distribution)
 
