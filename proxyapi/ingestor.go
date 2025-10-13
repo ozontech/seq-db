@@ -22,8 +22,6 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/metric"
-	"github.com/ozontech/seq-db/network/ratelimiter"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/bulk"
@@ -39,8 +37,6 @@ type Ingestor struct {
 
 	BulkIngestor   *bulk.Ingestor
 	SearchIngestor *search.Ingestor
-
-	rateLimiter *ratelimiter.RateLimiter
 
 	cancel context.CancelFunc
 
@@ -110,8 +106,6 @@ func appendClients(ctx context.Context, clients map[string]storeapi.StoreApiClie
 func NewIngestor(config IngestorConfig, store *storeapiclient.Store) (*Ingestor, error) {
 	config.setDefaults()
 
-	rateLimiter := ratelimiter.NewRateLimiter(config.API.QueryRateLimit, metric.RateLimiterSize.Set)
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	grpcGateway := runtime.NewServeMux(
@@ -158,18 +152,15 @@ func NewIngestor(config IngestorConfig, store *storeapiclient.Store) (*Ingestor,
 	return &Ingestor{
 		Config:         config,
 		httpServer:     newHTTPServer(handler),
-		grpcServer:     newGRPCServer(config.API, searchIngestor, config.Bulk.MappingProvider, rateLimiter, mirror),
+		grpcServer:     newGRPCServer(config.API, searchIngestor, config.Bulk.MappingProvider, mirror),
 		BulkIngestor:   bulkIngestor,
 		SearchIngestor: searchIngestor,
-		rateLimiter:    rateLimiter,
 		cancel:         cancel,
 		isStopped:      atomic.Bool{},
 	}, nil
 }
 
 func (i *Ingestor) Start(httpListener, grpcListener net.Listener) {
-	i.rateLimiter.Start()
-
 	go i.httpServer.Start(httpListener)
 	go i.grpcServer.Start(grpcListener)
 
@@ -200,7 +191,6 @@ func (i *Ingestor) Stop() {
 	wg.Wait()
 
 	i.BulkIngestor.Stop()
-	i.rateLimiter.Stop()
 
 	i.cancel()
 

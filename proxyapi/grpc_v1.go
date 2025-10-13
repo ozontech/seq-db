@@ -69,14 +69,12 @@ func newGrpcV1(
 	config APIConfig,
 	si SearchIngestor,
 	mappingProvider MappingProvider,
-	rl RateLimiter,
 	mirror seqproxyapi.SeqProxyApiClient,
 ) *grpcV1 {
 	return &grpcV1{
 		config:          config,
 		searchIngestor:  si,
 		mappingProvider: mappingProvider,
-		rateLimiter:     rl,
 		mirror:          mirror,
 		mirrorRequests:  atomic.Int64{},
 	}

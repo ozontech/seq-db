@@ -13,7 +13,6 @@ import (
 
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/network/grpcutil"
-	"github.com/ozontech/seq-db/network/ratelimiter"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/tracing"
@@ -27,12 +26,11 @@ func newGRPCServer(
 	apiConfig APIConfig,
 	si *search.Ingestor,
 	mp MappingProvider,
-	rl *ratelimiter.RateLimiter,
 	mirror seqproxyapi.SeqProxyApiClient,
 ) *grpcServer {
 	s := initServer()
 
-	apiV1 := newGrpcV1(apiConfig, si, mp, rl, mirror)
+	apiV1 := newGrpcV1(apiConfig, si, mp, mirror)
 	seqproxyapi.RegisterSeqProxyApiServer(s, apiV1)
 
 	return &grpcServer{
