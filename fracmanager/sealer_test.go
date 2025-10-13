@@ -97,11 +97,11 @@ func defaultSealingParams() common.SealParams {
 	}
 }
 
-func Benchmark_SealingNoSort(b *testing.B) {
+func BenchmarkSealing_NoSort(b *testing.B) {
 	runSealingBench(b, &frac.Config{SkipSortDocs: true})
 }
 
-func Benchmark_SealingWithSort(b *testing.B) {
+func BenchmarkSealing_WithSort(b *testing.B) {
 	runSealingBench(b, &frac.Config{})
 }
 
