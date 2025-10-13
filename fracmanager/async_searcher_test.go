@@ -25,17 +25,12 @@ func (f *fakeFrac) Info() *common.Info {
 	return &f.info
 }
 
-func (f *fakeFrac) DataProvider(_ context.Context) (frac.DataProvider, func()) {
-	return &f.dp, func() {}
+func (f *fakeFrac) Search(context.Context, processor.SearchParams) (*seq.QPR, error) {
+	return &f.dp.qpr, nil
 }
 
 type fakeDP struct {
-	frac.DataProvider
 	qpr seq.QPR
-}
-
-func (f *fakeDP) Search(processor.SearchParams) (*seq.QPR, error) {
-	return &f.qpr, nil
 }
 
 func TestAsyncSearcherMaintain(t *testing.T) {

@@ -44,6 +44,8 @@ type IndexSealer struct {
 func NewIndexSealer(params common.SealParams) *IndexSealer {
 	return &IndexSealer{
 		params: params,
+		buf1:   make([]byte, 0, consts.RegularBlockSize),
+		buf2:   make([]byte, 0, consts.RegularBlockSize),
 	}
 }
 
@@ -432,8 +434,8 @@ func (s *IndexSealer) packLIDsBlock(block lidsSealBlock) indexBlock {
 }
 
 // LIDsTable returns the built LIDs table for fast initialization of sealed fraction.
-func (s *IndexSealer) LIDsTable() *lids.Table {
-	return &s.lidsTable
+func (s *IndexSealer) LIDsTable() lids.Table {
+	return s.lidsTable
 }
 
 // TokenTable returns the built token table for fast initialization of sealed fraction.

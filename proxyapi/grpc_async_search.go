@@ -26,6 +26,11 @@ func (g *grpcV1) StartAsyncSearch(
 			r.Size, g.config.AsyncSearchMaxDocumentsPerRequest)
 	}
 
+	// reject "empty" request: no docs, no aggs, no hist
+	if r.WithDocs == false && len(r.Aggs) == 0 && r.Hist == nil {
+		return nil, status.Error(codes.InvalidArgument, "can't serve empty request: fill aggs, hist or withDocs")
+	}
+
 	aggs, err := convertAggsQuery(r.Aggs)
 	if err != nil {
 		return nil, err
@@ -164,12 +169,20 @@ func (g *grpcV1) DeleteAsyncSearch(
 func makeProtoRequestAggregations(sourceAggs []search.AggQuery) []*seqproxyapi.AggQuery {
 	aggs := make([]*seqproxyapi.AggQuery, 0, len(sourceAggs))
 	for _, agg := range sourceAggs {
-		aggs = append(aggs, &seqproxyapi.AggQuery{
+		agg := &seqproxyapi.AggQuery{
 			Field:     agg.Field,
 			GroupBy:   agg.GroupBy,
 			Func:      seqproxyapi.AggFunc(agg.Func),
 			Quantiles: agg.Quantiles,
-		})
+		}
+
+		// Support legacy format in which field means groupBy.
+		if agg.Func == seq.AggFuncCount && agg.GroupBy != "" {
+			agg.Field = agg.GroupBy
+			agg.GroupBy = ""
+		}
+
+		aggs = append(aggs, agg)
 	}
 	return aggs
 }
