@@ -16,40 +16,40 @@ import (
 
 const defaultFilePermission = 0o660
 
-type sealedFracCache struct {
+type fracInfoCache struct {
 	dataDir  string
 	fullPath string
 	fileName string
 
-	fracCacheMu sync.RWMutex
-	fracCache   map[string]*common.Info
-	version     uint64 // if we increment the counter every second it will take 31 billion years (quite enough)
+	mu      sync.RWMutex
+	cache   map[string]*common.Info
+	version uint64 // if we increment the counter every second it will take 31 billion years (quite enough)
 
 	saveMu       sync.Mutex
 	savedVersion atomic.Uint64
 }
 
-func NewSealedFracCache(filePath string) *sealedFracCache {
-	fc := &sealedFracCache{
-		fracCache:   make(map[string]*common.Info),
-		fracCacheMu: sync.RWMutex{},
-		fullPath:    filePath,
-		fileName:    filepath.Base(filePath),
-		dataDir:     filepath.Dir(filePath),
-		version:     1,
+func NewFracInfoCache(filePath string) *fracInfoCache {
+	fc := &fracInfoCache{
+		cache:    make(map[string]*common.Info),
+		mu:       sync.RWMutex{},
+		fullPath: filePath,
+		fileName: filepath.Base(filePath),
+		dataDir:  filepath.Dir(filePath),
+		version:  1,
 	}
 
 	return fc
 }
 
-func NewFracCacheFromDisk(filePath string) *sealedFracCache {
-	fc := NewSealedFracCache(filePath)
+func NewFracInfoCacheFromDisk(filePath string) *fracInfoCache {
+	fc := NewFracInfoCache(filePath)
 	fc.LoadFromDisk(filePath)
 	return fc
 }
 
 // LoadFromDisk loads the contents of the fraction cache file to the in-memory map.
-func (fc *sealedFracCache) LoadFromDisk(fileName string) {
+func (fc *fracInfoCache) LoadFromDisk(fileName string) {
 	content, err := os.ReadFile(fileName)
 	if err != nil {
 		logger.Info("frac-cache read error, empty cache will be created",
@@ -59,7 +59,7 @@ func (fc *sealedFracCache) LoadFromDisk(fileName string) {
 		return
 	}
 
-	err = json.Unmarshal(content, &fc.fracCache)
+	err = json.Unmarshal(content, &fc.cache)
 	if err != nil {
 		logger.Warn("can't unmarshal frac-cache, new frac-cache will be created later on",
 			zap.Error(err),
@@ -69,48 +69,50 @@ func (fc *sealedFracCache) LoadFromDisk(fileName string) {
 
 	logger.Info("frac-cache loaded from disk",
 		zap.String("filename", fileName),
-		zap.Int("cache_entries", len(fc.fracCache)),
+		zap.Int("cache_entries", len(fc.cache)),
 	)
 }
 
-// AddFraction adds a new entry to the in-memory [sealedFracCache].
-func (fc *sealedFracCache) AddFraction(name string, info *common.Info) {
-	fc.fracCacheMu.Lock()
-	defer fc.fracCacheMu.Unlock()
+// Add adds a new entry to the in-memory [sealedFracCache].
+func (fc *fracInfoCache) Add(info *common.Info) {
+	name := info.Name()
+
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
 
 	fc.version++
-	fc.fracCache[name] = info
+	fc.cache[name] = info
 }
 
-// RemoveFraction removes a fraction from [sealedFracCache].
+// Remove removes a fraction from [sealedFracCache].
 // The data is synced with the disk on [sealedFracCache.SyncWithDisk] call.
-func (fc *sealedFracCache) RemoveFraction(name string) {
-	fc.fracCacheMu.Lock()
-	defer fc.fracCacheMu.Unlock()
+func (fc *fracInfoCache) Remove(name string) {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
 
 	fc.version++
-	delete(fc.fracCache, name)
+	delete(fc.cache, name)
 }
 
-// GetFracInfo returns fraction info and a flag that indicates
+// Get returns fraction info and a flag that indicates
 // whether the data is present in the map.
-func (fc *sealedFracCache) GetFracInfo(name string) (*common.Info, bool) {
-	fc.fracCacheMu.RLock()
-	defer fc.fracCacheMu.RUnlock()
+func (fc *fracInfoCache) Get(name string) (*common.Info, bool) {
+	fc.mu.RLock()
+	defer fc.mu.RUnlock()
 
-	el, ok := fc.fracCache[name]
+	el, ok := fc.cache[name]
 	return el, ok
 }
 
-func (fc *sealedFracCache) getContentWithVersion() (uint64, []byte, error) {
-	fc.fracCacheMu.RLock()
-	defer fc.fracCacheMu.RUnlock()
+func (fc *fracInfoCache) getContentWithVersion() (uint64, []byte, error) {
+	fc.mu.RLock()
+	defer fc.mu.RUnlock()
 
 	if fc.version == fc.savedVersion.Load() {
 		return 0, nil, nil // no changes
 	}
 
-	content, err := json.Marshal(fc.fracCache)
+	content, err := json.Marshal(fc.cache)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -119,7 +121,7 @@ func (fc *sealedFracCache) getContentWithVersion() (uint64, []byte, error) {
 
 // SyncWithDisk synchronizes the contents of the in-memory map
 // with the file on the disk, if any changes were made (fractions added/deleted).
-func (fc *sealedFracCache) SyncWithDisk() error {
+func (fc *fracInfoCache) SyncWithDisk() error {
 	curVersion, content, err := fc.getContentWithVersion()
 	if err != nil {
 		return fmt.Errorf("can't get frac-cache content: %w", err)
@@ -136,7 +138,7 @@ func (fc *sealedFracCache) SyncWithDisk() error {
 	return nil
 }
 
-func (fc *sealedFracCache) SaveCacheToDisk(version uint64, content []byte) error {
+func (fc *fracInfoCache) SaveCacheToDisk(version uint64, content []byte) error {
 	fc.saveMu.Lock()
 	defer fc.saveMu.Unlock()
 

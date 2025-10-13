@@ -142,11 +142,7 @@ func fracFetch(ctx context.Context, f frac.Fraction, ids []seq.ID) (_ [][]byte, 
 			err = fmt.Errorf("internal error: fetch panicked on fraction %s, error=%w", f.Info().Name(), panicData)
 		}
 	}()
-
-	dp, release := f.DataProvider(ctx)
-	defer release()
-
-	return dp.Fetch(ids)
+	return f.Fetch(ctx, ids)
 }
 
 func sortIDs(idsOrig seq.IDSources) (seq.IDSources, seq.MID, seq.MID) {
