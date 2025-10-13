@@ -30,4 +30,7 @@ data:
       path: /mappings/mappings.yaml
       {{- end }}
       update_period: {{ .Values.mapping.update_period }}
-    {{- toYaml .Values.seqproxy.config | nindent 4 }}
+    {{- with .Values.seqproxy.config }}
+    {{ toYaml . | nindent 4 }}
+    {{- else }}
+    {{- end }}
