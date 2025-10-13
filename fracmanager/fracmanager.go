@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
@@ -459,24 +458,27 @@ func startCacheWorker(ctx context.Context, cfg *Config, cache *CacheMaintainer, 
 func (fm *FracManager) Load(ctx context.Context) error {
 	l := NewLoader(fm.config, fm.fracProvider, fm.fracCache)
 
-	actives, sealed, remote, err := l.load(ctx)
+	active, locals, remotes, err := l.Load(ctx)
 	if err != nil {
 		return err
 	}
 
-	for _, s := range sealed {
+	docs := 0
+	for _, s := range locals {
 		fm.localFracs = append(fm.localFracs, &fracRef{instance: s})
+		docs += int(s.Info().DocsTotal)
 	}
 
-	for _, s := range remote {
+	for _, s := range remotes {
 		fm.remoteFracs = append(fm.remoteFracs, s)
+		docs += int(s.Info().DocsTotal)
 	}
 
-	if err := fm.replayAll(ctx, actives); err != nil {
-		return err
-	}
+	fm.active = fm.newActiveRef(active)
+	fm.localFracs = append(fm.localFracs, fm.active.ref)
+	docs += int(active.Info().DocsTotal)
 
-	if len(fm.localFracs)+len(fm.remoteFracs) == 0 { // no data, first run
+	if docs == 0 { // no data, first run
 		if err := fm.setImmature(); err != nil {
 			return err
 		}
@@ -486,64 +488,7 @@ func (fm *FracManager) Load(ctx context.Context) error {
 		}
 	}
 
-	if fm.active.ref == nil { // no active
-		_ = fm.rotate() // make new empty active
-	}
-
 	fm.updateOldestCT()
-	return nil
-}
-
-func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) error {
-	if len(actives) == 0 {
-		return nil
-	}
-
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(fm.config.ReplayWorkers)
-
-	// goroutines access different indices, no need for lock protection for fracRefs
-	var fracRefs = make([]*fracRef, len(actives))
-	var newActiveRef *activeRef
-
-	for i, f := range actives {
-		g.Go(func() error {
-			if err := f.Replay(ctx); err != nil {
-				return err
-			}
-
-			if f.Info().DocsTotal == 0 {
-				f.Suicide() // remove empty
-				return nil
-			}
-
-			ref := fm.newActiveRef(f)
-			fracRefs[i] = ref.ref
-
-			if i != len(actives)-1 {
-				fm.seal(ref)
-			} else {
-				// last frac stays active and is not sealed
-				newActiveRef = &ref
-			}
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	for _, ref := range fracRefs {
-		if ref != nil {
-			fm.localFracs = append(fm.localFracs, ref)
-		}
-	}
-
-	if newActiveRef != nil {
-		fm.active = *newActiveRef
-	}
 	return nil
 }
 
