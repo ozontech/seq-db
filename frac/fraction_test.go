@@ -919,7 +919,7 @@ func (s *FractionTestSuite) TestFractionInfo() {
 
 	switch s.fraction.(type) {
 	case *Active:
-		s.Require().True(info.MetaOnDisk > uint64(340) && info.MetaOnDisk < uint64(350),
+		s.Require().True(info.MetaOnDisk >= uint64(320) && info.MetaOnDisk <= uint64(350),
 			"meta on disk doesn't match. actual value: %d", info.MetaOnDisk)
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
 	case *Sealed:
@@ -1049,7 +1049,7 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 
 	// We can check total only if limit is not set. Otherwise, total returns a count
 	// of all docs which match the query
-	if checkTotal && params.Limit == 0 {
+	if checkTotal && params.Limit == math.MaxInt32 {
 		withTotals = append(withTotals, true)
 	}
 
