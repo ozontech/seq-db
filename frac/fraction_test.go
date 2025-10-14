@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -945,6 +946,67 @@ func (s *FractionTestSuite) TestSearchMultipleBulks() {
 	s.AssertSearch(s.query("source:prod01"), docs, []int{5, 3, 0})
 	s.AssertSearch(s.query("level:4"), docs, []int{7})
 	s.AssertSearch(s.query("message:request"), docs, []int{6, 5, 3, 0})
+}
+
+// This test checks search on a large frac. Doc count is to 25000 which results in ~200 kbyte docs file (3 doc blocks)
+func (s *FractionTestSuite) TestSearchLargeFrac() {
+	services := []string{"gateway", "proxy", "scheduler"}
+	messages := []string{
+		"request started", "request completed", "processing timed out",
+		"processing data", "processing failed", "processing retry",
+	}
+
+	baseTime := time.Date(2000, 1, 1, 13, 0, 0, 0, time.UTC)
+
+	var docs []string
+	var messageRequestIndexes []int
+	var serviceGatewayIndexes []int
+	var level5Indexes []int
+
+	for i := 0; i < 25000; i++ {
+		service := services[rand.IntN(len(services))]
+		message := messages[rand.IntN(len(messages))]
+		level := rand.IntN(6)
+		timestamp := baseTime.Add(time.Duration(i) * time.Millisecond)
+
+		doc := fmt.Sprintf(`{"timestamp":"%s","service":"%s","message":"%s","level":"%d"}`,
+			timestamp.Format(time.RFC3339Nano), service, message, level)
+		docs = append(docs, doc)
+
+		if service == "gateway" {
+			serviceGatewayIndexes = append(serviceGatewayIndexes, i)
+		}
+		if level == 5 {
+			level5Indexes = append(level5Indexes, i)
+		}
+		if strings.Contains(message, "request") {
+			messageRequestIndexes = append(messageRequestIndexes, i)
+		}
+	}
+
+	slices.Reverse(messageRequestIndexes)
+	slices.Reverse(serviceGatewayIndexes)
+	slices.Reverse(level5Indexes)
+
+	bulkSize := 1000
+	var bulks [][]string
+	for i := 0; i < len(docs); i += bulkSize {
+		end := i + bulkSize
+		if end > len(docs) {
+			end = len(docs)
+		}
+		bulks = append(bulks, docs[i:end])
+	}
+	// docs in each bulk will be shuffled in insertDocuments, now we only shuffle bulks
+	rand.Shuffle(len(bulks), func(i, j int) {
+		bulks[i], bulks[j] = bulks[j], bulks[i]
+	})
+
+	s.insertDocuments(bulks...)
+
+	s.AssertSearch(s.query("message:request", withLimit(100)), docs, messageRequestIndexes[:100])
+	s.AssertSearch(s.query("service:gateway	", withLimit(100)), docs, serviceGatewayIndexes[:100])
+	s.AssertSearch(s.query("level:5", withLimit(100)), docs, level5Indexes[:100])
 }
 
 func (s *FractionTestSuite) TestFractionInfo() {
