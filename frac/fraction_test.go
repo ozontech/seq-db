@@ -107,11 +107,11 @@ func (s *FractionTestSuite) TearDownTestCommon() {
 
 func (s *FractionTestSuite) TestSearchKeyword() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message some text","trace_id":"abcdef","source":"prod01","level":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:32Z","service":"service_b","message":"second message other text","trace_id":"abcdef","source":"prod01","level":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:43Z","service":"service_c","message":"third message other text","trace_id":"aaaaaa","source":"prod02","level":"2"}`,
-		`{"timestamp":"2000-01-01T13:00:53Z","service":"service_a","message":"fourth message some text","trace_id":"bbbbbb","source":"prod01","level":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:54Z","service":"service_c","message":"apple","source":"prod03"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message some text","trace_id":"abcdef","source":"prod01","level":"1"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:32Z","service":"service_b","message":"second message other text","trace_id":"abcdef","source":"prod01","level":"1"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:43Z","service":"service_c","message":"third message other text","trace_id":"aaaaaa","source":"prod02","level":"2"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:53Z","service":"service_a","message":"fourth message some text","trace_id":"bbbbbb","source":"prod01","level":"1"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:54Z","service":"service_c","message":"apple","source":"prod03"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -135,12 +135,12 @@ func (s *FractionTestSuite) TestSearchKeyword() {
 
 func (s *FractionTestSuite) TestSearchNot() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:25Z","message":"bad","level":"1","service":"srv_1","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:26Z","message":"good","level":"2","service":"srv_2","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:27Z","message":"bad","level":"3","service":"srv_3","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:28Z","message":"good","level":"4","service":"srv_4","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:29Z","message":"bad","level":"5","service":"srv_5","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:30Z","message":"good","level":"6","service":"srv_6","status":"ok"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:25Z","message":"bad","level":"1","service":"srv_1","status":"ok"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:26Z","message":"good","level":"2","service":"srv_2","status":"ok"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:27Z","message":"bad","level":"3","service":"srv_3","status":"ok"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:28Z","message":"good","level":"4","service":"srv_4","status":"ok"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:29Z","message":"bad","level":"5","service":"srv_5","status":"ok"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:30Z","message":"good","level":"6","service":"srv_6","status":"ok"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -168,12 +168,12 @@ func (s *FractionTestSuite) TestSearchNot() {
 
 func (s *FractionTestSuite) TestSearchAndOr() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"apple","level":"info","service":"svc_a","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"apple","level":"error","service":"svc_b","status":"fail"}`,
-		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"banana","level":"info","service":"svc_a","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"banana","level":"error","service":"svc_b","status":"fail"}`,
-		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"cherry","level":"info","service":"svc_c","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:00.005Z","message":"cherry","level":"warn","service":"svc_c","status":"ok"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z","message":"apple","level":"info","service":"svc_a","status":"ok"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:00.001Z","message":"apple","level":"error","service":"svc_b","status":"fail"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:00.002Z","message":"banana","level":"info","service":"svc_a","status":"ok"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:00.003Z","message":"banana","level":"error","service":"svc_b","status":"fail"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:00.004Z","message":"cherry","level":"info","service":"svc_c","status":"ok"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:00.005Z","message":"cherry","level":"warn","service":"svc_c","status":"ok"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -208,10 +208,10 @@ func (s *FractionTestSuite) TestSearchAndOr() {
 
 func (s *FractionTestSuite) TestWildcardSymbolsSearch() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00.010Z","message":"first value:****"}`,
-		`{"timestamp":"2000-01-01T13:00:00.020Z","message":"second value:*******"}`,
-		`{"timestamp":"2000-01-01T13:00:00.030Z","message":"third value****"}`,
-		`{"timestamp":"2000-01-01T13:00:00.040Z","message":"fourth ****"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.010Z","message":"first value:****"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:00.020Z","message":"second value:*******"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:00.030Z","message":"third value****"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:00.040Z","message":"fourth ****"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -232,10 +232,10 @@ func (s *FractionTestSuite) TestWildcardSymbolsSearch() {
 
 func (s *FractionTestSuite) TestSearchFullText() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:30Z","message":"first test document","level":"info","service":"test-service","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:31Z","message":"second test document","level":"error","service":"test-service","status":"fail"}`,
-		`{"timestamp":"2000-01-01T13:00:32Z","message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
-		`{"timestamp":"2000-01-01T13:00:33Z","message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:30Z","message":"first test document","level":"info","service":"test-service","status":"ok"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:31Z","message":"second test document","level":"error","service":"test-service","status":"fail"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:32Z","message":"third test document","level":"debug","service":"another-service","status":"ok"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:33Z","message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -255,17 +255,17 @@ func (s *FractionTestSuite) TestSearchFullText() {
 
 func (s *FractionTestSuite) TestSearchPath() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"a","request_uri":"/one"}`,
-		`{"timestamp":"2000-01-01T13:00:00.001Z","service":"a","request_uri":"/one/two"}`,
-		`{"timestamp":"2000-01-01T13:00:00.002Z","service":"a","request_uri":"/one/two/three"}`,
-		`{"timestamp":"2000-01-01T13:00:00.003Z","service":"a","request_uri":"/one/two.three/four"}`,
-		`{"timestamp":"2000-01-01T13:00:00.004Z","service":"a","request_uri":"/one/two.three/five"}`,
-		`{"timestamp":"2000-01-01T13:00:00.005Z","service":"a","request_uri":"/one/two/three/"}`,
-		`{"timestamp":"2000-01-01T13:00:00.006Z","service":"a","request_uri":"/one/two/three/1"}`,
-		`{"timestamp":"2000-01-01T13:00:00.007Z","service":"a","request_uri":"/one/two/three/2"}`,
-		`{"timestamp":"2000-01-01T13:00:00.008Z","service":"a","request_uri":"/one/two/three/3/four/"}`,
-		`{"timestamp":"2000-01-01T13:00:00.009Z","service":"a","request_uri":"/one/four/three/3/"}`,
-		`{"timestamp":"2000-01-01T13:00:00.010Z","service":"a","request_uri":"/two/one/three/2"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z","service":"a","request_uri":"/one"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:00.001Z","service":"a","request_uri":"/one/two"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:00.002Z","service":"a","request_uri":"/one/two/three"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:00.003Z","service":"a","request_uri":"/one/two.three/four"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:00.004Z","service":"a","request_uri":"/one/two.three/five"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:00.005Z","service":"a","request_uri":"/one/two/three/"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:00.006Z","service":"a","request_uri":"/one/two/three/1"}`,
+		/*7*/ `{"timestamp":"2000-01-01T13:00:00.007Z","service":"a","request_uri":"/one/two/three/2"}`,
+		/*8*/ `{"timestamp":"2000-01-01T13:00:00.008Z","service":"a","request_uri":"/one/two/three/3/four/"}`,
+		/*9*/ `{"timestamp":"2000-01-01T13:00:00.009Z","service":"a","request_uri":"/one/four/three/3/"}`,
+		/*10*/ `{"timestamp":"2000-01-01T13:00:00.010Z","service":"a","request_uri":"/two/one/three/2"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -285,13 +285,13 @@ func (s *FractionTestSuite) TestSearchPath() {
 
 func (s *FractionTestSuite) TestSearchRange() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"test-service","level":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:00.001Z","service":"test-service","level":"3"}`,
-		`{"timestamp":"2000-01-01T13:00:00.002Z","service":"test-service","level":"7"}`,
-		`{"timestamp":"2000-01-01T13:00:00.003Z","service":"test-service","level":"15"}`,
-		`{"timestamp":"2000-01-01T13:00:00.004Z","service":"test-service","level":"31"}`,
-		`{"timestamp":"2000-01-01T13:00:00.005Z","service":"test-service","level":"63"}`,
-		`{"timestamp":"2000-01-01T13:00:00.006Z","service":"test-service","level":"127"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z","service":"test-service","level":"1"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:00.001Z","service":"test-service","level":"3"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:00.002Z","service":"test-service","level":"7"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:00.003Z","service":"test-service","level":"15"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:00.004Z","service":"test-service","level":"31"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:00.005Z","service":"test-service","level":"63"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:00.006Z","service":"test-service","level":"127"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -322,25 +322,25 @@ func (s *FractionTestSuite) TestSearchRange() {
 
 func (s *FractionTestSuite) TestSearchIPRange() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"gateway-0","level":"1","client_ip":"192.168.31.0"}`,
-		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"gateway-1","level":"1","client_ip":"192.168.0.1"}`,
-		`{"timestamp":"2000-01-01T13:00:02.000Z","service":"gateway-2","level":"1","client_ip":"192.168.0.2"}`,
-		`{"timestamp":"2000-01-01T13:00:03.000Z","service":"gateway-3","level":"1","client_ip":"192.168.0.3"}`,
-		`{"timestamp":"2000-01-01T13:00:04.000Z","service":"gateway-0","level":"1","client_ip":"192.168.1.0"}`,
-		`{"timestamp":"2000-01-01T13:00:05.000Z","service":"gateway-1","level":"1","client_ip":"192.168.1.1"}`,
-		`{"timestamp":"2000-01-01T13:00:06.000Z","service":"gateway-0","level":"1","client_ip":"192.168.1.2"}`,
-		`{"timestamp":"2000-01-01T13:00:07.000Z","service":"gateway-1","level":"1","client_ip":"192.168.1.255"}`,
-		`{"timestamp":"2000-01-01T13:00:08.000Z","service":"gateway-3","level":"1","client_ip":"192.168.31.0"}`,
-		`{"timestamp":"2000-01-01T13:00:09.000Z","service":"api-0","level":"2","client_ip":"172.10.0.1"}`,
-		`{"timestamp":"2000-01-01T13:00:10.000Z","service":"api-1","level":"2","client_ip":"172.10.0.100"}`,
-		`{"timestamp":"2000-01-01T13:00:11.000Z","service":"api-2","level":"2","client_ip":"172.10.1.50"}`,
-		`{"timestamp":"2000-01-01T13:00:12.000Z","service":"api-3","level":"2","client_ip":"172.10.1.200"}`,
-		`{"timestamp":"2000-01-01T13:00:13.000Z","service":"api-4","level":"2","client_ip":"172.10.2.1"}`,
-		`{"timestamp":"2000-01-01T13:00:14.000Z","service":"backend-0","level":"3","client_ip":"10.53.0.10"}`,
-		`{"timestamp":"2000-01-01T13:00:15.000Z","service":"backend-1","level":"3","client_ip":"10.53.0.20"}`,
-		`{"timestamp":"2000-01-01T13:00:16.000Z","service":"backend-2","level":"3","client_ip":"10.53.1.30"}`,
-		`{"timestamp":"2000-01-01T13:00:17.000Z","service":"backend-3","level":"3","client_ip":"10.53.1.40"}`,
-		`{"timestamp":"2000-01-01T13:00:18.000Z","service":"backend-4","level":"3","client_ip":"10.53.2.50"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z","service":"gateway-0","level":"1","client_ip":"192.168.31.0"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:01.000Z","service":"gateway-1","level":"1","client_ip":"192.168.0.1"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:02.000Z","service":"gateway-2","level":"1","client_ip":"192.168.0.2"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:03.000Z","service":"gateway-3","level":"1","client_ip":"192.168.0.3"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:04.000Z","service":"gateway-0","level":"1","client_ip":"192.168.1.0"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:05.000Z","service":"gateway-1","level":"1","client_ip":"192.168.1.1"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:06.000Z","service":"gateway-0","level":"1","client_ip":"192.168.1.2"}`,
+		/*7*/ `{"timestamp":"2000-01-01T13:00:07.000Z","service":"gateway-1","level":"1","client_ip":"192.168.1.255"}`,
+		/*8*/ `{"timestamp":"2000-01-01T13:00:08.000Z","service":"gateway-3","level":"1","client_ip":"192.168.31.0"}`,
+		/*9*/ `{"timestamp":"2000-01-01T13:00:09.000Z","service":"api-0","level":"2","client_ip":"172.10.0.1"}`,
+		/*10*/ `{"timestamp":"2000-01-01T13:00:10.000Z","service":"api-1","level":"2","client_ip":"172.10.0.100"}`,
+		/*11*/ `{"timestamp":"2000-01-01T13:00:11.000Z","service":"api-2","level":"2","client_ip":"172.10.1.50"}`,
+		/*12*/ `{"timestamp":"2000-01-01T13:00:12.000Z","service":"api-3","level":"2","client_ip":"172.10.1.200"}`,
+		/*13*/ `{"timestamp":"2000-01-01T13:00:13.000Z","service":"api-4","level":"2","client_ip":"172.10.2.1"}`,
+		/*14*/ `{"timestamp":"2000-01-01T13:00:14.000Z","service":"backend-0","level":"3","client_ip":"10.53.0.10"}`,
+		/*15*/ `{"timestamp":"2000-01-01T13:00:15.000Z","service":"backend-1","level":"3","client_ip":"10.53.0.20"}`,
+		/*16*/ `{"timestamp":"2000-01-01T13:00:16.000Z","service":"backend-2","level":"3","client_ip":"10.53.1.30"}`,
+		/*17*/ `{"timestamp":"2000-01-01T13:00:17.000Z","service":"backend-3","level":"3","client_ip":"10.53.1.40"}`,
+		/*18*/ `{"timestamp":"2000-01-01T13:00:18.000Z","service":"backend-4","level":"3","client_ip":"10.53.2.50"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -366,16 +366,16 @@ func (s *FractionTestSuite) TestSearchIPRange() {
 
 func (s *FractionTestSuite) TestSearchIn() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"starting pod","level":"info","k8s_namespace":"prod","k8s_pod":"proxy-node1"}`,
-		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"api call failed","level":"error","k8s_namespace":"prod","k8s_pod":"apiserver-master1"}`,
-		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"scheduling task","level":"info","k8s_namespace":"test","k8s_pod":"scheduler-master1"}`,
-		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"authentication error","level":"error","k8s_namespace":"test","k8s_pod":"apiserver-master2"}`,
-		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"network policy applied","level":"info","k8s_namespace":"prod","k8s_pod":"proxy-node2"}`,
-		`{"timestamp":"2000-01-01T13:00:00.005Z","message":"scheduling completed","level":"info","k8s_namespace":"staging","k8s_pod":"scheduler-master2"}`,
-		`{"timestamp":"2000-01-01T13:00:00.006Z","message":"connection timeout","level":"error","k8s_namespace":"staging","k8s_pod":"app-backend-1"}`,
-		`{"timestamp":"2000-01-01T13:00:00.007Z","message":"health check passed","level":"info","k8s_namespace":"prod","k8s_pod":"app-frontend-1"}`,
-		`{"timestamp":"2000-01-01T13:00:00.008Z","message":"database query slow","level":"warn","k8s_namespace":"prod","k8s_pod":"app-backend-2"}`,
-		`{"timestamp":"2000-01-01T13:00:00.009Z","message":"cache miss","level":"warn","k8s_namespace":"test","k8s_pod":"app-cache-1"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z","message":"starting pod","level":"info","k8s_namespace":"prod","k8s_pod":"proxy-node1"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:00.001Z","message":"api call failed","level":"error","k8s_namespace":"prod","k8s_pod":"apiserver-master1"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:00.002Z","message":"scheduling task","level":"info","k8s_namespace":"test","k8s_pod":"scheduler-master1"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:00.003Z","message":"authentication error","level":"error","k8s_namespace":"test","k8s_pod":"apiserver-master2"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:00.004Z","message":"network policy applied","level":"info","k8s_namespace":"prod","k8s_pod":"proxy-node2"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:00.005Z","message":"scheduling completed","level":"info","k8s_namespace":"staging","k8s_pod":"scheduler-master2"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:00.006Z","message":"connection timeout","level":"error","k8s_namespace":"staging","k8s_pod":"app-backend-1"}`,
+		/*7*/ `{"timestamp":"2000-01-01T13:00:00.007Z","message":"health check passed","level":"info","k8s_namespace":"prod","k8s_pod":"app-frontend-1"}`,
+		/*8*/ `{"timestamp":"2000-01-01T13:00:00.008Z","message":"database query slow","level":"warn","k8s_namespace":"prod","k8s_pod":"app-backend-2"}`,
+		/*9*/ `{"timestamp":"2000-01-01T13:00:00.009Z","message":"cache miss","level":"warn","k8s_namespace":"test","k8s_pod":"app-cache-1"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -403,10 +403,10 @@ func (s *FractionTestSuite) TestSearchIn() {
 
 func (s *FractionTestSuite) TestSearchNested() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00.000Z","spans":[{"span_id":"1"},{"span_id":"2"}]}`,
-		`{"timestamp":"2000-01-01T13:00:00.001Z","spans":[{"span_id":"2"},{"span_id":"3"}]}`,
-		`{"timestamp":"2000-01-01T13:00:00.002Z","spans":[{"span_id":"1"},{"span_id":"3"}]}`,
-		`{"timestamp":"2000-01-01T13:00:00.003Z","spans":[{"span_id":"4"},{"span_id":"5"}]}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z","spans":[{"span_id":"1"},{"span_id":"2"}]}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:00.001Z","spans":[{"span_id":"2"},{"span_id":"3"}]}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:00.002Z","spans":[{"span_id":"1"},{"span_id":"3"}]}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:00.003Z","spans":[{"span_id":"4"},{"span_id":"5"}]}`,
 	}
 
 	s.insertDocuments(docs)
@@ -421,14 +421,14 @@ func (s *FractionTestSuite) TestSearchNested() {
 
 func (s *FractionTestSuite) TestSearchFromTo() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
-		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"bad","level":"3","trace_id":"0","service":"2"}`,
-		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"good","level":"4","trace_id":"1","service":"0"}`,
-		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"bad","level":"5","trace_id":"1","service":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:00.005Z","message":"good","level":"6","trace_id":"1","service":"2"}`,
-		`{"timestamp":"2000-01-01T13:00:00.006Z","message":"bad","level":"7","trace_id":"2","service":"0"}`,
-		`{"timestamp":"2000-01-01T13:00:00.007Z","message":"good","level":"8","trace_id":"2","service":"1"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:00.001Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:00.002Z","message":"bad","level":"3","trace_id":"0","service":"2"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:00.003Z","message":"good","level":"4","trace_id":"1","service":"0"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:00.004Z","message":"bad","level":"5","trace_id":"1","service":"1"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:00.005Z","message":"good","level":"6","trace_id":"1","service":"2"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:00.006Z","message":"bad","level":"7","trace_id":"2","service":"0"}`,
+		/*7*/ `{"timestamp":"2000-01-01T13:00:00.007Z","message":"good","level":"8","trace_id":"2","service":"1"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -473,14 +473,14 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 
 func (s *FractionTestSuite) TestSearchWithLimit() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
-		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"bad","level":"3","trace_id":"0","service":"2"}`,
-		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"good","level":"4","trace_id":"1","service":"0"}`,
-		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"bad","level":"5","trace_id":"1","service":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:00.005Z","message":"good","level":"6","trace_id":"1","service":"2"}`,
-		`{"timestamp":"2000-01-01T13:00:00.006Z","message":"bad","level":"7","trace_id":"2","service":"0"}`,
-		`{"timestamp":"2000-01-01T13:00:00.007Z","message":"good","level":"8","trace_id":"2","service":"1"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:00.001Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:00.002Z","message":"bad","level":"3","trace_id":"0","service":"2"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:00.003Z","message":"good","level":"4","trace_id":"1","service":"0"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:00.004Z","message":"bad","level":"5","trace_id":"1","service":"1"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:00.005Z","message":"good","level":"6","trace_id":"1","service":"2"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:00.006Z","message":"bad","level":"7","trace_id":"2","service":"0"}`,
+		/*7*/ `{"timestamp":"2000-01-01T13:00:00.007Z","message":"good","level":"8","trace_id":"2","service":"1"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -913,15 +913,15 @@ func (s *FractionTestSuite) TestAggAvgWithoutGroupBy() {
 
 func (s *FractionTestSuite) TestSearchMultipleBulks() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:01Z","service":"service_a","message":"request started","source":"prod01","level":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:02Z","service":"service_b","message":"processing data","source":"prod03","level":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:03Z","service":"service_c","message":"database query","source":"prod02","level":"2"}`,
-		`{"timestamp":"2000-01-01T13:00:04Z","service":"service_a","message":"request completed","source":"prod01","level":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:05Z","service":"service_c","message":"cache hit","source":"prod03","level":"3"}`,
-		`{"timestamp":"2000-01-01T13:00:06Z","service":"service_c","message":"processing request","source":"prod01","level":"2"}`,
-		`{"timestamp":"2000-01-01T13:00:07Z","service":"service_a","message":"request failed","source":"prod02","level":"1"}`,
-		`{"timestamp":"2000-01-01T13:00:08Z","service":"service_b","message":"processing failed","source":"prod03","level":"4"}`,
-		`{"timestamp":"2000-01-01T13:00:09Z","service":"service_b","message":"processing retry","source":"prod03","level":"3"}`,
+		/*0*/ `{"timestamp":"2000-01-01T13:00:01Z","service":"service_a","message":"request started","source":"prod01","level":"1"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:02Z","service":"service_b","message":"processing data","source":"prod03","level":"1"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:03Z","service":"service_c","message":"database query","source":"prod02","level":"2"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:04Z","service":"service_a","message":"request completed","source":"prod01","level":"1"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:05Z","service":"service_c","message":"cache hit","source":"prod03","level":"3"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:06Z","service":"service_c","message":"processing request","source":"prod01","level":"2"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:07Z","service":"service_a","message":"request failed","source":"prod02","level":"1"}`,
+		/*7*/ `{"timestamp":"2000-01-01T13:00:08Z","service":"service_b","message":"processing failed","source":"prod03","level":"4"}`,
+		/*8*/ `{"timestamp":"2000-01-01T13:00:09Z","service":"service_b","message":"processing retry","source":"prod03","level":"3"}`,
 	}
 	var bulk1 []string
 	var bulk2 []string
