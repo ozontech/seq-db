@@ -10,26 +10,17 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 )
 
 type testFakeFrac struct {
-	frac.Fraction
+	frac.Empty
 }
 
-func (t *testFakeFrac) IsIntersecting(_, _ seq.MID) bool {
+func (t *testFakeFrac) IsIntersecting(seq.MID, seq.MID) bool {
 	return true
-}
-
-func (t *testFakeFrac) DataProvider(_ context.Context) (frac.DataProvider, func()) {
-	return frac.EmptyDataProvider{}, func() {}
-}
-
-func (t *testFakeFrac) Info() *common.Info {
-	return common.NewInfo("test", 0, 0)
 }
 
 func TestFracsLimit(t *testing.T) {
