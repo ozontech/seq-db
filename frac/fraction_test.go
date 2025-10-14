@@ -948,7 +948,7 @@ func (s *FractionTestSuite) TestSearchMultipleBulks() {
 	s.AssertSearch(s.query("message:request"), docs, []int{6, 5, 3, 0})
 }
 
-// This test checks search on a large frac. Doc count is to 25000 which results in ~200 kbyte docs file (3 doc blocks)
+// This test checks search on a large frac. Doc count is set to 25000 which results in ~200 kbyte docs file (3 doc blocks)
 func (s *FractionTestSuite) TestSearchLargeFrac() {
 	services := []string{"gateway", "proxy", "scheduler"}
 	messages := []string{
@@ -1005,7 +1005,9 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 	s.insertDocuments(bulks...)
 
 	s.AssertSearch(s.query("message:request", withLimit(100)), docs, messageRequestIndexes[:100])
-	s.AssertSearch(s.query("service:gateway	", withLimit(100)), docs, serviceGatewayIndexes[:100])
+	s.AssertSearch(s.query("service:gateway"), docs, serviceGatewayIndexes)
+	s.AssertSearch(s.query("service:gateway", withLimit(100)), docs, serviceGatewayIndexes[:100])
+	s.AssertSearch(s.query("level:5"), docs, level5Indexes)
 	s.AssertSearch(s.query("level:5", withLimit(100)), docs, level5Indexes[:100])
 }
 
@@ -1168,8 +1170,8 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 		withTotals = append(withTotals, true)
 	}
 
-	var sortOrders = []seq.DocsOrder{seq.DocsOrderDesc}
-	if params.Limit == math.MaxInt32 {
+	var sortOrders = []seq.DocsOrder{params.Order}
+	if params.Order == seq.DocsOrderDesc && params.Limit == math.MaxInt32 {
 		sortOrders = append(sortOrders, seq.DocsOrderAsc)
 	}
 
