@@ -34,13 +34,14 @@ type FractionTestSuite struct {
 	mapping        seq.Mapping
 	tokenizers     map[seq.TokenizerType]tokenizer.Tokenizer
 	activeIndexers []*ActiveIndexer
+	sealParams     common.SealParams
 
 	fraction Fraction
 
-	insertDocuments func(docs ...string)
+	insertDocuments func(docs ...[]string)
 }
 
-func (s *FractionTestSuite) SetupSuite() {
+func (s *FractionTestSuite) SetupTestCommon() {
 	s.config = &Config{
 		Search: SearchConfig{
 			AggLimits: AggLimits{
@@ -73,9 +74,16 @@ func (s *FractionTestSuite) SetupSuite() {
 		"spans.span_id": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"v":             seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 	}
-}
+	s.sealParams = common.SealParams{
+		IDsZstdLevel:           1,
+		LIDsZstdLevel:          1,
+		TokenListZstdLevel:     1,
+		DocsPositionsZstdLevel: 1,
+		TokenTableZstdLevel:    1,
+		DocBlocksZstdLevel:     1,
+		DocBlockSize:           128 * int(units.KiB),
+	}
 
-func (s *FractionTestSuite) SetupTestCommon() {
 	var err error
 	s.tmpDir, err = os.MkdirTemp("", "fraction_test_*")
 	s.Require().NoError(err)
@@ -104,7 +112,7 @@ func (s *FractionTestSuite) TestSearchKeyword() {
 		`{"timestamp":"2000-01-01T13:00:54Z","service":"service_c","message":"apple","source":"prod03"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertSearch("service:service_a", docs, []int{3, 0})
 	s.AssertSearch("trace_id:abcdef", docs, []int{1, 0})
@@ -133,7 +141,7 @@ func (s *FractionTestSuite) TestSearchNot() {
 		`{"timestamp":"2000-01-01T13:00:30Z","message":"good","level":"6","service":"srv_6","status":"ok"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertSearch("NOT level:1", docs, []int{5, 4, 3, 2, 1})
 	s.AssertSearch("NOT level:2", docs, []int{5, 4, 3, 2, 0})
@@ -166,7 +174,7 @@ func (s *FractionTestSuite) TestSearchAndOr() {
 		`{"timestamp":"2000-01-01T13:00:00.005Z","message":"cherry","level":"warn","service":"svc_c","status":"ok"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertSearch("message:apple AND level:info", docs, []int{0})
 	s.AssertSearch("message:banana AND service:svc_a", docs, []int{2})
@@ -204,7 +212,7 @@ func (s *FractionTestSuite) TestWildcardSymbolsSearch() {
 		`{"timestamp":"2000-01-01T13:00:00.040Z","message":"fourth ****"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertSearch(`message:*`, docs, []int{3, 2, 1, 0})
 	s.AssertSearch(`message:value`, docs, []int{1, 0})
@@ -228,7 +236,7 @@ func (s *FractionTestSuite) TestSearchFullText() {
 		`{"timestamp":"2000-01-01T13:00:33Z","message":"fourth test document","level":"info","service":"another-service","status":"ok"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertSearch("message:document", docs, []int{3, 2, 1, 0})
 	s.AssertSearch("message:test", docs, []int{3, 2, 1, 0})
@@ -258,7 +266,7 @@ func (s *FractionTestSuite) TestSearchPath() {
 		`{"timestamp":"2000-01-01T13:00:00.010Z","service":"a","request_uri":"/two/one/three/2"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertSearch("request_uri:/one", docs, []int{9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
 	s.AssertSearch("request_uri:/two", docs, []int{10})
@@ -284,7 +292,7 @@ func (s *FractionTestSuite) TestSearchRange() {
 		`{"timestamp":"2000-01-01T13:00:00.006Z","service":"test-service","level":"127"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertSearch("level:[1 TO 3]", docs, []int{1, 0})
 	s.AssertSearch(s.seqql("level:[1, 3]"), docs, []int{1, 0})
@@ -333,7 +341,7 @@ func (s *FractionTestSuite) TestSearchIPRange() {
 		`{"timestamp":"2000-01-01T13:00:18.000Z","service":"backend-4","level":"3","client_ip":"10.53.2.50"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.0.0,192.168.0.255)"), docs, []int{3, 2, 1})
 	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.1.0,192.168.1.255)"), docs, []int{7, 6, 5, 4})
@@ -368,7 +376,7 @@ func (s *FractionTestSuite) TestSearchIn() {
 		`{"timestamp":"2000-01-01T13:00:00.009Z","message":"cache miss","level":"warn","k8s_namespace":"test","k8s_pod":"app-cache-1"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertSearch(s.seqql("k8s_namespace:in(prod)"), docs, []int{8, 7, 4, 1, 0})
 	s.AssertSearch(s.seqql("k8s_namespace:in(test)"), docs, []int{9, 3, 2})
@@ -399,7 +407,7 @@ func (s *FractionTestSuite) TestSearchNested() {
 		`{"timestamp":"2000-01-01T13:00:00.003Z","spans":[{"span_id":"4"},{"span_id":"5"}]}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertSearchIgnoreTotal("spans.span_id:*", docs, []int{3, 2, 1, 0})
 	s.AssertSearch("spans.span_id:1", docs, []int{2, 0})
@@ -421,7 +429,7 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 		`{"timestamp":"2000-01-01T13:00:00.007Z","message":"good","level":"8","trace_id":"2","service":"1"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	assertSearch := func(query string, fromOffset, toOffset int, expectedIndexes []int) {
 		s.AssertSearch(s.query(
@@ -473,7 +481,7 @@ func (s *FractionTestSuite) TestSearchWithLimit() {
 		`{"timestamp":"2000-01-01T13:00:00.007Z","message":"good","level":"8","trace_id":"2","service":"1"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertSearch(s.query("message:good"), docs, []int{7, 5, 3, 1})
 	s.AssertSearch(s.query("message:good", withLimit(3)), docs, []int{7, 5, 3})
@@ -502,7 +510,7 @@ func (s *FractionTestSuite) TestSearchHist() {
 		`{"timestamp":"2000-01-01T13:00:25.600Z","message": "apple cider"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	s.AssertHist(s.query("message:apple", withHist(1000)), map[string]uint64{
 		"2000-01-01T13:00:01.000Z": 1,
@@ -587,7 +595,7 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 		`{"timestamp":"2000-01-01T13:00:05.000Z","message":"good","level":"1","trace_id":"1","service":"gateway"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	assertAggSearch := func(searchParams *processor.SearchParams, expected []map[string]uint64) {
 
@@ -658,7 +666,7 @@ func (s *FractionTestSuite) TestAggSum() {
 		`{"timestamp":"2000-01-01T13:00:00.019Z","service":"sum5"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	searchParams := s.query(
 		"service:sum*",
@@ -694,7 +702,7 @@ func (s *FractionTestSuite) TestAggMin() {
 		`{"timestamp":"2000-01-01T13:00:00.012Z","v":null}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	searchParams := s.query(
 		"service:min*",
@@ -723,7 +731,7 @@ func (s *FractionTestSuite) TestAggMax() {
 		`{"timestamp":"2000-01-01T13:00:00.007Z","v":null}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	searchParams := s.query(
 		"service:max*",
@@ -754,7 +762,7 @@ func (s *FractionTestSuite) TestAggQuantile() {
 		`{"timestamp":"2000-01-01T13:00:00.009Z","service":"quantile1","v":10}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	searchParams := s.query(
 		"service:quantile*",
@@ -793,7 +801,7 @@ func (s *FractionTestSuite) TestAggUnique() {
 		`{"timestamp":"2000-01-01T13:00:00.010Z","level":3}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	searchParams := s.query(
 		"level:3",
@@ -826,7 +834,7 @@ func (s *FractionTestSuite) TestAggSumWithoutGroupBy() {
 		`{"timestamp":"2000-01-01T13:00:00.010Z","v":0,"service":"sum_without_group_by"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	searchParams := s.query(
 		`service:"sum_without_group_by"`,
@@ -848,7 +856,7 @@ func (s *FractionTestSuite) TestAggMaxWithoutGroupBy() {
 		`{"timestamp":"2000-01-01T13:00:00.003Z","v":-300,"service":"max_without_group_by"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	searchParams := s.query(
 		`service:"max_without_group_by"`,
@@ -867,7 +875,7 @@ func (s *FractionTestSuite) TestAggNotExists() {
 		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"not_exists"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	searchParams := s.query(
 		`service:"not_exists"`,
@@ -887,7 +895,7 @@ func (s *FractionTestSuite) TestAggAvgWithoutGroupBy() {
 		`{"timestamp":"2000-01-01T13:00:00.001Z","v":500,"service":"avg_without_group_by"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	searchParams := s.query(
 		`service:"avg_without_group_by"`,
@@ -901,6 +909,43 @@ func (s *FractionTestSuite) TestAggAvgWithoutGroupBy() {
 	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
 }
 
+func (s *FractionTestSuite) TestSearchMultipleBulks() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:01Z","service":"service_a","message":"request started","source":"prod01","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:02Z","service":"service_b","message":"processing data","source":"prod03","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:03Z","service":"service_c","message":"database query","source":"prod02","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:04Z","service":"service_a","message":"request completed","source":"prod01","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:05Z","service":"service_c","message":"cache hit","source":"prod03","level":"3"}`,
+		`{"timestamp":"2000-01-01T13:00:06Z","service":"service_c","message":"processing request","source":"prod01","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:07Z","service":"service_a","message":"request failed","source":"prod02","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:08Z","service":"service_b","message":"processing failed","source":"prod03","level":"4"}`,
+		`{"timestamp":"2000-01-01T13:00:09Z","service":"service_b","message":"processing retry","source":"prod03","level":"3"}`,
+	}
+	var bulk1 []string
+	var bulk2 []string
+	var bulk3 []string
+	docs = append(docs, bulk1...)
+	docs = append(docs, bulk2...)
+	docs = append(docs, bulk3...)
+	for i, doc := range docs {
+		switch i % 3 {
+		case 0:
+			bulk1 = append(bulk1, doc)
+		case 1:
+			bulk2 = append(bulk2, doc)
+		case 2:
+			bulk3 = append(bulk3, doc)
+		}
+	}
+
+	s.insertDocuments(bulk1, bulk2, bulk3)
+
+	s.AssertSearch(s.query("service:service_b"), docs, []int{8, 7, 1})
+	s.AssertSearch(s.query("source:prod01"), docs, []int{5, 3, 0})
+	s.AssertSearch(s.query("level:4"), docs, []int{7})
+	s.AssertSearch(s.query("message:request"), docs, []int{6, 5, 3, 0})
+}
+
 func (s *FractionTestSuite) TestFractionInfo() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message some text", "service":"gateway"}`,
@@ -910,7 +955,7 @@ func (s *FractionTestSuite) TestFractionInfo() {
 		`{"timestamp":"2000-01-01T13:00:54Z","service":"service_c","message":"apple","service":"kube-scheduler"}`,
 	}
 
-	s.insertDocuments(docs...)
+	s.insertDocuments(docs)
 
 	info := s.fraction.Info()
 
@@ -1156,7 +1201,7 @@ func (s *FractionTestSuite) AssertHist(
 	}
 }
 
-func (s *FractionTestSuite) newActive(docs ...string) *Active {
+func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
 	baseName := filepath.Join(s.tmpDir, "test_fraction")
 	activeIndexer := NewActiveIndexer(4, 10)
 	activeIndexer.Start()
@@ -1172,51 +1217,42 @@ func (s *FractionTestSuite) newActive(docs ...string) *Active {
 	)
 
 	proc := indexer.NewProcessor(s.mapping, s.tokenizers, 0, 0, 0)
-
-	idx := 0
-	readNext := func() ([]byte, error) {
-		if idx >= len(docs) {
-			return nil, nil
-		}
-		d := []byte(docs[idx])
-		idx++
-		return d, nil
-	}
-
-	_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
-	s.Require().NoError(err, "processing bulk failed")
-
 	compressor := indexer.GetDocsMetasCompressor(3, 3)
 	defer indexer.PutDocMetasCompressor(compressor)
-	compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
-	docsBlock, metasBlock := compressor.DocsMetas()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	err = active.Append(docsBlock, metasBlock, &wg)
-	s.Require().NoError(err, "append to active failed")
+	for _, docs := range bulks {
+		idx := 0
+		readNext := func() ([]byte, error) {
+			if idx >= len(docs) {
+				return nil, nil
+			}
+			d := []byte(docs[idx])
+			idx++
+			return d, nil
+		}
 
-	wg.Wait()
+		_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
+		s.Require().NoError(err, "processing bulk failed")
+
+		compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
+		docsBlock, metasBlock := compressor.DocsMetas()
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		err = active.Append(docsBlock, metasBlock, &wg)
+		s.Require().NoError(err, "append to active failed")
+		wg.Wait()
+	}
 	return active
 }
 
-func (s *FractionTestSuite) newSealed(docs ...string) *Sealed {
-	active := s.newActive(docs...)
+func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
+	active := s.newActive(bulks...)
 
-	sealParams := common.SealParams{
-		IDsZstdLevel:           1, // min comression level
-		LIDsZstdLevel:          1,
-		TokenListZstdLevel:     1,
-		DocsPositionsZstdLevel: 1,
-		TokenTableZstdLevel:    1,
-		DocBlocksZstdLevel:     1,
-		DocBlockSize:           128 * int(units.KiB),
-	}
-
-	activeSealingSource, err := NewActiveSealingSource(active, sealParams)
+	activeSealingSource, err := NewActiveSealingSource(active, s.sealParams)
 	s.Require().NoError(err, "Sealing source creation failed")
 
-	preloaded, err := sealing.Seal(activeSealingSource, sealParams)
+	preloaded, err := sealing.Seal(activeSealingSource, s.sealParams)
 	s.Require().NoError(err, "Sealing failed")
 
 	indexCache := &IndexCache{
@@ -1251,11 +1287,11 @@ type ActiveFractionTestSuite struct {
 func (s *ActiveFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 
-	s.insertDocuments = func(docs ...string) {
+	s.insertDocuments = func(bulks ...[]string) {
 		if s.fraction != nil {
 			s.Require().Fail("can insert docs only once")
 		}
-		s.fraction = s.newActive(docs...)
+		s.fraction = s.newActive(bulks...)
 	}
 }
 
@@ -1284,7 +1320,7 @@ type SealedFractionTestSuite struct {
 func (s *SealedFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 
-	s.insertDocuments = func(docs ...string) {
+	s.insertDocuments = func(docs ...[]string) {
 		if s.fraction != nil {
 			s.Require().Fail("can insert docs only once")
 		}
@@ -1311,16 +1347,16 @@ type SealedLoadedFractionTestSuite struct {
 func (s *SealedLoadedFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 
-	s.insertDocuments = func(docs ...string) {
+	s.insertDocuments = func(bulks ...[]string) {
 		if s.fraction != nil {
 			s.Require().Fail("can insert docs only once")
 		}
-		s.fraction = s.newSealedLoaded(docs...)
+		s.fraction = s.newSealedLoaded(bulks...)
 	}
 }
 
-func (s *SealedLoadedFractionTestSuite) newSealedLoaded(docs ...string) *Sealed {
-	sealed := s.newSealed(docs...)
+func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Sealed {
+	sealed := s.newSealed(bulks...)
 	sealed.close("closed")
 
 	indexCache := &IndexCache{
