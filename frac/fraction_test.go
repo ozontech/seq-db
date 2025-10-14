@@ -69,9 +69,6 @@ func (s *FractionTestSuite) SetupSuite() {
 		"request_uri":   seq.NewSingleType(seq.TokenizerTypePath, "", 0),
 		"spans":         seq.NewSingleType(seq.TokenizerTypeNested, "", 0),
 		"spans.span_id": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"process":       seq.NewSingleType(seq.TokenizerTypeObject, "", 0),
-		"process.tags":  seq.NewSingleType(seq.TokenizerTypeTags, "", 0),
-		"tags":          seq.NewSingleType(seq.TokenizerTypeTags, "", 0),
 		"v":             seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 	}
 }
