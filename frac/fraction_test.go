@@ -62,6 +62,7 @@ func (s *FractionTestSuite) SetupSuite() {
 		"k8s_container": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"message":       seq.NewSingleType(seq.TokenizerTypeText, "", 0),
 		"level":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"client_ip":     seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"service":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"source":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -301,6 +302,50 @@ func (s *FractionTestSuite) TestSearchRange() {
 
 	s.AssertSearch("level:[200 TO 300]", docs, []int{})
 	s.AssertSearch("level:{127 TO 200]", docs, []int{})
+}
+
+func (s *FractionTestSuite) TestSearchIPRange() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"gateway-0","level":"1","client_ip":"192.168.31.0"}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"gateway-1","level":"1","client_ip":"192.168.0.1"}`,
+		`{"timestamp":"2000-01-01T13:00:02.000Z","service":"gateway-2","level":"1","client_ip":"192.168.0.2"}`,
+		`{"timestamp":"2000-01-01T13:00:03.000Z","service":"gateway-3","level":"1","client_ip":"192.168.0.3"}`,
+		`{"timestamp":"2000-01-01T13:00:04.000Z","service":"gateway-0","level":"1","client_ip":"192.168.1.0"}`,
+		`{"timestamp":"2000-01-01T13:00:05.000Z","service":"gateway-1","level":"1","client_ip":"192.168.1.1"}`,
+		`{"timestamp":"2000-01-01T13:00:06.000Z","service":"gateway-0","level":"1","client_ip":"192.168.1.2"}`,
+		`{"timestamp":"2000-01-01T13:00:07.000Z","service":"gateway-1","level":"1","client_ip":"192.168.1.255"}`,
+		`{"timestamp":"2000-01-01T13:00:08.000Z","service":"gateway-3","level":"1","client_ip":"192.168.31.0"}`,
+		`{"timestamp":"2000-01-01T13:00:09.000Z","service":"api-0","level":"2","client_ip":"172.10.0.1"}`,
+		`{"timestamp":"2000-01-01T13:00:10.000Z","service":"api-1","level":"2","client_ip":"172.10.0.100"}`,
+		`{"timestamp":"2000-01-01T13:00:11.000Z","service":"api-2","level":"2","client_ip":"172.10.1.50"}`,
+		`{"timestamp":"2000-01-01T13:00:12.000Z","service":"api-3","level":"2","client_ip":"172.10.1.200"}`,
+		`{"timestamp":"2000-01-01T13:00:13.000Z","service":"api-4","level":"2","client_ip":"172.10.2.1"}`,
+		`{"timestamp":"2000-01-01T13:00:14.000Z","service":"backend-0","level":"3","client_ip":"10.53.0.10"}`,
+		`{"timestamp":"2000-01-01T13:00:15.000Z","service":"backend-1","level":"3","client_ip":"10.53.0.20"}`,
+		`{"timestamp":"2000-01-01T13:00:16.000Z","service":"backend-2","level":"3","client_ip":"10.53.1.30"}`,
+		`{"timestamp":"2000-01-01T13:00:17.000Z","service":"backend-3","level":"3","client_ip":"10.53.1.40"}`,
+		`{"timestamp":"2000-01-01T13:00:18.000Z","service":"backend-4","level":"3","client_ip":"10.53.2.50"}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.0.0,192.168.0.255)"), docs, []int{3, 2, 1})
+	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.1.0,192.168.1.255)"), docs, []int{7, 6, 5, 4})
+	s.AssertSearch(s.seqql("client_ip:ip_range(172.10.0.0,172.10.0.255)"), docs, []int{10, 9})
+	s.AssertSearch(s.seqql("client_ip:ip_range(172.10.0.0,172.10.255.255)"), docs, []int{13, 12, 11, 10, 9})
+	s.AssertSearch(s.seqql("client_ip:ip_range(10.53.0.0,10.53.0.255)"), docs, []int{15, 14})
+	s.AssertSearch(s.seqql("client_ip:ip_range(10.53.0.0,10.53.255.255)"), docs, []int{18, 17, 16, 15, 14})
+
+	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.0.0/24)"), docs, []int{3, 2, 1})
+	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.1.0/24)"), docs, []int{7, 6, 5, 4})
+	s.AssertSearch(s.seqql("client_ip:ip_range(172.10.0.0/24)"), docs, []int{10, 9})
+	s.AssertSearch(s.seqql("client_ip:ip_range(10.53.0.0/24)"), docs, []int{15, 14})
+
+	s.AssertSearch(s.seqql("client_ip:ip_range(172.10.0.0/16)"), docs, []int{13, 12, 11, 10, 9})
+	s.AssertSearch(s.seqql("client_ip:ip_range(10.53.0.0/16)"), docs, []int{18, 17, 16, 15, 14})
+
+	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.31.0/32)"), docs, []int{8, 0})
+	s.AssertSearch(s.seqql("client_ip:ip_range(172.10.0.1/32)"), docs, []int{9})
 }
 
 func (s *FractionTestSuite) TestSearchIn() {
