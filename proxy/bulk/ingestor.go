@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/indexer"
@@ -17,7 +19,6 @@ import (
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"
-	"go.uber.org/zap"
 )
 
 type MappingProvider interface {

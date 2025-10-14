@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -15,7 +17,6 @@ import (
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tokenizer"
-	"github.com/stretchr/testify/assert"
 )
 
 func readFileAllAtOnce(filename string) ([][]byte, error) {

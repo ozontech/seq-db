@@ -1,9 +1,10 @@
 package indexer
 
 import (
-	"github.com/ozontech/seq-db/metric"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/ozontech/seq-db/metric"
 )
 
 var (
