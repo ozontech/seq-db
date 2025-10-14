@@ -438,6 +438,97 @@ func (s *FractionTestSuite) TestSearchWithLimit() {
 		[]int{5, 3})
 }
 
+func (s *FractionTestSuite) TestSearchHist() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:01.549Z","message": "apple banana smoothie"}`,
+		`{"timestamp":"2000-01-01T13:00:02.690Z","message": "apple banana salad"}`,
+		`{"timestamp":"2000-01-01T13:00:03.102Z","message": "apple banana pineapple smoothie"}`,
+		`{"timestamp":"2000-01-01T13:00:03.052Z","message": "apple juice"}`,
+		`{"timestamp":"2000-01-01T13:00:04.999Z","message": "banana"}`,
+		`{"timestamp":"2000-01-01T13:00:05.000Z","message": "apple juice"}`,
+		`{"timestamp":"2000-01-01T13:00:10.777Z","message": "apple banana"}`,
+		`{"timestamp":"2000-01-01T13:00:15.100Z","message": "apple pie"}`,
+		`{"timestamp":"2000-01-01T13:00:15.200Z","message": "apple tart"}`,
+		`{"timestamp":"2000-01-01T13:00:15.300Z","message": "apple crisp"}`,
+		`{"timestamp":"2000-01-01T13:00:20.500Z","message": "orange juice"}`,
+		`{"timestamp":"2000-01-01T13:00:25.600Z","message": "apple cider"}`,
+	}
+
+	s.insertDocuments(docs...)
+
+	s.AssertHist(s.query("message:apple", withHist(1000)), map[string]uint64{
+		"2000-01-01T13:00:01.000Z": 1,
+		"2000-01-01T13:00:02.000Z": 1,
+		"2000-01-01T13:00:03.000Z": 2,
+		"2000-01-01T13:00:05.000Z": 1,
+		"2000-01-01T13:00:10.000Z": 1,
+		"2000-01-01T13:00:15.000Z": 3,
+		"2000-01-01T13:00:25.000Z": 1,
+	})
+	s.AssertHist(s.query("message:apple", withHist(3000)), map[string]uint64{
+		"2000-01-01T13:00:00.000Z": 2,
+		"2000-01-01T13:00:03.000Z": 3,
+		"2000-01-01T13:00:09.000Z": 1,
+		"2000-01-01T13:00:15.000Z": 3,
+		"2000-01-01T13:00:24.000Z": 1,
+	})
+	s.AssertHist(s.query("message:*", withHist(1000)), map[string]uint64{
+		"2000-01-01T13:00:01.000Z": 1,
+		"2000-01-01T13:00:02.000Z": 1,
+		"2000-01-01T13:00:03.000Z": 2,
+		"2000-01-01T13:00:04.000Z": 1,
+		"2000-01-01T13:00:05.000Z": 1,
+		"2000-01-01T13:00:10.000Z": 1,
+		"2000-01-01T13:00:15.000Z": 3,
+		"2000-01-01T13:00:20.000Z": 1,
+		"2000-01-01T13:00:25.000Z": 1,
+	})
+	s.AssertHist(s.query("message:*", withHist(2000)), map[string]uint64{
+		"2000-01-01T13:00:00.000Z": 1,
+		"2000-01-01T13:00:02.000Z": 3,
+		"2000-01-01T13:00:04.000Z": 2,
+		"2000-01-01T13:00:10.000Z": 1,
+		"2000-01-01T13:00:14.000Z": 3,
+		"2000-01-01T13:00:20.000Z": 1,
+		"2000-01-01T13:00:24.000Z": 1,
+	})
+	s.AssertHist(s.query(
+		"message:*",
+		withFrom("2000-01-01T13:00:03.000Z"),
+		withTo("2000-01-01T13:00:15.000Z"),
+		withHist(1000)),
+		map[string]uint64{
+			"2000-01-01T13:00:03.000Z": 2,
+			"2000-01-01T13:00:04.000Z": 1,
+			"2000-01-01T13:00:05.000Z": 1,
+			"2000-01-01T13:00:10.000Z": 1,
+		})
+	s.AssertHist(s.query(
+		"message:*",
+		withFrom("2000-01-01T13:00:03.000Z"),
+		withTo("2000-01-01T13:00:15.000Z"),
+		withHist(1000)),
+		map[string]uint64{
+			"2000-01-01T13:00:03.000Z": 2,
+			"2000-01-01T13:00:04.000Z": 1,
+			"2000-01-01T13:00:05.000Z": 1,
+			"2000-01-01T13:00:10.000Z": 1,
+		})
+	// Limit doesn't `limit` histogram but only query results
+	s.AssertHist(s.query(
+		"message:*",
+		withFrom("2000-01-01T13:00:03.000Z"),
+		withTo("2000-01-01T13:00:15.000Z"),
+		withLimit(1),
+		withHist(1000)),
+		map[string]uint64{
+			"2000-01-01T13:00:03.000Z": 2,
+			"2000-01-01T13:00:04.000Z": 1,
+			"2000-01-01T13:00:05.000Z": 1,
+			"2000-01-01T13:00:10.000Z": 1,
+		})
+}
+
 func (s *FractionTestSuite) TestBasicAggregation() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"proxy"}`,
@@ -867,6 +958,13 @@ func withLimit(limit int) searchOption {
 	}
 }
 
+func withHist(histInterval uint64) searchOption {
+	return func(p *processor.SearchParams) error {
+		p.HistInterval = histInterval
+		return nil
+	}
+}
+
 func aggField(field string) *parser.Literal {
 	searchAll := []parser.Term{{
 		Kind: parser.TermSymbol, Data: "*",
@@ -985,6 +1083,28 @@ func (s *FractionTestSuite) AssertAggregation(
 			}
 		}
 		s.Require().True(found, "bucket %s not found in results", expectedBucket.Name)
+	}
+}
+
+func (s *FractionTestSuite) AssertHist(
+	searchParams *processor.SearchParams,
+	expectedHist map[string]uint64) {
+
+	qpr, err := s.fraction.Search(context.Background(), *searchParams)
+	s.Require().NoError(err, "search failed")
+	s.Require().Equal(len(expectedHist), len(qpr.Histogram), "histogram count doesn't match")
+
+	for ts, expectedCount := range expectedHist {
+		timestamp, err := time.Parse(time.RFC3339, ts)
+		s.Require().NoError(err, "timestamp parsing failed")
+		expectedMID := seq.TimeToMID(timestamp)
+
+		actualCount, ok := qpr.Histogram[expectedMID]
+		if ok {
+			s.Require().Equal(expectedCount, actualCount, "count at bucket %s doesn't match", ts)
+		} else {
+			s.Require().Fail("bucket not found", "bucket %s was not found in qpr.hist", ts)
+		}
 	}
 }
 
