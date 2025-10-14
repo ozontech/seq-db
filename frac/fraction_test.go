@@ -1054,7 +1054,7 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 	}
 
 	var sortOrders = []seq.DocsOrder{seq.DocsOrderDesc}
-	if params.Limit == 0 {
+	if params.Limit == math.MaxInt32 {
 		sortOrders = append(sortOrders, seq.DocsOrderAsc)
 	}
 
