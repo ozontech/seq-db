@@ -29,10 +29,11 @@ import (
 
 type FractionTestSuite struct {
 	suite.Suite
-	tmpDir     string
-	config     *Config
-	mapping    seq.Mapping
-	tokenizers map[seq.TokenizerType]tokenizer.Tokenizer
+	tmpDir         string
+	config         *Config
+	mapping        seq.Mapping
+	tokenizers     map[seq.TokenizerType]tokenizer.Tokenizer
+	activeIndexers []*ActiveIndexer
 
 	fraction Fraction
 
@@ -85,6 +86,11 @@ func newSmallCache[V any]() *cache.Cache[V] {
 }
 
 func (s *FractionTestSuite) TearDownTestCommon() {
+	for _, activeIndexer := range s.activeIndexers {
+		activeIndexer.Stop()
+	}
+	s.activeIndexers = nil
+
 	err := os.RemoveAll(s.tmpDir)
 	s.NoError(err, "Failed to remove tmp dir")
 }
@@ -1154,6 +1160,7 @@ func (s *FractionTestSuite) newActive(docs ...string) *Active {
 	baseName := filepath.Join(s.tmpDir, "test_fraction")
 	activeIndexer := NewActiveIndexer(4, 10)
 	activeIndexer.Start()
+	s.activeIndexers = append(s.activeIndexers, activeIndexer)
 
 	active := NewActive(
 		baseName,
