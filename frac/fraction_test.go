@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -962,7 +963,8 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	// these checks should not break without a reason
 	// but if compression/marshalling has changed, expected values can be updated accordingly
 	s.Require().Equal(uint32(5), info.DocsTotal, "doc total doesn't match")
-	s.Require().True(info.DocsOnDisk > uint64(230) && info.DocsOnDisk < uint64(240),
+	// it varies depending on params and docs shuffled
+	s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(250),
 		"doc raw doesn't match. actual value: %d", info.DocsOnDisk)
 	s.Require().Equal(uint64(573), info.DocsRaw, "doc raw doesn't match")
 	s.Require().Equal(seq.MID(946731625000), info.From, "from doesn't match")
@@ -1221,12 +1223,18 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
 	defer indexer.PutDocMetasCompressor(compressor)
 
 	for _, docs := range bulks {
+		docsCopy := make([]string, len(docs))
+		copy(docsCopy, docs)
+		rand.Shuffle(len(docsCopy), func(i, j int) {
+			docsCopy[i], docsCopy[j] = docsCopy[j], docsCopy[i]
+		})
+
 		idx := 0
 		readNext := func() ([]byte, error) {
-			if idx >= len(docs) {
+			if idx >= len(docsCopy) {
 				return nil, nil
 			}
-			d := []byte(docs[idx])
+			d := []byte(docsCopy[idx])
 			idx++
 			return d, nil
 		}
