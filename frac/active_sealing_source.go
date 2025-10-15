@@ -421,6 +421,12 @@ func (src *ActiveSealingSource) writeDocs(blocks iter.Seq2[[]byte, []seq.DocPos]
 // Returns an iterator for blocks and corresponding document positions.
 func docBlocks(docs iter.Seq2[seq.ID, []byte], blockSize int) iter.Seq2[[]byte, []seq.DocPos] {
 	return func(yield func([]byte, []seq.DocPos) bool) {
+		const defaultBlockSize = 128 * units.KiB
+		if blockSize <= 0 {
+			blockSize = int(defaultBlockSize)
+			logger.Warn("document block size not specified", zap.Int("default_size", blockSize))
+		}
+
 		var (
 			prev  seq.ID
 			index uint32 // Current block index
