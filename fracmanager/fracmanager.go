@@ -511,45 +511,41 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 		return nil
 	}
 
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(fm.config.ReplayWorkers)
+
 	// goroutines access different indices, no need for lock protection for fracRefs
-	var fracRefs = make([]*fracRef, len(actives)-1)
+	var fracRefs = make([]*fracRef, len(actives))
+	var newActiveRef *activeRef
 
-	if len(actives) > 1 {
-		g, ctx := errgroup.WithContext(ctx)
-		g.SetLimit(fm.config.ReplayWorkers)
+	for i, f := range actives {
+		g.Go(func() error {
+			if err := f.Replay(ctx); err != nil {
+				return err
+			}
 
-		for i, f := range actives[:len(actives)-1] {
-			g.Go(func() error {
-				if err := f.Replay(ctx); err != nil {
-					return err
-				}
-
-				if f.Info().DocsTotal == 0 {
-					f.Suicide() // remove empty
-					return nil
-				}
-
-				ref := fm.newActiveRef(f)
-				fracRefs[i] = ref.ref
-
-				fm.seal(ref)
+			if f.Info().DocsTotal == 0 {
+				f.Suicide() // remove empty
 				return nil
-			})
-		}
+			}
 
-		if err := g.Wait(); err != nil {
-			return err
-		}
+			ref := fm.newActiveRef(f)
+			fracRefs[i] = ref.ref
+
+			if i != len(actives)-1 {
+				fm.seal(ref)
+			} else {
+				// last frac stays active and is not sealed
+				newActiveRef = &ref
+			}
+
+			return nil
+		})
 	}
 
-	// The last frac is only replayed, not sealed
-	last := actives[len(actives)-1]
-	if err := last.Replay(ctx); err != nil {
+	if err := g.Wait(); err != nil {
 		return err
 	}
-
-	newActiveRef := fm.newActiveRef(last)
-	active := &newActiveRef
 
 	var localFracs []*fracRef
 	for _, ref := range fracRefs {
@@ -557,11 +553,10 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 			localFracs = append(localFracs, ref)
 		}
 	}
-
 	fm.localFracs = append(fm.localFracs, localFracs...)
-	fm.active = *active
-	fm.localFracs = append(fm.localFracs, active.ref)
-
+	if newActiveRef != nil {
+		fm.active = *newActiveRef
+	}
 	return nil
 }
 
