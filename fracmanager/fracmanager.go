@@ -547,13 +547,12 @@ func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) er
 		return err
 	}
 
-	var localFracs []*fracRef
 	for _, ref := range fracRefs {
 		if ref != nil {
-			localFracs = append(localFracs, ref)
+			fm.localFracs = append(fm.localFracs, ref)
 		}
 	}
-	fm.localFracs = append(fm.localFracs, localFracs...)
+
 	if newActiveRef != nil {
 		fm.active = *newActiveRef
 	}
