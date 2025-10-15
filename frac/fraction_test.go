@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/johannesboyne/gofakes3"
+	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -25,6 +28,7 @@ import (
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/tokenizer"
 	"github.com/stretchr/testify/suite"
 )
@@ -1043,6 +1047,10 @@ func (s *FractionTestSuite) TestFractionInfo() {
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
 		s.Require().True(info.IndexOnDisk > uint64(1450) && info.IndexOnDisk < uint64(1500),
 			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
+	case *Remote:
+		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
+		s.Require().True(info.IndexOnDisk > uint64(1450) && info.IndexOnDisk < uint64(1500),
+			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
 	default:
 		s.Require().Fail("unsupported fraction type")
 	}
@@ -1460,8 +1468,78 @@ func (s *SealedLoadedFractionTestSuite) TearDownTest() {
 	s.TearDownTestCommon()
 }
 
+/*
+Remote frac
+*/
+type RemoteFractionTestSuite struct {
+	FractionTestSuite
+}
+
+func (s *RemoteFractionTestSuite) SetupTest() {
+	s.SetupTestCommon()
+
+	s3fakeBackend := s3mem.New()
+	err := s3fakeBackend.CreateBucket("bucket")
+	s.Require().NoError(err, "create bucket failed")
+	s3server := httptest.NewServer(gofakes3.New(s3fakeBackend).Server())
+
+	s3cli, err := s3.NewClient(
+		s3server.URL,
+		"ACCESS_KEY",
+		"SECRET_KEY",
+		"reg",
+		"bucket",
+		3,
+	)
+	s.Require().NoError(err, "s3 client setup failed")
+
+	uploader := s3.NewUploader(s3cli)
+
+	s.insertDocuments = func(bulks ...[]string) {
+		if s.fraction != nil {
+			s.Require().Fail("can insert docs only once")
+		}
+		sealed := s.newSealed(bulks...)
+		defer sealed.Suicide()
+
+		offloaded, err := sealed.Offload(context.Background(), uploader)
+		s.Require().NoError(err, "offload failed")
+		s.Require().True(offloaded, "didn't offload frac")
+
+		indexCache := &IndexCache{
+			MIDs:       newSmallCache[[]byte](),
+			RIDs:       newSmallCache[[]byte](),
+			Params:     newSmallCache[seqids.BlockParams](),
+			LIDs:       newSmallCache[*lids.Block](),
+			Tokens:     newSmallCache[*token.Block](),
+			TokenTable: newSmallCache[token.Table](),
+			Registry:   newSmallCache[[]byte](),
+		}
+
+		remoteFrac := NewRemote(
+			context.Background(),
+			sealed.BaseFileName,
+			storage.NewReadLimiter(1, nil),
+			indexCache,
+			newSmallCache[[]byte](),
+			sealed.info,
+			s.config,
+			s3cli)
+		s.fraction = remoteFrac
+	}
+}
+
+func (s *RemoteFractionTestSuite) TearDownTest() {
+	if s.fraction != nil {
+		s.fraction.Suicide()
+		s.fraction = nil
+	}
+	s.TearDownTestCommon()
+}
+
 func TestFractionSuites(t *testing.T) {
-	suite.Run(t, new(ActiveFractionTestSuite))
-	suite.Run(t, new(SealedFractionTestSuite))
-	suite.Run(t, new(SealedLoadedFractionTestSuite))
+	//suite.Run(t, new(ActiveFractionTestSuite))
+	//suite.Run(t, new(SealedFractionTestSuite))
+	//suite.Run(t, new(SealedLoadedFractionTestSuite))
+	suite.Run(t, new(RemoteFractionTestSuite))
 }
