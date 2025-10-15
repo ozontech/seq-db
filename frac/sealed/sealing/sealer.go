@@ -5,14 +5,10 @@ import (
 	"iter"
 	"os"
 	"path/filepath"
-	"time"
-
-	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
-	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
@@ -44,7 +40,6 @@ type Source interface {
 //   - *sealed.PreloadedData: Preloaded data structures for initialization of sealed fraction
 //   - error: Any error encountered during the sealing process
 func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
-	start := time.Now()
 	info := src.Info()
 
 	// Validate that we're not sealing an empty fraction
@@ -90,21 +85,16 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	util.MustSyncPath(filepath.Dir(info.Path))
 
 	// Build preloaded data structure for fast query access
+	lidsTable := indexSealer.LIDsTable()
 	preloaded := sealed.PreloadedData{
 		Info:       info,
 		TokenTable: indexSealer.TokenTable(),
 		BlocksData: sealed.BlocksData{
 			IDsTable:      indexSealer.IDsTable(),
-			LIDsTable:     indexSealer.LIDsTable(),
+			LIDsTable:     &lidsTable,
 			BlocksOffsets: src.BlocksOffsets(),
 		},
 	}
 
-	// Log successful sealing operation
-	logger.Info(
-		"fraction sealed",
-		zap.String("fraction", filepath.Dir(info.Path)),
-		zap.Float64("time_spent_s", util.DurationToUnit(time.Since(start), "s")),
-	)
 	return &preloaded, nil
 }

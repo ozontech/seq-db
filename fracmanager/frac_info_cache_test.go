@@ -53,14 +53,14 @@ func TestEmpty(t *testing.T) {
 	testscommon.RecreateDir(dataDir)
 	defer testscommon.RemoveDir(dataDir)
 
-	f := NewSealedFracCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
+	f := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 	err := f.SyncWithDisk()
 	assert.NoError(t, err)
 	content, err := loadFracCacheContent(dataDir)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("{}"), content)
 
-	currentFracInfo, ok := f.GetFracInfo("a")
+	currentFracInfo, ok := f.Get("a")
 	assert.Nil(t, currentFracInfo)
 	assert.Equal(t, false, ok)
 
@@ -80,23 +80,23 @@ func TestLoadFromDisk(t *testing.T) {
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
 
-	f := NewSealedFracCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
+	f := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 	f.LoadFromDisk(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 
-	el, has := f.GetFracInfo("a")
+	el, has := f.Get("a")
 	assert.True(t, has)
 	assert.NotNil(t, el)
 	assert.Equal(t, "a", el.Name())
 	assert.Equal(t, "1.1", el.Ver)
 	assert.Equal(t, uint64(1284), el.IndexOnDisk)
 
-	el, has = f.GetFracInfo("b")
+	el, has = f.Get("b")
 	assert.True(t, has)
 	assert.Equal(t, "b", el.Path)
 	assert.Equal(t, "1.2", el.Ver)
 	assert.Equal(t, uint64(1276), el.IndexOnDisk)
 
-	el, has = f.GetFracInfo("c")
+	el, has = f.Get("c")
 	assert.False(t, has)
 	assert.Nil(t, el)
 }
@@ -109,11 +109,11 @@ func TestRemoveFraction(t *testing.T) {
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
 
-	f := NewSealedFracCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
+	f := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 	f.LoadFromDisk(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 
-	f.RemoveFraction("a")
-	f.RemoveFraction("b")
+	f.Remove("a")
+	f.Remove("b")
 
 	err = f.SyncWithDisk()
 	assert.NoError(t, err)
@@ -137,7 +137,7 @@ func TestRemoveFraction(t *testing.T) {
 		To:                    0,
 		CreationTime:          0,
 	}
-	f.AddFraction(newInfo.Name(), newInfo)
+	f.Add(newInfo)
 	err = f.SyncWithDisk()
 	assert.NoError(t, err)
 
@@ -146,7 +146,7 @@ func TestRemoveFraction(t *testing.T) {
 	expected := map[string]*common.Info{"c": newInfo}
 
 	assert.Equal(t, expected, m)
-	f.RemoveFraction("c")
+	f.Remove("c")
 	err = f.SyncWithDisk()
 	assert.NoError(t, err)
 
@@ -164,7 +164,7 @@ func TestWriteToDisk(t *testing.T) {
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
 
-	f := NewSealedFracCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
+	f := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 	f.LoadFromDisk(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 
 	newInfo := &common.Info{
@@ -183,9 +183,9 @@ func TestWriteToDisk(t *testing.T) {
 		CreationTime:          0,
 	}
 
-	f.AddFraction(newInfo.Name(), newInfo)
+	f.Add(newInfo)
 
-	fracFromDisk, has := f.GetFracInfo(filepath.Base(newInfo.Path))
+	fracFromDisk, has := f.Get(filepath.Base(newInfo.Path))
 	assert.True(t, has)
 	assert.NotNil(t, fracFromDisk)
 	assert.Equal(t, newInfo.ConstLIDBlockCap, fracFromDisk.ConstLIDBlockCap)
@@ -197,28 +197,28 @@ func TestWriteToDisk(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, mapFracCache["c"], newInfo)
 
-	fracA, has := f.GetFracInfo("a")
+	fracA, has := f.Get("a")
 	assert.True(t, has)
 	assert.Equal(t, mapFracCache["a"], fracA)
 
-	fracB, has := f.GetFracInfo("b")
+	fracB, has := f.Get("b")
 	assert.True(t, has)
 	assert.Equal(t, mapFracCache["b"], fracB)
 
-	f.RemoveFraction("a")
-	f.RemoveFraction("b")
-	f.RemoveFraction("c")
+	f.Remove("a")
+	f.Remove("b")
+	f.Remove("c")
 
 	err = f.SyncWithDisk()
 	assert.NoError(t, err)
 
-	_, has = f.GetFracInfo("a")
+	_, has = f.Get("a")
 	assert.False(t, has)
 
-	_, has = f.GetFracInfo("b")
+	_, has = f.Get("b")
 	assert.False(t, has)
 
-	_, has = f.GetFracInfo("c")
+	_, has = f.Get("c")
 	assert.False(t, has)
 
 	_, has = mapFracCache["blabla"]
@@ -237,20 +237,20 @@ func TestUnusedFractionsCleanup(t *testing.T) {
 	expected := map[string]*common.Info{}
 
 	cacheFile := filepath.Join(dataDir, consts.FracCacheFileSuffix)
-	diskFracCache := NewFracCacheFromDisk(cacheFile)
-	f := NewSealedFracCache(cacheFile)
+	diskFracCache := NewFracInfoCacheFromDisk(cacheFile)
+	f := NewFracInfoCache(cacheFile)
 
-	currentFracInfo, has := diskFracCache.GetFracInfo("a")
+	currentFracInfo, has := diskFracCache.Get("a")
 	assert.True(t, has)
 	expected["a"] = currentFracInfo
-	f.AddFraction(currentFracInfo.Name(), currentFracInfo)
+	f.Add(currentFracInfo)
 	err = f.SyncWithDisk()
 	assert.NoError(t, err)
 	cache, err := loadFracCache(dataDir)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, cache)
 
-	f.RemoveFraction("a")
+	f.Remove("a")
 	err = f.SyncWithDisk()
 	assert.NoError(t, err)
 	cacheStr, err := loadFracCacheContent(dataDir)
@@ -302,7 +302,7 @@ func TestFracInfoSavedToCache(t *testing.T) {
 
 	fracCacheFromDisk, err := loadFracCache(dataDir)
 	assert.NoError(t, err)
-	assert.Equal(t, fracCacheFromDisk, fm.fracCache.fracCache)
+	assert.Equal(t, fracCacheFromDisk, fm.fracCache.cache)
 	assert.Equal(t, fracCacheFromDisk, infos)
 }
 
