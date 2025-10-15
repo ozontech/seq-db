@@ -11,8 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/tests/common"
+	testscommon "github.com/ozontech/seq-db/tests/common"
 )
 
 // newFracManagerWithBackgroundStart only used from tests
@@ -48,10 +49,10 @@ func MakeSomeFractions(t *testing.T, fm *FracManager) {
 }
 
 func TestCleanUp(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
+	dataDir := testscommon.GetTestTmpDir(t)
 
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	testscommon.RecreateDir(dataDir)
+	defer testscommon.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:     1000,
@@ -94,9 +95,9 @@ func TestCleanUp(t *testing.T) {
 }
 
 func TestMatureMode(t *testing.T) {
-	dataDir := common.GetTestTmpDir(t)
-	common.RecreateDir(dataDir)
-	defer common.RemoveDir(dataDir)
+	dataDir := testscommon.GetTestTmpDir(t)
+	testscommon.RecreateDir(dataDir)
+	defer testscommon.RemoveDir(dataDir)
 
 	launchAndCheck := func(checkFn func(fm *FracManager)) {
 		fm := NewFracManager(context.Background(), &Config{
@@ -109,7 +110,7 @@ func TestMatureMode(t *testing.T) {
 
 		checkFn(fm)
 
-		fm.fracProvider.Stop()
+		fm.indexer.Stop()
 	}
 
 	id := 1
@@ -150,15 +151,6 @@ func TestMatureMode(t *testing.T) {
 
 }
 
-func TestNewULID(t *testing.T) {
-	fm := NewFracManager(context.Background(), &Config{}, nil)
-	ulid1 := fm.nextFractionID()
-	ulid2 := fm.nextFractionID()
-	assert.NotEqual(t, ulid1, ulid2, "ULIDs should be different")
-	assert.Equal(t, 26, len(ulid1), "ULID should have length 26")
-	assert.Greater(t, ulid2, ulid1)
-}
-
 func TestOldestCT(t *testing.T) {
 	const fracCount = 10
 
@@ -170,7 +162,7 @@ func TestOldestCT(t *testing.T) {
 
 		for i := range fracCount {
 			fm.localFracs = append(fm.localFracs, &fracRef{instance: frac.NewSealed(
-				"", nil, nil, nil, &frac.Info{
+				"", nil, nil, nil, &common.Info{
 					Path:         fmt.Sprintf("local-frac-%d", i),
 					IndexOnDisk:  1,
 					CreationTime: uint64(nowOldestLocal.UnixMilli()),
@@ -193,7 +185,7 @@ func TestOldestCT(t *testing.T) {
 
 		for i := range fracCount {
 			fm.remoteFracs = append(fm.remoteFracs, frac.NewRemote(
-				t.Context(), "", nil, nil, nil, &frac.Info{
+				t.Context(), "", nil, nil, nil, &common.Info{
 					Path:         fmt.Sprintf("remote-frac-%d", i),
 					IndexOnDisk:  1,
 					CreationTime: uint64(nowOldestRemote.UnixMilli()),
@@ -207,7 +199,7 @@ func TestOldestCT(t *testing.T) {
 
 		for i := range fracCount {
 			fm.localFracs = append(fm.localFracs, &fracRef{instance: frac.NewSealed(
-				"", nil, nil, nil, &frac.Info{
+				"", nil, nil, nil, &common.Info{
 					Path:         fmt.Sprintf("local-frac-%d", i),
 					IndexOnDisk:  1,
 					CreationTime: uint64(nowOldestLocal.UnixMilli()),

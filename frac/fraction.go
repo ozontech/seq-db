@@ -9,22 +9,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 )
 
-type DataProvider interface {
-	Fetch([]seq.ID) ([][]byte, error)
-	Search(processor.SearchParams) (*seq.QPR, error)
-}
-
 type Fraction interface {
-	Info() *Info
+	Info() *common.Info
 	IsIntersecting(from seq.MID, to seq.MID) bool
 	Contains(mid seq.MID) bool
-	DataProvider(context.Context) (DataProvider, func())
+	Fetch(context.Context, []seq.ID) ([][]byte, error)
+	Search(context.Context, processor.SearchParams) (*seq.QPR, error)
 	Offload(ctx context.Context, u storage.Uploader) (bool, error)
 	Suicide()
 }

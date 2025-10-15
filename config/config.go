@@ -209,7 +209,7 @@ type Config struct {
 		Enabled bool `config:"enabled"`
 		// DocBlockSize sets document block size.
 		// Large size consumes more RAM but improves compression ratio.
-		DocBlockSize Bytes `config:"doc_block_size"`
+		DocBlockSize Bytes `config:"doc_block_size" default:"128KiB"`
 	} `config:"docs_sorting"`
 
 	Offloading struct {

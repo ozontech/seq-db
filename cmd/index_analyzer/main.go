@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/alecthomas/units"
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -57,7 +58,15 @@ func main() {
 func getCacheMaintainer() (*fracmanager.CacheMaintainer, func()) {
 	done := make(chan struct{})
 	cm := fracmanager.NewCacheMaintainer(uint64(units.GiB), uint64(units.MiB*64), nil)
-	wg := cm.RunCleanLoop(done, time.Second, time.Second)
+
+	wg := sync.WaitGroup{}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		cm.RunCleanLoop(done, time.Second, time.Second)
+	}()
+
 	return cm, func() {
 		close(done)
 		wg.Wait()
@@ -91,8 +100,11 @@ func analyzeIndex(
 	}
 
 	// load info
-	b := frac.BlockInfo{}
-	_ = b.Unpack(readBlock())
+	var b sealed.BlockInfo
+	if err := b.Unpack(readBlock()); err != nil {
+		logger.Fatal("error unpacking block info", zap.Error(err))
+	}
+
 	docsCount := int(b.Info.DocsTotal)
 
 	// load tokens
