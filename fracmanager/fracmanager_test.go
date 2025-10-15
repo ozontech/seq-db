@@ -57,10 +57,9 @@ func TestCleanUp(t *testing.T) {
 	defer testscommon.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     1000,
-		TotalSize:    100000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:  1000,
+		TotalSize: 100000,
+		DataDir:   dataDir,
 	})
 
 	assert.NoError(t, err)
@@ -83,10 +82,9 @@ func TestCleanUp(t *testing.T) {
 	}
 
 	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100,
-		TotalSize:    100000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:  100,
+		TotalSize: 100000,
+		DataDir:   dataDir,
 	})
 
 	assert.NoError(t, err)
@@ -102,10 +100,9 @@ func TestReplaySingleEmptyFrac(t *testing.T) {
 	defer testscommon.RemoveDir(dataDir)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100000000, // maintenance will not seal fracs
-		TotalSize:    100000000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:  100000000, // maintenance will not seal fracs
+		TotalSize: 100000000,
+		DataDir:   dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -114,10 +111,9 @@ func TestReplaySingleEmptyFrac(t *testing.T) {
 	fm.Stop()
 
 	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100000000,
-		TotalSize:    100000000,
-		ShouldReplay: true,
-		DataDir:      dataDir,
+		FracSize:  100000000,
+		TotalSize: 100000000,
+		DataDir:   dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -138,7 +134,6 @@ func TestReplayContextCancel(t *testing.T) {
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000, // maintenance will not seal fracs
 		TotalSize:     100000000,
-		ShouldReplay:  false,
 		ReplayWorkers: 10,
 		DataDir:       dataDir,
 	})
@@ -157,7 +152,6 @@ func TestReplayContextCancel(t *testing.T) {
 	fm, err = newFracManagerWithBackgroundStart(ctx, &Config{
 		FracSize:      100000000,
 		TotalSize:     100000000,
-		ShouldReplay:  true,
 		ReplayWorkers: 10,
 		DataDir:       dataDir,
 	})
@@ -175,7 +169,6 @@ func TestReplaySingleNonEmptyFrac(t *testing.T) {
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000, // maintenance will not seal fracs
 		TotalSize:     100000000,
-		ShouldReplay:  false,
 		ReplayWorkers: 10,
 		DataDir:       dataDir,
 	})
@@ -191,7 +184,6 @@ func TestReplaySingleNonEmptyFrac(t *testing.T) {
 	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000,
 		TotalSize:     100000000,
-		ShouldReplay:  true,
 		ReplayWorkers: 10,
 		DataDir:       dataDir,
 	})
@@ -200,7 +192,7 @@ func TestReplaySingleNonEmptyFrac(t *testing.T) {
 	replayedFracs := fm.getLocalFracs()
 	assert.Equal(t, 1, len(replayedFracs), "should replay exactly one frac")
 	active := fm.Active() // replayed frac is active
-	assert.Equal(t, fractionInfo.DocsOnDisk, active.Info().DocsOnDisk, "should have same doc count for replayed frac")
+	assert.Equal(t, fractionInfo.DocsTotal, active.Info().DocsTotal, "should have same doc count for replayed frac")
 
 	fm.Stop()
 }
@@ -214,7 +206,6 @@ func TestReplayMultipleFracs(t *testing.T) {
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000, // maintenance will not seal fracs
 		TotalSize:     100000000,
-		ShouldReplay:  false,
 		ReplayWorkers: 8,
 		DataDir:       dataDir,
 	})
@@ -229,9 +220,6 @@ func TestReplayMultipleFracs(t *testing.T) {
 	var fracs []common.Info
 	for _, fraction := range fm.getLocalFracs() {
 		info := *fraction.Info()
-		if info.DocsTotal == 0 {
-			fmt.Printf("no docs")
-		}
 		fracs = append(fracs, info)
 	}
 
@@ -240,7 +228,6 @@ func TestReplayMultipleFracs(t *testing.T) {
 	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000,
 		TotalSize:     100000000,
-		ShouldReplay:  true,
 		ReplayWorkers: 10,
 		DataDir:       dataDir,
 	})
@@ -251,11 +238,11 @@ func TestReplayMultipleFracs(t *testing.T) {
 	assert.Equal(t, len(fracs), len(replayedFracs), "should replay same number of fractions")
 
 	// all fracs should match exactly (no empty) in same order
-	for i := 0; i < 51; i++ {
+	for i := 0; i < fracCount+1; i++ {
 		assert.Equal(t, fracs[i].Name(), replayedFracs[i].Info().Name(), "fraction %d should have same name", i)
 		assert.Equal(t, fracs[i].DocsTotal, replayedFracs[i].Info().DocsTotal, "fraction %d should have same doc count", i)
 
-		if i != 50 {
+		if i != fracCount {
 			assert.Greater(t, replayedFracs[i].Info().SealingTime, uint64(0), "replayed frac %d must be sealed", i)
 		} else {
 			assert.Equal(t, replayedFracs[i].Info().SealingTime, uint64(0), "replayed frac %d must not be sealed", i)
@@ -263,12 +250,13 @@ func TestReplayMultipleFracs(t *testing.T) {
 	}
 
 	newActive := fm.Active()
-	assert.Greater(t, newActive.Info().DocsTotal, uint32(0), "new active fraction should not be empty")
+	assert.Equal(t, newActive.Info().DocsTotal, uint32(5), "new active fraction should not be empty")
 
 	fm.Stop()
 }
 
 func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
+	fracCount := 50
 	dataDir := testscommon.GetTestTmpDir(t)
 	testscommon.RecreateDir(dataDir)
 	defer testscommon.RemoveDir(dataDir)
@@ -276,15 +264,13 @@ func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000, // maintenance will not seal fracs
 		TotalSize:     100000000,
-		ShouldReplay:  false,
 		ReplayWorkers: 10,
 		DataDir:       dataDir,
 	})
 	assert.NoError(t, err)
 
-	for i := 0; i < 50; i++ {
+	for i := 0; i < fracCount; i++ {
 		addDocs(t, fm, 500+rand.Intn(100))
-		fm.WaitIdle()
 		fm.rotate()
 	}
 	// active frac is now empty
@@ -299,7 +285,6 @@ func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
 	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000,
 		TotalSize:     100000000,
-		ShouldReplay:  true,
 		ReplayWorkers: 10,
 		DataDir:       dataDir,
 	})
@@ -309,14 +294,14 @@ func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
 
 	assert.Equal(t, len(fracs), len(replayedFracs), "should replay same number of fractions")
 
-	for i := 0; i < 50; i++ {
+	for i := 0; i < fracCount; i++ {
 		assert.Equal(t, fracs[i].Name(), replayedFracs[i].Info().Name(), "fraction %d should have same name", i)
 		assert.Equal(t, fracs[i].DocsTotal, replayedFracs[i].Info().DocsTotal, "fraction %d should have same doc count", i)
 		assert.Greater(t, replayedFracs[i].Info().SealingTime, uint64(0), "replayed frac %d must be sealed", i)
 	}
 
-	assert.Equal(t, fracs[50].Name(), replayedFracs[50].Info().Name(), "should use same empty active frac")
-	assert.Equal(t, uint32(0), replayedFracs[50].Info().DocsTotal, "last fraction should have no documents")
+	assert.Equal(t, fracs[fracCount].Name(), replayedFracs[fracCount].Info().Name(), "should use same empty active frac")
+	assert.Equal(t, uint32(0), replayedFracs[fracCount].Info().DocsTotal, "last fraction should have no documents")
 
 	newActive := fm.Active()
 	assert.Equal(t, uint32(0), newActive.Info().DocsTotal, "new active fraction should be empty")
@@ -333,7 +318,6 @@ func TestReplayFractionsWithMultipleEmptyFracs(t *testing.T) {
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000, // maintenance will not seal fracs
 		TotalSize:     100000000,
-		ShouldReplay:  false,
 		ReplayWorkers: 10,
 		DataDir:       dataDir,
 	})
@@ -360,7 +344,6 @@ func TestReplayFractionsWithMultipleEmptyFracs(t *testing.T) {
 	fm, err = newFracManagerWithBackgroundStart(t.Context(), &Config{
 		FracSize:      100000000,
 		TotalSize:     100000000,
-		ShouldReplay:  true,
 		ReplayWorkers: 10,
 		DataDir:       dataDir,
 	})
@@ -402,10 +385,9 @@ func TestMatureMode(t *testing.T) {
 
 	launchAndCheck := func(checkFn func(fm *FracManager)) {
 		fm := NewFracManager(context.Background(), &Config{
-			FracSize:     500,
-			TotalSize:    5000,
-			ShouldReplay: false,
-			DataDir:      dataDir,
+			FracSize:  500,
+			TotalSize: 5000,
+			DataDir:   dataDir,
 		}, nil)
 		assert.NoError(t, fm.Load(context.Background()))
 
