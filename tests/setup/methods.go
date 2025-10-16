@@ -66,7 +66,6 @@ func SearchHTTP(t *testing.T, addr string, request *seqproxyapi.SearchRequest) *
 
 	req, err := http.NewRequest(http.MethodPost, addr, bytes.NewReader(payload))
 	require.NoError(t, err, "should be no errors")
-	req.Header.Set("Grpc-Metadata-use-seq-ql", "true")
 
 	r, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
