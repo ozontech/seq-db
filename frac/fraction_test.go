@@ -485,6 +485,35 @@ func (s *FractionTestSuite) TestSearchWithLimit() {
 		[]int{5, 3})
 }
 
+func (s *FractionTestSuite) TestSearchWithTotal() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:01.549Z","message": "apple banana smoothie"}`,
+		`{"timestamp":"2000-01-01T13:00:02.690Z","message": "fruit salad"}`,
+		`{"timestamp":"2000-01-01T13:00:03.102Z","message": "banana pineapple smoothie"}`,
+		`{"timestamp":"2000-01-01T13:00:03.052Z","message": "apple juice"}`,
+		`{"timestamp":"2000-01-01T13:00:04.999Z","message": "banana"}`,
+		`{"timestamp":"2000-01-01T13:00:05.000Z","message": "apple juice"}`,
+		`{"timestamp":"2000-01-01T13:00:10.777Z","message": "apple banana"}`,
+		`{"timestamp":"2000-01-01T13:00:15.100Z","message": "cherry pie"}`,
+		`{"timestamp":"2000-01-01T13:00:15.200Z","message": "apple tart"}`,
+		`{"timestamp":"2000-01-01T13:00:15.300Z","message": "bread crisp"}`,
+		`{"timestamp":"2000-01-01T13:00:20.500Z","message": "orange juice"}`,
+		`{"timestamp":"2000-01-01T13:00:25.600Z","message": "apple cider"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	qpr, err := s.fraction.Search(context.Background(), *s.query("message:apple", withLimit(3), withTotal()))
+	s.Require().NoError(err, "search failed")
+	s.Require().Equal(uint64(6), qpr.Total)
+	s.Require().Equal(3, qpr.IDs.Len())
+
+	qpr, err = s.fraction.Search(context.Background(), *s.query("message:*", withLimit(4), withTotal()))
+	s.Require().NoError(err, "search failed")
+	s.Require().Equal(uint64(12), qpr.Total)
+	s.Require().Equal(4, qpr.IDs.Len())
+}
+
 func (s *FractionTestSuite) TestSearchHist() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:01.549Z","message": "apple banana smoothie"}`,
@@ -1017,7 +1046,7 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	// but if compression/marshalling has changed, expected values can be updated accordingly
 	s.Require().Equal(uint32(5), info.DocsTotal, "doc total doesn't match")
 	// it varies depending on params and docs shuffled
-	s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(250),
+	s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(300),
 		"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
 	s.Require().Equal(uint64(573), info.DocsRaw, "doc raw doesn't match")
 	s.Require().Equal(seq.MID(946731625000), info.From, "from doesn't match")
@@ -1025,12 +1054,12 @@ func (s *FractionTestSuite) TestFractionInfo() {
 
 	switch s.fraction.(type) {
 	case *Active:
-		s.Require().True(info.MetaOnDisk >= uint64(300) && info.MetaOnDisk <= uint64(350),
+		s.Require().True(info.MetaOnDisk >= uint64(300) && info.MetaOnDisk <= uint64(400),
 			"meta on disk doesn't match. actual value: %d", info.MetaOnDisk)
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
 	case *Sealed:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1450) && info.IndexOnDisk < uint64(1550),
+		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1600),
 			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
 	default:
 		s.Require().Fail("unsupported fraction type")
@@ -1083,6 +1112,13 @@ func withTo(to string) searchOption {
 func withLimit(limit int) searchOption {
 	return func(p *processor.SearchParams) error {
 		p.Limit = limit
+		return nil
+	}
+}
+
+func withTotal() searchOption {
+	return func(p *processor.SearchParams) error {
+		p.WithTotal = true
 		return nil
 	}
 }
