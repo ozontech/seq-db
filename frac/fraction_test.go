@@ -31,16 +31,25 @@ import (
 
 type FractionTestSuite struct {
 	suite.Suite
-	tmpDir         string
-	config         *Config
-	mapping        seq.Mapping
-	tokenizers     map[seq.TokenizerType]tokenizer.Tokenizer
-	activeIndexers []*ActiveIndexer
-	sealParams     common.SealParams
+	tmpDir        string
+	config        *Config
+	mapping       seq.Mapping
+	tokenizers    map[seq.TokenizerType]tokenizer.Tokenizer
+	activeIndexer *ActiveIndexer
+	sealParams    common.SealParams
 
 	fraction Fraction
 
 	insertDocuments func(docs ...[]string)
+}
+
+func (s *FractionTestSuite) SetupSuite() {
+	s.activeIndexer = NewActiveIndexer(4, 10)
+	s.activeIndexer.Start()
+}
+
+func (s *FractionTestSuite) TearDownSuite() {
+	s.activeIndexer.Stop()
 }
 
 func (s *FractionTestSuite) SetupTestCommon() {
@@ -91,16 +100,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 	s.Require().NoError(err)
 }
 
-func newSmallCache[V any]() *cache.Cache[V] {
-	return cache.NewCache[V](cache.NewCleaner(uint64(units.KiB), nil), nil)
-}
-
 func (s *FractionTestSuite) TearDownTestCommon() {
-	for _, activeIndexer := range s.activeIndexers {
-		activeIndexer.Stop()
-	}
-	s.activeIndexers = nil
-
 	err := os.RemoveAll(s.tmpDir)
 	s.NoError(err, "Failed to remove tmp dir")
 }
@@ -219,15 +219,15 @@ func (s *FractionTestSuite) TestWildcardSymbolsSearch() {
 	s.AssertSearch(`message:*`, docs, []int{3, 2, 1, 0})
 	s.AssertSearch(`message:value`, docs, []int{1, 0})
 	s.AssertSearch(`message:value*`, docs, []int{2, 1, 0})
-	s.AssertSearch(`message:value\*`, docs, []int{})
-	s.AssertSearch(`message:value\**`, docs, []int{2})
-	s.AssertSearch(`message:*\**`, docs, []int{3, 2, 1, 0})
-	s.AssertSearch(`message:*e\**`, docs, []int{2})
-	s.AssertSearch(`message:\**`, docs, []int{3, 1, 0})
-	s.AssertSearch(`message:\*\*\*\*`, docs, []int{3, 0})
-	s.AssertSearch(`message:\*\*\*\**`, docs, []int{3, 1, 0})
-	s.AssertSearch(`message:value* AND message:\*\**`, docs, []int{1, 0})
-	s.AssertSearch(`message:value* OR message:\*\**`, docs, []int{3, 2, 1, 0})
+	s.AssertSearch(`message:"value\*"`, docs, []int{})
+	s.AssertSearch(`message:"value\**"`, docs, []int{2})
+	s.AssertSearch(`message:"*\**"`, docs, []int{3, 2, 1, 0})
+	s.AssertSearch(`message:"*e\**"`, docs, []int{2})
+	s.AssertSearch(`message:"\**"`, docs, []int{3, 1, 0})
+	s.AssertSearch(`message:"\*\*\*\*"`, docs, []int{3, 0})
+	s.AssertSearch(`message:"\*\*\*\**"`, docs, []int{3, 1, 0})
+	s.AssertSearch(`message:value* AND message:"\*\**"`, docs, []int{1, 0})
+	s.AssertSearch(`message:value* OR message:"\*\**"`, docs, []int{3, 2, 1, 0})
 }
 
 func (s *FractionTestSuite) TestSearchFullText() {
@@ -270,17 +270,17 @@ func (s *FractionTestSuite) TestSearchPath() {
 
 	s.insertDocuments(docs)
 
-	s.AssertSearch("request_uri:/one", docs, []int{9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
-	s.AssertSearch("request_uri:/two", docs, []int{10})
-	s.AssertSearch("request_uri:/one/two", docs, []int{8, 7, 6, 5, 2, 1})
-	s.AssertSearch("request_uri:/one/two/three", docs, []int{8, 7, 6, 5, 2})
-	s.AssertSearch("request_uri:/one/two/three/1", docs, []int{6})
-	s.AssertSearch("request_uri:/one/two.three", docs, []int{4, 3})
-	s.AssertSearch("request_uri:/one/two.three/four", docs, []int{3})
-	s.AssertSearch("request_uri:/one/*/three", docs, []int{9, 8, 7, 6, 5, 2})
-	s.AssertSearch("request_uri:/two/*/three", docs, []int{10})
-	s.AssertSearch("request_uri:*/three/", docs, []int{5})
-	s.AssertSearch("request_uri:*/three", docs, []int{10, 9, 8, 7, 6, 5, 2})
+	s.AssertSearch(`request_uri:"/one"`, docs, []int{9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
+	s.AssertSearch(`request_uri:"/two"`, docs, []int{10})
+	s.AssertSearch(`request_uri:"/one/two"`, docs, []int{8, 7, 6, 5, 2, 1})
+	s.AssertSearch(`request_uri:"/one/two/three"`, docs, []int{8, 7, 6, 5, 2})
+	s.AssertSearch(`request_uri:"/one/two/three/1"`, docs, []int{6})
+	s.AssertSearch(`request_uri:"/one/two.three"`, docs, []int{4, 3})
+	s.AssertSearch(`request_uri:"/one/two.three/four"`, docs, []int{3})
+	s.AssertSearch(`request_uri:"/one/*/three"`, docs, []int{9, 8, 7, 6, 5, 2})
+	s.AssertSearch(`request_uri:"/two/*/three"`, docs, []int{10})
+	s.AssertSearch(`request_uri:"*/three/"`, docs, []int{5})
+	s.AssertSearch(`request_uri:"*/three"`, docs, []int{10, 9, 8, 7, 6, 5, 2})
 }
 
 func (s *FractionTestSuite) TestSearchRange() {
@@ -296,28 +296,17 @@ func (s *FractionTestSuite) TestSearchRange() {
 
 	s.insertDocuments(docs)
 
-	s.AssertSearch("level:[1 TO 3]", docs, []int{1, 0})
-	s.AssertSearch(s.seqql("level:[1, 3]"), docs, []int{1, 0})
-	s.AssertSearch("level:[0 TO 63]", docs, []int{5, 4, 3, 2, 1, 0})
-	s.AssertSearch(s.seqql("level:[0, 63]"), docs, []int{5, 4, 3, 2, 1, 0})
+	s.AssertSearch("level:[1, 3]", docs, []int{1, 0})
+	s.AssertSearch("level:[0, 63]", docs, []int{5, 4, 3, 2, 1, 0})
+	s.AssertSearch("level:[-100, 100]", docs, []int{5, 4, 3, 2, 1, 0})
+	s.AssertSearch("level:(0, 3]", docs, []int{1, 0})
 
-	s.AssertSearch("level:{0 TO 3}", docs, []int{0})
-	s.AssertSearch("level:{-100 TO 100}", docs, []int{5, 4, 3, 2, 1, 0})
+	s.AssertSearch("level:[0, *]", docs, []int{6, 5, 4, 3, 2, 1, 0})
+	s.AssertSearch("level:[31, *]", docs, []int{6, 5, 4})
+	s.AssertSearch("level:(31, *]", docs, []int{6, 5})
 
-	s.AssertSearch("level:{0 TO 3]", docs, []int{1, 0})
-	s.AssertSearch(s.seqql("level:(0, 3]"), docs, []int{1, 0})
-	s.AssertSearch("level:[0 TO 3}", docs, []int{0})
-
-	s.AssertSearch("level:[-100 TO 100]", docs, []int{5, 4, 3, 2, 1, 0})
-
-	s.AssertSearch("level:[0 TO *]", docs, []int{6, 5, 4, 3, 2, 1, 0})
-	s.AssertSearch(s.seqql("level:[0, *]"), docs, []int{6, 5, 4, 3, 2, 1, 0})
-	s.AssertSearch("level:[0 TO *}", docs, []int{6, 5, 4, 3, 2, 1, 0})
-	s.AssertSearch("level:[31 TO *]", docs, []int{6, 5, 4})
-	s.AssertSearch("level:{31 TO *]", docs, []int{6, 5})
-
-	s.AssertSearch("level:[200 TO 300]", docs, []int{})
-	s.AssertSearch("level:{127 TO 200]", docs, []int{})
+	s.AssertSearch("level:[200, 300]", docs, []int{})
+	s.AssertSearch("level:(127, 200]", docs, []int{})
 }
 
 func (s *FractionTestSuite) TestSearchIPRange() {
@@ -345,23 +334,23 @@ func (s *FractionTestSuite) TestSearchIPRange() {
 
 	s.insertDocuments(docs)
 
-	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.0.0,192.168.0.255)"), docs, []int{3, 2, 1})
-	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.1.0,192.168.1.255)"), docs, []int{7, 6, 5, 4})
-	s.AssertSearch(s.seqql("client_ip:ip_range(172.10.0.0,172.10.0.255)"), docs, []int{10, 9})
-	s.AssertSearch(s.seqql("client_ip:ip_range(172.10.0.0,172.10.255.255)"), docs, []int{13, 12, 11, 10, 9})
-	s.AssertSearch(s.seqql("client_ip:ip_range(10.53.0.0,10.53.0.255)"), docs, []int{15, 14})
-	s.AssertSearch(s.seqql("client_ip:ip_range(10.53.0.0,10.53.255.255)"), docs, []int{18, 17, 16, 15, 14})
+	s.AssertSearch("client_ip:ip_range(192.168.0.0,192.168.0.255)", docs, []int{3, 2, 1})
+	s.AssertSearch("client_ip:ip_range(192.168.1.0,192.168.1.255)", docs, []int{7, 6, 5, 4})
+	s.AssertSearch("client_ip:ip_range(172.10.0.0,172.10.0.255)", docs, []int{10, 9})
+	s.AssertSearch("client_ip:ip_range(172.10.0.0,172.10.255.255)", docs, []int{13, 12, 11, 10, 9})
+	s.AssertSearch("client_ip:ip_range(10.53.0.0,10.53.0.255)", docs, []int{15, 14})
+	s.AssertSearch("client_ip:ip_range(10.53.0.0,10.53.255.255)", docs, []int{18, 17, 16, 15, 14})
 
-	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.0.0/24)"), docs, []int{3, 2, 1})
-	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.1.0/24)"), docs, []int{7, 6, 5, 4})
-	s.AssertSearch(s.seqql("client_ip:ip_range(172.10.0.0/24)"), docs, []int{10, 9})
-	s.AssertSearch(s.seqql("client_ip:ip_range(10.53.0.0/24)"), docs, []int{15, 14})
+	s.AssertSearch("client_ip:ip_range(192.168.0.0/24)", docs, []int{3, 2, 1})
+	s.AssertSearch("client_ip:ip_range(192.168.1.0/24)", docs, []int{7, 6, 5, 4})
+	s.AssertSearch("client_ip:ip_range(172.10.0.0/24)", docs, []int{10, 9})
+	s.AssertSearch("client_ip:ip_range(10.53.0.0/24)", docs, []int{15, 14})
 
-	s.AssertSearch(s.seqql("client_ip:ip_range(172.10.0.0/16)"), docs, []int{13, 12, 11, 10, 9})
-	s.AssertSearch(s.seqql("client_ip:ip_range(10.53.0.0/16)"), docs, []int{18, 17, 16, 15, 14})
+	s.AssertSearch("client_ip:ip_range(172.10.0.0/16)", docs, []int{13, 12, 11, 10, 9})
+	s.AssertSearch("client_ip:ip_range(10.53.0.0/16)", docs, []int{18, 17, 16, 15, 14})
 
-	s.AssertSearch(s.seqql("client_ip:ip_range(192.168.31.0/32)"), docs, []int{8, 0})
-	s.AssertSearch(s.seqql("client_ip:ip_range(172.10.0.1/32)"), docs, []int{9})
+	s.AssertSearch("client_ip:ip_range(192.168.31.0/32)", docs, []int{8, 0})
+	s.AssertSearch("client_ip:ip_range(172.10.0.1/32)", docs, []int{9})
 }
 
 func (s *FractionTestSuite) TestSearchIn() {
@@ -380,23 +369,23 @@ func (s *FractionTestSuite) TestSearchIn() {
 
 	s.insertDocuments(docs)
 
-	s.AssertSearch(s.seqql("k8s_namespace:in(prod)"), docs, []int{8, 7, 4, 1, 0})
-	s.AssertSearch(s.seqql("k8s_namespace:in(test)"), docs, []int{9, 3, 2})
-	s.AssertSearch(s.seqql("k8s_namespace:in(staging)"), docs, []int{6, 5})
-	s.AssertSearch(s.seqql("k8s_namespace:in(prod,test)"), docs, []int{9, 8, 7, 4, 3, 2, 1, 0})
-	s.AssertSearch(s.seqql("k8s_namespace:in(prod,test,staging)"), docs, []int{9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
+	s.AssertSearch("k8s_namespace:in(prod)", docs, []int{8, 7, 4, 1, 0})
+	s.AssertSearch("k8s_namespace:in(test)", docs, []int{9, 3, 2})
+	s.AssertSearch("k8s_namespace:in(staging)", docs, []int{6, 5})
+	s.AssertSearch("k8s_namespace:in(prod,test)", docs, []int{9, 8, 7, 4, 3, 2, 1, 0})
+	s.AssertSearch("k8s_namespace:in(prod,test,staging)", docs, []int{9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
 
-	s.AssertSearch(s.seqql("k8s_pod:in(proxy-*)"), docs, []int{4, 0})
-	s.AssertSearch(s.seqql("k8s_pod:in(apiserver-*)"), docs, []int{3, 1})
-	s.AssertSearch(s.seqql("k8s_pod:in(scheduler-*)"), docs, []int{5, 2})
-	s.AssertSearch(s.seqql("k8s_pod:in(proxy-*,apiserver-*)"), docs, []int{4, 3, 1, 0})
-	s.AssertSearch(s.seqql("k8s_pod:in(proxy-*,apiserver-*,scheduler-*)"), docs, []int{5, 4, 3, 2, 1, 0})
+	s.AssertSearch("k8s_pod:in(proxy-*)", docs, []int{4, 0})
+	s.AssertSearch("k8s_pod:in(apiserver-*)", docs, []int{3, 1})
+	s.AssertSearch("k8s_pod:in(scheduler-*)", docs, []int{5, 2})
+	s.AssertSearch("k8s_pod:in(proxy-*,apiserver-*)", docs, []int{4, 3, 1, 0})
+	s.AssertSearch("k8s_pod:in(proxy-*,apiserver-*,scheduler-*)", docs, []int{5, 4, 3, 2, 1, 0})
 
-	s.AssertSearch(s.seqql("level:error AND k8s_namespace:in(prod,test)"), docs, []int{3, 1})
-	s.AssertSearch(s.seqql("level:error AND k8s_namespace:in(prod,test) AND k8s_pod:in(apiserver-*)"), docs, []int{3, 1})
+	s.AssertSearch("level:error AND k8s_namespace:in(prod,test)", docs, []int{3, 1})
+	s.AssertSearch("level:error AND k8s_namespace:in(prod,test) AND k8s_pod:in(apiserver-*)", docs, []int{3, 1})
 
 	s.AssertSearch(
-		s.seqql(`level:error AND k8s_namespace:in(prod,test) AND k8s_pod:in(proxy-*,apiserver-*,scheduler-*)`),
+		`level:error AND k8s_namespace:in(prod,test) AND k8s_pod:in(proxy-*,apiserver-*,scheduler-*)`,
 		docs,
 		[]int{3, 1})
 }
@@ -411,7 +400,7 @@ func (s *FractionTestSuite) TestSearchNested() {
 
 	s.insertDocuments(docs)
 
-	s.AssertSearchIgnoreTotal("spans.span_id:*", docs, []int{3, 2, 1, 0})
+	s.AssertSearch("spans.span_id:*", docs, []int{3, 2, 1, 0})
 	s.AssertSearch("spans.span_id:1", docs, []int{2, 0})
 	s.AssertSearch("spans.span_id:2", docs, []int{1, 0})
 	s.AssertSearch("spans.span_id:3", docs, []int{2, 1})
@@ -1051,25 +1040,6 @@ func (s *FractionTestSuite) TestFractionInfo() {
 type searchOption func(*processor.SearchParams) error
 
 func (s *FractionTestSuite) query(queryString string, options ...searchOption) *processor.SearchParams {
-	queryAst, err := parser.ParseQuery(queryString, s.mapping)
-	s.Require().NoError(err, "failed to parse query: %s", queryString)
-
-	params := &processor.SearchParams{
-		AST:   queryAst,
-		From:  seq.MID(0),
-		To:    seq.MID(math.MaxUint64),
-		Limit: math.MaxInt32,
-	}
-
-	for _, option := range options {
-		err := option(params)
-		s.Require().NoError(err, "option can not be applied")
-	}
-
-	return params
-}
-
-func (s *FractionTestSuite) seqql(queryString string, options ...searchOption) *processor.SearchParams {
 	queryAst, err := parser.ParseSeqQL(queryString, s.mapping)
 	s.Require().NoError(err, "failed to parse query: %s", queryString)
 
@@ -1141,16 +1111,12 @@ func withAggQuery(aggQuery processor.AggQuery) searchOption {
 	}
 }
 
-func (s *FractionTestSuite) AssertSearchIgnoreTotal(query string, originalDocs []string, expectedIndexes []int) {
-	s.AssertSearchWithSearchParams(s.query(query), originalDocs, expectedIndexes, false)
-}
-
 func (s *FractionTestSuite) AssertSearch(queryObject interface{}, originalDocs []string, expectedIndexes []int) {
 	switch q := queryObject.(type) {
 	case string:
-		s.AssertSearchWithSearchParams(s.query(q), originalDocs, expectedIndexes, true)
+		s.AssertSearchWithSearchParams(s.query(q), originalDocs, expectedIndexes)
 	case *processor.SearchParams:
-		s.AssertSearchWithSearchParams(q, originalDocs, expectedIndexes, true)
+		s.AssertSearchWithSearchParams(q, originalDocs, expectedIndexes)
 	default:
 		s.Require().Fail("type for query object not supported")
 	}
@@ -1159,16 +1125,7 @@ func (s *FractionTestSuite) AssertSearch(queryObject interface{}, originalDocs [
 func (s *FractionTestSuite) AssertSearchWithSearchParams(
 	params *processor.SearchParams,
 	originalDocs []string,
-	expectedIndexes []int,
-	checkTotal bool) {
-
-	var withTotals = []bool{false}
-
-	// We can check total only if limit is not set. Otherwise, total returns a count
-	// of all docs which match the query
-	if checkTotal && params.Limit == math.MaxInt32 {
-		withTotals = append(withTotals, true)
-	}
+	expectedIndexes []int) {
 
 	var sortOrders = []seq.DocsOrder{params.Order}
 	if params.Order == seq.DocsOrderDesc && params.Limit == math.MaxInt32 {
@@ -1176,39 +1133,28 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 	}
 
 	for _, order := range sortOrders {
-		for _, withTotal := range withTotals {
-			params.Order = order
-			params.WithTotal = withTotal
+		params.Order = order
 
-			qpr, err := s.fraction.Search(context.Background(), *params)
-			s.Require().NoError(err, "search failed for query with order=%v", order)
+		qpr, err := s.fraction.Search(context.Background(), *params)
+		s.Require().NoError(err, "search failed for query with order=%v", order)
 
-			if withTotal {
-				s.Require().Equal(uint64(len(expectedIndexes)), qpr.Total, "qpr.total doesn't match")
-			} else {
-				s.Require().Equal(uint64(0), qpr.Total, "qpr has total but not expected to have")
-			}
+		s.Require().Equal(len(expectedIndexes), qpr.IDs.Len(), "doc count doesn't match")
 
-			s.Require().Equal(len(expectedIndexes), qpr.IDs.Len(), "doc count doesn't match")
+		docs, err := s.fraction.Fetch(context.Background(), qpr.IDs.IDs())
+		s.Require().NoError(err, "failed to fetch docs")
 
-			docs, err := s.fraction.Fetch(context.Background(), qpr.IDs.IDs())
-			s.Require().NoError(err, "failed to fetch docs")
+		if order.IsReverse() {
+			slices.Reverse(docs)
+		}
 
-			if order.IsReverse() {
-				slices.Reverse(docs)
-			}
+		fetchedDocs := make([]string, 0, len(docs))
+		for _, doc := range docs {
+			fetchedDocs = append(fetchedDocs, string(doc))
+		}
 
-			fetchedDocs := make([]string, 0, len(docs))
-			for _, doc := range docs {
-				fetchedDocs = append(fetchedDocs, string(doc))
-			}
-
-			for i, fetchedDoc := range fetchedDocs {
-				if i < len(expectedIndexes) {
-					expectedDoc := originalDocs[expectedIndexes[i]]
-					s.Require().Equal(expectedDoc, fetchedDoc, "doc at index %d doesn't match", i)
-				}
-			}
+		for i, fetchedDoc := range fetchedDocs {
+			expectedDoc := originalDocs[expectedIndexes[i]]
+			s.Require().Equal(expectedDoc, fetchedDoc, "doc at index %d doesn't match", i)
 		}
 	}
 }
@@ -1269,22 +1215,16 @@ func (s *FractionTestSuite) AssertHist(
 
 func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
 	baseName := filepath.Join(s.tmpDir, "test_fraction")
-	activeIndexer := NewActiveIndexer(4, 10)
-	activeIndexer.Start()
-	s.activeIndexers = append(s.activeIndexers, activeIndexer)
-
 	active := NewActive(
 		baseName,
-		activeIndexer,
+		s.activeIndexer,
 		storage.NewReadLimiter(1, nil),
-		newSmallCache[[]byte](),
-		newSmallCache[[]byte](),
+		cache.NewCache[[]byte](nil, nil),
+		cache.NewCache[[]byte](nil, nil),
 		s.config,
 	)
 
-	proc := indexer.NewProcessor(s.mapping, s.tokenizers, 0, 0, 0)
-	compressor := indexer.GetDocsMetasCompressor(3, 3)
-	defer indexer.PutDocMetasCompressor(compressor)
+	var wg sync.WaitGroup
 
 	for _, docs := range bulks {
 		docsCopy := make([]string, len(docs))
@@ -1303,18 +1243,19 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
 			return d, nil
 		}
 
+		proc := indexer.NewProcessor(s.mapping, s.tokenizers, 0, 0, 0)
+		compressor := indexer.GetDocsMetasCompressor(3, 3)
 		_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
 		s.Require().NoError(err, "processing bulk failed")
 
 		compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
 		docsBlock, metasBlock := compressor.DocsMetas()
 
-		var wg sync.WaitGroup
 		wg.Add(1)
 		err = active.Append(docsBlock, metasBlock, &wg)
 		s.Require().NoError(err, "append to active failed")
-		wg.Wait()
 	}
+	wg.Wait()
 	return active
 }
 
@@ -1328,13 +1269,13 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 	s.Require().NoError(err, "Sealing failed")
 
 	indexCache := &IndexCache{
-		MIDs:       newSmallCache[[]byte](),
-		RIDs:       newSmallCache[[]byte](),
-		Params:     newSmallCache[seqids.BlockParams](),
-		LIDs:       newSmallCache[*lids.Block](),
-		Tokens:     newSmallCache[*token.Block](),
-		TokenTable: newSmallCache[token.Table](),
-		Registry:   newSmallCache[[]byte](),
+		MIDs:       cache.NewCache[[]byte](nil, nil),
+		RIDs:       cache.NewCache[[]byte](nil, nil),
+		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
+		LIDs:       cache.NewCache[*lids.Block](nil, nil),
+		Tokens:     cache.NewCache[*token.Block](nil, nil),
+		TokenTable: cache.NewCache[token.Table](nil, nil),
+		Registry:   cache.NewCache[[]byte](nil, nil),
 	}
 
 	sealed := NewSealedPreloaded(
@@ -1342,7 +1283,7 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 		preloaded,
 		storage.NewReadLimiter(1, nil),
 		indexCache,
-		newSmallCache[[]byte](),
+		cache.NewCache[[]byte](nil, nil),
 		s.config,
 	)
 	active.Release()
@@ -1432,20 +1373,20 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 	sealed.close("closed")
 
 	indexCache := &IndexCache{
-		MIDs:       newSmallCache[[]byte](),
-		RIDs:       newSmallCache[[]byte](),
-		Params:     newSmallCache[seqids.BlockParams](),
-		LIDs:       newSmallCache[*lids.Block](),
-		Tokens:     newSmallCache[*token.Block](),
-		TokenTable: newSmallCache[token.Table](),
-		Registry:   newSmallCache[[]byte](),
+		MIDs:       cache.NewCache[[]byte](nil, nil),
+		RIDs:       cache.NewCache[[]byte](nil, nil),
+		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
+		LIDs:       cache.NewCache[*lids.Block](nil, nil),
+		Tokens:     cache.NewCache[*token.Block](nil, nil),
+		TokenTable: cache.NewCache[token.Table](nil, nil),
+		Registry:   cache.NewCache[[]byte](nil, nil),
 	}
 
 	sealed = NewSealed(
 		sealed.BaseFileName,
 		storage.NewReadLimiter(1, nil),
 		indexCache,
-		newSmallCache[[]byte](),
+		cache.NewCache[[]byte](nil, nil),
 		nil,
 		s.config)
 	s.fraction = sealed
