@@ -158,7 +158,7 @@ func TestReplayContextCancel(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Equal(t, err, context.DeadlineExceeded)
-	assert.Equal(t, context.DeadlineExceeded, ctx.Err())
+	assert.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
 }
 
 func TestReplaySingleNonEmptyFrac(t *testing.T) {
