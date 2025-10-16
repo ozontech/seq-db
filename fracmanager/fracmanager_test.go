@@ -156,8 +156,7 @@ func TestReplayContextCancel(t *testing.T) {
 		DataDir:       dataDir,
 	})
 
-	assert.Error(t, err)
-	assert.Equal(t, err, context.DeadlineExceeded)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
 }
 
