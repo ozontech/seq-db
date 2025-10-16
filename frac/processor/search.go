@@ -153,7 +153,7 @@ func iterateEvalTree(
 	timerAgg := sw.Timer("agg_node_count")
 
 	for i := 0; ; i++ {
-		if i%1000 == 0 && util.IsCancelled(ctx) {
+		if i&1023 == 0 && util.IsCancelled(ctx) {
 			return total, ids, histogram, ctx.Err()
 		}
 
