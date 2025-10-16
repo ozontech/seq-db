@@ -1513,9 +1513,18 @@ func (s *RemoteFractionTestSuite) TearDownTest() {
 	s.TearDownTestCommon()
 }
 
-func TestFractionSuites(t *testing.T) {
+func TestActiveFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(ActiveFractionTestSuite))
+}
+
+func TestSealedFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(SealedFractionTestSuite))
+}
+
+func TestSealedLoadedFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(SealedLoadedFractionTestSuite))
+}
+
+func TestRemoteFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(RemoteFractionTestSuite))
 }
