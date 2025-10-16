@@ -352,13 +352,14 @@ func TestReplayFractionsWithMultipleEmptyFracs(t *testing.T) {
 
 	replayedFracs := fm.getLocalFracs()
 
-	assert.Equal(t, 5, len(replayedFracs), "only non-empty fracs should remain")
+	assert.Equal(t, len(nonEmptyFracs)+1, len(replayedFracs), "only non-empty fracs and one active empty frac should remain")
 
 	for i := 0; i < 4; i++ {
 		assert.Equal(t, nonEmptyFracs[i].Name(), replayedFracs[i].Info().Name(), "fraction %d should have same name", i)
 		assert.Equal(t, nonEmptyFracs[i].DocsTotal, replayedFracs[i].Info().DocsTotal, "fraction %d should have same doc count", i)
 		assert.Greater(t, replayedFracs[i].Info().SealingTime, uint64(0), "replayed frac %d must be sealed", i)
 	}
+	assert.Equal(t, uint32(0), fm.Active().Info().DocsTotal, "new active fraction should be empty")
 
 	fm.Stop()
 }
