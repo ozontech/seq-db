@@ -100,7 +100,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 	}
 
 	var err error
-	s.tmpDir, err = os.MkdirTemp("", "fraction_test_*")
+	s.tmpDir, err = os.MkdirTemp("/dev/shm", "fraction_test_*")
 	s.Require().NoError(err)
 }
 
@@ -1483,13 +1483,13 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 		s.Require().True(offloaded, "didn't offload frac")
 
 		indexCache := &IndexCache{
-			MIDs:       newSmallCache[[]byte](),
-			RIDs:       newSmallCache[[]byte](),
-			Params:     newSmallCache[seqids.BlockParams](),
-			LIDs:       newSmallCache[*lids.Block](),
-			Tokens:     newSmallCache[*token.Block](),
-			TokenTable: newSmallCache[token.Table](),
-			Registry:   newSmallCache[[]byte](),
+			MIDs:       cache.NewCache[[]byte](nil, nil),
+			RIDs:       cache.NewCache[[]byte](nil, nil),
+			Params:     cache.NewCache[seqids.BlockParams](nil, nil),
+			LIDs:       cache.NewCache[*lids.Block](nil, nil),
+			Tokens:     cache.NewCache[*token.Block](nil, nil),
+			TokenTable: cache.NewCache[token.Table](nil, nil),
+			Registry:   cache.NewCache[[]byte](nil, nil),
 		}
 
 		remoteFrac := NewRemote(
@@ -1497,7 +1497,7 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			sealed.BaseFileName,
 			storage.NewReadLimiter(1, nil),
 			indexCache,
-			newSmallCache[[]byte](),
+			cache.NewCache[[]byte](nil, nil),
 			sealed.info,
 			s.config,
 			s3cli)
@@ -1514,8 +1514,8 @@ func (s *RemoteFractionTestSuite) TearDownTest() {
 }
 
 func TestFractionSuites(t *testing.T) {
-	//suite.Run(t, new(ActiveFractionTestSuite))
-	//suite.Run(t, new(SealedFractionTestSuite))
-	//suite.Run(t, new(SealedLoadedFractionTestSuite))
+	suite.Run(t, new(ActiveFractionTestSuite))
+	suite.Run(t, new(SealedFractionTestSuite))
+	suite.Run(t, new(SealedLoadedFractionTestSuite))
 	suite.Run(t, new(RemoteFractionTestSuite))
 }
