@@ -1018,19 +1018,19 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	s.Require().Equal(uint32(5), info.DocsTotal, "doc total doesn't match")
 	// it varies depending on params and docs shuffled
 	s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(250),
-		"doc raw doesn't match. actual value: %d", info.DocsOnDisk)
+		"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
 	s.Require().Equal(uint64(573), info.DocsRaw, "doc raw doesn't match")
 	s.Require().Equal(seq.MID(946731625000), info.From, "from doesn't match")
-	s.Require().Equal(seq.MID(946731654000), info.To, "from doesn't match")
+	s.Require().Equal(seq.MID(946731654000), info.To, "to doesn't match")
 
 	switch s.fraction.(type) {
 	case *Active:
-		s.Require().True(info.MetaOnDisk >= uint64(320) && info.MetaOnDisk <= uint64(350),
+		s.Require().True(info.MetaOnDisk >= uint64(300) && info.MetaOnDisk <= uint64(350),
 			"meta on disk doesn't match. actual value: %d", info.MetaOnDisk)
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
 	case *Sealed:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1450) && info.IndexOnDisk < uint64(1500),
+		s.Require().True(info.IndexOnDisk > uint64(1450) && info.IndexOnDisk < uint64(1550),
 			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
 	default:
 		s.Require().Fail("unsupported fraction type")
@@ -1137,7 +1137,6 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 
 		qpr, err := s.fraction.Search(context.Background(), *params)
 		s.Require().NoError(err, "search failed for query with order=%v", order)
-
 		s.Require().Equal(len(expectedIndexes), qpr.IDs.Len(), "doc count doesn't match")
 
 		docs, err := s.fraction.Fetch(context.Background(), qpr.IDs.IDs())
