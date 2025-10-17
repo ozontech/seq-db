@@ -100,7 +100,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 	}
 
 	var err error
-	s.tmpDir, err = os.MkdirTemp("/dev/shm", "fraction_test_*")
+	s.tmpDir, err = os.MkdirTemp("", "fraction_test_*")
 	s.Require().NoError(err)
 }
 
