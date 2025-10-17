@@ -47,12 +47,12 @@ type FractionTestSuite struct {
 	insertDocuments func(docs ...[]string)
 }
 
-func (s *FractionTestSuite) SetupSuite() {
+func (s *FractionTestSuite) SetupSuiteCommon() {
 	s.activeIndexer = NewActiveIndexer(4, 10)
 	s.activeIndexer.Start()
 }
 
-func (s *FractionTestSuite) TearDownSuite() {
+func (s *FractionTestSuite) TearDownSuiteCommon() {
 	s.activeIndexer.Stop()
 }
 
@@ -1340,6 +1340,10 @@ type ActiveFractionTestSuite struct {
 	FractionTestSuite
 }
 
+func (s *ActiveFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
+}
+
 func (s *ActiveFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 
@@ -1366,11 +1370,19 @@ func (s *ActiveFractionTestSuite) TearDownTest() {
 	s.TearDownTestCommon()
 }
 
+func (s *ActiveFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
+}
+
 /*
 SealedFractionTestSuite run tests for sealed fraction. Active fraction is created first and then sealed.
 */
 type SealedFractionTestSuite struct {
 	FractionTestSuite
+}
+
+func (s *SealedFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
 }
 
 func (s *SealedFractionTestSuite) SetupTest() {
@@ -1392,12 +1404,20 @@ func (s *SealedFractionTestSuite) TearDownTest() {
 	s.TearDownTestCommon()
 }
 
+func (s *SealedFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
+}
+
 /*
 SealedLoadedFractionTestSuite run tests for sealed fraction. Active fraction is created first and then sealed.
 Sealed fraction is then loaded with sealed.NewSealed call
 */
 type SealedLoadedFractionTestSuite struct {
 	FractionTestSuite
+}
+
+func (s *SealedLoadedFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
 }
 
 func (s *SealedLoadedFractionTestSuite) SetupTest() {
@@ -1409,6 +1429,18 @@ func (s *SealedLoadedFractionTestSuite) SetupTest() {
 		}
 		s.fraction = s.newSealedLoaded(bulks...)
 	}
+}
+
+func (s *SealedLoadedFractionTestSuite) TearDownTest() {
+	if s.fraction != nil {
+		s.fraction.Suicide()
+		s.fraction = nil
+	}
+	s.TearDownTestCommon()
+}
+
+func (s *SealedLoadedFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
 }
 
 func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Sealed {
@@ -1436,35 +1468,37 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 	return sealed
 }
 
-func (s *SealedLoadedFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		s.fraction.Suicide()
-		s.fraction = nil
-	}
-	s.TearDownTestCommon()
-}
-
 /*
-Remote frac
+RemoteFractionTestSuite runs tests for remote fraction. Fraction is first sealed, then uploaded
+to fakes3 backend.
 */
 type RemoteFractionTestSuite struct {
 	FractionTestSuite
+
+	s3Backend *s3mem.Backend
+	s3server  *httptest.Server
+}
+
+func (s *RemoteFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
+
+	s.s3Backend = s3mem.New()
+	s.s3server = httptest.NewServer(gofakes3.New(s.s3Backend).Server())
 }
 
 func (s *RemoteFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 
-	s3fakeBackend := s3mem.New()
-	err := s3fakeBackend.CreateBucket("bucket")
+	bucketName := fmt.Sprintf("bucket_%d", rand.Int())
+	err := s.s3Backend.CreateBucket(bucketName)
 	s.Require().NoError(err, "create bucket failed")
-	s3server := httptest.NewServer(gofakes3.New(s3fakeBackend).Server())
 
 	s3cli, err := s3.NewClient(
-		s3server.URL,
+		s.s3server.URL,
 		"ACCESS_KEY",
 		"SECRET_KEY",
-		"reg",
-		"bucket",
+		"eu-west-3",
+		bucketName,
 		3,
 	)
 	s.Require().NoError(err, "s3 client setup failed")
@@ -1511,6 +1545,12 @@ func (s *RemoteFractionTestSuite) TearDownTest() {
 		s.fraction = nil
 	}
 	s.TearDownTestCommon()
+}
+
+func (s *RemoteFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
+
+	s.s3server.Close()
 }
 
 func TestActiveFractionTestSuite(t *testing.T) {
