@@ -62,6 +62,7 @@ func (c *Config) storeValidations() []validateFn {
 
 		greaterThan("resources.reader_workers", 0, c.Resources.ReaderWorkers),
 		greaterThan("resources.search_workers", 0, c.Resources.SearchWorkers),
+		greaterThan("resources.replay_workers", 0, c.Resources.ReplayWorkers),
 		greaterThan("resources.cache_size", 0, c.Resources.CacheSize),
 
 		inRange("compression.sealed_zstd_compression_level", -7, 22, c.Compression.SealedZstdCompressionLevel),
