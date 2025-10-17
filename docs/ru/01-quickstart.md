@@ -123,7 +123,6 @@ curl --request POST \
 curl --request POST   \
   --url http://localhost:9002/search \
   --header 'Content-Type: application/json' \
-  --header 'Grpc-Metadata-use-seq-ql: true' \
   --data-binary '
   {
     "query":{

@@ -86,7 +86,6 @@ func main() {
 	config.CaseSensitive = cfg.Indexing.CaseSensitive
 	config.SkipFsync = cfg.Resources.SkipFsync
 	config.MaxRequestedDocuments = cfg.Limits.SearchDocs
-	config.UseSeqQLByDefault = *flagUseSeqQLByDefault
 
 	backoff.DefaultConfig.MaxDelay = 10 * time.Second
 
