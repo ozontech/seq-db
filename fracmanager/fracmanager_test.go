@@ -393,7 +393,7 @@ func TestMatureMode(t *testing.T) {
 
 		checkFn(fm)
 
-		fm.fracProvider.Stop()
+		fm.indexer.Stop()
 	}
 
 	id := 1
@@ -432,15 +432,6 @@ func TestMatureMode(t *testing.T) {
 		assert.Equal(t, true, fm.Mature(), "the data directory is not empty at startup and the .immature file must be missing")
 	})
 
-}
-
-func TestNewULID(t *testing.T) {
-	fm := NewFracManager(context.Background(), &Config{}, nil)
-	ulid1 := fm.nextFractionID()
-	ulid2 := fm.nextFractionID()
-	assert.NotEqual(t, ulid1, ulid2, "ULIDs should be different")
-	assert.Equal(t, 26, len(ulid1), "ULID should have length 26")
-	assert.Greater(t, ulid2, ulid1)
 }
 
 func TestOldestCT(t *testing.T) {

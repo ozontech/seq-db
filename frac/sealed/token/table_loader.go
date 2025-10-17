@@ -2,6 +2,8 @@ package token
 
 import (
 	"encoding/binary"
+	"slices"
+	"unsafe"
 
 	"go.uber.org/zap"
 
@@ -115,15 +117,39 @@ type FieldTable struct {
 	Entries []*TableEntry // expect that TableEntry are necessarily ordered by StartTID here
 }
 
+func (b TableBlock) packedSize() int {
+	const sizeOfUint32 = int(unsafe.Sizeof(uint32(0)))
+	size := 0
+	for _, fieldData := range b.FieldsTables {
+		// field name
+		size += sizeOfUint32
+		size += len(fieldData.Field)
+		// entries count
+		size += sizeOfUint32
+		for _, entry := range fieldData.Entries {
+			size += sizeOfUint32
+			size += sizeOfUint32
+			size += sizeOfUint32
+			size += sizeOfUint32
+			// MinVal
+			size += sizeOfUint32
+			size += len(entry.MinVal)
+			// MaxVal
+			size += sizeOfUint32
+			size += len(entry.MaxVal)
+		}
+	}
+	return size
+}
+
 func (b TableBlock) Pack(buf []byte) []byte {
+	buf = slices.Grow(buf, b.packedSize())
 	for _, fieldData := range b.FieldsTables {
 		// field name
 		buf = binary.LittleEndian.AppendUint32(buf, uint32(len(fieldData.Field)))
 		buf = append(buf, fieldData.Field...)
-
 		// entries count
 		buf = binary.LittleEndian.AppendUint32(buf, uint32(len(fieldData.Entries)))
-
 		// entries
 		for _, entry := range fieldData.Entries {
 			buf = binary.LittleEndian.AppendUint32(buf, entry.StartTID)

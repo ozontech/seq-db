@@ -170,9 +170,5 @@ func (s *Searcher) fracSearch(ctx context.Context, params processor.SearchParams
 			err = fmt.Errorf("internal error: search panicked on fraction %s, error=%w", f.Info().Name(), panicData)
 		}
 	}()
-
-	dp, release := f.DataProvider(ctx)
-	defer release()
-
-	return dp.Search(params)
+	return f.Search(ctx, params)
 }

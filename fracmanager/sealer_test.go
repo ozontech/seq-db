@@ -22,6 +22,7 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 	testscommon "github.com/ozontech/seq-db/tests/common"
 )
 
@@ -107,7 +108,11 @@ func BenchmarkSealing_WithSort(b *testing.B) {
 
 func runSealingBench(b *testing.B, cfg *frac.Config) {
 	cm := NewCacheMaintainer(uint64(units.MiB)*64, uint64(units.MiB)*64, nil)
-	fp := newFractionProvider(cfg, nil, cm, 1, 1)
+
+	idx := frac.NewActiveIndexer(1, 1)
+	rl := storage.NewReadLimiter(1, storeBytesRead)
+	fp := newFractionProvider(&Config{Fraction: *cfg}, nil, cm, rl, idx)
+	idx.Start()
 
 	dataDir := filepath.Join(b.TempDir(), "BenchmarkSealing")
 	testscommon.RecreateDir(dataDir)
@@ -115,7 +120,7 @@ func runSealingBench(b *testing.B, cfg *frac.Config) {
 	active := fp.NewActive(filepath.Join(dataDir, "test"))
 	err := fillActiveFraction(active)
 	assert.NoError(b, err)
-	fp.Stop()
+	idx.Stop()
 
 	seal := func(active *frac.Active, params common.SealParams) (*sealed.PreloadedData, error) {
 		src, err := frac.NewActiveSealingSource(active, params)
