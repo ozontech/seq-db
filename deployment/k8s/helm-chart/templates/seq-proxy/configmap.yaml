@@ -9,8 +9,6 @@ metadata:
     release: {{ .Release.Name | quote }}
 data:
   config.yaml: |
-    storage:
-      data_dir: /data
     cluster:
       replicas: {{ .Values.seqproxy.cluster.replicas }}
       shuffle_replicas: {{ .Values.seqproxy.cluster.shuffle_replicas }}
