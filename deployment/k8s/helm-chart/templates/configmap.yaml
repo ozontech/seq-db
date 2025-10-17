@@ -25,7 +25,7 @@ data:
       path: /mappings/mappings.yaml
       {{- end }}
       update_period: {{ .Values.mapping.update_period }}
-    {{- with .Values.config }}
-    {{ toYaml . | nindent 4 }}
+    {{- with .Values.extendedConfig }}
+    {{- toYaml . | nindent 4 }}
     {{- else }}
     {{- end }}

@@ -115,7 +115,7 @@ mapping:
 
 storage: {}
 
-config: {}
+extendedConfig: {}
 
 seqproxy:
   enabled: true
@@ -140,7 +140,7 @@ seqproxy:
   nameOverride: ""
   fullnameOverride: ""
 
-  config: {}
+  extendedConfig: {}
 
   cluster:
     replicas: 1

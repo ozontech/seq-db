@@ -25,10 +25,15 @@ storage:
   frac_size: "256MiB"
   total_size: "10GiB"
 
+extendedConfig:
+  compression:
+    docs_zstd_compression_level: 1
+    metas_zstd_compression_level: 1
+
 seqproxy:
   ingress:
     enabled: true
-  config:
+  extendedConfig:
     slow_logs:
       bulk_threshold: 0ms
       fetch_threshold: 3s
