@@ -391,8 +391,10 @@ func TestParseSeqQLError(t *testing.T) {
 	// Test pipes.
 	test(`message:--||`, `unknown pipe: |`)
 	test(`source_type:access* | fields message | fields except login:admin`, `parsing 'fields' pipe: unexpected symbol ":"`)
-	test(`source_type:access* | fields message | fields login`, `multiple field filters is not allowed`)
+	test(`source_type:access* | fields message | fields login`, `multiple field filters are not allowed`)
 	test(`* | fields event, `, `parsing 'fields' pipe: trailing comma not allowed`)
+	test(`* | histogram 1s | histogram 1s`, `multiple histograms are not allowed`)
+	test(`* | histogram 123`, `parsing 'histogram' pipe: can't parse histogram interval`)
 }
 
 // edited from the original answer https://stackoverflow.com/a/30230552/11750924

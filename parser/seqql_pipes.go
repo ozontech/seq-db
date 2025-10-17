@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/ozontech/seq-db/util"
 )
 
 type Pipe interface {
@@ -14,6 +17,8 @@ type Pipe interface {
 func parsePipes(lex *lexer) ([]Pipe, error) {
 	// Counter of 'fields' pipes.
 	fieldFilters := 0
+	histograms := 0
+
 	var pipes []Pipe
 	for !lex.IsEnd() {
 		if !lex.IsKeyword("|") {
@@ -29,14 +34,25 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 			}
 			pipes = append(pipes, p)
 			fieldFilters++
+		case lex.IsKeyword("histogram"):
+			p, err := parsePipeHistogram(lex)
+			if err != nil {
+				return nil, fmt.Errorf("parsing 'histogram' pipe: %s", err)
+			}
+			pipes = append(pipes, p)
+			histograms++
 		default:
 			return nil, fmt.Errorf("unknown pipe: %s", lex.Token)
 		}
 
 		if fieldFilters > 1 {
-			return nil, fmt.Errorf("multiple field filters is not allowed")
+			return nil, fmt.Errorf("multiple field filters are not allowed")
+		}
+		if histograms > 1 {
+			return nil, fmt.Errorf("multiple histograms are not allowed")
 		}
 	}
+
 	return pipes, nil
 }
 
@@ -110,6 +126,51 @@ func parseFieldList(lex *lexer) ([]string, error) {
 	return fields, nil
 }
 
+type PipeHistogram struct {
+	Interval int64
+}
+
+func (h *PipeHistogram) Name() string {
+	return "histogram"
+}
+
+func (h *PipeHistogram) DumpSeqQL(o *strings.Builder) {
+	o.WriteString("histogram ")
+	interval := time.Duration(h.Interval) * time.Millisecond
+	o.WriteString(quoteTokenIfNeeded(interval.String()))
+}
+
+func parsePipeHistogram(lex *lexer) (*PipeHistogram, error) {
+	if !lex.IsKeyword("histogram") {
+		return nil, fmt.Errorf("missing 'histogram' keyword")
+	}
+
+	lex.Next()
+
+	interval, err := parseInterval(lex)
+	if err != nil {
+		return nil, fmt.Errorf("can't parse histogram interval")
+	}
+
+	return &PipeHistogram{
+		Interval: interval,
+	}, nil
+}
+
+func parseInterval(lex *lexer) (int64, error) {
+	interval, err := parseCompositeTokenReplaceWildcards(lex)
+	if err != nil {
+		return 0, err
+	}
+
+	parsed, err := util.ParseDuration(interval)
+	if err != nil {
+		return 0, err
+	}
+
+	return parsed.Milliseconds(), nil
+}
+
 func quoteTokenIfNeeded(token string) string {
 	if !needQuoteToken(token) {
 		return token
@@ -149,7 +210,7 @@ var reservedKeywords = uniqueTokens([]string{
 	"|",
 
 	// Pipe specific keywords.
-	"fields", "except",
+	"fields", "except", "histogram",
 })
 
 func needQuoteToken(s string) bool {

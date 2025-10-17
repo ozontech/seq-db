@@ -1307,6 +1307,18 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 			histSum += v
 		}
 		assert.Equal(t, uint64(allDocsNum), histSum, "the sum of the histogram should be equal to the number of all documents")
+
+		// histogram from pipe
+		qpr, _, _, err = env.Search(`service:x* | histogram 60s`, size, setup.NoFetch())
+		require.NoError(t, err, "should be no errors")
+		assert.Equal(t, uint64(allDocsNum), qpr.Total, "we must scann all docs in withTotal=true mode")
+		assert.Equal(t, size, len(qpr.IDs), "we must get only size ids")
+		assert.Equal(t, histCnt, len(qpr.Histogram))
+		histSum = uint64(0)
+		for _, v := range qpr.Histogram {
+			histSum += v
+		}
+		assert.Equal(t, uint64(allDocsNum), histSum, "the sum of the histogram should be equal to the number of all documents")
 	}
 
 	s.T().Run("ActiveFraction", test)

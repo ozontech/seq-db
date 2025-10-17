@@ -44,7 +44,7 @@ func (g *grpcV1) ComplexSearch(
 		resp.Aggs = makeProtoAggregation(allAggregations)
 		aggTr.Done()
 	}
-	if req.Hist != nil {
+	if sResp.qpr.Histogram != nil {
 		histTr := tr.NewChild("histogram")
 		resp.Hist = makeProtoHistogram(sResp.qpr)
 		histTr.Done()

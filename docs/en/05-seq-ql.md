@@ -123,7 +123,7 @@ trace_id:in(123e4567-e89b-12d3-a456-426655440000, '123e4567-e89b-12d3-a456-42665
 Pipes in seq-ql are used to sequentially process data.
 Pipes enable data transformation, enrichment, filtering, aggregation, and formatting of results.
 
-#### `fields` pipe
+### `fields` pipe
 
 The `fields` pipe allows removing unnecessary fields from documents in the output.
 This is useful when only specific fields are needed, especially when exporting large datasets to reduce network load.
@@ -146,6 +146,18 @@ source_type:access* | fields except payload, cookies
 ```
 
 In this example, the `payload` and `cookies` fields will be excluded from the result.
+
+### `histogram` pipe
+
+The `histogram` pipe allows to get a histogram by query.
+
+The pipe takes `interval` parameter that specifies bucket size in time duration format: `10s` for ten seconds, `1h` for one hour etc.
+
+Example:
+
+```seq-ql
+source_type:access* | histogram 30s
+```
 
 ## Comments
 

@@ -237,6 +237,14 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs fracmanager.Lis
 	}
 	r.Params.AST = ast.Root
 
+	// extract parameters from pipes
+	for _, pipe := range ast.Pipes {
+		p, ok := pipe.(*parser.PipeHistogram)
+		if ok && r.Params.HistInterval == 0 {
+			r.Params.HistInterval = uint64(p.Interval)
+		}
+	}
+
 	now := timeNow()
 	if r.Retention < minRetention {
 		return fmt.Errorf("retention time should be at least %s, got %s", minRetention, r.Retention)
@@ -350,6 +358,14 @@ func (as *AsyncSearcher) doSearch(id string, fracs fracmanager.List) {
 			panic(fmt.Errorf("BUG: search query must be valid: %s", err))
 		}
 		info.Request.Params.AST = ast.Root
+
+		// extract parameters from pipes
+		for _, pipe := range ast.Pipes {
+			p, ok := pipe.(*parser.PipeHistogram)
+			if ok && info.Request.Params.HistInterval == 0 {
+				info.Request.Params.HistInterval = uint64(p.Interval)
+			}
+		}
 	}
 
 	fracsByName := make(map[string]frac.Fraction)

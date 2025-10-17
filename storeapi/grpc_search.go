@@ -99,7 +99,7 @@ func (g *GrpcV1) doSearch(
 	t := time.Now()
 
 	parseQueryTr := tr.NewChild("parse query")
-	ast, err := g.parseQuery(req.Query)
+	ast, pipes, err := g.parseQuery(req.Query)
 	if err != nil {
 		parseQueryTr.Done()
 		if code, ok := parseStoreError(err); ok {
@@ -125,7 +125,7 @@ func (g *GrpcV1) doSearch(
 			zap.String("query", req.Query),
 		)
 
-		parseQuery, err := g.parseQuery(g.config.Filter.Query)
+		parseQuery, _, err := g.parseQuery(g.config.Filter.Query)
 		if err != nil {
 			parseQueryTr.Done()
 			if code, ok := parseStoreError(err); ok {
@@ -152,10 +152,20 @@ func (g *GrpcV1) doSearch(
 	const millisecondsInSecond = float64(time.Second / time.Millisecond)
 	metric.SearchRangesSeconds.Observe(float64(to-from) / millisecondsInSecond)
 
+	histInterval := req.Interval
+
+	// extract parameters from pipes
+	for _, pipe := range pipes {
+		p, ok := pipe.(*parser.PipeHistogram)
+		if ok && histInterval == 0 {
+			histInterval = p.Interval
+		}
+	}
+
 	searchParams := processor.SearchParams{
 		AST:          ast,
 		AggQ:         aggQ,
-		HistInterval: uint64(req.Interval),
+		HistInterval: uint64(histInterval),
 		From:         from,
 		To:           to,
 		Limit:        limit,
@@ -216,18 +226,23 @@ func (g *GrpcV1) doSearch(
 	return buildSearchResponse(qpr), nil
 }
 
-func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, error) {
+func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, []parser.Pipe, error) {
 	if query == "" {
 		query = seq.TokenAll + ":*"
 	}
 
+	var ast *parser.ASTNode
+	var pipes []parser.Pipe
+
 	seqql, err := parser.ParseSeqQL(query, g.mappingProvider.GetMapping())
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "can't parse query %q: %v", query, err)
+		return nil, nil, status.Errorf(codes.InvalidArgument, "can't parse query %q: %v", query, err)
 	}
-	ast := seqql.Root
 
-	return ast, nil
+	ast = seqql.Root
+	pipes = seqql.Pipes
+
+	return ast, pipes, nil
 }
 
 func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {
