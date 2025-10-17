@@ -11,6 +11,7 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
@@ -114,13 +115,31 @@ func (f *Remote) Contains(mid seq.MID) bool {
 	return f.info.IsIntersecting(mid, mid)
 }
 
-func (f *Remote) DataProvider(ctx context.Context) (DataProvider, func()) {
+func (f *Remote) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+	dp, release := f.DataProvider(ctx)
+	defer release()
+	if dp == nil {
+		return EmptyFraction.Fetch(ctx, ids)
+	}
+	return dp.Fetch(ids)
+}
+
+func (f *Remote) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
+	dp, release := f.DataProvider(ctx)
+	defer release()
+	if dp == nil {
+		return EmptyFraction.Search(ctx, params)
+	}
+	return dp.Search(params)
+}
+
+func (f *Remote) DataProvider(ctx context.Context) (*sealedDataProvider, func()) {
 	f.useMu.RLock()
 
 	if f.suicided {
 		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
 		f.useMu.RUnlock()
-		return EmptyDataProvider{}, func() {}
+		return nil, func() {}
 	}
 
 	defer func() {
@@ -137,7 +156,7 @@ func (f *Remote) DataProvider(ctx context.Context) (DataProvider, func()) {
 			zap.Error(err),
 		)
 		f.useMu.RUnlock()
-		return EmptyDataProvider{}, func() {}
+		return nil, func() {}
 	}
 
 	dp := f.createDataProvider(ctx)
