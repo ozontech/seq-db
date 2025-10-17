@@ -2,10 +2,8 @@ package fracmanager
 
 import (
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
@@ -155,27 +153,20 @@ func (cm *CacheMaintainer) CreateIndexCache() *frac.IndexCache {
 	}
 }
 
-func (cm *CacheMaintainer) RunCleanLoop(done <-chan struct{}, cleanupInterval, gcInterval time.Duration) *sync.WaitGroup {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+func (cm *CacheMaintainer) RunCleanLoop(done <-chan struct{}, cleanupInterval, gcInterval time.Duration) {
+	runs := 0
+	gcRunsCount := int(gcInterval / cleanupInterval)
 
-		runs := 0
-		gcRunsCount := int(gcInterval / cleanupInterval)
+	util.RunEvery(done, cleanupInterval, func() {
+		runs++
+		cm.rotate()
+		cm.cleanup()
 
-		util.RunEvery(done, cleanupInterval, func() {
-			runs++
-			cm.rotate()
-			cm.cleanup()
-
-			if runs >= gcRunsCount {
-				runs = 0
-				cm.garbageCollection()
-			}
-		})
-	}()
-	return wg
+		if runs >= gcRunsCount {
+			runs = 0
+			cm.garbageCollection()
+		}
+	})
 }
 
 func (cm *CacheMaintainer) rotate() {
@@ -229,54 +220,5 @@ func (cm *CacheMaintainer) garbageCollection() {
 func (cm *CacheMaintainer) Reset() {
 	for _, cleaner := range cm.cleaners {
 		cleaner.Reset()
-	}
-}
-
-type CacheMaintainerMetrics struct {
-	HitsTotal       *prometheus.CounterVec
-	MissTotal       *prometheus.CounterVec
-	PanicsTotal     *prometheus.CounterVec
-	LockWaitsTotal  *prometheus.CounterVec
-	WaitsTotal      *prometheus.CounterVec
-	ReattemptsTotal *prometheus.CounterVec
-	SizeRead        *prometheus.CounterVec
-	SizeOccupied    *prometheus.CounterVec
-	SizeReleased    *prometheus.CounterVec
-	MapsRecreated   *prometheus.CounterVec
-	MissLatency     *prometheus.CounterVec
-
-	Oldest            *prometheus.GaugeVec
-	AddBuckets        *prometheus.CounterVec
-	DelBuckets        *prometheus.CounterVec
-	CleanGenerations  *prometheus.CounterVec
-	ChangeGenerations *prometheus.CounterVec
-}
-
-func (m *CacheMaintainerMetrics) GetLayerMetrics(layerName string) *cache.Metrics {
-	return &cache.Metrics{
-		HitsTotal:       m.HitsTotal.WithLabelValues(layerName),
-		MissTotal:       m.MissTotal.WithLabelValues(layerName),
-		PanicsTotal:     m.PanicsTotal.WithLabelValues(layerName),
-		LockWaitsTotal:  m.LockWaitsTotal.WithLabelValues(layerName),
-		WaitsTotal:      m.WaitsTotal.WithLabelValues(layerName),
-		ReattemptsTotal: m.ReattemptsTotal.WithLabelValues(layerName),
-		SizeRead:        m.SizeRead.WithLabelValues(layerName),
-		SizeOccupied:    m.SizeOccupied.WithLabelValues(layerName),
-		SizeReleased:    m.SizeReleased.WithLabelValues(layerName),
-		MapsRecreated:   m.MapsRecreated.WithLabelValues(layerName),
-		MissLatency:     m.MissLatency.WithLabelValues(layerName),
-	}
-}
-
-func (m *CacheMaintainerMetrics) GetCleanerMetrics(cleanerLabel string) *cache.CleanerMetrics {
-	if m == nil {
-		return nil
-	}
-	return &cache.CleanerMetrics{
-		Oldest:            m.Oldest.WithLabelValues(cleanerLabel),
-		AddBuckets:        m.AddBuckets.WithLabelValues(cleanerLabel),
-		DelBuckets:        m.DelBuckets.WithLabelValues(cleanerLabel),
-		CleanGenerations:  m.CleanGenerations.WithLabelValues(cleanerLabel),
-		ChangeGenerations: m.ChangeGenerations.WithLabelValues(cleanerLabel),
 	}
 }

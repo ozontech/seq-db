@@ -13,6 +13,7 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
@@ -324,13 +325,31 @@ func (f *Sealed) String() string {
 	return fracToString(f, "sealed")
 }
 
-func (f *Sealed) DataProvider(ctx context.Context) (DataProvider, func()) {
+func (f *Sealed) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+	dp, release := f.DataProvider(ctx)
+	defer release()
+	if dp == nil {
+		return EmptyFraction.Fetch(ctx, ids)
+	}
+	return dp.Fetch(ids)
+}
+
+func (f *Sealed) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
+	dp, release := f.DataProvider(ctx)
+	defer release()
+	if dp == nil {
+		return EmptyFraction.Search(ctx, params)
+	}
+	return dp.Search(params)
+}
+
+func (f *Sealed) DataProvider(ctx context.Context) (*sealedDataProvider, func()) {
 	f.useMu.RLock()
 
 	if f.suicided {
 		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
 		f.useMu.RUnlock()
-		return EmptyDataProvider{}, func() {}
+		return nil, func() {}
 	}
 
 	defer func() {

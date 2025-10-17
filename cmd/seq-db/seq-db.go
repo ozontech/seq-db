@@ -257,6 +257,7 @@ func startStore(
 			SortCacheSize:     uint64(cfg.Resources.SortDocsCacheSize),
 			FracLoadLimit:     0,
 			ShouldReplay:      true,
+			ReplayWorkers:     cfg.Resources.ReplayWorkers,
 			MaintenanceDelay:  0,
 			CacheGCDelay:      0,
 			CacheCleanupDelay: 0,
