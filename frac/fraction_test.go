@@ -1489,21 +1489,9 @@ func (s *RemoteFractionTestSuite) SetupSuite() {
 func (s *RemoteFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 
-	bucketName := fmt.Sprintf("bucket_%d", rand.Int())
+	bucketName := fmt.Sprintf("bucket_%d_%d", time.Now().UnixMilli(), rand.Int())
 	err := s.s3Backend.CreateBucket(bucketName)
 	s.Require().NoError(err, "create bucket failed")
-
-	s3cli, err := s3.NewClient(
-		s.s3server.URL,
-		"ACCESS_KEY",
-		"SECRET_KEY",
-		"eu-west-3",
-		bucketName,
-		3,
-	)
-	s.Require().NoError(err, "s3 client setup failed")
-
-	uploader := s3.NewUploader(s3cli)
 
 	s.insertDocuments = func(bulks ...[]string) {
 		if s.fraction != nil {
@@ -1512,7 +1500,17 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 		sealed := s.newSealed(bulks...)
 		defer sealed.Suicide()
 
-		offloaded, err := sealed.Offload(context.Background(), uploader)
+		s3cli, err := s3.NewClient(
+			s.s3server.URL,
+			"ACCESS_KEY",
+			"SECRET_KEY",
+			"eu-west-3",
+			bucketName,
+			3,
+		)
+		s.Require().NoError(err, "s3 client setup failed")
+
+		offloaded, err := sealed.Offload(context.Background(), s3.NewUploader(s3cli))
 		s.Require().NoError(err, "offload failed")
 		s.Require().True(offloaded, "didn't offload frac")
 
