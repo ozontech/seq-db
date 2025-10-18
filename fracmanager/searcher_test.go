@@ -16,19 +16,11 @@ import (
 )
 
 type testFakeFrac struct {
-	frac.Fraction
+	frac.Empty
 }
 
-func (t *testFakeFrac) IsIntersecting(_, _ seq.MID) bool {
+func (t *testFakeFrac) IsIntersecting(seq.MID, seq.MID) bool {
 	return true
-}
-
-func (t *testFakeFrac) DataProvider(_ context.Context) (frac.DataProvider, func()) {
-	return frac.EmptyDataProvider{}, func() {}
-}
-
-func (t *testFakeFrac) Info() *frac.Info {
-	return frac.NewInfo("test", 0, 0)
 }
 
 func TestFracsLimit(t *testing.T) {

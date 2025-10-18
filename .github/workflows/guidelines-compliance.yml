@@ -1,8 +1,13 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
 name: Guidelines Compliance
 
 on:
   pull_request:
     types: [ opened, edited, synchronize, reopened ]
+
+permissions:
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -45,6 +50,7 @@ jobs:
             });
 
   validate-branch-name:
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Validate branch name
