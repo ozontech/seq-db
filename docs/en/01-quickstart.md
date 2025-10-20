@@ -115,6 +115,10 @@ curl --request POST \
 '
 ```
 
+### Running in Kubernetes
+
+To run Seq-db in a production environment, you can use Kubernetes and the ready-made [Helm-chart](https://github.com/ozontech/seq-db/blob/main/deployment/k8s/helm-chart/) from the project repository.
+
 ## Search for documents
 
 We'll wrap up this guide with a simple search query
