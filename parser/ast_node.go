@@ -84,46 +84,6 @@ func propagateNot(node *ASTNode) (*ASTNode, bool) {
 	return node, not
 }
 
-// Dump is used in tests only
-func (e *ASTNode) Dump(builder *strings.Builder) {
-	switch t := e.Value.(type) {
-	case *Logical:
-		builder.WriteByte('(')
-		switch t.Operator {
-		case LogicalNot:
-			builder.WriteString("NOT ")
-			e.Children[0].Dump(builder)
-		case LogicalNAnd:
-			builder.WriteString("NOT ")
-			fallthrough
-		case LogicalOr, LogicalAnd:
-			e.Children[0].Dump(builder)
-			if t.Operator == LogicalOr {
-				builder.WriteString(" OR ")
-			} else {
-				builder.WriteString(" AND ")
-			}
-			e.Children[1].Dump(builder)
-		default:
-			panic("unknown operator")
-		}
-		builder.WriteByte(')')
-	case *Literal:
-		t.Dump(builder)
-	case *Range:
-		t.Dump(builder)
-	default:
-		panic("unknown token implementation")
-	}
-}
-
-// String is used in tests only
-func (e *ASTNode) String() string {
-	builder := &strings.Builder{}
-	e.Dump(builder)
-	return builder.String()
-}
-
 func (e *ASTNode) DumpSeqQL(b *strings.Builder) {
 	switch t := e.Value.(type) {
 	case *Logical:

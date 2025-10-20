@@ -12,7 +12,8 @@ services:
     image: ghcr.io/ozontech/seq-ui-fe:latest
     ports:
       - "5173:80"
-
+    volumes:
+      - ./seq-ui-fe-config.json:/usr/share/nginx/html/config.json
   seq-db-proxy:
     image: ghcr.io/ozontech/seq-db:latest
     volumes:

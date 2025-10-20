@@ -2,6 +2,7 @@ package processor
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,7 +40,9 @@ func (p *staticProvider) provide(token string) ([]uint32, error) {
 }
 
 func (p *staticProvider) newStatic(literal *parser.Literal) (node.Node, error) {
-	data, err := p.provide(literal.String())
+	builder := &strings.Builder{}
+	literal.DumpSeqQL(builder)
+	data, err := p.provide(builder.String())
 	if err != nil {
 		return nil, err
 	}
@@ -73,9 +76,9 @@ func TestEval(t *testing.T) {
 	}
 
 	t.Run("simple", func(t *testing.T) {
-		ast, err := parser.ParseQuery(`((NOT m:a AND m:b) AND (m:c OR m:d))`, nil)
+		query, err := parser.ParseSeqQL(`((NOT m:a AND m:b) AND (m:c OR m:d))`, nil)
 		require.NoError(t, err)
-		root, err := buildEvalTree(ast, 1, 12, &searchStats{}, false, newStatic)
+		root, err := buildEvalTree(query.Root, 1, 12, &searchStats{}, false, newStatic)
 		require.NoError(t, err)
 
 		assert.Equal(t, "((STATIC NAND STATIC) AND (STATIC OR STATIC))", root.String())
@@ -83,9 +86,9 @@ func TestEval(t *testing.T) {
 	})
 
 	t.Run("not", func(t *testing.T) {
-		ast, err := parser.ParseQuery(`NOT ((NOT m:a AND m:b) AND (m:c OR m:d))`, nil)
+		query, err := parser.ParseSeqQL(`NOT ((NOT m:a AND m:b) AND (m:c OR m:d))`, nil)
 		require.NoError(t, err)
-		root, err := buildEvalTree(ast, 1, 12, &searchStats{}, false, newStatic)
+		root, err := buildEvalTree(query.Root, 1, 12, &searchStats{}, false, newStatic)
 		require.NoError(t, err)
 
 		assert.Equal(t, "(NOT ((STATIC NAND STATIC) AND (STATIC OR STATIC)))", root.String())

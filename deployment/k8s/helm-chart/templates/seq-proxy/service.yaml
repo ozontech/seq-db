@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "seq-proxy.fullname" . }}
+  labels:
+    {{- include "seq-proxy.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.seqproxy.service.type }}
+  ports:
+    - port: {{ .Values.seqproxy.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.seqproxy.service.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    {{- include "seq-proxy.selectorLabels" . | nindent 4 }}

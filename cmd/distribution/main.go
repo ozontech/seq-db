@@ -11,7 +11,8 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
@@ -58,8 +59,10 @@ func readBlock(reader storage.IndexReader, blockIndex uint32) ([]byte, error) {
 	return data, nil
 }
 
-func loadInfo(path string) *frac.Info {
+func loadInfo(path string) *common.Info {
 	indexReader, f := getReader(path)
+	defer f.Close()
+
 	result, err := readBlock(indexReader, 0)
 	if err != nil {
 		logger.Fatal("error reading block", zap.String("file", path), zap.Error(err))
@@ -69,7 +72,7 @@ func loadInfo(path string) *frac.Info {
 		logger.Fatal("seq-db index file header corrupted", zap.String("file", path))
 	}
 
-	b := frac.BlockInfo{}
+	b := sealed.BlockInfo{}
 	err = b.Unpack(result)
 	if err != nil {
 		logger.Fatal("can't unpack info bloc of index file", zap.String("file", path), zap.Error(err))
@@ -84,8 +87,9 @@ func loadInfo(path string) *frac.Info {
 	return b.Info
 }
 
-func buildDist(dist *seq.MIDsDistribution, path string, _ *frac.Info) {
-	blocksReader, _ := getReader(path)
+func buildDist(dist *seq.MIDsDistribution, path string, _ *common.Info) {
+	blocksReader, f := getReader(path)
+	defer f.Close()
 
 	// skip tokens
 	blockIndex := uint32(1)
@@ -160,7 +164,7 @@ func main() {
 		}
 	}
 
-	fc := fracmanager.NewSealedFracCache(filePathDist)
+	fc := fracmanager.NewFracInfoCache(filePathDist)
 
 	lastSavedTime := time.Now()
 	for _, path := range getAllFracs(dataDir) {
@@ -169,7 +173,7 @@ func main() {
 
 		logger.Info("start process", zap.String("name", key))
 
-		info, ok := fc.GetFracInfo(key)
+		info, ok := fc.Get(key)
 		if ok {
 			logger.Info("found in frac-cache", zap.String("key", key))
 		} else {
@@ -197,7 +201,7 @@ func main() {
 		}
 
 		buildDist(info.Distribution, path, info)
-		fc.AddFraction(key, info)
+		fc.Add(info)
 		logger.Info("built distribution", zap.Int("affected_minutes", len(info.Distribution.GetDist())))
 		printDistribution(info.Distribution)
 

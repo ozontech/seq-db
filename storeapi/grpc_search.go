@@ -4,18 +4,15 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strconv"
 	"time"
 
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
@@ -102,7 +99,7 @@ func (g *GrpcV1) doSearch(
 	t := time.Now()
 
 	parseQueryTr := tr.NewChild("parse query")
-	ast, err := g.parseQuery(ctx, req.Query)
+	ast, err := g.parseQuery(req.Query)
 	if err != nil {
 		parseQueryTr.Done()
 		if code, ok := parseStoreError(err); ok {
@@ -128,7 +125,7 @@ func (g *GrpcV1) doSearch(
 			zap.String("query", req.Query),
 		)
 
-		parseQuery, err := g.parseQuery(ctx, g.config.Filter.Query)
+		parseQuery, err := g.parseQuery(g.config.Filter.Query)
 		if err != nil {
 			parseQueryTr.Done()
 			if code, ok := parseStoreError(err); ok {
@@ -219,37 +216,18 @@ func (g *GrpcV1) doSearch(
 	return buildSearchResponse(qpr), nil
 }
 
-func (g *GrpcV1) parseQuery(ctx context.Context, query string) (*parser.ASTNode, error) {
+func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, error) {
 	if query == "" {
 		query = seq.TokenAll + ":*"
 	}
-	var ast *parser.ASTNode
-	if useSeqQL(ctx) {
-		seqql, err := parser.ParseSeqQL(query, g.mappingProvider.GetMapping())
-		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "can't parse query %q: %v", query, err)
-		}
-		ast = seqql.Root
-	} else {
-		var err error
-		ast, err = parser.ParseQuery(query, g.mappingProvider.GetMapping())
-		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "can't parse query %q: %v", query, err)
-		}
-	}
-	return ast, nil
-}
 
-func useSeqQL(ctx context.Context) bool {
-	md, _ := metadata.FromIncomingContext(ctx)
-	useSeqQLValues := md.Get("use-seq-ql")
-	if len(useSeqQLValues) == 0 {
-		// Header isn't set, so use default query language.
-		return config.UseSeqQLByDefault
+	seqql, err := parser.ParseSeqQL(query, g.mappingProvider.GetMapping())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "can't parse query %q: %v", query, err)
 	}
-	val := useSeqQLValues[0]
-	useSeqQL, _ := strconv.ParseBool(val)
-	return useSeqQL
+	ast := seqql.Root
+
+	return ast, nil
 }
 
 func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {

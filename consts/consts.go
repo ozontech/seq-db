@@ -11,10 +11,9 @@ const (
 	// DummyMID is used in aggregations when we do not need to build time series.
 	DummyMID = 0
 
-	IDsBlockSize     = int(4 * units.KiB)
-	RegularBlockSize = int(16 * units.KiB)
 	IDsPerBlock      = int(4 * units.KiB)
 	LIDBlockCap      = int(64 * units.KiB)
+	RegularBlockSize = int(16 * units.KiB)
 
 	DefaultMaintenanceDelay  = time.Second
 	DefaultCacheGCDelay      = 1 * time.Second
@@ -46,6 +45,8 @@ const (
 	SealOnExitFracSizePercent = 20 // Percent of the max frac size, above which the fraction is sealed on exit
 
 	IngestorMaxInflightBulks = 32
+
+	DefaultReplayWorkers = 2
 
 	// known extensions
 	MetaFileSuffix = ".meta"

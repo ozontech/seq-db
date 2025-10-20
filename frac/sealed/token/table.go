@@ -9,6 +9,21 @@ import (
 	"github.com/ozontech/seq-db/logger"
 )
 
+// token.Table maps fields to token.Blocks, specifying which block and the token range
+// contains the field's token sequence.
+//
+// A single token.Block may contain tokens for multiple fields; thus, multiple
+// token.TableEntry instances can reference the same block but different ranges.
+//
+// A single field may also span multiple token.Blocks entirely.
+//
+// Here's how it can be depicted:
+//
+// Field Ranges:    <-------f1----------><------f2-------><------------f3------------><----------f4---------->
+// Token Blocks:    [.t1.t2.t3.t4.][.t5.t6.t7.t8.][.t9....etc...][.............][.............][.............]
+// TableEntries:    {-----f1------}{-f1-}{---f2--}{--f2--}{-f3--}{------f3-----}{-f3-}{----f4-}{-----f4------}
+//
+
 const (
 	TableEntrySize = unsafe.Sizeof(TableEntry{}) + unsafe.Sizeof(&TableEntry{})
 	FieldDataSize  = unsafe.Sizeof(FieldData{}) + unsafe.Sizeof(&FieldData{})

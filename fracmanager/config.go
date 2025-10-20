@@ -7,6 +7,7 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/util"
 )
@@ -20,10 +21,11 @@ type Config struct {
 
 	FracLoadLimit     uint64 // how many sealed fractions should fracmanager load, if 0 then loads all
 	ShouldReplay      bool
+	ReplayWorkers     int
 	MaintenanceDelay  time.Duration
 	CacheCleanupDelay time.Duration
 	CacheGCDelay      time.Duration
-	SealParams        frac.SealParams
+	SealParams        common.SealParams
 	SortCacheSize     uint64 // size for docs cache for active fraction
 	Fraction          frac.Config
 
@@ -60,6 +62,9 @@ func FillConfigWithDefault(config *Config) *Config {
 	}
 	if config.SealParams.TokenTableZstdLevel == 0 {
 		config.SealParams.TokenTableZstdLevel = zstdDefaultLevel
+	}
+	if config.ReplayWorkers == 0 {
+		config.ReplayWorkers = consts.DefaultReplayWorkers
 	}
 
 	if config.SortCacheSize == 0 {

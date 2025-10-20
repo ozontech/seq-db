@@ -5,8 +5,11 @@ import (
 	"math"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
@@ -119,12 +122,27 @@ func IndexSearch(
 		IDs:       ids,
 		Aggs:      aggsResult,
 		Total:     uint64(total),
-		Histogram: histogram,
+		Histogram: convertHistToMap(params, histogram),
 	}
 
 	stats.UpdateMetrics()
 
 	return qpr, nil
+}
+
+func convertHistToMap(params SearchParams, hist []uint64) map[seq.MID]uint64 {
+	if len(hist) == 0 {
+		return nil
+	}
+	res := make(map[seq.MID]uint64, len(hist))
+	bucket := params.From - params.From%seq.MID(params.HistInterval)
+	for _, cnt := range hist {
+		if cnt > 0 {
+			res[bucket] = cnt
+		}
+		bucket += seq.MID(params.HistInterval)
+	}
+	return res
 }
 
 func iterateEvalTree(
@@ -134,13 +152,18 @@ func iterateEvalTree(
 	evalTree node.Node,
 	aggs []Aggregator,
 	sw *stopwatch.Stopwatch,
-) (int, seq.IDSources, map[seq.MID]uint64, error) {
+) (int, seq.IDSources, []uint64, error) {
 	hasHist := params.HasHist()
 	needScanAllRange := params.IsScanAllRequest()
 
-	var histogram map[seq.MID]uint64
+	var (
+		histBase  uint64
+		histogram []uint64
+	)
 	if hasHist {
-		histogram = make(map[seq.MID]uint64)
+		histBase = uint64(params.From) / params.HistInterval
+		histSize := uint64(params.To)/params.HistInterval - histBase + 1
+		histogram = make([]uint64, histSize)
 	}
 
 	total := 0
@@ -176,9 +199,15 @@ func iterateEvalTree(
 			timerMID.Stop()
 
 			if hasHist {
-				bucket := mid
-				bucket -= bucket % seq.MID(params.HistInterval)
-				histogram[bucket]++
+				if mid < params.From || mid > params.To {
+					logger.Error("MID value outside the query range",
+						zap.Time("from", params.From.Time()),
+						zap.Time("to", params.To.Time()),
+						zap.Time("mid", mid.Time()))
+					continue
+				}
+				bucketIndex := uint64(mid)/params.HistInterval - histBase
+				histogram[bucketIndex]++
 			}
 
 			if needMore {
