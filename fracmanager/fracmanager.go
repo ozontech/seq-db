@@ -619,7 +619,7 @@ func (fm *FracManager) rotate() activeRef {
 }
 
 func (fm *FracManager) minFracSizeToSeal() uint64 {
-	return fm.config.FracSize * consts.SealOnExitFracSizePercent / 100
+	return fm.config.FracSize * consts.MinSealPercent / 100
 }
 
 func (fm *FracManager) Stop() {

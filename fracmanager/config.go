@@ -31,7 +31,9 @@ type Config struct {
 
 	OffloadingEnabled   bool
 	OffloadingForced    bool
+	OffloadingSize      uint64
 	OffloadingRetention time.Duration
+	OffloadRetryDelay   time.Duration
 }
 
 func FillConfigWithDefault(config *Config) *Config {

@@ -42,7 +42,7 @@ const (
 
 	MaxTextFieldValueLength = 32 * 1024
 
-	SealOnExitFracSizePercent = 20 // Percent of the max frac size, above which the fraction is sealed on exit
+	MinSealPercent = 20 // Percent of the max frac size, above which the fraction is sealed on exit
 
 	IngestorMaxInflightBulks = 32
 

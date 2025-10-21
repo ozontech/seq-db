@@ -3,7 +3,7 @@ package fracmanager
 import (
 	"context"
 	"errors"
-	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -15,208 +15,160 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
-var ErrSealingFractionSuicided = errors.New("sealing fraction is suicided")
+var (
+	_ frac.Fraction = (*fractionProxy)(nil)
+	_ frac.Fraction = (*emptyFraction)(nil)
+)
 
-/**
- *   Possible states (only 4):
- *  --------------------------------------------------------
- *  |            		| f.active | f.sealed | f.readonly |
- *  --------------------------------------------------------
- *  | Active & Writable |  value   |    nil   |  false     |
- *  --------------------------------------------------------
- *  | Sealing   		|  value   |    nil   |  true      |
- *  --------------------------------------------------------
- *  | Sealed 			|   nil    |  value   |  true      |
- *  --------------------------------------------------------
- *  | Suicided 			|   nil    |   nil    |  true      |
- *  --------------------------------------------------------
- *  All other states are impossible.
- */
-
-type proxyFrac struct {
-	fp *fractionProvider
-
-	useMu    sync.RWMutex
-	active   *frac.Active
-	sealed   *frac.Sealed
-	readonly bool
-
-	name string
-
-	indexWg sync.WaitGroup
-	sealWg  sync.WaitGroup
+// fractionProxy provides thread-safe access to a fraction with atomic replacement
+// Used to switch fraction implementations (active → sealed → remote) without blocking readers.
+// Lifecycle: Created for each fraction, persists through state transitions.
+type fractionProxy struct {
+	mu   sync.RWMutex
+	impl frac.Fraction // Current fraction implementation
 }
 
-func newProxyFrac(active *frac.Active, fp *fractionProvider) *proxyFrac {
-	return &proxyFrac{
-		fp:     fp,
-		active: active,
-		name:   active.BaseFileName,
+func (p *fractionProxy) Redirect(frac frac.Fraction) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.impl = frac
+}
+
+func (p *fractionProxy) Info() *common.Info {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.impl.Info()
+}
+
+func (p *fractionProxy) IsIntersecting(from seq.MID, to seq.MID) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.impl.IsIntersecting(from, to)
+}
+
+func (p *fractionProxy) Contains(mid seq.MID) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.impl.Contains(mid)
+}
+
+func (p *fractionProxy) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.impl.Fetch(ctx, ids)
+}
+
+func (p *fractionProxy) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.impl.Search(ctx, params)
+}
+
+// activeProxy manages an active (writable) fraction
+// Tracks pending write operations and provides freeze capability.
+// Lifecycle: Created when fraction becomes active, destroyed after sealing.
+type activeProxy struct {
+	proxy    *fractionProxy // Thread-safe fraction access
+	instance *frac.Active   // Actual active fraction instance
+	sealed   *frac.Sealed   // Sealed version (set after sealing)
+
+	mu sync.RWMutex   // Protects readonly state
+	wg sync.WaitGroup // Tracks pending write operations
+
+	frozen bool // Whether fraction is frozen for writes
+}
+
+func newActiveProxy(active *frac.Active) *activeProxy {
+	return &activeProxy{
+		proxy:    &fractionProxy{impl: active},
+		instance: active,
 	}
 }
 
-func (f *proxyFrac) cur() frac.Fraction {
-	f.useMu.RLock()
-	defer f.useMu.RUnlock()
-
-	if f.active != nil {
-		return f.active
-	}
-
-	if f.sealed != nil {
-		metric.CountersTotal.WithLabelValues("use_sealed_from_active").Inc()
-		return f.sealed
-	}
-
-	metric.CountersTotal.WithLabelValues("use_empty_from_active").Inc()
-	return frac.EmptyFraction
-}
-
-func (f *proxyFrac) IsIntersecting(from, to seq.MID) bool {
-	return f.cur().IsIntersecting(from, to)
-}
-
-func (f *proxyFrac) Contains(mid seq.MID) bool {
-	return f.cur().Contains(mid)
-}
-
-func (f *proxyFrac) Info() *common.Info {
-	return f.cur().Info()
-}
-
-func (f *proxyFrac) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
-	return f.cur().Fetch(ctx, ids)
-}
-
-func (f *proxyFrac) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
-	return f.cur().Search(ctx, params)
-}
-
-func (f *proxyFrac) Append(docs, meta []byte) error {
-	f.useMu.RLock()
-	if !f.isActiveState() {
-		f.useMu.RUnlock()
+// Append adds documents to the active fraction
+func (p *activeProxy) Append(docs, meta []byte) error {
+	p.mu.RLock()
+	if p.frozen {
+		p.mu.RUnlock()
 		return errors.New("fraction is not writable")
 	}
-	active := f.active
-	f.indexWg.Add(1) // It's important to put wg.Add() inside a lock, otherwise we might call WaitWriteIdle() before it
-	f.useMu.RUnlock()
+	p.wg.Add(1) // Important: wg.Add() inside lock to prevent race with WaitWriteIdle()
+	p.mu.RUnlock()
 
-	return active.Append(docs, meta, &f.indexWg)
+	return p.instance.Append(docs, meta, &p.wg)
 }
 
-func (f *proxyFrac) WaitWriteIdle() {
+// WaitWriteIdle waits for all pending write operations to complete
+// Used before sealing to ensure data consistency.
+func (p *activeProxy) WaitWriteIdle() {
 	start := time.Now()
-	logger.Info("waiting fraction to stop write...", zap.String("name", f.name))
-	f.indexWg.Wait()
+	logger.Info("waiting fraction to stop write...", zap.String("name", p.instance.BaseFileName))
+	p.wg.Wait()
 	waitTime := util.DurationToUnit(time.Since(start), "s")
-	logger.Info("write is stopped", zap.String("name", f.name), zap.Float64("time_wait_s", waitTime))
+	logger.Info("write is stopped",
+		zap.String("name", p.instance.BaseFileName),
+		zap.Float64("time_wait_s", waitTime))
 }
 
-func (f *proxyFrac) Seal() (*frac.Sealed, error) {
-	f.useMu.Lock()
-	if f.isSuicidedState() {
-		f.useMu.Unlock()
-		return nil, ErrSealingFractionSuicided
+// Freeze marks the fraction as read-only and prevents new writes from starting after freeze.
+func (p *activeProxy) Freeze() error {
+	p.mu.Lock()
+	if p.frozen {
+		p.mu.Unlock()
+		return errors.New("fraction is already freezed")
 	}
-	if !f.isActiveState() {
-		f.useMu.Unlock()
-		return nil, errors.New("sealing fraction is not active")
-	}
-	f.readonly = true
-	active := f.active
-	f.sealWg.Add(1) // It's important to put wg.Add() inside a lock, otherwise we might call wg.Wait() before it
-	f.useMu.Unlock()
+	p.frozen = true
+	p.mu.Unlock()
 
-	f.WaitWriteIdle()
+	p.WaitWriteIdle()
 
-	sealed, err := f.fp.Seal(active)
-	if err != nil {
-		return nil, err
-	}
-
-	f.useMu.Lock()
-	f.sealed = sealed
-	f.active = nil
-	f.useMu.Unlock()
-
-	f.sealWg.Done()
-
-	active.Release()
-
-	return sealed, nil
+	return nil
 }
 
-// trySetSuicided set suicided state if possible (if not sealing right now)
-func (f *proxyFrac) trySetSuicided() (*frac.Active, *frac.Sealed, bool) {
-	f.useMu.Lock()
-	defer f.useMu.Unlock()
-
-	sealed := f.sealed
-	active := f.active
-
-	isSealing := f.isSealingState()
-
-	if !isSealing {
-		f.sealed = nil
-		f.active = nil
-	}
-
-	return active, sealed, isSealing
+// sealedProxy represents a sealed fraction that may be offloaded
+// Tracks both local sealed instance and remote version if offloaded.
+type sealedProxy struct {
+	proxy    *fractionProxy // Thread-safe fraction access
+	instance *frac.Sealed   // Local sealed fraction
+	remote   *frac.Remote   // Remote version (if offloaded)
 }
 
-func (f *proxyFrac) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
-	f.useMu.RLock()
-
-	if f.isSealingState() {
-		f.useMu.RUnlock()
-		f.sealWg.Wait()
-
-		if c := f.cur(); c != nil {
-			return c.Offload(ctx, u)
-		}
-
-		return false, nil
-	}
-
-	f.useMu.RUnlock()
-	return f.cur().Offload(ctx, u)
+// remoteProxy represents an offloaded fraction
+type remoteProxy struct {
+	proxy    *fractionProxy // Thread-safe fraction access
+	instance *frac.Remote   // Remote fraction instance
 }
 
-func (f *proxyFrac) Suicide() {
-	active, sealed, isSealing := f.trySetSuicided()
-	if isSealing {
-		f.sealWg.Wait()
-		// we can get `sealing` == true only once here
-		// next attempt after Wait() should be successful
-		active, sealed, _ = f.trySetSuicided()
-	}
+// emptyFraction represents a missing or deleted fraction
+// Returns empty results for all operations.
+// Used as placeholder when fraction is removed but references still exist.
+type emptyFraction struct {
+}
 
-	if active != nil {
-		active.Suicide()
-	}
-
-	if sealed != nil {
-		sealed.Suicide()
+func (emptyFraction) Info() *common.Info {
+	return &common.Info{
+		Path: "empty",
+		From: math.MaxUint64,
+		To:   0,
 	}
 }
 
-func (f *proxyFrac) String() string {
-	return fmt.Sprintf("%s", f.cur())
+func (emptyFraction) IsIntersecting(from seq.MID, to seq.MID) bool {
+	return false
 }
 
-func (f *proxyFrac) isActiveState() bool {
-	return f.active != nil && f.sealed == nil && !f.readonly
+func (emptyFraction) Contains(mid seq.MID) bool {
+	return false
 }
 
-func (f *proxyFrac) isSealingState() bool {
-	return f.active != nil && f.sealed == nil && f.readonly
+func (emptyFraction) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+	return nil, nil
 }
 
-func (f *proxyFrac) isSuicidedState() bool {
-	return f.active == nil && f.sealed == nil
+func (emptyFraction) Search(_ context.Context, params processor.SearchParams) (*seq.QPR, error) {
+	metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()
+	return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, nil
 }

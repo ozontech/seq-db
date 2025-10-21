@@ -9,14 +9,13 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 )
 
 type testFakeFrac struct {
-	frac.Empty
+	emptyFraction
 }
 
 func (t *testFakeFrac) IsIntersecting(seq.MID, seq.MID) bool {
