@@ -27,7 +27,7 @@ jobs:
 
       - name: Run Golang benchmarks
         shell: bash
-        run: LOG_LEVEL=FATAL go test -run='$^' -bench=. -benchmem ./... | tee ${{ runner.temp }}/gotool.txt
+        run: LOG_LEVEL=FATAL go test -run='$^' -count=10 -bench=. -benchmem ./... | tee ${{ runner.temp }}/gotool.txt
 
       # Add GitHub job summary for pull requests.
       - name: Summarize benchmarks results
