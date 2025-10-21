@@ -230,6 +230,7 @@ func iterateEvalTree(
 			timerAgg.Start()
 			for i := range aggs {
 				if err := aggs[i].Next(lid); err != nil {
+					timerAgg.Stop()
 					return total, ids, histogram, err
 				}
 			}
