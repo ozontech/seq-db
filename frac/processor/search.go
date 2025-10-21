@@ -170,9 +170,13 @@ func iterateEvalTree(
 	ids := seq.IDSources{}
 	var lastID seq.ID
 
-	for {
+	timerEval := sw.Timer("eval_tree_next")
+	timerMID := sw.Timer("get_mid")
+	timerRID := sw.Timer("get_rid")
+	timerAgg := sw.Timer("agg_node_count")
 
-		if util.IsCancelled(ctx) {
+	for i := 0; ; i++ {
+		if i&1023 == 0 && util.IsCancelled(ctx) {
 			return total, ids, histogram, ctx.Err()
 		}
 
@@ -181,18 +185,18 @@ func iterateEvalTree(
 			break
 		}
 
-		m := sw.Start("eval_tree_next")
+		timerEval.Start()
 		lid, has := evalTree.Next()
-		m.Stop()
+		timerEval.Stop()
 
 		if !has {
 			break
 		}
 
 		if needMore || hasHist {
-			m = sw.Start("get_mid")
+			timerMID.Start()
 			mid := idsIndex.GetMID(seq.LID(lid))
-			m.Stop()
+			timerMID.Stop()
 
 			if hasHist {
 				if mid < params.From || mid > params.To {
@@ -207,9 +211,9 @@ func iterateEvalTree(
 			}
 
 			if needMore {
-				m = sw.Start("get_rid")
+				timerRID.Start()
 				rid := idsIndex.GetRID(seq.LID(lid))
-				m.Stop()
+				timerRID.Stop()
 
 				id := seq.ID{MID: mid, RID: rid}
 
@@ -223,13 +227,14 @@ func iterateEvalTree(
 		total++ // increment found counter, use aggNode, calculate histogram and collect ids only if id in borders
 
 		if len(aggs) > 0 {
-			m = sw.Start("agg_node_count")
+			timerAgg.Start()
 			for i := range aggs {
 				if err := aggs[i].Next(lid); err != nil {
+					timerAgg.Stop()
 					return total, ids, histogram, err
 				}
 			}
-			m.Stop()
+			timerAgg.Stop()
 		}
 
 	}
