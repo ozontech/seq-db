@@ -46,6 +46,7 @@ func newStopwatchMetricSampled(sw *Stopwatch, parent *metricSampled) *metricSamp
 		parent:           parent,
 		children:         make(map[string]*metricSampled),
 		samplingSequence: expSamplingSequence(),
+		stopped:          true,
 	}
 }
 
