@@ -32,9 +32,11 @@ func (s *IntegrationTestSuite) ingestData(env *setup.TestingEnv, from, to time.T
 
 		step := fractionTo.Sub(fractionFrom) / time.Duration(docsPerFraction)
 
-		for i, ts := 0, fractionFrom; i < docsPerFraction; ts, i = ts.Add(step), i+1 {
-			origDocs = append(origDocs, fmt.Sprintf(`{"service":"x%d", "ts":%q}`, i, ts.Format(time.RFC3339)))
-			docsTimes = append(docsTimes, ts)
+		for i, ts := 0, fractionFrom; i < docsPerFraction; i, ts = i+1, ts.Add(step) {
+			// using truncate, since RFC3339 is sub-second accurate
+			t := ts.Truncate(time.Second)
+			origDocs = append(origDocs, fmt.Sprintf(`{"service":"x%d", "ts":%q}`, i, t.Format(time.RFC3339)))
+			docsTimes = append(docsTimes, t)
 		}
 
 		setup.Bulk(s.T(), env.IngestorBulkAddr(), origDocs)

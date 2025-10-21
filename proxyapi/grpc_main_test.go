@@ -121,7 +121,7 @@ func runGRPCServerWithClient(apiServer seqproxyapi.SeqProxyApiServer) (seqproxya
 		server.Stop()
 	}
 	conn, err := grpc.NewClient(
-		"",
+		"localhost",
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 			return lis.Dial()
 		}),
