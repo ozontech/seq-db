@@ -137,7 +137,7 @@ func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
 }
 
 func (f *Active) Replay(ctx context.Context) error {
-	logger.Info("start replaying...")
+	logger.Info("start replaying...", zap.String("name", f.info.Name()))
 
 	t := time.Now()
 
@@ -169,6 +169,7 @@ out:
 				next += step
 				progress := float64(offset) / float64(f.info.MetaOnDisk) * 100
 				logger.Info("replaying batch, meta",
+					zap.String("name", f.info.Name()),
 					zap.Uint64("from", offset),
 					zap.Uint64("to", offset+metaSize),
 					zap.Uint64("target", f.info.MetaOnDisk),

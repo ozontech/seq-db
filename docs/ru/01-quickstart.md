@@ -96,6 +96,10 @@ services:
 Обратите внимание, что мы установили настройку `mapping.path: auto`, это сделано для упрощения запуска, эта настройка не предназначена для использования в продакшене.
 Поэтому мы рекомендуем прочитать больше о [маппингах и индексации полей](03-index-types.md) и [архитектуре](13-architecture.md)
 
+### Запуск в Kubernetes
+
+Для запуска Seq-db в production-среде можно использовать Kubernetes и готовый [Helm-чарт](https://github.com/ozontech/seq-db/blob/main/deployment/k8s/helm-chart/) из репозитория проекта
+
 ## Запись документов в seq-db
 
 ### Запись документов при помощи `curl`
@@ -123,7 +127,6 @@ curl --request POST \
 curl --request POST   \
   --url http://localhost:9002/search \
   --header 'Content-Type: application/json' \
-  --header 'Grpc-Metadata-use-seq-ql: true' \
   --data-binary '
   {
     "query":{
