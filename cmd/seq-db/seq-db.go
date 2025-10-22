@@ -86,7 +86,6 @@ func main() {
 	config.CaseSensitive = cfg.Indexing.CaseSensitive
 	config.SkipFsync = cfg.Resources.SkipFsync
 	config.MaxRequestedDocuments = cfg.Limits.SearchDocs
-	config.UseSeqQLByDefault = *flagUseSeqQLByDefault
 
 	backoff.DefaultConfig.MaxDelay = 10 * time.Second
 
@@ -257,6 +256,7 @@ func startStore(
 			SortCacheSize:     uint64(cfg.Resources.SortDocsCacheSize),
 			FracLoadLimit:     0,
 			ShouldReplay:      true,
+			ReplayWorkers:     cfg.Resources.ReplayWorkers,
 			MaintenanceDelay:  0,
 			CacheGCDelay:      0,
 			CacheCleanupDelay: 0,

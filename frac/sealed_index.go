@@ -100,6 +100,10 @@ func (dp *sealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, error) {
 	aggLimits := processor.AggLimits(dp.config.Search.AggLimits)
 
+	// Limit the parameter range to data boundaries to prevent histogram overflow
+	params.From = max(params.From, dp.info.From)
+	params.To = min(params.To, dp.info.To)
+
 	sw := stopwatch.New()
 
 	defer sw.Export(

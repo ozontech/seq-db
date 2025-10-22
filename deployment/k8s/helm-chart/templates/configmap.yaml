@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "seq-db.fullname" . }}-config
+  labels:
+    app: "{{ template "seq-db.fullname" . }}"
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    heritage: {{ .Release.Service | quote }}
+    release: {{ .Release.Name | quote }}
+data:
+  config.yaml: |
+    storage:
+      data_dir: /data
+      {{- if .Values.storage.frac_size }}
+      frac_size: {{ .Values.storage.frac_size }}
+      {{- end }}
+      {{- if .Values.storage.total_size }}
+      total_size: {{ .Values.storage.total_size }}
+      {{- end }}
+    mapping:
+      enable_updates: {{ .Values.mapping.enable_updates }}
+      {{- if .Values.mapping.auto }}
+      path: auto
+      {{- else }}
+      path: /mappings/mappings.yaml
+      {{- end }}
+      update_period: {{ .Values.mapping.update_period }}
+    {{- with .Values.extendedConfig }}
+    {{- toYaml . | nindent 4 }}
+    {{- else }}
+    {{- end }}

@@ -1,0 +1,77 @@
+{{- if .Values.sequi.front.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "seq-ui-front.fullname" . }}
+  labels:
+    {{- include "seq-ui-front.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.sequi.front.autoscaling.enabled }}
+  replicas: {{ .Values.sequi.front.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "seq-ui-front.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+      {{- with .Values.sequi.front.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+        checksum/config: {{ include (print .Template.BasePath "/seq-ui/front/configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "seq-ui-front.labels" . | nindent 8 }}
+        {{- with .Values.sequi.front.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.sequi.front.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "seq-ui.serviceAccountName" . }}
+      {{- with .Values.sequi.front.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: front
+          {{- with .Values.sequi.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.sequi.front.image.repository }}:{{ .Values.sequi.front.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.sequi.front.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.sequi.front.service.httpPort }}
+              protocol: TCP
+          {{- with .Values.sequi.front.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: "{{ template "seq-ui-front.fullname" . }}-config"
+              mountPath: "/usr/share/nginx/html/config.json"
+              subPath: config.json
+              readOnly: true
+      volumes:
+        - name: {{ template "seq-ui-front.fullname" . }}-config
+          configMap:
+            name: {{ template "seq-ui-front.fullname" . }}-config
+        {{- with .Values.sequi.front.volumes }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.sequi.front.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sequi.front.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sequi.front.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

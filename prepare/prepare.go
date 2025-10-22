@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
@@ -94,7 +93,7 @@ func main() {
 		logger.Fatal("can't create dir for batches", zap.Error(err))
 	}
 	for i, batch := range batches {
-		err := ioutil.WriteFile(fmt.Sprintf("%s/%d.json", batchesDir, i), batch.Bytes(), 0o777)
+		err := os.WriteFile(fmt.Sprintf("%s/%d.json", batchesDir, i), batch.Bytes(), 0o777)
 		if err != nil {
 			logger.Fatal("can't write batch",
 				zap.Int("i", i),

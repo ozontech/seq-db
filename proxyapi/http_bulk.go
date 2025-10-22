@@ -256,7 +256,7 @@ func (r *esBulkDocReader) readDoc() ([]byte, bool, error) {
 
 	// If this is a line that exceeds maxDocumentSize, skip it.
 	for isPrefix {
-		doc, isPrefix, err = r.r.ReadLine()
+		_, isPrefix, err = r.r.ReadLine()
 		if err != nil {
 			return nil, true, err
 		}
