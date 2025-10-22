@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/ozontech/seq-db/util"
 )
 
 const StateFile = "storage-state.json"
@@ -16,14 +18,12 @@ type StorageState struct {
 
 // StateManager manages storage state with thread safety
 type StateManager struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	current  StorageState
 	filePath string
 }
 
 // NewStateManager creates a new storage state manager
-// dataDir - directory for storing state file
-// defaultState - default state if file doesn't exist
 func NewStateManager(dataDir string, defaultState StorageState) (*StateManager, error) {
 	sm := &StateManager{
 		filePath: filepath.Join(dataDir, StateFile),
@@ -34,8 +34,8 @@ func NewStateManager(dataDir string, defaultState StorageState) (*StateManager, 
 
 // IsCapacityExceeded returns storage capacity exceeded flag
 func (m *StateManager) IsCapacityExceeded() bool {
-	m.mu.Lock()         // Lock for thread safety
-	defer m.mu.Unlock() // Ensure unlock
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.current.CapacityExceeded
 }
 
@@ -84,9 +84,7 @@ func (m *StateManager) save() error {
 }
 
 // atomicWrite safely writes data to file using atomic replacement pattern
-// Ensures data integrity with proper synchronization and cleanup
 func atomicWrite(path string, data []byte, perm os.FileMode) error {
-	// Create temporary file
 	tmpPath := path + ".tmp"
 	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
@@ -95,48 +93,33 @@ func atomicWrite(path string, data []byte, perm os.FileMode) error {
 
 	defer func() {
 		if f != nil {
-			f.Close() // Close file if still open
+			f.Close()
 		}
 		if err != nil {
-			os.Remove(tmpPath) // Remove temp file on error
+			os.Remove(tmpPath)
 		}
 	}()
 
-	// Write data to temporary file
 	if _, err = f.Write(data); err != nil {
 		return fmt.Errorf("write data: %w", err)
 	}
 
-	// Sync data to disk (force write from cache)
 	if err = f.Sync(); err != nil {
 		return fmt.Errorf("sync data: %w", err)
 	}
 
-	// Close file handle
 	if err = f.Close(); err != nil {
 		return fmt.Errorf("close file: %w", err)
 	}
-	f = nil // Mark as closed so defer doesn't close again
+	f = nil // mark as closed so defer doesn't close again
 
-	// Atomic replacement using rename (atomic operation on most filesystems)
 	if err = os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("rename file: %w", err)
 	}
 
-	// Sync parent directory
-	if err = syncDir(filepath.Dir(path)); err != nil {
+	if err = util.SyncPath(filepath.Dir(path)); err != nil { // also sync parent directory
 		return fmt.Errorf("sync dir: %w", err)
 	}
 
 	return nil
-}
-
-func syncDir(dir string) error {
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-
-	return d.Sync()
 }
