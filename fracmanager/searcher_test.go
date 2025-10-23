@@ -14,10 +14,10 @@ import (
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/storage"
 )
 
 type testFakeFrac struct {
+	frac.Empty
 	info          *common.Info
 	qpr           *seq.QPR
 	searchesCount int
@@ -61,14 +61,6 @@ func (f *testFakeFrac) Fetch(_ context.Context, ids []seq.ID) ([][]byte, error) 
 func (f *testFakeFrac) Search(context.Context, processor.SearchParams) (*seq.QPR, error) {
 	f.searchesCount++
 	return f.qpr, nil
-}
-
-func (f *testFakeFrac) Offload(context.Context, storage.Uploader) (bool, error) {
-	return false, nil
-}
-
-func (f *testFakeFrac) Suicide() {
-
 }
 
 func newFakeFrac(from, to seq.MID, qpr *seq.QPR) *testFakeFrac {
