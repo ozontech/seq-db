@@ -72,11 +72,11 @@ func (m *fracManifest) AddExtension(ext string) error {
 type fracStage int
 
 const (
-	fracStageActive  fracStage = iota // active fraction - accepts new data
+	fracStageUnknown fracStage = iota // unknown state - requires analysis
+	fracStageActive                   // active fraction - accepts new data
 	fracStageSealed                   // sealed fraction - read-only
 	fracStageRemote                   // remote fraction - data stored in external storage
 	fracStageZombie                   // partially deleted fraction - requires cleanup
-	fracStageUnknown                  // unknown state - requires analysis
 )
 
 // Stage determines the current stage of the fraction based on file presence
@@ -184,9 +184,7 @@ func analyzeFiles(files []string) ([]*fracManifest, error) {
 		}
 	}
 
-	sort.Strings(ids) // sort by identifiers
-
-	// Filter valid fractions
+	sort.Strings(ids)
 	return filterValid(ids, manifests)
 }
 
@@ -244,7 +242,7 @@ func cleanupRemoteFrac(m *fracManifest) {
 func cleanupSealedFrac(m *fracManifest) {
 	removeMeta(m)
 	if m.hasSdocs {
-		removeDocs(m) // remove orig docs, keep sorted
+		removeDocs(m) // remove orig docs, but keeping sorted
 	}
 }
 

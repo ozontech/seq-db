@@ -21,8 +21,8 @@ type Loader struct {
 	infoCache *fracInfoCache    // fraction metadata cache
 
 	cacheStat struct {
-		hits   int // counter of fractions loaded from cache
-		misses int // counter of fractions loaded without using cache
+		hits   int // counter of fractions loaded from frac info cache
+		misses int // counter of fractions loaded without using frac info cache
 	}
 }
 
@@ -122,24 +122,10 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 		return nil, nil, nil, err
 	}
 
-	// Apply load limit if specified in configuration
-	if l.config.FracLoadLimit > 0 {
-		logger.Info("preloading fractions", zap.Uint64("limit", l.config.FracLoadLimit))
-		if len(manifests) > int(l.config.FracLoadLimit) {
-			manifests = manifests[len(manifests)-int(l.config.FracLoadLimit):] // take the newest ones
-		}
-	}
-
-	// Load fractions according to their stage
-	return l.loadByStage(ctx, manifests)
-}
-
-// loadByStage loads fractions according to their stage
-// Separates fractions into active, sealed, and remote
-func (l *Loader) loadByStage(ctx context.Context, manifests []*fracManifest) ([]*frac.Active, []*frac.Sealed, []*frac.Remote, error) {
 	start := time.Now()
 	total := len(manifests)
 
+	// Load fractions according to their stage (active, sealed, and remote)
 	actives := make([]*frac.Active, 0)
 	locals := make([]*frac.Sealed, 0, total)
 	remotes := make([]*frac.Remote, 0, total)
@@ -156,7 +142,7 @@ func (l *Loader) loadByStage(ctx context.Context, manifests []*fracManifest) ([]
 		default:
 			logger.Error("unexpected fraction stage", zap.Any("manifest", manifest))
 		}
-		logLoadingProgress(start, i, total) // log progress
+		logDiscoveringProgress(start, i, total)
 	}
 
 	logger.Info("fractions initialization completed",
@@ -173,7 +159,7 @@ func (l *Loader) loadSealed(basePath string) *frac.Sealed {
 	l.updateStats(found)
 
 	f := l.provider.NewSealed(basePath, info)
-	l.infoCache.Add(f.Info()) // update cache
+	l.infoCache.Add(f.Info())
 	return f
 }
 
@@ -209,13 +195,13 @@ func (l *Loader) scanFiles() []string {
 	return files
 }
 
-// logLoadingProgress logs loading progress at regular intervals
+// logDiscoveringProgress logs loading progress at regular intervals
 // Provides visibility into the fraction loading process
-func logLoadingProgress(startTime time.Time, currentIndex, totalCount int) {
+func logDiscoveringProgress(startTime time.Time, currentIndex, totalCount int) {
 	if time.Since(startTime) >= time.Second || currentIndex == totalCount-1 {
 		progressPercent := 100 * (currentIndex + 1) / totalCount
 		logger.Info(
-			"fraction loading progress",
+			"fraction list discovering progress",
 			zap.String("progress", fmt.Sprintf("%d%%", progressPercent)),
 			zap.Int("total", totalCount),
 			zap.Int("loaded", currentIndex+1),
