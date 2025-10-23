@@ -21,47 +21,76 @@ type testFakeFrac struct {
 	info          *common.Info
 	qpr           *seq.QPR
 	searchesCount int
+	fetchCount    int
+	documents     map[seq.ID][]byte
+	fetchError    error
 }
 
-func (s *testFakeFrac) Info() *common.Info {
-	return s.info
+func (f *testFakeFrac) Info() *common.Info {
+	return f.info
 }
 
-func (s *testFakeFrac) IsIntersecting(from, to seq.MID) bool {
-	if s.info == nil {
+func (f *testFakeFrac) IsIntersecting(from, to seq.MID) bool {
+	if f.info == nil {
 		return false
 	}
-	return !(to < s.info.From || s.info.To < from)
+	return !(to < f.info.From || f.info.To < from)
 }
 
-func (s *testFakeFrac) Contains(seq.MID) bool {
-	return false
+func (f *testFakeFrac) Contains(mid seq.MID) bool {
+	return f.info.IsIntersecting(mid, mid)
 }
 
-func (s *testFakeFrac) Fetch(context.Context, []seq.ID) ([][]byte, error) {
-	return nil, nil
+func (f *testFakeFrac) Fetch(_ context.Context, ids []seq.ID) ([][]byte, error) {
+	f.fetchCount++
+	if f.fetchError != nil {
+		return nil, f.fetchError
+	}
+
+	docs := make([][]byte, len(ids))
+	for i, id := range ids {
+		if doc, exists := f.documents[id]; exists {
+			docs[i] = doc
+		} else {
+			docs[i] = nil
+		}
+	}
+	return docs, nil
 }
 
-func (s *testFakeFrac) Search(context.Context, processor.SearchParams) (*seq.QPR, error) {
-	s.searchesCount++
-	return s.qpr, nil
+func (f *testFakeFrac) Search(context.Context, processor.SearchParams) (*seq.QPR, error) {
+	f.searchesCount++
+	return f.qpr, nil
 }
 
-func (s *testFakeFrac) Offload(context.Context, storage.Uploader) (bool, error) {
+func (f *testFakeFrac) Offload(context.Context, storage.Uploader) (bool, error) {
 	return false, nil
 }
 
-func (s *testFakeFrac) Suicide() {
+func (f *testFakeFrac) Suicide() {
 
 }
 
 func newFakeFrac(from, to seq.MID, qpr *seq.QPR) *testFakeFrac {
-	info := &common.Info{From: from, To: to}
-	info.BuildDistribution([]uint64{uint64(from), uint64(to)})
-
 	return &testFakeFrac{
-		info: info,
-		qpr:  qpr,
+		info:      &common.Info{From: from, To: to, DocsTotal: 1},
+		qpr:       qpr,
+		documents: make(map[seq.ID][]byte),
+	}
+}
+
+func newFakeFracWithDocs(from, to seq.MID, documents map[seq.ID][]byte) *testFakeFrac {
+	return &testFakeFrac{
+		info:      &common.Info{From: from, To: to, DocsTotal: uint32(len(documents))},
+		documents: documents,
+	}
+}
+
+func newFakeFracWithFetchError(from, to seq.MID, fetchError error) *testFakeFrac {
+	return &testFakeFrac{
+		info:       &common.Info{From: from, To: to, DocsTotal: 1},
+		documents:  make(map[seq.ID][]byte),
+		fetchError: fetchError,
 	}
 }
 
