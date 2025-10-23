@@ -363,12 +363,12 @@ func TestReplayFractionsWithMultipleEmptyFracs(t *testing.T) {
 }
 
 func addDocs(t *testing.T, fm *FracManager, docCount int) {
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	for i := 0; i < docCount; i++ {
 		doc := []byte("{\"timestamp\": 0, \"message\": \"msg\"}")
 		docRoot, err := insaneJSON.DecodeBytes(doc)
 		assert.NoError(t, err)
-		dp.Append(doc, docRoot, seq.SimpleID(i), seq.Tokens("service:100500", "k8s_pod", "_all_:"))
+		dp.Append(doc, docRoot, seq.SimpleID(i), "service:100500", "k8s_pod", "_all_:")
 	}
 
 	docs, metas := dp.Provide()
