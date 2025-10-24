@@ -429,10 +429,11 @@ func provideExtractTimeFunc(sw *stopwatch.Stopwatch, idx idsIndex, interval int6
 		})
 	}
 
+	timer := sw.Timer("agg_get_mid")
 	return ExtractMIDFunc(func(lid seq.LID) seq.MID {
-		m := sw.Start("get_mid")
+		timer.Start()
 		mid := idx.GetMID(seq.LID(lid))
-		m.Stop()
+		timer.Stop()
 		return mid - (mid % seq.MID(interval))
 	})
 }

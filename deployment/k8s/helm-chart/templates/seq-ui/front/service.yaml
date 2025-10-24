@@ -1,0 +1,17 @@
+{{- if .Values.sequi.front.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "seq-ui-front.fullname" . }}
+  labels:
+    {{- include "seq-ui-front.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.sequi.front.service.type }}
+  ports:
+    - port: {{ .Values.sequi.front.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "seq-ui-front.selectorLabels" . | nindent 4 }}
+{{- end }}

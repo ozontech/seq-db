@@ -1400,46 +1400,16 @@ func (s *IntegrationTestSuite) TestSearchRange() {
 		request string
 		cnt     int
 	}{
-		{
-			request: "[1 TO 3]",
-			cnt:     2,
-		},
-		{
-			request: "[0 TO 3]",
-			cnt:     3,
-		},
-		{
-			request: "{0 TO 3}",
-			cnt:     1,
-		},
-		{
-			request: "{0 TO 3]",
-			cnt:     2,
-		},
-		{
-			request: "[0 TO 3}",
-			cnt:     2,
-		},
-		{
-			request: "[0 TO 63]",
-			cnt:     7,
-		},
-		{
-			request: "[-100 TO 100]",
-			cnt:     7,
-		},
-		{
-			request: "{-100 TO 100}",
-			cnt:     7,
-		},
-		{
-			request: "[0 TO *]",
-			cnt:     7,
-		},
-		{
-			request: "[0 TO *}",
-			cnt:     7,
-		},
+		{request: "[1 TO 3]", cnt: 2},
+		{request: "[0 TO 3]", cnt: 3},
+		{request: "(0 TO 3)", cnt: 1},
+		{request: "(0 TO 3]", cnt: 2},
+		{request: "[0 TO 3)", cnt: 2},
+		{request: "[0 TO 63]", cnt: 7},
+		{request: "[-100 TO 100]", cnt: 7},
+		{request: "(-100 TO 100)", cnt: 7},
+		{request: "[0 TO *]", cnt: 7},
+		{request: "[0 TO *)", cnt: 7},
 	}
 
 	for _, test := range tests {
@@ -1738,17 +1708,17 @@ func (s *IntegrationTestSuite) TestPathSearch() {
 		request string
 		cnt     int
 	}{
-		{request: "/one", cnt: 10},
-		{request: "/two", cnt: 1},
-		{request: "/one/two", cnt: 6},
-		{request: "/one/two/three", cnt: 5},
-		{request: "/one/two/three/1", cnt: 1},
-		{request: "/one/two.three", cnt: 2},
-		{request: "/one/two.three/four", cnt: 1},
-		{request: "/one/*/three", cnt: 6},
-		{request: "/two/*/three", cnt: 1},
-		{request: "*/three/", cnt: 1},
-		{request: "*/three", cnt: 7},
+		{request: `"/one"`, cnt: 10},
+		{request: `"/two"`, cnt: 1},
+		{request: `"/one/two"`, cnt: 6},
+		{request: `"/one/two/three"`, cnt: 5},
+		{request: `"/one/two/three/1"`, cnt: 1},
+		{request: `"/one/two.three"`, cnt: 2},
+		{request: `"/one/two.three/four"`, cnt: 1},
+		{request: `"/one/*/three"`, cnt: 6},
+		{request: `"/two/*/three"`, cnt: 1},
+		{request: `"*/three/"`, cnt: 1},
+		{request: `"*/three"`, cnt: 7},
 	}
 
 	for _, test := range tests {

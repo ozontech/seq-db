@@ -6,6 +6,9 @@ on:
   pull_request:
     types: [ opened, edited, synchronize, reopened ]
 
+permissions:
+  pull-requests: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -15,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: '24'
 
@@ -47,6 +50,7 @@ jobs:
             });
 
   validate-branch-name:
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Validate branch name
