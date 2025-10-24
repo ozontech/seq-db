@@ -119,9 +119,9 @@ func TestReplaySingleEmptyFrac(t *testing.T) {
 
 	replayedFracs := fm.getLocalFracs()
 	assert.Equal(t, 1, len(replayedFracs), "should replay exactly one frac")
-	active := fm.Active() // replayed frac is active
-	assert.Equal(t, uint32(0), active.Info().DocsTotal, "no docs")
-	assert.NotEqual(t, fractionInfo.Name(), active.Info().Name(), "should create a new empty frac")
+	assert.Equal(t, fractionInfo.Name(), replayedFracs[0].Info().Name(), "replayed fraction should have the same name")
+	assert.Equal(t, uint32(0), replayedFracs[0].Info().DocsTotal, "no docs")
+	assert.Equal(t, fm.Active(), replayedFracs[0], "replayed fraction should be active")
 
 	fm.Stop()
 }
@@ -299,11 +299,9 @@ func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
 		assert.Greater(t, replayedFracs[i].Info().SealingTime, uint64(0), "replayed frac %d must be sealed", i)
 	}
 
-	assert.NotEqual(t, fracs[fracCount].Name(), replayedFracs[fracCount].Info().Name(), "should create a new empty frac")
+	assert.Equal(t, fracs[fracCount].Name(), replayedFracs[fracCount].Info().Name(), "last replayed fraction should have the same name as last fraction")
 	assert.Equal(t, uint32(0), replayedFracs[fracCount].Info().DocsTotal, "last fraction should have no documents")
-
-	newActive := fm.Active()
-	assert.Equal(t, uint32(0), newActive.Info().DocsTotal, "new active fraction should be empty")
+	assert.Equal(t, replayedFracs[fracCount], fm.Active(), "last replayed fraction should be active")
 
 	fm.Stop()
 }

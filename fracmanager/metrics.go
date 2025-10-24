@@ -87,4 +87,11 @@ var (
 		Subsystem: "cache",
 		Name:      "miss_latency_sec",
 	}, []string{"layer"})
+
+	fractionLoadErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "main",
+		Name:      "fraction_load_errors",
+		Help:      "Doc file load errors (missing or invalid doc file)",
+	})
 )

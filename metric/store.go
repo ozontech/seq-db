@@ -130,13 +130,6 @@ var (
 		Help:      "store is ready to accept requests",
 	})
 
-	FractionLoadErrors = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "main",
-		Name:      "fraction_load_errors",
-		Help:      "Doc file load errors (missing or invalid doc file)",
-	})
-
 	StorePanics = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "common",
