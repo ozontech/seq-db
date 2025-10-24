@@ -3,7 +3,7 @@ package storeapi
 import (
 	"fmt"
 
-	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -98,28 +98,28 @@ func MustProtoOrder(o seq.DocsOrder) Order {
 }
 
 var statusMappings = []AsyncSearchStatus{
-	fracmanager.AsyncSearchStatusDone:       AsyncSearchStatus_AsyncSearchStatusDone,
-	fracmanager.AsyncSearchStatusInProgress: AsyncSearchStatus_AsyncSearchStatusInProgress,
-	fracmanager.AsyncSearchStatusError:      AsyncSearchStatus_AsyncSearchStatusError,
-	fracmanager.AsyncSearchStatusCanceled:   AsyncSearchStatus_AsyncSearchStatusCanceled,
+	asyncsearcher.AsyncSearchStatusDone:       AsyncSearchStatus_AsyncSearchStatusDone,
+	asyncsearcher.AsyncSearchStatusInProgress: AsyncSearchStatus_AsyncSearchStatusInProgress,
+	asyncsearcher.AsyncSearchStatusError:      AsyncSearchStatus_AsyncSearchStatusError,
+	asyncsearcher.AsyncSearchStatusCanceled:   AsyncSearchStatus_AsyncSearchStatusCanceled,
 }
 
-var statusMappingsPb = func() []fracmanager.AsyncSearchStatus {
-	mappings := make([]fracmanager.AsyncSearchStatus, len(statusMappings))
+var statusMappingsPb = func() []asyncsearcher.AsyncSearchStatus {
+	mappings := make([]asyncsearcher.AsyncSearchStatus, len(statusMappings))
 	for from, to := range statusMappings {
-		mappings[to] = fracmanager.AsyncSearchStatus(from)
+		mappings[to] = asyncsearcher.AsyncSearchStatus(from)
 	}
 	return mappings
 }()
 
-func (s AsyncSearchStatus) ToAsyncSearchStatus() (fracmanager.AsyncSearchStatus, error) {
+func (s AsyncSearchStatus) ToAsyncSearchStatus() (asyncsearcher.AsyncSearchStatus, error) {
 	if int(s) >= len(statusMappingsPb) {
 		return 0, fmt.Errorf("unknown status: %d", s)
 	}
 	return statusMappingsPb[s], nil
 }
 
-func (s AsyncSearchStatus) MustAsyncSearchStatus() fracmanager.AsyncSearchStatus {
+func (s AsyncSearchStatus) MustAsyncSearchStatus() asyncsearcher.AsyncSearchStatus {
 	v, err := s.ToAsyncSearchStatus()
 	if err != nil {
 		panic(err)
@@ -127,14 +127,14 @@ func (s AsyncSearchStatus) MustAsyncSearchStatus() fracmanager.AsyncSearchStatus
 	return v
 }
 
-func ToProtoAsyncSearchStatus(s fracmanager.AsyncSearchStatus) (AsyncSearchStatus, error) {
+func ToProtoAsyncSearchStatus(s asyncsearcher.AsyncSearchStatus) (AsyncSearchStatus, error) {
 	if int(s) >= len(statusMappings) {
 		return 0, fmt.Errorf("unknown status")
 	}
 	return statusMappings[s], nil
 }
 
-func MustProtoAsyncSearchStatus(s fracmanager.AsyncSearchStatus) AsyncSearchStatus {
+func MustProtoAsyncSearchStatus(s asyncsearcher.AsyncSearchStatus) AsyncSearchStatus {
 	v, err := ToProtoAsyncSearchStatus(s)
 	if err != nil {
 		panic(err)

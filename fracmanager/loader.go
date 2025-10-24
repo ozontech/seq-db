@@ -3,7 +3,6 @@ package fracmanager
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/util"
 )
 
 type fracInfo struct {
@@ -76,10 +76,10 @@ func (l *loader) load(ctx context.Context) ([]*frac.Active, []*frac.Sealed, []*f
 
 		if info.hasSdocs && info.hasIndex {
 			if info.hasMeta {
-				removeFile(info.base + consts.MetaFileSuffix)
+				util.RemoveFile(info.base + consts.MetaFileSuffix)
 			}
 			if info.hasDocs {
-				removeFile(info.base + consts.DocsFileSuffix)
+				util.RemoveFile(info.base + consts.DocsFileSuffix)
 			}
 			sealed = append(sealed, l.loadSealedFrac(diskFracCache, info))
 		} else if !info.hasRemote {
@@ -150,22 +150,14 @@ func (l *loader) getFileList() []string {
 }
 
 func removeFractionFiles(base string) {
-	removeFile(base + consts.IndexFileSuffix) // first delete files without del suffix
-	removeFile(base + consts.DocsFileSuffix)  // to preserve the info about fractions
-	removeFile(base + consts.SdocsFileSuffix) // that should be deleted
-	removeFile(base + consts.MetaFileSuffix)
+	util.RemoveFile(base + consts.IndexFileSuffix) // first delete files without del suffix
+	util.RemoveFile(base + consts.DocsFileSuffix)  // to preserve the info about fractions
+	util.RemoveFile(base + consts.SdocsFileSuffix) // that should be deleted
+	util.RemoveFile(base + consts.MetaFileSuffix)
 
-	removeFile(base + consts.IndexDelFileSuffix)
-	removeFile(base + consts.DocsDelFileSuffix)
-	removeFile(base + consts.SdocsDelFileSuffix)
-}
-
-func removeFile(file string) {
-	if err := os.Remove(file); err == nil {
-		logger.Info("remove file", zap.String("filename", file))
-	} else if !os.IsNotExist(err) {
-		logger.Error("file removing error", zap.Error(err))
-	}
+	util.RemoveFile(base + consts.IndexDelFileSuffix)
+	util.RemoveFile(base + consts.DocsDelFileSuffix)
+	util.RemoveFile(base + consts.SdocsDelFileSuffix)
 }
 
 func (l *loader) filterInfos(fracIDs []string, infos map[string]*fracInfo) []*fracInfo {

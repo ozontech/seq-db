@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/encoding"
 	"gopkg.in/alecthomas/kingpin.v2"
 
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
@@ -295,7 +296,7 @@ func startStore(
 				FractionsPerIteration: config.NumCPU,
 				RequestsLimit:         uint64(cfg.Limits.SearchRequests),
 				LogThreshold:          cfg.SlowLogs.SearchThreshold,
-				Async: fracmanager.AsyncSearcherConfig{
+				Async: asyncsearcher.AsyncSearcherConfig{
 					DataDir:           cfg.AsyncSearch.DataDir,
 					Workers:           cfg.AsyncSearch.Concurrency,
 					MaxSize:           int(cfg.AsyncSearch.MaxTotalSize),

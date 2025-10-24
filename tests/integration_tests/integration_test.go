@@ -25,8 +25,8 @@ import (
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
@@ -1956,13 +1956,13 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.Eventually(func() bool {
 		resp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 		r.NoError(err)
-		return resp.Status == fracmanager.AsyncSearchStatusDone
+		return resp.Status == asyncsearcher.AsyncSearchStatusDone
 	}, 10*time.Second, 50*time.Millisecond)
 
 	fresp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 	r.NoError(err)
 
-	r.Equalf(fracmanager.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
+	r.Equalf(asyncsearcher.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
 	r.Equal([]seq.ErrorSource(nil), fresp.QPR.Errors)
 	r.True(fresp.ExpiresAt.After(time.Now().UTC()))
 	r.Equal([]seq.AggregationResult{
@@ -2006,7 +2006,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.Eventually(func() bool {
 		resp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 		r.NoError(err)
-		return resp.Status == fracmanager.AsyncSearchStatusDone
+		return resp.Status == asyncsearcher.AsyncSearchStatusDone
 	}, 10*time.Second, 50*time.Millisecond)
 
 	listResp, err := searcher.GetAsyncSearchesList(ctx, search.GetAsyncSearchesListRequest{})
@@ -2015,7 +2015,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 
 	for i, s := range listResp {
 		r.True(s.ID == searchIDs[len(searchIDs)-i-1]) // list is sorted by startedAt desc
-		r.Equal(fracmanager.AsyncSearchStatusDone, s.Status)
+		r.Equal(asyncsearcher.AsyncSearchStatusDone, s.Status)
 		r.Equal(startReq, s.Request)
 		r.True(s.ExpiresAt.After(time.Now().UTC()))
 		r.Equal(float64(1), s.Progress)

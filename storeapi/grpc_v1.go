@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -31,7 +32,7 @@ type SearchConfig struct {
 	FractionsPerIteration int
 	RequestsLimit         uint64
 	LogThreshold          time.Duration
-	Async                 fracmanager.AsyncSearcherConfig
+	Async                 asyncsearcher.AsyncSearcherConfig
 }
 
 type BulkConfig struct {
@@ -99,7 +100,7 @@ type GrpcV1 struct {
 	bulkData      bulkData
 	searchData    searchData
 	fetchData     fetchData
-	asyncSearcher *fracmanager.AsyncSearcher
+	asyncSearcher *asyncsearcher.AsyncSearcher
 
 	inflightBulks atomic.Int64
 }
@@ -118,7 +119,7 @@ func NewGrpcV1(cfg APIConfig, fracManager *fracmanager.FracManager, mappingProvi
 		fetchData: fetchData{
 			docFetcher: fracmanager.NewFetcher(config.FetchWorkers),
 		},
-		asyncSearcher: fracmanager.MustStartAsync(
+		asyncSearcher: asyncsearcher.MustStartAsync(
 			cfg.Search.Async, mappingProvider,
 			fracManager.GetAllFracs(),
 		),
