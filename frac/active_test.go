@@ -7,9 +7,13 @@ import (
 	"math/rand/v2"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -19,11 +23,13 @@ import (
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tokenizer"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestConcurrentAppendAndQuery(t *testing.T) {
-	const concurrency = 8
+	const writers = 8
+	const readers = 8
+	const queries = 500
+
 	services := []string{"gateway", "proxy", "scheduler"}
 	messages := []string{
 		"request started", "request completed", "processing timed out",
@@ -61,7 +67,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	tmpDir := common.CreateTempDir()
 	baseName := filepath.Join(tmpDir, "test_fraction")
 
-	activeIndexer := NewActiveIndexer(concurrency, 1000)
+	activeIndexer := NewActiveIndexer(writers, 1000)
 	activeIndexer.Start()
 	defer activeIndexer.Stop()
 
@@ -73,6 +79,12 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 		cache.NewCache[[]byte](nil, nil),
 		&Config{},
 	)
+
+	mapping := seq.Mapping{
+		"service": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"message": seq.NewSingleType(seq.TokenizerTypeText, "", 100),
+		"level":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+	}
 
 	wg := sync.WaitGroup{}
 
@@ -92,7 +104,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 			return d, nil
 		}
 
-		proc := getTestProcessor()
+		proc := getTestProcessor(mapping)
 		compressor := indexer.GetDocsMetasCompressor(3, 3)
 		_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
 		assert.NoError(t, err, "processing bulk failed")
@@ -107,33 +119,65 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 	wg.Wait()
 
-	mapping := seq.Mapping{
-		"clientip": seq.NewSingleType(seq.TokenizerTypeKeyword, "service", 20),
-		"request":  seq.NewSingleType(seq.TokenizerTypeText, "message", 100),
-		"status":   seq.NewSingleType(seq.TokenizerTypeKeyword, "level", 20),
+	ctx := context.Background()
+	g, ctx := errgroup.WithContext(ctx)
+
+	for readerID := 0; readerID < readers; readerID++ {
+		g.Go(func() error {
+			for queryID := 0; queryID < queries; queryID++ {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+				}
+
+				queryAst, err := parser.ParseSeqQL("message:request", mapping)
+				if err != nil {
+					return fmt.Errorf("reader %d query %d: failed to parse query: %w", readerID, queryID, err)
+				}
+
+				searchParams := processor.SearchParams{}
+				searchParams.AST = queryAst.Root
+				searchParams.From = seq.MID(0)
+				searchParams.To = seq.MID(math.MaxUint64)
+				searchParams.Limit = 50
+
+				qpr, err := fraction.Search(ctx, searchParams)
+				if err != nil {
+					return fmt.Errorf("reader %d query %d: search failed: %w", readerID, queryID, err)
+				}
+
+				fetchedDocs, err := fraction.Fetch(ctx, qpr.IDs.IDs())
+				if err != nil {
+					return fmt.Errorf("reader %d query %d: fetch docs failed: %w", readerID, queryID, err)
+				}
+
+				fetchedDocsStrings := make([]string, len(fetchedDocs))
+				for i, doc := range fetchedDocs {
+					fetchedDocsStrings[i] = string(doc)
+				}
+
+				var expectedDocs []string
+				for i := len(docs) - 1; i >= 0 && len(expectedDocs) < 50; i-- {
+					if strings.Contains(docs[i], "request") {
+						expectedDocs = append(expectedDocs, docs[i])
+					}
+				}
+
+				assert.Equal(t, len(expectedDocs), len(fetchedDocsStrings),
+					"reader %d query %d: number of fetched docs should match expected", readerID, queryID)
+				assert.Equal(t, expectedDocs, fetchedDocsStrings,
+					"reader %d query %d: fetched documents should match expected documents containing 'request' in descending order", readerID, queryID)
+			}
+			return nil
+		})
 	}
-	queryAst, err := parser.ParseSeqQL("message:request", mapping)
-	assert.NoError(t, err, "failed to parse query")
 
-	searchParams := processor.SearchParams{}
-	searchParams.AST = queryAst.Root
-	searchParams.From = seq.MID(0)
-	searchParams.To = seq.MID(math.MaxUint64)
-	searchParams.Limit = 50
-
-	qpr, err := fraction.Search(context.Background(), searchParams)
-	assert.NoError(t, err, "search failed")
-
-	fetchedDocs, err := fraction.Fetch(context.Background(), qpr.IDs.IDs())
-	assert.NoError(t, err, "fetch docs failed")
+	err := g.Wait()
+	assert.NoError(t, err, "concurrent queries should complete without errors")
 }
 
-func getTestProcessor() *indexer.Processor {
-	mapping := seq.Mapping{
-		"clientip": seq.NewSingleType(seq.TokenizerTypeKeyword, "service", 20),
-		"request":  seq.NewSingleType(seq.TokenizerTypeText, "message", 100),
-		"status":   seq.NewSingleType(seq.TokenizerTypeKeyword, "level", 20),
-	}
+func getTestProcessor(mapping seq.Mapping) *indexer.Processor {
 	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(1024, false, true, 8192),
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(1024, false, true),
