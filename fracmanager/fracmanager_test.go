@@ -436,7 +436,11 @@ func TestOldestCT(t *testing.T) {
 	const fracCount = 10
 
 	t.Run("local", func(t *testing.T) {
-		fm := NewFracManager(context.Background(), &Config{}, nil)
+		dataDir := testscommon.GetTestTmpDir(t)
+		testscommon.RecreateDir(dataDir)
+		defer testscommon.RemoveDir(dataDir)
+
+		fm := NewFracManager(context.Background(), &Config{DataDir: dataDir}, nil)
 
 		oldestLocal := time.Now()
 		nowOldestLocal := oldestLocal
@@ -460,7 +464,11 @@ func TestOldestCT(t *testing.T) {
 	})
 
 	t.Run("local-and-remote", func(t *testing.T) {
-		fm := NewFracManager(context.Background(), &Config{}, nil)
+		dataDir := testscommon.GetTestTmpDir(t)
+		testscommon.RecreateDir(dataDir)
+		defer testscommon.RemoveDir(dataDir)
+
+		fm := NewFracManager(context.Background(), &Config{DataDir: dataDir}, nil)
 		oldestRemote := time.Now()
 		nowOldestRemote := oldestRemote
 
