@@ -122,8 +122,8 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 		return nil, nil, nil, err
 	}
 
-	start := time.Now()
 	total := len(manifests)
+	logProgress := progressLogger(time.Second)
 
 	// Load fractions according to their stage (active, sealed, and remote)
 	actives := make([]*frac.Active, 0)
@@ -142,7 +142,7 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 		default:
 			logger.Error("unexpected fraction stage", zap.Any("manifest", manifest))
 		}
-		logDiscoveringProgress(start, i, total)
+		logProgress(i, total)
 	}
 
 	logger.Info("fractions initialization completed",
@@ -195,16 +195,19 @@ func (l *Loader) scanFiles() []string {
 	return files
 }
 
-// logDiscoveringProgress logs loading progress at regular intervals
+// progressLogger returns function that logs discovering progress no more frequently than the specified interval
 // Provides visibility into the fraction loading process
-func logDiscoveringProgress(startTime time.Time, currentIndex, totalCount int) {
-	if time.Since(startTime) >= time.Second || currentIndex == totalCount-1 {
-		progressPercent := 100 * (currentIndex + 1) / totalCount
-		logger.Info(
-			"fraction list discovering progress",
-			zap.String("progress", fmt.Sprintf("%d%%", progressPercent)),
-			zap.Int("total", totalCount),
-			zap.Int("loaded", currentIndex+1),
-		)
+func progressLogger(interval time.Duration) func(currentIndex, totalCount int) {
+	ts := time.Now()
+	return func(currentIndex, totalCount int) {
+		if time.Since(ts) >= interval || currentIndex == totalCount-1 {
+			logger.Info(
+				"fraction list discovering",
+				zap.String("progress", fmt.Sprintf("%d%%", 100*(currentIndex+1)/totalCount)),
+				zap.Int("total", totalCount),
+				zap.Int("loaded", currentIndex+1),
+			)
+			ts = time.Now()
+		}
 	}
 }
