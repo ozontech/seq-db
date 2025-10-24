@@ -407,27 +407,27 @@ func TestMatureMode(t *testing.T) {
 
 	// first run
 	launchAndCheck(func(fm *FracManager) {
-		assert.Equal(t, false, fm.Mature(), "expect data dir is empty")
+		assert.Equal(t, false, fm.Flags().IsCapacityExceeded(), "expect data dir is empty")
 		makeSealedFrac(fm, 10)
-		assert.Equal(t, false, fm.Mature(), "file .immature must still exist")
+		assert.Equal(t, false, fm.Flags().IsCapacityExceeded(), "there should still be no fraction removal and the flag should be false")
 	})
 
 	// second run
 	launchAndCheck(func(fm *FracManager) {
-		assert.Equal(t, false, fm.Mature(), "file .immature must exist")
+		assert.Equal(t, false, fm.Flags().IsCapacityExceeded(), "there should still be no fraction removal and the flag should be false")
 		for fm.GetAllFracs().GetTotalSize() < fm.config.TotalSize {
 			makeSealedFrac(fm, 10)
 		}
-		assert.Equal(t, false, fm.Mature(), "file .immature must still exist")
+		assert.Equal(t, false, fm.Flags().IsCapacityExceeded(), "there should still be no fraction removal and the flag should be false")
 		sealWG := sync.WaitGroup{}
 		suicideWG := sync.WaitGroup{}
 		fm.maintenance(&sealWG, &suicideWG)
-		assert.Equal(t, true, fm.Mature(), "file .immature have to be removed")
+		assert.Equal(t, true, fm.Flags().IsCapacityExceeded(), "the deletion should occur and the flag should now be true")
 	})
 
 	// third run
 	launchAndCheck(func(fm *FracManager) {
-		assert.Equal(t, true, fm.Mature(), "the data directory is not empty at startup and the .immature file must be missing")
+		assert.Equal(t, true, fm.Flags().IsCapacityExceeded(), "IsCapacityExceeded must be set to true in the state file")
 	})
 
 }
