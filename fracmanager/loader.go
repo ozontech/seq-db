@@ -3,273 +3,208 @@ package fracmanager
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/metric"
 )
 
-type fracInfo struct {
-	base        string
-	hasDocs     bool
-	hasDocsDel  bool
-	hasIndex    bool
-	hasIndexDel bool
-	hasMeta     bool
-	hasSdocs    bool
-	hasSdocsDel bool
-	hasRemote   bool
-}
+// Loader is responsible for loading and initializing fractions from filesystem
+// Coordinates the process of discovering, validating, and loading all fraction types
+type Loader struct {
+	config    *Config           // loader configuration
+	provider  *fractionProvider // provider for creating fraction objects
+	infoCache *fracInfoCache    // fraction metadata cache
 
-type loader struct {
-	config       *Config
-	fracProvider *fractionProvider
-	fracCache    *sealedFracCache
-
-	cachedFracs   int
-	uncachedFracs int
-}
-
-func NewLoader(
-	config *Config, fracProvider *fractionProvider,
-	fracCache *sealedFracCache,
-) *loader {
-	return &loader{
-		config:       config,
-		fracProvider: fracProvider,
-		fracCache:    fracCache,
+	cacheStat struct {
+		hits   int // counter of fractions loaded from frac info cache
+		misses int // counter of fractions loaded without using frac info cache
 	}
 }
 
-func (l *loader) load(ctx context.Context) ([]*frac.Active, []*frac.Sealed, []*frac.Remote, error) {
-	fracIDs, infos := l.makeInfos(l.getFileList())
-	sort.Strings(fracIDs)
-
-	if l.config.FracLoadLimit > 0 {
-		logger.Info("preloading fractions", zap.Uint64("limit", l.config.FracLoadLimit))
-		if len(fracIDs) > int(l.config.FracLoadLimit) {
-			fracIDs = fracIDs[len(fracIDs)-int(l.config.FracLoadLimit):]
-		}
+// NewLoader creates a new fraction loader
+// Initialized at system startup to prepare data
+func NewLoader(config *Config, provider *fractionProvider, infoCache *fracInfoCache) *Loader {
+	return &Loader{
+		config:    config,
+		provider:  provider,
+		infoCache: infoCache,
 	}
-
-	infosList := l.filterInfos(fracIDs, infos)
-	cnt := len(infosList)
-
-	actives := make([]*frac.Active, 0)
-	remote := make([]*frac.Remote, 0, cnt)
-	sealed := make([]*frac.Sealed, 0, cnt)
-
-	diskFracCache := NewFracCacheFromDisk(filepath.Join(l.config.DataDir, consts.FracCacheFileSuffix))
-	ts := time.Now()
-
-	for i, info := range infosList {
-		if l.config.OffloadingEnabled && info.hasRemote {
-			remote = append(remote, l.loadRemoteFrac(ctx, diskFracCache, info))
-		}
-
-		if info.hasSdocs && info.hasIndex {
-			if info.hasMeta {
-				removeFile(info.base + consts.MetaFileSuffix)
-			}
-			if info.hasDocs {
-				removeFile(info.base + consts.DocsFileSuffix)
-			}
-			sealed = append(sealed, l.loadSealedFrac(diskFracCache, info))
-		} else if !info.hasRemote {
-			if info.hasMeta {
-				actives = append(actives, l.fracProvider.NewActive(info.base))
-			} else {
-				sealed = append(sealed, l.loadSealedFrac(diskFracCache, info))
-			}
-		}
-
-		if time.Since(ts) >= time.Second || i == len(infosList)-1 {
-			ts = time.Now()
-			p := 100 * (i + 1) / cnt
-			logger.Info(
-				"preloading",
-				zap.String("progress", fmt.Sprintf("%d%%", p)),
-				zap.Int("fracs_total", cnt),
-				zap.Int("fracs_loaded", i+1),
-			)
-		}
-	}
-
-	logger.Info("fractions list created", zap.Int("cached", l.cachedFracs), zap.Int("uncached", l.uncachedFracs))
-
-	return actives, sealed, remote, nil
 }
 
-func (l *loader) loadSealedFrac(diskFracCache *sealedFracCache, info *fracInfo) *frac.Sealed {
-	listedInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
-	if ok {
-		l.cachedFracs++
-	} else {
-		l.uncachedFracs++
-	}
-
-	sealed := l.fracProvider.NewSealed(info.base, listedInfo)
-
-	stats := sealed.Info()
-	l.fracCache.AddFraction(stats.Name(), stats)
-	return sealed
-}
-
-func (l *loader) loadRemoteFrac(ctx context.Context, diskFracCache *sealedFracCache, info *fracInfo) *frac.Remote {
-	listedInfo, ok := diskFracCache.GetFracInfo(filepath.Base(info.base))
-	if ok {
-		l.cachedFracs++
-	} else {
-		l.uncachedFracs++
-	}
-
-	remote := l.fracProvider.NewRemote(ctx, info.base, listedInfo)
-
-	stats := remote.Info()
-	l.fracCache.AddFraction(stats.Name(), stats)
-
-	return remote
-}
-
-func (l *loader) getFileList() []string {
-	filePatten := fmt.Sprintf("%s*", fileBasePattern)
-	pattern := filepath.Join(l.config.DataDir, filePatten)
-
-	files, err := filepath.Glob(pattern)
+// Load is the main method for loading all fractions
+// Coordinates the entire process: discovery, validation, recovery, and ordering
+func (l *Loader) Load(ctx context.Context) (*frac.Active, []*frac.Sealed, []*frac.Remote, error) {
+	// Stage 1: Discover all fractions in filesystem
+	actives, locals, remotes, err := l.discover(ctx)
 	if err != nil {
-		logger.Panic("todo")
+		return nil, nil, nil, err
+	}
+
+	// Stage 2: Replay active fractions and seal them
+	active, sealed, err := l.replayAndSeal(ctx, actives)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Stage 3: Create new active fraction if no existing ones
+	if active == nil {
+		active = l.provider.CreateActive()
+	}
+
+	// Stage 4: Combine all local fractions
+	locals = append(locals, sealed...)
+	return active, locals, remotes, nil
+}
+
+// replayAndSeal replays active fractions and seals old ones
+// Key method for ensuring data consistency during restart
+func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*frac.Active, []*frac.Sealed, error) {
+	if len(actives) == 0 {
+		return nil, nil, nil
+	}
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(l.config.ReplayWorkers)
+
+	sealed := make([]*frac.Sealed, len(actives)-1)
+
+	for i, a := range actives[:len(actives)-1] {
+		g.Go(func() error {
+			// Replay operations from WAL to restore state
+			if err := a.Replay(ctx); err != nil {
+				return err
+			}
+
+			if a.Info().DocsTotal == 0 {
+				a.Suicide() // can't seal empty, skip it
+				return nil
+			}
+
+			s, err := l.provider.Seal(a)
+			if err != nil {
+				return err
+			}
+			sealed[i] = s
+
+			return nil
+		})
+	}
+
+	last := actives[len(actives)-1]
+	g.Go(func() error { return last.Replay(ctx) }) // last frac stays active and is not sealed just replayed
+
+	if err := g.Wait(); err != nil {
+		return nil, nil, err
+	}
+
+	n := 0
+	for i, s := range sealed { // skip empty
+		if s != nil {
+			sealed[n] = sealed[i]
+			n++
+		}
+	}
+
+	return last, sealed[:n], nil
+}
+
+// discover discovers all fractions in filesystem
+// Returns fractions separated by type: active, local, remote
+func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, []*frac.Remote, error) {
+	// Scan and analyze fraction files. Filter valid fractions
+	manifests, err := analyzeFiles(l.scanFiles())
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	start := time.Now()
+	total := len(manifests)
+
+	// Load fractions according to their stage (active, sealed, and remote)
+	actives := make([]*frac.Active, 0)
+	locals := make([]*frac.Sealed, 0, total)
+	remotes := make([]*frac.Remote, 0, total)
+
+	// Iterate through all manifests and load corresponding fraction types
+	for i, manifest := range manifests {
+		switch manifest.Stage() {
+		case fracStageActive:
+			actives = append(actives, l.provider.NewActive(manifest.basePath))
+		case fracStageSealed:
+			locals = append(locals, l.loadSealed(manifest.basePath))
+		case fracStageRemote:
+			remotes = append(remotes, l.loadRemote(ctx, manifest.basePath))
+		default:
+			logger.Error("unexpected fraction stage", zap.Any("manifest", manifest))
+		}
+		logDiscoveringProgress(start, i, total)
+	}
+
+	logger.Info("fractions initialization completed",
+		zap.Int("cached", l.cacheStat.hits),
+		zap.Int("uncached", l.cacheStat.misses))
+
+	return actives, locals, remotes, nil
+}
+
+// loadSealed loads a sealed fraction using cache
+// Optimizes loading through pre-saved metadata
+func (l *Loader) loadSealed(basePath string) *frac.Sealed {
+	info, found := l.infoCache.Get(filepath.Base(basePath))
+	l.updateStats(found)
+
+	f := l.provider.NewSealed(basePath, info)
+	l.infoCache.Add(f.Info())
+	return f
+}
+
+// loadRemote loads a remote fraction
+// Works with external storages through context
+func (l *Loader) loadRemote(ctx context.Context, basePath string) *frac.Remote {
+	info, found := l.infoCache.Get(filepath.Base(basePath))
+	l.updateStats(found)
+
+	f := l.provider.NewRemote(ctx, basePath, info)
+	l.infoCache.Add(f.Info())
+	return f
+}
+
+// updateCacheStats updates cache usage statistics
+// For monitoring caching effectiveness
+func (l *Loader) updateStats(found bool) {
+	if found {
+		l.cacheStat.hits++
+	} else {
+		l.cacheStat.misses++
+	}
+}
+
+// scanFiles scans filesystem for fraction files
+// Uses glob pattern to find all matching files
+func (l *Loader) scanFiles() []string {
+	fullPattern := filepath.Join(l.config.DataDir, fileBasePattern+"*")
+	files, err := filepath.Glob(fullPattern)
+	if err != nil {
+		logger.Panic("failed to scan fraction files", zap.Error(err))
 	}
 	return files
 }
 
-func removeFractionFiles(base string) {
-	removeFile(base + consts.IndexFileSuffix) // first delete files without del suffix
-	removeFile(base + consts.DocsFileSuffix)  // to preserve the info about fractions
-	removeFile(base + consts.SdocsFileSuffix) // that should be deleted
-	removeFile(base + consts.MetaFileSuffix)
-
-	removeFile(base + consts.IndexDelFileSuffix)
-	removeFile(base + consts.DocsDelFileSuffix)
-	removeFile(base + consts.SdocsDelFileSuffix)
-}
-
-func removeFile(file string) {
-	if err := os.Remove(file); err == nil {
-		logger.Info("remove file", zap.String("filename", file))
-	} else if !os.IsNotExist(err) {
-		logger.Error("file removing error", zap.Error(err))
+// logDiscoveringProgress logs loading progress at regular intervals
+// Provides visibility into the fraction loading process
+func logDiscoveringProgress(startTime time.Time, currentIndex, totalCount int) {
+	if time.Since(startTime) >= time.Second || currentIndex == totalCount-1 {
+		progressPercent := 100 * (currentIndex + 1) / totalCount
+		logger.Info(
+			"fraction list discovering progress",
+			zap.String("progress", fmt.Sprintf("%d%%", progressPercent)),
+			zap.Int("total", totalCount),
+			zap.Int("loaded", currentIndex+1),
+		)
 	}
-}
-
-func (l *loader) filterInfos(fracIDs []string, infos map[string]*fracInfo) []*fracInfo {
-	infoList := make([]*fracInfo, 0)
-
-	for _, id := range fracIDs {
-		info := infos[id]
-		if info == nil {
-			logger.Panic("frac loader has gone crazy")
-		}
-
-		if info.hasRemote {
-			infoList = append(infoList, info)
-			continue
-		}
-
-		if info.hasDocsDel || info.hasIndexDel || info.hasSdocsDel {
-			// storage has terminated in the middle of fraction deletion so continue this process
-			logger.Info("cleaning up partially deleted fraction files", zap.String("file", info.base))
-			removeFractionFiles(info.base)
-			continue
-		}
-
-		if !info.hasDocs && !info.hasSdocs {
-			metric.FractionLoadErrors.Inc()
-			logger.Error("fraction doesn't have .docs/.sdocs file, skipping", zap.String("file", info.base))
-			continue
-		}
-
-		if info.hasMeta || info.hasIndex {
-			infoList = append(infoList, info)
-			continue
-		}
-
-		logger.Fatal("fraction has valid docs but no .index or .meta file", zap.String("fraction_id", id), zap.Any("info", info))
-	}
-	return infoList
-}
-
-func (l *loader) makeInfos(files []string) ([]string, map[string]*fracInfo) {
-	fracIDs := make([]string, 0, len(files))
-	infos := make(map[string]*fracInfo)
-	for _, file := range files {
-		base, suffix, fracID := l.extractInfo(file)
-		if suffix == consts.IndexTmpFileSuffix || suffix == consts.SdocsTmpFileSuffix {
-			continue
-		}
-
-		info, ok := infos[fracID]
-		if !ok {
-			info = &fracInfo{base: base}
-			infos[fracID] = info
-			fracIDs = append(fracIDs, fracID)
-		}
-
-		logger.Info("new file", zap.String("file", file))
-
-		switch suffix {
-		case consts.DocsFileSuffix:
-			info.hasDocs = true
-		case consts.DocsDelFileSuffix:
-			info.hasDocsDel = true
-		case consts.SdocsFileSuffix:
-			info.hasSdocs = true
-		case consts.SdocsDelFileSuffix:
-			info.hasSdocsDel = true
-		case consts.IndexFileSuffix:
-			info.hasIndex = true
-		case consts.IndexDelFileSuffix:
-			info.hasIndexDel = true
-		case consts.MetaFileSuffix:
-			info.hasMeta = true
-		case consts.RemoteFractionSuffix:
-			info.hasRemote = true
-		default:
-			logger.Fatal("unknown file", zap.String("file", file))
-		}
-	}
-
-	return fracIDs, infos
-}
-
-func (l *loader) extractInfo(file string) (string, string, string) {
-	base := filepath.Base(file)
-
-	if len(base) < len(fileBasePattern) {
-		logger.Panic("wrong docs file", zap.String("file", file))
-	}
-
-	if base[:len(fileBasePattern)] != fileBasePattern {
-		logger.Panic("wrong docs file", zap.String("file", file))
-	}
-
-	suffix := getSuffix(base)
-	fracID := base[len(fileBasePattern) : len(base)-len(suffix)]
-
-	return file[:len(file)-len(suffix)], suffix, fracID
-}
-
-func getSuffix(str string) string {
-	for i, c := range str {
-		if c == '.' {
-			return str[i:]
-		}
-	}
-	return ""
 }

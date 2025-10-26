@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/seq"
@@ -19,6 +21,16 @@ func (g *grpcV1) StartAsyncSearch(
 	ctx context.Context,
 	r *seqproxyapi.StartAsyncSearchRequest,
 ) (*seqproxyapi.StartAsyncSearchResponse, error) {
+	if g.config.AsyncSearchMaxDocumentsPerRequest > 0 && r.Size > g.config.AsyncSearchMaxDocumentsPerRequest {
+		return nil, status.Errorf(codes.InvalidArgument, "too many documents are requested: count=%d, max=%d",
+			r.Size, g.config.AsyncSearchMaxDocumentsPerRequest)
+	}
+
+	// reject "empty" request: no docs, no aggs, no hist
+	if r.WithDocs == false && len(r.Aggs) == 0 && r.Hist == nil {
+		return nil, status.Error(codes.InvalidArgument, "can't serve empty request: fill aggs, hist or withDocs")
+	}
+
 	aggs, err := convertAggsQuery(r.Aggs)
 	if err != nil {
 		return nil, err
@@ -40,6 +52,7 @@ func (g *grpcV1) StartAsyncSearch(
 		Aggregations:      aggs,
 		HistogramInterval: seq.MID(histInterval.Milliseconds()),
 		WithDocs:          r.WithDocs,
+		Size:              r.Size,
 	})
 	if err != nil {
 		return nil, err
@@ -79,6 +92,7 @@ func (g *grpcV1) FetchAsyncSearchResult(
 		},
 		Aggs:     makeProtoRequestAggregations(resp.Request.Aggregations),
 		WithDocs: resp.Request.WithDocs,
+		Size:     resp.Request.Size,
 	}
 	if resp.Request.HistogramInterval > 0 {
 		searchReq.Hist = &seqproxyapi.HistQuery{
@@ -109,14 +123,14 @@ func (g *grpcV1) GetAsyncSearchesList(
 	ctx context.Context,
 	r *seqproxyapi.GetAsyncSearchesListRequest,
 ) (*seqproxyapi.GetAsyncSearchesListResponse, error) {
-	var status *fracmanager.AsyncSearchStatus
+	var searchStatus *asyncsearcher.AsyncSearchStatus
 	if r.Status != nil {
 		s := r.Status.MustAsyncSearchStatus()
-		status = &s
+		searchStatus = &s
 	}
 
 	req := search.GetAsyncSearchesListRequest{
-		Status: status,
+		Status: searchStatus,
 		Size:   int(r.Size),
 		Offset: int(r.Offset),
 		IDs:    r.Ids,
@@ -155,12 +169,20 @@ func (g *grpcV1) DeleteAsyncSearch(
 func makeProtoRequestAggregations(sourceAggs []search.AggQuery) []*seqproxyapi.AggQuery {
 	aggs := make([]*seqproxyapi.AggQuery, 0, len(sourceAggs))
 	for _, agg := range sourceAggs {
-		aggs = append(aggs, &seqproxyapi.AggQuery{
+		agg := &seqproxyapi.AggQuery{
 			Field:     agg.Field,
 			GroupBy:   agg.GroupBy,
 			Func:      seqproxyapi.AggFunc(agg.Func),
 			Quantiles: agg.Quantiles,
-		})
+		}
+
+		// Support legacy format in which field means groupBy.
+		if agg.Func == seq.AggFuncCount && agg.GroupBy != "" {
+			agg.Field = agg.GroupBy
+			agg.GroupBy = ""
+		}
+
+		aggs = append(aggs, agg)
 	}
 	return aggs
 }
@@ -182,6 +204,7 @@ func makeProtoAsyncSearchesList(in []*search.AsyncSearchesListItem) []*seqproxya
 			},
 			Aggs:     makeProtoRequestAggregations(s.Request.Aggregations),
 			WithDocs: s.Request.WithDocs,
+			Size:     s.Request.Size,
 		}
 		if s.Request.HistogramInterval > 0 {
 			searchReq.Hist = &seqproxyapi.HistQuery{

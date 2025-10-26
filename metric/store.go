@@ -6,112 +6,6 @@ import (
 )
 
 var (
-	BulkDiskSyncTasksCount = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "bulk",
-		Name:      "disk_sync_tasks_count",
-		Help:      "",
-		Buckets:   prometheus.LinearBuckets(1, 16, 16),
-	})
-
-	CacheOldest = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "oldest",
-		Help:      "",
-	}, []string{"cleaner"})
-	CacheAddBuckets = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "add_buckets",
-		Help:      "",
-	}, []string{"cleaner"})
-	CacheDelBuckets = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "del_buckets",
-		Help:      "",
-	}, []string{"cleaner"})
-	CacheCleanGenerations = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "clean_generations",
-		Help:      "",
-	}, []string{"cleaner"})
-	CacheChangeGenerations = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "change_generations",
-		Help:      "",
-	}, []string{"cleaner"})
-
-	CacheSizeReleased = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "size_released_total",
-		Help:      "",
-	}, []string{"layer"})
-	CacheHitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "hits_total",
-		Help:      "",
-	}, []string{"layer"})
-	CacheMissTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "miss_total",
-		Help:      "",
-	}, []string{"layer"})
-	CachePanicsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "panics_total",
-		Help:      "",
-	}, []string{"layer"})
-	CacheLockWaitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "lock_waits_total",
-		Help:      "",
-	}, []string{"layer"})
-	CacheWaitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "waits_total",
-		Help:      "",
-	}, []string{"layer"})
-	CacheReattemptsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "reattempts_total",
-		Help:      "",
-	}, []string{"layer"})
-	CacheSizeRead = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "hits_size_total",
-		Help:      "",
-	}, []string{"layer"})
-	CacheSizeOccupied = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "miss_size_total",
-		Help:      "",
-	}, []string{"layer"})
-	CacheMapsRecreated = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "maps_recreated",
-		Help:      "",
-	}, []string{"layer"})
-	CacheMissLatencySec = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "miss_latency_sec",
-		Help:      "",
-	}, []string{"layer"})
-
 	DataSizeTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "common",
@@ -119,12 +13,12 @@ var (
 		Help:      "",
 	}, []string{"kind", "storage_type"})
 
-	OldestFracTime = promauto.NewGauge(prometheus.GaugeOpts{
+	OldestFracTime = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "common",
 		Name:      "oldest_frac_time",
 		Help:      "",
-	})
+	}, []string{"storage_type"})
 
 	BulkDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
@@ -180,13 +74,6 @@ var (
 		Help:      "",
 		Buckets:   SecondsBuckets,
 	})
-	SearchTreeDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "search",
-		Name:      "tree_duration_seconds",
-		Help:      "",
-		Buckets:   SecondsBuckets,
-	})
 
 	SearchRangesSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
@@ -229,18 +116,6 @@ var (
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(256, 4, 32),
 	})
-	FetchActiveStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetch",
-		Name:      "active_stages_seconds",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
-	FetchSealedStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetch",
-		Name:      "sealed_stages_seconds",
-		Buckets:   SecondsBuckets,
-	}, []string{"stage"})
 	MaintenanceTruncateTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "maintenance",
@@ -253,13 +128,6 @@ var (
 		Subsystem: "main",
 		Name:      "ready",
 		Help:      "store is ready to accept requests",
-	})
-
-	FractionLoadErrors = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "main",
-		Name:      "fraction_load_errors",
-		Help:      "Doc file load errors (missing or invalid doc file)",
 	})
 
 	StorePanics = promauto.NewCounter(prometheus.CounterOpts{

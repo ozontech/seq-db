@@ -16,6 +16,8 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -38,7 +40,7 @@ type Active struct {
 	released bool
 
 	infoMu sync.RWMutex
-	info   *Info
+	info   *common.Info
 
 	MIDs *UInt64s
 	RIDs *UInt64s
@@ -103,7 +105,7 @@ func NewActive(
 		writer:  NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync),
 
 		BaseFileName: baseFileName,
-		info:         NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
+		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
 		Config:       cfg,
 	}
 
@@ -135,7 +137,7 @@ func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
 }
 
 func (f *Active) Replay(ctx context.Context) error {
-	logger.Info("start replaying...")
+	logger.Info("start replaying...", zap.String("name", f.info.Name()))
 
 	t := time.Now()
 
@@ -167,6 +169,7 @@ out:
 				next += step
 				progress := float64(offset) / float64(f.info.MetaOnDisk) * 100
 				logger.Info("replaying batch, meta",
+					zap.String("name", f.info.Name()),
 					zap.Uint64("from", offset),
 					zap.Uint64("to", offset+metaSize),
 					zap.Uint64("target", f.info.MetaOnDisk),
@@ -265,7 +268,25 @@ func (f *Active) String() string {
 	return fracToString(f, "active")
 }
 
-func (f *Active) DataProvider(ctx context.Context) (DataProvider, func()) {
+func (f *Active) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+	dp, release := f.DataProvider(ctx)
+	defer release()
+	if dp == nil {
+		return EmptyFraction.Fetch(ctx, ids)
+	}
+	return dp.Fetch(ids)
+}
+
+func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
+	dp, release := f.DataProvider(ctx)
+	defer release()
+	if dp == nil {
+		return EmptyFraction.Search(ctx, params)
+	}
+	return dp.Search(params)
+}
+
+func (f *Active) DataProvider(ctx context.Context) (*activeDataProvider, func()) {
 	f.useMu.RLock()
 
 	if f.suicided || f.released || f.Info().DocsTotal == 0 { // it is empty active fraction state
@@ -273,7 +294,7 @@ func (f *Active) DataProvider(ctx context.Context) (DataProvider, func()) {
 			metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
 		}
 		f.useMu.RUnlock()
-		return EmptyDataProvider{}, func() {}
+		return nil, func() {}
 	}
 
 	// it is ordinary active fraction state
@@ -300,7 +321,7 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 	}
 }
 
-func (f *Active) Info() *Info {
+func (f *Active) Info() *common.Info {
 	f.infoMu.RLock()
 	defer f.infoMu.RUnlock()
 

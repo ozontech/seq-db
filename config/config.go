@@ -169,6 +169,9 @@ type Config struct {
 		// SearchWorkers specifies number of workers for searchers pool.
 		// By default this setting is equal to [runtime.GOMAXPROCS].
 		SearchWorkers int `config:"search_workers"`
+		// ReplayWorkers specifies number of workers.
+		// By default this setting is equal to 2.
+		ReplayWorkers int `config:"replay_workers" default:"2"`
 		// CacheSize specifies maxium size of cache.
 		// By default this setting is equal to 30% of available RAM.
 		CacheSize         Bytes `config:"cache_size"`
@@ -209,7 +212,7 @@ type Config struct {
 		Enabled bool `config:"enabled"`
 		// DocBlockSize sets document block size.
 		// Large size consumes more RAM but improves compression ratio.
-		DocBlockSize Bytes `config:"doc_block_size"`
+		DocBlockSize Bytes `config:"doc_block_size" default:"128KiB"`
 	} `config:"docs_sorting"`
 
 	Offloading struct {
@@ -238,10 +241,11 @@ type Config struct {
 	AsyncSearch struct {
 		// DataDir specifies directory that contains data for asynchronous searches.
 		// By default will be subdirectory in [Config.Storage.DataDir].
-		DataDir           string `config:"data_dir"`
-		Concurrency       int    `config:"concurrency"`
-		MaxTotalSize      Bytes  `config:"max_total_size" default:"1GiB"`
-		MaxSizePerRequest Bytes  `config:"max_size_per_request" default:"100MiB"`
+		DataDir                string `config:"data_dir"`
+		Concurrency            int    `config:"concurrency"`
+		MaxTotalSize           Bytes  `config:"max_total_size" default:"1GiB"`
+		MaxSizePerRequest      Bytes  `config:"max_size_per_request" default:"100MiB"`
+		MaxDocumentsPerRequest int64  `config:"max_documents_per_request" default:"100000"`
 	} `config:"async_search"`
 
 	API struct {

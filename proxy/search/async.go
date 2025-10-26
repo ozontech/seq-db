@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/stores"
@@ -29,6 +29,7 @@ type AsyncRequest struct {
 	Aggregations      []AggQuery
 	HistogramInterval seq.MID
 	WithDocs          bool
+	Size              int64
 }
 
 type AsyncResponse struct {
@@ -51,8 +52,8 @@ func (si *Ingestor) StartAsyncSearch(ctx context.Context, r AsyncRequest) (Async
 		Aggs:              convertToAggsQuery(r.Aggregations),
 		HistogramInterval: int64(r.HistogramInterval),
 		Retention:         durationpb.New(r.Retention),
-		// TODO: enable WithDocs after we implement async searches' qprs merging in batches
-		WithDocs: false,
+		WithDocs:          r.WithDocs,
+		Size:              r.Size,
 	}
 
 	for i, shard := range searchStores.Shards {
@@ -85,7 +86,7 @@ type FetchAsyncSearchResultRequest struct {
 }
 
 type FetchAsyncSearchResultResponse struct {
-	Status     fracmanager.AsyncSearchStatus
+	Status     asyncsearcher.AsyncSearchStatus
 	QPR        seq.QPR
 	CanceledAt time.Time
 
@@ -101,7 +102,7 @@ type FetchAsyncSearchResultResponse struct {
 }
 
 type GetAsyncSearchesListRequest struct {
-	Status *fracmanager.AsyncSearchStatus
+	Status *asyncsearcher.AsyncSearchStatus
 	Size   int
 	Offset int
 	IDs    []string
@@ -109,7 +110,7 @@ type GetAsyncSearchesListRequest struct {
 
 type AsyncSearchesListItem struct {
 	ID     string
-	Status fracmanager.AsyncSearchStatus
+	Status asyncsearcher.AsyncSearchStatus
 
 	StartedAt  time.Time
 	ExpiresAt  time.Time
@@ -245,6 +246,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 				Aggregations:      buildRequestAggs(storeResp.Aggs),
 				HistogramInterval: histInterval,
 				WithDocs:          storeResp.WithDocs,
+				Size:              storeResp.Size,
 			}
 		}
 	}
@@ -256,7 +258,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 	if fracsDone != 0 {
 		pr.Progress = float64(fracsDone) / float64(fracsDone+fracsInQueue)
 	}
-	if pr.Status == fracmanager.AsyncSearchStatusDone {
+	if pr.Status == asyncsearcher.AsyncSearchStatusDone {
 		pr.Progress = 1
 	}
 	pr.AggResult = pr.QPR.Aggregate(aggQueries)
@@ -389,6 +391,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 					Aggregations:      buildRequestAggs(s.Aggs),
 					HistogramInterval: seq.MID(s.HistogramInterval),
 					WithDocs:          s.WithDocs,
+					Size:              s.Size,
 				}
 			}
 		}
@@ -396,7 +399,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 		if fracsDone != 0 {
 			search.Progress = float64(fracsDone) / float64(fracsDone+fracsInQueue)
 		}
-		if search.Status == fracmanager.AsyncSearchStatusDone {
+		if search.Status == asyncsearcher.AsyncSearchStatusDone {
 			search.Progress = 1
 		}
 		search.Request = *searchReq
@@ -420,12 +423,12 @@ func (si *Ingestor) GetAsyncSearchesList(
 	return searches, nil
 }
 
-func mergeAsyncSearchStatus(a, b fracmanager.AsyncSearchStatus) fracmanager.AsyncSearchStatus {
-	statusWeight := []fracmanager.AsyncSearchStatus{
-		fracmanager.AsyncSearchStatusDone:       1,
-		fracmanager.AsyncSearchStatusInProgress: 2,
-		fracmanager.AsyncSearchStatusCanceled:   3,
-		fracmanager.AsyncSearchStatusError:      4,
+func mergeAsyncSearchStatus(a, b asyncsearcher.AsyncSearchStatus) asyncsearcher.AsyncSearchStatus {
+	statusWeight := []asyncsearcher.AsyncSearchStatus{
+		asyncsearcher.AsyncSearchStatusDone:       1,
+		asyncsearcher.AsyncSearchStatusInProgress: 2,
+		asyncsearcher.AsyncSearchStatusCanceled:   3,
+		asyncsearcher.AsyncSearchStatusError:      4,
 	}
 	weightA := statusWeight[a]
 	weightB := statusWeight[b]

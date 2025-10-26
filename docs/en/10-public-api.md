@@ -215,6 +215,7 @@ Sample documents:
 **Request:**
 
 ```sh
+grpcurl -plaintext -d '
 {
   "query": {
     "from": "2000-01-01T00:00:00Z",
@@ -239,7 +240,7 @@ Sample documents:
       "func": "AGG_FUNC_MAX"
     }
   ]
-} | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 **Response:**
@@ -276,6 +277,7 @@ Sample documents:
 **Request:**
 
 ```sh
+grpcurl -plaintext -d '
 {
   "query": {
     "from": "2000-01-01T00:00:00Z",
@@ -304,7 +306,7 @@ Sample documents:
       "group_by": "service"
     }
   ]
-} | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 **Response:**
@@ -351,6 +353,7 @@ Sample documents:
 **Request:**
 
 ```sh
+grpcurl -plaintext -d '
 {
   "query": {
     "from": "2000-01-01T00:00:00Z",
@@ -367,7 +370,7 @@ Sample documents:
       ]
     }
   ]
-} | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 **Response:**
@@ -397,6 +400,7 @@ Sample documents:
 **Request:**
 
 ```sh
+grpcurl -plaintext -d '
 {
   "query": {
     "from": "2000-01-01T00:00:00Z",
@@ -413,7 +417,7 @@ Sample documents:
       "group_by": "service"
     }
   ]
-} | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 **Response:**
@@ -444,6 +448,7 @@ Sample documents:
 **Request:**
 
 ```sh
+grpcurl -plaintext -d '
 {
   "query": {
     "from": "2000-01-01T00:00:00Z",
@@ -457,7 +462,7 @@ Sample documents:
       "interval": "30s"
     }
   ]
-} | grpcurl -plaintext -d @ localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
 ```
 
 **Response:**

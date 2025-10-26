@@ -25,7 +25,7 @@ func (q *SeqQLQuery) SeqQLString() string {
 	return b.String()
 }
 
-func ParseSeqQL(q string, mapping seq.Mapping) (SeqQLQuery, error) {
+func parse(q string, mapping seq.Mapping) (SeqQLQuery, error) {
 	lex := newLexer(q)
 
 	lex.Next()
@@ -46,15 +46,26 @@ func ParseSeqQL(q string, mapping seq.Mapping) (SeqQLQuery, error) {
 		panic(fmt.Errorf("BUG: lexer is not end: %+v", lex))
 	}
 
-	root, not := propagateNot(root)
-	if not {
-		root = newNotNode(root)
-	}
-
 	return SeqQLQuery{
 		Root:  root,
 		Pipes: pipes,
 	}, nil
+}
+
+func ParseSeqQL(q string, mapping seq.Mapping) (SeqQLQuery, error) {
+	seqql, err := parse(q, mapping)
+	if err != nil {
+		return SeqQLQuery{}, err
+	}
+
+	root, not := propagateNot(seqql.Root)
+	if not {
+		seqql.Root = newNotNode(root)
+	} else {
+		seqql.Root = root
+	}
+
+	return seqql, nil
 }
 
 // wildcardRune is unicode symbol from Private Use Area to represent wildcard.

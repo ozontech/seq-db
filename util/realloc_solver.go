@@ -24,10 +24,6 @@ type ReallocSolver struct {
 
 type ReallocSolverOpts func(*ReallocSolver)
 
-func ReallocSolverSize(statSize int) ReallocSolverOpts {
-	return func(r *ReallocSolver) { r.statSize = statSize }
-}
-
 func ReallocSolverLabel(label string) ReallocSolverOpts {
 	return func(r *ReallocSolver) { r.label = label }
 }

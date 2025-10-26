@@ -1,0 +1,102 @@
+{{- if .Values.seqproxy.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "seq-proxy.fullname" . }}
+  labels:
+    {{- include "seq-proxy.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.seqproxy.autoscaling.enabled }}
+  replicas: {{ .Values.seqproxy.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "seq-proxy.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+      {{- with .Values.seqproxy.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+        checksum/config: {{ include (print .Template.BasePath "/seq-proxy/configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "seq-proxy.labels" . | nindent 8 }}
+        {{- with .Values.seqproxy.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.seqproxy.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "seq-proxy.serviceAccountName" . }}
+      {{- with .Values.seqproxy.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- with .Values.seqproxy.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.seqproxy.image.repository }}:{{ .Values.seqproxy.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.seqproxy.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.seqproxy.service.httpPort }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.seqproxy.service.grpcPort }}
+              protocol: TCP
+            - name: debug
+              containerPort: {{ .Values.seqproxy.service.debugPort }}
+              protocol: TCP
+          args:
+          - --mode=proxy
+          - --config=/configs/config.yaml
+          {{- with .Values.seqproxy.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.seqproxy.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.seqproxy.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: "{{ template "seq-proxy.fullname" . }}-config"
+              mountPath: "/configs"
+              readOnly: true
+            - name: "{{ template "seq-proxy.fullname" . }}-mappings"
+              mountPath: "/mappings"
+              readOnly: true
+          {{- with .Values.seqproxy.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: {{ template "seq-proxy.fullname" . }}-config
+          configMap:
+            name: {{ template "seq-proxy.fullname" . }}-config
+        - name: {{ template "seq-proxy.fullname" . }}-mappings
+          configMap:
+            name: {{ template "seq-db.fullname" . }}-mappings
+      {{- with .Values.seqproxy.volumes }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.seqproxy.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.seqproxy.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.seqproxy.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

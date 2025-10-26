@@ -5,6 +5,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/logger"
@@ -19,7 +21,7 @@ type Loader struct {
 	blockBuf   []byte
 }
 
-func (l *Loader) Load(state *sealedState, info *Info, indexReader *storage.IndexReader) {
+func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, indexReader *storage.IndexReader) {
 	t := time.Now()
 
 	l.reader = indexReader
@@ -29,11 +31,11 @@ func (l *Loader) Load(state *sealedState, info *Info, indexReader *storage.Index
 
 	var err error
 
-	if state.idsTable, state.BlocksOffsets, err = l.loadIDs(); err != nil {
+	if blocksData.IDsTable, blocksData.BlocksOffsets, err = l.loadIDs(); err != nil {
 		logger.Fatal("load ids error", zap.Error(err))
 	}
 
-	if state.lidsTable, err = l.loadLIDsBlocksTable(); err != nil {
+	if blocksData.LIDsTable, err = l.loadLIDsBlocksTable(); err != nil {
 		logger.Fatal("load lids error", zap.Error(err))
 	}
 
@@ -76,7 +78,7 @@ func (l *Loader) loadIDs() (idsTable seqids.Table, blocksOffsets []uint64, err e
 		return idsTable, nil, err
 	}
 
-	b := BlockOffsets{}
+	b := sealed.BlockOffsets{}
 	if err := b.Unpack(result); err != nil {
 		return idsTable, nil, err
 	}

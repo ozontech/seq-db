@@ -2,15 +2,14 @@ package storeapi
 
 import (
 	"context"
-	"math"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/frac/processor"
-	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -26,7 +25,7 @@ func (g *GrpcV1) StartAsyncSearch(
 
 	limit := 0
 	if r.WithDocs {
-		limit = math.MaxInt
+		limit = int(r.Size)
 	}
 
 	params := processor.SearchParams{
@@ -40,11 +39,12 @@ func (g *GrpcV1) StartAsyncSearch(
 		Order:        seq.DocsOrderDesc,
 	}
 
-	req := fracmanager.AsyncSearchRequest{
+	req := asyncsearcher.AsyncSearchRequest{
 		ID:        r.SearchId,
 		Query:     r.Query,
 		Params:    params,
 		Retention: r.Retention.AsDuration(),
+		WithDocs:  r.WithDocs,
 	}
 	fracs := g.fracManager.GetAllFracs().FilterInRange(seq.MID(r.From), seq.MID(r.To))
 	if err := g.asyncSearcher.StartSearch(req, fracs); err != nil {
@@ -58,7 +58,7 @@ func (g *GrpcV1) FetchAsyncSearchResult(
 	_ context.Context,
 	r *storeapi.FetchAsyncSearchResultRequest,
 ) (*storeapi.FetchAsyncSearchResultResponse, error) {
-	fr, exists := g.asyncSearcher.FetchSearchResult(fracmanager.FetchSearchResultRequest{
+	fr, exists := g.asyncSearcher.FetchSearchResult(asyncsearcher.FetchSearchResultRequest{
 		ID:    r.SearchId,
 		Limit: int(r.Size + r.Offset),
 		Order: r.Order.MustDocsOrder(),
@@ -90,6 +90,7 @@ func (g *GrpcV1) FetchAsyncSearchResult(
 		To:                timestamppb.New(fr.To.Time()),
 		Retention:         durationpb.New(fr.Retention),
 		WithDocs:          fr.WithDocs,
+		Size:              fr.Size,
 	}, nil
 }
 
@@ -113,13 +114,13 @@ func (g *GrpcV1) GetAsyncSearchesList(
 	_ context.Context,
 	r *storeapi.GetAsyncSearchesListRequest,
 ) (*storeapi.GetAsyncSearchesListResponse, error) {
-	var searchStatus *fracmanager.AsyncSearchStatus
+	var searchStatus *asyncsearcher.AsyncSearchStatus
 	if r.Status != nil {
 		s := r.Status.MustAsyncSearchStatus()
 		searchStatus = &s
 	}
 
-	searches := g.asyncSearcher.GetAsyncSearchesList(fracmanager.GetAsyncSearchesListRequest{
+	searches := g.asyncSearcher.GetAsyncSearchesList(asyncsearcher.GetAsyncSearchesListRequest{
 		Status: searchStatus,
 		IDs:    r.Ids,
 	})
@@ -147,7 +148,7 @@ func convertAggQueriesToProto(query []processor.AggQuery) []*storeapi.AggQuery {
 	return res
 }
 
-func convertAsyncSearchesToProto(in []*fracmanager.AsyncSearchesListItem) []*storeapi.AsyncSearchesListItem {
+func convertAsyncSearchesToProto(in []*asyncsearcher.AsyncSearchesListItem) []*storeapi.AsyncSearchesListItem {
 	res := make([]*storeapi.AsyncSearchesListItem, 0, len(in))
 
 	for _, s := range in {
@@ -172,6 +173,7 @@ func convertAsyncSearchesToProto(in []*fracmanager.AsyncSearchesListItem) []*sto
 			To:                timestamppb.New(s.To.Time()),
 			Retention:         durationpb.New(s.Retention),
 			WithDocs:          s.WithDocs,
+			Size:              s.Size,
 		})
 	}
 

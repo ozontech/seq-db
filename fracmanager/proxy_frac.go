@@ -10,6 +10,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
@@ -43,18 +45,35 @@ type proxyFrac struct {
 	sealed   *frac.Sealed
 	readonly bool
 
+	name string
+
 	indexWg sync.WaitGroup
 	sealWg  sync.WaitGroup
+}
+
+func newProxyFrac(active *frac.Active, fp *fractionProvider) *proxyFrac {
+	return &proxyFrac{
+		fp:     fp,
+		active: active,
+		name:   active.BaseFileName,
+	}
 }
 
 func (f *proxyFrac) cur() frac.Fraction {
 	f.useMu.RLock()
 	defer f.useMu.RUnlock()
 
-	if f.sealed == nil {
+	if f.active != nil {
 		return f.active
 	}
-	return f.sealed
+
+	if f.sealed != nil {
+		metric.CountersTotal.WithLabelValues("use_sealed_from_active").Inc()
+		return f.sealed
+	}
+
+	metric.CountersTotal.WithLabelValues("use_empty_from_active").Inc()
+	return frac.EmptyFraction
 }
 
 func (f *proxyFrac) IsIntersecting(from, to seq.MID) bool {
@@ -65,24 +84,16 @@ func (f *proxyFrac) Contains(mid seq.MID) bool {
 	return f.cur().Contains(mid)
 }
 
-func (f *proxyFrac) Info() *frac.Info {
+func (f *proxyFrac) Info() *common.Info {
 	return f.cur().Info()
 }
 
-func (f *proxyFrac) DataProvider(ctx context.Context) (frac.DataProvider, func()) {
-	f.useMu.RLock()
-	defer f.useMu.RUnlock()
+func (f *proxyFrac) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+	return f.cur().Fetch(ctx, ids)
+}
 
-	if f.active != nil {
-		return f.active.DataProvider(ctx)
-	}
-
-	if f.sealed != nil {
-		metric.CountersTotal.WithLabelValues("use_sealed_from_active").Inc()
-		return f.sealed.DataProvider(ctx)
-	}
-
-	return frac.EmptyDataProvider{}, func() {}
+func (f *proxyFrac) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
+	return f.cur().Search(ctx, params)
 }
 
 func (f *proxyFrac) Append(docs, meta []byte) error {
@@ -100,13 +111,13 @@ func (f *proxyFrac) Append(docs, meta []byte) error {
 
 func (f *proxyFrac) WaitWriteIdle() {
 	start := time.Now()
-	logger.Info("waiting fraction to stop write...", zap.String("name", f.active.BaseFileName))
+	logger.Info("waiting fraction to stop write...", zap.String("name", f.name))
 	f.indexWg.Wait()
 	waitTime := util.DurationToUnit(time.Since(start), "s")
-	logger.Info("write is stopped", zap.String("name", f.active.BaseFileName), zap.Float64("time_wait_s", waitTime))
+	logger.Info("write is stopped", zap.String("name", f.name), zap.Float64("time_wait_s", waitTime))
 }
 
-func (f *proxyFrac) Seal(params frac.SealParams) (*frac.Sealed, error) {
+func (f *proxyFrac) Seal() (*frac.Sealed, error) {
 	f.useMu.Lock()
 	if f.isSuicidedState() {
 		f.useMu.Unlock()
@@ -123,12 +134,10 @@ func (f *proxyFrac) Seal(params frac.SealParams) (*frac.Sealed, error) {
 
 	f.WaitWriteIdle()
 
-	preloaded, err := frac.Seal(active, params)
+	sealed, err := f.fp.Seal(active)
 	if err != nil {
 		return nil, err
 	}
-
-	sealed := f.fp.NewSealedPreloaded(active.BaseFileName, preloaded)
 
 	f.useMu.Lock()
 	f.sealed = sealed
@@ -150,14 +159,20 @@ func (f *proxyFrac) trySetSuicided() (*frac.Active, *frac.Sealed, bool) {
 	sealed := f.sealed
 	active := f.active
 
-	sealing := f.isSealingState()
+	// If the object is in active state, switch to read-only mode
+	if f.isActiveState() {
+		f.readonly = true
+	}
 
-	if !sealing {
+	isSealing := f.isSealingState()
+
+	// If sealing is not in progress, we can safely clear the state
+	if !isSealing {
 		f.sealed = nil
 		f.active = nil
 	}
 
-	return active, sealed, sealing
+	return active, sealed, isSealing
 }
 
 func (f *proxyFrac) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
@@ -179,8 +194,9 @@ func (f *proxyFrac) Offload(ctx context.Context, u storage.Uploader) (bool, erro
 }
 
 func (f *proxyFrac) Suicide() {
-	active, sealed, sealing := f.trySetSuicided()
-	if sealing {
+	active, sealed, isSealing := f.trySetSuicided()
+
+	if isSealing {
 		f.sealWg.Wait()
 		// we can get `sealing` == true only once here
 		// next attempt after Wait() should be successful
@@ -188,6 +204,8 @@ func (f *proxyFrac) Suicide() {
 	}
 
 	if active != nil {
+		// Wait for write operations to complete before suiciding
+		f.WaitWriteIdle()
 		active.Suicide()
 	}
 

@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+name: Continuous Benchmarks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+  deployments: write
+
+jobs:
+  ci-benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Golang
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run Golang benchmarks
+        shell: bash
+        run: |
+          COUNT=$([[ "${{ github.event_name }}" == "pull_request" ]] && echo 1 || echo 5)
+          LOG_LEVEL=FATAL go test -run='$^' -count=$COUNT -bench=. -benchmem ./... | tee ${{ runner.temp }}/gotool.txt
+
+      # Add GitHub job summary for pull requests.
+      - name: Summarize benchmarks results
+        if: ${{ success() && github.event_name == 'pull_request' }}
+        uses: dkharms/chronos@v0.0.6
+        with:
+          github-token: ${{ github.token }}
+          benchmarks-file-path: ${{ runner.temp }}/gotool.txt
+          action-to-perform: summarize
+
+      # Save benchmarks results only when branch
+      # was merged to main and previous job was successful.
+      - name: Save benchmarks results
+        if: ${{ success() && github.ref_name == 'main' }}
+        uses: dkharms/chronos@v0.0.6
+        with:
+          github-token: ${{ github.token }}
+          benchmarks-file-path: ${{ runner.temp }}/gotool.txt
+          action-to-perform: save
+
+      # Publish benchmarks results to GitHub pages only when branch
+      # was merged to main and previous job was successful.
+      - name: Publish benchmarks results
+        if: ${{ success() && github.ref_name == 'main' }}
+        uses: dkharms/chronos@v0.0.6
+        with:
+          github-token: ${{ github.token }}
+          action-to-perform: publish

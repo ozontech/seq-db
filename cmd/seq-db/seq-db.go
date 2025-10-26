@@ -18,10 +18,12 @@ import (
 	"google.golang.org/grpc/encoding"
 	"gopkg.in/alecthomas/kingpin.v2"
 
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/mappingprovider"
@@ -85,7 +87,6 @@ func main() {
 	config.CaseSensitive = cfg.Indexing.CaseSensitive
 	config.SkipFsync = cfg.Resources.SkipFsync
 	config.MaxRequestedDocuments = cfg.Limits.SearchDocs
-	config.UseSeqQLByDefault = *flagUseSeqQLByDefault
 
 	backoff.DefaultConfig.MaxDelay = 10 * time.Second
 
@@ -178,11 +179,12 @@ func startProxy(
 
 	pconfig := proxyapi.IngestorConfig{
 		API: proxyapi.APIConfig{
-			SearchTimeout:  consts.DefaultSearchTimeout,
-			ExportTimeout:  consts.DefaultExportTimeout,
-			QueryRateLimit: cfg.Limits.QueryRate,
-			EsVersion:      cfg.API.ESVersion,
-			GatewayAddr:    cfg.Address.GRPC,
+			SearchTimeout:                     consts.DefaultSearchTimeout,
+			ExportTimeout:                     consts.DefaultExportTimeout,
+			QueryRateLimit:                    cfg.Limits.QueryRate,
+			EsVersion:                         cfg.API.ESVersion,
+			GatewayAddr:                       cfg.Address.GRPC,
+			AsyncSearchMaxDocumentsPerRequest: cfg.AsyncSearch.MaxDocumentsPerRequest,
 		},
 		Search: search.Config{
 			HotStores:       hotStores,
@@ -253,12 +255,12 @@ func startStore(
 			TotalSize:         uint64(cfg.Storage.TotalSize),
 			CacheSize:         uint64(cfg.Resources.CacheSize),
 			SortCacheSize:     uint64(cfg.Resources.SortDocsCacheSize),
-			FracLoadLimit:     0,
 			ShouldReplay:      true,
+			ReplayWorkers:     cfg.Resources.ReplayWorkers,
 			MaintenanceDelay:  0,
 			CacheGCDelay:      0,
 			CacheCleanupDelay: 0,
-			SealParams: frac.SealParams{
+			SealParams: common.SealParams{
 				IDsZstdLevel:           cfg.Compression.SealedZstdCompressionLevel,
 				LIDsZstdLevel:          cfg.Compression.SealedZstdCompressionLevel,
 				TokenListZstdLevel:     cfg.Compression.SealedZstdCompressionLevel,
@@ -293,7 +295,7 @@ func startStore(
 				FractionsPerIteration: config.NumCPU,
 				RequestsLimit:         uint64(cfg.Limits.SearchRequests),
 				LogThreshold:          cfg.SlowLogs.SearchThreshold,
-				Async: fracmanager.AsyncSearcherConfig{
+				Async: asyncsearcher.AsyncSearcherConfig{
 					DataDir:           cfg.AsyncSearch.DataDir,
 					Workers:           cfg.AsyncSearch.Concurrency,
 					MaxSize:           int(cfg.AsyncSearch.MaxTotalSize),

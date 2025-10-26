@@ -148,6 +148,7 @@ message StartAsyncSearchRequest {
   repeated AggQuery aggs = 6;
   int64 histogram_interval = 7;
   bool with_docs = 8;
+  int64 size = 9;
 }
 
 message StartAsyncSearchResponse {}
@@ -184,6 +185,7 @@ message FetchAsyncSearchResultResponse {
   google.protobuf.Timestamp to = 13;
   google.protobuf.Duration retention = 14;
   bool with_docs = 15;
+  int64 size = 16;
 }
 
 message CancelAsyncSearchRequest{
@@ -225,6 +227,7 @@ message AsyncSearchesListItem {
   google.protobuf.Timestamp to = 13;
   google.protobuf.Duration retention = 14;
   bool with_docs = 15;
+  int64 size = 16;
 }
 
 message IdWithHint {

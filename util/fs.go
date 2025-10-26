@@ -13,17 +13,8 @@ import (
 )
 
 func MustSyncPath(path string) {
-	d, err := os.Open(path)
-	if err != nil {
-		logger.Panic("cannot open file for fsync", zap.Error(err))
-	}
-	if err = d.Sync(); err != nil {
-		_ = d.Close()
-		logger.Panic("cannot flush path to storage", zap.String("path", path), zap.Error(err))
-	}
-
-	if err = d.Close(); err != nil {
-		logger.Panic("cannot close path", zap.String("path", path), zap.Error(err))
+	if err := SyncPath(path); err != nil {
+		logger.Panic("cannot sync path", zap.String("path", path), zap.Error(err))
 	}
 }
 
@@ -34,5 +25,31 @@ func MustRemoveFileByPath(path string) {
 			zap.String("path", path),
 			zap.Error(err),
 		)
+	}
+}
+
+func SyncPath(path string) error {
+	d, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	if err := d.Sync(); err != nil {
+		_ = d.Close()
+		return err
+	}
+
+	if err := d.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// RemoveFile safely removes a file with logging
+// Handles cases where the file already doesn't exist
+func RemoveFile(file string) {
+	if err := os.Remove(file); err == nil {
+		logger.Info("remove file", zap.String("filename", file))
+	} else if !os.IsNotExist(err) {
+		logger.Error("file removing error", zap.Error(err))
 	}
 }

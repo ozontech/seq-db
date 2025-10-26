@@ -25,8 +25,8 @@ import (
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
@@ -1419,46 +1419,16 @@ func (s *IntegrationTestSuite) TestSearchRange() {
 		request string
 		cnt     int
 	}{
-		{
-			request: "[1 TO 3]",
-			cnt:     2,
-		},
-		{
-			request: "[0 TO 3]",
-			cnt:     3,
-		},
-		{
-			request: "{0 TO 3}",
-			cnt:     1,
-		},
-		{
-			request: "{0 TO 3]",
-			cnt:     2,
-		},
-		{
-			request: "[0 TO 3}",
-			cnt:     2,
-		},
-		{
-			request: "[0 TO 63]",
-			cnt:     7,
-		},
-		{
-			request: "[-100 TO 100]",
-			cnt:     7,
-		},
-		{
-			request: "{-100 TO 100}",
-			cnt:     7,
-		},
-		{
-			request: "[0 TO *]",
-			cnt:     7,
-		},
-		{
-			request: "[0 TO *}",
-			cnt:     7,
-		},
+		{request: "[1 TO 3]", cnt: 2},
+		{request: "[0 TO 3]", cnt: 3},
+		{request: "(0 TO 3)", cnt: 1},
+		{request: "(0 TO 3]", cnt: 2},
+		{request: "[0 TO 3)", cnt: 2},
+		{request: "[0 TO 63]", cnt: 7},
+		{request: "[-100 TO 100]", cnt: 7},
+		{request: "(-100 TO 100)", cnt: 7},
+		{request: "[0 TO *]", cnt: 7},
+		{request: "[0 TO *)", cnt: 7},
 	}
 
 	for _, test := range tests {
@@ -1763,17 +1733,17 @@ func (s *IntegrationTestSuite) TestPathSearch() {
 		request string
 		cnt     int
 	}{
-		{request: "/one", cnt: 10},
-		{request: "/two", cnt: 1},
-		{request: "/one/two", cnt: 6},
-		{request: "/one/two/three", cnt: 5},
-		{request: "/one/two/three/1", cnt: 1},
-		{request: "/one/two.three", cnt: 2},
-		{request: "/one/two.three/four", cnt: 1},
-		{request: "/one/*/three", cnt: 6},
-		{request: "/two/*/three", cnt: 1},
-		{request: "*/three/", cnt: 1},
-		{request: "*/three", cnt: 7},
+		{request: `"/one"`, cnt: 10},
+		{request: `"/two"`, cnt: 1},
+		{request: `"/one/two"`, cnt: 6},
+		{request: `"/one/two/three"`, cnt: 5},
+		{request: `"/one/two/three/1"`, cnt: 1},
+		{request: `"/one/two.three"`, cnt: 2},
+		{request: `"/one/two.three/four"`, cnt: 1},
+		{request: `"/one/*/three"`, cnt: 6},
+		{request: `"/two/*/three"`, cnt: 1},
+		{request: `"*/three/"`, cnt: 1},
+		{request: `"*/three"`, cnt: 7},
 	}
 
 	for _, test := range tests {
@@ -1996,7 +1966,8 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 			},
 		},
 		HistogramInterval: seq.MID(time.Second.Milliseconds()),
-		WithDocs:          false,
+		WithDocs:          true,
+		Size:              100,
 	}
 	resp, err := searcher.StartAsyncSearch(ctx, startReq)
 	r.NoError(err)
@@ -2014,13 +1985,13 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.Eventually(func() bool {
 		resp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 		r.NoError(err)
-		return resp.Status == fracmanager.AsyncSearchStatusDone
+		return resp.Status == asyncsearcher.AsyncSearchStatusDone
 	}, 10*time.Second, 50*time.Millisecond)
 
 	fresp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 	r.NoError(err)
 
-	r.Equalf(fracmanager.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
+	r.Equalf(asyncsearcher.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
 	r.Equal([]seq.ErrorSource(nil), fresp.QPR.Errors)
 	r.True(fresp.ExpiresAt.After(time.Now().UTC()))
 	r.Equal([]seq.AggregationResult{
@@ -2050,8 +2021,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.Equal(startReq, fresp.Request)
 
 	r.True(len(fresp.QPR.Histogram) != 0)
-	// TODO: compare ids after with_docs is enabled
-	// r.Equal(len(docs), fresp.QPR.IDs.Len())
+	r.Equal(len(docs), fresp.QPR.IDs.Len())
 	r.Equal(float64(1), fresp.Progress)
 
 	// GetAsyncSearchesList
@@ -2065,7 +2035,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.Eventually(func() bool {
 		resp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 		r.NoError(err)
-		return resp.Status == fracmanager.AsyncSearchStatusDone
+		return resp.Status == asyncsearcher.AsyncSearchStatusDone
 	}, 10*time.Second, 50*time.Millisecond)
 
 	listResp, err := searcher.GetAsyncSearchesList(ctx, search.GetAsyncSearchesListRequest{})
@@ -2074,7 +2044,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 
 	for i, s := range listResp {
 		r.True(s.ID == searchIDs[len(searchIDs)-i-1]) // list is sorted by startedAt desc
-		r.Equal(fracmanager.AsyncSearchStatusDone, s.Status)
+		r.Equal(asyncsearcher.AsyncSearchStatusDone, s.Status)
 		r.Equal(startReq, s.Request)
 		r.True(s.ExpiresAt.After(time.Now().UTC()))
 		r.Equal(float64(1), s.Progress)
