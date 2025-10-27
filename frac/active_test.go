@@ -3,7 +3,6 @@ package frac
 import (
 	"context"
 	"fmt"
-	"math"
 	"math/rand/v2"
 	"path/filepath"
 	"strings"
@@ -31,7 +30,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	const numMessages = 25000
 	const bulkSize = 100
 
-	docs, bulks, _, _ := generatesMessages(numMessages, bulkSize)
+	docs, bulks, fromTime, toTime := generatesMessages(numMessages, bulkSize)
 
 	tmpDir := common.CreateTempDir()
 	defer common.RemoveDir(tmpDir)
@@ -55,6 +54,11 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 		"message": seq.NewSingleType(seq.TokenizerTypeText, "", 100),
 		"level":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
 	}
+	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
+		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(1024, false, true, 8192),
+		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(1024, false, true),
+		seq.TokenizerTypeExists:  tokenizer.NewExistsTokenizer(),
+	}
 
 	wg := sync.WaitGroup{}
 
@@ -69,7 +73,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 			return d, nil
 		}
 
-		proc := getTestProcessor(mapping)
+		proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
 		compressor := indexer.GetDocsMetasCompressor(3, 3)
 		_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
 		assert.NoError(t, err, "processing bulk failed")
@@ -87,52 +91,79 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	ctx := context.Background()
 	g, ctx := errgroup.WithContext(ctx)
 
+	type queryFilter func(doc *testDoc) bool
+
 	for readerId := 0; readerId < numReaders; readerId++ {
 		g.Go(func() error {
-			for queryID := 0; queryID < numQueries; queryID++ {
+			for q := 0; q < numQueries; q++ {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
 				default:
 				}
 
-				queryAst, err := parser.ParseSeqQL("message:request", mapping)
-				if err != nil {
-					return fmt.Errorf("failed to parse query: %w", err)
+				var query string
+				var filter queryFilter
+				random := rand.IntN(3)
+				switch random {
+				case 0:
+					query = "message:request"
+					filter = func(doc *testDoc) bool {
+						return strings.Contains(doc.message, "request")
+					}
+				case 1:
+					query = "service:gateway"
+					filter = func(doc *testDoc) bool {
+						return doc.service == "gateway"
+					}
+				case 2:
+					query = "level:2"
+					filter = func(doc *testDoc) bool {
+						return doc.level == 2
+					}
 				}
+
+				queryAst, err := parser.ParseSeqQL(query, mapping)
+				if err != nil {
+					return fmt.Errorf("failed to parse query %s: %w", query, err)
+				}
+
+				// pick random query time
+				queryTime := fromTime.Add(time.Duration(rand.Int64N(int64(toTime.Sub(fromTime)))))
 
 				searchParams := processor.SearchParams{}
 				searchParams.AST = queryAst.Root
 				searchParams.From = seq.MID(0)
-				searchParams.To = seq.MID(math.MaxUint64)
+				searchParams.To = seq.TimeToMID(queryTime)
 				searchParams.Limit = 50
 
 				qpr, err := fraction.Search(ctx, searchParams)
 				if err != nil {
-					return fmt.Errorf("reader %d query %d: search failed: %w", readerId, queryID, err)
+					return fmt.Errorf("search failed: %w", err)
 				}
 
-				fetchedDocs, err := fraction.Fetch(ctx, qpr.IDs.IDs())
+				fetchedResult, err := fraction.Fetch(ctx, qpr.IDs.IDs())
 				if err != nil {
-					return fmt.Errorf("reader %d query %d: fetch docs failed: %w", readerId, queryID, err)
+					return fmt.Errorf("fetch failed: %w", err)
 				}
 
-				fetchedDocsStrings := make([]string, len(fetchedDocs))
-				for i, doc := range fetchedDocs {
-					fetchedDocsStrings[i] = string(doc)
+				fetchedDocs := make([]string, len(fetchedResult))
+				for i, doc := range fetchedResult {
+					fetchedDocs[i] = string(doc)
 				}
 
+				// find docs by time range and provided query filter to match against fetched docs
 				var expectedDocs []string
-				for i := len(docs) - 1; i >= 0 && len(expectedDocs) < 50; i-- {
-					if strings.Contains(docs[i], "request") {
-						expectedDocs = append(expectedDocs, docs[i])
+				for i := len(docs) - 1; i >= 0 && len(expectedDocs) < searchParams.Limit; i-- {
+					if (docs[i].timestamp.Before(queryTime) || docs[i].timestamp.Equal(queryTime)) && filter(&docs[i]) {
+						expectedDocs = append(expectedDocs, docs[i].doc)
 					}
 				}
 
-				assert.Equal(t, len(expectedDocs), len(fetchedDocsStrings),
-					"reader %d query %d: number of fetched docs should match expected", readerId, queryID)
-				assert.Equal(t, expectedDocs, fetchedDocsStrings,
-					"reader %d query %d: fetched documents should match expected documents containing 'request' in descending order", readerId, queryID)
+				assert.Equal(t, len(expectedDocs), len(fetchedDocs), "doc count doesn't match")
+				if len(expectedDocs) > 0 {
+					assert.Equal(t, expectedDocs, fetchedDocs, "docs do not match for query")
+				}
 			}
 			return nil
 		})
@@ -142,7 +173,15 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	assert.NoError(t, err, "concurrent queries should complete without errors")
 }
 
-func generatesMessages(numMessages int, bulkSize int) ([]string, [][]string, time.Time, time.Time) {
+type testDoc = struct {
+	doc       string
+	message   string
+	service   string
+	level     int
+	timestamp time.Time
+}
+
+func generatesMessages(numMessages int, bulkSize int) ([]testDoc, [][]string, time.Time, time.Time) {
 	services := []string{"gateway", "proxy", "scheduler"}
 	messages := []string{
 		"request started", "request completed", "processing timed out",
@@ -152,7 +191,7 @@ func generatesMessages(numMessages int, bulkSize int) ([]string, [][]string, tim
 	fromTime := time.Date(2000, 1, 1, 13, 0, 0, 0, time.UTC)
 	var toTime time.Time
 
-	var docs []string
+	docs := make([]testDoc, 0, numMessages)
 
 	for i := 0; i < numMessages; i++ {
 		service := services[rand.IntN(len(services))]
@@ -165,7 +204,14 @@ func generatesMessages(numMessages int, bulkSize int) ([]string, [][]string, tim
 
 		doc := fmt.Sprintf(`{"timestamp":"%s","service":"%s","message":"%s","level":"%d"}`,
 			timestamp.Format(time.RFC3339Nano), service, message, level)
-		docs = append(docs, doc)
+
+		docs = append(docs, testDoc{
+			doc:       doc,
+			timestamp: timestamp,
+			message:   message,
+			service:   service,
+			level:     level,
+		})
 	}
 
 	var bulks [][]string
@@ -174,19 +220,16 @@ func generatesMessages(numMessages int, bulkSize int) ([]string, [][]string, tim
 		if end > len(docs) {
 			end = len(docs)
 		}
-		bulks = append(bulks, docs[i:end])
+
+		bulk := make([]string, end-i)
+		for j := i; j < end; j++ {
+			bulk[j-i] = docs[j].doc
+		}
+
+		bulks = append(bulks, bulk)
 	}
 	rand.Shuffle(len(bulks), func(i, j int) {
 		bulks[i], bulks[j] = bulks[j], bulks[i]
 	})
 	return docs, bulks, fromTime, toTime
-}
-
-func getTestProcessor(mapping seq.Mapping) *indexer.Processor {
-	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
-		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(1024, false, true, 8192),
-		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(1024, false, true),
-		seq.TokenizerTypeExists:  tokenizer.NewExistsTokenizer(),
-	}
-	return indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
 }
