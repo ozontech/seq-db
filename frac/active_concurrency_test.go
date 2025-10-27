@@ -74,6 +74,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 		writerBulks := bulks[start:end]
 
 		writersGroup.Go(func() error {
+			wg := sync.WaitGroup{}
 			for _, bulk := range writerBulks {
 				select {
 				case <-writeCtx.Done():
@@ -91,6 +92,22 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 					return d, nil
 				}
 
+				proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
+				compressor := indexer.GetDocsMetasCompressor(3, 3)
+				_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
+				if err != nil {
+					return fmt.Errorf("writer %d: processing bulk failed: %w", writerId, err)
+				}
+
+				compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
+				docsBlock, metasBlock := compressor.DocsMetas()
+
+				wg.Add(1)
+				err = fraction.Append(docsBlock, metasBlock, &wg)
+				if err != nil {
+					return fmt.Errorf("writer %d: appending docs failed: %w", writerId, err)
+				}
+
 				// 20% chance - simply issue a query for race detector to catch something
 				if rand.IntN(10) < 2 {
 					searchParams := processor.SearchParams{}
@@ -103,27 +120,13 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 					}
 					searchParams.AST = ast.Root
 
-					fraction.Search(context.Background(), searchParams)
+					_, err = fraction.Search(context.Background(), searchParams)
+					if err != nil {
+						return err
+					}
 				}
-
-				proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
-				compressor := indexer.GetDocsMetasCompressor(3, 3)
-				_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
-				if err != nil {
-					return fmt.Errorf("writer %d: processing bulk failed: %w", writerId, err)
-				}
-
-				compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
-				docsBlock, metasBlock := compressor.DocsMetas()
-
-				wg := sync.WaitGroup{}
-				wg.Add(1)
-				err = fraction.Append(docsBlock, metasBlock, &wg)
-				if err != nil {
-					return fmt.Errorf("writer %d: appending docs failed: %w", writerId, err)
-				}
-				wg.Wait()
 			}
+			wg.Wait()
 			return nil
 		})
 	}
