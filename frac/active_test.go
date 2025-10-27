@@ -6,7 +6,6 @@ import (
 	"math"
 	"math/rand/v2"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -26,48 +25,19 @@ import (
 )
 
 func TestConcurrentAppendAndQuery(t *testing.T) {
-	const writers = 8
-	const readers = 8
-	const queries = 500
+	const numWriters = 8
+	const numReaders = 8
+	const numQueries = 500
+	const numMessages = 25000
+	const bulkSize = 100
 
-	services := []string{"gateway", "proxy", "scheduler"}
-	messages := []string{
-		"request started", "request completed", "processing timed out",
-		"processing data", "processing failed", "processing retry",
-	}
-
-	fromTime := time.Date(2000, 1, 1, 13, 0, 0, 0, time.UTC)
-
-	var docs []string
-
-	for i := 0; i < 25000; i++ {
-		service := services[rand.IntN(len(services))]
-		message := messages[rand.IntN(len(messages))]
-		level := rand.IntN(6)
-		timestamp := fromTime.Add(time.Duration(i) * time.Millisecond)
-
-		doc := fmt.Sprintf(`{"timestamp":"%s","service":"%s","message":"%s","level":"%d"}`,
-			timestamp.Format(time.RFC3339Nano), service, message, level)
-		docs = append(docs, doc)
-	}
-
-	bulkSize := 100
-	var bulks [][]string
-	for i := 0; i < len(docs); i += bulkSize {
-		end := i + bulkSize
-		if end > len(docs) {
-			end = len(docs)
-		}
-		bulks = append(bulks, docs[i:end])
-	}
-	rand.Shuffle(len(bulks), func(i, j int) {
-		bulks[i], bulks[j] = bulks[j], bulks[i]
-	})
+	docs, bulks, _, _ := generatesMessages(numMessages, bulkSize)
 
 	tmpDir := common.CreateTempDir()
+	defer common.RemoveDir(tmpDir)
 	baseName := filepath.Join(tmpDir, "test_fraction")
 
-	activeIndexer := NewActiveIndexer(writers, 1000)
+	activeIndexer := NewActiveIndexer(numWriters, 1000)
 	activeIndexer.Start()
 	defer activeIndexer.Stop()
 
@@ -89,17 +59,12 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	wg := sync.WaitGroup{}
 
 	for _, bulk := range bulks {
-		docsCopy := slices.Clone(bulk)
-		rand.Shuffle(len(docsCopy), func(i, j int) {
-			docsCopy[i], docsCopy[j] = docsCopy[j], docsCopy[i]
-		})
-
 		idx := 0
 		readNext := func() ([]byte, error) {
-			if idx >= len(docsCopy) {
+			if idx >= len(bulk) {
 				return nil, nil
 			}
-			d := []byte(docsCopy[idx])
+			d := []byte(bulk[idx])
 			idx++
 			return d, nil
 		}
@@ -122,9 +87,9 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	ctx := context.Background()
 	g, ctx := errgroup.WithContext(ctx)
 
-	for readerID := 0; readerID < readers; readerID++ {
+	for readerId := 0; readerId < numReaders; readerId++ {
 		g.Go(func() error {
-			for queryID := 0; queryID < queries; queryID++ {
+			for queryID := 0; queryID < numQueries; queryID++ {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -133,7 +98,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 				queryAst, err := parser.ParseSeqQL("message:request", mapping)
 				if err != nil {
-					return fmt.Errorf("reader %d query %d: failed to parse query: %w", readerID, queryID, err)
+					return fmt.Errorf("failed to parse query: %w", err)
 				}
 
 				searchParams := processor.SearchParams{}
@@ -144,12 +109,12 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 				qpr, err := fraction.Search(ctx, searchParams)
 				if err != nil {
-					return fmt.Errorf("reader %d query %d: search failed: %w", readerID, queryID, err)
+					return fmt.Errorf("reader %d query %d: search failed: %w", readerId, queryID, err)
 				}
 
 				fetchedDocs, err := fraction.Fetch(ctx, qpr.IDs.IDs())
 				if err != nil {
-					return fmt.Errorf("reader %d query %d: fetch docs failed: %w", readerID, queryID, err)
+					return fmt.Errorf("reader %d query %d: fetch docs failed: %w", readerId, queryID, err)
 				}
 
 				fetchedDocsStrings := make([]string, len(fetchedDocs))
@@ -165,9 +130,9 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 				}
 
 				assert.Equal(t, len(expectedDocs), len(fetchedDocsStrings),
-					"reader %d query %d: number of fetched docs should match expected", readerID, queryID)
+					"reader %d query %d: number of fetched docs should match expected", readerId, queryID)
 				assert.Equal(t, expectedDocs, fetchedDocsStrings,
-					"reader %d query %d: fetched documents should match expected documents containing 'request' in descending order", readerID, queryID)
+					"reader %d query %d: fetched documents should match expected documents containing 'request' in descending order", readerId, queryID)
 			}
 			return nil
 		})
@@ -175,6 +140,46 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 	err := g.Wait()
 	assert.NoError(t, err, "concurrent queries should complete without errors")
+}
+
+func generatesMessages(numMessages int, bulkSize int) ([]string, [][]string, time.Time, time.Time) {
+	services := []string{"gateway", "proxy", "scheduler"}
+	messages := []string{
+		"request started", "request completed", "processing timed out",
+		"processing data", "processing failed", "processing retry",
+	}
+
+	fromTime := time.Date(2000, 1, 1, 13, 0, 0, 0, time.UTC)
+	var toTime time.Time
+
+	var docs []string
+
+	for i := 0; i < numMessages; i++ {
+		service := services[rand.IntN(len(services))]
+		message := messages[rand.IntN(len(messages))]
+		level := rand.IntN(6)
+		timestamp := fromTime.Add(time.Duration(i) * time.Millisecond)
+		if i == numMessages-1 {
+			toTime = timestamp
+		}
+
+		doc := fmt.Sprintf(`{"timestamp":"%s","service":"%s","message":"%s","level":"%d"}`,
+			timestamp.Format(time.RFC3339Nano), service, message, level)
+		docs = append(docs, doc)
+	}
+
+	var bulks [][]string
+	for i := 0; i < len(docs); i += bulkSize {
+		end := i + bulkSize
+		if end > len(docs) {
+			end = len(docs)
+		}
+		bulks = append(bulks, docs[i:end])
+	}
+	rand.Shuffle(len(bulks), func(i, j int) {
+		bulks[i], bulks[j] = bulks[j], bulks[i]
+	})
+	return docs, bulks, fromTime, toTime
 }
 
 func getTestProcessor(mapping seq.Mapping) *indexer.Processor {
