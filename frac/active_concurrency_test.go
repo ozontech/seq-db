@@ -28,7 +28,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	const numWriters = 8
 	const numReaders = 8
 	const numQueries = 500
-	const numMessagesPerWriter = 4000
+	const numMessagesPerWriter = 5000
 	const bulkSize = 100
 
 	docs, bulks, fromTime, toTime := generatesMessages(numWriters*numMessagesPerWriter, bulkSize)
@@ -89,6 +89,21 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 					d := []byte(bulk[idx])
 					idx++
 					return d, nil
+				}
+
+				// 20% chance - simply issue a query for race detector to catch something
+				if rand.IntN(10) < 2 {
+					searchParams := processor.SearchParams{}
+					searchParams.Limit = 50
+					searchParams.From = seq.MID(0)
+					searchParams.To = seq.TimeToMID(toTime)
+					ast, err := parser.ParseSeqQL("message:*", mapping)
+					if err != nil {
+						return err
+					}
+					searchParams.AST = ast.Root
+
+					fraction.Search(context.Background(), searchParams)
 				}
 
 				proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
@@ -153,7 +168,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 				queryAst, err := parser.ParseSeqQL(query, mapping)
 				if err != nil {
-					return fmt.Errorf("failed to parse query %s: %w", query, err)
+					return err
 				}
 
 				// pick random query time
