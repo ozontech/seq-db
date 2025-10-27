@@ -24,19 +24,20 @@ import (
 )
 
 func TestConcurrentAppendAndQuery(t *testing.T) {
+	const numIndexWorkers = 8
 	const numWriters = 8
 	const numReaders = 8
 	const numQueries = 500
-	const numMessages = 25000
+	const numMessagesPerWriter = 4000
 	const bulkSize = 100
 
-	docs, bulks, fromTime, toTime := generatesMessages(numMessages, bulkSize)
+	docs, bulks, fromTime, toTime := generatesMessages(numWriters*numMessagesPerWriter, bulkSize)
 
 	tmpDir := common.CreateTempDir()
 	defer common.RemoveDir(tmpDir)
 	baseName := filepath.Join(tmpDir, "test_fraction")
 
-	activeIndexer := NewActiveIndexer(numWriters, 1000)
+	activeIndexer := NewActiveIndexer(numIndexWorkers, 1000)
 	activeIndexer.Start()
 	defer activeIndexer.Stop()
 
@@ -60,41 +61,68 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 		seq.TokenizerTypeExists:  tokenizer.NewExistsTokenizer(),
 	}
 
-	wg := sync.WaitGroup{}
+	bulksPerWriter := len(bulks) / numWriters
 
-	for _, bulk := range bulks {
-		idx := 0
-		readNext := func() ([]byte, error) {
-			if idx >= len(bulk) {
-				return nil, nil
+	writeCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	writersGroup, writeCtx := errgroup.WithContext(writeCtx)
+
+	for writerId := 0; writerId < numWriters; writerId++ {
+		start := writerId * bulksPerWriter
+		end := start + bulksPerWriter
+
+		writerBulks := bulks[start:end]
+
+		writersGroup.Go(func() error {
+			for _, bulk := range writerBulks {
+				select {
+				case <-writeCtx.Done():
+					return writeCtx.Err()
+				default:
+				}
+
+				idx := 0
+				readNext := func() ([]byte, error) {
+					if idx >= len(bulk) {
+						return nil, nil
+					}
+					d := []byte(bulk[idx])
+					idx++
+					return d, nil
+				}
+
+				proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
+				compressor := indexer.GetDocsMetasCompressor(3, 3)
+				_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
+				if err != nil {
+					return fmt.Errorf("writer %d: processing bulk failed: %w", writerId, err)
+				}
+
+				compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
+				docsBlock, metasBlock := compressor.DocsMetas()
+
+				wg := sync.WaitGroup{}
+				wg.Add(1)
+				err = fraction.Append(docsBlock, metasBlock, &wg)
+				if err != nil {
+					return fmt.Errorf("writer %d: appending docs failed: %w", writerId, err)
+				}
+				wg.Wait()
 			}
-			d := []byte(bulk[idx])
-			idx++
-			return d, nil
-		}
-
-		proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
-		compressor := indexer.GetDocsMetasCompressor(3, 3)
-		_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
-		assert.NoError(t, err, "processing bulk failed")
-
-		compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
-		docsBlock, metasBlock := compressor.DocsMetas()
-
-		wg.Add(1)
-		err = fraction.Append(docsBlock, metasBlock, &wg)
-		assert.NoError(t, err, "appending docs failed")
+			return nil
+		})
 	}
 
-	wg.Wait()
+	err := writersGroup.Wait()
+	assert.NoError(t, err, "concurrent writers should complete without errors")
 
 	ctx := context.Background()
-	g, ctx := errgroup.WithContext(ctx)
+	readersGroup, ctx := errgroup.WithContext(ctx)
 
 	type queryFilter func(doc *testDoc) bool
 
 	for readerId := 0; readerId < numReaders; readerId++ {
-		g.Go(func() error {
+		readersGroup.Go(func() error {
 			for q := 0; q < numQueries; q++ {
 				select {
 				case <-ctx.Done():
@@ -169,7 +197,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 		})
 	}
 
-	err := g.Wait()
+	err = readersGroup.Wait()
 	assert.NoError(t, err, "concurrent queries should complete without errors")
 }
 
