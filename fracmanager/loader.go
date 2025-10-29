@@ -16,9 +16,10 @@ import (
 // Loader is responsible for loading and initializing fractions from filesystem
 // Coordinates the process of discovering, validating, and loading all fraction types
 type Loader struct {
-	config    *Config           // loader configuration
-	provider  *fractionProvider // provider for creating fraction objects
-	infoCache *fracInfoCache    // fraction metadata cache
+	config       *Config           // loader configuration
+	provider     *fractionProvider // provider for creating fraction objects
+	newInfoCache *fracInfoCache    // new empty info cache
+	oldInfoCache *fracInfoCache    // loaded info cache
 
 	cacheStat struct {
 		hits   int // counter of fractions loaded from frac info cache
@@ -30,9 +31,10 @@ type Loader struct {
 // Initialized at system startup to prepare data
 func NewLoader(config *Config, provider *fractionProvider, infoCache *fracInfoCache) *Loader {
 	return &Loader{
-		config:    config,
-		provider:  provider,
-		infoCache: infoCache,
+		config:       config,
+		provider:     provider,
+		newInfoCache: infoCache,
+		oldInfoCache: NewFracInfoCacheFromDisk(infoCache.fileName),
 	}
 }
 
@@ -155,22 +157,22 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 // loadSealed loads a sealed fraction using cache
 // Optimizes loading through pre-saved metadata
 func (l *Loader) loadSealed(basePath string) *frac.Sealed {
-	info, found := l.infoCache.Get(filepath.Base(basePath))
+	info, found := l.oldInfoCache.Get(filepath.Base(basePath))
 	l.updateStats(found)
 
 	f := l.provider.NewSealed(basePath, info)
-	l.infoCache.Add(f.Info())
+	l.newInfoCache.Add(f.Info())
 	return f
 }
 
 // loadRemote loads a remote fraction
 // Works with external storages through context
 func (l *Loader) loadRemote(ctx context.Context, basePath string) *frac.Remote {
-	info, found := l.infoCache.Get(filepath.Base(basePath))
+	info, found := l.oldInfoCache.Get(filepath.Base(basePath))
 	l.updateStats(found)
 
 	f := l.provider.NewRemote(ctx, basePath, info)
-	l.infoCache.Add(f.Info())
+	l.newInfoCache.Add(f.Info())
 	return f
 }
 
