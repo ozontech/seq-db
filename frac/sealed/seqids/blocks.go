@@ -8,7 +8,8 @@ import (
 )
 
 type BlockMIDs struct {
-	Values []uint64
+	fracVersion config.BinaryDataVersion
+	Values      []uint64
 }
 
 func (b BlockMIDs) Pack(dst []byte) []byte {
@@ -26,6 +27,14 @@ func (b *BlockMIDs) Unpack(data []byte) error {
 		return err
 	}
 	b.Values = values
+
+	// v2 (microsecond MIDs) compatibility - convert micros to millis
+	if b.fracVersion >= config.BinaryDataV2 {
+		for i := range b.Values {
+			b.Values[i] = b.Values[i] / 1000
+		}
+	}
+
 	return nil
 }
 

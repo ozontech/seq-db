@@ -5,6 +5,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
@@ -31,7 +32,7 @@ func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, indexRea
 
 	var err error
 
-	if blocksData.IDsTable, blocksData.BlocksOffsets, err = l.loadIDs(); err != nil {
+	if blocksData.IDsTable, blocksData.BlocksOffsets, err = l.loadIDs(info.BinaryDataVer); err != nil {
 		logger.Fatal("load ids error", zap.Error(err))
 	}
 
@@ -71,7 +72,7 @@ func (l *Loader) skipBlock() storage.IndexBlockHeader {
 	return header
 }
 
-func (l *Loader) loadIDs() (idsTable seqids.Table, blocksOffsets []uint64, err error) {
+func (l *Loader) loadIDs(fracVersion config.BinaryDataVersion) (idsTable seqids.Table, blocksOffsets []uint64, err error) {
 	var result []byte
 
 	if result, err = l.nextIndexBlock(); err != nil {
@@ -94,8 +95,16 @@ func (l *Loader) loadIDs() (idsTable seqids.Table, blocksOffsets []uint64, err e
 		if header.Len() == 0 {
 			break
 		}
+
+		var mid seq.MID
+		if fracVersion < config.BinaryDataV2 {
+			mid = seq.MID(header.GetExt1())
+		} else {
+			mid = seq.MID(header.GetExt1() / 1000)
+		}
+
 		idsTable.MinBlockIDs = append(idsTable.MinBlockIDs, seq.ID{
-			MID: seq.MID(header.GetExt1()),
+			MID: mid,
 			RID: seq.RID(header.GetExt2()),
 		})
 
