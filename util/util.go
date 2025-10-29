@@ -10,7 +10,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/c2h5oh/datasize"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
@@ -25,10 +24,6 @@ func StringToByteUnsafe(str string) []byte { // this works fine
 	var buf = *(*[]byte)(unsafe.Pointer(&str))
 	(*reflect.SliceHeader)(unsafe.Pointer(&buf)).Cap = len(str)
 	return buf
-}
-
-func SizeStr(bytes uint64) string {
-	return datasize.ByteSize(bytes).HR()
 }
 
 func RunEvery(done <-chan struct{}, runInterval time.Duration, actionFn func()) {
@@ -73,20 +68,20 @@ func Float64ToPrec(val float64, prec uint32) float64 {
 
 // SizeToUnit converts size in bytes to unit and returns as float64.
 func SizeToUnit(sizeVal uint64, unit string) float64 {
-	val := datasize.ByteSize(sizeVal)
+	val := int64(sizeVal)
 	switch strings.ToLower(unit) {
 	case "kb":
-		return val.KBytes()
+		return ByteToKBytes(val)
 	case "mb":
-		return val.MBytes()
+		return ByteToMBytes(val)
 	case "gb":
-		return val.GBytes()
+		return ByteToGBytes(val)
 	case "tb":
-		return val.TBytes()
+		return ByteToTBytes(val)
 	case "pb":
-		return val.PBytes()
+		return ByteToPBytes(val)
 	case "eb":
-		return val.EBytes()
+		return ByteToEBytes(val)
 	default:
 		logger.Panic("unsupported unit", zap.String("unit", unit))
 		panic("_")
