@@ -135,12 +135,12 @@ func convertHistToMap(params SearchParams, hist []uint64) map[seq.MID]uint64 {
 		return nil
 	}
 	res := make(map[seq.MID]uint64, len(hist))
-	bucket := params.From - params.From%seq.MID(params.HistInterval)
+	bucket := params.From - params.From%seq.MillisToMID(params.HistInterval)
 	for _, cnt := range hist {
 		if cnt > 0 {
 			res[bucket] = cnt
 		}
-		bucket += seq.MID(params.HistInterval)
+		bucket += seq.MillisToMID(params.HistInterval)
 	}
 	return res
 }
@@ -161,8 +161,8 @@ func iterateEvalTree(
 		histogram []uint64
 	)
 	if hasHist {
-		histBase = uint64(params.From) / params.HistInterval
-		histSize := uint64(params.To)/params.HistInterval - histBase + 1
+		histBase = uint64(seq.MIDToMillis(params.From)) / params.HistInterval
+		histSize := uint64(seq.MIDToMillis(params.To))/params.HistInterval - histBase + 1
 		histogram = make([]uint64, histSize)
 	}
 
@@ -206,7 +206,7 @@ func iterateEvalTree(
 						zap.Time("mid", mid.Time()))
 					continue
 				}
-				bucketIndex := uint64(mid)/params.HistInterval - histBase
+				bucketIndex := uint64(mid/1000)/params.HistInterval - histBase
 				histogram[bucketIndex]++
 			}
 
@@ -274,7 +274,7 @@ func MergeQPRs(qprs []*seq.QPR, params SearchParams) *seq.QPR {
 	}
 	qpr := qprs[0]
 	if len(qprs) > 1 {
-		seq.MergeQPRs(qpr, qprs[1:], params.Limit, seq.MID(params.HistInterval), params.Order)
+		seq.MergeQPRs(qpr, qprs[1:], params.Limit, seq.MillisToMID(params.HistInterval), params.Order)
 	}
 	return qpr
 }

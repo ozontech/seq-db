@@ -32,11 +32,11 @@ type SearchRequest struct {
 func (sr *SearchRequest) GetAPISearchRequest() *storeapi.SearchRequest {
 	return &storeapi.SearchRequest{
 		Query:     util.ByteToStringUnsafe(sr.Q),
-		From:      int64(sr.From),
-		To:        int64(sr.To),
+		From:      seq.MIDToMillis(sr.From),
+		To:        seq.MIDToMillis(sr.To),
 		Size:      int64(sr.Size),
 		Offset:    int64(sr.Offset),
-		Interval:  int64(sr.Interval),
+		Interval:  seq.MIDToMillis(sr.Interval),
 		Aggs:      convertToAggsQuery(sr.AggQ),
 		Explain:   sr.Explain,
 		WithTotal: sr.WithTotal,
@@ -63,7 +63,7 @@ func convertToAggsQuery(aggs []AggQuery) []*storeapi.AggQuery {
 
 		buf[i].Func = storeapi.AggFunc(query.Func)
 		buf[i].Quantiles = query.Quantiles
-		buf[i].Interval = int64(query.Interval)
+		buf[i].Interval = seq.MIDToMillis(query.Interval)
 
 		aggQ[i] = &buf[i]
 	}

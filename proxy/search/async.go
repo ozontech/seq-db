@@ -50,7 +50,7 @@ func (si *Ingestor) StartAsyncSearch(ctx context.Context, r AsyncRequest) (Async
 		From:              r.From.UnixMilli(),
 		To:                r.To.UnixMilli(),
 		Aggs:              convertToAggsQuery(r.Aggregations),
-		HistogramInterval: int64(r.HistogramInterval),
+		HistogramInterval: seq.MIDToMillis(r.HistogramInterval),
 		Retention:         durationpb.New(r.Retention),
 		WithDocs:          r.WithDocs,
 		Size:              r.Size,
@@ -186,7 +186,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		fracsInQueue += int(sr.FracsQueue)
 		fracsDone += int(sr.FracsDone)
 
-		histInterval = seq.MID(sr.HistogramInterval)
+		histInterval = seq.MillisToMID(uint64(sr.HistogramInterval))
 
 		ss := sr.Status.MustAsyncSearchStatus()
 		pr.Status = mergeAsyncSearchStatus(pr.Status, ss)
@@ -389,7 +389,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 					From:              s.From.AsTime(),
 					To:                s.To.AsTime(),
 					Aggregations:      buildRequestAggs(s.Aggs),
-					HistogramInterval: seq.MID(s.HistogramInterval),
+					HistogramInterval: seq.MillisToMID(uint64(s.HistogramInterval)),
 					WithDocs:          s.WithDocs,
 					Size:              s.Size,
 				}

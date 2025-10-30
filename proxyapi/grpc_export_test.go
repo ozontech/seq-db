@@ -76,8 +76,8 @@ func prepareExportTestData(cData exportTestCaseData) exportTestData {
 				Q:           []byte(req.Query.Query),
 				Offset:      int(req.Offset),
 				Size:        int(req.Size),
-				From:        seq.MID(req.Query.From.AsTime().UnixMilli()),
-				To:          seq.MID(req.Query.To.AsTime().UnixMilli()),
+				From:        seq.MillisToMID(uint64(req.Query.From.AsTime().UnixMilli())),
+				To:          seq.MillisToMID(uint64(req.Query.To.AsTime().UnixMilli())),
 				ShouldFetch: true,
 			},
 			ret: siSearchRet{

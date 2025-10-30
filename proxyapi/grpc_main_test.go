@@ -233,7 +233,7 @@ func makeGetHistRespData(interval string, totalSize, fromTs, toTs int64) (*testG
 	docCnt := totalSize / int64(bucketsCnt)
 	remainCnt := totalSize - docCnt*(int64(bucketsCnt)-1)
 	bucketKey := fromTs
-	qprHist[seq.MID(bucketKey)] = uint64(remainCnt)
+	qprHist[seq.MillisToMID(uint64(bucketKey))] = uint64(remainCnt)
 	ts := time.UnixMilli(bucketKey)
 	bucket := &seqproxyapi.Histogram_Bucket{
 		DocCount: uint64(remainCnt),
@@ -243,7 +243,7 @@ func makeGetHistRespData(interval string, totalSize, fromTs, toTs int64) (*testG
 	for i := 1; i < bucketsCnt; i++ {
 		bucketKey := fromTs + int64(i)*intervalMS
 		ts := time.UnixMilli(bucketKey)
-		qprHist[seq.MID(bucketKey)] = uint64(docCnt)
+		qprHist[seq.MillisToMID(uint64(bucketKey))] = uint64(docCnt)
 		bucket := &seqproxyapi.Histogram_Bucket{
 			DocCount: uint64(docCnt),
 			Ts:       timestamppb.New(ts),

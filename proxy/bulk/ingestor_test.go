@@ -87,7 +87,7 @@ func TestProcessDocuments(t *testing.T) {
 
 	now := time.Now().UTC()
 
-	id := seq.SimpleID(int(now.UnixMilli()))
+	id := seq.SimpleID(int(now.UnixNano() / 1000))
 
 	type TestPayload struct {
 		InDocs  []string

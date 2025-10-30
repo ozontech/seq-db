@@ -50,7 +50,7 @@ func (g *grpcV1) StartAsyncSearch(
 		From:              r.GetQuery().GetFrom().AsTime(),
 		To:                r.GetQuery().GetTo().AsTime(),
 		Aggregations:      aggs,
-		HistogramInterval: seq.MID(histInterval.Milliseconds()),
+		HistogramInterval: seq.MillisToMID(uint64(histInterval.Milliseconds())),
 		WithDocs:          r.WithDocs,
 		Size:              r.Size,
 	})
