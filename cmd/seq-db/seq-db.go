@@ -85,7 +85,6 @@ func main() {
 
 	config.ReaderWorkers = cfg.Resources.ReaderWorkers
 	config.CaseSensitive = cfg.Indexing.CaseSensitive
-	config.SkipFsync = cfg.Resources.SkipFsync
 	config.MaxRequestedDocuments = cfg.Limits.SearchDocs
 
 	backoff.DefaultConfig.MaxDelay = 10 * time.Second
@@ -255,7 +254,6 @@ func startStore(
 			TotalSize:         uint64(cfg.Storage.TotalSize),
 			CacheSize:         uint64(cfg.Resources.CacheSize),
 			SortCacheSize:     uint64(cfg.Resources.SortDocsCacheSize),
-			ShouldReplay:      true,
 			ReplayWorkers:     cfg.Resources.ReplayWorkers,
 			MaintenanceDelay:  0,
 			CacheGCDelay:      0,
@@ -277,6 +275,7 @@ func startStore(
 						MaxTIDsPerFraction: cfg.Limits.Aggregation.FractionTokens,
 					},
 				},
+				SkipFsync:    cfg.Resources.SkipFsync,
 				SkipSortDocs: !cfg.DocsSorting.Enabled,
 				KeepMetaFile: false,
 			},

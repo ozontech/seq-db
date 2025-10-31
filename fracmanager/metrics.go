@@ -3,6 +3,8 @@ package fracmanager
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/ozontech/seq-db/metric"
 )
 
 var (
@@ -93,5 +95,55 @@ var (
 		Subsystem: "main",
 		Name:      "fraction_load_errors",
 		Help:      "Doc file load errors (missing or invalid doc file)",
+	})
+
+	storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "common",
+		Name:      "bytes_read",
+	})
+	sealsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db",
+		Subsystem: "main",
+		Name:      "seals_total",
+	})
+	sealsDoneSeconds = promauto.NewSummary(prometheus.SummaryOpts{
+		Namespace: "seq_db",
+		Subsystem: "main",
+		Name:      "seals_done_seconds",
+	})
+
+	fetcherStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "stages_seconds",
+		Buckets:   metric.SecondsBuckets,
+	}, []string{"stage"})
+	fetcherIDsPerFraction = promauto.NewSummary(prometheus.SummaryOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "ids_per_fraction",
+	})
+	fetcherWithHints = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "requests_with_hints",
+	})
+	fetcherWithoutHint = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "requests_without_hints",
+	})
+	fetcherHintMisses = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "fetcher",
+		Name:      "hint_misses",
+	})
+
+	searchSubSearches = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "sub_searches",
+		Buckets:   []float64{0.99, 1, 1.01, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048},
 	})
 )

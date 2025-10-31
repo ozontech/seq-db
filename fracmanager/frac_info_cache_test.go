@@ -8,26 +8,20 @@ import (
 	"sync"
 	"testing"
 
-	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
+
+	insaneJSON "github.com/ozontech/insane-json"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/seq"
-	testscommon "github.com/ozontech/seq-db/tests/common"
 )
 
 const dummyFracFixture = `{"a":{"name":"a","ver":"1.1","docs_total":1,"docs_on_disk":363,"docs_raw":450,"meta_on_disk":0,"index_on_disk":1284,"const_regular_block_size":16384,"const_ids_per_block":4096,"const_lid_block_cap":65536,"from":1666193255114,"to":1666193255114,"creation_time":1666193044479},"b":{"name":"b","ver":"1.2","docs_total":1,"docs_on_disk":363,"docs_raw":450,"meta_on_disk":0,"index_on_disk":1276,"const_regular_block_size":16384,"const_ids_per_block":4096,"const_lid_block_cap":65536,"from":1666193602304,"to":1666193602304,"creation_time":1666193598979}}`
 
-func loadFracCacheContent(dataDir string) ([]byte, error) {
-	fileName := filepath.Join(dataDir, consts.FracCacheFileSuffix)
+func loadInfoCache(fileName string) (map[string]*common.Info, error) {
 	content, err := os.ReadFile(fileName)
-	return content, err
-}
-
-func loadFracCache(dataDir string) (map[string]*common.Info, error) {
-	content, err := loadFracCacheContent(dataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -41,47 +35,28 @@ func loadFracCache(dataDir string) (map[string]*common.Info, error) {
 	return fracCache, err
 }
 
-func writeToFracCache(dataDir, fname, data string) error {
-	fullPath := filepath.Join(dataDir, fname)
-	err := os.WriteFile(fullPath, []byte(data), 0o660)
-	return err
-}
-
 func TestEmpty(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
+	filename := filepath.Join(t.TempDir(), consts.FracCacheFileSuffix)
 
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
+	f := NewFracInfoCache(filename)
 
-	f := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 	err := f.SyncWithDisk()
 	assert.NoError(t, err)
-	content, err := loadFracCacheContent(dataDir)
+	content, err := os.ReadFile(filename)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("{}"), content)
 
 	currentFracInfo, ok := f.Get("a")
 	assert.Nil(t, currentFracInfo)
 	assert.Equal(t, false, ok)
-
-	err = f.SyncWithDisk()
-	assert.NoError(t, err)
-	content, err = loadFracCacheContent(dataDir)
-	assert.NoError(t, err)
-	assert.Equal(t, []byte("{}"), content)
 }
 
 func TestLoadFromDisk(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
+	filename := filepath.Join(t.TempDir(), consts.FracCacheFileSuffix)
+	assert.NoError(t, os.WriteFile(filename, []byte(dummyFracFixture), 0o660))
 
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
-
-	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
-	assert.NoError(t, err)
-
-	f := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
-	f.LoadFromDisk(filepath.Join(dataDir, consts.FracCacheFileSuffix))
+	f := NewFracInfoCache(filename)
+	f.LoadFromDisk(filename)
 
 	el, has := f.Get("a")
 	assert.True(t, has)
@@ -102,100 +77,59 @@ func TestLoadFromDisk(t *testing.T) {
 }
 
 func TestRemoveFraction(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
+	filename := filepath.Join(t.TempDir(), consts.FracCacheFileSuffix)
+	assert.NoError(t, os.WriteFile(filename, []byte(dummyFracFixture), 0o660))
 
-	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
-	assert.NoError(t, err)
-
-	f := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
-	f.LoadFromDisk(filepath.Join(dataDir, consts.FracCacheFileSuffix))
+	f := NewFracInfoCache(filename)
+	f.LoadFromDisk(filename)
 
 	f.Remove("a")
 	f.Remove("b")
 
-	err = f.SyncWithDisk()
-	assert.NoError(t, err)
+	assert.NoError(t, f.SyncWithDisk())
 
-	contents, err := loadFracCacheContent(dataDir)
+	contents, err := os.ReadFile(filename)
 	assert.NoError(t, err)
 	assert.Equal(t, contents, []byte("{}"))
 
-	newInfo := &common.Info{
-		Path:                  "/data/c",
-		Ver:                   "1.3",
-		DocsTotal:             0,
-		DocsOnDisk:            0,
-		DocsRaw:               0,
-		MetaOnDisk:            0,
-		IndexOnDisk:           0,
-		ConstRegularBlockSize: 0,
-		ConstIDsPerBlock:      0,
-		ConstLIDBlockCap:      100500,
-		From:                  0,
-		To:                    0,
-		CreationTime:          0,
-	}
-	f.Add(newInfo)
-	err = f.SyncWithDisk()
-	assert.NoError(t, err)
+	newInfo := common.NewInfo("/data/c", 11, 12)
 
-	m, err := loadFracCache(dataDir)
+	f.Add(newInfo)
+	assert.NoError(t, f.SyncWithDisk())
+
+	m, err := loadInfoCache(filename)
 	assert.NoError(t, err)
 	expected := map[string]*common.Info{"c": newInfo}
 
 	assert.Equal(t, expected, m)
 	f.Remove("c")
-	err = f.SyncWithDisk()
-	assert.NoError(t, err)
+	assert.NoError(t, f.SyncWithDisk())
 
-	contents, err = loadFracCacheContent(dataDir)
+	contents, err = os.ReadFile(filename)
 	assert.NoError(t, err)
 	assert.Equal(t, contents, []byte("{}"))
 }
 
 func TestWriteToDisk(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
+	filename := filepath.Join(t.TempDir(), consts.FracCacheFileSuffix)
+	assert.NoError(t, os.WriteFile(filename, []byte(dummyFracFixture), 0o660))
 
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
+	f := NewFracInfoCache(filename)
+	f.LoadFromDisk(filename)
 
-	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
-	assert.NoError(t, err)
+	infoExpected := common.NewInfo("/data/c", 11, 12)
+	f.Add(infoExpected)
 
-	f := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
-	f.LoadFromDisk(filepath.Join(dataDir, consts.FracCacheFileSuffix))
-
-	newInfo := &common.Info{
-		Path:                  "/data/c",
-		Ver:                   "1.3",
-		DocsTotal:             0,
-		DocsOnDisk:            0,
-		DocsRaw:               0,
-		MetaOnDisk:            0,
-		IndexOnDisk:           0,
-		ConstRegularBlockSize: 0,
-		ConstIDsPerBlock:      0,
-		ConstLIDBlockCap:      100500,
-		From:                  0,
-		To:                    0,
-		CreationTime:          0,
-	}
-
-	f.Add(newInfo)
-
-	fracFromDisk, has := f.Get(filepath.Base(newInfo.Path))
+	infoActual, has := f.Get(filepath.Base(infoExpected.Path))
 	assert.True(t, has)
-	assert.NotNil(t, fracFromDisk)
-	assert.Equal(t, newInfo.ConstLIDBlockCap, fracFromDisk.ConstLIDBlockCap)
+	assert.NotNil(t, infoActual)
+	assert.Equal(t, infoExpected.ConstLIDBlockCap, infoActual.ConstLIDBlockCap)
 
-	err = f.SyncWithDisk()
-	assert.NoError(t, err)
+	assert.NoError(t, f.SyncWithDisk())
 
-	mapFracCache, err := loadFracCache(dataDir)
+	mapFracCache, err := loadInfoCache(filename)
 	assert.NoError(t, err)
-	assert.Equal(t, mapFracCache["c"], newInfo)
+	assert.Equal(t, mapFracCache["c"], infoExpected)
 
 	fracA, has := f.Get("a")
 	assert.True(t, has)
@@ -209,8 +143,7 @@ func TestWriteToDisk(t *testing.T) {
 	f.Remove("b")
 	f.Remove("c")
 
-	err = f.SyncWithDisk()
-	assert.NoError(t, err)
+	assert.NoError(t, f.SyncWithDisk())
 
 	_, has = f.Get("a")
 	assert.False(t, has)
@@ -226,36 +159,27 @@ func TestWriteToDisk(t *testing.T) {
 }
 
 func TestUnusedFractionsCleanup(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
+	filename := filepath.Join(t.TempDir(), consts.FracCacheFileSuffix)
+	assert.NoError(t, os.WriteFile(filename, []byte(dummyFracFixture), 0o660))
 
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
-
-	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
-	assert.NoError(t, err)
-
-	expected := map[string]*common.Info{}
-
-	cacheFile := filepath.Join(dataDir, consts.FracCacheFileSuffix)
-	diskFracCache := NewFracInfoCacheFromDisk(cacheFile)
-	f := NewFracInfoCache(cacheFile)
-
+	diskFracCache := NewFracInfoCacheFromDisk(filename)
 	currentFracInfo, has := diskFracCache.Get("a")
 	assert.True(t, has)
-	expected["a"] = currentFracInfo
+	expected := map[string]*common.Info{"a": currentFracInfo}
+
+	f := NewFracInfoCache(filename)
 	f.Add(currentFracInfo)
-	err = f.SyncWithDisk()
-	assert.NoError(t, err)
-	cache, err := loadFracCache(dataDir)
+	assert.NoError(t, f.SyncWithDisk())
+	cache, err := loadInfoCache(filename)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, cache)
 
 	f.Remove("a")
-	err = f.SyncWithDisk()
+	assert.NoError(t, f.SyncWithDisk())
+
+	contents, err := os.ReadFile(filename)
 	assert.NoError(t, err)
-	cacheStr, err := loadFracCacheContent(dataDir)
-	assert.NoError(t, err)
-	assert.Equal(t, []byte("{}"), cacheStr)
+	assert.Equal(t, contents, []byte("{}"))
 }
 
 func rotateAndSeal(fm *FracManager) frac.Fraction {
@@ -265,20 +189,13 @@ func rotateAndSeal(fm *FracManager) frac.Fraction {
 }
 
 func TestFracInfoSavedToCache(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
-
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
-
 	const maxSize = 10000
 
-	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100,
-		TotalSize:    maxSize * 2,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+	_, fm, tearDown := setupFracManager(t, &Config{
+		FracSize:  100,
+		TotalSize: maxSize * 2,
 	})
-	assert.NoError(t, err)
+	defer tearDown()
 
 	dp := frac.NewDocProvider()
 	metaRoot := insaneJSON.Spawn()
@@ -297,10 +214,9 @@ func TestFracInfoSavedToCache(t *testing.T) {
 		dp.TryReset()
 	}
 
-	err = fm.fracCache.SyncWithDisk()
-	assert.NoError(t, err)
+	assert.NoError(t, fm.fracCache.SyncWithDisk())
 
-	fracCacheFromDisk, err := loadFracCache(dataDir)
+	fracCacheFromDisk, err := loadInfoCache(fm.fracCache.fullPath)
 	assert.NoError(t, err)
 	assert.Equal(t, fracCacheFromDisk, fm.fracCache.cache)
 	assert.Equal(t, fracCacheFromDisk, infos)
@@ -346,24 +262,15 @@ func appendGlob(files []string, dataDir, glob string) []string {
 }
 
 func TestExtraFractionsRemoved(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
-
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
-
-	const maxSize = 5500
 	const times = 10
+	const maxSize = 5500
 
 	q := newEvictingQueue(maxSize)
 
-	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100,
-		TotalSize:    maxSize,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+	_, fm, tearDown := setupFracManager(t, &Config{
+		FracSize:  100,
+		TotalSize: maxSize,
 	})
-
-	assert.NoError(t, err)
 
 	dp := frac.NewDocProvider()
 	infos := map[string]*common.Info{}
@@ -391,11 +298,10 @@ func TestExtraFractionsRemoved(t *testing.T) {
 	fm.maintenance(&sealWG, &suicideWG) // shrinkSizes should be called
 	sealWG.Wait()
 	suicideWG.Wait()
-
-	fm.Stop()
+	tearDown()
 
 	fracsOnDisk := []string{}
-	fracCacheFromDisk, err := loadFracCache(dataDir)
+	fracCacheFromDisk, err := loadInfoCache(fm.fracCache.fullPath)
 
 	assert.NoError(t, err)
 	for k := range fracCacheFromDisk {
@@ -409,21 +315,13 @@ func TestExtraFractionsRemoved(t *testing.T) {
 }
 
 func TestMissingCacheFilesDeleted(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
-
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
-
-	const maxSize = 5500
 	const times = 10
-	// make some fractions
-	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100,
-		TotalSize:    maxSize,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+	const maxSize = 5500
+
+	cfg, fm, tearDown := setupFracManager(t, &Config{
+		FracSize:  100,
+		TotalSize: maxSize,
 	})
-	assert.NoError(t, err)
 
 	dp := frac.NewDocProvider()
 	metaRoot := insaneJSON.Spawn()
@@ -438,44 +336,37 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	// make sure the disk is in sync with the in-memory fraction cache
 	sealWG := sync.WaitGroup{}
 	suicideWG := sync.WaitGroup{}
-
 	fm.maintenance(&sealWG, &suicideWG) // shrinkSizes should be called
 	sealWG.Wait()
 	suicideWG.Wait()
 
-	fm.Stop()
+	tearDown()
 
 	// remove the fraction files
 	files := []string{}
-	files = appendGlob(files, dataDir, "*.docs")
-	files = appendGlob(files, dataDir, "*.sdocs")
-	files = appendGlob(files, dataDir, "*.index")
-	files = appendGlob(files, dataDir, "*.meta")
+	files = appendGlob(files, cfg.DataDir, "*.docs")
+	files = appendGlob(files, cfg.DataDir, "*.sdocs")
+	files = appendGlob(files, cfg.DataDir, "*.index")
+	files = appendGlob(files, cfg.DataDir, "*.meta")
 	for _, file := range files {
 		err := os.RemoveAll(file)
 		assert.NoError(t, err)
 	}
 
 	// create a new fracmanager that will read the fraction cache file
-	fm2, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100,
-		TotalSize:    maxSize,
-		ShouldReplay: false,
-		DataDir:      dataDir,
-	})
-	assert.NoError(t, err)
+	// fm2, err := New(t.Context(), cfg, nil)
+	// assert.NoError(t, err)
+	cfg, fm2, tearDown := setupFracManager(t, cfg)
+	defer tearDown()
 
 	sealWG2 := sync.WaitGroup{}
 	suicideWG2 := sync.WaitGroup{}
-
 	fm2.maintenance(&sealWG2, &suicideWG2) // shrinkSizes should be called
 	sealWG2.Wait()
 	suicideWG2.Wait()
 
-	fm2.Stop()
-
 	// make sure the missing files are removed from the fraction cache
-	fracCacheFromDisk, err := loadFracCacheContent(dataDir)
+	fracCacheFromDisk, err := os.ReadFile(fm.fracCache.fullPath)
 	assert.NoError(t, err)
 	assert.Equal(t, fracCacheFromDisk, []byte("{}"))
 }

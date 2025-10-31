@@ -19,7 +19,6 @@ type Config struct {
 	TotalSize uint64
 	CacheSize uint64
 
-	ShouldReplay      bool
 	ReplayWorkers     int
 	MaintenanceDelay  time.Duration
 	CacheCleanupDelay time.Duration
@@ -27,6 +26,8 @@ type Config struct {
 	SealParams        common.SealParams
 	SortCacheSize     uint64 // size for docs cache for active fraction
 	Fraction          frac.Config
+
+	MinSealFracSize uint64
 
 	OffloadingEnabled   bool
 	OffloadingForced    bool
@@ -64,6 +65,9 @@ func FillConfigWithDefault(config *Config) *Config {
 	}
 	if config.ReplayWorkers == 0 {
 		config.ReplayWorkers = consts.DefaultReplayWorkers
+	}
+	if config.MinSealFracSize == 0 {
+		config.MinSealFracSize = config.FracSize * consts.DefaultMinSealPercent / 100
 	}
 
 	if config.SortCacheSize == 0 {

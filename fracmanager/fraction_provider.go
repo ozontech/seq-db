@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
@@ -19,11 +17,7 @@ import (
 	"github.com/ozontech/seq-db/storage/s3"
 )
 
-var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
-	Namespace: "seq_db_store",
-	Subsystem: "common",
-	Name:      "bytes_read",
-})
+const fileBasePattern = "seq-db-"
 
 // fractionProvider is a factory for creating different types of fractions
 // Contains all necessary dependencies for creating and managing fractions
@@ -34,6 +28,7 @@ type fractionProvider struct {
 	activeIndexer *frac.ActiveIndexer  // Indexer for active fractions
 	readLimiter   *storage.ReadLimiter // Read rate limiter
 	ulidEntropy   io.Reader            // Entropy source for ULID generation
+	uploader      func() storage.Uploader
 }
 
 func newFractionProvider(
@@ -47,6 +42,9 @@ func newFractionProvider(
 		activeIndexer: indexer,
 		readLimiter:   readLimiter,
 		ulidEntropy:   ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
+		uploader: func() storage.Uploader {
+			return s3.NewUploader(s3cli)
+		},
 	}
 }
 
@@ -129,7 +127,7 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 // Offload uploads fraction to S3 storage and returns a remote fraction
 // IMPORTANT: context controls timeouts and operation cancellation
 func (fp *fractionProvider) Offload(ctx context.Context, f frac.Fraction) (*frac.Remote, error) {
-	mustBeOffloaded, err := f.Offload(ctx, s3.NewUploader(fp.s3cli))
+	mustBeOffloaded, err := f.Offload(ctx, fp.uploader())
 	if err != nil {
 		return nil, err
 	}

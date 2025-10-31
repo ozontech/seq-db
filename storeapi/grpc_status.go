@@ -10,7 +10,7 @@ import (
 )
 
 func (g *GrpcV1) Status(_ context.Context, _ *storeapi.StatusRequest) (*storeapi.StatusResponse, error) {
-	oldestFracTime := g.fracManager.OldestCT()
+	oldestFracTime := g.fracManager.Oldest()
 
 	return &storeapi.StatusResponse{
 		OldestTime: timestamppb.New(time.UnixMilli(int64(oldestFracTime))),

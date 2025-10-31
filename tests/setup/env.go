@@ -22,6 +22,7 @@ import (
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
@@ -91,6 +92,7 @@ func (cfg *TestingEnvConfig) GetFracManagerConfig(replicaID string) fracmanager.
 		c = fracmanager.FillConfigWithDefault(&fracmanager.Config{
 			FracSize:  256 * uint64(units.MiB),
 			TotalSize: 1 * uint64(units.GiB),
+			Fraction:  frac.Config{SkipFsync: true},
 			SealParams: common.SealParams{
 				IDsZstdLevel:           fastestZstdLevel,
 				LIDsZstdLevel:          fastestZstdLevel,
@@ -470,12 +472,6 @@ func (s Stores) OffloadAll() {
 	})
 }
 
-func (s Stores) ResetCache() {
-	s.apply(func(s *storeapi.Store) {
-		s.ResetCache()
-	})
-}
-
 func (s Stores) CountInstances() int {
 	sum := 0
 	for _, replicaSet := range s {
@@ -497,11 +493,6 @@ func (t *TestingEnv) OffloadAll() {
 func (t *TestingEnv) WaitIdle() {
 	t.HotStores.WaitIdle()
 	t.ColdStores.WaitIdle()
-}
-
-func (t *TestingEnv) ResetCache() {
-	t.HotStores.ResetCache()
-	t.ColdStores.ResetCache()
 }
 
 func (t *TestingEnv) StopStore() {

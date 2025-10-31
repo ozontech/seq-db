@@ -51,8 +51,7 @@ func NewStore(ctx context.Context, c StoreConfig, s3cli *s3.Client, mappingProvi
 		return nil, err
 	}
 
-	fracManager := fracmanager.NewFracManager(ctx, &c.FracManager, s3cli)
-	err := fracManager.Load(ctx)
+	fracManager, err := fracmanager.New(ctx, &c.FracManager, s3cli)
 	if err != nil {
 		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
@@ -88,7 +87,6 @@ func (s *Store) Stop() {
 
 	s.grpcServer.Stop(ctx)
 
-	s.FracManager.WaitIdle()
 	s.FracManager.Stop()
 
 	logger.Info("store stopped")
@@ -106,7 +104,7 @@ func (s *Store) GrpcV1() *GrpcV1 { // tests only
 }
 
 func (s *Store) WaitIdle() { // tests only
-	s.FracManager.WaitIdle()
+	s.FracManager.WaitIdleForTests()
 }
 
 func (s *Store) SealAll() { // tests only
@@ -115,8 +113,4 @@ func (s *Store) SealAll() { // tests only
 
 func (s *Store) OffloadAll() { // tests only
 	s.FracManager.OffloadForcedForTests()
-}
-
-func (s *Store) ResetCache() { // tests only
-	s.FracManager.ResetCacheForTests()
 }

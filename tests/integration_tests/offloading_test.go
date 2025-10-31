@@ -41,6 +41,7 @@ func TestOffloading(t *testing.T) {
 			TotalSize: 8 * uint64(units.MiB),
 
 			Fraction: frac.Config{
+				SkipFsync:    true,
 				SkipSortDocs: true,
 			},
 

@@ -22,7 +22,6 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/storage"
 	testscommon "github.com/ozontech/seq-db/tests/common"
 )
 
@@ -99,28 +98,27 @@ func defaultSealingParams() common.SealParams {
 }
 
 func BenchmarkSealing_NoSort(b *testing.B) {
-	runSealingBench(b, &frac.Config{SkipSortDocs: true})
+	runSealingBench(b, &frac.Config{
+		SkipFsync:    true,
+		SkipSortDocs: true,
+	})
 }
 
 func BenchmarkSealing_WithSort(b *testing.B) {
-	runSealingBench(b, &frac.Config{})
+	runSealingBench(b, &frac.Config{
+		SkipFsync:    true,
+		SkipSortDocs: false,
+	})
 }
 
 func runSealingBench(b *testing.B, cfg *frac.Config) {
-	cm := NewCacheMaintainer(uint64(units.MiB)*64, uint64(units.MiB)*64, nil)
+	fp, tearDown := setupFractionProvider(b, &Config{Fraction: *cfg})
+	defer tearDown()
 
-	idx := frac.NewActiveIndexer(1, 1)
-	rl := storage.NewReadLimiter(1, storeBytesRead)
-	fp := newFractionProvider(&Config{Fraction: *cfg}, nil, cm, rl, idx)
-	idx.Start()
+	active := fp.CreateActive()
 
-	dataDir := filepath.Join(b.TempDir(), "BenchmarkSealing")
-	testscommon.RecreateDir(dataDir)
-
-	active := fp.NewActive(filepath.Join(dataDir, "test"))
 	err := fillActiveFraction(active)
 	assert.NoError(b, err)
-	idx.Stop()
 
 	seal := func(active *frac.Active, params common.SealParams) (*sealed.PreloadedData, error) {
 		src, err := frac.NewActiveSealingSource(active, params)

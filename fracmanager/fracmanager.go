@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
@@ -21,8 +19,6 @@ import (
 	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/util"
 )
-
-const fileBasePattern = "seq-db-"
 
 type FracManager struct {
 	ctx    context.Context
@@ -70,7 +66,7 @@ func (fm *FracManager) newActiveRef(active *frac.Active) activeRef {
 	}
 }
 
-func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracManager {
+func New(ctx context.Context, cfg *Config, s3cli *s3.Client) (*FracManager, error) {
 	FillConfigWithDefault(cfg)
 
 	cacheMaintainer := NewCacheMaintainer(cfg.CacheSize, cfg.SortCacheSize, newDefaultCacheMetrics())
@@ -95,7 +91,8 @@ func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracMan
 		fracCache:       NewFracInfoCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix)),
 	}
 
-	return fracManager
+	err = fracManager.load(ctx)
+	return fracManager, err
 }
 
 func (fm *FracManager) maintenance(sealWg, cleanupWg *sync.WaitGroup) {
@@ -123,7 +120,7 @@ func (fm *FracManager) maintenance(sealWg, cleanupWg *sync.WaitGroup) {
 	logger.Debug("maintenance finished", zap.Int64("took_ms", time.Since(n).Milliseconds()))
 }
 
-func (fm *FracManager) OldestCT() uint64 {
+func (fm *FracManager) Oldest() uint64 {
 	local, remote := fm.oldestCTLocal.Load(), fm.oldestCTRemote.Load()
 	if local != 0 && remote != 0 {
 		return min(local, remote)
@@ -320,21 +317,14 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 	}
 }
 
-type FracType int
-
-const (
-	FracTypeLocal FracType = 1 << iota
-	FracTypeRemote
-)
-
-// GetAllFracs returns a list of known fracs (local and remote).
+// Fractions returns a list of known fracs (local and remote).
 //
 // While working with this list, it may become irrelevant (factions may, for example, be deleted).
 // This is a valid situation, because access to the data of these factions (search and fetch) occurs under blocking (see DataProvider).
 // This way we avoid the race.
 //
 // Accessing the deleted faction data just will return an empty result.
-func (fm *FracManager) GetAllFracs() (fracs List) {
+func (fm *FracManager) Fractions() (fracs List) {
 	return append(fm.getLocalFracs(), fm.getRemoteFracs()...)
 }
 
@@ -463,7 +453,7 @@ func startCacheWorker(ctx context.Context, cfg *Config, cache *CacheMaintainer, 
 	}()
 }
 
-func (fm *FracManager) Load(ctx context.Context) error {
+func (fm *FracManager) load(ctx context.Context) error {
 	l := NewLoader(fm.config, fm.fracProvider, fm.fracCache)
 
 	active, locals, remotes, err := l.Load(ctx)
@@ -500,19 +490,6 @@ func (fm *FracManager) Append(ctx context.Context, docs, metas storage.DocBlock)
 		}
 	}
 }
-
-var (
-	sealsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db",
-		Subsystem: "main",
-		Name:      "seals_total",
-	})
-	sealsDoneSeconds = promauto.NewSummary(prometheus.SummaryOpts{
-		Namespace: "seq_db",
-		Subsystem: "main",
-		Name:      "seals_done_seconds",
-	})
-)
 
 func (fm *FracManager) seal(activeRef activeRef) {
 	sealsTotal.Inc()
@@ -558,10 +535,11 @@ func (fm *FracManager) rotate() activeRef {
 }
 
 func (fm *FracManager) minFracSizeToSeal() uint64 {
-	return fm.config.FracSize * consts.SealOnExitFracSizePercent / 100
+	return fm.config.FracSize * fm.config.MinSealFracSize / 100
 }
 
 func (fm *FracManager) Stop() {
+	fm.Writer().WaitWriteIdle()
 	fm.indexer.Stop()
 	fm.stopFn()
 
@@ -609,32 +587,4 @@ func (fm *FracManager) Active() frac.Fraction {
 	defer fm.fracMu.RUnlock()
 
 	return fm.active.frac
-}
-
-func (fm *FracManager) WaitIdle() {
-	fm.Writer().WaitWriteIdle()
-}
-
-func (fm *FracManager) SealForcedForTests() {
-	active := fm.rotate()
-	if active.frac.Info().DocsTotal > 0 {
-		fm.seal(active)
-	}
-}
-
-func (fm *FracManager) OffloadForcedForTests() {
-	if !(fm.config.OffloadingEnabled && fm.config.OffloadingForced) {
-		panic("trying to force offloading when it is disabled")
-	}
-
-	// Offloading works only for sealed fractions.
-	fm.SealForcedForTests()
-
-	var wg sync.WaitGroup
-	fm.cleanupFractions(&wg)
-	wg.Wait()
-}
-
-func (fm *FracManager) ResetCacheForTests() {
-	fm.cacheMaintainer.Reset()
 }

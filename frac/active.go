@@ -82,8 +82,8 @@ func NewActive(
 	sortCache *cache.Cache[[]byte],
 	cfg *Config,
 ) *Active {
-	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
-	metaFile, metaStats := mustOpenFile(baseFileName+consts.MetaFileSuffix, config.SkipFsync)
+	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, cfg.SkipFsync)
+	metaFile, metaStats := mustOpenFile(baseFileName+consts.MetaFileSuffix, cfg.SkipFsync)
 
 	f := &Active{
 		TokenList:     NewActiveTokenList(config.IndexWorkers),
@@ -102,7 +102,7 @@ func NewActive(
 		metaReader: storage.NewDocBlocksReader(readLimiter, metaFile),
 
 		indexer: activeIndexer,
-		writer:  NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync),
+		writer:  NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), cfg.SkipFsync),
 
 		BaseFileName: baseFileName,
 		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),

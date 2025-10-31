@@ -215,10 +215,3 @@ func (cm *CacheMaintainer) garbageCollection() {
 		}
 	}
 }
-
-// Reset is used in tests only
-func (cm *CacheMaintainer) Reset() {
-	for _, cleaner := range cm.cleaners {
-		cleaner.Reset()
-	}
-}

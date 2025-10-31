@@ -3,6 +3,7 @@ package frac
 type Config struct {
 	Search SearchConfig
 
+	SkipFsync    bool
 	SkipSortDocs bool
 	KeepMetaFile bool
 }
