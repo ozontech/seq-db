@@ -611,6 +611,13 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 		return nil, 0, err
 	}
 
+	for _, id := range data.IdSources {
+		mid := id.Id.Mid
+		if mid < 2000000000000 {
+			id.Id.Mid = id.Id.Mid * 1000
+		}
+	}
+
 	return data, si.sourceByClient[host], nil
 }
 
