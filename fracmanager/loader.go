@@ -18,7 +18,7 @@ import (
 type Loader struct {
 	config    *Config           // loader configuration
 	provider  *fractionProvider // provider for creating fraction objects
-	infoCache *fracInfoCache    // fraction metadata cache
+	infoCache *fracInfoCache    // new empty info cache
 
 	cacheStat struct {
 		hits   int // counter of fractions loaded from frac info cache
@@ -125,20 +125,20 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 	total := len(manifests)
 	logProgress := progressLogger(time.Millisecond * 500)
 
-	// Load fractions according to their stage (active, sealed, and remote)
 	actives := make([]*frac.Active, 0)
 	locals := make([]*frac.Sealed, 0, total)
 	remotes := make([]*frac.Remote, 0, total)
 
-	// Iterate through all manifests and load corresponding fraction types
+	loadedInfoCache := NewFracInfoCacheFromDisk(l.infoCache.fileName)
+
 	for i, manifest := range manifests {
 		switch manifest.Stage() {
 		case fracStageActive:
 			actives = append(actives, l.provider.NewActive(manifest.basePath))
 		case fracStageSealed:
-			locals = append(locals, l.loadSealed(manifest.basePath))
+			locals = append(locals, l.loadSealed(manifest.basePath, loadedInfoCache))
 		case fracStageRemote:
-			remotes = append(remotes, l.loadRemote(ctx, manifest.basePath))
+			remotes = append(remotes, l.loadRemote(ctx, manifest.basePath, loadedInfoCache))
 		default:
 			logger.Error("unexpected fraction stage", zap.Any("manifest", manifest))
 		}
@@ -153,9 +153,8 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 }
 
 // loadSealed loads a sealed fraction using cache
-// Optimizes loading through pre-saved metadata
-func (l *Loader) loadSealed(basePath string) *frac.Sealed {
-	info, found := l.infoCache.Get(filepath.Base(basePath))
+func (l *Loader) loadSealed(basePath string, loadedInfoCache *fracInfoCache) *frac.Sealed {
+	info, found := loadedInfoCache.Get(filepath.Base(basePath))
 	l.updateStats(found)
 
 	f := l.provider.NewSealed(basePath, info)
@@ -164,9 +163,8 @@ func (l *Loader) loadSealed(basePath string) *frac.Sealed {
 }
 
 // loadRemote loads a remote fraction
-// Works with external storages through context
-func (l *Loader) loadRemote(ctx context.Context, basePath string) *frac.Remote {
-	info, found := l.infoCache.Get(filepath.Base(basePath))
+func (l *Loader) loadRemote(ctx context.Context, basePath string, loadedInfoCache *fracInfoCache) *frac.Remote {
+	info, found := loadedInfoCache.Get(filepath.Base(basePath))
 	l.updateStats(found)
 
 	f := l.provider.NewRemote(ctx, basePath, info)
@@ -185,7 +183,6 @@ func (l *Loader) updateStats(found bool) {
 }
 
 // scanFiles scans filesystem for fraction files
-// Uses glob pattern to find all matching files
 func (l *Loader) scanFiles() []string {
 	fullPattern := filepath.Join(l.config.DataDir, fileBasePattern+"*")
 	files, err := filepath.Glob(fullPattern)
