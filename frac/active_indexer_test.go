@@ -8,14 +8,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap/zapcore"
+
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/indexer"
+	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tokenizer"
-	"github.com/stretchr/testify/assert"
 )
 
 func readFileAllAtOnce(filename string) ([][]byte, error) {
@@ -69,23 +72,20 @@ func getTestProcessor() *indexer.Processor {
 	}
 
 	return indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
-
 }
 
 func BenchmarkIndexer(b *testing.B) {
+	logger.SetLevel(zapcore.FatalLevel)
 	idx := NewActiveIndexer(8, 8)
 	idx.Start()
 	defer idx.Stop()
-
-	dataDir := filepath.Join(b.TempDir(), "BenchmarkIndexing")
-	common.RecreateDir(dataDir)
 
 	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
 	readers := splitLogsToBulks(allLogs, 1000)
 	assert.NoError(b, err)
 
 	active := NewActive(
-		filepath.Join(dataDir, "test"),
+		filepath.Join(b.TempDir(), "test"),
 		idx,
 		storage.NewReadLimiter(1, nil),
 		cache.NewCache[[]byte](nil, nil),
@@ -95,22 +95,20 @@ func BenchmarkIndexer(b *testing.B) {
 
 	processor := getTestProcessor()
 
-	b.Run("indexing", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			b.StopTimer()
-			bulks := make([][]byte, 0, len(readers))
-			for _, readNext := range readers {
-				_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-				bulks = append(bulks, storage.CompressDocBlock(meta, nil, 3))
-			}
-			b.StartTimer()
-
-			wg := sync.WaitGroup{}
-			for _, meta := range bulks {
-				wg.Add(1)
-				idx.Index(active, meta, &wg, stopwatch.New())
-			}
-			wg.Wait()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		bulks := make([][]byte, 0, len(readers))
+		for _, readNext := range readers {
+			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
+			bulks = append(bulks, storage.CompressDocBlock(meta, nil, 3))
 		}
-	})
+		b.StartTimer()
+
+		wg := sync.WaitGroup{}
+		for _, meta := range bulks {
+			wg.Add(1)
+			idx.Index(active, meta, &wg, stopwatch.New())
+		}
+		wg.Wait()
+	}
 }
