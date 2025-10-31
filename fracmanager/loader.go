@@ -129,7 +129,7 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 	locals := make([]*frac.Sealed, 0, total)
 	remotes := make([]*frac.Remote, 0, total)
 
-	loadedInfoCache := NewFracInfoCacheFromDisk(l.infoCache.fileName)
+	loadedInfoCache := NewFracInfoCacheFromDisk(l.infoCache.fullPath)
 
 	for i, manifest := range manifests {
 		switch manifest.Stage() {
