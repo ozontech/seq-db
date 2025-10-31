@@ -83,7 +83,12 @@ func FromString(x string) (ID, error) {
 		return id, err
 	}
 
-	id.MID = MID(binary.LittleEndian.Uint64(mid))
+	// new format, MID in micros
+	if x[16] == '_' {
+		id.MID = MID(binary.LittleEndian.Uint64(mid) / uint64(1000))
+	} else {
+		id.MID = MID(binary.LittleEndian.Uint64(mid))
+	}
 	id.RID = RID(binary.LittleEndian.Uint64(rid))
 
 	return id, nil
