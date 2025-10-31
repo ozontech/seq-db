@@ -29,9 +29,14 @@ func NewStreamingDoc(idSource seq.IDSource, data []byte) StreamingDoc {
 
 func unpackDoc(data []byte, source uint64) StreamingDoc {
 	block := storage.DocBlock(data)
+	mid := block.GetExt1()
+	// milli to micro
+	if mid < 1000000000000000 {
+		mid = mid * 1000
+	}
 	doc := StreamingDoc{
 		ID: seq.ID{
-			MID: seq.MID(block.GetExt1()),
+			MID: seq.MID(mid),
 			RID: seq.RID(block.GetExt2()),
 		},
 		Source: source,
