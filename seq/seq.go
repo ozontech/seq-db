@@ -42,7 +42,7 @@ func (d ID) Bytes() []byte {
 	n := hex.Encode(hexBuf, numBuf)
 
 	final := append(make([]byte, 0), hexBuf[:n]...)
-	final = append(final, '-')
+	final = append(final, '_')
 
 	binary.LittleEndian.PutUint64(numBuf, uint64(d.RID))
 	n = hex.Encode(hexBuf, numBuf)
@@ -83,7 +83,12 @@ func FromString(x string) (ID, error) {
 		return id, err
 	}
 
-	id.MID = MID(binary.LittleEndian.Uint64(mid))
+	// legacy format, MID in millis
+	if x[16] == '-' {
+		id.MID = MillisToMID(binary.LittleEndian.Uint64(mid))
+	} else {
+		id.MID = MID(binary.LittleEndian.Uint64(mid))
+	}
 	id.RID = RID(binary.LittleEndian.Uint64(rid))
 
 	return id, nil
