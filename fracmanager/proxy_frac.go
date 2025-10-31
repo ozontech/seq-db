@@ -157,21 +157,27 @@ func (f *proxyFrac) Seal() (*frac.Sealed, error) {
 // trySetSuicided set suicided state if possible (if not sealing right now)
 func (f *proxyFrac) trySetSuicided() (*frac.Active, *frac.Sealed, bool) {
 	f.useMu.Lock()
+	defer f.useMu.Unlock()
 
 	sealed := f.sealed
 	active := f.active
 
-	if f.isActiveState() {
-		f.sealed = nil
-		f.active = nil
-		f.readonly = true
+	// We must compute `isSealing` before
+	// we change fraction to read-only.
+	isSealing := f.isSealingState()
 
-		f.useMu.Unlock()
-		return active, sealed, false
+	// If the object is in active state, switch to read-only mode
+	if f.isActiveState() {
+		f.readonly = true
 	}
 
-	f.useMu.Unlock()
-	return active, sealed, true
+	// If sealing is not in progress, we can safely clear the state
+	if !isSealing {
+		f.sealed = nil
+		f.active = nil
+	}
+
+	return active, sealed, isSealing
 }
 
 func (f *proxyFrac) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
