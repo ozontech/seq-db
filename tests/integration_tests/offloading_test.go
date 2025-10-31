@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/ozontech/seq-db/consts"
@@ -38,7 +37,7 @@ func TestOffloading(t *testing.T) {
 			// Following values were chosen empirically.
 			// We need to have small enough total size to trigger fractions offloading.
 			FracSize:  uint64(units.MiB),
-			TotalSize: 8 * uint64(units.MiB),
+			TotalSize: 10 * uint64(units.MiB),
 
 			Fraction: frac.Config{
 				SkipSortDocs: true,
@@ -163,12 +162,12 @@ func (s *OffloadingSuite) waitForOffloading(env *setup.TestingEnv) {
 	// to accomplish these goals (it will just pollute code with some weird conditions).
 	//
 	// So it will be fixed later.
-	s.Require().EventuallyWithTf(func(collect *assert.CollectT) {
+	s.Require().Eventually(func() bool {
 		p := filepath.Join(env.Store(true).Config.FracManager.DataDir, "*"+consts.RemoteFractionSuffix)
 
 		m, err := filepath.Glob(p)
 		s.Require().NoError(err)
 
-		s.Require().True(len(m) > 0)
+		return len(m) > 0
 	}, 30*time.Second, time.Second, "fraction were not offloaded")
 }

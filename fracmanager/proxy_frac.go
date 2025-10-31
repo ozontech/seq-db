@@ -123,12 +123,15 @@ func (f *proxyFrac) Seal() (*frac.Sealed, error) {
 		f.useMu.Unlock()
 		return nil, ErrSealingFractionSuicided
 	}
+
 	if !f.isActiveState() {
 		f.useMu.Unlock()
 		return nil, errors.New("sealing fraction is not active")
 	}
+
 	f.readonly = true
 	active := f.active
+
 	f.sealWg.Add(1) // It's important to put wg.Add() inside a lock, otherwise we might call wg.Wait() before it
 	f.useMu.Unlock()
 
@@ -154,25 +157,21 @@ func (f *proxyFrac) Seal() (*frac.Sealed, error) {
 // trySetSuicided set suicided state if possible (if not sealing right now)
 func (f *proxyFrac) trySetSuicided() (*frac.Active, *frac.Sealed, bool) {
 	f.useMu.Lock()
-	defer f.useMu.Unlock()
 
 	sealed := f.sealed
 	active := f.active
 
-	// If the object is in active state, switch to read-only mode
 	if f.isActiveState() {
-		f.readonly = true
-	}
-
-	isSealing := f.isSealingState()
-
-	// If sealing is not in progress, we can safely clear the state
-	if !isSealing {
 		f.sealed = nil
 		f.active = nil
+		f.readonly = true
+
+		f.useMu.Unlock()
+		return active, sealed, false
 	}
 
-	return active, sealed, isSealing
+	f.useMu.Unlock()
+	return active, sealed, true
 }
 
 func (f *proxyFrac) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
