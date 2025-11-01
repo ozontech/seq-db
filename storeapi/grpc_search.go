@@ -213,7 +213,13 @@ func (g *GrpcV1) doSearch(
 		)
 	}
 
-	return buildSearchResponse(qpr), nil
+	// TODO remove dbg logg
+	resp := buildSearchResponse(qpr)
+	if len(qpr.IDs) > 0 {
+		logger.Info(fmt.Sprintf("responding with IDS: %d", qpr.IDs[0].ID.MID))
+	}
+
+	return resp, nil
 }
 
 func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, error) {
