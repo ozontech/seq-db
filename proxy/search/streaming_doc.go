@@ -36,7 +36,7 @@ func unpackDoc(data []byte, source uint64) StreamingDoc {
 	}
 	doc := StreamingDoc{
 		ID: seq.ID{
-			MID: seq.MID(block.GetExt1()),
+			MID: seq.MID(mid),
 			RID: seq.RID(block.GetExt2()),
 		},
 		Source: source,
