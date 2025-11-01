@@ -97,6 +97,36 @@ var (
 		Help:      "Doc file load errors (missing or invalid doc file)",
 	})
 
+	dataSizeTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "common",
+		Name:      "data_size_total",
+	}, []string{"kind", "storage_type"})
+
+	offloadingTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "offloading",
+		Name:      "total",
+		Help:      "How many fractions were offloaded",
+	}, []string{"status"})
+	offloadingDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "offloading",
+		Name:      "duration_seconds",
+		Help:      "How many seconds it took to offload fraction to remote storage",
+		Buckets:   metric.SecondsBuckets,
+	})
+
+	maintenanceTruncateTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "maintenance",
+		Name:      "truncate_total",
+	})
+	oldestFracTime = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "common",
+		Name:      "oldest_frac_time",
+	}, []string{"storage_type"})
 	storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "common",

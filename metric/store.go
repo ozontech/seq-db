@@ -6,20 +6,6 @@ import (
 )
 
 var (
-	DataSizeTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "common",
-		Name:      "data_size_total",
-		Help:      "",
-	}, []string{"kind", "storage_type"})
-
-	OldestFracTime = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "common",
-		Name:      "oldest_frac_time",
-		Help:      "",
-	}, []string{"storage_type"})
-
 	BulkDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "bulk",
@@ -116,13 +102,6 @@ var (
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(256, 4, 32),
 	})
-	MaintenanceTruncateTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "maintenance",
-		Name:      "truncate_total",
-		Help:      "",
-	})
-
 	StoreReady = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "main",
@@ -154,18 +133,4 @@ var (
 	SkippedIndexesBytesText    = skippedIndexesBytes.WithLabelValues("text")
 	SkippedIndexesBytesKeyword = skippedIndexesBytes.WithLabelValues("keyword")
 	SkippedIndexesBytesPath    = skippedIndexesBytes.WithLabelValues("path")
-
-	OffloadingTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "offloading",
-		Name:      "total",
-		Help:      "How many fractions were offloaded",
-	}, []string{"status"})
-	OffloadingDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "offloading",
-		Name:      "duration_seconds",
-		Help:      "How many seconds it took to offload fraction to remote storage",
-		Buckets:   SecondsBuckets,
-	})
 )

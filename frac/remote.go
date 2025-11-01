@@ -17,7 +17,6 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
@@ -41,9 +40,6 @@ type Remote struct {
 	BaseFileName string
 
 	info *common.Info
-
-	useMu    sync.RWMutex
-	suicided bool
 
 	docsFile   storage.ImmutableFile
 	docsCache  *cache.Cache[[]byte]
@@ -116,54 +112,52 @@ func (f *Remote) Contains(mid seq.MID) bool {
 }
 
 func (f *Remote) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
-	dp, release := f.DataProvider(ctx)
-	defer release()
-	if dp == nil {
-		return EmptyFraction.Fetch(ctx, ids)
+	dp, err := f.createDataProvider(ctx)
+	if err != nil {
+		return nil, err
+
 	}
 	return dp.Fetch(ids)
 }
 
 func (f *Remote) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
-	dp, release := f.DataProvider(ctx)
-	defer release()
-	if dp == nil {
-		return EmptyFraction.Search(ctx, params)
+	dp, err := f.createDataProvider(ctx)
+	if err != nil {
+		return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, err
 	}
 	return dp.Search(params)
 }
 
-func (f *Remote) DataProvider(ctx context.Context) (*sealedDataProvider, func()) {
-	f.useMu.RLock()
-
-	if f.suicided {
-		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
-		f.useMu.RUnlock()
-		return nil, func() {}
-	}
-
-	defer func() {
-		if panicData := recover(); panicData != nil {
-			f.useMu.RUnlock()
-			panic(panicData)
-		}
-	}()
-
+func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, error) {
 	if err := f.load(); err != nil {
 		logger.Error(
 			"will create empty data provider: cannot load remote fraction",
 			zap.String("fraction", f.Info().Name()),
 			zap.Error(err),
 		)
-		f.useMu.RUnlock()
-		return nil, func() {}
+		return nil, err
 	}
+	return &sealedDataProvider{
+		ctx:              ctx,
+		info:             f.info,
+		config:           f.Config,
+		docsReader:       &f.docsReader,
+		blocksOffsets:    f.blocksData.BlocksOffsets,
+		lidsTable:        f.blocksData.LIDsTable,
+		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.indexReader, f.indexCache.Tokens),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.indexReader, f.indexCache.TokenTable),
 
-	dp := f.createDataProvider(ctx)
-	return dp, func() {
-		dp.release()
-		f.useMu.RUnlock()
-	}
+		idsTable: &f.blocksData.IDsTable,
+		idsProvider: seqids.NewProvider(
+			&f.indexReader,
+			f.indexCache.MIDs,
+			f.indexCache.RIDs,
+			f.indexCache.Params,
+			&f.blocksData.IDsTable,
+			f.info.BinaryDataVer,
+		),
+	}, nil
 }
 
 func (f *Remote) Info() *common.Info {
@@ -174,15 +168,7 @@ func (f *Remote) IsIntersecting(from, to seq.MID) bool {
 	return f.info.IsIntersecting(from, to)
 }
 
-func (f *Remote) Offload(context.Context, storage.Uploader) (bool, error) {
-	panic("BUG: remote fraction cannot be offloaded")
-}
-
 func (f *Remote) Suicide() {
-	f.useMu.Lock()
-	f.suicided = true
-	f.useMu.Unlock()
-
 	util.MustRemoveFileByPath(f.BaseFileName + consts.RemoteFractionSuffix)
 
 	f.docsCache.Release()
@@ -206,32 +192,6 @@ func (f *Remote) Suicide() {
 
 func (f *Remote) String() string {
 	return fracToString(f, "remote")
-}
-
-func (f *Remote) createDataProvider(ctx context.Context) *sealedDataProvider {
-	return &sealedDataProvider{
-		ctx:               ctx,
-		fractionTypeLabel: "remote",
-
-		info:             f.info,
-		config:           f.Config,
-		docsReader:       &f.docsReader,
-		blocksOffsets:    f.blocksData.BlocksOffsets,
-		lidsTable:        f.blocksData.LIDsTable,
-		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.indexReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.indexReader, f.indexCache.TokenTable),
-
-		idsTable: &f.blocksData.IDsTable,
-		idsProvider: seqids.NewProvider(
-			&f.indexReader,
-			f.indexCache.MIDs,
-			f.indexCache.RIDs,
-			f.indexCache.Params,
-			&f.blocksData.IDsTable,
-			f.info.BinaryDataVer,
-		),
-	}
 }
 
 func (f *Remote) load() error {

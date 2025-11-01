@@ -38,17 +38,17 @@ func NewLoader(config *Config, provider *fractionProvider, infoCache *fracInfoCa
 
 // Load is the main method for loading all fractions
 // Coordinates the entire process: discovery, validation, recovery, and ordering
-func (l *Loader) Load(ctx context.Context) (*frac.Active, []*frac.Sealed, []*frac.Remote, error) {
+func (l *Loader) Load(ctx context.Context) (*fractionRegistry, error) {
 	// Stage 1: Discover all fractions in filesystem
 	actives, locals, remotes, err := l.discover(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	// Stage 2: Replay active fractions and seal them
 	active, sealed, err := l.replayAndSeal(ctx, actives)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	// Stage 3: Create new active fraction if no existing ones
@@ -58,7 +58,7 @@ func (l *Loader) Load(ctx context.Context) (*frac.Active, []*frac.Sealed, []*fra
 
 	// Stage 4: Combine all local fractions
 	locals = append(locals, sealed...)
-	return active, locals, remotes, nil
+	return NewFractionRegistry(active, locals, remotes)
 }
 
 // replayAndSeal replays active fractions and seals old ones
@@ -80,8 +80,9 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 				return err
 			}
 
-			if a.Info().DocsTotal == 0 {
-				a.Suicide() // can't seal empty, skip it
+			if a.Info().DocsTotal == 0 { // can't seal empty, skip it and remove
+				a.Release()
+				removeAllFiles(a.BaseFileName)
 				return nil
 			}
 

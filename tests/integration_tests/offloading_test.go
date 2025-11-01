@@ -2,16 +2,13 @@ package integration_tests
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/proxy/search"
@@ -25,7 +22,7 @@ type OffloadingSuite struct {
 }
 
 func TestOffloading(t *testing.T) {
-	suite.Run(t, &OffloadingSuite{Base: *suites.NewBase(&setup.TestingEnvConfig{
+	cfg := setup.TestingEnvConfig{
 		Name: "Offloading",
 
 		IngestorCount:  1,
@@ -37,18 +34,21 @@ func TestOffloading(t *testing.T) {
 		FracManagerConfig: &fracmanager.Config{
 			// Following values were chosen empirically.
 			// We need to have small enough total size to trigger fractions offloading.
-			FracSize:  uint64(units.MiB),
-			TotalSize: 8 * uint64(units.MiB),
+			FracSize:  64 * uint64(units.KiB),
+			TotalSize: 1 * uint64(units.MiB),
 
 			Fraction: frac.Config{
 				SkipFsync:    true,
 				SkipSortDocs: true,
 			},
 
+			MaintenanceDelay: 1 * time.Millisecond,
+
 			OffloadingEnabled: true,
-			OffloadingForced:  true,
+			OffloadingForced:  true, // todo ?
 		},
-	})})
+	}
+	suite.Run(t, &OffloadingSuite{Base: *suites.NewBase(&cfg)})
 }
 
 func (s *OffloadingSuite) TestSearch() {
@@ -59,9 +59,8 @@ func (s *OffloadingSuite) TestSearch() {
 	defer env.StopAll()
 
 	from, to, allDocs := s.bulk(env)
-	env.WaitIdle()
+
 	env.OffloadAll()
-	s.waitForOffloading(env)
 
 	_, found, _, err := env.Search(
 		"service:*", len(allDocs),
@@ -106,9 +105,8 @@ func (s *OffloadingSuite) TestAggregations() {
 	defer env.StopAll()
 
 	from, to, allDocs := s.bulk(env)
-	env.WaitIdle()
+
 	env.OffloadAll()
-	s.waitForOffloading(env)
 
 	qpr, _, _, err := env.Search(
 		"", len(allDocs),
@@ -135,8 +133,8 @@ func (s *OffloadingSuite) bulk(env *setup.TestingEnv) (time.Time, time.Time, []s
 		allDocs   []string
 		from      = time.Now().Add(time.Second * 10)
 		to        = from
-		batchSize = 1024
-		batches   = 1000
+		batchSize = 512
+		batches   = 200
 		counter   int
 	)
 
@@ -152,24 +150,7 @@ func (s *OffloadingSuite) bulk(env *setup.TestingEnv) (time.Time, time.Time, []s
 		setup.Bulk(s.T(), env.IngestorBulkAddr(), docs)
 		allDocs = append(allDocs, docs...)
 	}
+	env.WaitIdle()
 
 	return from, to, allDocs
-}
-
-func (s *OffloadingSuite) waitForOffloading(env *setup.TestingEnv) {
-	// TODO(dkharms): I am ashamed of this workaround but I need somehow find a way to be sure
-	// that all sealings are done and offloadings are finished.
-	//
-	// Integration tests for such cases are not really convenient because we need invasive tools
-	// to accomplish these goals (it will just pollute code with some weird conditions).
-	//
-	// So it will be fixed later.
-	s.Require().EventuallyWithTf(func(collect *assert.CollectT) {
-		p := filepath.Join(env.Store(true).Config.FracManager.DataDir, "*"+consts.RemoteFractionSuffix)
-
-		m, err := filepath.Glob(p)
-		s.Require().NoError(err)
-
-		s.Require().True(len(m) > 0)
-	}, 30*time.Second, time.Second, "fraction were not offloaded")
 }

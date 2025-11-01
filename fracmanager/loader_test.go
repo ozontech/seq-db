@@ -24,7 +24,7 @@ func setupLoaderTest(t testing.TB, cfg *Config) (*fractionProvider, *Loader, fun
 	return fp, loader, tearDown
 }
 
-func appendDocs(t *testing.T, active *frac.Active, docCount int) {
+func appendDocs(t testing.TB, active *frac.Active, docCount int) {
 	dp := frac.NewDocProvider()
 	for i := 0; i < docCount; i++ {
 		doc := []byte("{\"timestamp\": 0, \"message\": \"msg\"}")
@@ -187,10 +187,7 @@ func TestReplaySingleNonEmpty(t *testing.T) {
 	appendDocs(t, actives[0], 500+rand.Intn(100))
 
 	// replay and seal
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Microsecond)
-	defer cancel()
-
-	active, sealed, err := loader.replayAndSeal(ctx, actives)
+	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
 	assert.NoError(t, err)
 
 	assert.Equal(t, 0, len(sealed), "sealed should be empty")

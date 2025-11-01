@@ -4,20 +4,18 @@ import (
 	"testing"
 
 	"github.com/alecthomas/units"
-	"github.com/stretchr/testify/assert"
-
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/storage"
+	"github.com/stretchr/testify/assert"
 )
 
 func setupFractionProvider(t testing.TB, cfg *Config) (*fractionProvider, func()) {
 	cfg = setupDataDir(t, cfg)
 	rl := storage.NewReadLimiter(1, nil)
-	idx := frac.NewActiveIndexer(1, 1)
-	idx.Start()
+	idx, stopIdx := frac.NewActiveIndexer(1, 1)
 	cache := NewCacheMaintainer(uint64(units.MB), uint64(units.MB), nil)
 	provider := newFractionProvider(cfg, nil, cache, rl, idx)
-	return provider, idx.Stop
+	return provider, stopIdx
 }
 
 func TestFractionID(t *testing.T) {

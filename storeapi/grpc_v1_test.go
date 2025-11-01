@@ -68,14 +68,13 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 	dataDir := common.GetTestTmpDir(t)
 	common.RecreateDir(dataDir)
 
-	fm, err := fracmanager.New(t.Context(), &fracmanager.Config{
+	fm, stop, err := fracmanager.New(t.Context(), &fracmanager.Config{
 		FracSize:  500,
 		TotalSize: 5000,
 		Fraction:  frac.Config{SkipFsync: false},
 		DataDir:   dataDir,
 	}, nil)
 	assert.NoError(t, err)
-	fm.Start()
 
 	config := APIConfig{
 		StoreMode: "",
@@ -101,7 +100,7 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 	g := NewGrpcV1(config, fm, mappingProvider)
 
 	release := func() {
-		fm.Stop()
+		stop()
 		common.RemoveDir(dataDir)
 	}
 

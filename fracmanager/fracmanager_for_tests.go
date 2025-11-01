@@ -1,7 +1,7 @@
 package fracmanager
 
 import (
-	"sync"
+	"context"
 )
 
 // todo: get rid of such methods
@@ -11,22 +11,20 @@ func (fm *FracManager) WaitIdleForTests() {
 
 // todo: get rid of such methods
 func (fm *FracManager) SealForcedForTests() {
-	active := fm.rotate()
-	if active.frac.Info().DocsTotal > 0 {
-		fm.seal(active)
-	}
+	fm.mu.Lock()
+	fm.lc.Rotate(0)
+	fm.mu.Unlock()
+
+	fm.lc.WaitSealing()
 }
 
 // todo: get rid of such methods
 func (fm *FracManager) OffloadForcedForTests() {
-	if !(fm.config.OffloadingEnabled && fm.config.OffloadingForced) {
-		panic("trying to force offloading when it is disabled")
-	}
+	fm.SealForcedForTests() // Offloading works only for sealed fractions.
 
-	// Offloading works only for sealed fractions.
-	fm.SealForcedForTests()
+	fm.mu.Lock()
+	fm.lc.OffloadLocal(context.Background(), 0)
+	fm.mu.Unlock()
 
-	var wg sync.WaitGroup
-	fm.cleanupFractions(&wg)
-	wg.Wait()
+	fm.lc.WaitOffloading()
 }
