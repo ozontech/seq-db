@@ -216,7 +216,13 @@ func (g *GrpcV1) doSearch(
 	// TODO remove dbg logg
 	resp := buildSearchResponse(qpr)
 	if len(qpr.IDs) > 0 {
-		logger.Info(fmt.Sprintf("responding with IDS: %d", qpr.IDs[0].ID.MID))
+		logger.Info(fmt.Sprintf("responding with IDS: %d %d", qpr.IDs[0].ID.MID, qpr.IDs[0].Source))
+	}
+	if len(qpr.Histogram) > 0 {
+		for k, v := range qpr.Histogram {
+			logger.Info(fmt.Sprintf("responding with hist: %d -> %d", k, v))
+			break
+		}
 	}
 
 	return resp, nil
