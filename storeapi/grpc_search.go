@@ -213,14 +213,7 @@ func (g *GrpcV1) doSearch(
 		)
 	}
 
-	resp := buildSearchResponse(qpr)
-	if len(qpr.Histogram) > 0 {
-		for k, v := range qpr.Histogram {
-			logger.Info(fmt.Sprintf("responding with hist: %d -> %d", k, v))
-			break
-		}
-	}
-	return resp, nil
+	return buildSearchResponse(qpr), nil
 }
 
 func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, error) {
