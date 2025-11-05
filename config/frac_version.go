@@ -10,3 +10,5 @@ const (
 	// BinaryDataV2 - MIDs stored in microseconds
 	BinaryDataV2
 )
+
+const CurrentFracVersion = BinaryDataV2

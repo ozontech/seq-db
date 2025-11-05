@@ -42,7 +42,7 @@ type Info struct {
 func NewInfo(filename string, docsOnDisk, metaOnDisk uint64) *Info {
 	return &Info{
 		Ver:                   buildinfo.Version,
-		BinaryDataVer:         config.BinaryDataV2,
+		BinaryDataVer:         config.CurrentFracVersion,
 		Path:                  filename,
 		From:                  math.MaxUint64,
 		To:                    0,
