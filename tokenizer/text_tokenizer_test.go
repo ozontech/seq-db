@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/ozontech/seq-db/frac"
 )
 
 const maxTokenSizeDummy = 0
@@ -18,8 +16,8 @@ func TestTokenizeEmptyValue(t *testing.T) {
 	testCase := []byte("")
 	tokenizer := NewTextTokenizer(1000, false, true, 1024)
 
-	tokens := tokenizer.Tokenize([]frac.MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
-	expected := []frac.MetaToken{newFracToken("message", "")}
+	tokens := tokenizer.Tokenize([]MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
+	expected := []MetaToken{newMetaToken("message", "")}
 
 	assert.Equal(t, expected, tokens)
 }
@@ -29,23 +27,23 @@ func TestTokenizeSimple(t *testing.T) {
 	tokenizer := NewTextTokenizer(1000, false, true, 1024)
 
 	tokens := tokenizer.Tokenize(nil, []byte("message"), testCase, maxTokenSizeDummy)
-	assert.Equal(t, newFracToken("message", "arr"), tokens[0])
-	assert.Equal(t, newFracToken("message", "hello"), tokens[1])
-	assert.Equal(t, newFracToken("message", "world"), tokens[2])
+	assert.Equal(t, newMetaToken("message", "arr"), tokens[0])
+	assert.Equal(t, newMetaToken("message", "hello"), tokens[1])
+	assert.Equal(t, newMetaToken("message", "world"), tokens[2])
 }
 
 func TestTokenizeSimple2(t *testing.T) {
 	tokenizer := NewTextTokenizer(1000, false, true, 1024)
 	tokens := tokenizer.Tokenize(nil, []byte("message"), bytes.Clone(longDocument), maxTokenSizeDummy)
 
-	assert.Equal(t, newFracToken("message", "t1"), tokens[0])
-	assert.Equal(t, newFracToken("message", "t2_t3"), tokens[1])
-	assert.Equal(t, newFracToken("message", "t4"), tokens[2])
-	assert.Equal(t, newFracToken("message", "looooong_t5"), tokens[3])
-	assert.Equal(t, newFracToken("message", "readyz"), tokens[4])
-	assert.Equal(t, newFracToken("message", "error*"), tokens[5])
-	assert.Equal(t, newFracToken("message", "5555"), tokens[6])
-	assert.Equal(t, newFracToken("message", "r2"), tokens[7])
+	assert.Equal(t, newMetaToken("message", "t1"), tokens[0])
+	assert.Equal(t, newMetaToken("message", "t2_t3"), tokens[1])
+	assert.Equal(t, newMetaToken("message", "t4"), tokens[2])
+	assert.Equal(t, newMetaToken("message", "looooong_t5"), tokens[3])
+	assert.Equal(t, newMetaToken("message", "readyz"), tokens[4])
+	assert.Equal(t, newMetaToken("message", "error*"), tokens[5])
+	assert.Equal(t, newMetaToken("message", "5555"), tokens[6])
+	assert.Equal(t, newMetaToken("message", "r2"), tokens[7])
 }
 
 func TestTokenizePartialDefault(t *testing.T) {
@@ -53,9 +51,9 @@ func TestTokenizePartialDefault(t *testing.T) {
 	tokenizer := NewTextTokenizer(maxSize, false, true, maxSize)
 	testCase := []byte(strings.Repeat("1", maxSize+1))
 
-	tokens := tokenizer.Tokenize([]frac.MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
+	tokens := tokenizer.Tokenize([]MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
 
-	expected := []frac.MetaToken{newFracToken("message", strings.Repeat("1", maxSize))}
+	expected := []MetaToken{newMetaToken("message", strings.Repeat("1", maxSize))}
 
 	assert.Equal(t, expected, tokens)
 }
@@ -67,7 +65,7 @@ func TestTokenizePartial(t *testing.T) {
 
 	tokens := tokenizer.Tokenize(nil, []byte("message"), testCase, maxSize)
 
-	expected := []frac.MetaToken{newFracToken("message", strings.Repeat("1", maxSize))}
+	expected := []MetaToken{newMetaToken("message", strings.Repeat("1", maxSize))}
 
 	assert.Equal(t, expected, tokens)
 }
@@ -77,9 +75,9 @@ func TestTokenizePartialSkipDefault(t *testing.T) {
 	tokenizer := NewTextTokenizer(maxSize, false, false, maxSize)
 	testCase := []byte(strings.Repeat("1", maxSize+1))
 
-	tokens := tokenizer.Tokenize([]frac.MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
+	tokens := tokenizer.Tokenize([]MetaToken{}, []byte("message"), testCase, maxTokenSizeDummy)
 
-	assert.Equal(t, []frac.MetaToken{}, tokens)
+	assert.Equal(t, []MetaToken{}, tokens)
 }
 
 func TestTokenizePartialSkip(t *testing.T) {
@@ -87,22 +85,22 @@ func TestTokenizePartialSkip(t *testing.T) {
 	tokenizer := NewTextTokenizer(maxSize, false, false, 0)
 	testCase := []byte(strings.Repeat("1", maxSize+1))
 
-	tokens := tokenizer.Tokenize([]frac.MetaToken{}, []byte("message"), testCase, maxSize)
+	tokens := tokenizer.Tokenize([]MetaToken{}, []byte("message"), testCase, maxSize)
 
-	assert.Equal(t, []frac.MetaToken{}, tokens)
+	assert.Equal(t, []MetaToken{}, tokens)
 }
 
 func TestTokenizeDefaultMaxTokenSize(t *testing.T) {
 	tokenizer := NewTextTokenizer(6, false, true, 1024)
 	tokens := tokenizer.Tokenize(nil, []byte("message"), bytes.Clone(longDocument), maxTokenSizeDummy)
 
-	assert.Equal(t, newFracToken("message", "t1"), tokens[0])
-	assert.Equal(t, newFracToken("message", "t2_t3"), tokens[1])
-	assert.Equal(t, newFracToken("message", "t4"), tokens[2])
-	assert.Equal(t, newFracToken("message", "readyz"), tokens[3])
-	assert.Equal(t, newFracToken("message", "error*"), tokens[4])
-	assert.Equal(t, newFracToken("message", "5555"), tokens[5])
-	assert.Equal(t, newFracToken("message", "r2"), tokens[6])
+	assert.Equal(t, newMetaToken("message", "t1"), tokens[0])
+	assert.Equal(t, newMetaToken("message", "t2_t3"), tokens[1])
+	assert.Equal(t, newMetaToken("message", "t4"), tokens[2])
+	assert.Equal(t, newMetaToken("message", "readyz"), tokens[3])
+	assert.Equal(t, newMetaToken("message", "error*"), tokens[4])
+	assert.Equal(t, newMetaToken("message", "5555"), tokens[5])
+	assert.Equal(t, newMetaToken("message", "r2"), tokens[6])
 }
 
 func TestTokenizeCaseSensitive(t *testing.T) {
@@ -110,14 +108,14 @@ func TestTokenizeCaseSensitive(t *testing.T) {
 
 	tokens := tokenizer.Tokenize(nil, []byte("message"), bytes.Clone(longDocument), maxTokenSizeDummy)
 
-	assert.Equal(t, newFracToken("message", "T1"), tokens[0])
-	assert.Equal(t, newFracToken("message", "T2_T3"), tokens[1])
-	assert.Equal(t, newFracToken("message", "t4"), tokens[2])
-	assert.Equal(t, newFracToken("message", "looooong_t5"), tokens[3])
-	assert.Equal(t, newFracToken("message", "readyz"), tokens[4])
-	assert.Equal(t, newFracToken("message", "error*"), tokens[5])
-	assert.Equal(t, newFracToken("message", "5555"), tokens[6])
-	assert.Equal(t, newFracToken("message", "r2"), tokens[7])
+	assert.Equal(t, newMetaToken("message", "T1"), tokens[0])
+	assert.Equal(t, newMetaToken("message", "T2_T3"), tokens[1])
+	assert.Equal(t, newMetaToken("message", "t4"), tokens[2])
+	assert.Equal(t, newMetaToken("message", "looooong_t5"), tokens[3])
+	assert.Equal(t, newMetaToken("message", "readyz"), tokens[4])
+	assert.Equal(t, newMetaToken("message", "error*"), tokens[5])
+	assert.Equal(t, newMetaToken("message", "5555"), tokens[6])
+	assert.Equal(t, newMetaToken("message", "r2"), tokens[7])
 }
 
 func TestTokenizeCaseSensitiveAndMaxTokenSize(t *testing.T) {
@@ -125,13 +123,13 @@ func TestTokenizeCaseSensitiveAndMaxTokenSize(t *testing.T) {
 
 	tokens := tokenizer.Tokenize(nil, []byte("message"), bytes.Clone(longDocument), maxTokenSizeDummy)
 
-	assert.Equal(t, newFracToken("message", "T1"), tokens[0])
-	assert.Equal(t, newFracToken("message", "T2_T3"), tokens[1])
-	assert.Equal(t, newFracToken("message", "t4"), tokens[2])
-	assert.Equal(t, newFracToken("message", "readyz"), tokens[3])
-	assert.Equal(t, newFracToken("message", "error*"), tokens[4])
-	assert.Equal(t, newFracToken("message", "5555"), tokens[5])
-	assert.Equal(t, newFracToken("message", "r2"), tokens[6])
+	assert.Equal(t, newMetaToken("message", "T1"), tokens[0])
+	assert.Equal(t, newMetaToken("message", "T2_T3"), tokens[1])
+	assert.Equal(t, newMetaToken("message", "t4"), tokens[2])
+	assert.Equal(t, newMetaToken("message", "readyz"), tokens[3])
+	assert.Equal(t, newMetaToken("message", "error*"), tokens[4])
+	assert.Equal(t, newMetaToken("message", "5555"), tokens[5])
+	assert.Equal(t, newMetaToken("message", "r2"), tokens[6])
 }
 
 func TestTokenizeLastTokenLength(t *testing.T) {
@@ -140,7 +138,7 @@ func TestTokenizeLastTokenLength(t *testing.T) {
 
 	tokens := tokenizer.Tokenize(nil, []byte("message"), testCase, maxTokenSizeDummy)
 	assert.Equal(t, 1, len(tokens))
-	assert.Equal(t, newFracToken("message", "1"), tokens[0])
+	assert.Equal(t, newMetaToken("message", "1"), tokens[0])
 }
 
 func TestTextTokenizerUTF8(t *testing.T) {
@@ -155,14 +153,14 @@ func TestTextTokenizerUTF8(t *testing.T) {
 
 			tokenizer := NewTextTokenizer(100, true, true, 1024)
 
-			tokens := tokenizer.Tokenize([]frac.MetaToken{}, []byte("message"), []byte(in), maxTokenSizeDummy)
+			tokens := tokenizer.Tokenize([]MetaToken{}, []byte("message"), []byte(in), maxTokenSizeDummy)
 
-			expected := []frac.MetaToken{}
+			expected := []MetaToken{}
 			for _, token := range out {
 				if lowercase {
 					token = strings.ToLower(token)
 				}
-				expected = append(expected, newFracToken("message", token))
+				expected = append(expected, newMetaToken("message", token))
 			}
 			assert.Equal(t, expected, tokens)
 		}
