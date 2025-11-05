@@ -978,7 +978,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		level := rand.IntN(6)
 		timestamp := baseTime.Add(time.Duration(i) * time.Millisecond)
 
-		doc := fmt.Sprintf(`{"timestamp":"%s","service":"%s","message":"%s","level":"%d"}`,
+		doc := fmt.Sprintf(`{"timestamp":%q,"service":%q,"message":%q,"level":"%d"}`,
 			timestamp.Format(time.RFC3339Nano), service, message, level)
 		docs = append(docs, doc)
 
