@@ -39,6 +39,7 @@ func newGRPCServer(cfg APIConfig, fracManager *fracmanager.FracManager, mappingP
 
 func initServer() *grpc.Server {
 	interceptors := []grpc.UnaryServerInterceptor{
+		grpcutil.MIDPrecisionHeaderUnaryServerInterceptor("ms"),
 		grpcutil.ReturnToVTPoolUnaryServerInterceptor(),
 	}
 	opts := []grpc.ServerOption{

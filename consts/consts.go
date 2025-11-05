@@ -69,6 +69,9 @@ const (
 	// tracing
 	JaegerDebugKey = "jaeger-debug-id"
 	DebugHeader    = "x-o3-sample-trace"
+
+	// MIDPrecisionHeader reports store MID precision
+	MIDPrecisionHeader = "x-seq-time-precision"
 )
 
 var (
