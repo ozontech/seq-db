@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/ozontech/seq-db/consts"
@@ -602,32 +603,32 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 		)
 	}
 
+	var md metadata.MD
 	data, err := client.Search(ctx, req,
 		grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
 		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
 		grpc.UseCompressor(gzip.Name),
+		grpc.Header(&md),
 	)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	for _, id := range data.IdSources {
-		mid := id.Id.Mid
-		if mid < 2000000000000 {
-			id.Id.Mid = id.Id.Mid * 1000
-		}
+	// Check the store's MID precision from response header
+	// If header indicates milliseconds, convert to microseconds
+	storePrecision := "ms"
+	if precisionValues := md.Get(consts.MIDPrecisionHeader); len(precisionValues) > 0 {
+		storePrecision = precisionValues[0]
 	}
 
-	// Convert histogram MIDs from milliseconds to microseconds if needed
-	if len(data.Histogram) > 0 {
-		needsConversion := false
-		for k := range data.Histogram {
-			if k < 2000000000000 {
-				needsConversion = true
-				break
-			}
+	if storePrecision == "ms" {
+		// Store operates in milliseconds, convert to microseconds
+		for _, id := range data.IdSources {
+			id.Id.Mid = id.Id.Mid * 1000
 		}
-		if needsConversion {
+
+		// Convert histogram MIDs from milliseconds to microseconds
+		if len(data.Histogram) > 0 {
 			newHist := make(map[uint64]uint64, len(data.Histogram))
 			for k, v := range data.Histogram {
 				newHist[k*1000] = v

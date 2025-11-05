@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/tracing"
@@ -121,5 +122,21 @@ func PassMetadataUnaryClientInterceptor() grpc.UnaryClientInterceptor {
 			ctx = metadata.NewOutgoingContext(ctx, md)
 		}
 		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+// MIDPrecisionHeaderUnaryServerInterceptor sets the MID precision header for all unary responses.
+func MIDPrecisionHeaderUnaryServerInterceptor(precision string) grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context, req interface{}, info *grpc.UnaryServerInfo,
+		h grpc.UnaryHandler,
+	) (interface{}, error) {
+		md := metadata.New(map[string]string{
+			consts.MIDPrecisionHeader: precision,
+		})
+		if err := grpc.SetHeader(ctx, md); err != nil {
+			logger.Error("failed to set MID precision header", zap.Error(err))
+		}
+		return h(ctx, req)
 	}
 }
