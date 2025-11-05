@@ -83,11 +83,14 @@ func FromString(x string) (ID, error) {
 		return id, err
 	}
 
-	// legacy format, MID in millis
-	if x[16] == '-' {
+	delimiter := x[16]
+	if delimiter == '-' {
+		// legacy format, MID in millis
 		id.MID = MillisToMID(binary.LittleEndian.Uint64(mid))
-	} else {
+	} else if delimiter == '_' {
 		id.MID = MID(binary.LittleEndian.Uint64(mid))
+	} else {
+		return id, fmt.Errorf("unknown delimiter %c", delimiter)
 	}
 	id.RID = RID(binary.LittleEndian.Uint64(rid))
 
