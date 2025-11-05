@@ -76,20 +76,22 @@ func (u *uniqueIDIterator) Next() (StreamingDoc, error) {
 }
 
 type grpcStreamIterator struct {
-	source   uint64
-	host     string
-	stream   storeapi.StoreApi_FetchClient
-	totalIDs int
+	source       uint64
+	host         string
+	stream       storeapi.StoreApi_FetchClient
+	totalIDs     int
+	midPrecision string
 
 	fetched int
 }
 
-func newGrpcStreamIterator(stream storeapi.StoreApi_FetchClient, host string, source uint64, totalIDs int) *grpcStreamIterator {
+func newGrpcStreamIterator(stream storeapi.StoreApi_FetchClient, host string, source uint64, totalIDs int, midPrecision string) *grpcStreamIterator {
 	return &grpcStreamIterator{
-		stream:   stream,
-		source:   source,
-		host:     host,
-		totalIDs: totalIDs,
+		stream:       stream,
+		source:       source,
+		host:         host,
+		totalIDs:     totalIDs,
+		midPrecision: midPrecision,
 	}
 }
 
@@ -108,7 +110,7 @@ func (s *grpcStreamIterator) Next() (StreamingDoc, error) {
 		return StreamingDoc{Source: s.source}, err
 	}
 
-	doc := unpackDoc(data.Data, s.source)
+	doc := unpackDoc(data.Data, s.source, s.midPrecision)
 	if !doc.Empty() {
 		s.fetched++
 	} else {

@@ -42,8 +42,12 @@ func initServer() *grpc.Server {
 		grpcutil.MIDPrecisionHeaderUnaryServerInterceptor("us"),
 		grpcutil.ReturnToVTPoolUnaryServerInterceptor(),
 	}
+	streamInterceptors := []grpc.StreamServerInterceptor{
+		grpcutil.MIDPrecisionHeaderStreamServerInterceptor("us"),
+	}
 	opts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(interceptors...),
+		grpc.ChainStreamInterceptor(streamInterceptors...),
 		grpc.MaxRecvMsgSize(int(units.MiB) * 256),
 		grpc.MaxSendMsgSize(int(units.MiB) * 256),
 		grpc.StatsHandler(&tracing.ServerHandler{}),
