@@ -618,6 +618,24 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 		}
 	}
 
+	// Convert histogram MIDs from milliseconds to microseconds if needed
+	if len(data.Histogram) > 0 {
+		needsConversion := false
+		for k := range data.Histogram {
+			if k < 2000000000000 {
+				needsConversion = true
+				break
+			}
+		}
+		if needsConversion {
+			newHist := make(map[uint64]uint64, len(data.Histogram))
+			for k, v := range data.Histogram {
+				newHist[k*1000] = v
+			}
+			data.Histogram = newHist
+		}
+	}
+
 	return data, si.sourceByClient[host], nil
 }
 
