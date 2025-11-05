@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/ozontech/seq-db/util"
@@ -105,7 +106,12 @@ func SimpleID(i int) ID {
 }
 
 func MillisToMID(millis uint64) MID {
-	return MID(millis * 1000)
+
+	if millis < math.MaxUint64/1000 {
+		return MID(millis * 1000)
+	} else {
+		return MID(millis)
+	}
 }
 
 func TimeToMID(t time.Time) MID {
