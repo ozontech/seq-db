@@ -1,0 +1,25 @@
+{{- if .Values.sequi.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "seq-ui.fullname" . }}
+  labels:
+    {{- include "seq-ui.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.sequi.service.type }}
+  ports:
+    - port: {{ .Values.sequi.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.sequi.front.service.httpPort }}
+      targetPort: fronthttp
+      protocol: TCP
+      name: fronthttp
+    - port: {{ .Values.sequi.service.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    {{- include "seq-ui.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -10,6 +10,7 @@ import (
 	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/indexer"
@@ -86,7 +87,7 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 			FractionsPerIteration: 1,
 			RequestsLimit:         consts.DefaultSearchRequestsLimit,
 			LogThreshold:          0,
-			Async:                 fracmanager.AsyncSearcherConfig{DataDir: path.Join(dataDir, "async_search")},
+			Async:                 asyncsearcher.AsyncSearcherConfig{DataDir: path.Join(dataDir, "async_search")},
 		},
 		Fetch: FetchConfig{
 			LogThreshold: 0,

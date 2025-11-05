@@ -6,31 +6,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"lukechampine.com/frand"
-
-	"github.com/ozontech/seq-db/seq"
 )
 
 var baseTmpDir string
-
-func MakeTouchTotal() *prometheus.CounterVec {
-	return prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "touch_total",
-		Help:      "",
-	}, []string{"layer"})
-}
-
-func MakeHitsTotal() *prometheus.CounterVec {
-	return prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "hits_total",
-		Help:      "",
-	}, []string{"layer"})
-}
 
 func CreateDir(path string) {
 	err := os.MkdirAll(path, 0o777)
@@ -68,15 +47,6 @@ func CreateTempDir() string {
 
 func GetTestTmpDir(t *testing.T) string {
 	return filepath.Join(CreateTempDir(), t.Name())
-}
-
-func IDs(ids ...int) []seq.ID {
-	r := make([]seq.ID, 0)
-	for _, n := range ids {
-		r = append(r, seq.SimpleID(n))
-	}
-
-	return r
 }
 
 func RandomString(minLen, maxLen int) string {

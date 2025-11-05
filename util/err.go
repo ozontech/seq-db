@@ -1,9 +1,7 @@
 package util
 
 import (
-	"errors"
 	"fmt"
-	"runtime"
 	"runtime/debug"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,20 +19,6 @@ func (p *panicWrapper) Unwrap() error {
 
 func (p *panicWrapper) Error() string {
 	return p.e.Error()
-}
-
-func IsRecoveredPanicError(e error) bool {
-	if e == nil {
-		return false
-	}
-
-	var p *panicWrapper
-	if errors.As(e, &p) {
-		return true
-	}
-
-	var re runtime.Error
-	return errors.As(e, &re)
 }
 
 func Recover(metric prometheus.Counter, err error) {

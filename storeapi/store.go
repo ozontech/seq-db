@@ -54,7 +54,7 @@ func NewStore(ctx context.Context, c StoreConfig, s3cli *s3.Client, mappingProvi
 	fracManager := fracmanager.NewFracManager(ctx, &c.FracManager, s3cli)
 	err := fracManager.Load(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("loading time list: %s", err)
+		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
 	fracManager.Start()
 

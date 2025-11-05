@@ -3,7 +3,6 @@ package fracmanager
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -23,10 +22,7 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-const (
-	fileBasePattern  = "seq-db-"
-	fileImmatureFlag = ".immature"
-)
+const fileBasePattern = "seq-db-"
 
 type FracManager struct {
 	ctx    context.Context
@@ -46,7 +42,8 @@ type FracManager struct {
 
 	oldestCTLocal  atomic.Uint64
 	oldestCTRemote atomic.Uint64
-	mature         atomic.Bool
+
+	flags *StateManager
 
 	stopFn  func()
 	statWG  sync.WaitGroup
@@ -82,11 +79,16 @@ func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracMan
 	indexer := frac.NewActiveIndexer(config.IndexWorkers, config.IndexWorkers)
 	indexer.Start()
 
+	flags, err := NewStateManager(cfg.DataDir, StorageState{})
+	if err != nil {
+		logger.Fatal("state manager initiation error", zap.Error(err))
+	}
+
 	fracManager := &FracManager{
 		config:          cfg,
 		ctx:             ctx,
 		s3cli:           s3cli,
-		mature:          atomic.Bool{},
+		flags:           flags,
 		cacheMaintainer: cacheMaintainer,
 		indexer:         indexer,
 		fracProvider:    newFractionProvider(cfg, s3cli, cacheMaintainer, readLimiter, indexer),
@@ -220,6 +222,10 @@ func (fm *FracManager) removeStaleFractions(cleanupWg *sync.WaitGroup, retention
 	}()
 }
 
+func (fm *FracManager) Flags() *StateManager {
+	return fm.flags
+}
+
 func (fm *FracManager) determineOutsiders() []frac.Fraction {
 	var outsiders []frac.Fraction
 
@@ -239,8 +245,10 @@ func (fm *FracManager) determineOutsiders() []frac.Fraction {
 		truncated++
 	}
 
-	if len(outsiders) > 0 && !fm.Mature() {
-		fm.setMature()
+	if len(outsiders) > 0 && !fm.flags.IsCapacityExceeded() {
+		if err := fm.flags.setCapacityExceeded(true); err != nil {
+			logger.Fatal("set capacity exceeded error", zap.Error(err))
+		}
 	}
 
 	metric.MaintenanceTruncateTotal.Add(float64(truncated))
@@ -458,63 +466,23 @@ func startCacheWorker(ctx context.Context, cfg *Config, cache *CacheMaintainer, 
 func (fm *FracManager) Load(ctx context.Context) error {
 	l := NewLoader(fm.config, fm.fracProvider, fm.fracCache)
 
-	actives, sealed, remote, err := l.load(ctx)
+	active, locals, remotes, err := l.Load(ctx)
 	if err != nil {
 		return err
 	}
 
-	for _, s := range sealed {
+	for _, s := range locals {
 		fm.localFracs = append(fm.localFracs, &fracRef{instance: s})
 	}
 
-	for _, s := range remote {
+	for _, s := range remotes {
 		fm.remoteFracs = append(fm.remoteFracs, s)
 	}
 
-	if err := fm.replayAll(ctx, actives); err != nil {
-		return err
-	}
-
-	if len(fm.localFracs)+len(fm.remoteFracs) == 0 { // no data, first run
-		if err := fm.setImmature(); err != nil {
-			return err
-		}
-	} else {
-		if err := fm.checkIsImmature(); err != nil {
-			return err
-		}
-	}
-
-	if fm.active.ref == nil { // no active
-		_ = fm.rotate() // make new empty active
-	}
+	fm.active = fm.newActiveRef(active)
+	fm.localFracs = append(fm.localFracs, fm.active.ref)
 
 	fm.updateOldestCT()
-	return nil
-}
-
-func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) error {
-	for i, a := range actives {
-		if err := a.Replay(ctx); err != nil {
-			return err
-		}
-
-		if a.Info().DocsTotal == 0 {
-			a.Suicide() // remove empty
-			continue
-		}
-
-		r := fm.newActiveRef(a)
-		fm.localFracs = append(fm.localFracs, r.ref)
-
-		if i == len(actives)-1 { // last and not empty
-			fm.active = r
-			continue
-		}
-
-		fm.seal(r)
-	}
-
 	return nil
 }
 
@@ -645,36 +613,6 @@ func (fm *FracManager) Active() frac.Fraction {
 
 func (fm *FracManager) WaitIdle() {
 	fm.Writer().WaitWriteIdle()
-}
-
-func (fm *FracManager) setMature() {
-	if err := os.Remove(filepath.Join(fm.config.DataDir, fileImmatureFlag)); err != nil {
-		logger.Panic(err.Error())
-	}
-	fm.mature.Store(true)
-}
-
-func (fm *FracManager) setImmature() error {
-	fm.mature.Store(false)
-	_, err := os.Create(filepath.Join(fm.config.DataDir, fileImmatureFlag))
-	return err
-}
-
-func (fm *FracManager) checkIsImmature() error {
-	_, err := os.Stat(filepath.Join(fm.config.DataDir, fileImmatureFlag))
-	if err == nil { // file exists; store is immature
-		fm.mature.Store(false)
-		return nil
-	}
-	if os.IsNotExist(err) { // file not exists; store is mature
-		fm.mature.Store(true)
-		return nil
-	}
-	return err
-}
-
-func (fm *FracManager) Mature() bool {
-	return fm.mature.Load()
 }
 
 func (fm *FracManager) SealForcedForTests() {

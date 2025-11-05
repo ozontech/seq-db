@@ -207,7 +207,10 @@ func (c *metaDataCollector) Init(blockIndex uint32) {
 	}
 
 	if size, need := c.solvers.tokensValues.ReallocParams(len(c.TokensValues), cap(c.TokensValues)); need {
-		estimatedMapSize := len(c.tokensMap) * size / len(c.TokensValues)
+		estimatedMapSize := 0
+		if len(c.TokensValues) > 0 {
+			estimatedMapSize = len(c.tokensMap) * size / len(c.TokensValues)
+		}
 		c.tokensMap = make(map[string]int, estimatedMapSize)
 		c.FieldsLengths = make([]int, 0, size)
 		c.TokensValues = make([][]byte, 0, size)
