@@ -110,7 +110,7 @@ func (s *grpcStreamIterator) Next() (StreamingDoc, error) {
 		return StreamingDoc{Source: s.source}, err
 	}
 
-	doc := unpackDoc(data.Data, s.source)
+	doc := unpackDoc(data.Data, s.source, s.midPrecision)
 	if !doc.Empty() {
 		s.fetched++
 	} else {
