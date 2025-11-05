@@ -51,6 +51,9 @@ type Config struct {
 	// SleepWindow how long to deny requests before allowing attempts
 	// again to determine if the chain should be closed again.
 	SleepWindow time.Duration
+
+	// CustomSuffix exists for adding custom suffix in circuit breaker name in order not to catch panic via existing name.
+	CustomSuffix string
 }
 
 const (
@@ -63,6 +66,10 @@ const (
 )
 
 func New(name string, config Config) *CircuitBreaker {
+	if config.CustomSuffix != "" {
+		name += fmt.Sprintf("-%s", config.CustomSuffix)
+	}
+
 	breaker := manager.GetCircuit(name)
 	if breaker != nil {
 		return &CircuitBreaker{

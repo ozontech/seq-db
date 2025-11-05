@@ -37,6 +37,7 @@ func NewReplicaEnv(t *testing.T, config setup.TestingEnvConfig) ReplicasEnv {
 	}
 	config.DataDir = dir
 	config.IngestorCount = 1
+	config.Name = fmt.Sprintf("%s-%s", config.Name, t.Name())
 
 	env := ReplicasEnv{setup.NewTestingEnv(&config)}
 

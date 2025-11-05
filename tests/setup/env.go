@@ -350,6 +350,7 @@ func MakeIngestors(cfg *TestingEnvConfig, hot, cold [][]string) []*Ingestor {
 					BulkCircuit: circuitbreaker.Config{
 						RequestVolumeThreshold: 101, // disable circuit breaker
 						Timeout:                time.Hour,
+						CustomSuffix:           cfg.Name,
 					},
 					MaxInflightBulks:       0,
 					AllowedTimeDrift:       24 * time.Hour,

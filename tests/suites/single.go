@@ -1,6 +1,7 @@
 package suites
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -147,6 +148,7 @@ func NewSingle(cfg *setup.TestingEnvConfig) *Single {
 
 func (s *Single) BeforeTest(suiteName, testName string) {
 	s.Base.BeforeTest(suiteName, testName)
+	s.Config.Name = fmt.Sprintf("%s-%s", s.Config.Name, testName)
 	s.Env = setup.NewTestingEnv(s.Config)
 }
 
