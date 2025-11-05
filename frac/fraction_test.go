@@ -32,7 +32,6 @@ import (
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/tokenizer"
-	"github.com/stretchr/testify/suite"
 )
 
 type FractionTestSuite struct {
@@ -1374,6 +1373,10 @@ type ActiveReplayedFractionTestSuite struct {
 	FractionTestSuite
 }
 
+func (s *ActiveReplayedFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
+}
+
 func (s *ActiveReplayedFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 	// Setting this flags allows to keep meta and docs files on disk after Active.Release() is called
@@ -1416,6 +1419,10 @@ func (s *ActiveReplayedFractionTestSuite) TearDownTest() {
 	}
 
 	s.TearDownTestCommon()
+}
+
+func (s *ActiveReplayedFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
 }
 
 /*
