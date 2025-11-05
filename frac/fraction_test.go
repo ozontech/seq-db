@@ -288,9 +288,11 @@ func (s *FractionTestSuite) TestSearchRange() {
 	s.insertDocuments(docs)
 
 	s.AssertSearch("level:[1, 3]", docs, []int{1, 0})
+	s.AssertSearch("level:[1 TO 3]", docs, []int{1, 0})
 	s.AssertSearch("level:[0, 63]", docs, []int{5, 4, 3, 2, 1, 0})
 	s.AssertSearch("level:[-100, 100]", docs, []int{5, 4, 3, 2, 1, 0})
 	s.AssertSearch("level:(0, 3]", docs, []int{1, 0})
+	s.AssertSearch("level:(0 TO 3]", docs, []int{1, 0})
 
 	s.AssertSearch("level:[0, *]", docs, []int{6, 5, 4, 3, 2, 1, 0})
 	s.AssertSearch("level:[31, *]", docs, []int{6, 5, 4})
