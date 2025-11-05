@@ -7,7 +7,7 @@ const (
 	BinaryDataV0 BinaryDataVersion = iota
 	// BinaryDataV1 - support RIDs encoded without varint
 	BinaryDataV1
-	// BinaryDataV2 - MIDs stored in microseconds
+	// BinaryDataV2 - MIDs stored in nanoseconds
 	BinaryDataV2
 )
 

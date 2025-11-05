@@ -11,8 +11,8 @@ func TestLegacyMIDFromString(t *testing.T) {
 	id, err := FromString("abaf05877b010000-2402dc02d60615cc")
 
 	assert.NoError(t, err)
-	// converted legacy (millis) to micros
-	assert.Equal(t, MID(1630057901995000), id.MID)
+	// converted legacy (milliseconds MID) to nanoseconds
+	assert.Equal(t, MID(1630057901995000000), id.MID)
 }
 
 func TestFromString(t *testing.T) {
@@ -24,7 +24,7 @@ func TestFromString(t *testing.T) {
 }
 
 func TestMillisToMID(t *testing.T) {
-	assert.Equal(t, MID(1761812502000000), MillisToMID(1761812502000))
+	assert.Equal(t, MID(1761812502000000000), MillisToMID(1761812502000))
 
 	// we can't convert millis this high to nanos (overflow), so we expect that user just want "infinite future"
 	assert.Equal(t, MID(math.MaxUint64), MillisToMID(math.MaxUint64))

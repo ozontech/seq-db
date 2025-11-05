@@ -31,9 +31,9 @@ func unpackDoc(data []byte, source uint64, midPrecision string) StreamingDoc {
 	block := storage.DocBlock(data)
 	mid := block.GetExt1()
 
-	// Convert from milliseconds to microseconds if store operates in milliseconds
+	// Convert from milliseconds to nanoseconds if store (legacy) operates in milliseconds
 	if midPrecision == "ms" {
-		mid = mid * 1000
+		mid = mid * 1000000
 	}
 
 	doc := StreamingDoc{

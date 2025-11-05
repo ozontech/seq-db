@@ -206,7 +206,8 @@ func iterateEvalTree(
 						zap.Time("mid", mid.Time()))
 					continue
 				}
-				bucketIndex := uint64(mid/1000)/params.HistInterval - histBase
+				// TODO /1000000 replace
+				bucketIndex := uint64(mid/1000000)/params.HistInterval - histBase
 				histogram[bucketIndex]++
 			}
 

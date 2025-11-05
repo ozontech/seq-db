@@ -9,6 +9,7 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/seq"
 )
 
 const seqDBMagic = "SEQM"
@@ -42,8 +43,8 @@ func (b *BlockInfo) Unpack(data []byte) error {
 
 	// legacy format - MID in milliseconds
 	if b.Info.BinaryDataVer < config.BinaryDataV2 {
-		b.Info.From = b.Info.From * 1000
-		b.Info.To = b.Info.To * 1000
+		b.Info.From = seq.MillisToMID(uint64(b.Info.From))
+		b.Info.To = seq.MillisToMID(uint64(b.Info.To))
 	}
 
 	return nil

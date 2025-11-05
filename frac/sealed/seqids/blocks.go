@@ -31,7 +31,8 @@ func (b *BlockMIDs) Unpack(data []byte) error {
 	// Legacy format - convert millis to micros
 	if b.fracVersion < config.BinaryDataV2 {
 		for i := range b.Values {
-			b.Values[i] = b.Values[i] * 1000
+			// TODO replace this by calling function
+			b.Values[i] = b.Values[i] * 1000000
 		}
 	}
 

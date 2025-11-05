@@ -15,12 +15,13 @@ type ID struct {
 	RID RID
 }
 
-type MID uint64 // microseconds part of ID
+type MID uint64 // nanoseconds part of ID
 type RID uint64 // random part of ID
 type LID uint32 // local id for a fraction
 
 func (m MID) Time() time.Time {
-	return time.Unix(0, int64(m)*int64(time.Microsecond))
+	// TODO check for large nanos and avoid cast
+	return time.Unix(0, int64(m))
 }
 
 func (d ID) String() string {
@@ -106,20 +107,19 @@ func SimpleID(i int) ID {
 }
 
 func MillisToMID(millis uint64) MID {
-
-	if millis < math.MaxUint64/1000 {
-		return MID(millis * 1000)
+	if millis < math.MaxUint64/1000000 {
+		return MID(millis * 1000000)
 	} else {
 		return MID(millis)
 	}
 }
 
 func TimeToMID(t time.Time) MID {
-	return MID(t.UnixNano() / int64(time.Microsecond))
+	return MID(t.UnixNano())
 }
 
 func DurationToMID(d time.Duration) MID {
-	return MID(d / time.Microsecond)
+	return MID(d)
 }
 
 func MIDToTime(t MID) time.Time {
@@ -127,11 +127,11 @@ func MIDToTime(t MID) time.Time {
 }
 
 func MIDToMillis(t MID) int64 {
-	return int64(uint64(t) / uint64(1000))
+	return int64(uint64(t) / uint64(1000000))
 }
 
 func MIDToDuration(t MID) time.Duration {
-	return time.Duration(t) * time.Microsecond
+	return time.Duration(t)
 }
 
 func NewID(t time.Time, randomness uint64) ID {
