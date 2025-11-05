@@ -1,0 +1,43 @@
+{{- if .Values.sequi.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "seq-ui.fullname" . }}
+  labels:
+    {{- include "seq-ui.labels" . | nindent 4 }}
+  {{- with .Values.sequi.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.sequi.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.sequi.ingress.tls }}
+  tls:
+    {{- range .Values.sequi.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.sequi.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            {{- with .pathType }}
+            pathType: {{ . }}
+            {{- end }}
+            backend:
+              service:
+                name: {{ include "seq-ui.fullname" $ }}
+                port:
+                  number: {{ $.Values.sequi.service.httpPort }}
+          {{- end }}
+    {{- end }}
+{{- end }}

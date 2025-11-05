@@ -17,6 +17,8 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -57,17 +59,7 @@ func (s *FractionTestSuite) TearDownSuiteCommon() {
 }
 
 func (s *FractionTestSuite) SetupTestCommon() {
-	s.config = &Config{
-		Search: SearchConfig{
-			AggLimits: AggLimits{
-				MaxFieldTokens:     1000,
-				MaxGroupTokens:     1000,
-				MaxTIDsPerFraction: 1000,
-			},
-		},
-		SkipSortDocs: false,
-		KeepMetaFile: false,
-	}
+	s.config = &Config{}
 	s.tokenizers = map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(20, false, true),
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 100),
@@ -100,7 +92,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 	}
 
 	var err error
-	s.tmpDir, err = os.MkdirTemp("", "fraction_test_*")
+	s.tmpDir, err = os.MkdirTemp(os.TempDir(), "fraction_test_*")
 	s.Require().NoError(err)
 }
 
@@ -301,9 +293,11 @@ func (s *FractionTestSuite) TestSearchRange() {
 	s.insertDocuments(docs)
 
 	s.AssertSearch("level:[1, 3]", docs, []int{1, 0})
+	s.AssertSearch("level:[1 TO 3]", docs, []int{1, 0})
 	s.AssertSearch("level:[0, 63]", docs, []int{5, 4, 3, 2, 1, 0})
 	s.AssertSearch("level:[-100, 100]", docs, []int{5, 4, 3, 2, 1, 0})
 	s.AssertSearch("level:(0, 3]", docs, []int{1, 0})
+	s.AssertSearch("level:(0 TO 3]", docs, []int{1, 0})
 
 	s.AssertSearch("level:[0, *]", docs, []int{6, 5, 4, 3, 2, 1, 0})
 	s.AssertSearch("level:[31, *]", docs, []int{6, 5, 4})
@@ -991,7 +985,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		level := rand.IntN(6)
 		timestamp := baseTime.Add(time.Duration(i) * time.Millisecond)
 
-		doc := fmt.Sprintf(`{"timestamp":"%s","service":"%s","message":"%s","level":"%d"}`,
+		doc := fmt.Sprintf(`{"timestamp":%q,"service":%q,"message":%q,"level":"%d"}`,
 			timestamp.Format(time.RFC3339Nano), service, message, level)
 		docs = append(docs, doc)
 
@@ -1035,11 +1029,11 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 
 func (s *FractionTestSuite) TestFractionInfo() {
 	docs := []string{
-		`{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message some text", "service":"gateway"}`,
-		`{"timestamp":"2000-01-01T13:00:32Z","service":"service_b","message":"second message other text", "service":"kube-proxy"}`,
-		`{"timestamp":"2000-01-01T13:00:43Z","service":"service_c","message":"third message other text", "service":"gateway"}`,
-		`{"timestamp":"2000-01-01T13:00:53Z","service":"service_a","message":"fourth message some text", "service":"kube-proxy"}`,
-		`{"timestamp":"2000-01-01T13:00:54Z","service":"service_c","message":"apple","service":"kube-scheduler"}`,
+		`{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message some text", "container":"gateway"}`,
+		`{"timestamp":"2000-01-01T13:00:32Z","service":"service_b","message":"second message other text", "container":"kube-proxy"}`,
+		`{"timestamp":"2000-01-01T13:00:43Z","service":"service_c","message":"third message other text", "container":"gateway"}`,
+		`{"timestamp":"2000-01-01T13:00:53Z","service":"service_a","message":"fourth message some text", "container":"kube-proxy"}`,
+		`{"timestamp":"2000-01-01T13:00:54Z","service":"service_c","message":"apple","container":"kube-scheduler"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -1052,13 +1046,13 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	// it varies depending on params and docs shuffled
 	s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(300),
 		"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
-	s.Require().Equal(uint64(573), info.DocsRaw, "doc raw doesn't match")
+	s.Require().Equal(uint64(583), info.DocsRaw, "doc raw doesn't match")
 	s.Require().Equal(seq.MID(946731625000), info.From, "from doesn't match")
 	s.Require().Equal(seq.MID(946731654000), info.To, "to doesn't match")
 
 	switch s.fraction.(type) {
 	case *Active:
-		s.Require().True(info.MetaOnDisk >= uint64(300) && info.MetaOnDisk <= uint64(400),
+		s.Require().True(info.MetaOnDisk >= uint64(250) && info.MetaOnDisk <= uint64(350),
 			"meta on disk doesn't match. actual value: %d", info.MetaOnDisk)
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
 	case *Sealed:
@@ -1067,7 +1061,7 @@ func (s *FractionTestSuite) TestFractionInfo() {
 			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
 	case *Remote:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1450) && info.IndexOnDisk < uint64(1500),
+		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1500),
 			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
 	default:
 		s.Require().Fail("unsupported fraction type")
@@ -1270,8 +1264,7 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
 	var wg sync.WaitGroup
 
 	for _, docs := range bulks {
-		docsCopy := make([]string, len(docs))
-		copy(docsCopy, docs)
+		docsCopy := slices.Clone(docs)
 		rand.Shuffle(len(docsCopy), func(i, j int) {
 			docsCopy[i], docsCopy[j] = docsCopy[j], docsCopy[i]
 		})
@@ -1372,6 +1365,57 @@ func (s *ActiveFractionTestSuite) TearDownTest() {
 
 func (s *ActiveFractionTestSuite) TearDownSuite() {
 	s.TearDownSuiteCommon()
+}
+
+/*
+ActiveReplayedFractionTestSuite run tests for active fraction which was replayed from meta and docs file on disk
+*/
+type ActiveReplayedFractionTestSuite struct {
+	FractionTestSuite
+}
+
+func (s *ActiveReplayedFractionTestSuite) SetupTest() {
+	s.SetupTestCommon()
+	// Setting this flags allows to keep meta and docs files on disk after Active.Release() is called
+	s.config.SkipSortDocs = true
+	s.config.KeepMetaFile = true
+
+	s.insertDocuments = func(bulks ...[]string) {
+		if s.fraction != nil {
+			s.Require().Fail("can insert docs only once")
+		}
+		s.fraction = s.Replay(s.newActive(bulks...))
+	}
+}
+
+func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
+	fracFileName := frac.BaseFileName
+	frac.Release()
+	replayedFrac := NewActive(
+		fracFileName,
+		s.activeIndexer,
+		storage.NewReadLimiter(1, nil),
+		cache.NewCache[[]byte](nil, nil),
+		cache.NewCache[[]byte](nil, nil),
+		&Config{})
+	err := replayedFrac.Replay(context.Background())
+	s.Require().NoError(err, "replay failed")
+	return replayedFrac
+}
+
+func (s *ActiveReplayedFractionTestSuite) TearDownTest() {
+	if s.fraction != nil {
+		active, ok := s.fraction.(*Active)
+		if ok {
+			active.Release()
+		} else {
+			s.Require().Fail("fraction is not of Active type")
+		}
+		s.fraction.Suicide()
+		s.fraction = nil
+	}
+
+	s.TearDownTestCommon()
 }
 
 /*
@@ -1553,6 +1597,10 @@ func (s *RemoteFractionTestSuite) TearDownSuite() {
 
 func TestActiveFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(ActiveFractionTestSuite))
+}
+
+func TestActiveReplayedFractionTestSuite(t *testing.T) {
+	suite.Run(t, new(ActiveReplayedFractionTestSuite))
 }
 
 func TestSealedFractionTestSuite(t *testing.T) {

@@ -1,0 +1,63 @@
+replicaCount: 2
+
+mapping:
+  auto: false
+  enable_updates: true
+  mapping_list:
+    - type: "keyword"
+      name: "k8s_pod"
+    - type: "keyword"
+      name: "k8s_namespace"
+    - type: "keyword"
+      name: "k8s_container"
+    - type: "text"
+      name: "request"
+    - type: "path"
+      name: "request_uri"
+    - name: "message"
+      types:
+        - type: "text"
+        - title: "keyword"
+          type: "keyword"
+          size: 18
+
+storage:
+  frac_size: "256MiB"
+  total_size: "10GiB"
+
+extendedConfig:
+  compression:
+    docs_zstd_compression_level: 1
+    metas_zstd_compression_level: 1
+
+seqproxy:
+  ingress:
+    enabled: true
+  extendedConfig:
+    slow_logs:
+      bulk_threshold: 0ms
+      fetch_threshold: 3s
+      search_threshold: 3s
+    limits:
+      query_rate: 2.0
+      search_requests: 32
+      bulk_requests: 32
+      inflight_bulks: 32
+      fraction_hits: 6000
+      search_docs: 100000
+      doc_size: "128KiB"
+
+sequi:
+  ingress:
+    enabled: true
+  front:
+    ingress:
+      enabled: true
+
+config:
+  compression:
+    docs_zstd_compression_level: -1
+    metas_zstd_compression_level: -1
+  docs_sorting:
+    doc_block_size: "1MiB"
+    enabled: false

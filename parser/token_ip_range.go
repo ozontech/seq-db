@@ -15,17 +15,6 @@ type IPRange struct {
 	To    Term
 }
 
-func (n *IPRange) Dump(builder *strings.Builder) {
-	builder.WriteString(quoteTokenIfNeeded(n.Field))
-	builder.WriteString(`:ip_range(`)
-
-	n.From.Dump(builder)
-	builder.WriteString(", ")
-	n.To.Dump(builder)
-
-	builder.WriteString(`)`)
-}
-
 func (n *IPRange) DumpSeqQL(b *strings.Builder) {
 	b.WriteString(quoteTokenIfNeeded(n.Field))
 	b.WriteString(`:ip_range(`)

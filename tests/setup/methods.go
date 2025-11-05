@@ -26,19 +26,6 @@ func GenBuffer(docs []string) *bytes.Buffer {
 	return b
 }
 
-func GenBufferBytesReuse(docs [][]byte, b *bytes.Buffer) *bytes.Buffer {
-	for _, doc := range docs {
-		_, _ = b.WriteString(`{"index":"seq-db"}` + "\n")
-		_, _ = b.Write(doc)
-		_, _ = b.WriteString("\n")
-	}
-	return b
-}
-
-func GenBufferBytes(docs [][]byte) *bytes.Buffer {
-	return GenBufferBytesReuse(docs, bytes.NewBuffer(nil))
-}
-
 func BulkBuffer(t *testing.T, addr string, b *bytes.Buffer) {
 	r, err := http.Post(addr, "", b)
 	require.NoError(t, err, "should be no errors")
@@ -66,7 +53,6 @@ func SearchHTTP(t *testing.T, addr string, request *seqproxyapi.SearchRequest) *
 
 	req, err := http.NewRequest(http.MethodPost, addr, bytes.NewReader(payload))
 	require.NoError(t, err, "should be no errors")
-	req.Header.Set("Grpc-Metadata-use-seq-ql", "true")
 
 	r, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)

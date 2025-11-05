@@ -85,25 +85,37 @@ func (s *SingleTestSuite) TestBasicSearchHotRead() {
 		Shards: [][]string{},
 		Vers:   []string{},
 	}
+}
 
+func (s *SingleTestSuite) TestSearchAgg() {
+	startTS := time.Now()
+	docs := simpleCases(startTS)
+	docStrs := setup.DocsToStrings(docs)
+	s.Bulk(docStrs)
+
+	assertAgg := func(query string, aggQ []any, expected []map[string]uint64) {
+		r := s.Require()
+		qpr, _, _, err := s.Env.Search(query, math.MaxInt32, setup.WithAggQuery(aggQ...), setup.WithTotal(false))
+		r.NoError(err)
+		r.Equal(len(expected), len(qpr.Aggs))
+		for i := range expected {
+			for bin, hist := range qpr.Aggs[i].SamplesByBin {
+				r.Equalf(int64(expected[i][bin.Token]), hist.Total, "failed for token %s", bin)
+			}
+		}
+	}
 	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		s.AssertSearch(`service: service_a`, docStrs, []int{3, 0})
-		s.AssertSearch(`traceID:abcdef`, docStrs, []int{1, 0})
-		s.AssertSearch(`level: 1`, docStrs, []int{1, 3, 0})
-
-		s.AssertSearch(`message: "message text"`, docStrs, []int{2, 1, 3, 0})
-		s.AssertSearch(`message: "other text"`, docStrs, []int{2, 1})
-
-		s.AssertSearch(`traceID: abcd*`, docStrs, []int{1, 0})
-		s.AssertSearch(`traceID: a*`, docStrs, []int{2, 1, 0})
-		s.AssertSearch(`traceID: a*f`, docStrs, []int{1, 0})
-		s.AssertSearch(`traceID: a*a`, docStrs, []int{2})
-		s.AssertSearch(`service: service*a`, docStrs, []int{3, 0})
-		s.AssertSearch(`message: message\ som*`, docStrs, []int{3, 0})
-
-		// test limit
-		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderAsc))
-		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderDesc))
+		assertAgg("message:message", []any{"service"}, []map[string]uint64{
+			{"service_a": 2, "service_b": 1, "service_c": 1},
+		})
+		assertAgg("message:message", []any{"level"}, []map[string]uint64{
+			{"1": 3, "2": 1},
+		})
+		assertAgg("message:message", []any{"service", "level"},
+			[]map[string]uint64{
+				{"service_a": 2, "service_b": 1, "service_c": 1},
+				{"1": 3, "2": 1},
+			})
 	})
 }
 
@@ -251,11 +263,20 @@ func (s *SingleTestSuite) TestIndexingAllFields() {
 	require.Empty(s.T(), s.Ingestor().Config.Bulk.MappingProvider.GetMapping(), "mapping is not empty")
 
 	s.Bulk(docStrs)
+	tests := []struct {
+		query   string
+		indexes []int
+	}{
+		{`service:"service-1"`, []int{0}},
+		{`service:"service-*"`, []int{4, 3, 2, 1, 0}},
+		{`level:"4130134"`, []int{4, 3, 2, 1, 0}},
+		{`unknown:"foobarbaz"`, nil},
+	}
+
 	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		s.AssertSearch(`service:"service-1"`, docStrs, []int{0})
-		s.AssertSearch(`service:"service-*"`, docStrs, []int{4, 3, 2, 1, 0})
-		s.AssertSearch(`level:"4130134"`, docStrs, []int{4, 3, 2, 1, 0})
-		s.AssertSearch(`unknown:"foobarbaz"`, docStrs, nil)
+		for _, test := range tests {
+			s.AssertSearch(test.query, docStrs, test.indexes)
+		}
 	})
 }
 
@@ -288,7 +309,6 @@ func (s *SingleTestSuite) TestSealedMultiFetch() {
 
 func TestSingleSuite(t *testing.T) {
 	for _, cfg := range suites.SingleEnvs() {
-		cfg := cfg
 		t.Run(cfg.Name, func(t *testing.T) {
 			t.Parallel()
 			suite.Run(t, NewSingleTestSuite(cfg))

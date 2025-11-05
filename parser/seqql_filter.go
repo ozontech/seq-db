@@ -13,6 +13,27 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
+var builtinMapping = map[string]seq.TokenizerType{
+	seq.TokenAll:    seq.TokenizerTypeKeyword,
+	seq.TokenExists: seq.TokenizerTypeKeyword,
+	seq.TokenIndex:  seq.TokenizerTypeKeyword,
+}
+
+func indexType(userMapping seq.Mapping, field string) seq.TokenizerType {
+	if userMapping == nil {
+		return seq.TokenizerTypeKeyword
+	}
+	tokKinds, has := userMapping[field]
+	if has {
+		return tokKinds.Main.TokenizerType
+	}
+	tokKind, has := builtinMapping[field]
+	if has {
+		return tokKind
+	}
+	return seq.TokenizerTypeNoop
+}
+
 func parseSeqQLFieldFilter(lex *lexer, mapping seq.Mapping) (*ASTNode, error) {
 	fieldName, err := parseCompositeTokenReplaceWildcards(lex)
 	if err != nil {

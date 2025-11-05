@@ -22,6 +22,9 @@ Before launch you need to create a config file:
 config.yaml:
 
 ```yaml
+storage:
+  data_dir: /seq-db-data
+
 mapping:
   path: auto
 ```
@@ -33,6 +36,7 @@ docker run --rm \
   -p 9002:9002 \
   -p 9004:9004 \
   -p 9200:9200 \
+  -v "$(pwd)"/seq-db-data:/seq-db-data \
   -v "$(pwd)"/config.yaml:/seq-db/config.yaml \
   -it ghcr.io/ozontech/seq-db:latest --mode single --config=config.yaml
 ```
@@ -115,6 +119,10 @@ curl --request POST \
 '
 ```
 
+### Running in Kubernetes
+
+To run Seq-db in a production environment, you can use Kubernetes and the ready-made [Helm-chart](https://github.com/ozontech/seq-db/blob/main/deployment/k8s/helm-chart/) from the project repository.
+
 ## Search for documents
 
 We'll wrap up this guide with a simple search query
@@ -126,7 +134,6 @@ Note: make sure `curl` and `jq` are installed to run this example.
 curl --request POST   \
   --url http://localhost:9002/search \
   --header 'Content-Type: application/json' \
-  --header 'Grpc-Metadata-use-seq-ql: true' \
   --data-binary '
   {
     "query":{

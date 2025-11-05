@@ -1,4 +1,4 @@
-package fracmanager
+package asyncsearcher
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
@@ -91,7 +92,7 @@ type AsyncSearcherConfig struct {
 	MaxSizePerRequest int
 }
 
-func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracs List) *AsyncSearcher {
+func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracs fracmanager.List) *AsyncSearcher {
 	if config.DataDir == "" {
 		logger.Fatal("can't start async searcher: DataDir is empty")
 	}
@@ -166,7 +167,7 @@ type asyncSearchInfo struct {
 	infoSize *atomic.Int64
 }
 
-func newAsyncSearchInfo(r AsyncSearchRequest, list List) asyncSearchInfo {
+func newAsyncSearchInfo(r AsyncSearchRequest, list fracmanager.List) asyncSearchInfo {
 	fracsToSearch := make([]fracSearchState, 0, len(list))
 	for _, f := range list {
 		fracsToSearch = append(fracsToSearch, fracSearchState{Name: f.Info().Name()})
@@ -215,7 +216,7 @@ func (i *asyncSearchInfo) Status() AsyncSearchStatus {
 	return status
 }
 
-func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs List) error {
+func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs fracmanager.List) error {
 	if as.readOnly.Load() {
 		return fmt.Errorf("cannot start search on read-only mode")
 	}
@@ -256,7 +257,7 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs List) error {
 	return nil
 }
 
-func (as *AsyncSearcher) saveSearchInfo(r AsyncSearchRequest, fracs List) bool {
+func (as *AsyncSearcher) saveSearchInfo(r AsyncSearchRequest, fracs fracmanager.List) bool {
 	as.requestsMu.Lock()
 	defer as.requestsMu.Unlock()
 	if _, ok := as.requests[r.ID]; ok {
@@ -306,7 +307,7 @@ func (as *AsyncSearcher) createDataDir() {
 	})
 }
 
-func (as *AsyncSearcher) processRequest(asyncSearchID string, fracs List) {
+func (as *AsyncSearcher) processRequest(asyncSearchID string, fracs fracmanager.List) {
 	defer as.processWg.Done()
 
 	as.rateLimit <- struct{}{}
@@ -316,7 +317,7 @@ func (as *AsyncSearcher) processRequest(asyncSearchID string, fracs List) {
 	asyncSearchActiveSearches.Add(-1)
 }
 
-func (as *AsyncSearcher) doSearch(id string, fracs List) {
+func (as *AsyncSearcher) doSearch(id string, fracs fracmanager.List) {
 	qprPaths, err := as.findQPRs(id)
 	if err != nil {
 		panic(fmt.Errorf("can't find QPRs for id %q: %s", id, err))
@@ -507,7 +508,7 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 			return nil
 		}
 		fpath := path.Join(dataDir, name)
-		removeFile(fpath)
+		util.RemoveFile(fpath)
 		anyRemove = true
 		return nil
 	}
@@ -865,10 +866,10 @@ func (as *AsyncSearcher) removeExpiredResults(now time.Time) {
 			logger.Fatal("can't load async search results", zap.String("id", id), zap.Error(err))
 		}
 		for _, qprPath := range qprPaths {
-			removeFile(qprPath)
+			util.RemoveFile(qprPath)
 		}
-		removeFile(path.Join(as.config.DataDir, id+asyncSearchExtMergedQPR))
-		removeFile(path.Join(as.config.DataDir, id+asyncSearchExtInfo))
+		util.RemoveFile(path.Join(as.config.DataDir, id+asyncSearchExtMergedQPR))
+		util.RemoveFile(path.Join(as.config.DataDir, id+asyncSearchExtInfo))
 	}
 	logger.Info("async search results have been removed", zap.Int("count", len(toRemove)), zap.Duration("took", time.Since(now)))
 }
