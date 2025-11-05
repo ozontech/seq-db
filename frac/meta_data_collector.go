@@ -106,9 +106,9 @@ func (m *MetaData) unmarshalVersion1(b []byte) error {
 }
 
 func (m *MetaData) unmarshalVersion2(b []byte) error {
-	// Version 2 stores MID in microseconds
+	// Version 2 stores MID in nanoseconds
 	// Decode seq.ID.
-	m.ID.MID = seq.MID(binary.LittleEndian.Uint64(b) / 1000)
+	m.ID.MID = seq.NanosToMID(binary.LittleEndian.Uint64(b))
 	b = b[8:]
 	m.ID.RID = seq.RID(binary.LittleEndian.Uint64(b))
 	b = b[8:]

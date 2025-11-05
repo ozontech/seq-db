@@ -84,9 +84,9 @@ func FromString(x string) (ID, error) {
 	}
 
 	delimiter := x[16]
-	// new format, MID in micros
 	if delimiter == '_' {
-		id.MID = MID(binary.LittleEndian.Uint64(mid) / uint64(1000))
+		// new format, MID in nanoseconds. convert to milliseconds
+		id.MID = NanosToMID(binary.LittleEndian.Uint64(mid))
 	} else if delimiter == '-' {
 		id.MID = MID(binary.LittleEndian.Uint64(mid))
 	} else {
@@ -102,6 +102,10 @@ func SimpleID(i int) ID {
 		MID: MID(i),
 		RID: 0,
 	}
+}
+
+func NanosToMID(nanos uint64) MID {
+	return MID(nanos / 1000000)
 }
 
 func TimeToMID(t time.Time) MID {

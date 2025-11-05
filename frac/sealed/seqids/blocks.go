@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/seq"
 )
 
 type BlockMIDs struct {
@@ -28,10 +29,10 @@ func (b *BlockMIDs) Unpack(data []byte) error {
 	}
 	b.Values = values
 
-	// v2 (microsecond MIDs) compatibility - convert micros to millis
+	// v2 (microsecond MIDs) compatibility - convert nanos to millis
 	if b.fracVersion >= config.BinaryDataV2 {
 		for i := range b.Values {
-			b.Values[i] = b.Values[i] / 1000
+			b.Values[i] = uint64(seq.NanosToMID(b.Values[i]))
 		}
 	}
 

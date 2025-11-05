@@ -31,8 +31,8 @@ func unpackDoc(data []byte, source uint64, midPrecision string) StreamingDoc {
 	block := storage.DocBlock(data)
 	mid := block.GetExt1()
 
-	if midPrecision == "us" {
-		mid = mid / 1000
+	if midPrecision == "ns" {
+		mid = uint64(seq.NanosToMID(mid))
 	}
 	doc := StreamingDoc{
 		ID: seq.ID{

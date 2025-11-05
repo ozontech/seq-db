@@ -626,22 +626,22 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 	}
 
 	// Check the store's MID precision from response header
-	// If header indicates milliseconds, convert to microseconds
-	storePrecision := "ms"
-	if precisionValues := md.Get(consts.MIDPrecisionHeader); len(precisionValues) > 0 {
-		storePrecision = precisionValues[0]
+	// If header indicates milliseconds, then convert to nanoseconds
+	midPrecision := "ms"
+	if precisionHeaderValues := md.Get(consts.MIDPrecisionHeader); len(precisionHeaderValues) > 0 {
+		midPrecision = precisionHeaderValues[0]
 	}
 
-	if storePrecision == "us" {
+	if midPrecision == "ns" {
 		for _, id := range data.IdSources {
-			id.Id.Mid = id.Id.Mid / 1000
+			id.Id.Mid = uint64(seq.NanosToMID(id.Id.Mid))
 		}
 
 		// Convert histogram MIDs from microseconds to milliseconds if needed
 		if len(data.Histogram) > 0 {
 			newHist := make(map[uint64]uint64, len(data.Histogram))
 			for mid, v := range data.Histogram {
-				newHist[mid/1000] = v
+				newHist[uint64(seq.NanosToMID(mid))] = v
 			}
 			data.Histogram = newHist
 		}
