@@ -79,37 +79,17 @@ func (m *MetaData) unmarshalVersion1(b []byte) error {
 	// Decode seq.ID.
 	m.ID.MID = seq.MID(binary.LittleEndian.Uint64(b))
 	b = b[8:]
-	m.ID.RID = seq.RID(binary.LittleEndian.Uint64(b))
-	b = b[8:]
-
-	// Decode uncompressed document size.
-	m.Size = binary.LittleEndian.Uint32(b)
-	b = b[4:]
-
-	// Decode tokens length.
-	toksLen := binary.LittleEndian.Uint32(b)
-	b = b[4:]
-
-	// Decode tokens.
-	m.Tokens = m.Tokens[:0]
-	m.Tokens = slices.Grow(m.Tokens, int(toksLen))
-	var err error
-	for i := uint32(0); i < toksLen; i++ {
-		var token MetaToken
-		b, err = token.UnmarshalBinary(b)
-		if err != nil {
-			return err
-		}
-		m.Tokens = append(m.Tokens, token)
-	}
-	return nil
+	return m.unmarshalVersion1And2(b)
 }
 
 func (m *MetaData) unmarshalVersion2(b []byte) error {
-	// Version 2 stores MID in nanoseconds
-	// Decode seq.ID.
+	// Decode seq.ID. Version 2 (and higher) stores MID in nanoseconds
 	m.ID.MID = seq.NanosToMID(binary.LittleEndian.Uint64(b))
 	b = b[8:]
+	return m.unmarshalVersion1And2(b)
+}
+
+func (m *MetaData) unmarshalVersion1And2(b []byte) error {
 	m.ID.RID = seq.RID(binary.LittleEndian.Uint64(b))
 	b = b[8:]
 
