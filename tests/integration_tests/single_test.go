@@ -85,6 +85,7 @@ func (s *SingleTestSuite) TestBasicSearchHotRead() {
 		Shards: [][]string{},
 		Vers:   []string{},
 	}
+}
 
 func (s *SingleTestSuite) TestSearchAgg() {
 	startTS := time.Now()
