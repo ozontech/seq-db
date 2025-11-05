@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/johannesboyne/gofakes3"
+	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/ozontech/seq-db/cache"
@@ -27,6 +30,7 @@ import (
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
@@ -44,12 +48,12 @@ type FractionTestSuite struct {
 	insertDocuments func(docs ...[]string)
 }
 
-func (s *FractionTestSuite) SetupSuite() {
+func (s *FractionTestSuite) SetupSuiteCommon() {
 	s.activeIndexer = NewActiveIndexer(4, 10)
 	s.activeIndexer.Start()
 }
 
-func (s *FractionTestSuite) TearDownSuite() {
+func (s *FractionTestSuite) TearDownSuiteCommon() {
 	s.activeIndexer.Stop()
 }
 
@@ -1054,6 +1058,10 @@ func (s *FractionTestSuite) TestFractionInfo() {
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
 		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1600),
 			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
+	case *Remote:
+		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
+		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1500),
+			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
 	default:
 		s.Require().Fail("unsupported fraction type")
 	}
@@ -1324,6 +1332,10 @@ type ActiveFractionTestSuite struct {
 	FractionTestSuite
 }
 
+func (s *ActiveFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
+}
+
 func (s *ActiveFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 
@@ -1350,11 +1362,19 @@ func (s *ActiveFractionTestSuite) TearDownTest() {
 	s.TearDownTestCommon()
 }
 
+func (s *ActiveFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
+}
+
 /*
 ActiveReplayedFractionTestSuite run tests for active fraction which was replayed from meta and docs file on disk
 */
 type ActiveReplayedFractionTestSuite struct {
 	FractionTestSuite
+}
+
+func (s *ActiveReplayedFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
 }
 
 func (s *ActiveReplayedFractionTestSuite) SetupTest() {
@@ -1401,11 +1421,19 @@ func (s *ActiveReplayedFractionTestSuite) TearDownTest() {
 	s.TearDownTestCommon()
 }
 
+func (s *ActiveReplayedFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
+}
+
 /*
 SealedFractionTestSuite run tests for sealed fraction. Active fraction is created first and then sealed.
 */
 type SealedFractionTestSuite struct {
 	FractionTestSuite
+}
+
+func (s *SealedFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
 }
 
 func (s *SealedFractionTestSuite) SetupTest() {
@@ -1427,12 +1455,20 @@ func (s *SealedFractionTestSuite) TearDownTest() {
 	s.TearDownTestCommon()
 }
 
+func (s *SealedFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
+}
+
 /*
 SealedLoadedFractionTestSuite run tests for sealed fraction. Active fraction is created first and then sealed.
 Sealed fraction is then loaded with sealed.NewSealed call
 */
 type SealedLoadedFractionTestSuite struct {
 	FractionTestSuite
+}
+
+func (s *SealedLoadedFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
 }
 
 func (s *SealedLoadedFractionTestSuite) SetupTest() {
@@ -1444,6 +1480,18 @@ func (s *SealedLoadedFractionTestSuite) SetupTest() {
 		}
 		s.fraction = s.newSealedLoaded(bulks...)
 	}
+}
+
+func (s *SealedLoadedFractionTestSuite) TearDownTest() {
+	if s.fraction != nil {
+		s.fraction.Suicide()
+		s.fraction = nil
+	}
+	s.TearDownTestCommon()
+}
+
+func (s *SealedLoadedFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
 }
 
 func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Sealed {
@@ -1471,12 +1519,87 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 	return sealed
 }
 
-func (s *SealedLoadedFractionTestSuite) TearDownTest() {
+/*
+RemoteFractionTestSuite runs tests for remote fraction. Fraction is first sealed, then uploaded
+to fakes3 backend.
+*/
+type RemoteFractionTestSuite struct {
+	FractionTestSuite
+
+	s3Backend *s3mem.Backend
+	s3server  *httptest.Server
+}
+
+func (s *RemoteFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
+
+	s.s3Backend = s3mem.New()
+	s.s3server = httptest.NewServer(gofakes3.New(s.s3Backend).Server())
+}
+
+func (s *RemoteFractionTestSuite) SetupTest() {
+	s.SetupTestCommon()
+
+	bucketName := fmt.Sprintf("bucket_%d_%d", time.Now().UnixMilli(), rand.Int())
+	err := s.s3Backend.CreateBucket(bucketName)
+	s.Require().NoError(err, "create bucket failed")
+
+	s.insertDocuments = func(bulks ...[]string) {
+		if s.fraction != nil {
+			s.Require().Fail("can insert docs only once")
+		}
+		sealed := s.newSealed(bulks...)
+		defer sealed.Suicide()
+
+		s3cli, err := s3.NewClient(
+			s.s3server.URL,
+			"ACCESS_KEY",
+			"SECRET_KEY",
+			"eu-west-3",
+			bucketName,
+			3,
+		)
+		s.Require().NoError(err, "s3 client setup failed")
+
+		offloaded, err := sealed.Offload(context.Background(), s3.NewUploader(s3cli))
+		s.Require().NoError(err, "offload failed")
+		s.Require().True(offloaded, "didn't offload frac")
+
+		indexCache := &IndexCache{
+			MIDs:       cache.NewCache[[]byte](nil, nil),
+			RIDs:       cache.NewCache[[]byte](nil, nil),
+			Params:     cache.NewCache[seqids.BlockParams](nil, nil),
+			LIDs:       cache.NewCache[*lids.Block](nil, nil),
+			Tokens:     cache.NewCache[*token.Block](nil, nil),
+			TokenTable: cache.NewCache[token.Table](nil, nil),
+			Registry:   cache.NewCache[[]byte](nil, nil),
+		}
+
+		remoteFrac := NewRemote(
+			context.Background(),
+			sealed.BaseFileName,
+			storage.NewReadLimiter(1, nil),
+			indexCache,
+			cache.NewCache[[]byte](nil, nil),
+			sealed.info,
+			s.config,
+			s3cli)
+		s.fraction = remoteFrac
+	}
+}
+
+func (s *RemoteFractionTestSuite) TearDownTest() {
 	if s.fraction != nil {
 		s.fraction.Suicide()
 		s.fraction = nil
 	}
 	s.TearDownTestCommon()
+}
+
+func (s *RemoteFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
+
+	s.s3server.Close()
 }
 
 func TestActiveFractionTestSuite(t *testing.T) {
@@ -1493,4 +1616,8 @@ func TestSealedFractionTestSuite(t *testing.T) {
 
 func TestSealedLoadedFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(SealedLoadedFractionTestSuite))
+}
+
+func TestRemoteFractionTestSuite(t *testing.T) {
+	suite.Run(t, new(RemoteFractionTestSuite))
 }
