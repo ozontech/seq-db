@@ -22,6 +22,9 @@ seq-db можно быстро запустить в docker-контейнере
 config.yaml:
 
 ```yaml
+storage:
+  data_dir: /seq-db-data
+
 mapping:
   path: auto
 ```
@@ -33,6 +36,7 @@ docker run --rm \
   -p 9002:9002 \
   -p 9004:9004 \
   -p 9200:9200 \
+  -v "$(pwd)"/seq-db-data:/seq-db-data \
   -v "$(pwd)"/config.yaml:/seq-db/config.yaml \
   -it ghcr.io/ozontech/seq-db:latest --mode single --config=config.yaml
 ```
