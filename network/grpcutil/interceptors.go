@@ -140,3 +140,19 @@ func MIDPrecisionHeaderUnaryServerInterceptor(precision string) grpc.UnaryServer
 		return h(ctx, req)
 	}
 }
+
+// MIDPrecisionHeaderStreamServerInterceptor sets the MID precision header for all streaming responses.
+func MIDPrecisionHeaderStreamServerInterceptor(precision string) grpc.StreamServerInterceptor {
+	return func(
+		srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo,
+		h grpc.StreamHandler,
+	) error {
+		md := metadata.New(map[string]string{
+			consts.MIDPrecisionHeader: precision,
+		})
+		if err := ss.SendHeader(md); err != nil {
+			logger.Error("failed to set MID precision header in stream", zap.Error(err))
+		}
+		return h(srv, ss)
+	}
+}

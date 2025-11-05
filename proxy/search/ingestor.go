@@ -229,7 +229,18 @@ func (si *Ingestor) singleDocsStream(ctx context.Context, explain bool, source u
 		return nil, fmt.Errorf("can't fetch docs: %s", err.Error())
 	}
 
-	var it DocsIterator = newGrpcStreamIterator(stream, host, source, len(ids))
+	md, err := stream.Header()
+	midPrecision := "ms"
+	if md != nil && err == nil {
+		if precisionValues := md.Get(consts.MIDPrecisionHeader); len(precisionValues) > 0 {
+			midPrecision = precisionValues[0]
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("can't fetch metadata: %s", err.Error())
+	}
+
+	var it DocsIterator = newGrpcStreamIterator(stream, host, source, len(ids), midPrecision)
 	if explain {
 		it = newExplainWrapperIterator(it, ids, host, startTime)
 	}
