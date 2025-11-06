@@ -17,7 +17,6 @@ import (
 )
 
 type testFakeFrac struct {
-	frac.Empty
 	info          *common.Info
 	qpr           *seq.QPR
 	searchesCount int
