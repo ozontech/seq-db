@@ -92,6 +92,8 @@ func TestQPRMarshalUnmarshal(t *testing.T) {
 	}
 }
 
+// TestQPRVersion2Compatibility tests that it's possible to unmarshall and read version 2 async search result encoded.
+// MIDs in IDs and a histogram must be converted to milliseconds
 func TestQPRVersion2Compatibility(t *testing.T) {
 	qpr := seq.QPR{
 		IDs: seq.IDSources{
