@@ -20,8 +20,6 @@ type ActiveIndexer struct {
 	chMerge     chan *mergeTask
 	bulkStats   *BulkStatsCollector
 	workerCount int
-
-	stopFn func()
 }
 
 type indexTask struct {
@@ -36,13 +34,15 @@ type mergeTask struct {
 	tokenLIDs *TokenLIDs
 }
 
-func NewActiveIndexer(workerCount, chLen int) *ActiveIndexer {
-	return &ActiveIndexer{
+func NewActiveIndexer(workerCount, chLen int) (*ActiveIndexer, func()) {
+	idx := ActiveIndexer{
 		ch:          make(chan *indexTask, chLen),
 		chMerge:     make(chan *mergeTask, chLen),
 		workerCount: workerCount,
 		bulkStats:   NewBulkStatsCollector(5*time.Second, chLen),
 	}
+	stopIdx := idx.start()
+	return &idx, stopIdx
 }
 
 func (ai *ActiveIndexer) Index(frac *Active, metas []byte, wg *sync.WaitGroup, sw *stopwatch.Stopwatch) {
@@ -56,7 +56,7 @@ func (ai *ActiveIndexer) Index(frac *Active, metas []byte, wg *sync.WaitGroup, s
 	m.Stop()
 }
 
-func (ai *ActiveIndexer) Start() {
+func (ai *ActiveIndexer) start() func() {
 	wg := sync.WaitGroup{}
 	wg.Add(ai.workerCount)
 
@@ -75,27 +75,17 @@ func (ai *ActiveIndexer) Start() {
 		}()
 	}
 
-	ai.stopFn = func() {
+	return func() {
 		close(ai.ch)
 		close(ai.chMerge)
-
 		wg.Wait()
-
 		ai.bulkStats.Stop()
-
-		ai.stopFn = nil
 	}
 }
 
 func (ai *ActiveIndexer) mergeWorker() {
 	for task := range ai.chMerge {
 		task.tokenLIDs.GetLIDs(task.frac.MIDs, task.frac.RIDs) // GetLIDs cause sort and merge LIDs from queue
-	}
-}
-
-func (ai *ActiveIndexer) Stop() {
-	if ai.stopFn != nil {
-		ai.stopFn()
 	}
 }
 
