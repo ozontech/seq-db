@@ -9,11 +9,14 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/ozontech/seq-db/asyncsearcher"
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/stores"
@@ -154,10 +157,33 @@ func (si *Ingestor) FetchAsyncSearchResult(
 			defer wg.Done()
 
 			for _, replica := range shard {
-				storeResp, err := si.clients[replica].FetchAsyncSearchResult(storesCtx, &req)
+				var md metadata.MD
+				storeResp, err := si.clients[replica].FetchAsyncSearchResult(storesCtx, &req,
+					grpc.Header(&md),
+				)
 				if err != nil {
 					if status.Code(err) == codes.NotFound {
 						continue
+					}
+				}
+
+				midPrecision := "ms"
+				if precisionValues := md.Get(consts.MIDPrecisionHeader); len(precisionValues) > 0 {
+					midPrecision = precisionValues[0]
+				}
+
+				if midPrecision == "ns" {
+					response := storeResp.Response
+					for _, id := range response.IdSources {
+						id.Id.Mid = uint64(seq.NanosToMID(id.Id.Mid))
+					}
+
+					if len(response.Histogram) > 0 {
+						newHist := make(map[uint64]uint64, len(response.Histogram))
+						for mid, v := range response.Histogram {
+							newHist[uint64(seq.NanosToMID(mid))] = v
+						}
+						response.Histogram = newHist
 					}
 				}
 
