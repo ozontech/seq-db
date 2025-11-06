@@ -158,9 +158,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 
 			for _, replica := range shard {
 				var md metadata.MD
-				storeResp, err := si.clients[replica].FetchAsyncSearchResult(storesCtx, &req,
-					grpc.Header(&md),
-				)
+				storeResp, err := si.clients[replica].FetchAsyncSearchResult(storesCtx, &req, grpc.Header(&md))
 				if err != nil {
 					if status.Code(err) == codes.NotFound {
 						continue
