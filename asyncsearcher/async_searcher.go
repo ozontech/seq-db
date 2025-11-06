@@ -147,7 +147,7 @@ type fracSearchState struct {
 }
 
 type asyncSearchInfo struct {
-	Version uint8 `json:"version"`
+	Version uint8
 
 	// Finished is true if there are no fracs waiting to be processed.
 	//
