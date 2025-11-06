@@ -45,7 +45,7 @@ const (
 	infoVersion2 = uint8(2) // MIDs stored in nanoseconds
 )
 
-const infoVersion = infoVersion2 // Phase 2: write version 2 (nanoseconds)
+const infoVersion = infoVersion2
 
 var (
 	asyncSearchActiveSearches = promauto.NewGauge(prometheus.GaugeOpts{
@@ -147,7 +147,7 @@ type fracSearchState struct {
 }
 
 type asyncSearchInfo struct {
-	Version uint8 `json:"version"`
+	Version uint8
 
 	// Finished is true if there are no fracs waiting to be processed.
 	//
@@ -181,7 +181,7 @@ func newAsyncSearchInfo(r AsyncSearchRequest, list fracmanager.List) asyncSearch
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return asyncSearchInfo{
-		Version:    infoVersion, // Set version based on current phase
+		Version:    infoVersion,
 		Finished:   false,
 		Error:      "",
 		CanceledAt: time.Time{},
