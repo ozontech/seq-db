@@ -12,8 +12,8 @@ import (
 
 	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/mappingprovider"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/seq"
@@ -52,12 +52,11 @@ func makeBulkRequest(cnt int) *storeapi.BulkRequest {
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	for i := 0; i < cnt; i++ {
 		id := seq.SimpleID(i + 1)
 		doc := []byte("document")
-		tokens := seq.Tokens("_all_:", "service:100500", "k8s_pod:"+strconv.Itoa(i))
-		dp.Append(doc, nil, id, tokens)
+		dp.Append(doc, nil, id, "_all_:", "service:100500", "k8s_pod:"+strconv.Itoa(i))
 	}
 	req := &storeapi.BulkRequest{Count: int64(cnt)}
 	req.Docs, req.Metas = dp.Provide()

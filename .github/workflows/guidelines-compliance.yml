@@ -31,8 +31,10 @@ jobs:
           echo "module.exports = { extends: ['@commitlint/config-conventional'] };" > commitlint.config.js
 
       - name: Validate PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          echo "${{ github.event.pull_request.title }}" | npx commitlint
+          echo $PR_TITLE | npx commitlint
 
       - name: Comment on PR if validation fails
         if: failure()
@@ -55,9 +57,9 @@ jobs:
     steps:
       - name: Validate branch name
         id: validate-branch
+        env:
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
         run: |
-          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
-          
           # Pattern: {issue-number}-{branch-name}
           # Issue number must be 0 or positive integer
           BRANCH_PATTERN="^(0|[1-9][0-9]*)-[a-z0-9]+(-[a-z0-9]+)*$"
