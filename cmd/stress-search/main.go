@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/alecthomas/units"
 
@@ -59,10 +60,9 @@ func main() {
 		cancel()
 	}()
 
-	conn, err := grpc.DialContext(
-		ctx,
+	conn, err := grpc.NewClient(
 		*endpoint,
-		grpc.WithInsecure(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithStatsHandler(&tracing.ClientHandler{}),
 	)
 

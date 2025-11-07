@@ -46,10 +46,12 @@ func newStopwatchMetricSampled(sw *Stopwatch, parent *metricSampled) *metricSamp
 		parent:           parent,
 		children:         make(map[string]*metricSampled),
 		samplingSequence: expSamplingSequence(),
+		stopped:          true,
 	}
 }
 
 func (m *metricSampled) start() {
+	m.sw.metric = m
 	m.stopped = false
 	m.parent.unstopped++
 	if m.needSkip() {

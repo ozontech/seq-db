@@ -184,7 +184,7 @@ func (tl *TokenList) getTokenProvider(field string) *activeTokenProvider {
 	}
 }
 
-func (tl *TokenList) FindPattern(ctx context.Context, t parser.Token, tids []uint32) ([]uint32, error) {
+func (tl *TokenList) FindPattern(ctx context.Context, t parser.Token) ([]uint32, error) {
 	field := parser.GetField(t)
 	tp := tl.getTokenProvider(field)
 	tids, err := pattern.Search(ctx, t, tp)

@@ -1,11 +1,5 @@
 package seq
 
-import (
-	"strings"
-
-	"github.com/ozontech/seq-db/util"
-)
-
 const (
 	TokenAll    = "_all_"
 	TokenExists = "_exists_"
@@ -47,31 +41,4 @@ func init() {
 	for k, v := range TokenTypesToNames {
 		NamesToTokenTypes[v] = k
 	}
-}
-
-type Token struct {
-	Field []byte
-	Val   []byte
-}
-
-func Tokens(tokens ...string) []Token {
-	r := make([]Token, 0)
-	for _, tokenStr := range tokens {
-		fieldPos := strings.IndexByte(tokenStr, ':')
-		var t Token
-		if fieldPos < 0 {
-			t = Token{
-				Field: util.StringToByteUnsafe(tokenStr),
-				Val:   []byte("some_val")}
-		} else {
-			t = Token{
-				Field: util.StringToByteUnsafe(tokenStr[:fieldPos]),
-				Val:   util.StringToByteUnsafe(tokenStr[fieldPos+1:]),
-			}
-		}
-
-		r = append(r, t)
-	}
-
-	return r
 }

@@ -47,38 +47,37 @@ type Ingestor struct {
 	isStopped atomic.Bool
 }
 
-func clientsFromConfig(ctx context.Context, config search.Config) (map[string]storeapi.StoreApiClient, error) {
+func clientsFromConfig(config search.Config) (map[string]storeapi.StoreApiClient, error) {
 	clients := map[string]storeapi.StoreApiClient{}
-	if err := appendClients(ctx, clients, config.HotStores.Shards); err != nil {
+	if err := appendClients(clients, config.HotStores.Shards); err != nil {
 		return nil, err
 	}
 	if config.HotReadStores != nil {
-		if err := appendClients(ctx, clients, config.HotReadStores.Shards); err != nil {
+		if err := appendClients(clients, config.HotReadStores.Shards); err != nil {
 			return nil, err
 		}
 	}
 	if config.WriteStores != nil {
-		if err := appendClients(ctx, clients, config.WriteStores.Shards); err != nil {
+		if err := appendClients(clients, config.WriteStores.Shards); err != nil {
 			return nil, err
 		}
 	}
 	if config.ReadStores != nil {
-		if err := appendClients(ctx, clients, config.ReadStores.Shards); err != nil {
+		if err := appendClients(clients, config.ReadStores.Shards); err != nil {
 			return nil, err
 		}
 	}
 	return clients, nil
 }
 
-func appendClients(ctx context.Context, clients map[string]storeapi.StoreApiClient, shards [][]string) error {
+func appendClients(clients map[string]storeapi.StoreApiClient, shards [][]string) error {
 	for _, shard := range shards {
 		for _, replica := range shard {
 			if _, has := clients[replica]; has {
 				continue
 			}
 			// this doesn't block, and if store is down, it will try to reconnect in background
-			conn, err := grpc.DialContext(
-				ctx,
+			conn, err := grpc.NewClient(
 				replica,
 				grpc.WithTransportCredentials(insecure.NewCredentials()),
 				grpc.WithStatsHandler(&tracing.ClientHandler{}),
@@ -132,7 +131,7 @@ func NewIngestor(config IngestorConfig, store *storeapiclient.Store) (*Ingestor,
 		config.Bulk.HotStores = stores.NewStoresFromString("memory", 1)
 		config.Search.HotStores = stores.NewStoresFromString("memory", 1)
 	} else {
-		clients, err = clientsFromConfig(ctx, config.Search)
+		clients, err = clientsFromConfig(config.Search)
 		if err != nil {
 			cancel()
 			return nil, fmt.Errorf("initialize clients: %s", err)

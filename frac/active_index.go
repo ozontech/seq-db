@@ -182,7 +182,7 @@ func (si *activeTokenIndex) GetValByTID(tid uint32) []byte {
 }
 
 func (si *activeTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
-	return si.tokenList.FindPattern(si.ctx, t, nil)
+	return si.tokenList.FindPattern(si.ctx, t)
 }
 
 func (si *activeTokenIndex) GetLIDsFromTIDs(tids []uint32, _ lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {

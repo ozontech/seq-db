@@ -2,46 +2,23 @@ package bulk
 
 import (
 	"context"
-	"encoding/binary"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/ozontech/seq-db/seq"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/network/circuitbreaker"
 	"github.com/ozontech/seq-db/proxy/stores"
+	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"
-)
-
-var (
-	inflightBulks = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "seq_db_ingestor",
-		Subsystem: "bulk",
-		Name:      "in_flight_queries_total",
-		Help:      "",
-	})
-
-	bulkParseDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_ingestor",
-		Subsystem: "bulk",
-		Name:      "parse_duration_seconds",
-		Help:      "",
-		Buckets:   metric.SecondsBuckets,
-	})
 )
 
 type MappingProvider interface {
@@ -142,29 +119,6 @@ func (i *Ingestor) Stop() {
 
 var ErrTooManyInflightBulks = errors.New("too many inflight bulks, dropping")
 
-var (
-	rateLimitedTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_ingestor",
-		Name:      "rate_limited_total",
-		Help:      "Count of rate limited requests",
-	})
-
-	docsWritten = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "seq_db_ingestor",
-		Subsystem: "bulk",
-		Name:      "docs_written",
-		Help:      "",
-		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
-	})
-
-	notAnObjectTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_ingestor",
-		Subsystem: "bulk",
-		Name:      "not_an_object_errors_total",
-		Help:      "Number of ingestion errors due to incorrect document type",
-	})
-)
-
 func (i *Ingestor) ProcessDocuments(ctx context.Context, requestTime time.Time, readNext func() ([]byte, error)) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, consts.BulkTimeout)
 	defer cancel()
@@ -186,10 +140,10 @@ func (i *Ingestor) ProcessDocuments(ctx context.Context, requestTime time.Time, 
 
 	t := time.Now()
 
-	compressor := frac.GetDocsMetasCompressor(i.config.DocsZSTDCompressLevel, i.config.MetasZSTDCompressLevel)
-	defer frac.PutDocMetasCompressor(compressor)
+	compressor := indexer.GetDocsMetasCompressor(i.config.DocsZSTDCompressLevel, i.config.MetasZSTDCompressLevel)
+	defer indexer.PutDocMetasCompressor(compressor)
 
-	total, err := i.processDocsToCompressor(compressor, requestTime, readNext)
+	total, docs, metas, err := i.processDocsToCompressor(compressor, requestTime, readNext)
 	if err != nil {
 		return 0, err
 	}
@@ -197,8 +151,6 @@ func (i *Ingestor) ProcessDocuments(ctx context.Context, requestTime time.Time, 
 		logger.Warn("bulk empty request, skipping")
 		return 0, nil
 	}
-
-	docs, metas := compressor.DocsMetas()
 
 	metric.IngestorBulkDocProvideDurationSeconds.Observe(time.Since(t).Seconds())
 
@@ -228,79 +180,46 @@ var (
 )
 
 func (i *Ingestor) processDocsToCompressor(
-	compressor *frac.DocsMetasCompressor,
+	compressor *indexer.DocsMetasCompressor,
 	requestTime time.Time,
 	readNext func() ([]byte, error),
-) (int, error) {
-	parseDuration := time.Duration(0)
-
+) (int, []byte, []byte, error) {
 	proc := i.getProcessor()
 	defer i.putProcessor(proc)
 
 	binaryDocs := binaryDocsPool.Get().(*bytespool.Buffer)
 	defer binaryDocsPool.Put(binaryDocs)
 	binaryDocs.Reset()
+
 	binaryMetas := binaryMetasPool.Get().(*bytespool.Buffer)
 	defer binaryMetasPool.Put(binaryMetas)
 	binaryMetas.Reset()
 
-	total := 0
-	for {
-		originalDoc, err := readNext()
-		if err != nil {
-			return total, fmt.Errorf("reading next document: %s", err)
-		}
-		if originalDoc == nil {
-			break
-		}
-		parseStart := time.Now()
-		doc, metas, err := proc.Process(originalDoc, requestTime)
-		if err != nil {
-			if errors.Is(err, errNotAnObject) {
-				logger.Error("unable to process the document because it is not an object", zap.Any("document", json.RawMessage(originalDoc)))
-				notAnObjectTotal.Inc()
-				continue
-			}
-			return total, fmt.Errorf("processing doc: %s", err)
-		}
-		parseDuration += time.Since(parseStart)
-
-		binaryDocs.B = binary.LittleEndian.AppendUint32(binaryDocs.B, uint32(len(doc)))
-		binaryDocs.B = append(binaryDocs.B, doc...)
-		for _, meta := range metas {
-			binaryMetas.B = marshalAppendMeta(binaryMetas.B, meta)
-		}
-		total++
+	var (
+		err   error
+		total int
+	)
+	total, binaryDocs.B, binaryMetas.B, err = proc.ProcessBulk(requestTime, binaryDocs.B, binaryMetas.B, readNext)
+	if err != nil {
+		return 0, nil, nil, err
 	}
 
-	bulkParseDurationSeconds.Observe(parseDuration.Seconds())
-
 	compressor.CompressDocsAndMetas(binaryDocs.B, binaryMetas.B)
+	docs, metas := compressor.DocsMetas()
 
-	return total, nil
+	return total, docs, metas, nil
 }
 
-func marshalAppendMeta(dst []byte, meta frac.MetaData) []byte {
-	metaLenPosition := len(dst)
-	dst = append(dst, make([]byte, 4)...)
-	dst = meta.MarshalBinaryTo(dst)
-	// Metadata length = len(slice after append) - len(slice before append).
-	metaLen := uint32(len(dst) - metaLenPosition - 4)
-	// Put metadata length before metadata bytes.
-	binary.LittleEndian.PutUint32(dst[metaLenPosition:], metaLen)
-	return dst
-}
-
-func (i *Ingestor) getProcessor() *processor {
+func (i *Ingestor) getProcessor() *indexer.Processor {
 	procEface := i.procPool.Get()
 	if procEface != nil {
 		// The proc already initialized with current ingestor config, so we don't need to reinit it.
-		return procEface.(*processor)
+		return procEface.(*indexer.Processor)
 	}
 	index := rand.Uint64() % consts.IngestorMaxInstances
-	return newBulkProcessor(i.config.MappingProvider.GetMapping(), i.tokenizers, i.config.AllowedTimeDrift, i.config.FutureAllowedTimeDrift, index)
+	return indexer.NewProcessor(i.config.MappingProvider.GetMapping(), i.tokenizers, i.config.AllowedTimeDrift, i.config.FutureAllowedTimeDrift, index)
 }
 
-func (i *Ingestor) putProcessor(proc *processor) {
+func (i *Ingestor) putProcessor(proc *indexer.Processor) {
 	i.procPool.Put(proc)
 }
