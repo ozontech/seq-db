@@ -10,7 +10,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/logger"
 )
@@ -67,17 +66,6 @@ func (fc *fracInfoCache) LoadFromDisk(fileName string) {
 		)
 		return
 	}
-
-	versionMismatchFracs := make([]string, 0)
-	for frac, info := range fc.cache {
-		if info.BinaryDataVer != config.CurrentFracVersion {
-			versionMismatchFracs = append(versionMismatchFracs, frac)
-		}
-	}
-	for _, key := range versionMismatchFracs {
-		delete(fc.cache, key)
-	}
-
 	logger.Info("frac-cache loaded from disk",
 		zap.String("filename", fileName),
 		zap.Int("cache_entries", len(fc.cache)),
