@@ -80,12 +80,17 @@ type grpcStreamIterator struct {
 	host         string
 	stream       storeapi.StoreApi_FetchClient
 	totalIDs     int
-	midPrecision string
+	midPrecision seq.MIDPrecision
 
 	fetched int
 }
 
-func newGrpcStreamIterator(stream storeapi.StoreApi_FetchClient, host string, source uint64, totalIDs int, midPrecision string) *grpcStreamIterator {
+func newGrpcStreamIterator(
+	stream storeapi.StoreApi_FetchClient,
+	host string,
+	source uint64,
+	totalIDs int,
+	midPrecision seq.MIDPrecision) *grpcStreamIterator {
 	return &grpcStreamIterator{
 		stream:       stream,
 		source:       source,

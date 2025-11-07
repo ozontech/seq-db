@@ -133,3 +133,32 @@ func NewID(t time.Time, randomness uint64) ID {
 func (m MID) String() string {
 	return util.MsTsToESFormat(uint64(m))
 }
+
+type MIDPrecision uint8
+
+const (
+	MIDPrecisionMilliseconds MIDPrecision = iota
+	MIDPrecisionNanoseconds
+)
+
+func (p MIDPrecision) String() string {
+	switch p {
+	case MIDPrecisionMilliseconds:
+		return "ms"
+	case MIDPrecisionNanoseconds:
+		return "ns"
+	default:
+		return "ms"
+	}
+}
+
+func ParseMIDPrecision(s string) MIDPrecision {
+	switch s {
+	case "ms":
+		return MIDPrecisionMilliseconds
+	case "ns":
+		return MIDPrecisionNanoseconds
+	default:
+		return MIDPrecisionMilliseconds
+	}
+}

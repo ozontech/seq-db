@@ -165,12 +165,12 @@ func (si *Ingestor) FetchAsyncSearchResult(
 					}
 				}
 
-				midPrecision := "ms"
+				midPrecision := seq.MIDPrecisionMilliseconds
 				if precisionValues := md.Get(consts.MIDPrecisionHeader); len(precisionValues) > 0 {
-					midPrecision = precisionValues[0]
+					midPrecision = seq.ParseMIDPrecision(precisionValues[0])
 				}
 
-				if midPrecision == "ns" {
+				if midPrecision == seq.MIDPrecisionNanoseconds {
 					response := storeResp.Response
 					for _, id := range response.IdSources {
 						id.Id.Mid = uint64(seq.NanosToMID(id.Id.Mid))

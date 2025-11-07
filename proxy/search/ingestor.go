@@ -230,10 +230,10 @@ func (si *Ingestor) singleDocsStream(ctx context.Context, explain bool, source u
 	}
 
 	md, err := stream.Header()
-	midPrecision := "ms"
+	midPrecision := seq.MIDPrecisionMilliseconds
 	if md != nil && err == nil {
 		if precisionValues := md.Get(consts.MIDPrecisionHeader); len(precisionValues) > 0 {
-			midPrecision = precisionValues[0]
+			midPrecision = seq.ParseMIDPrecision(precisionValues[0])
 		}
 	}
 	if err != nil {
@@ -627,12 +627,12 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 
 	// Check the store's MID precision from response header
 	// If header indicates milliseconds, then convert to nanoseconds
-	midPrecision := "ms"
+	midPrecision := seq.MIDPrecisionMilliseconds
 	if precisionHeaderValues := md.Get(consts.MIDPrecisionHeader); len(precisionHeaderValues) > 0 {
-		midPrecision = precisionHeaderValues[0]
+		midPrecision = seq.ParseMIDPrecision(precisionHeaderValues[0])
 	}
 
-	if midPrecision == "ns" {
+	if midPrecision == seq.MIDPrecisionNanoseconds {
 		for _, id := range data.IdSources {
 			id.Id.Mid = uint64(seq.NanosToMID(id.Id.Mid))
 		}

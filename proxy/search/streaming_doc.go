@@ -27,11 +27,11 @@ func NewStreamingDoc(idSource seq.IDSource, data []byte) StreamingDoc {
 	}
 }
 
-func unpackDoc(data []byte, source uint64, midPrecision string) StreamingDoc {
+func unpackDoc(data []byte, source uint64, midPrecision seq.MIDPrecision) StreamingDoc {
 	block := storage.DocBlock(data)
 	mid := block.GetExt1()
 
-	if midPrecision == "ns" {
+	if midPrecision == seq.MIDPrecisionNanoseconds {
 		mid = uint64(seq.NanosToMID(mid))
 	}
 	doc := StreamingDoc{
