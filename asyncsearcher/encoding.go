@@ -44,7 +44,7 @@ func unmarshalQPR(dst *seq.QPR, src []byte, idsLimit int) (_ []byte, err error) 
 	version := src[0]
 	src = src[1:]
 	if version != qprBinVersion1 && version != qprBinVersion2 {
-		return nil, fmt.Errorf("invalid QPR version %d; want %d or %d", version, qprBinVersion1, qprBinVersion2)
+		return nil, fmt.Errorf("invalid QPR version %d", version)
 	}
 
 	idsBlocksLen := int(be.Uint64(src))

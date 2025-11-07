@@ -45,8 +45,6 @@ const (
 	infoVersion2 = uint8(2) // MIDs stored in nanoseconds
 )
 
-const infoVersion = infoVersion1
-
 var (
 	asyncSearchActiveSearches = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
@@ -181,7 +179,7 @@ func newAsyncSearchInfo(r AsyncSearchRequest, list fracmanager.List) asyncSearch
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return asyncSearchInfo{
-		Version:    infoVersion,
+		Version:    infoVersion1,
 		Finished:   false,
 		Error:      "",
 		CanceledAt: time.Time{},
@@ -592,7 +590,7 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 		if info.Version == infoVersion2 {
 			info.Request.Params.From = seq.NanosToMID(uint64(info.Request.Params.From))
 			info.Request.Params.To = seq.NanosToMID(uint64(info.Request.Params.To))
-			info.Version = infoVersion
+			info.Version = infoVersion1
 		}
 
 		info.merged.Store(areQPRsMerged[requestID])
