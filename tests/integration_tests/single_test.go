@@ -85,6 +85,35 @@ func (s *SingleTestSuite) TestBasicSearchHotRead() {
 		Shards: [][]string{},
 		Vers:   []string{},
 	}
+	s.assertSearch(docStrs)
+}
+
+func (s *SingleTestSuite) assertSearch(docStrs []string) {
+	tests := []struct {
+		query   string
+		indexes []int
+	}{
+		{`service: service_a`, []int{3, 0}},
+		{`traceID:abcdef`, []int{1, 0}},
+		{`level: 1`, []int{1, 3, 0}},
+		{`message: "message text"`, []int{2, 1, 3, 0}},
+		{`message: "other text"`, []int{2, 1}},
+		{`traceID: abcd*`, []int{1, 0}},
+		{`traceID: a*`, []int{2, 1, 0}},
+		{`traceID: a*f`, []int{1, 0}},
+		{`traceID: a*a`, []int{2}},
+		{`service: service*a`, []int{3, 0}},
+		{`message: "message\ som*"`, []int{3, 0}},
+	}
+
+	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
+		for _, test := range tests {
+			s.AssertSearch(test.query, docStrs, test.indexes)
+		}
+		// test limit
+		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderAsc))
+		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderDesc))
+	})
 }
 
 func (s *SingleTestSuite) TestSearchAgg() {
