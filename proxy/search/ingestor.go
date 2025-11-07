@@ -637,7 +637,6 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 			id.Id.Mid = uint64(seq.NanosToMID(id.Id.Mid))
 		}
 
-		// Convert histogram MIDs from microseconds to milliseconds if needed
 		if len(data.Histogram) > 0 {
 			newHist := make(map[uint64]uint64, len(data.Histogram))
 			for mid, v := range data.Histogram {
