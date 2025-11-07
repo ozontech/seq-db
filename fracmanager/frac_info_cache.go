@@ -10,12 +10,56 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/seq"
 )
 
 const defaultFilePermission = 0o660
+
+// infoJSON is a temporary struct for JSON marshaling/unmarshaling
+// that always stores From and To in milliseconds for backward compatibility
+type infoJSON struct {
+	*common.Info
+	From uint64 `json:"from"`
+	To   uint64 `json:"to"`
+}
+
+// MarshalJSON implements custom JSON marshaling to always store From and To in milliseconds
+func (e *infoJSON) MarshalJSON() ([]byte, error) {
+	// Use type alias to avoid infinite recursion
+	type Alias common.Info
+	return json.Marshal(&struct {
+		From uint64 `json:"from"`
+		To   uint64 `json:"to"`
+		*Alias
+	}{
+		From:  uint64(seq.MIDToMillis(e.Info.From)),
+		To:    seq.MIDToCeilingMillis(e.Info.To),
+		Alias: (*Alias)(e.Info),
+	})
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling to convert From and To from milliseconds to nanoseconds
+func (e *infoJSON) UnmarshalJSON(data []byte) error {
+	e.Info = &common.Info{}
+
+	// Use type alias to avoid infinite recursion
+	type Alias common.Info
+	tmp := &struct {
+		From uint64 `json:"from"`
+		To   uint64 `json:"to"`
+		*Alias
+	}{
+		Alias: (*Alias)(e.Info),
+	}
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	e.Info.From = seq.MillisToMID(tmp.From)
+	e.Info.To = seq.MillisToMID(tmp.To)
+	return nil
+}
 
 type fracInfoCache struct {
 	dataDir  string
@@ -60,24 +104,17 @@ func (fc *fracInfoCache) LoadFromDisk(fileName string) {
 		return
 	}
 
-	err = json.Unmarshal(content, &fc.cache)
+	cacheJSON := make(map[string]*infoJSON)
+	err = json.Unmarshal(content, &cacheJSON)
 	if err != nil {
 		logger.Warn("can't unmarshal frac-cache, new frac-cache will be created later on",
 			zap.Error(err),
 		)
 		return
 	}
-
-	versionMismatchFracs := make([]string, 0)
-	for frac, info := range fc.cache {
-		if info.BinaryDataVer != config.CurrentFracVersion {
-			versionMismatchFracs = append(versionMismatchFracs, frac)
-		}
+	for frac, entry := range cacheJSON {
+		fc.cache[frac] = entry.Info
 	}
-	for _, key := range versionMismatchFracs {
-		delete(fc.cache, key)
-	}
-
 	logger.Info("frac-cache loaded from disk",
 		zap.String("filename", fileName),
 		zap.Int("cache_entries", len(fc.cache)),
@@ -123,7 +160,12 @@ func (fc *fracInfoCache) getContentWithVersion() (uint64, []byte, error) {
 		return 0, nil, nil // no changes
 	}
 
-	content, err := json.Marshal(fc.cache)
+	cacheJSON := make(map[string]*infoJSON, len(fc.cache))
+	for k, v := range fc.cache {
+		cacheJSON[k] = &infoJSON{Info: v}
+	}
+
+	content, err := json.Marshal(cacheJSON)
 	if err != nil {
 		return 0, nil, err
 	}

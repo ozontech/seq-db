@@ -130,6 +130,15 @@ func MIDToMillis(t MID) int64 {
 	return int64(uint64(t) / uint64(1000000))
 }
 
+func MIDToCeilingMillis(t MID) uint64 {
+	nanos := uint64(t)
+	if nanos%1000000 != 0 {
+		return (nanos / 1000000) + 1
+	} else {
+		return nanos / 1000000
+	}
+}
+
 func MIDToDuration(t MID) time.Duration {
 	return time.Duration(t)
 }
