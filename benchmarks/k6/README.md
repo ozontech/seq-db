@@ -2,6 +2,9 @@
 
 ## Preparation
 
+### Test Dataset Preparation
+Before running the benchmarks, you must start the seq-db instance and load the test data into it. Instructions for setup and data loading are provided in the [document](/benchmarks/README.md).
+
 ### Installing k6
 ```bash
 # For MacOS (via Homebrew)
