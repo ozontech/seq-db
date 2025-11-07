@@ -13,11 +13,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/mappingprovider"
 	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/tokenizer"
 )
 
 func TestProcessDocuments(t *testing.T) {
@@ -92,7 +93,7 @@ func TestProcessDocuments(t *testing.T) {
 	type TestPayload struct {
 		InDocs  []string
 		ExpDocs []string
-		ExpMeta []frac.MetaData
+		ExpMeta []indexer.MetaData
 	}
 	type TestCase struct {
 		Name    string
@@ -111,10 +112,10 @@ func TestProcessDocuments(t *testing.T) {
 				return TestPayload{
 					InDocs:  []string{"{}"},
 					ExpDocs: nil,
-					ExpMeta: []frac.MetaData{{
+					ExpMeta: []indexer.MetaData{{
 						ID:     id,
 						Size:   2,
-						Tokens: []frac.MetaToken{newToken(seq.TokenAll, "")},
+						Tokens: []tokenizer.MetaToken{newToken(seq.TokenAll, "")},
 					}},
 				}
 			},
@@ -122,7 +123,7 @@ func TestProcessDocuments(t *testing.T) {
 		{
 			Name: "text_with_asterisks",
 			Payload: func() TestPayload {
-				tk := func(val string) frac.MetaToken {
+				tk := func(val string) tokenizer.MetaToken {
 					return newToken("message", val)
 				}
 				return TestPayload{
@@ -139,15 +140,15 @@ func TestProcessDocuments(t *testing.T) {
 						`{"message":"postfix asterisk *"}`,
 					},
 					ExpDocs: nil,
-					ExpMeta: []frac.MetaData{
-						{ID: id, Size: 30, Tokens: []frac.MetaToken{all, tk("*prefix_asterisk"), existsMsg}},
-						{ID: id, Size: 31, Tokens: []frac.MetaToken{all, tk("*"), tk("prefix_asterisk"), existsMsg}},
-						{ID: id, Size: 28, Tokens: []frac.MetaToken{all, tk("infix*asterisk"), existsMsg}},
-						{ID: id, Size: 30, Tokens: []frac.MetaToken{all, tk("infix"), tk("*"), tk("asterisk"), existsMsg}},
-						{ID: id, Size: 29, Tokens: []frac.MetaToken{all, tk("infix"), tk("*asterisk"), existsMsg}},
-						{ID: id, Size: 29, Tokens: []frac.MetaToken{all, tk("infix*"), tk("asterisk"), existsMsg}},
-						{ID: id, Size: 31, Tokens: []frac.MetaToken{all, tk("postfix"), tk("asterisk*"), existsMsg}},
-						{ID: id, Size: 32, Tokens: []frac.MetaToken{all, tk("postfix"), tk("asterisk"), tk("*"), existsMsg}},
+					ExpMeta: []indexer.MetaData{
+						{ID: id, Size: 30, Tokens: []tokenizer.MetaToken{all, tk("*prefix_asterisk"), existsMsg}},
+						{ID: id, Size: 31, Tokens: []tokenizer.MetaToken{all, tk("*"), tk("prefix_asterisk"), existsMsg}},
+						{ID: id, Size: 28, Tokens: []tokenizer.MetaToken{all, tk("infix*asterisk"), existsMsg}},
+						{ID: id, Size: 30, Tokens: []tokenizer.MetaToken{all, tk("infix"), tk("*"), tk("asterisk"), existsMsg}},
+						{ID: id, Size: 29, Tokens: []tokenizer.MetaToken{all, tk("infix"), tk("*asterisk"), existsMsg}},
+						{ID: id, Size: 29, Tokens: []tokenizer.MetaToken{all, tk("infix*"), tk("asterisk"), existsMsg}},
+						{ID: id, Size: 31, Tokens: []tokenizer.MetaToken{all, tk("postfix"), tk("asterisk*"), existsMsg}},
+						{ID: id, Size: 32, Tokens: []tokenizer.MetaToken{all, tk("postfix"), tk("asterisk"), tk("*"), existsMsg}},
 					},
 				}
 			},
@@ -159,10 +160,10 @@ func TestProcessDocuments(t *testing.T) {
 				return TestPayload{
 					InDocs:  doc,
 					ExpDocs: doc,
-					ExpMeta: []frac.MetaData{{
+					ExpMeta: []indexer.MetaData{{
 						ID:   id,
 						Size: 22,
-						Tokens: []frac.MetaToken{
+						Tokens: []tokenizer.MetaToken{
 							newToken(seq.TokenAll, ""),
 							newToken(seq.TokenExists, "exists_only"),
 						},
@@ -177,8 +178,8 @@ func TestProcessDocuments(t *testing.T) {
 				return TestPayload{
 					InDocs:  []string{doc},
 					ExpDocs: []string{doc},
-					ExpMeta: []frac.MetaData{
-						{ID: id, Size: uint32(len(doc)), Tokens: []frac.MetaToken{
+					ExpMeta: []indexer.MetaData{
+						{ID: id, Size: uint32(len(doc)), Tokens: []tokenizer.MetaToken{
 							newToken(seq.TokenAll, ""),
 							newToken("_exists_", "tags.level"),
 							newToken("_exists_", "tags.message"),
@@ -197,10 +198,10 @@ func TestProcessDocuments(t *testing.T) {
 				return TestPayload{
 					InDocs:  []string{doc1, doc2, doc3},
 					ExpDocs: nil,
-					ExpMeta: []frac.MetaData{
-						{ID: id, Size: uint32(len(doc1)), Tokens: []frac.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "level")}},
-						{ID: id, Size: uint32(len(doc2)), Tokens: []frac.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "message")}},
-						{ID: id, Size: uint32(len(doc3)), Tokens: []frac.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "path")}},
+					ExpMeta: []indexer.MetaData{
+						{ID: id, Size: uint32(len(doc1)), Tokens: []tokenizer.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "level")}},
+						{ID: id, Size: uint32(len(doc2)), Tokens: []tokenizer.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "message")}},
+						{ID: id, Size: uint32(len(doc3)), Tokens: []tokenizer.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "path")}},
 					},
 				}
 			},
@@ -209,7 +210,7 @@ func TestProcessDocuments(t *testing.T) {
 			Name: "simple_document",
 			Payload: func() TestPayload {
 				const doc = `{"level":"error", "message":" request 🫦 failed! ", "error": "context cancelled", "shard": "1", "path":"http://localhost:8080/example"}`
-				meta := frac.MetaData{ID: id, Size: uint32(len(doc)), Tokens: []frac.MetaToken{
+				meta := indexer.MetaData{ID: id, Size: uint32(len(doc)), Tokens: []tokenizer.MetaToken{
 					newToken(seq.TokenAll, ""),
 					newToken("level", "error"),
 					newToken(seq.TokenExists, "level"),
@@ -231,7 +232,7 @@ func TestProcessDocuments(t *testing.T) {
 				return TestPayload{
 					InDocs:  []string{doc, doc, doc},
 					ExpDocs: []string{doc, doc, doc},
-					ExpMeta: []frac.MetaData{meta, meta, meta},
+					ExpMeta: []indexer.MetaData{meta, meta, meta},
 				}
 			},
 		},
@@ -323,7 +324,7 @@ func TestProcessDocuments(t *testing.T) {
 				return TestPayload{
 					InDocs:  []string{string(inTrace)},
 					ExpDocs: []string{string(expTrace)},
-					ExpMeta: []frac.MetaData{
+					ExpMeta: []indexer.MetaData{
 						{ID: id, Size: uint32(len(expTrace)), Tokens: buildKeywordTokens(
 							"trace_id", "aaaaaaaaaaabcmadwewubq==",
 							"trace_duration", "137252000",
@@ -378,7 +379,7 @@ func TestProcessDocuments(t *testing.T) {
 					},
 				})
 
-				meta := []frac.MetaData{
+				meta := []indexer.MetaData{
 					{ID: id, Size: uint32(len(doc)), Tokens: buildKeywordTokens()},
 					{ID: id, Size: 0, Tokens: buildKeywordTokens("spans.span_id", "1", "spans.operation_name", "op1")},
 					{ID: id, Size: 0, Tokens: buildKeywordTokens("spans.span_id", "2", "spans.operation_name", "op2")},
@@ -432,9 +433,9 @@ func TestProcessDocuments(t *testing.T) {
 			binaryMetas, err := storage.DocBlock(c.metas).DecompressTo(nil)
 			require.NoError(t, err)
 			metasUnpacker := packer.NewBytesUnpacker(binaryMetas)
-			var gotMetas []frac.MetaData
+			var gotMetas []indexer.MetaData
 			for metasUnpacker.Len() > 0 {
-				meta := frac.MetaData{}
+				meta := indexer.MetaData{}
 				r.NoError(meta.UnmarshalBinary(metasUnpacker.GetBinary()))
 				gotMetas = append(gotMetas, meta)
 			}
@@ -527,15 +528,15 @@ func newMapping(mappingType seq.TokenizerType) seq.MappingTypes {
 	return seq.NewSingleType(mappingType, "", int(units.KiB))
 }
 
-func newToken(k, v string) frac.MetaToken {
-	return frac.MetaToken{
+func newToken(k, v string) tokenizer.MetaToken {
+	return tokenizer.MetaToken{
 		Key:   []byte(k),
 		Value: []byte(v),
 	}
 }
 
-func buildKeywordTokens(kvs ...string) []frac.MetaToken {
-	var tokens []frac.MetaToken
+func buildKeywordTokens(kvs ...string) []tokenizer.MetaToken {
+	var tokens []tokenizer.MetaToken
 
 	tokens = append(tokens, newToken("_all_", ""))
 

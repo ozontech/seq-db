@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/bytespool"
+	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -95,7 +96,7 @@ func (ai *ActiveIndexer) Stop() {
 
 var metaDataPool = sync.Pool{
 	New: func() any {
-		return new(MetaData)
+		return new(indexer.MetaData)
 	},
 }
 
@@ -121,7 +122,7 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 		collector.Init(blockIndex)
 
 		parsingMetric := sw.Start("metas_parsing")
-		meta := metaDataPool.Get().(*MetaData)
+		meta := metaDataPool.Get().(*indexer.MetaData)
 		for len(metasPayload) > 0 {
 			n := binary.LittleEndian.Uint32(metasPayload)
 			metasPayload = metasPayload[4:]

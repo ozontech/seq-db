@@ -14,6 +14,7 @@ import (
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/seq"
 	testscommon "github.com/ozontech/seq-db/tests/common"
 )
@@ -28,16 +29,16 @@ func newFracManagerWithBackgroundStart(ctx context.Context, config *Config) (*Fr
 	return fracManager, nil
 }
 
-func addDummyDoc(t *testing.T, fm *FracManager, dp *frac.DocProvider, seqID seq.ID) {
+func addDummyDoc(t *testing.T, fm *FracManager, dp *indexer.TestDocProvider, seqID seq.ID) {
 	doc := []byte("document")
-	dp.Append(doc, nil, seqID, seq.Tokens("service:100500", "k8s_pod", "_all_:"))
+	dp.Append(doc, nil, seqID, "service:100500", "k8s_pod", "_all_:")
 	docs, metas := dp.Provide()
 	err := fm.Append(context.Background(), docs, metas)
 	assert.NoError(t, err)
 }
 
 func MakeSomeFractions(t *testing.T, fm *FracManager) {
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
 	fm.seal(fm.rotate())
 
@@ -362,12 +363,12 @@ func TestReplayFractionsWithMultipleEmptyFracs(t *testing.T) {
 }
 
 func addDocs(t *testing.T, fm *FracManager, docCount int) {
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	for i := 0; i < docCount; i++ {
 		doc := []byte("{\"timestamp\": 0, \"message\": \"msg\"}")
 		docRoot, err := insaneJSON.DecodeBytes(doc)
 		assert.NoError(t, err)
-		dp.Append(doc, docRoot, seq.SimpleID(i), seq.Tokens("service:100500", "k8s_pod", "_all_:"))
+		dp.Append(doc, docRoot, seq.SimpleID(i), "service:100500", "k8s_pod", "_all_:")
 	}
 
 	docs, metas := dp.Provide()
@@ -395,7 +396,7 @@ func TestMatureMode(t *testing.T) {
 	}
 
 	id := 1
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	makeSealedFrac := func(fm *FracManager, docsPerFrac int) {
 		for i := 0; i < docsPerFrac; i++ {
 			addDummyDoc(t, fm, dp, seq.SimpleID(id))
