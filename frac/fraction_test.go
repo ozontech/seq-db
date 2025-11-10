@@ -1026,6 +1026,33 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 	s.AssertSearch(s.query("level:5", withLimit(100)), docs, level5Indexes[:100])
 }
 
+func (s *FractionTestSuite) TestMIDDistribution() {
+	now := time.Now().Truncate(time.Minute)
+	docs := []string{
+		fmt.Sprintf(`{"timestamp":"%s","message":"apple juice"}`, now.Add(-60*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"orange juice"}`, now.Add(-61*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"cider"}`, now.Add(-65*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"red wine"}`, now.Add(-120*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"coca cola"}`, now.Add(-360*time.Minute).Format(time.RFC3339Nano)),
+	}
+
+	s.insertDocuments(docs)
+
+	_, ok := s.fraction.(*Active)
+	if ok {
+		s.Require().Nil(s.fraction.Info().Distribution, "active fraction has MID distribution")
+		return
+	}
+
+	dist := s.fraction.Info().Distribution.GetDist()
+	s.Require().Equal(5, len(dist))
+	s.Require().Equal(now.Add(-360*time.Minute).UTC(), dist[0])
+	s.Require().Equal(now.Add(-120*time.Minute).UTC(), dist[1])
+	s.Require().Equal(now.Add(-65*time.Minute).UTC(), dist[2])
+	s.Require().Equal(now.Add(-61*time.Minute).UTC(), dist[3])
+	s.Require().Equal(now.Add(-60*time.Minute).UTC(), dist[4])
+}
+
 func (s *FractionTestSuite) TestFractionInfo() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message some text", "container":"gateway"}`,

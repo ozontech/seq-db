@@ -147,7 +147,12 @@ func (src *ActiveSealingSource) LastError() error {
 func (src *ActiveSealingSource) prepareInfo() {
 	src.info.MetaOnDisk = 0
 	src.info.SealingTime = uint64(src.created.UnixMilli())
-	src.info.BuildDistribution(src.mids.vals)
+	mids := src.mids.vals
+	if len(mids) > 1 {
+		// skip system MID
+		mids = mids[1:]
+	}
+	src.info.BuildDistribution(mids)
 }
 
 // Info returns index metadata information.
