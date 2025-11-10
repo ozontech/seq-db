@@ -634,7 +634,3 @@ func (fm *FracManager) OffloadForcedForTests() {
 	fm.cleanupFractions(&wg)
 	wg.Wait()
 }
-
-func (fm *FracManager) ResetCacheForTests() {
-	fm.cacheMaintainer.Reset()
-}

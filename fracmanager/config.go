@@ -19,7 +19,6 @@ type Config struct {
 	TotalSize uint64
 	CacheSize uint64
 
-	ShouldReplay      bool
 	ReplayWorkers     int
 	MaintenanceDelay  time.Duration
 	CacheCleanupDelay time.Duration

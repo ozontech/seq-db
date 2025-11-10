@@ -16,10 +16,9 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	common.RecreateDir(dataDir)
 	defer common.RemoveDir(dataDir)
 	config := &Config{
-		FracSize:     1000,
-		TotalSize:    100000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:  1000,
+		TotalSize: 100000,
+		DataDir:   dataDir,
 	}
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), config)
