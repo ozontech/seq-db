@@ -457,6 +457,34 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 3, 5, []int{5, 4, 3})
 }
 
+func (s *FractionTestSuite) TestSearchFromToNanoseconds() {
+	docs := []string{
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000000000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:00.000000001Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:00.000000002Z","message":"bad","level":"3","trace_id":"0","service":"2"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:00.000000003Z","message":"good","level":"4","trace_id":"1","service":"0"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:00.000000004Z","message":"bad","level":"5","trace_id":"1","service":"1"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:00.000000005Z","message":"good","level":"6","trace_id":"1","service":"2"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:00.000000006Z","message":"bad","level":"7","trace_id":"2","service":"0"}`,
+		/*7*/ `{"timestamp":"2000-01-01T13:00:00.000000007Z","message":"good","level":"8","trace_id":"2","service":"1"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	assertSearch := func(query string, fromOffset, toOffset int, expectedIndexes []int) {
+		s.AssertSearch(s.query(
+			query,
+			withFrom(fmt.Sprintf("2000-01-01T13:00:00.000000%03dZ", fromOffset)),
+			withTo(fmt.Sprintf("2000-01-01T13:00:00.000000%03dZ", toOffset))),
+			docs, expectedIndexes)
+	}
+
+	assertSearch(`message:good`, 0, 7, []int{7, 5, 3, 1})
+	assertSearch(`message:bad`, 0, 7, []int{6, 4, 2, 0})
+	assertSearch(`message:good`, 0, 6, []int{5, 3, 1})
+	assertSearch(`message:bad`, 1, 7, []int{6, 4, 2})
+}
+
 func (s *FractionTestSuite) TestSearchWithLimit() {
 	docs := []string{
 		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
@@ -1026,6 +1054,58 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 	s.AssertSearch(s.query("level:5", withLimit(100)), docs, level5Indexes[:100])
 }
 
+func (s *FractionTestSuite) TestContains() {
+	now := time.Now().Truncate(time.Minute)
+	docs := []string{
+		fmt.Sprintf(`{"timestamp":"%s","message":"apple juice"}`, now.Add(-60*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"orange juice"}`, now.Add(-61*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"cider"}`, now.Add(-65*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"wine"}`, now.Add(-123*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"cola"}`, now.Add(-365*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"cola"}`, now.Add(-30*time.Hour).Format(time.RFC3339Nano)),
+	}
+
+	s.insertDocuments(docs)
+
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-60 * time.Minute))))
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-61 * time.Minute))))
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-123 * time.Minute))))
+	// also true, MID distribution bucket is 1 minute
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-60 * time.Minute).Add(-30 * time.Second))))
+	// contains=true: outside MID distribution but within from-to range
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-27 * time.Hour))))
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-30 * time.Hour))))
+	// contains=false: outside MID distribution AND outside from-to range
+	s.Require().False(s.fraction.Contains(seq.TimeToMID(now.Add(-30 * time.Hour).Add(-1 * time.Minute))))
+}
+
+func (s *FractionTestSuite) TestDistribution() {
+	now := time.Now().Truncate(time.Minute)
+	docs := []string{
+		fmt.Sprintf(`{"timestamp":"%s","message":"apple juice"}`, now.Add(-60*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"orange juice"}`, now.Add(-61*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"cider"}`, now.Add(-65*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"wine"}`, now.Add(-120*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":"%s","message":"cola"}`, now.Add(-360*time.Minute).Format(time.RFC3339Nano)),
+	}
+
+	s.insertDocuments(docs)
+
+	_, ok := s.fraction.(*Active)
+	if ok {
+		s.Require().Nil(s.fraction.Info().Distribution, "active fraction has MID distribution")
+		return
+	}
+
+	dist := s.fraction.Info().Distribution.GetDist()
+	s.Require().Equal(5, len(dist))
+	s.Require().Equal(now.Add(-360*time.Minute).UTC(), dist[0])
+	s.Require().Equal(now.Add(-120*time.Minute).UTC(), dist[1])
+	s.Require().Equal(now.Add(-65*time.Minute).UTC(), dist[2])
+	s.Require().Equal(now.Add(-61*time.Minute).UTC(), dist[3])
+	s.Require().Equal(now.Add(-60*time.Minute).UTC(), dist[4])
+}
+
 func (s *FractionTestSuite) TestFractionInfo() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message some text", "container":"gateway"}`,
@@ -1046,8 +1126,8 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(300),
 		"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
 	s.Require().Equal(uint64(583), info.DocsRaw, "doc raw doesn't match")
-	s.Require().Equal(seq.MID(946731625000), info.From, "from doesn't match")
-	s.Require().Equal(seq.MID(946731654000), info.To, "to doesn't match")
+	s.Require().Equal(seq.MID(946731625000000000), info.From, "from doesn't match")
+	s.Require().Equal(seq.MID(946731654000000000), info.To, "to doesn't match")
 
 	switch s.fraction.(type) {
 	case *Active:
@@ -1057,7 +1137,7 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	case *Sealed:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
 		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1600),
-			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
+			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	case *Remote:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
 		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1500),
@@ -1090,7 +1170,7 @@ func (s *FractionTestSuite) query(queryString string, options ...searchOption) *
 
 func withFrom(from string) searchOption {
 	return func(p *processor.SearchParams) error {
-		t, err := time.Parse(time.RFC3339, from)
+		t, err := time.Parse(time.RFC3339Nano, from)
 		if err != nil {
 			return err
 		}
@@ -1101,7 +1181,7 @@ func withFrom(from string) searchOption {
 
 func withTo(to string) searchOption {
 	return func(p *processor.SearchParams) error {
-		t, err := time.Parse(time.RFC3339, to)
+		t, err := time.Parse(time.RFC3339Nano, to)
 		if err != nil {
 			return err
 		}

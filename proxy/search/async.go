@@ -53,7 +53,7 @@ func (si *Ingestor) StartAsyncSearch(ctx context.Context, r AsyncRequest) (Async
 		From:              r.From.UnixMilli(),
 		To:                r.To.UnixMilli(),
 		Aggs:              convertToAggsQuery(r.Aggregations),
-		HistogramInterval: seq.MIDToMillis(r.HistogramInterval),
+		HistogramInterval: int64(seq.MIDToMillis(r.HistogramInterval)),
 		Retention:         durationpb.New(r.Retention),
 		WithDocs:          r.WithDocs,
 		Size:              r.Size,

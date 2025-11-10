@@ -161,8 +161,8 @@ func iterateEvalTree(
 		histogram []uint64
 	)
 	if hasHist {
-		histBase = uint64(seq.MIDToMillis(params.From)) / params.HistInterval
-		histSize := uint64(seq.MIDToMillis(params.To))/params.HistInterval - histBase + 1
+		histBase = seq.MIDToMillis(params.From) / params.HistInterval
+		histSize := seq.MIDToMillis(params.To)/params.HistInterval - histBase + 1
 		histogram = make([]uint64, histSize)
 	}
 

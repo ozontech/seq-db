@@ -54,7 +54,7 @@ func makeBulkRequest(cnt int) *storeapi.BulkRequest {
 
 	dp := indexer.NewTestDocProvider()
 	for i := 0; i < cnt; i++ {
-		id := seq.SimpleID(i + 1)
+		id := seq.SimpleID(int64(i + 1))
 		doc := []byte("document")
 		dp.Append(doc, nil, id, "_all_:", "service:100500", "k8s_pod:"+strconv.Itoa(i))
 	}

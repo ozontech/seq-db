@@ -80,7 +80,7 @@ func (s *Info) BuildDistribution(mids []uint64) {
 }
 
 func (s *Info) InitEmptyDistribution() bool {
-	from := time.UnixMilli(int64(s.From))
+	from := s.From.Time()
 	creationTime := time.UnixMilli(int64(s.CreationTime))
 	if creationTime.Sub(from) < DistributionSpreadThreshold { // no big spread in past
 		return false

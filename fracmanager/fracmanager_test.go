@@ -368,7 +368,7 @@ func addDocs(t *testing.T, fm *FracManager, docCount int) {
 		doc := []byte("{\"timestamp\": 0, \"message\": \"msg\"}")
 		docRoot, err := insaneJSON.DecodeBytes(doc)
 		assert.NoError(t, err)
-		dp.Append(doc, docRoot, seq.SimpleID(i), "service:100500", "k8s_pod", "_all_:")
+		dp.Append(doc, docRoot, seq.SimpleID(int64(i)), "service:100500", "k8s_pod", "_all_:")
 	}
 
 	docs, metas := dp.Provide()
@@ -399,7 +399,7 @@ func TestMatureMode(t *testing.T) {
 	dp := indexer.NewTestDocProvider()
 	makeSealedFrac := func(fm *FracManager, docsPerFrac int) {
 		for i := 0; i < docsPerFrac; i++ {
-			addDummyDoc(t, fm, dp, seq.SimpleID(id))
+			addDummyDoc(t, fm, dp, seq.SimpleID(int64(id)))
 			id++
 		}
 		fm.seal(fm.rotate())

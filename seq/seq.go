@@ -20,8 +20,11 @@ type RID uint64 // random part of ID
 type LID uint32 // local id for a fraction
 
 func (m MID) Time() time.Time {
-	// TODO check for large nanos and avoid cast
-	return time.Unix(0, int64(m))
+	nanos := uint64(m)
+	nanosPerSec := uint64(time.Second)
+	secondsPart := nanos / nanosPerSec
+	nanosPart := nanos - secondsPart*nanosPerSec
+	return time.Unix(int64(secondsPart), int64(nanosPart))
 }
 
 func (d ID) String() string {
@@ -99,7 +102,7 @@ func FromString(x string) (ID, error) {
 	return id, nil
 }
 
-func SimpleID(i int) ID {
+func SimpleID(i int64) ID {
 	return ID{
 		MID: MID(i),
 		RID: 0,
@@ -107,9 +110,11 @@ func SimpleID(i int) ID {
 }
 
 func MillisToMID(millis uint64) MID {
-	if millis < math.MaxUint64/1000000 {
-		return MID(millis * 1000000)
+	if millis <= math.MaxUint64/uint64(time.Millisecond) {
+		return MID(millis * uint64(time.Millisecond))
 	} else {
+		// math.MaxUint64/1000000 is 2554 year in unix time millisecond, so it's just an "infinite" future for us.
+		// We can't scale it to nanoseconds, so we just leave it as it is
 		return MID(millis)
 	}
 }
@@ -123,19 +128,22 @@ func DurationToMID(d time.Duration) MID {
 }
 
 func MIDToTime(t MID) time.Time {
-	return time.Unix(0, 0).Add(MIDToDuration(t))
+	return t.Time()
 }
 
-func MIDToMillis(t MID) int64 {
-	return int64(uint64(t) / uint64(1000000))
+func MIDToMillis(t MID) uint64 {
+	return uint64(t) / uint64(time.Millisecond)
 }
 
 func MIDToCeilingMillis(t MID) uint64 {
 	nanos := uint64(t)
-	if nanos%1000000 != 0 {
-		return (nanos / 1000000) + 1
+	nanosPerMilli := uint64(time.Millisecond)
+	millisFloorPart := nanos / uint64(time.Millisecond)
+	nanosPart := nanos % nanosPerMilli
+	if nanosPart != 0 {
+		return millisFloorPart + 1
 	} else {
-		return nanos / 1000000
+		return millisFloorPart
 	}
 }
 
@@ -149,6 +157,7 @@ func NewID(t time.Time, randomness uint64) ID {
 	return ID{MID: mid, RID: RID(randomness)}
 }
 
+// String prints MID to ESFormat. Nanosecond part will not be printed.
 func (m MID) String() string {
-	return util.MsTsToESFormat(uint64(m))
+	return util.NsTsToESFormat(uint64(m))
 }

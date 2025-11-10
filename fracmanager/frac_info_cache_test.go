@@ -296,7 +296,7 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	totalSize := uint64(0)
 	cnt := 1
 	for totalSize < maxSize {
-		addDummyDoc(t, fm, dp, seq.SimpleID(cnt*1000000))
+		addDummyDoc(t, fm, dp, seq.SimpleID(int64(cnt*1000000)))
 		cnt++
 		fracInstance := rotateAndSeal(fm)
 		totalSize += fracInstance.Info().FullSize()
@@ -377,7 +377,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 	infos := map[string]*common.Info{}
 
 	for i := 1; i < times+1; i++ {
-		addDummyDoc(t, fm, dp, seq.SimpleID(i))
+		addDummyDoc(t, fm, dp, seq.SimpleID(int64(i)))
 		fracInstance := rotateAndSeal(fm)
 		info := fracInstance.Info()
 		q.Add(item{
@@ -438,7 +438,7 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	defer insaneJSON.Release(metaRoot)
 
 	for i := 1; i < times+1; i++ {
-		addDummyDoc(t, fm, dp, seq.SimpleID(i))
+		addDummyDoc(t, fm, dp, seq.SimpleID(int64(i)))
 		rotateAndSeal(fm)
 		dp.TryReset()
 	}
@@ -504,7 +504,6 @@ func TestInfoCacheJSONEntryMarshalUnmarshal(t *testing.T) {
 		SealingTime:   1666193045000,
 	}
 
-	// Test marshaling: create temporary struct like getContentWithVersion does
 	type infoJSON struct {
 		*common.Info
 		From uint64 `json:"from"`
@@ -512,8 +511,8 @@ func TestInfoCacheJSONEntryMarshalUnmarshal(t *testing.T) {
 	}
 	entry := &infoJSON{
 		Info: originalInfo,
-		From: uint64(seq.MIDToMillis(originalInfo.From)),
-		To:   uint64(seq.MIDToMillis(originalInfo.To)),
+		From: seq.MIDToMillis(originalInfo.From),
+		To:   seq.MIDToMillis(originalInfo.To),
 	}
 	jsonBytes, err := json.Marshal(entry)
 	assert.NoError(t, err)
@@ -522,21 +521,17 @@ func TestInfoCacheJSONEntryMarshalUnmarshal(t *testing.T) {
 	err = json.Unmarshal(jsonBytes, &jsonMap)
 	assert.NoError(t, err)
 
-	// Verify JSON contains milliseconds
 	assert.Equal(t, float64(1761812502000), jsonMap["from"])
 	assert.Equal(t, float64(1761812503000), jsonMap["to"])
 
-	// Test unmarshaling: like LoadFromDisk does
 	var unmarshaledEntry infoJSON
 	err = json.Unmarshal(jsonBytes, &unmarshaledEntry)
 	assert.NoError(t, err)
 	assert.NotNil(t, unmarshaledEntry.Info)
 
-	// Convert From and To from milliseconds to nanoseconds (like LoadFromDisk does)
 	unmarshaledEntry.Info.From = seq.MillisToMID(unmarshaledEntry.From)
 	unmarshaledEntry.Info.To = seq.MillisToMID(unmarshaledEntry.To)
 
-	// Verify conversion back to nanoseconds
 	assert.Equal(t, seq.MID(1761812502000000000), unmarshaledEntry.Info.From)
 	assert.Equal(t, seq.MID(1761812503000000000), unmarshaledEntry.Info.To)
 	assert.Equal(t, originalInfo.Path, unmarshaledEntry.Info.Path)

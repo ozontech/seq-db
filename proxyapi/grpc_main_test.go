@@ -197,7 +197,7 @@ func makeSearchRespData(size int) *testSearchResp {
 	docs := make([][]byte, 0)
 	respDocs := make([]*seqproxyapi.Document, 0)
 	for i := 0; i < size; i++ {
-		id := seq.SimpleID(i)
+		id := seq.SimpleID(int64(i))
 		ids = append(ids, seq.IDSource{ID: id, Source: 0})
 		data := []byte("doc" + strconv.Itoa(i))
 		docs = append(docs, data)
@@ -313,7 +313,7 @@ func makeExportRespData(size int) *testExportResp {
 	docs := make([][]byte, size)
 	resp := make([]*seqproxyapi.ExportResponse, size)
 	for i := range size {
-		id := seq.SimpleID(i)
+		id := seq.SimpleID(int64(i))
 		ids[i] = seq.IDSource{ID: id, Source: 0}
 
 		data := []byte("doc" + strconv.Itoa(i))

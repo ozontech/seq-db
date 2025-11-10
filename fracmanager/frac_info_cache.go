@@ -34,7 +34,7 @@ func (e *infoJSON) MarshalJSON() ([]byte, error) {
 		To   uint64 `json:"to"`
 		*Alias
 	}{
-		From:  uint64(seq.MIDToMillis(e.Info.From)),
+		From:  seq.MIDToMillis(e.Info.From),
 		To:    seq.MIDToCeilingMillis(e.Info.To),
 		Alias: (*Alias)(e.Info),
 	})
