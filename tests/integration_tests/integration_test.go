@@ -354,7 +354,7 @@ func (s *IntegrationTestSuite) envWithDummyDocs(n int) (*setup.TestingEnv, []str
 	origDocs := make([]string, 0, allDocsNum)
 	docsBulk := make([]string, 2*n)
 
-	getNextTs := getAutoTsGenerator(time.Now(), -time.Second)
+	getNextTs := getAutoTsGenerator(time.Now(), -time.Nanosecond)
 
 	for i := 0; i < bulksNum; i++ {
 
@@ -431,7 +431,7 @@ func (s *IntegrationTestSuite) TestFetchNotFound() {
 
 func (s *IntegrationTestSuite) TestMulti() {
 	// ingest
-	getNextTs := getAutoTsGenerator(time.Now(), -time.Second)
+	getNextTs := getAutoTsGenerator(time.Now(), -time.Nanosecond)
 	origDocs := []string{
 		fmt.Sprintf(`{"service":"b1", "k8s_pod":"pod1", "yyyy":"xxxx1", "ts":%q}`, getNextTs()),
 		fmt.Sprintf(`{"service":"b2", "k8s_pod":"pod2", "yyyy":"xxxx2", "ts":%q}`, getNextTs()),
