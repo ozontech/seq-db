@@ -1029,11 +1029,11 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 func (s *FractionTestSuite) TestMIDDistribution() {
 	now := time.Now().Truncate(time.Minute)
 	docs := []string{
-		fmt.Sprintf(`{"timestamp":"%s","message":"apple juice"}`, now.Add(-60*time.Minute).Format(time.RFC3339Nano)),
-		fmt.Sprintf(`{"timestamp":"%s","message":"orange juice"}`, now.Add(-61*time.Minute).Format(time.RFC3339Nano)),
-		fmt.Sprintf(`{"timestamp":"%s","message":"cider"}`, now.Add(-65*time.Minute).Format(time.RFC3339Nano)),
-		fmt.Sprintf(`{"timestamp":"%s","message":"red wine"}`, now.Add(-120*time.Minute).Format(time.RFC3339Nano)),
-		fmt.Sprintf(`{"timestamp":"%s","message":"coca cola"}`, now.Add(-360*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"apple juice"}`, now.Add(-60*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"orange juice"}`, now.Add(-61*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"cider"}`, now.Add(-65*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"red wine"}`, now.Add(-120*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"coca cola"}`, now.Add(-360*time.Minute).Format(time.RFC3339Nano)),
 	}
 
 	s.insertDocuments(docs)
