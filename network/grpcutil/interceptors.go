@@ -16,6 +16,7 @@ import (
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tracing"
 	"github.com/ozontech/seq-db/util"
 )
@@ -126,13 +127,13 @@ func PassMetadataUnaryClientInterceptor() grpc.UnaryClientInterceptor {
 }
 
 // MIDPrecisionHeaderUnaryServerInterceptor sets the MID precision header for all unary responses.
-func MIDPrecisionHeaderUnaryServerInterceptor(precision string) grpc.UnaryServerInterceptor {
+func MIDPrecisionHeaderUnaryServerInterceptor(precision seq.MIDPrecision) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context, req interface{}, info *grpc.UnaryServerInfo,
 		h grpc.UnaryHandler,
 	) (interface{}, error) {
 		md := metadata.New(map[string]string{
-			consts.MIDPrecisionHeader: precision,
+			consts.MIDPrecisionHeader: precision.String(),
 		})
 		if err := grpc.SetHeader(ctx, md); err != nil {
 			logger.Error("failed to set MID precision header", zap.Error(err))
@@ -142,13 +143,13 @@ func MIDPrecisionHeaderUnaryServerInterceptor(precision string) grpc.UnaryServer
 }
 
 // MIDPrecisionHeaderStreamServerInterceptor sets the MID precision header for all streaming responses.
-func MIDPrecisionHeaderStreamServerInterceptor(precision string) grpc.StreamServerInterceptor {
+func MIDPrecisionHeaderStreamServerInterceptor(precision seq.MIDPrecision) grpc.StreamServerInterceptor {
 	return func(
 		srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo,
 		h grpc.StreamHandler,
 	) error {
 		md := metadata.New(map[string]string{
-			consts.MIDPrecisionHeader: precision,
+			consts.MIDPrecisionHeader: precision.String(),
 		})
 		if err := ss.SendHeader(md); err != nil {
 			logger.Error("failed to set MID precision header in stream", zap.Error(err))

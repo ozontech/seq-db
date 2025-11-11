@@ -16,6 +16,7 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/network/grpcutil"
 	"github.com/ozontech/seq-db/pkg/storeapi"
+	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tracing"
 )
 
@@ -39,11 +40,11 @@ func newGRPCServer(cfg APIConfig, fracManager *fracmanager.FracManager, mappingP
 
 func initServer() *grpc.Server {
 	interceptors := []grpc.UnaryServerInterceptor{
-		grpcutil.MIDPrecisionHeaderUnaryServerInterceptor("ms"),
+		grpcutil.MIDPrecisionHeaderUnaryServerInterceptor(seq.MIDPrecisionMilliseconds),
 		grpcutil.ReturnToVTPoolUnaryServerInterceptor(),
 	}
 	streamInterceptors := []grpc.StreamServerInterceptor{
-		grpcutil.MIDPrecisionHeaderStreamServerInterceptor("ms"),
+		grpcutil.MIDPrecisionHeaderStreamServerInterceptor(seq.MIDPrecisionMilliseconds),
 	}
 	opts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(interceptors...),

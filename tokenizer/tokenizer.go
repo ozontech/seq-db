@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/ozontech/seq-db/frac"
 )
 
 type Tokenizer interface {
-	Tokenize(tokens []frac.MetaToken, key, value []byte, maxLength int) []frac.MetaToken
+	Tokenize(tokens []MetaToken, key, value []byte, maxLength int) []MetaToken
 }
 
 func toLowerIfCaseInsensitive(isCaseSensitive bool, x []byte) []byte {

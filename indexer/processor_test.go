@@ -1,4 +1,4 @@
-package bulk
+package indexer
 
 import (
 	"testing"

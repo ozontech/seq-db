@@ -29,7 +29,7 @@ func (b *BlockMIDs) Unpack(data []byte) error {
 	}
 	b.Values = values
 
-	// v2 (microsecond MIDs) compatibility - convert nanos to millis
+	// v2 (nanosecond MIDs) compatibility - convert nanos to millis
 	if b.fracVersion >= config.BinaryDataV2 {
 		for i := range b.Values {
 			b.Values[i] = uint64(seq.NanosToMID(b.Values[i]))

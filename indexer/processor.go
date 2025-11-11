@@ -1,38 +1,34 @@
-package bulk
+package indexer
 
 import (
+	"encoding/binary"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"math/rand/v2"
 	"time"
 
 	insaneJSON "github.com/ozontech/insane-json"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
+
+	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"
 	"github.com/ozontech/seq-db/util"
 )
 
 var (
-	bulkTimeErrors = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_ingestor",
-		Subsystem: "bulk",
-		Name:      "time_errors_total",
-		Help:      "errors for time rules violation in events",
-	}, []string{"cause"})
-
 	parseErrors  = bulkTimeErrors.WithLabelValues("parse_error")
 	delays       = bulkTimeErrors.WithLabelValues("delay")
 	futureDelays = bulkTimeErrors.WithLabelValues("future_delay")
 )
 
-// processor accumulates meta and docs from a single bulk
+// Processor accumulates meta and docs from a single bulk
 // returns bulk request ready to be sent to store
-type processor struct {
+type Processor struct {
 	proxyIndex  uint64
 	drift       time.Duration
 	futureDrift time.Duration
@@ -46,15 +42,15 @@ func init() {
 	insaneJSON.MapUseThreshold = math.MaxInt32
 }
 
-func newBulkProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, drift, futureDrift time.Duration, index uint64) *processor {
-	return &processor{
+func NewProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, drift, futureDrift time.Duration, index uint64) *Processor {
+	return &Processor{
 		proxyIndex:  index,
 		drift:       drift,
 		futureDrift: futureDrift,
 		indexer: &indexer{
 			tokenizers: tokenizers,
 			mapping:    mapping,
-			metas:      []frac.MetaData{},
+			metas:      []MetaData{},
 		},
 		decoder: insaneJSON.Spawn(),
 	}
@@ -62,7 +58,7 @@ func newBulkProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]toke
 
 var errNotAnObject = errors.New("not an object")
 
-func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []frac.MetaData, error) {
+func (p *Processor) ProcessDoc(doc []byte, requestTime time.Time) ([]byte, []MetaData, error) {
 	err := p.decoder.DecodeBytes(doc)
 	if err != nil {
 		return nil, nil, err
@@ -72,8 +68,7 @@ func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []frac.M
 	}
 	docTime, timeField := extractDocTime(p.decoder.Node, requestTime)
 	docDelay := requestTime.Sub(docTime)
-	if timeField == nil {
-		// couldn't parse given event time
+	if timeField == nil { // couldn't parse given event time
 		parseErrors.Inc()
 	} else if documentDelayed(docDelay, p.drift, p.futureDrift) {
 		docTime = requestTime
@@ -88,11 +83,11 @@ func (p *processor) Process(doc []byte, requestTime time.Time) ([]byte, []frac.M
 
 func documentDelayed(docDelay, drift, futureDrift time.Duration) bool {
 	delayed := false
-	if docDelay > drift {
+	if docDelay > drift && drift > 0 {
 		delays.Inc()
 		delayed = true
 	}
-	if docDelay < 0 && docDelay.Abs() > futureDrift {
+	if docDelay < 0 && docDelay.Abs() > futureDrift && futureDrift > 0 {
 		futureDelays.Inc()
 		delayed = true
 	}
@@ -181,4 +176,56 @@ func parseESTime(t string) (time.Time, bool) {
 	}
 
 	return time.Date(int(year), time.Month(month), int(day), int(hour), int(minute), int(second), int(nsecs), time.UTC), true
+}
+
+func (p *Processor) ProcessBulk(
+	requestTime time.Time,
+	dstDocs, dstMeta []byte,
+	readNext func() ([]byte, error),
+) (int, []byte, []byte, error) {
+	parseDuration := time.Duration(0)
+
+	total := 0
+	for {
+		originalDoc, err := readNext()
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("reading next document: %s", err)
+		}
+		if originalDoc == nil {
+			break
+		}
+		parseStart := time.Now()
+		doc, meta, err := p.ProcessDoc(originalDoc, requestTime)
+		if err != nil {
+			if errors.Is(err, errNotAnObject) {
+				logger.Error("unable to process the document because it is not an object", zap.Any("document", json.RawMessage(originalDoc)))
+				notAnObjectTotal.Inc()
+				continue
+			}
+			return 0, nil, nil, fmt.Errorf("processing doc: %s", err)
+		}
+		parseDuration += time.Since(parseStart)
+
+		total++
+		dstDocs = binary.LittleEndian.AppendUint32(dstDocs, uint32(len(doc)))
+		dstDocs = append(dstDocs, doc...)
+		for _, m := range meta {
+			dstMeta = marshalAppendMeta(dstMeta, m)
+		}
+	}
+
+	bulkParseDurationSeconds.Observe(parseDuration.Seconds())
+
+	return total, dstDocs, dstMeta, nil
+}
+
+func marshalAppendMeta(dst []byte, meta MetaData) []byte {
+	metaLenPosition := len(dst)
+	dst = append(dst, make([]byte, 4)...)
+	dst = meta.MarshalBinaryTo(dst)
+	// Metadata length = len(slice after append) - len(slice before append).
+	metaLen := uint32(len(dst) - metaLenPosition - 4)
+	// Put metadata length before metadata bytes.
+	binary.LittleEndian.PutUint32(dst[metaLenPosition:], metaLen)
+	return dst
 }

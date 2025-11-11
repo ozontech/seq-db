@@ -14,6 +14,7 @@ import (
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/seq"
 	testscommon "github.com/ozontech/seq-db/tests/common"
 )
@@ -280,7 +281,7 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
@@ -365,7 +366,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	infos := map[string]*common.Info{}
 
 	for i := 1; i < times+1; i++ {
@@ -425,7 +426,7 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
