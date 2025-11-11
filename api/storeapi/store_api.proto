@@ -230,6 +230,7 @@ message AsyncSearchesListItem {
   google.protobuf.Duration retention = 14;
   bool with_docs = 15;
   int64 size = 16;
+  string error = 17;
 }
 
 message IdWithHint {
