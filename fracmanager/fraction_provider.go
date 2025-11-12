@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
@@ -20,12 +18,6 @@ import (
 )
 
 const fileBasePattern = "seq-db-"
-
-var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
-	Namespace: "seq_db_store",
-	Subsystem: "common",
-	Name:      "bytes_read",
-})
 
 // fractionProvider is a factory for creating different types of fractions
 // Contains all necessary dependencies for creating and managing fractions
