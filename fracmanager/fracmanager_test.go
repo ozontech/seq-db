@@ -21,8 +21,8 @@ import (
 
 // newFracManagerWithBackgroundStart only used from tests
 func newFracManagerWithBackgroundStart(ctx context.Context, config *Config) (*FracManager, error) {
-	fracManager := NewFracManager(ctx, config, nil)
-	if err := fracManager.Load(ctx); err != nil {
+	fracManager, err := New(ctx, config, nil)
+	if err != nil {
 		return nil, err
 	}
 	fracManager.Start()
@@ -374,7 +374,7 @@ func addDocs(t *testing.T, fm *FracManager, docCount int) {
 	docs, metas := dp.Provide()
 	err := fm.Append(context.Background(), docs, metas)
 	assert.NoError(t, err)
-	fm.WaitIdle()
+	fm.WaitIdleForTests()
 }
 
 func TestMatureMode(t *testing.T) {
@@ -383,12 +383,12 @@ func TestMatureMode(t *testing.T) {
 	defer testscommon.RemoveDir(dataDir)
 
 	launchAndCheck := func(checkFn func(fm *FracManager)) {
-		fm := NewFracManager(context.Background(), &Config{
+		fm, err := New(context.Background(), &Config{
 			FracSize:  500,
 			TotalSize: 5000,
 			DataDir:   dataDir,
 		}, nil)
-		assert.NoError(t, fm.Load(context.Background()))
+		assert.NoError(t, err)
 
 		checkFn(fm)
 
@@ -416,7 +416,7 @@ func TestMatureMode(t *testing.T) {
 	// second run
 	launchAndCheck(func(fm *FracManager) {
 		assert.Equal(t, false, fm.Flags().IsCapacityExceeded(), "there should still be no fraction removal and the flag should be false")
-		for fm.GetAllFracs().GetTotalSize() < fm.config.TotalSize {
+		for fm.Fractions().GetTotalSize() < fm.config.TotalSize {
 			makeSealedFrac(fm, 10)
 		}
 		assert.Equal(t, false, fm.Flags().IsCapacityExceeded(), "there should still be no fraction removal and the flag should be false")
@@ -437,11 +437,13 @@ func TestOldestCT(t *testing.T) {
 	const fracCount = 10
 
 	t.Run("local", func(t *testing.T) {
-		fm := NewFracManager(context.Background(), &Config{}, nil)
+		fm, err := New(context.Background(), &Config{DataDir: t.TempDir()}, nil)
+		assert.NoError(t, err)
 
 		oldestLocal := time.Now()
 		nowOldestLocal := oldestLocal
 
+		fm.localFracs = nil
 		for i := range fracCount {
 			fm.localFracs = append(fm.localFracs, &fracRef{instance: frac.NewSealed(
 				"", nil, nil, nil, &common.Info{
@@ -457,14 +459,17 @@ func TestOldestCT(t *testing.T) {
 
 		require.Equal(t, uint64(0), fm.oldestCTRemote.Load())
 		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.oldestCTLocal.Load())
-		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.OldestCT())
+		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.Oldest())
 	})
 
 	t.Run("local-and-remote", func(t *testing.T) {
-		fm := NewFracManager(context.Background(), &Config{}, nil)
+		fm, err := New(context.Background(), &Config{DataDir: t.TempDir()}, nil)
+		assert.NoError(t, err)
+
 		oldestRemote := time.Now()
 		nowOldestRemote := oldestRemote
 
+		fm.localFracs = nil
 		for i := range fracCount {
 			fm.remoteFracs = append(fm.remoteFracs, frac.NewRemote(
 				t.Context(), "", nil, nil, nil, &common.Info{
@@ -494,6 +499,6 @@ func TestOldestCT(t *testing.T) {
 
 		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.oldestCTRemote.Load())
 		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.oldestCTLocal.Load())
-		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.OldestCT())
+		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.Oldest())
 	})
 }

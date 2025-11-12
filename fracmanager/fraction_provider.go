@@ -19,6 +19,8 @@ import (
 	"github.com/ozontech/seq-db/storage/s3"
 )
 
+const fileBasePattern = "seq-db-"
+
 var storeBytesRead = promauto.NewCounter(prometheus.CounterOpts{
 	Namespace: "seq_db_store",
 	Subsystem: "common",
