@@ -87,7 +87,6 @@ func (s *Store) Stop() {
 
 	s.grpcServer.Stop(ctx)
 
-	s.FracManager.WaitIdleForTests()
 	s.FracManager.Stop()
 
 	logger.Info("store stopped")

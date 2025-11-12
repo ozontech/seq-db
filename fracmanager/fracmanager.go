@@ -561,6 +561,7 @@ func (fm *FracManager) minFracSizeToSeal() uint64 {
 }
 
 func (fm *FracManager) Stop() {
+	fm.Writer().WaitWriteIdle()
 	fm.indexer.Stop()
 	fm.stopFn()
 
