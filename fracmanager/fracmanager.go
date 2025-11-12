@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
@@ -16,7 +14,6 @@ import (
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/util"
@@ -250,7 +247,7 @@ func (fm *FracManager) determineOutsiders() []frac.Fraction {
 		}
 	}
 
-	metric.MaintenanceTruncateTotal.Add(float64(truncated))
+	maintenanceTruncateTotal.Add(float64(truncated))
 	return outsiders
 }
 
@@ -275,8 +272,8 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 			offloadStart := time.Now()
 			remote, err := fm.fracProvider.Offload(fm.ctx, outsider)
 			if err != nil {
-				metric.OffloadingTotal.WithLabelValues("failure").Inc()
-				metric.OffloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
+				offloadingTotal.WithLabelValues("failure").Inc()
+				offloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
 
 				logger.Error(
 					"will call Suicide() on fraction: failed to offload fraction",
@@ -297,8 +294,8 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 				return
 			}
 
-			metric.OffloadingTotal.WithLabelValues("success").Inc()
-			metric.OffloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
+			offloadingTotal.WithLabelValues("success").Inc()
+			offloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
 
 			logger.Info(
 				"successully offloaded fraction",
@@ -395,13 +392,13 @@ func (fm *FracManager) processFracsStats() {
 			util.ZapUint64AsSizeStr("index", ft.index),
 		)
 
-		metric.DataSizeTotal.WithLabelValues("total", st).Set(float64(ft.totalSize))
-		metric.DataSizeTotal.WithLabelValues("docs_raw", st).Set(float64(ft.docsRaw))
-		metric.DataSizeTotal.WithLabelValues("docs_on_disk", st).Set(float64(ft.docsDisk))
-		metric.DataSizeTotal.WithLabelValues("index", st).Set(float64(ft.index))
+		dataSizeTotal.WithLabelValues("total", st).Set(float64(ft.totalSize))
+		dataSizeTotal.WithLabelValues("docs_raw", st).Set(float64(ft.docsRaw))
+		dataSizeTotal.WithLabelValues("docs_on_disk", st).Set(float64(ft.docsDisk))
+		dataSizeTotal.WithLabelValues("index", st).Set(float64(ft.index))
 
 		if oldest != 0 {
-			metric.OldestFracTime.WithLabelValues(st).
+			oldestFracTime.WithLabelValues(st).
 				Set((time.Duration(oldest) * time.Millisecond).Seconds())
 		}
 	}
@@ -499,19 +496,6 @@ func (fm *FracManager) Append(ctx context.Context, docs, metas storage.DocBlock)
 		}
 	}
 }
-
-var (
-	sealsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db",
-		Subsystem: "main",
-		Name:      "seals_total",
-	})
-	sealsDoneSeconds = promauto.NewSummary(prometheus.SummaryOpts{
-		Namespace: "seq_db",
-		Subsystem: "main",
-		Name:      "seals_done_seconds",
-	})
-)
 
 func (fm *FracManager) seal(activeRef activeRef) {
 	sealsTotal.Inc()
