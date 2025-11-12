@@ -82,14 +82,15 @@ func TestReplayWithMultipleEmpty(t *testing.T) {
 	// fill data
 	nonEmpty := make([]*common.Info, 0)
 	actives := make([]*frac.Active, 0, fracCount)
-	actives = append(actives, fp.CreateActive())
 	for i := 0; i < fracCount; i++ {
+		active := fp.CreateActive()
 		if i%3 == 0 {
-			appendDocs(t, actives[len(actives)-1], 500+rand.Intn(100))
-			nonEmpty = append(nonEmpty, actives[len(actives)-1].Info())
+			appendDocs(t, active, 500+rand.Intn(100))
+			nonEmpty = append(nonEmpty, active.Info())
 		}
-		actives = append(actives, fp.CreateActive())
+		actives = append(actives, active)
 	}
+	actives = append(actives, fp.CreateActive()) // last active frac is now empty
 
 	// replay and seal
 	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
@@ -113,12 +114,14 @@ func TestReplayMultiple(t *testing.T) {
 
 	// fill data
 	actives := make([]*frac.Active, 0, fracCount)
-	actives = append(actives, fp.CreateActive())
 	for i := 0; i < fracCount; i++ {
-		appendDocs(t, actives[len(actives)-1], 500+rand.Intn(100))
-		actives = append(actives, fp.CreateActive())
+		active := fp.CreateActive()
+		appendDocs(t, active, 500+rand.Intn(100))
+		actives = append(actives, active)
 	}
-	appendDocs(t, actives[len(actives)-1], 5)
+	active := fp.CreateActive()
+	appendDocs(t, active, 5)
+	actives = append(actives, active)
 
 	// replay and seal
 	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
@@ -161,11 +164,12 @@ func TestReplayContextCancel(t *testing.T) {
 
 	// fill data
 	actives := make([]*frac.Active, 0, fracCount)
-	actives = append(actives, fp.CreateActive())
 	for i := 0; i < fracCount; i++ {
-		appendDocs(t, actives[len(actives)-1], 500+rand.Intn(100))
-		actives = append(actives, fp.CreateActive())
+		active := fp.CreateActive()
+		appendDocs(t, active, 500+rand.Intn(100))
+		actives = append(actives, active)
 	}
+	actives = append(actives, fp.CreateActive())
 
 	// replay and seal
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Microsecond)

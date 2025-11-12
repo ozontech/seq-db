@@ -4,9 +4,10 @@ import (
 	"testing"
 
 	"github.com/alecthomas/units"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/storage"
-	"github.com/stretchr/testify/assert"
 )
 
 func setupFractionProvider(t testing.TB, cfg *Config) (*fractionProvider, func()) {
