@@ -54,7 +54,7 @@ jobs:
           grep -v -e ".pb.go:" -e ".pb.gw.go:" -e ".mock.go:" -e "/mock/" profile.out > profile.out.clean
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage
           path: profile.out.clean
