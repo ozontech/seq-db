@@ -3,7 +3,7 @@ package storeapi
 import (
 	"context"
 
-	"github.com/c2h5oh/datasize"
+	"github.com/ozontech/seq-db/util"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/config"
@@ -107,7 +107,7 @@ func (d *docsStream) calcChunkSize(docs [][]byte, prevChunkSize int) int {
 			zap.Int("total_len", d.totalIDs),
 			zap.Int("prev_chunk_size", prevChunkSize),
 			zap.Int("new_chunk_size", newChunkSize),
-			zap.String("batch_size", datasize.ByteSize(batchSize).HumanReadable()),
+			zap.String("batch_size", util.ByteToHumanReadable(uint64(batchSize))),
 		)
 	}
 

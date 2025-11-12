@@ -8,7 +8,7 @@ import (
 
 // ZapUint64AsSizeStr forms string zap.Field with val converted to size string.
 func ZapUint64AsSizeStr(key string, val uint64) zap.Field {
-	return zap.String(key, SizeStr(val))
+	return zap.String(key, ByteToHumanReadable(val))
 }
 
 // ZapFloat64WithPrec forms float64 zap.Field with removed numerics after prec

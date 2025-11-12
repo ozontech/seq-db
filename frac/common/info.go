@@ -6,7 +6,7 @@ import (
 	"path"
 	"time"
 
-	"github.com/c2h5oh/datasize"
+	"github.com/ozontech/seq-db/util"
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/config"
@@ -58,8 +58,8 @@ func NewInfo(filename string, docsOnDisk, metaOnDisk uint64) *Info {
 func (s *Info) String() string {
 	return fmt.Sprintf(
 		"raw docs=%s, disk docs=%s",
-		datasize.ByteSize(s.DocsRaw).HR(),
-		datasize.ByteSize(s.DocsOnDisk).HR(),
+		util.ByteToHumanReadable(s.DocsRaw),
+		util.ByteToHumanReadable(s.DocsOnDisk),
 	)
 }
 
