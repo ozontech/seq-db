@@ -16,17 +16,16 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	common.RecreateDir(dataDir)
 	defer common.RemoveDir(dataDir)
 	config := &Config{
-		FracSize:     1000,
-		TotalSize:    100000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:  1000,
+		TotalSize: 100000,
+		DataDir:   dataDir,
 	}
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), config)
 	assert.NoError(t, err)
 	dp := indexer.NewTestDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
-	fm.WaitIdle()
+	fm.WaitIdleForTests()
 	info := fm.Active().Info()
 
 	id := seq.IDSource{
@@ -38,17 +37,17 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 
 	ids := []seq.IDSource{id}
 
-	docs, err := fetcher.FetchDocs(t.Context(), fm.GetAllFracs(), ids)
+	docs, err := fetcher.FetchDocs(t.Context(), fm.Fractions(), ids)
 	assert.NoError(t, err)
 	for _, v := range docs {
 		assert.Equal(t, []byte("document"), v)
 	}
 
 	fm.SealForcedForTests()
-	fm.WaitIdle()
+	fm.WaitIdleForTests()
 	dp.TryReset()
 	addDummyDoc(t, fm, dp, seq.SimpleID(2))
-	fm.WaitIdle()
+	fm.WaitIdleForTests()
 
 	info = fm.Active().Info()
 
@@ -60,7 +59,7 @@ func testFetcher(t *testing.T, fetcher *Fetcher, hasHint bool) {
 	}
 	ids = append(ids, newID)
 	counter := 0
-	docs, err = fetcher.FetchDocs(context.TODO(), fm.GetAllFracs(), ids)
+	docs, err = fetcher.FetchDocs(context.TODO(), fm.Fractions(), ids)
 	assert.NoError(t, err)
 	for _, v := range docs {
 		counter++

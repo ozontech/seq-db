@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
-	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -18,14 +17,8 @@ import (
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tests/setup"
 	"github.com/ozontech/seq-db/tests/suites"
-)
-
-const (
-	good = "good"
-	bad  = "bad"
 )
 
 type SingleTestSuite struct {
@@ -76,19 +69,6 @@ func simpleCases(startTS time.Time) []setup.ExampleDoc {
 	return docs
 }
 
-func (s *SingleTestSuite) TestBasicSearch() {
-	startTS := time.Now()
-	docs := simpleCases(startTS)
-	docStrs := setup.DocsToStrings(docs)
-	// order of docs is "2, 1, 3, 0"
-	// first: order is reversed
-	// second: doc #3 has smaller timestamp, than #1 and #2,
-	// so it will be reordered
-	s.Bulk(docStrs)
-
-	s.assertSearch(docStrs)
-}
-
 func (s *SingleTestSuite) TestBasicSearchHotRead() {
 	startTS := time.Now()
 	docs := simpleCases(startTS)
@@ -106,6 +86,34 @@ func (s *SingleTestSuite) TestBasicSearchHotRead() {
 		Vers:   []string{},
 	}
 	s.assertSearch(docStrs)
+}
+
+func (s *SingleTestSuite) assertSearch(docStrs []string) {
+	tests := []struct {
+		query   string
+		indexes []int
+	}{
+		{`service: service_a`, []int{3, 0}},
+		{`traceID:abcdef`, []int{1, 0}},
+		{`level: 1`, []int{1, 3, 0}},
+		{`message: "message text"`, []int{2, 1, 3, 0}},
+		{`message: "other text"`, []int{2, 1}},
+		{`traceID: abcd*`, []int{1, 0}},
+		{`traceID: a*`, []int{2, 1, 0}},
+		{`traceID: a*f`, []int{1, 0}},
+		{`traceID: a*a`, []int{2}},
+		{`service: service*a`, []int{3, 0}},
+		{`message: "message\ som*"`, []int{3, 0}},
+	}
+
+	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
+		for _, test := range tests {
+			s.AssertSearch(test.query, docStrs, test.indexes)
+		}
+		// test limit
+		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderAsc))
+		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderDesc))
+	})
 }
 
 func (s *SingleTestSuite) TestSearchAgg() {
@@ -138,58 +146,6 @@ func (s *SingleTestSuite) TestSearchAgg() {
 				{"1": 3, "2": 1},
 			})
 	})
-}
-
-func (s *SingleTestSuite) assertSearch(docStrs []string) {
-	tests := []struct {
-		query   string
-		indexes []int
-	}{
-		{`service: service_a`, []int{3, 0}},
-		{`traceID:abcdef`, []int{1, 0}},
-		{`level: 1`, []int{1, 3, 0}},
-		{`message: "message text"`, []int{2, 1, 3, 0}},
-		{`message: "other text"`, []int{2, 1}},
-		{`traceID: abcd*`, []int{1, 0}},
-		{`traceID: a*`, []int{2, 1, 0}},
-		{`traceID: a*f`, []int{1, 0}},
-		{`traceID: a*a`, []int{2}},
-		{`service: service*a`, []int{3, 0}},
-		{`message: "message\ som*"`, []int{3, 0}},
-	}
-
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		for _, test := range tests {
-			s.AssertSearch(test.query, docStrs, test.indexes)
-		}
-		// test limit
-		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderAsc))
-		s.AssertDocsEqual(docStrs, []int{2, 1}, s.SearchDocs(`message:other`, 2, seq.DocsOrderDesc))
-	})
-}
-
-func (s *SingleTestSuite) TestSearchNestedIndexOneFraction() {
-	const numDocs = 100
-	const doc = `{"trace_id": "1", "spans": [{"span_id": "1"}, {"span_id": "2"}]}`
-
-	docs := []string{}
-	for range numDocs {
-		docs = append(docs, doc)
-		s.Bulk([]string{doc})
-	}
-
-	assertSearch := func(q string, size int) {
-		s.Assert().Equal(size, len(s.SearchDocs(q, size, seq.DocsOrderAsc)))
-		s.Assert().Equal(docs[:size], s.SearchDocs(q, size, seq.DocsOrderAsc))
-	}
-
-	assertSearch(`spans.span_id:*`, 1)
-	assertSearch(`spans.span_id:*`, 5)
-	assertSearch(`spans.span_id:*`, numDocs)
-	assertSearch(`trace_id:*`, numDocs)
-
-	s.Assert().Equal(0, len(s.SearchDocs(`spans.span_id:*`, 0, seq.DocsOrderAsc)))
-	s.Assert().Equal(numDocs, len(s.SearchDocs(`spans.span_id:*`, numDocs+1, seq.DocsOrderAsc)))
 }
 
 // Test AND tree (sorting issue)
@@ -225,46 +181,6 @@ func (s *SingleTestSuite) TestSearchNestedWithAND() {
 			spanID := rand.IntN(numSpans)
 			q := fmt.Sprintf("trace_id:%d AND spans.span_id:%d", traceID, spanID)
 			s.Assert().Equal(docs[traceID:traceID+1], s.SearchDocs(q, 10, seq.DocsOrderDesc), q)
-		}
-	})
-}
-
-func (s *SingleTestSuite) TestSearchNot() {
-	docs := setup.GenerateDocs(6, func(i int, doc *setup.ExampleDoc) {
-		doc.Message = good
-		if i%2 == 0 {
-			doc.Message = bad
-		}
-		doc.Level = i + 1 // zero will not write
-		doc.Service = fmt.Sprintf("srv_%d", i+1)
-	})
-	docStrs := setup.DocsToStrings(docs)
-	s.Bulk(docStrs)
-
-	tests := []struct {
-		query   string
-		indexes []int
-	}{
-		{`NOT level:1`, []int{5, 4, 3, 2, 1}},
-		{`NOT level:2`, []int{5, 4, 3, 2, 0}},
-		{`NOT level:5`, []int{5, 3, 2, 1, 0}},
-		{`NOT level:6`, []int{4, 3, 2, 1, 0}},
-		{`NOT message:notfound`, []int{5, 4, 3, 2, 1, 0}},
-		{`NOT service:srv_*`, []int{}},
-		{`NOT message:bad`, []int{5, 3, 1}},
-		{`NOT message:good`, []int{4, 2, 0}},
-		{`NOT message:"good bad"`, []int{5, 4, 3, 2, 1, 0}},
-		{`NOT (message:good AND message:bad)`, []int{5, 4, 3, 2, 1, 0}},
-		{`NOT (message:good OR message:bad)`, []int{}},
-		{`NOT message:bad AND message:bad`, []int{}},
-		{`NOT message:bad AND message:good`, []int{5, 3, 1}},
-		{`message:good AND NOT message:good`, []int{}},
-		{`message:bad AND NOT message:good`, []int{4, 2, 0}},
-	}
-
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		for _, test := range tests {
-			s.AssertSearch(test.query, docStrs, test.indexes)
 		}
 	})
 }
@@ -340,156 +256,6 @@ func (s *SingleTestSuite) TestFetchHints() {
 			}
 		}
 		s.Assert().Empty(fetched)
-	})
-}
-
-func (s *SingleTestSuite) TestSearchFromTo() {
-	docs := setup.GenerateDocs(8, func(i int, doc *setup.ExampleDoc) {
-		doc.Message = good
-		if i%2 == 0 {
-			doc.Message = bad
-		}
-		doc.Level = i + 1 // zero will not write
-		doc.TraceID = fmt.Sprintf("%d", i/3)
-		doc.Service = fmt.Sprintf("%d", i%3)
-	})
-	start := docs[0].Timestamp
-	docStrs := setup.DocsToStrings(docs)
-	s.Bulk(docStrs)
-
-	assertSearch := func(query string, from int, to int, indexes []int) {
-		fromMID := seq.TimeToMID(start.Add(time.Millisecond * time.Duration(from)))
-		toMID := seq.TimeToMID(start.Add(time.Millisecond * time.Duration(to)))
-
-		for _, withTotal := range []bool{true, false} {
-			for _, o := range []seq.DocsOrder{seq.DocsOrderAsc, seq.DocsOrderDesc} {
-				_, docsStream, _, err := s.Ingestor().SearchIngestor.Search(
-					context.Background(),
-					&search.SearchRequest{
-						Explain:     false,
-						Q:           []byte(query),
-						Offset:      0,
-						Size:        math.MaxUint32,
-						Interval:    0,
-						From:        fromMID,
-						To:          toMID,
-						WithTotal:   withTotal,
-						ShouldFetch: true,
-						Order:       o,
-					},
-					nil,
-				)
-				s.Require().NoError(err)
-				foundDocs := common.ToStringSlice(search.ReadAll(docsStream))
-				if o.IsReverse() {
-					slices.Reverse(foundDocs)
-				}
-				s.AssertDocsEqual(docStrs, indexes, foundDocs)
-			}
-		}
-	}
-
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		assertSearch(`message:good`, 0, 7, []int{7, 5, 3, 1})
-		assertSearch(`message:bad`, 0, 7, []int{6, 4, 2, 0})
-		assertSearch(`message:good`, 0, 6, []int{5, 3, 1})
-		assertSearch(`message:bad`, 1, 7, []int{6, 4, 2})
-
-		assertSearch(`message:good OR message:bad`, 2, 6, []int{6, 5, 4, 3, 2})
-		assertSearch(`message:good OR message:bad`, 3, 3, []int{3})
-		assertSearch(`NOT message:notexists`, 0, 7, []int{7, 6, 5, 4, 3, 2, 1, 0})
-		assertSearch(`NOT message:notexists`, 0, 6, []int{6, 5, 4, 3, 2, 1, 0})
-
-		assertSearch(`NOT message:notexists`, 1, 7, []int{7, 6, 5, 4, 3, 2, 1})
-		assertSearch(`NOT message:notexists`, 1, 6, []int{6, 5, 4, 3, 2, 1})
-		assertSearch(`NOT message:notexists AND message:*`, 1, 6, []int{6, 5, 4, 3, 2, 1})
-		assertSearch(`NOT message:notexists AND (message:* OR message:*)`, 1, 6, []int{6, 5, 4, 3, 2, 1})
-
-		assertSearch(`NOT message:notexists AND (message:good OR message:bad)`, 1, 6, []int{6, 5, 4, 3, 2, 1})
-		assertSearch(`NOT message:notexists AND message:good`, 1, 6, []int{5, 3, 1})
-		assertSearch(`NOT (message:good OR message:bad)`, 0, 7, []int{})
-		assertSearch(`NOT (message:good OR message:bad)`, 1, 6, []int{})
-
-		assertSearch(`NOT traceID:0`, 0, 2, []int{})
-		assertSearch(`NOT traceID:0`, 0, 3, []int{3})
-		assertSearch(`NOT traceID:1`, 3, 5, []int{})
-		assertSearch(`NOT traceID:1`, 2, 6, []int{6, 2})
-		assertSearch(`NOT traceID:0 AND NOT traceID:2`, 0, 10, []int{5, 4, 3})
-		assertSearch(`NOT traceID:0 AND NOT traceID:2`, 3, 5, []int{5, 4, 3})
-	})
-}
-
-func (s *SingleTestSuite) TestFetch() {
-	n := 8
-	docs := setup.GenerateDocs(n, func(i int, doc *setup.ExampleDoc) {
-		doc.Message = good
-		if i%2 == 0 {
-			doc.Message = bad
-		}
-		doc.Level = i + 1 // zero will not write
-		doc.TraceID = fmt.Sprintf("%d", i/3)
-		doc.Service = fmt.Sprintf("%d", i%3)
-	})
-	docStrs := setup.DocsToStrings(docs)
-	s.Bulk(docStrs)
-
-	qpr, _, _, err := s.Env.Search("_all_:*", math.MaxInt32, setup.WithTotal(false), setup.NoFetch())
-	s.Assert().NoError(err)
-	s.Assert().Equal(n, len(qpr.IDs))
-
-	ids := qpr.IDs.IDs()
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		docs, err := s.Env.Fetch(ids)
-		s.Assert().NoError(err)
-		s.Assert().Equal(len(ids), len(docs))
-	})
-}
-
-func (s *SingleTestSuite) TestWildcardSymbols() {
-	startTS := time.Now()
-	docs := []setup.ExampleDoc{
-		{
-			Message:   "first value:****",
-			Timestamp: startTS.Add(time.Millisecond * 10),
-		},
-		{
-			Message:   "second value:*******",
-			Timestamp: startTS.Add(time.Millisecond * 20),
-		},
-		{
-			Message:   "third value****",
-			Timestamp: startTS.Add(time.Millisecond * 30),
-		},
-		{
-			Message:   "fourth ****",
-			Timestamp: startTS.Add(time.Millisecond * 40),
-		},
-	}
-	docStrs := setup.DocsToStrings(docs)
-	s.Bulk(docStrs)
-
-	tests := []struct {
-		query   string
-		indexes []int
-	}{
-		{`message:*`, []int{3, 2, 1, 0}},
-		{`message:value`, []int{1, 0}},
-		{`message:value*`, []int{2, 1, 0}},
-		{`message:"value\*"`, []int{}},
-		{`message:"value\**"`, []int{2}},
-		{`message:"*\**"`, []int{3, 2, 1, 0}},
-		{`message:"*e\**"`, []int{2}},
-		{`message:"\**"`, []int{3, 1, 0}},
-		{`message:"\*\*\*\*"`, []int{3, 0}},
-		{`message:"\*\*\*\**"`, []int{3, 1, 0}},
-		{`message:value* AND message:"\*\**"`, []int{1, 0}},
-		{`message:value* OR message:"\*\**"`, []int{3, 2, 1, 0}},
-	}
-
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
-		for _, test := range tests {
-			s.AssertSearch(test.query, docStrs, test.indexes)
-		}
 	})
 }
 

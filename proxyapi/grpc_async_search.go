@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/seq"
@@ -123,7 +123,7 @@ func (g *grpcV1) GetAsyncSearchesList(
 	ctx context.Context,
 	r *seqproxyapi.GetAsyncSearchesListRequest,
 ) (*seqproxyapi.GetAsyncSearchesListResponse, error) {
-	var searchStatus *fracmanager.AsyncSearchStatus
+	var searchStatus *asyncsearcher.AsyncSearchStatus
 	if r.Status != nil {
 		s := r.Status.MustAsyncSearchStatus()
 		searchStatus = &s

@@ -6,8 +6,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/frac"
@@ -16,35 +14,6 @@ import (
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
-)
-
-var (
-	fetcherStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetcher",
-		Name:      "stages_seconds",
-		Buckets:   metric.SecondsBuckets,
-	}, []string{"stage"})
-	fetcherIDsPerFraction = promauto.NewSummary(prometheus.SummaryOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetcher",
-		Name:      "ids_per_fraction",
-	})
-	fetcherWithHints = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetcher",
-		Name:      "requests_with_hints",
-	})
-	fetcherWithoutHint = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetcher",
-		Name:      "requests_without_hints",
-	})
-	fetcherHintMisses = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "fetcher",
-		Name:      "hint_misses",
-	})
 )
 
 type Fetcher struct {

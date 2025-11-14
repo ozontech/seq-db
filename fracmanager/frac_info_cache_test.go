@@ -274,10 +274,9 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	const maxSize = 10000
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100,
-		TotalSize:    maxSize * 2,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:  100,
+		TotalSize: maxSize * 2,
+		DataDir:   dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -358,10 +357,9 @@ func TestExtraFractionsRemoved(t *testing.T) {
 	q := newEvictingQueue(maxSize)
 
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100,
-		TotalSize:    maxSize,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:  100,
+		TotalSize: maxSize,
+		DataDir:   dataDir,
 	})
 
 	assert.NoError(t, err)
@@ -419,10 +417,9 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	const times = 10
 	// make some fractions
 	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100,
-		TotalSize:    maxSize,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:  100,
+		TotalSize: maxSize,
+		DataDir:   dataDir,
 	})
 	assert.NoError(t, err)
 
@@ -459,10 +456,9 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 
 	// create a new fracmanager that will read the fraction cache file
 	fm2, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:     100,
-		TotalSize:    maxSize,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+		FracSize:  100,
+		TotalSize: maxSize,
+		DataDir:   dataDir,
 	})
 	assert.NoError(t, err)
 

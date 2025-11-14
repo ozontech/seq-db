@@ -43,3 +43,13 @@ func SyncPath(path string) error {
 	}
 	return nil
 }
+
+// RemoveFile safely removes a file with logging
+// Handles cases where the file already doesn't exist
+func RemoveFile(file string) {
+	if err := os.Remove(file); err == nil {
+		logger.Info("remove file", zap.String("filename", file))
+	} else if !os.IsNotExist(err) {
+		logger.Error("file removing error", zap.Error(err))
+	}
+}
