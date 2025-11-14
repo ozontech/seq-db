@@ -1,0 +1,26 @@
+github-pages:
+  directory: .  # Save index.html file at the root of gh-pages
+
+storage:
+  capacity: 25
+
+units:
+  - name: allocs/op
+    better: lower
+    threshold: 0.05
+
+  - name: B/op
+    better: lower
+    threshold: 0.05
+
+  - name: ns/op
+    better: lower
+    threshold: 0.05
+
+  - name: MB/s
+    better: higher
+    threshold: 0.05
+
+  - name: iterations
+    better: higher
+    threshold: 0.05
