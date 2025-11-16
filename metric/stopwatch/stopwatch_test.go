@@ -1,7 +1,6 @@
 package stopwatch
 
 import (
-	"math/rand"
 	"testing"
 	"time"
 
@@ -29,8 +28,7 @@ func TestSamplingStopwatch(t *testing.T) {
 	var tikerFn func()
 	var nowCnt, sinceCnt, tikerCnt int
 
-	now := time.Now()
-	rand.Seed(now.UnixNano())
+    
 
 	n := 5555
 
@@ -68,8 +66,7 @@ func TestStopwatch(t *testing.T) {
 	var tikerFn func()
 	var nowCnt, sinceCnt, tikerCnt int
 
-	now := time.Now()
-	rand.Seed(now.UnixNano())
+    
 
 	sw := New()
 
