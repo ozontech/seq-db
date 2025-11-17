@@ -3,30 +3,20 @@ package fracmanager
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/util"
-)
-
-const (
-	fileBasePattern  = "seq-db-"
-	fileImmatureFlag = ".immature"
 )
 
 type FracManager struct {
@@ -47,7 +37,8 @@ type FracManager struct {
 
 	oldestCTLocal  atomic.Uint64
 	oldestCTRemote atomic.Uint64
-	mature         atomic.Bool
+
+	flags *StateManager
 
 	stopFn  func()
 	statWG  sync.WaitGroup
@@ -74,7 +65,7 @@ func (fm *FracManager) newActiveRef(active *frac.Active) activeRef {
 	}
 }
 
-func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracManager {
+func New(ctx context.Context, cfg *Config, s3cli *s3.Client) (*FracManager, error) {
 	FillConfigWithDefault(cfg)
 
 	cacheMaintainer := NewCacheMaintainer(cfg.CacheSize, cfg.SortCacheSize, newDefaultCacheMetrics())
@@ -83,18 +74,24 @@ func NewFracManager(ctx context.Context, cfg *Config, s3cli *s3.Client) *FracMan
 	indexer := frac.NewActiveIndexer(config.IndexWorkers, config.IndexWorkers)
 	indexer.Start()
 
-	fracManager := &FracManager{
+	flags, err := NewStateManager(cfg.DataDir, StorageState{})
+	if err != nil {
+		logger.Fatal("state manager initiation error", zap.Error(err))
+	}
+
+	fm := &FracManager{
 		config:          cfg,
 		ctx:             ctx,
 		s3cli:           s3cli,
-		mature:          atomic.Bool{},
+		flags:           flags,
 		cacheMaintainer: cacheMaintainer,
 		indexer:         indexer,
 		fracProvider:    newFractionProvider(cfg, s3cli, cacheMaintainer, readLimiter, indexer),
 		fracCache:       NewFracInfoCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix)),
 	}
 
-	return fracManager
+	err = fm.load(ctx)
+	return fm, err
 }
 
 func (fm *FracManager) maintenance(sealWg, cleanupWg *sync.WaitGroup) {
@@ -122,7 +119,7 @@ func (fm *FracManager) maintenance(sealWg, cleanupWg *sync.WaitGroup) {
 	logger.Debug("maintenance finished", zap.Int64("took_ms", time.Since(n).Milliseconds()))
 }
 
-func (fm *FracManager) OldestCT() uint64 {
+func (fm *FracManager) Oldest() uint64 {
 	local, remote := fm.oldestCTLocal.Load(), fm.oldestCTRemote.Load()
 	if local != 0 && remote != 0 {
 		return min(local, remote)
@@ -221,6 +218,10 @@ func (fm *FracManager) removeStaleFractions(cleanupWg *sync.WaitGroup, retention
 	}()
 }
 
+func (fm *FracManager) Flags() *StateManager {
+	return fm.flags
+}
+
 func (fm *FracManager) determineOutsiders() []frac.Fraction {
 	var outsiders []frac.Fraction
 
@@ -240,11 +241,13 @@ func (fm *FracManager) determineOutsiders() []frac.Fraction {
 		truncated++
 	}
 
-	if len(outsiders) > 0 && !fm.Mature() {
-		fm.setMature()
+	if len(outsiders) > 0 && !fm.flags.IsCapacityExceeded() {
+		if err := fm.flags.setCapacityExceeded(true); err != nil {
+			logger.Fatal("set capacity exceeded error", zap.Error(err))
+		}
 	}
 
-	metric.MaintenanceTruncateTotal.Add(float64(truncated))
+	maintenanceTruncateTotal.Add(float64(truncated))
 	return outsiders
 }
 
@@ -269,8 +272,8 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 			offloadStart := time.Now()
 			remote, err := fm.fracProvider.Offload(fm.ctx, outsider)
 			if err != nil {
-				metric.OffloadingTotal.WithLabelValues("failure").Inc()
-				metric.OffloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
+				offloadingTotal.WithLabelValues("failure").Inc()
+				offloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
 
 				logger.Error(
 					"will call Suicide() on fraction: failed to offload fraction",
@@ -291,8 +294,8 @@ func (fm *FracManager) cleanupFractions(cleanupWg *sync.WaitGroup) {
 				return
 			}
 
-			metric.OffloadingTotal.WithLabelValues("success").Inc()
-			metric.OffloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
+			offloadingTotal.WithLabelValues("success").Inc()
+			offloadingDurationSeconds.Observe(float64(time.Since(offloadStart).Seconds()))
 
 			logger.Info(
 				"successully offloaded fraction",
@@ -320,14 +323,14 @@ const (
 	FracTypeRemote
 )
 
-// GetAllFracs returns a list of known fracs (local and remote).
+// Fractions returns a list of known fracs (local and remote).
 //
 // While working with this list, it may become irrelevant (factions may, for example, be deleted).
 // This is a valid situation, because access to the data of these factions (search and fetch) occurs under blocking (see DataProvider).
 // This way we avoid the race.
 //
 // Accessing the deleted faction data just will return an empty result.
-func (fm *FracManager) GetAllFracs() (fracs List) {
+func (fm *FracManager) Fractions() (fracs List) {
 	return append(fm.getLocalFracs(), fm.getRemoteFracs()...)
 }
 
@@ -389,13 +392,13 @@ func (fm *FracManager) processFracsStats() {
 			util.ZapUint64AsSizeStr("index", ft.index),
 		)
 
-		metric.DataSizeTotal.WithLabelValues("total", st).Set(float64(ft.totalSize))
-		metric.DataSizeTotal.WithLabelValues("docs_raw", st).Set(float64(ft.docsRaw))
-		metric.DataSizeTotal.WithLabelValues("docs_on_disk", st).Set(float64(ft.docsDisk))
-		metric.DataSizeTotal.WithLabelValues("index", st).Set(float64(ft.index))
+		dataSizeTotal.WithLabelValues("total", st).Set(float64(ft.totalSize))
+		dataSizeTotal.WithLabelValues("docs_raw", st).Set(float64(ft.docsRaw))
+		dataSizeTotal.WithLabelValues("docs_on_disk", st).Set(float64(ft.docsDisk))
+		dataSizeTotal.WithLabelValues("index", st).Set(float64(ft.index))
 
 		if oldest != 0 {
-			metric.OldestFracTime.WithLabelValues(st).
+			oldestFracTime.WithLabelValues(st).
 				Set((time.Duration(oldest) * time.Millisecond).Seconds())
 		}
 	}
@@ -456,94 +459,26 @@ func startCacheWorker(ctx context.Context, cfg *Config, cache *CacheMaintainer, 
 	}()
 }
 
-func (fm *FracManager) Load(ctx context.Context) error {
+func (fm *FracManager) load(ctx context.Context) error {
 	l := NewLoader(fm.config, fm.fracProvider, fm.fracCache)
 
-	actives, sealed, remote, err := l.load(ctx)
+	active, locals, remotes, err := l.Load(ctx)
 	if err != nil {
 		return err
 	}
 
-	for _, s := range sealed {
+	for _, s := range locals {
 		fm.localFracs = append(fm.localFracs, &fracRef{instance: s})
 	}
 
-	for _, s := range remote {
+	for _, s := range remotes {
 		fm.remoteFracs = append(fm.remoteFracs, s)
 	}
 
-	if err := fm.replayAll(ctx, actives); err != nil {
-		return err
-	}
-
-	if len(fm.localFracs)+len(fm.remoteFracs) == 0 { // no data, first run
-		if err := fm.setImmature(); err != nil {
-			return err
-		}
-	} else {
-		if err := fm.checkIsImmature(); err != nil {
-			return err
-		}
-	}
-
-	if fm.active.ref == nil { // no active
-		_ = fm.rotate() // make new empty active
-	}
+	fm.active = fm.newActiveRef(active)
+	fm.localFracs = append(fm.localFracs, fm.active.ref)
 
 	fm.updateOldestCT()
-	return nil
-}
-
-func (fm *FracManager) replayAll(ctx context.Context, actives []*frac.Active) error {
-	if len(actives) == 0 {
-		return nil
-	}
-
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(fm.config.ReplayWorkers)
-
-	// goroutines access different indices, no need for lock protection for fracRefs
-	var fracRefs = make([]*fracRef, len(actives))
-	var newActiveRef *activeRef
-
-	for i, f := range actives {
-		g.Go(func() error {
-			if err := f.Replay(ctx); err != nil {
-				return err
-			}
-
-			if f.Info().DocsTotal == 0 {
-				f.Suicide() // remove empty
-				return nil
-			}
-
-			ref := fm.newActiveRef(f)
-			fracRefs[i] = ref.ref
-
-			if i != len(actives)-1 {
-				fm.seal(ref)
-			} else {
-				// last frac stays active and is not sealed
-				newActiveRef = &ref
-			}
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	for _, ref := range fracRefs {
-		if ref != nil {
-			fm.localFracs = append(fm.localFracs, ref)
-		}
-	}
-
-	if newActiveRef != nil {
-		fm.active = *newActiveRef
-	}
 	return nil
 }
 
@@ -561,19 +496,6 @@ func (fm *FracManager) Append(ctx context.Context, docs, metas storage.DocBlock)
 		}
 	}
 }
-
-var (
-	sealsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db",
-		Subsystem: "main",
-		Name:      "seals_total",
-	})
-	sealsDoneSeconds = promauto.NewSummary(prometheus.SummaryOpts{
-		Namespace: "seq_db",
-		Subsystem: "main",
-		Name:      "seals_done_seconds",
-	})
-)
 
 func (fm *FracManager) seal(activeRef activeRef) {
 	sealsTotal.Inc()
@@ -619,10 +541,11 @@ func (fm *FracManager) rotate() activeRef {
 }
 
 func (fm *FracManager) minFracSizeToSeal() uint64 {
-	return fm.config.FracSize * consts.SealOnExitFracSizePercent / 100
+	return fm.config.FracSize * consts.DefaultMinSealPercent / 100
 }
 
 func (fm *FracManager) Stop() {
+	fm.Writer().WaitWriteIdle()
 	fm.indexer.Stop()
 	fm.stopFn()
 
@@ -670,62 +593,4 @@ func (fm *FracManager) Active() frac.Fraction {
 	defer fm.fracMu.RUnlock()
 
 	return fm.active.frac
-}
-
-func (fm *FracManager) WaitIdle() {
-	fm.Writer().WaitWriteIdle()
-}
-
-func (fm *FracManager) setMature() {
-	if err := os.Remove(filepath.Join(fm.config.DataDir, fileImmatureFlag)); err != nil {
-		logger.Panic(err.Error())
-	}
-	fm.mature.Store(true)
-}
-
-func (fm *FracManager) setImmature() error {
-	fm.mature.Store(false)
-	_, err := os.Create(filepath.Join(fm.config.DataDir, fileImmatureFlag))
-	return err
-}
-
-func (fm *FracManager) checkIsImmature() error {
-	_, err := os.Stat(filepath.Join(fm.config.DataDir, fileImmatureFlag))
-	if err == nil { // file exists; store is immature
-		fm.mature.Store(false)
-		return nil
-	}
-	if os.IsNotExist(err) { // file not exists; store is mature
-		fm.mature.Store(true)
-		return nil
-	}
-	return err
-}
-
-func (fm *FracManager) Mature() bool {
-	return fm.mature.Load()
-}
-
-func (fm *FracManager) SealForcedForTests() {
-	active := fm.rotate()
-	if active.frac.Info().DocsTotal > 0 {
-		fm.seal(active)
-	}
-}
-
-func (fm *FracManager) OffloadForcedForTests() {
-	if !(fm.config.OffloadingEnabled && fm.config.OffloadingForced) {
-		panic("trying to force offloading when it is disabled")
-	}
-
-	// Offloading works only for sealed fractions.
-	fm.SealForcedForTests()
-
-	var wg sync.WaitGroup
-	fm.cleanupFractions(&wg)
-	wg.Wait()
-}
-
-func (fm *FracManager) ResetCacheForTests() {
-	fm.cacheMaintainer.Reset()
 }

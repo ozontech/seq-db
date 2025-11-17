@@ -10,9 +10,10 @@ import (
 	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/mappingprovider"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/seq"
@@ -51,12 +52,11 @@ func makeBulkRequest(cnt int) *storeapi.BulkRequest {
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
 
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	for i := 0; i < cnt; i++ {
 		id := seq.SimpleID(i + 1)
 		doc := []byte("document")
-		tokens := seq.Tokens("_all_:", "service:100500", "k8s_pod:"+strconv.Itoa(i))
-		dp.Append(doc, nil, id, tokens)
+		dp.Append(doc, nil, id, "_all_:", "service:100500", "k8s_pod:"+strconv.Itoa(i))
 	}
 	req := &storeapi.BulkRequest{Count: int64(cnt)}
 	req.Docs, req.Metas = dp.Provide()
@@ -67,13 +67,12 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 	dataDir := common.GetTestTmpDir(t)
 	common.RecreateDir(dataDir)
 
-	fm := fracmanager.NewFracManager(t.Context(), &fracmanager.Config{
-		FracSize:     500,
-		TotalSize:    5000,
-		ShouldReplay: false,
-		DataDir:      dataDir,
+	fm, err := fracmanager.New(t.Context(), &fracmanager.Config{
+		FracSize:  500,
+		TotalSize: 5000,
+		DataDir:   dataDir,
 	}, nil)
-	assert.NoError(t, fm.Load(context.Background()))
+	assert.NoError(t, err)
 	fm.Start()
 
 	config := APIConfig{
@@ -87,7 +86,7 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 			FractionsPerIteration: 1,
 			RequestsLimit:         consts.DefaultSearchRequestsLimit,
 			LogThreshold:          0,
-			Async:                 fracmanager.AsyncSearcherConfig{DataDir: path.Join(dataDir, "async_search")},
+			Async:                 asyncsearcher.AsyncSearcherConfig{DataDir: path.Join(dataDir, "async_search")},
 		},
 		Fetch: FetchConfig{
 			LogThreshold: 0,
@@ -104,5 +103,5 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 		common.RemoveDir(dataDir)
 	}
 
-	return g, fm.WaitIdle, release
+	return g, fm.WaitIdleForTests, release
 }

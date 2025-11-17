@@ -25,8 +25,8 @@ import (
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
@@ -253,37 +253,6 @@ func (s *IntegrationTestSuite) TestSearchNothing() {
 	assert.NoError(s.T(), err, "should be no errors")
 	assert.Len(s.T(), qpr.IDs, 0, "wrong doc count")
 	assert.Equal(s.T(), uint64(0), qpr.Total, "wrong doc count")
-}
-
-func (s *IntegrationTestSuite) TestSearchBackwards() {
-	now := time.Now()
-	before := now.Add(-5 * time.Hour)
-	origDocs := []string{
-		fmt.Sprintf(`{"service":"a","xxxx":"yyyy","time":%q}`, now.Format(time.RFC3339)),
-		fmt.Sprintf(`{"service":"a","yyyy":"xxxx","time":%q}`, before.Format(time.RFC3339)),
-	}
-
-	env := setup.NewTestingEnv(s.Config)
-	defer env.StopAll()
-
-	setup.Bulk(s.T(), env.IngestorBulkAddr(), origDocs)
-	env.WaitIdle()
-
-	for _, o := range []seq.DocsOrder{seq.DocsOrderAsc, seq.DocsOrderDesc} {
-		for _, withTotal := range []bool{true, false} {
-			qpr, docs, _, err := env.Search(`service:a`, 1000, setup.WithTotal(withTotal), setup.WithOrder(o))
-
-			if o.IsReverse() {
-				slices.Reverse(docs)
-			}
-
-			assert.NoError(s.T(), err, "should be no errors")
-			assert.Len(s.T(), qpr.IDs, 2, "wrong doc count")
-			assert.Equal(s.T(), origDocs[0], string(docs[0]), "wrong doc content")
-			assert.Equal(s.T(), origDocs[1], string(docs[1]), "wrong doc content")
-			assert.Equal(s.T(), getTotal(2, withTotal), qpr.Total, "wrong doc count")
-		}
-	}
 }
 
 func (s *IntegrationTestSuite) TestSearchSequence() {
@@ -921,292 +890,6 @@ func sortedTimeBins(hist map[seq.AggBin]*seq.SamplesContainer) []seq.AggBin {
 	return keys
 }
 
-func (s *IntegrationTestSuite) TestAggStat() {
-	t := s.T()
-
-	cfg := *s.Config
-	cfg.Mapping = map[string]seq.MappingTypes{
-		"service": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"v":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"level":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-	}
-
-	type Expected struct {
-		NotExists int64
-		Buckets   []seq.AggregationBucket
-	}
-	type TestCase struct {
-		Name        string
-		ToBulk      []string
-		SearchQuery string
-		AggQuery    search.AggQuery
-		Expected    Expected
-	}
-
-	tcs := []TestCase{
-		{
-			Name: "sum",
-			ToBulk: []string{
-				`{"service": "sum1", "v":1}`,
-				`{"service": "some_log", "v":2}`,
-				`{"service": "sum1", "v":1}`,
-				`{"service": "sum1", "v":-1}`,
-				`{"service": "sum1", "v":-0}`,
-				`{"service": "sum1", "v":+0}`,
-				`{"service": "sum1", "v":0}`,
-				`{"service": "sum1"}`,
-				// test negative values
-				`{"service": "sum2", "v":-1}`,
-				`{"service": "sum2", "v":-3}`,
-				`{"service": "sum2", "v":-4}`,
-				// test same token ("1") repetitions
-				`{"service": "sum3", "v":1}`,
-				`{"service": "sum4", "v":99}`,
-				`{"service": "sum4", "v":1}`,
-				`{"service": "sum4", "v":1}`,
-				`{"service": "sum4", "v":1}`,
-				`{"service": "sum4", "v":1}`,
-				`{"service": "sum4", "v":1}`,
-				// test sort
-				`{"service": "sum5", "v":1}`,
-				// test not exists
-				`{"service": "sum5"}`,
-			},
-			SearchQuery: "service:sum*",
-			AggQuery: search.AggQuery{
-				Field:   "v",
-				GroupBy: "service",
-				Func:    seq.AggFuncSum,
-			},
-			Expected: Expected{
-				NotExists: 0,
-				Buckets: []seq.AggregationBucket{
-					{Name: "sum4", Value: 104, NotExists: 0},
-					{Name: "sum1", Value: 1, NotExists: 1},
-					{Name: "sum3", Value: 1, NotExists: 0},
-					{Name: "sum5", Value: 1, NotExists: 1},
-					{Name: "sum2", Value: -8, NotExists: 0},
-				},
-			},
-		},
-		{
-			Name: "min",
-			ToBulk: []string{
-				`{"service": "min1", "v":1}`,
-				`{"service": "min1", "v":2}`,
-				`{"service": "min2", "v":3}`,
-				`{"service": "min2", "v":"-10"}`,
-				`{"service": "min4"}`,
-				`{"service": "min4"}`,
-				`{"service": "min4"}`,
-				`{"service": "min4"}`,
-				`{"service": "min4"}`,
-				`{"service": "min4"}`,
-				`{"service": "min4"}`,
-				`{"service": null, "v":null}`,
-				`{"v":null}`,
-			},
-			SearchQuery: "service:min*",
-			AggQuery: search.AggQuery{
-				Field:   "v",
-				GroupBy: "service",
-				Func:    seq.AggFuncMin,
-			},
-			Expected: Expected{
-				NotExists: 0,
-				Buckets: []seq.AggregationBucket{
-					{Name: "min4", Value: math.NaN(), NotExists: 7},
-					{Name: "min2", Value: -10, NotExists: 0},
-					{Name: "min1", Value: 1, NotExists: 0},
-				},
-			},
-		},
-		{
-			Name: "max",
-			ToBulk: []string{
-				`{"service": "max1", "v":1}`,
-				`{"service": "max1", "v":2}`,
-				`{"service": "max2", "v":3}`,
-				`{"service": "max2", "v":"-10"}`,
-				`{"service": "max4"}`,
-				`{"service": "max4"}`,
-				`{"service": null, "v":null}`,
-				`{"v":null}`,
-			},
-			SearchQuery: "service:max*",
-			AggQuery: search.AggQuery{
-				Field:   "v",
-				GroupBy: "service",
-				Func:    seq.AggFuncMax,
-			},
-			Expected: Expected{
-				NotExists: 0,
-				Buckets: []seq.AggregationBucket{
-					{Name: "max2", Value: 3, NotExists: 0},
-					{Name: "max1", Value: 2, NotExists: 0},
-					{Name: "max4", Value: math.NaN(), NotExists: 2},
-				},
-			},
-		},
-		{
-			Name: "quantile",
-			ToBulk: []string{
-				`{"service": "quantile1", "v":1}`,
-				`{"service": "quantile1", "v":2}`,
-				`{"service": "quantile1", "v":3}`,
-				`{"service": "quantile1", "v":4}`,
-				`{"service": "quantile1", "v":5}`,
-				`{"service": "quantile1", "v":6}`,
-				`{"service": "quantile1", "v":7}`,
-				`{"service": "quantile1", "v":8}`,
-				`{"service": "quantile1", "v":9}`,
-				`{"service": "quantile1", "v":10}`,
-			},
-			SearchQuery: "service:quantile*",
-			AggQuery: search.AggQuery{
-				Field:     "v",
-				GroupBy:   "service",
-				Func:      seq.AggFuncQuantile,
-				Quantiles: []float64{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 0.99, 0.999, 0.99999999},
-			},
-			Expected: Expected{
-				NotExists: 0,
-				Buckets: []seq.AggregationBucket{
-					{
-						Name:      "quantile1",
-						Value:     1,
-						Quantiles: []float64{1, 2, 3, 4, 5, 6, 6, 7, 8, 8, 9, 10, 10, 10},
-						NotExists: 0,
-					},
-				},
-			},
-		},
-		{
-			Name: "unique",
-			ToBulk: []string{
-				`{"service": "some_log", "level": 2}`,
-				`{"service": "unique1", "level": 3}`,
-				`{"service": "unique2", "level": 3}`,
-				`{"service": "unique2", "level": 3}`,
-				`{"service": "unique3", "level": 3}`,
-				`{"service": "unique3", "level": 2}`,
-				`{"service": "unique4", "level": 3}`,
-				`{"service": "unique4", "level": 2}`,
-				`{"service": "unique4", "level": 3}`,
-				`{"service": "unique5", "level": 3}`,
-				`{"level": 3}`,
-			},
-			SearchQuery: "level:3",
-			AggQuery: search.AggQuery{
-				GroupBy: "service",
-				Func:    seq.AggFuncUnique,
-			},
-			Expected: Expected{
-				NotExists: 1,
-				Buckets: []seq.AggregationBucket{
-					{Name: "unique1", Value: 0, NotExists: 0},
-					{Name: "unique2", Value: 0, NotExists: 0},
-					{Name: "unique3", Value: 0, NotExists: 0},
-					{Name: "unique4", Value: 0, NotExists: 0},
-					{Name: "unique5", Value: 0, NotExists: 0},
-				},
-			},
-		},
-		{
-			Name: "sum without group_by",
-			ToBulk: []string{
-				`{"v":1, "service":"sum_without_group_by"}`,
-				`{"v":1, "service":"sum_without_group_by"}`,
-				`{"v":2, "service":"sum_without_group_by"}`,
-				`{"v":1, "service":"sum_without_group_by"}`,
-				`{"v":1, "service":"sum_without_group_by"}`,
-				`{"v":1, "service":"sum_without_group_by"}`,
-				`{"v":1, "service":"sum_without_group_by"}`,
-				`{"v":2, "service":"sum_without_group_by"}`,
-				`{"v":-0, "service":"sum_without_group_by"}`,
-				`{"v":+0, "service":"sum_without_group_by"}`,
-				`{"v":0, "service":"sum_without_group_by"}`,
-			},
-			SearchQuery: `service:"sum_without_group_by"`,
-			AggQuery:    search.AggQuery{Field: "v", Func: seq.AggFuncSum},
-			Expected:    Expected{NotExists: 0, Buckets: []seq.AggregationBucket{{Name: "", Value: 10, NotExists: 0}}},
-		},
-		{
-			Name: "max without group_by",
-			ToBulk: []string{
-				`{"v":100, "service":"max_without_group_by"}`,
-				`{"v":-200, "service":"max_without_group_by"}`,
-				`{"v":300, "service":"max_without_group_by"}`,
-				`{"v":-300, "service":"max_without_group_by"}`,
-			},
-			SearchQuery: `service:"max_without_group_by"`,
-			AggQuery:    search.AggQuery{Field: "v", Func: seq.AggFuncMax},
-			Expected:    Expected{NotExists: 0, Buckets: []seq.AggregationBucket{{Name: "", Value: 300, NotExists: 0}}},
-		},
-		{
-			Name:        "check not_exists without group_by",
-			ToBulk:      []string{`{"service":"not_exists_without_group_by"}`},
-			SearchQuery: `service:"not_exists_without_group_by"`,
-			AggQuery:    search.AggQuery{Field: "v", Func: seq.AggFuncAvg},
-			Expected:    Expected{NotExists: 0, Buckets: []seq.AggregationBucket{{Name: "", Value: math.NaN(), NotExists: 1}}},
-		},
-		{
-			Name: "avg without group_by",
-			ToBulk: []string{
-				`{"v":200, "service":"avg_without_group_by"}`,
-				`{"v":500, "service":"avg_without_group_by"}`,
-			},
-			SearchQuery: `service:"avg_without_group_by"`,
-			AggQuery:    search.AggQuery{Field: "v", Func: seq.AggFuncAvg},
-			Expected:    Expected{NotExists: 0, Buckets: []seq.AggregationBucket{{Name: "", Value: 350, NotExists: 0}}},
-		},
-	}
-
-	aggregateWithOrder := func(r *require.Assertions, env *setup.TestingEnv, tc *TestCase, order seq.DocsOrder) {
-		qpr, _, _, err := env.Search(tc.SearchQuery, math.MaxInt32, setup.WithAggQuery(tc.AggQuery), setup.WithOrder(order))
-		r.NoError(err)
-
-		gotBuckets := qpr.Aggregate([]seq.AggregateArgs{{Func: tc.AggQuery.Func, Quantiles: tc.AggQuery.Quantiles}})
-
-		r.Equal(1, len(gotBuckets))
-		r.Equal(1, len(qpr.Aggs))
-		r.Equal(tc.Expected.NotExists, qpr.Aggs[0].NotExists)
-
-		// Handwritten bucket comparison to ignore NaN values
-		r.Len(gotBuckets[0].Buckets, len(tc.Expected.Buckets), "wrong bucket count, expected=%v, got=%v", tc.Expected.Buckets, gotBuckets[0])
-		for i, expBucket := range tc.Expected.Buckets {
-			gotBucket := gotBuckets[0].Buckets[i]
-			if math.IsNaN(expBucket.Value) || math.IsNaN(gotBucket.Value) {
-				r.Truef(math.IsNaN(expBucket.Value) && math.IsNaN(gotBucket.Value), "wrong bucket value, expected=%v, got=%v", expBucket.Value, gotBucket.Value)
-				expBucket.Value = 0
-				gotBucket.Value = 0
-			}
-			r.EqualValues(expBucket, gotBucket)
-		}
-	}
-
-	for i := range tcs {
-		tc := &tcs[i]
-		t.Run(tc.Name, func(t *testing.T) {
-			env := setup.NewTestingEnv(&cfg)
-			defer env.StopAll()
-
-			setup.Bulk(t, env.IngestorBulkAddr(), tc.ToBulk)
-			env.WaitIdle()
-
-			t.Run("asc", func(t *testing.T) {
-				r := require.New(t)
-				aggregateWithOrder(r, env, tc, seq.DocsOrderAsc)
-			})
-
-			t.Run("desc", func(t *testing.T) {
-				r := require.New(t)
-				aggregateWithOrder(r, env, tc, seq.DocsOrderDesc)
-			})
-		})
-	}
-}
-
 func (s *IntegrationTestSuite) TestAggNoTotal() {
 	env := setup.NewTestingEnv(s.Config)
 	defer env.StopAll()
@@ -1380,46 +1063,6 @@ func (s *IntegrationTestSuite) TestSeal() {
 		qpr, _, _, err := env.Search(`status:200`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(result, withTotal), qpr.Total, "wrong doc count")
-	}
-}
-
-func (s *IntegrationTestSuite) TestSearchRange() {
-	doc := `{"service": "test-service", "level": "%d"}`
-
-	env := setup.NewTestingEnv(s.Config)
-	defer env.StopAll()
-
-	origDocs := []string{}
-	for i := 0; i < 100; i = 2*i + 1 {
-		origDocs = append(origDocs, fmt.Sprintf(doc, i))
-	}
-	setup.Bulk(s.T(), env.IngestorBulkAddr(), origDocs)
-	env.WaitIdle()
-
-	tests := []struct {
-		request string
-		cnt     int
-	}{
-		{request: "[1 TO 3]", cnt: 2},
-		{request: "[0 TO 3]", cnt: 3},
-		{request: "(0 TO 3)", cnt: 1},
-		{request: "(0 TO 3]", cnt: 2},
-		{request: "[0 TO 3)", cnt: 2},
-		{request: "[0 TO 63]", cnt: 7},
-		{request: "[-100 TO 100]", cnt: 7},
-		{request: "(-100 TO 100)", cnt: 7},
-		{request: "[0 TO *]", cnt: 7},
-		{request: "[0 TO *)", cnt: 7},
-	}
-
-	for _, test := range tests {
-		for _, withTotal := range []bool{true, false} {
-			req := fmt.Sprintf(`level:%v`, test.request)
-			qpr, _, _, err := env.Search(req, 1000, setup.WithTotal(withTotal))
-			require.NoError(s.T(), err, "should be no errors")
-			assert.Len(s.T(), qpr.IDs, test.cnt, "wrong doc count")
-			assert.Equal(s.T(), getTotal(test.cnt, withTotal), qpr.Total, "wrong doc count")
-		}
 	}
 }
 
@@ -1683,64 +1326,6 @@ func copySlice[V any](src []V) []V {
 	return dst
 }
 
-func (s *IntegrationTestSuite) TestPathSearch() {
-	env := setup.NewTestingEnv(s.Config)
-	defer env.StopAll()
-
-	docs := []string{
-		`{"service":"a", "request_uri":"/one"}`,
-		`{"service":"a", "request_uri":"/one/two"}`,
-		`{"service":"a", "request_uri":"/one/two/three"}`,
-		`{"service":"a", "request_uri":"/one/two.three/four"}`,
-		`{"service":"a", "request_uri":"/one/two.three/five"}`,
-		`{"service":"a", "request_uri":"/one/two/three/"}`,
-		`{"service":"a", "request_uri":"/one/two/three/1"}`,
-		`{"service":"a", "request_uri":"/one/two/three/2"}`,
-		`{"service":"a", "request_uri":"/one/two/three/3/four/"}`,
-		`{"service":"a", "request_uri":"/one/four/three/3/"}`,
-		`{"service":"a", "request_uri":"/two/one/three/2"}`,
-	}
-
-	setup.Bulk(s.T(), env.IngestorBulkAddr(), docs)
-	env.WaitIdle()
-
-	tests := []struct {
-		request string
-		cnt     int
-	}{
-		{request: `"/one"`, cnt: 10},
-		{request: `"/two"`, cnt: 1},
-		{request: `"/one/two"`, cnt: 6},
-		{request: `"/one/two/three"`, cnt: 5},
-		{request: `"/one/two/three/1"`, cnt: 1},
-		{request: `"/one/two.three"`, cnt: 2},
-		{request: `"/one/two.three/four"`, cnt: 1},
-		{request: `"/one/*/three"`, cnt: 6},
-		{request: `"/two/*/three"`, cnt: 1},
-		{request: `"*/three/"`, cnt: 1},
-		{request: `"*/three"`, cnt: 7},
-	}
-
-	for _, test := range tests {
-		req := fmt.Sprintf(`request_uri:%v`, test.request)
-		qpr, _, _, err := env.Search(req, 1000, setup.WithTotal(true))
-		require.NoError(s.T(), err, "should be no errors")
-		assert.Len(s.T(), qpr.IDs, test.cnt, "wrong doc count")
-		assert.Equal(s.T(), test.cnt, int(qpr.Total), "wrong doc count")
-	}
-
-	env.WaitIdle()
-	env.SealAll()
-
-	for _, test := range tests {
-		req := fmt.Sprintf(`request_uri:%v`, test.request)
-		qpr, _, _, err := env.Search(req, 1000, setup.WithTotal(true))
-		require.NoError(s.T(), err, "should be no errors")
-		assert.Len(s.T(), qpr.IDs, test.cnt, "wrong doc count")
-		assert.Equal(s.T(), test.cnt, int(qpr.Total), "wrong doc count")
-	}
-}
-
 func (s *IntegrationTestSuite) TestSearchFieldsWithMultipleTypes() {
 	t := s.T()
 
@@ -1956,13 +1541,13 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.Eventually(func() bool {
 		resp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 		r.NoError(err)
-		return resp.Status == fracmanager.AsyncSearchStatusDone
+		return resp.Status == asyncsearcher.AsyncSearchStatusDone
 	}, 10*time.Second, 50*time.Millisecond)
 
 	fresp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 	r.NoError(err)
 
-	r.Equalf(fracmanager.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
+	r.Equalf(asyncsearcher.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
 	r.Equal([]seq.ErrorSource(nil), fresp.QPR.Errors)
 	r.True(fresp.ExpiresAt.After(time.Now().UTC()))
 	r.Equal([]seq.AggregationResult{
@@ -2006,7 +1591,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.Eventually(func() bool {
 		resp, _, err := searcher.FetchAsyncSearchResult(ctx, freq)
 		r.NoError(err)
-		return resp.Status == fracmanager.AsyncSearchStatusDone
+		return resp.Status == asyncsearcher.AsyncSearchStatusDone
 	}, 10*time.Second, 50*time.Millisecond)
 
 	listResp, err := searcher.GetAsyncSearchesList(ctx, search.GetAsyncSearchesListRequest{})
@@ -2015,7 +1600,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 
 	for i, s := range listResp {
 		r.True(s.ID == searchIDs[len(searchIDs)-i-1]) // list is sorted by startedAt desc
-		r.Equal(fracmanager.AsyncSearchStatusDone, s.Status)
+		r.Equal(asyncsearcher.AsyncSearchStatusDone, s.Status)
 		r.Equal(startReq, s.Request)
 		r.True(s.ExpiresAt.After(time.Now().UTC()))
 		r.Equal(float64(1), s.Progress)

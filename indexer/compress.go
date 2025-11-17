@@ -1,23 +1,13 @@
-package frac
+package indexer
 
 import (
 	"sync"
 
 	"github.com/alecthomas/units"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
-
-var bulkSizeAfterCompression = promauto.NewHistogram(prometheus.HistogramOpts{
-	Namespace: "seq_db_ingestor",
-	Subsystem: "bulk",
-	Name:      "bulk_size_after_compression",
-	Help:      "Bulk request sizes after compression",
-	Buckets:   prometheus.ExponentialBuckets(1024, 2, 16),
-})
 
 type DocsMetasCompressor struct {
 	docsCompressLevel int
@@ -53,8 +43,6 @@ func (c *DocsMetasCompressor) CompressDocsAndMetas(docs, meta []byte) {
 	c.docsBuf = storage.CompressDocBlock(docs, c.docsBuf, c.docsCompressLevel)
 	// Compress metas block.
 	c.metaBuf = storage.CompressDocBlock(meta, c.metaBuf, c.metaCompressLevel)
-	// Set compressed doc block size.
-	c.metaBuf.SetExt1(uint64(len(c.docsBuf)))
 
 	bulkSizeAfterCompression.Observe(float64(len(c.docsBuf) + len(c.metaBuf)))
 }

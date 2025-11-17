@@ -14,30 +14,31 @@ import (
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/seq"
 	testscommon "github.com/ozontech/seq-db/tests/common"
 )
 
 // newFracManagerWithBackgroundStart only used from tests
 func newFracManagerWithBackgroundStart(ctx context.Context, config *Config) (*FracManager, error) {
-	fracManager := NewFracManager(ctx, config, nil)
-	if err := fracManager.Load(ctx); err != nil {
+	fracManager, err := New(ctx, config, nil)
+	if err != nil {
 		return nil, err
 	}
 	fracManager.Start()
 	return fracManager, nil
 }
 
-func addDummyDoc(t *testing.T, fm *FracManager, dp *frac.DocProvider, seqID seq.ID) {
+func addDummyDoc(t *testing.T, fm *FracManager, dp *indexer.TestDocProvider, seqID seq.ID) {
 	doc := []byte("document")
-	dp.Append(doc, nil, seqID, seq.Tokens("service:100500", "k8s_pod", "_all_:"))
+	dp.Append(doc, nil, seqID, "service:100500", "k8s_pod", "_all_:")
 	docs, metas := dp.Provide()
 	err := fm.Append(context.Background(), docs, metas)
 	assert.NoError(t, err)
 }
 
 func MakeSomeFractions(t *testing.T, fm *FracManager) {
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	addDummyDoc(t, fm, dp, seq.SimpleID(1))
 	fm.seal(fm.rotate())
 
@@ -119,9 +120,9 @@ func TestReplaySingleEmptyFrac(t *testing.T) {
 
 	replayedFracs := fm.getLocalFracs()
 	assert.Equal(t, 1, len(replayedFracs), "should replay exactly one frac")
-	active := fm.Active() // replayed frac is active
-	assert.Equal(t, uint32(0), active.Info().DocsTotal, "no docs")
-	assert.NotEqual(t, fractionInfo.Name(), active.Info().Name(), "should create a new empty frac")
+	assert.Equal(t, fractionInfo.Name(), replayedFracs[0].Info().Name(), "replayed fraction should have the same name")
+	assert.Equal(t, uint32(0), replayedFracs[0].Info().DocsTotal, "no docs")
+	assert.Equal(t, fm.Active(), replayedFracs[0], "replayed fraction should be active")
 
 	fm.Stop()
 }
@@ -299,11 +300,9 @@ func TestReplayFracsWithEmptyActiveFrac(t *testing.T) {
 		assert.Greater(t, replayedFracs[i].Info().SealingTime, uint64(0), "replayed frac %d must be sealed", i)
 	}
 
-	assert.NotEqual(t, fracs[fracCount].Name(), replayedFracs[fracCount].Info().Name(), "should create a new empty frac")
+	assert.Equal(t, fracs[fracCount].Name(), replayedFracs[fracCount].Info().Name(), "last replayed fraction should have the same name as last fraction")
 	assert.Equal(t, uint32(0), replayedFracs[fracCount].Info().DocsTotal, "last fraction should have no documents")
-
-	newActive := fm.Active()
-	assert.Equal(t, uint32(0), newActive.Info().DocsTotal, "new active fraction should be empty")
+	assert.Equal(t, replayedFracs[fracCount], fm.Active(), "last replayed fraction should be active")
 
 	fm.Stop()
 }
@@ -364,18 +363,18 @@ func TestReplayFractionsWithMultipleEmptyFracs(t *testing.T) {
 }
 
 func addDocs(t *testing.T, fm *FracManager, docCount int) {
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	for i := 0; i < docCount; i++ {
 		doc := []byte("{\"timestamp\": 0, \"message\": \"msg\"}")
 		docRoot, err := insaneJSON.DecodeBytes(doc)
 		assert.NoError(t, err)
-		dp.Append(doc, docRoot, seq.SimpleID(i), seq.Tokens("service:100500", "k8s_pod", "_all_:"))
+		dp.Append(doc, docRoot, seq.SimpleID(i), "service:100500", "k8s_pod", "_all_:")
 	}
 
 	docs, metas := dp.Provide()
 	err := fm.Append(context.Background(), docs, metas)
 	assert.NoError(t, err)
-	fm.WaitIdle()
+	fm.WaitIdleForTests()
 }
 
 func TestMatureMode(t *testing.T) {
@@ -384,12 +383,12 @@ func TestMatureMode(t *testing.T) {
 	defer testscommon.RemoveDir(dataDir)
 
 	launchAndCheck := func(checkFn func(fm *FracManager)) {
-		fm := NewFracManager(context.Background(), &Config{
+		fm, err := New(context.Background(), &Config{
 			FracSize:  500,
 			TotalSize: 5000,
 			DataDir:   dataDir,
 		}, nil)
-		assert.NoError(t, fm.Load(context.Background()))
+		assert.NoError(t, err)
 
 		checkFn(fm)
 
@@ -397,7 +396,7 @@ func TestMatureMode(t *testing.T) {
 	}
 
 	id := 1
-	dp := frac.NewDocProvider()
+	dp := indexer.NewTestDocProvider()
 	makeSealedFrac := func(fm *FracManager, docsPerFrac int) {
 		for i := 0; i < docsPerFrac; i++ {
 			addDummyDoc(t, fm, dp, seq.SimpleID(id))
@@ -409,27 +408,27 @@ func TestMatureMode(t *testing.T) {
 
 	// first run
 	launchAndCheck(func(fm *FracManager) {
-		assert.Equal(t, false, fm.Mature(), "expect data dir is empty")
+		assert.Equal(t, false, fm.Flags().IsCapacityExceeded(), "expect data dir is empty")
 		makeSealedFrac(fm, 10)
-		assert.Equal(t, false, fm.Mature(), "file .immature must still exist")
+		assert.Equal(t, false, fm.Flags().IsCapacityExceeded(), "there should still be no fraction removal and the flag should be false")
 	})
 
 	// second run
 	launchAndCheck(func(fm *FracManager) {
-		assert.Equal(t, false, fm.Mature(), "file .immature must exist")
-		for fm.GetAllFracs().GetTotalSize() < fm.config.TotalSize {
+		assert.Equal(t, false, fm.Flags().IsCapacityExceeded(), "there should still be no fraction removal and the flag should be false")
+		for fm.Fractions().GetTotalSize() < fm.config.TotalSize {
 			makeSealedFrac(fm, 10)
 		}
-		assert.Equal(t, false, fm.Mature(), "file .immature must still exist")
+		assert.Equal(t, false, fm.Flags().IsCapacityExceeded(), "there should still be no fraction removal and the flag should be false")
 		sealWG := sync.WaitGroup{}
 		suicideWG := sync.WaitGroup{}
 		fm.maintenance(&sealWG, &suicideWG)
-		assert.Equal(t, true, fm.Mature(), "file .immature have to be removed")
+		assert.Equal(t, true, fm.Flags().IsCapacityExceeded(), "the deletion should occur and the flag should now be true")
 	})
 
 	// third run
 	launchAndCheck(func(fm *FracManager) {
-		assert.Equal(t, true, fm.Mature(), "the data directory is not empty at startup and the .immature file must be missing")
+		assert.Equal(t, true, fm.Flags().IsCapacityExceeded(), "IsCapacityExceeded must be set to true in the state file")
 	})
 
 }
@@ -438,11 +437,13 @@ func TestOldestCT(t *testing.T) {
 	const fracCount = 10
 
 	t.Run("local", func(t *testing.T) {
-		fm := NewFracManager(context.Background(), &Config{}, nil)
+		fm, err := New(context.Background(), &Config{DataDir: t.TempDir()}, nil)
+		assert.NoError(t, err)
 
 		oldestLocal := time.Now()
 		nowOldestLocal := oldestLocal
 
+		fm.localFracs = nil
 		for i := range fracCount {
 			fm.localFracs = append(fm.localFracs, &fracRef{instance: frac.NewSealed(
 				"", nil, nil, nil, &common.Info{
@@ -458,14 +459,17 @@ func TestOldestCT(t *testing.T) {
 
 		require.Equal(t, uint64(0), fm.oldestCTRemote.Load())
 		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.oldestCTLocal.Load())
-		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.OldestCT())
+		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.Oldest())
 	})
 
 	t.Run("local-and-remote", func(t *testing.T) {
-		fm := NewFracManager(context.Background(), &Config{}, nil)
+		fm, err := New(context.Background(), &Config{DataDir: t.TempDir()}, nil)
+		assert.NoError(t, err)
+
 		oldestRemote := time.Now()
 		nowOldestRemote := oldestRemote
 
+		fm.localFracs = nil
 		for i := range fracCount {
 			fm.remoteFracs = append(fm.remoteFracs, frac.NewRemote(
 				t.Context(), "", nil, nil, nil, &common.Info{
@@ -495,6 +499,6 @@ func TestOldestCT(t *testing.T) {
 
 		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.oldestCTRemote.Load())
 		require.Equal(t, uint64(oldestLocal.UnixMilli()), fm.oldestCTLocal.Load())
-		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.OldestCT())
+		require.Equal(t, uint64(oldestRemote.UnixMilli()), fm.Oldest())
 	})
 }
