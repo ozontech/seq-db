@@ -236,8 +236,7 @@ func TestFetcher_FetchError(t *testing.T) {
 
 	_, err := fetcher.FetchDocs(context.Background(), List{frac1, frac2}, fetchIDs)
 
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "fetch failed")
+	assert.ErrorContains(t, err, "fetch failed")
 }
 
 func TestFetcher_ContextCancellation(t *testing.T) {
