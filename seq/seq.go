@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/ozontech/seq-db/util"
@@ -50,6 +51,30 @@ func (d ID) Bytes() []byte {
 	final = append(final, hexBuf[:n]...)
 
 	return final
+}
+
+func (d ID) Dec() ID {
+	if d.RID != 0 {
+		d.RID -= 1
+	} else {
+		if d.MID != 0 {
+			d.MID -= 1
+			d.RID = math.MaxUint64
+		}
+	}
+	return d
+}
+
+func (d ID) Inc() ID {
+	if d.RID != math.MaxUint64 {
+		d.RID += 1
+	} else {
+		if d.MID != math.MaxUint64 {
+			d.MID += 1
+			d.RID = 0
+		}
+	}
+	return d
 }
 
 func LessOrEqual(a, b ID) bool {

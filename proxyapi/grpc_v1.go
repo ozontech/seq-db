@@ -192,6 +192,9 @@ func (g *grpcV1) doSearch(
 	if req.Query.From == nil || req.Query.To == nil {
 		return nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
 	}
+	if req.Offset != 0 && len(req.OffsetId) > 0 {
+		return nil, status.Error(codes.InvalidArgument, `only one of "offset" and "offset_id" must be provided`)
+	}
 
 	fromTime := req.Query.From.AsTime()
 	toTime := req.Query.To.AsTime()
@@ -203,6 +206,7 @@ func (g *grpcV1) doSearch(
 			trace.BoolAttribute("explain", req.Query.Explain),
 			trace.Int64Attribute("size", req.Size),
 			trace.Int64Attribute("offset", req.Offset),
+			trace.StringAttribute("offset_id", req.OffsetId),
 			trace.BoolAttribute("with_total", req.WithTotal),
 			trace.StringAttribute("order", req.Order.String()),
 		)
@@ -231,6 +235,7 @@ func (g *grpcV1) doSearch(
 		Explain:     req.Query.Explain,
 		Size:        int(req.Size),
 		Offset:      int(req.Offset),
+		OffsetId:    req.OffsetId,
 		WithTotal:   req.WithTotal,
 		ShouldFetch: shouldFetch,
 		Order:       req.Order.MustDocsOrder(),

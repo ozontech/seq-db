@@ -482,6 +482,58 @@ func (s *FractionTestSuite) TestSearchWithLimit() {
 		[]int{5, 3})
 }
 
+func (s *FractionTestSuite) TestSearchWithOffsetId() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T12:59:59.999Z","message":"outsider1"}`,
+		`{"timestamp":"2000-01-01T12:59:59.999Z","message":"outsider2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"good"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"good"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"good"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"good"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"good"}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"ugly"}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"ugly"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	// validate that we can page through fraction using offset id in both orders.
+	// every message must appear exactly once. some docs have same MID
+
+	for _, order := range []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc} {
+		searchParams := s.query("message:*",
+			withFrom("2000-01-01T13:00:00.000Z"),
+			withTo("2000-01-01T13:00:00.003Z"),
+			withLimit(2))
+		searchParams.Order = order
+
+		ids := make(map[seq.ID]bool)
+
+		for {
+			qpr, err := s.fraction.Search(context.Background(), *searchParams)
+			s.Require().NoError(err, "search failed")
+			if len(qpr.IDs) == 0 {
+				break
+			}
+
+			qprIDs := qpr.IDs.IDs()
+			for _, id := range qprIDs {
+				ids[id] = true
+			}
+			// switch to the next page
+			searchParams.OffsetId = qprIDs[len(qprIDs)-1]
+		}
+
+		s.Require().Equal(11, len(ids), "duplicate IDs found")
+	}
+}
+
 func (s *FractionTestSuite) TestSearchWithTotal() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:01.549Z","message": "apple banana smoothie"}`,

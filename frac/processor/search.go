@@ -50,7 +50,7 @@ func IndexSearch(
 	stats := &searchStats{}
 
 	m := sw.Start("get_lids_borders")
-	minLID, maxLID := getLIDsBorders(params.From, params.To, index)
+	minLID, maxLID := getLIDsBorders(params, index)
 	m.Stop()
 
 	m = sw.Start("eval_leaf")
@@ -242,18 +242,34 @@ func iterateEvalTree(
 	return total, ids, histogram, nil
 }
 
-func getLIDsBorders(minMID, maxMID seq.MID, idsIndex idsIndex) (uint32, uint32) {
+func getLIDsBorders(params SearchParams, idsIndex idsIndex) (uint32, uint32) {
 	if idsIndex.Len() == 0 {
 		return 0, 0
 	}
+	minMID := params.From
+	maxMID := params.To
 
 	minID := seq.ID{MID: minMID, RID: 0}
 	maxID := seq.ID{MID: maxMID, RID: math.MaxUint64}
 
+	minIDFromOffset := false
+	if uint64(params.OffsetId.MID) != 0 {
+		if params.Order == seq.DocsOrderDesc && seq.Less(params.OffsetId, maxID) {
+			// decrement RID by 1 to exclude already seen document while paging
+			maxID = params.OffsetId.Dec()
+		}
+		if params.Order == seq.DocsOrderAsc && seq.Less(minID, params.OffsetId) {
+			minID = params.OffsetId.Inc()
+			minIDFromOffset = true
+		}
+	}
+
 	from := 1 // first ID is not accessible (lid == 0 is invalid value)
 	to := idsIndex.Len() - 1
 
-	if minMID > 0 { // decrementing minMID to make LessOrEqual work like Less
+	// decrementing minMID to make LessOrEqual work like Less
+	// do not decrement minID if min ID comes from offset-id since we have to exclude the doc ID equal to offset-id
+	if !minIDFromOffset && minMID > 0 {
 		minID.MID--
 		minID.RID = math.MaxUint64
 	}

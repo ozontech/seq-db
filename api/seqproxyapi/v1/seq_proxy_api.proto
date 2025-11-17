@@ -214,6 +214,7 @@ message SearchRequest {
   int64 offset = 3;      // Search offset.
   bool with_total = 4;   // Should total number of documents be returned in response.
   Order order = 5;       // Document order ORDER_DESC/ORDER_ASC.
+  string offset_id = 6;  // ID offset for pagination.
 }
 
 message ComplexSearchRequest {
@@ -224,6 +225,7 @@ message ComplexSearchRequest {
   int64 offset = 5;             // Search offset.
   bool with_total = 6;          // Should total number of documents be returned in response.
   Order order = 7;              // Document order ORDER_DESC/ORDER_ASC.
+  string offset_id = 8;         // ID offset for pagination.
 }
 
 message SearchResponse {

@@ -19,6 +19,7 @@ type SearchRequest struct {
 	Explain     bool
 	Q           []byte
 	Offset      int
+	OffsetId    string
 	Size        int
 	Interval    seq.MID
 	AggQ        []AggQuery
@@ -36,6 +37,7 @@ func (sr *SearchRequest) GetAPISearchRequest() *storeapi.SearchRequest {
 		To:        int64(sr.To),
 		Size:      int64(sr.Size),
 		Offset:    int64(sr.Offset),
+		OffsetId:  sr.OffsetId,
 		Interval:  int64(sr.Interval),
 		Aggs:      convertToAggsQuery(sr.AggQ),
 		Explain:   sr.Explain,
