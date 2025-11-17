@@ -27,9 +27,7 @@ func getTimerFn(nowCnt, sinceCnt, tikerCnt *int) (func() time.Time, func(t time.
 func TestSamplingStopwatch(t *testing.T) {
 	var tikerFn func()
 	var nowCnt, sinceCnt, tikerCnt int
-
     
-
 	n := 5555
 
 	samples := make([]uint32, 0)
@@ -65,9 +63,7 @@ func TestSamplingStopwatch(t *testing.T) {
 func TestStopwatch(t *testing.T) {
 	var tikerFn func()
 	var nowCnt, sinceCnt, tikerCnt int
-
     
-
 	sw := New()
 
 	sw.nowFn, sw.sinceFn, tikerFn = getTimerFn(&nowCnt, &sinceCnt, &tikerCnt)
