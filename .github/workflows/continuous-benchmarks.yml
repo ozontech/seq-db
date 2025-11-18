@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   ci-benchmarks:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           COUNT=$([[ "${{ github.event_name }}" == "pull_request" ]] && echo 1 || echo 5)
-          LOG_LEVEL=FATAL go test -run='$^' -count=$COUNT -bench=. -benchmem ./... | tee ${{ runner.temp }}/gotool.txt
+          LOG_LEVEL=FATAL GOMAXPROCS=4 go test -run='$^' -count=$COUNT -bench=. -benchmem ./... | tee ${{ runner.temp }}/gotool.txt
 
       # Add GitHub job summary for pull requests.
       - name: Summarize benchmarks results
