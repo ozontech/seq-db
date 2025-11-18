@@ -4,9 +4,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -37,7 +37,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: "1.24"
           cache: true
 
       - name: Build
@@ -89,7 +89,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: "1.24"
           cache: true
 
       - name: Lint
@@ -100,10 +100,8 @@ jobs:
           args: --timeout 5m
           # Package/build cache already provided above.
           #
-          # Disable module cache.
-          skip-pkg-cache: true
-          # Disable build cache.
-          skip-build-cache: true
+          # Disable caches (single unified option supported by the action).
+          skip-cache: true
 
       - name: Install goimports
         run: go install golang.org/x/tools/cmd/goimports@latest
@@ -132,7 +130,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: "1.24"
           cache: true
 
       - name: Download dependencies
