@@ -63,6 +63,11 @@ type Config struct {
 		// TotalSize specifies upper bound of how much disk space can be occupied
 		// by sealed fractions before they get deleted (or offloaded).
 		TotalSize Bytes `config:"total_size" default:"1GiB"`
+		// SealingQueueLen defines the maximum length of the sealing queue.
+		// If the queue size exceeds this limit, writing to the store will be paused,
+		// and bulk requests will start returning errors.
+		// A value of zero disables this limit, allowing writes to proceed unconditionally.
+		SealingQueueLen int `config:"sealing_queue_len" default:"10"`
 	} `config:"storage"`
 
 	Cluster struct {
@@ -242,8 +247,13 @@ type Config struct {
 		// You can learn more about secret keys [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html).
 		SecretKey string `config:"secret_key"`
 		// RetryCount sets [RetryMaxAttempts] for S3 client which is applied for all API calls.
-		// Be aware that fraction is suicided when offloading attempts exceeds [RetryCount].
 		RetryCount int `config:"retry_count" default:"5"`
+		// Specifies the percentage of total local dataset size allocated to the offloading queue.
+		// Note: When the queue overflows, the oldest fraction of data is automatically removed.
+		// This automatic removal is disabled when set to zero.
+		QueueSizePercent float64 `config:"queue_size_percent" default:"5"`
+		// Delay duration between consecutive offloading retries
+		RetryDelay time.Duration `config:"retry_delay" default:"2s"`
 	} `config:"offloading"`
 
 	AsyncSearch struct {
