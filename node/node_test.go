@@ -7,17 +7,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func readAllInto(node Node, ids []uint32) []uint32 {
-	id, has := node.Next()
+func all(node Node) {
+	_, has := node.Next()
 	for has {
-		ids = append(ids, id)
-		id, has = node.Next()
+		_, has = node.Next()
 	}
-	return ids
 }
 
-func readAll(node Node) []uint32 {
-	return readAllInto(node, nil)
+func readAll(node Node) (lids []uint32) {
+	v, has := node.Next()
+
+	for has {
+		lids = append(lids, v)
+		v, has = node.Next()
+	}
+
+	return lids
 }
 
 func getRemainingSlice(t *testing.T, node Node) []uint32 {
