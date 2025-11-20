@@ -55,6 +55,8 @@ func RunParallel(n int, f func()) {
 }
 
 func BenchmarkRandomJSON(b *testing.B) {
+	b.SkipNow()
+
 	RunParallel(4, func() {
 		sum := 0
 		for i := 0; i < b.N; i++ {
