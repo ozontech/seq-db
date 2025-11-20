@@ -33,6 +33,8 @@ func TestSeqListAppend(t *testing.T) {
 }
 
 func BenchmarkMutexListAppend(b *testing.B) {
+	b.SkipNow()
+
 	gr := 2
 	mu := sync.Mutex{}
 	b.SetBytes(int64(gr * 8000000))
@@ -57,6 +59,8 @@ func BenchmarkMutexListAppend(b *testing.B) {
 }
 
 func BenchmarkSeqListAppend(b *testing.B) {
+	b.SkipNow()
+
 	gr := 2
 	b.SetBytes(int64(gr * 8000000))
 	for n := 0; n < b.N; n++ {

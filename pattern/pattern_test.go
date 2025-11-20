@@ -515,6 +515,8 @@ func TestFindSequence(t *testing.T) {
 }
 
 func BenchmarkFindSequence_Deterministic(b *testing.B) {
+	b.SkipNow()
+
 	type testCase struct {
 		haystack []byte
 		needles  [][]byte
@@ -556,6 +558,8 @@ func BenchmarkFindSequence_Deterministic(b *testing.B) {
 }
 
 func BenchmarkFindSequence_Random(b *testing.B) {
+	b.SkipNow()
+
 	sizes := []struct {
 		name         string
 		haystackSize int

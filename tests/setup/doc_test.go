@@ -67,6 +67,8 @@ func BenchmarkRandomJSON(b *testing.B) {
 }
 
 func BenchmarkRandomDoc(b *testing.B) {
+	b.SkipNow()
+
 	RunParallel(4, func() {
 		sum := 0
 		for i := 0; i < b.N; i++ {
@@ -79,6 +81,8 @@ func BenchmarkRandomDoc(b *testing.B) {
 }
 
 func BenchmarkGenerateDocs(b *testing.B) {
+	b.SkipNow()
+
 	res := GenerateDocs(b.N, func(_ int, doc *ExampleDoc) {
 		*doc = *RandomDoc(1)
 	})
@@ -86,11 +90,15 @@ func BenchmarkGenerateDocs(b *testing.B) {
 }
 
 func BenchmarkGenerateDocsJSON(b *testing.B) {
+	b.SkipNow()
+
 	res := GenerateDocsJSON(b.N, false)
 	_ = res
 }
 
 func BenchmarkGenerateDocsJSONFields(b *testing.B) {
+	b.SkipNow()
+
 	res := GenerateDocsJSON(b.N, true)
 	_ = res
 }
