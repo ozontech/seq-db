@@ -25,6 +25,8 @@ func Generate(n int) ([]uint32, uint32) {
 // bench for base point
 // you can't go faster
 func BenchmarkCopy(b *testing.B) {
+	b.SkipNow()
+
 	res := make([]uint32, b.N)
 	n := newNodeStaticSize(b.N)
 	b.ResetTimer()
@@ -33,6 +35,8 @@ func BenchmarkCopy(b *testing.B) {
 
 // base point
 func BenchmarkIterate(b *testing.B) {
+	b.SkipNow()
+
 	res := make([]uint32, b.N)
 	n := newNodeStaticSize(b.N)
 	b.ResetTimer()

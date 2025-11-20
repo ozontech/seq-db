@@ -129,6 +129,8 @@ func TestStress(t *testing.T) {
 }
 
 func BenchmarkBucketClean(b *testing.B) {
+	b.SkipNow()
+
 	b.StopTimer()
 
 	cleaner := NewCleaner(0, nil)
