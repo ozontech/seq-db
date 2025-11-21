@@ -8,19 +8,24 @@ units:
   - name: allocs/op
     better: lower
     threshold: 0.05
+    reduction: median
 
   - name: B/op
     better: lower
     threshold: 0.05
+    reduction: median
 
   - name: ns/op
     better: lower
     threshold: 0.05
+    reduction: min
 
   - name: MB/s
     better: higher
     threshold: 0.05
+    reduction: median
 
   - name: iterations
     better: higher
     threshold: 0.05
+    reduction: max
