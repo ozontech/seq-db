@@ -231,13 +231,13 @@ func (si *Ingestor) singleDocsStream(ctx context.Context, explain bool, source u
 
 	md, err := stream.Header()
 	midPrecision := seq.MIDPrecisionMilliseconds
-	if md != nil && err == nil {
+	if err != nil {
+		return nil, fmt.Errorf("can't fetch metadata: %s", err.Error())
+	}
+	if md != nil {
 		if precisionValues := md.Get(consts.MIDPrecisionHeader); len(precisionValues) > 0 {
 			midPrecision = seq.ParseMIDPrecision(precisionValues[0])
 		}
-	}
-	if err != nil {
-		return nil, fmt.Errorf("can't fetch metadata: %s", err.Error())
 	}
 
 	var it DocsIterator = newGrpcStreamIterator(stream, host, source, len(ids), midPrecision)
@@ -626,7 +626,7 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 	}
 
 	// Check the store's MID precision from response header
-	// If header indicates milliseconds, then convert to nanoseconds
+	// If header indicates nanoseconds, then convert to milliseconds
 	midPrecision := seq.MIDPrecisionMilliseconds
 	if precisionHeaderValues := md.Get(consts.MIDPrecisionHeader); len(precisionHeaderValues) > 0 {
 		midPrecision = seq.ParseMIDPrecision(precisionHeaderValues[0])

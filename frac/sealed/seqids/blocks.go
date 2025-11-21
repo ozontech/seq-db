@@ -9,8 +9,7 @@ import (
 )
 
 type BlockMIDs struct {
-	fracVersion config.BinaryDataVersion
-	Values      []uint64
+	Values []uint64
 }
 
 func (b BlockMIDs) Pack(dst []byte) []byte {
@@ -22,7 +21,7 @@ func (b BlockMIDs) Pack(dst []byte) []byte {
 	return dst
 }
 
-func (b *BlockMIDs) Unpack(data []byte) error {
+func (b *BlockMIDs) Unpack(data []byte, fracVersion config.BinaryDataVersion) error {
 	values, err := unpackRawIDsVarint(data, b.Values)
 	if err != nil {
 		return err
@@ -30,7 +29,7 @@ func (b *BlockMIDs) Unpack(data []byte) error {
 	b.Values = values
 
 	// v2 (nanosecond MIDs) compatibility - convert nanos to millis
-	if b.fracVersion >= config.BinaryDataV2 {
+	if fracVersion >= config.BinaryDataV2 {
 		for i := range b.Values {
 			b.Values[i] = uint64(seq.NanosToMID(b.Values[i]))
 		}

@@ -83,13 +83,13 @@ func FromString(x string) (ID, error) {
 		return id, err
 	}
 
-	delimiter := x[16]
-	if delimiter == '_' {
+	switch delimiter := x[16]; delimiter {
+	case '_':
 		// new format, MID in nanoseconds. convert to milliseconds
 		id.MID = NanosToMID(binary.LittleEndian.Uint64(mid))
-	} else if delimiter == '-' {
+	case '-':
 		id.MID = MID(binary.LittleEndian.Uint64(mid))
-	} else {
+	default:
 		return id, fmt.Errorf("unknown delimiter %c", delimiter)
 	}
 	id.RID = RID(binary.LittleEndian.Uint64(rid))
