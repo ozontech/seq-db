@@ -2,7 +2,7 @@ download-dataset:
 	cd ./dataset/logs && bash download.sh
 
 prepare-dataset: download-dataset
-	cd ./dataset && rm -rdf docs-*.json && python3 distribute.py ./logs -n 10
+	cd ./dataset && rm -rdf docs-*.log && python3 distribute.py ./logs -n 32
 
 docker-run-seqdb:
 	docker compose -f docker-compose.yml -f docker-compose-seqdb.yml up -d
