@@ -115,8 +115,9 @@ func (f *Remote) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
 	dp, err := f.createDataProvider(ctx)
 	if err != nil {
 		return nil, err
-
 	}
+	defer dp.release()
+
 	return dp.Fetch(ids)
 }
 
@@ -125,6 +126,8 @@ func (f *Remote) Search(ctx context.Context, params processor.SearchParams) (*se
 	if err != nil {
 		return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, err
 	}
+	defer dp.release()
+
 	return dp.Search(params)
 }
 

@@ -300,11 +300,17 @@ func (f *Sealed) String() string {
 }
 
 func (f *Sealed) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
-	return f.createDataProvider(ctx).Fetch(ids)
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.Fetch(ids)
 }
 
 func (f *Sealed) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
-	return f.createDataProvider(ctx).Search(params)
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.Search(params)
 }
 
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {

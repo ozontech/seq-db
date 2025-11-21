@@ -268,7 +268,11 @@ func (f *Active) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
 	if f.Info().DocsTotal == 0 { // it is empty active fraction state
 		return nil, nil
 	}
-	return f.createDataProvider(ctx).Fetch(ids)
+
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.Fetch(ids)
 }
 
 func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
@@ -276,7 +280,11 @@ func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*se
 		metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()
 		return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, nil
 	}
-	return f.createDataProvider(ctx).Search(params)
+
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.Search(params)
 }
 
 func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
