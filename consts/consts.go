@@ -70,8 +70,8 @@ const (
 	JaegerDebugKey = "jaeger-debug-id"
 	DebugHeader    = "x-o3-sample-trace"
 
-	// MIDPrecisionHeader reports store MID precision
-	MIDPrecisionHeader = "x-seq-mid-precision"
+	// StoreProtocolVersionHeader reports store protocol version
+	StoreProtocolVersionHeader = "x-seq-protocol-id"
 )
 
 var (

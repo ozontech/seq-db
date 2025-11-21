@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -230,17 +231,17 @@ func (si *Ingestor) singleDocsStream(ctx context.Context, explain bool, source u
 	}
 
 	md, err := stream.Header()
-	midPrecision := "ms"
-	if md != nil && err == nil {
-		if precisionValues := md.Get(consts.MIDPrecisionHeader); len(precisionValues) > 0 {
-			midPrecision = precisionValues[0]
-		}
-	}
+	protocolVersion := config.StoreProtocolVersion2
 	if err != nil {
 		return nil, fmt.Errorf("can't fetch metadata: %s", err.Error())
 	}
+	if md != nil {
+		if precisionValues := md.Get(consts.StoreProtocolVersionHeader); len(precisionValues) > 0 {
+			protocolVersion = config.ParseStoreProtocolVersion(precisionValues[0])
+		}
+	}
 
-	var it DocsIterator = newGrpcStreamIterator(stream, host, source, len(ids), midPrecision)
+	var it DocsIterator = newGrpcStreamIterator(stream, host, source, len(ids), protocolVersion)
 	if explain {
 		it = newExplainWrapperIterator(it, ids, host, startTime)
 	}
@@ -625,15 +626,15 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 		return nil, 0, err
 	}
 
-	// Check the store's MID precision from response header
-	// If header indicates milliseconds, convert to nanoseconds
-	midPrecision := "ms"
-	if precisionValues := md.Get(consts.MIDPrecisionHeader); len(precisionValues) > 0 {
-		midPrecision = precisionValues[0]
+	// Check the store's protocol version from response header
+	// If header indicates protocol version 1 (MID in milliseconds), then convert to nanoseconds
+	protocolVersion := config.StoreProtocolVersion2
+	if precisionHeaderValues := md.Get(consts.StoreProtocolVersionHeader); len(precisionHeaderValues) > 0 {
+		protocolVersion = config.ParseStoreProtocolVersion(precisionHeaderValues[0])
 	}
 
-	// Convert legacy store response to nanoseconds MID
-	if midPrecision == "ms" {
+	// Convert legacy store response (protocol version 1) to nanoseconds MID
+	if protocolVersion == config.StoreProtocolVersion1 {
 		for _, id := range data.IdSources {
 			id.Id.Mid = uint64(seq.MillisToMID(id.Id.Mid))
 		}

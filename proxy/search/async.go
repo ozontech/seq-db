@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/ozontech/seq-db/asyncsearcher"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/storeapi"
@@ -165,12 +166,12 @@ func (si *Ingestor) FetchAsyncSearchResult(
 					}
 				}
 
-				midPrecision := "ms"
-				if precisionValues := md.Get(consts.MIDPrecisionHeader); len(precisionValues) > 0 {
-					midPrecision = precisionValues[0]
+				protocolVersion := config.StoreProtocolVersion2
+				if precisionValues := md.Get(consts.StoreProtocolVersionHeader); len(precisionValues) > 0 {
+					protocolVersion = config.ParseStoreProtocolVersion(precisionValues[0])
 				}
 
-				if midPrecision == "ms" {
+				if protocolVersion == config.StoreProtocolVersion1 {
 					response := storeResp.Response
 					for _, id := range response.IdSources {
 						id.Id.Mid = uint64(seq.MillisToMID(id.Id.Mid))
