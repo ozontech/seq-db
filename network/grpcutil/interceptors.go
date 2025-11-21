@@ -152,7 +152,7 @@ func MIDPrecisionHeaderStreamServerInterceptor(precision seq.MIDPrecision) grpc.
 			consts.MIDPrecisionHeader: precision.String(),
 		})
 		if err := ss.SendHeader(md); err != nil {
-			logger.Error("failed to set MID precision header in stream", zap.Error(err))
+			logger.Error("failed to send MID precision header in stream", zap.Error(err))
 		}
 		return h(srv, ss)
 	}
