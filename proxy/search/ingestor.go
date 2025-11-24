@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -230,17 +231,16 @@ func (si *Ingestor) singleDocsStream(ctx context.Context, explain bool, source u
 	}
 
 	md, err := stream.Header()
-	midPrecision := seq.MIDPrecisionMilliseconds
+	protocolVersion := config.StoreProtocolVersion1
 	if err != nil {
 		return nil, fmt.Errorf("can't fetch metadata: %s", err.Error())
-	}
-	if md != nil {
-		if precisionValues := md.Get(consts.MIDPrecisionHeader); len(precisionValues) > 0 {
-			midPrecision = seq.ParseMIDPrecision(precisionValues[0])
+	} else if md != nil {
+		if storeProtocolValues := md.Get(consts.StoreProtocolVersionHeader); len(storeProtocolValues) > 0 {
+			protocolVersion = config.ParseStoreProtocolVersion(storeProtocolValues[0])
 		}
 	}
 
-	var it DocsIterator = newGrpcStreamIterator(stream, host, source, len(ids), midPrecision)
+	var it DocsIterator = newGrpcStreamIterator(stream, host, source, len(ids), protocolVersion)
 	if explain {
 		it = newExplainWrapperIterator(it, ids, host, startTime)
 	}
@@ -625,14 +625,14 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 		return nil, 0, err
 	}
 
-	// Check the store's MID precision from response header
-	// If header indicates nanoseconds, then convert to milliseconds
-	midPrecision := seq.MIDPrecisionMilliseconds
-	if precisionHeaderValues := md.Get(consts.MIDPrecisionHeader); len(precisionHeaderValues) > 0 {
-		midPrecision = seq.ParseMIDPrecision(precisionHeaderValues[0])
+	// Check the store's protocol version from response header
+	// If header indicates protocol version 2 (MID in nanoseconds), then convert to milliseconds
+	protocolVersion := config.StoreProtocolVersion1
+	if storeProtocolValues := md.Get(consts.StoreProtocolVersionHeader); len(storeProtocolValues) > 0 {
+		protocolVersion = config.ParseStoreProtocolVersion(storeProtocolValues[0])
 	}
 
-	if midPrecision == seq.MIDPrecisionNanoseconds {
+	if protocolVersion == config.StoreProtocolVersion2 {
 		for _, id := range data.IdSources {
 			id.Id.Mid = uint64(seq.NanosToMID(id.Id.Mid))
 		}
