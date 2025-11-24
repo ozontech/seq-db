@@ -23,10 +23,8 @@ func (m MID) Time() time.Time {
 	if uint64(m) <= math.MaxInt64 {
 		return time.UnixMilli(int64(m))
 	} else {
-		millis := uint64(m)
-		secondsPart := millis / 1000
-		nanosPart := millis - secondsPart*1000
-		return time.Unix(int64(secondsPart), int64(nanosPart))
+		// since MaxInt64 is 292278994 year in milliseconds, so we assume this MID is "infinite future"
+		return time.UnixMilli(math.MaxInt64)
 	}
 }
 
