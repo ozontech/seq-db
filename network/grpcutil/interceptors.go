@@ -152,7 +152,7 @@ func StoreProtocolHeaderStreamServerInterceptor(protocolVersion config.StoreProt
 			consts.StoreProtocolVersionHeader: protocolVersion.String(),
 		})
 		if err := ss.SendHeader(md); err != nil {
-			logger.Error("failed to set store protocol version header in stream", zap.Error(err))
+			logger.Error("failed to send protocol version header in stream", zap.Error(err))
 		}
 		return h(srv, ss)
 	}
