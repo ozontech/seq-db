@@ -164,12 +164,15 @@ func (g *GrpcV1) doSearch(
 	}
 
 	searchTr := tr.NewChild("search iteratively")
+	fractions, release := g.fracManager.FractionsSnapshot()
 	qpr, err := g.searchData.searcher.SearchDocs(
 		ctx,
-		g.fracManager.Fractions(),
+		fractions,
 		searchParams,
 	)
+	release()
 	searchTr.Done()
+
 	if err != nil {
 		if code, ok := parseStoreError(err); ok {
 			return &storeapi.SearchResponse{Code: code}, nil

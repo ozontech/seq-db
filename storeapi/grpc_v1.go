@@ -106,6 +106,9 @@ type GrpcV1 struct {
 }
 
 func NewGrpcV1(cfg APIConfig, fracManager *fracmanager.FracManager, mappingProvider MappingProvider) *GrpcV1 {
+	fractions, release := fracManager.FractionsSnapshot()
+	defer release()
+
 	g := &GrpcV1{
 		config:          cfg,
 		fracManager:     fracManager,
@@ -121,7 +124,7 @@ func NewGrpcV1(cfg APIConfig, fracManager *fracmanager.FracManager, mappingProvi
 		},
 		asyncSearcher: asyncsearcher.MustStartAsync(
 			cfg.Search.Async, mappingProvider,
-			fracManager.Fractions(),
+			fractions,
 		),
 	}
 

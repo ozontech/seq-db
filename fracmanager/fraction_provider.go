@@ -8,13 +8,16 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
+	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
+	"github.com/ozontech/seq-db/util"
 )
 
 const fileBasePattern = "seq-db-"
@@ -107,8 +110,10 @@ func (fp *fractionProvider) CreateActive() *frac.Active {
 
 // Seal converts an active fraction to a sealed one
 // Process includes sorting, indexing, and data optimization for reading
-func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
-	src, err := frac.NewActiveSealingSource(active, fp.config.SealParams)
+func (fp *fractionProvider) Seal(a *frac.Active) (*frac.Sealed, error) {
+	now := time.Now()
+
+	src, err := frac.NewActiveSealingSource(a, fp.config.SealParams)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +122,19 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 		return nil, err
 	}
 
-	return fp.NewSealedPreloaded(active.BaseFileName, preloaded), nil
+	s := fp.NewSealedPreloaded(a.BaseFileName, preloaded)
+
+	sealsTotal.Inc()
+	sealingTime := time.Since(now)
+	sealsDoneSeconds.Observe(sealingTime.Seconds())
+
+	logger.Info(
+		"fraction sealed",
+		zap.String("fraction", filepath.Base(s.BaseFileName)),
+		zap.Float64("time_spent_s", util.DurationToUnit(sealingTime, "s")),
+	)
+
+	return s, nil
 }
 
 // Offload uploads fraction to S3 storage and returns a remote fraction

@@ -52,30 +52,35 @@ func TestSealingOnShutdown(t *testing.T) {
 	cfg.MinSealFracSize = 0 // to ensure that the frac will not be sealed on shutdown
 	cfg, fm, stop := setupFracManager(t, cfg)
 	appendDocsToFracManager(t, fm, 10)
-	activeName := fm.Fractions()[0].Info().Name()
+
+	f, release := fm.FractionsSnapshot()
+	activeName := f[0].Info().Name()
+	release()
 	stop()
 
 	// second start
 	cfg.MinSealFracSize = 1 // to ensure that the frac will be sealed on shutdown
 	cfg, fm, stop = setupFracManager(t, cfg)
 
-	assert.Equal(t, 1, len(fm.Fractions()), "should have one fraction")
-	assert.Equal(t, activeName, fm.Fractions()[0].Info().Name(), "fraction should have the same name")
-	_, ok := fm.Fractions()[0].(*fractionProxy).impl.(*frac.Active)
+	f, release = fm.FractionsSnapshot()
+	assert.Equal(t, 1, len(f), "should have one fraction")
+	assert.Equal(t, activeName, f[0].Info().Name(), "fraction should have the same name")
+	_, ok := f[0].(*frac.Active)
 	assert.True(t, ok, "fraction should be active")
-
+	release()
 	stop()
 
 	// third start
 	_, fm, stop = setupFracManager(t, cfg)
 
-	assert.Equal(t, 2, len(fm.Fractions()), "should have 2 fraction: new active and old sealed")
-	_, ok = fm.Fractions()[0].(*fractionProxy).impl.(*frac.Sealed)
+	f, release = fm.FractionsSnapshot()
+	assert.Equal(t, 2, len(f), "should have 2 fraction: new active and old sealed")
+	_, ok = f[0].(*frac.Sealed)
 	assert.True(t, ok, "first fraction should be sealed")
-	assert.Equal(t, activeName, fm.Fractions()[0].Info().Name(), "sealed fraction should have the same name")
-	assert.Equal(t, uint32(0), fm.Fractions()[1].Info().DocsTotal, "active fraction should be empty")
-	_, ok = fm.Fractions()[1].(*fractionProxy).impl.(*frac.Active)
+	assert.Equal(t, activeName, f[0].Info().Name(), "sealed fraction should have the same name")
+	assert.Equal(t, uint32(0), f[1].Info().DocsTotal, "active fraction should be empty")
+	_, ok = f[1].(*frac.Active)
 	assert.True(t, ok, "new fraction should be active")
-
+	release()
 	stop()
 }

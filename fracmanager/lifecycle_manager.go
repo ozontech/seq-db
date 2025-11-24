@@ -2,7 +2,6 @@ package fracmanager
 
 import (
 	"context"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/util"
 )
 
 // lifecycleManager manages the complete lifecycle of fractions.
@@ -60,37 +58,10 @@ func (lc *lifecycleManager) SyncInfoCache() {
 	}
 }
 
-// Seal converts an active fraction to sealed state
-// Freezes writes, waits for pending operations, then seals the fraction.
-func (lc *lifecycleManager) Seal(active *activeProxy) error {
-	now := time.Now()
-	sealed, err := lc.provider.Seal(active.instance)
-	if err != nil {
-		return err
-	}
-	sealsTotal.Inc()
-	sealingTime := time.Since(now)
-	sealsDoneSeconds.Observe(sealingTime.Seconds())
-
-	logger.Info(
-		"fraction sealed",
-		zap.String("fraction", filepath.Base(sealed.BaseFileName)),
-		zap.Float64("time_spent_s", util.DurationToUnit(sealingTime, "s")),
-	)
-
-	lc.infoCache.Add(sealed.Info())
-	lc.registry.PromoteToLocal(active, sealed)
-	active.proxy.Redirect(sealed)
-	active.instance.Release()
-	return nil
-}
-
 // Rotate checks if active fraction needs rotation based on size limit
 // Creates new active fraction and starts sealing the previous one.
 func (lc *lifecycleManager) Rotate(maxSize uint64, wg *sync.WaitGroup) {
-	activeToSeal, waitBeforeSealing, err := lc.registry.RotateIfFull(maxSize, func() *activeProxy {
-		return newActiveProxy(lc.provider.CreateActive())
-	})
+	activeToSeal, waitBeforeSealing, err := lc.registry.RotateIfFull(maxSize, lc.provider.CreateActive)
 	if err != nil {
 		logger.Fatal("active fraction rotation error", zap.Error(err))
 	}
@@ -105,9 +76,15 @@ func (lc *lifecycleManager) Rotate(maxSize uint64, wg *sync.WaitGroup) {
 		defer lc.sealingWg.Done()
 
 		waitBeforeSealing()
-		if err := lc.Seal(activeToSeal); err != nil {
+
+		sealed, err := lc.provider.Seal(activeToSeal.active)
+		if err != nil {
 			logger.Fatal("sealing error", zap.Error(err))
 		}
+
+		lc.infoCache.Add(sealed.Info())
+		lc.registry.PromoteToLocal(activeToSeal, sealed)
+		activeToSeal.Destroy()
 	}()
 }
 
@@ -123,18 +100,15 @@ func (lc *lifecycleManager) OffloadLocal(ctx context.Context, sizeLimit uint64, 
 		go func() {
 			defer wg.Done()
 
-			remote, _ := lc.TryOffload(ctx, sealed.instance)
+			remote, _ := lc.TryOffload(ctx, sealed.sealed)
 			lc.registry.PromoteToRemote(sealed, remote)
 
 			if remote == nil {
-				sealed.proxy.Redirect(emptyFraction{})
-				lc.infoCache.Remove(sealed.instance.Info().Name())
-			} else {
-				sealed.proxy.Redirect(remote)
+				lc.infoCache.Remove(sealed.sealed.Info().Name())
 			}
 
 			// Free up local resources
-			sealed.instance.Suicide()
+			sealed.Destroy()
 			maintenanceTruncateTotal.Add(1)
 		}()
 	}
@@ -171,9 +145,8 @@ func (lc *lifecycleManager) CleanRemote(retention time.Duration, wg *sync.WaitGr
 	go func() {
 		defer wg.Done()
 		for _, remote := range toDelete {
-			remote.proxy.Redirect(emptyFraction{})
-			lc.infoCache.Remove(remote.instance.Info().Name())
-			remote.instance.Suicide()
+			lc.infoCache.Remove(remote.remote.Info().Name())
+			remote.Destroy()
 		}
 	}()
 }
@@ -194,9 +167,8 @@ func (lc *lifecycleManager) CleanLocal(sizeLimit uint64, wg *sync.WaitGroup) {
 	go func() {
 		defer wg.Done()
 		for _, sealed := range toDelete {
-			sealed.proxy.Redirect(emptyFraction{})
-			lc.infoCache.Remove(sealed.instance.Info().Name())
-			sealed.instance.Suicide()
+			lc.infoCache.Remove(sealed.sealed.Info().Name())
+			sealed.Destroy()
 			maintenanceTruncateTotal.Add(1)
 		}
 	}()

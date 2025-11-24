@@ -18,18 +18,18 @@ type fractionRegistry struct {
 	mu sync.RWMutex // Main mutex for protecting registry state
 
 	// Lifecycle queues (FIFO order, oldest at lower indexes)
-	sealing    []*activeProxy // Fractions being sealed (0-5 typical)
-	locals     []*sealedProxy // Local sealed fractions (can be thousands)
-	offloading []*sealedProxy // Fractions being offloaded (0-5 typical)
-	remotes    []*remoteProxy // Offloaded fractions (can be thousands)
+	sealing    []*syncActiveDestroyable
+	locals     []*syncSealedDestroyable
+	offloading []*syncSealedDestroyable
+	remotes    []*syncRemoteDestroyable
 
 	stats       registryStats // Size statistics for monitoring
 	oldestTotal uint64        // Creation time of oldest fraction
 	oldestLocal uint64        // Creation time of oldest fraction
 
-	muAll  sync.RWMutex    // Mutex specifically for all fractions list
-	active *activeProxy    // Currently active writable fraction
-	all    []frac.Fraction // All fractions in creation order (read-only view)
+	muAll  sync.RWMutex
+	active *syncAppender
+	all    *fractionsSnapshot
 }
 
 // NewFractionRegistry creates and initializes a new fraction registry instance.
@@ -41,52 +41,41 @@ func NewFractionRegistry(active *frac.Active, locals []*frac.Sealed, remotes []*
 	}
 
 	// Set current active fraction
-	r := fractionRegistry{
-		active: &activeProxy{
-			proxy:    &fractionProxy{impl: active},
-			instance: active,
-		},
-	}
+	r := fractionRegistry{active: &syncAppender{instance: active}}
 
 	// Initialize local sealed fractions
 	for _, sealed := range locals {
 		r.stats.locals.Add(sealed.Info())
-		r.locals = append(r.locals, &sealedProxy{
-			proxy:    &fractionProxy{impl: sealed},
-			instance: sealed,
-		})
+		r.locals = append(r.locals, &syncSealedDestroyable{sealed: sealed})
 	}
 
 	// Initialize remote fractions
 	for _, remote := range remotes {
 		r.stats.remotes.Add(remote.Info())
-		r.remotes = append(r.remotes, &remoteProxy{
-			proxy:    &fractionProxy{impl: remote},
-			instance: remote,
-		})
+		r.remotes = append(r.remotes, &syncRemoteDestroyable{remote: remote})
 	}
 
 	// Init oldest local value
 	r.updateOldestLocal()
 
 	// Rebuild complete fractions list in order
-	r.rebuildAllFractions()
+	r.rebuildSnapshot()
 
 	return &r, nil
 }
 
 // Active returns the currently active writable fraction.
-func (r *fractionRegistry) Active() *activeProxy {
+func (r *fractionRegistry) Active() *syncAppender {
 	r.muAll.RLock()
 	defer r.muAll.RUnlock()
 	return r.active
 }
 
-// AllFractions returns a read-only view of all fractions in creation order.
-func (r *fractionRegistry) AllFractions() []frac.Fraction {
+// FractionsSnapshot returns a read-only view of all fractions in creation order.
+func (r *fractionRegistry) FractionsSnapshot() ([]frac.Fraction, ReleaseSnapshot) {
 	r.muAll.RLock()
 	defer r.muAll.RUnlock()
-	return r.all
+	return r.all.Fractions()
 }
 
 // Stats returns current size statistics of the registry.
@@ -114,7 +103,7 @@ func (r *fractionRegistry) OldestLocal() uint64 {
 // Moves previous active fraction to sealing queue.
 // Updates statistics and maintains chronological order.
 // Should be called when creating a new fraction.
-func (r *fractionRegistry) RotateIfFull(maxSize uint64, newActive func() *activeProxy) (*activeProxy, func(), error) {
+func (r *fractionRegistry) RotateIfFull(maxSize uint64, newActive func() *frac.Active) (*syncActiveDestroyable, func(), error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -123,11 +112,14 @@ func (r *fractionRegistry) RotateIfFull(maxSize uint64, newActive func() *active
 	}
 
 	old := r.active
-	r.sealing = append(r.sealing, old)
+	sad := &syncActiveDestroyable{active: old.instance}
+	r.sealing = append(r.sealing, sad)
 	r.addActive(newActive())
 
+	r.rebuildSnapshot()
+
 	if err := old.Finalize(); err != nil {
-		return old, nil, err
+		return nil, nil, err
 	}
 
 	curInfo := old.instance.Info()
@@ -152,32 +144,21 @@ func (r *fractionRegistry) RotateIfFull(maxSize uint64, newActive func() *active
 		r.stats.sealing.Add(finalInfo)
 	}()
 
-	return old, wg.Wait, nil
+	return sad, wg.Wait, nil
 }
 
 // addActive sets a new active fraction and updates the complete fractions list.
-func (r *fractionRegistry) addActive(a *activeProxy) {
+func (r *fractionRegistry) addActive(a *frac.Active) {
 	r.muAll.Lock()
 	defer r.muAll.Unlock()
 
-	r.active = a
-	r.all = append(r.all, a.proxy)
-}
-
-// trimAll removes the oldest fractions from the complete fractions list.
-// Used when fractions are evicted or deleted from the system.
-func (r *fractionRegistry) trimAll(count int) {
-	r.muAll.Lock()
-	defer r.muAll.Unlock()
-
-	r.all = r.all[count:]
-	r.updateOldestTotal()
+	r.active = &syncAppender{instance: a}
 }
 
 // EvictLocal removes oldest local fractions to free disk space.
 // If shouldOffload is true, moves fractions to offloading queue instead of deleting.
 // Returns evicted fractions or error if insufficient space is released.
-func (r *fractionRegistry) EvictLocal(shouldOffload bool, sizeLimit uint64) ([]*sealedProxy, error) {
+func (r *fractionRegistry) EvictLocal(shouldOffload bool, sizeLimit uint64) ([]*syncSealedDestroyable, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -196,7 +177,7 @@ func (r *fractionRegistry) EvictLocal(shouldOffload bool, sizeLimit uint64) ([]*
 		if totalUsedSize-releasingSize <= sizeLimit {
 			break
 		}
-		info := item.instance.Info()
+		info := item.sealed.Info()
 		releasingSize += info.FullSize()
 		r.stats.locals.Sub(info)
 		count++
@@ -217,10 +198,10 @@ func (r *fractionRegistry) EvictLocal(shouldOffload bool, sizeLimit uint64) ([]*
 	if shouldOffload {
 		for _, item := range evicted {
 			r.offloading = append(r.offloading, item)
-			r.stats.offloading.Add(item.instance.Info())
+			r.stats.offloading.Add(item.sealed.Info())
 		}
 	} else {
-		r.trimAll(count)      // Permanently remove
+		r.rebuildSnapshot()
 		r.updateOldestLocal() // Oldest local can be changed here
 	}
 
@@ -230,14 +211,14 @@ func (r *fractionRegistry) EvictLocal(shouldOffload bool, sizeLimit uint64) ([]*
 // EvictRemote removes oldest remote fractions based on retention policy.
 // Fractions older than retention period are permanently deleted.
 // Returns removed fractions or empty slice if nothing to remove.
-func (r *fractionRegistry) EvictRemote(retention time.Duration) []*remoteProxy {
+func (r *fractionRegistry) EvictRemote(retention time.Duration) []*syncRemoteDestroyable {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	count := 0
 	// Find fractions older than retention period
 	for _, item := range r.remotes {
-		info := item.instance.Info()
+		info := item.remote.Info()
 		if time.Since(time.UnixMilli(int64(info.CreationTime))) <= retention {
 			break // Stop at first fraction within retention
 		}
@@ -247,14 +228,14 @@ func (r *fractionRegistry) EvictRemote(retention time.Duration) []*remoteProxy {
 
 	evicted := r.remotes[:count]
 	r.remotes = r.remotes[count:]
-	r.trimAll(count) // Remove from complete list
+	r.rebuildSnapshot()
 
 	return evicted
 }
 
 // PromoteToLocal moves fractions from sealing to local queue when sealing completes.
 // Maintains strict ordering - younger fractions wait for older ones to seal first.
-func (r *fractionRegistry) PromoteToLocal(active *activeProxy, sealed *frac.Sealed) {
+func (r *fractionRegistry) PromoteToLocal(active *syncActiveDestroyable, sealed *frac.Sealed) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -267,22 +248,22 @@ func (r *fractionRegistry) PromoteToLocal(active *activeProxy, sealed *frac.Seal
 			break // Maintain order - wait for previous fractions to complete
 		}
 		promotedCount++
-		r.locals = append(r.locals, &sealedProxy{
-			proxy:    item.proxy,
-			instance: item.sealed,
-		})
+		r.locals = append(r.locals, &syncSealedDestroyable{sealed: item.sealed})
 		r.stats.locals.Add(item.sealed.Info())
-		r.stats.sealing.Sub(item.instance.Info())
+		r.stats.sealing.Sub(item.active.Info())
 	}
 
-	// Remove promoted fractions from sealing queue
-	r.sealing = r.sealing[promotedCount:]
+	if promotedCount > 0 {
+		// Remove promoted fractions from sealing queue and rebuild snapshot
+		r.sealing = r.sealing[promotedCount:]
+		r.rebuildSnapshot()
+	}
 }
 
 // PromoteToRemote moves fractions from offloading to remote queue when offloading completes.
 // Special case: Handles fractions that don't require offloading (remote == nil).
 // Maintains strict ordering - younger fractions wait for older ones to offload.
-func (r *fractionRegistry) PromoteToRemote(sealed *sealedProxy, remote *frac.Remote) {
+func (r *fractionRegistry) PromoteToRemote(sealed *syncSealedDestroyable, remote *frac.Remote) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -300,62 +281,63 @@ func (r *fractionRegistry) PromoteToRemote(sealed *sealedProxy, remote *frac.Rem
 			break // Maintain order - wait for previous fractions to complete
 		}
 		promotedCount++
-		r.remotes = append(r.remotes, &remoteProxy{
-			proxy:    item.proxy,
-			instance: item.remote,
-		})
+		r.remotes = append(r.remotes, &syncRemoteDestroyable{remote: item.remote})
 
 		r.stats.remotes.Add(item.remote.Info())
-		r.stats.offloading.Sub(item.instance.Info())
+		r.stats.offloading.Sub(item.sealed.Info())
 	}
 	if promotedCount > 0 {
 		// Remove promoted fractions from offloading queue
 		r.offloading = r.offloading[promotedCount:]
 		r.updateOldestLocal()
+		r.rebuildSnapshot()
 	}
 }
 
 // removeFromOffloading removes a specific fraction from offloading queue.
 // O(n) operation that rebuilds the all fractions list.
-func (r *fractionRegistry) removeFromOffloading(sealed *sealedProxy) {
+func (r *fractionRegistry) removeFromOffloading(sealed *syncSealedDestroyable) {
 	count := 0
 	// Filter out the target fraction
 	for _, item := range r.offloading {
-		if sealed != item {
+		if sealed.sealed != item.sealed {
 			r.offloading[count] = item
 			count++
 		}
 	}
 	r.offloading = r.offloading[:count]
-	r.stats.offloading.Sub(sealed.instance.Info())
+	r.stats.offloading.Sub(sealed.sealed.Info())
 
 	// Oldest local can be changed here
 	r.updateOldestLocal()
 
 	// Rebuild complete list since we modified the middle of the queue
-	r.rebuildAllFractions()
+	r.rebuildSnapshot()
 }
 
-// rebuildAllFractions reconstructs the all fractions list in correct chronological order.
+// rebuildSnapshot reconstructs the all fractions list in correct chronological order.
 // Order: remote (oldest) → offloading → local → sealing → active (newest)
 // Expensive O(n) operation used when direct list modification is insufficient.
-func (r *fractionRegistry) rebuildAllFractions() {
-	all := make([]frac.Fraction, 0, len(r.all))
+func (r *fractionRegistry) rebuildSnapshot() {
+	all := newFractionsSnapshot(r.all.Len())
 
 	// Collect fractions in correct chronological order: from oldest (remote) to newest (active)
 	for _, remote := range r.remotes {
-		all = append(all, remote.proxy)
+		all.AppendRemote(remote)
 	}
 	for _, offloaded := range r.offloading {
-		all = append(all, offloaded.proxy)
+		all.AppendSealed(offloaded)
 	}
 	for _, sealed := range r.locals {
-		all = append(all, sealed.proxy)
+		all.AppendSealed(sealed)
 	}
 	for _, active := range r.sealing {
-		all = append(all, active.proxy)
+		all.AppendActive(active)
 	}
-	all = append(all, r.active.proxy)
+
+	// we wrap the current active fraction in syncActiveDestroyable solely to comply with the API,
+	// since it is never returned for Destroy and we don't store this instance.
+	all.AppendActive(&syncActiveDestroyable{active: r.active.instance})
 
 	r.muAll.Lock()
 	defer r.muAll.Unlock()
@@ -367,19 +349,19 @@ func (r *fractionRegistry) rebuildAllFractions() {
 // updateOldestTotal recalculates the creation time of the oldest fraction.
 // Called after modifications of the complete fractions list.
 func (r *fractionRegistry) updateOldestTotal() {
-	r.oldestTotal = r.all[0].Info().CreationTime
+	r.oldestTotal = r.all.f[0].Info().CreationTime
 }
 
 // updateOldestLocal recalculates the creation time of the oldest local fraction.
 // Called after modifications of the local fractions list.
 func (r *fractionRegistry) updateOldestLocal() {
 	if len(r.offloading) > 0 {
-		r.oldestLocal = r.offloading[0].proxy.Info().CreationTime
+		r.oldestLocal = r.offloading[0].sealed.Info().CreationTime
 	} else if len(r.locals) > 0 {
-		r.oldestLocal = r.locals[0].proxy.Info().CreationTime
+		r.oldestLocal = r.locals[0].sealed.Info().CreationTime
 	} else if len(r.sealing) > 0 {
-		r.oldestLocal = r.sealing[0].proxy.Info().CreationTime
+		r.oldestLocal = r.sealing[0].active.Info().CreationTime
 	} else {
-		r.oldestLocal = r.active.proxy.Info().CreationTime
+		r.oldestLocal = r.active.instance.Info().CreationTime
 	}
 }

@@ -98,8 +98,8 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client) (*FracManager, func
 	return &fm, stop, nil
 }
 
-func (fm *FracManager) Fractions() List {
-	return fm.lc.registry.AllFractions()
+func (fm *FracManager) FractionsSnapshot() (List, ReleaseSnapshot) {
+	return fm.lc.registry.FractionsSnapshot()
 }
 
 func (fm *FracManager) Oldest() uint64 {
@@ -112,7 +112,7 @@ func (fm *FracManager) Flags() *StateManager {
 
 // Active returns the currently active fraction
 func (fm *FracManager) Active() frac.Fraction {
-	return fm.lc.registry.Active().proxy
+	return fm.lc.registry.Active().instance
 }
 
 // Append writes documents and metadata to the active fraction

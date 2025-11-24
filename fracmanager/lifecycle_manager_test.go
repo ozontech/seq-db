@@ -41,7 +41,7 @@ func TestFracInfoCache(t *testing.T) {
 		lc.Rotate(0, &wg)
 		wg.Wait()
 
-		info := active.proxy.Info()
+		info := active.instance.Info()
 		_, ok := lc.infoCache.Get(info.Name())
 		assert.True(t, ok)
 
@@ -90,7 +90,7 @@ func TestCapacityExceeded(t *testing.T) {
 		lc.Rotate(0, &wg)
 		wg.Wait()
 
-		info := active.proxy.Info()
+		info := active.instance.Info()
 		total += info.FullSize()
 	}
 
@@ -130,11 +130,11 @@ func TestOldestMetrics(t *testing.T) {
 		lc.Rotate(0, &wg)
 		wg.Wait()
 
-		info := active.proxy.Info()
+		info := active.instance.Info()
 		total += info.FullSize()
 	}
 
-	firstFracTime := lc.registry.Active().proxy.Info().CreationTime
+	firstFracTime := lc.registry.Active().instance.Info().CreationTime
 	for range fracsCount {
 		fillAndRotate()
 	}
@@ -144,7 +144,7 @@ func TestOldestMetrics(t *testing.T) {
 	assert.Equal(t, firstFracTime, lc.registry.OldestLocal(), "should point to the first fraction when nothing is offloaded")
 
 	halfSize := total
-	halfwayFracTime := lc.registry.Active().proxy.Info().CreationTime
+	halfwayFracTime := lc.registry.Active().instance.Info().CreationTime
 	for range fracsCount {
 		fillAndRotate()
 	}
