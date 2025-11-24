@@ -72,6 +72,7 @@ func TestSeqQLAll(t *testing.T) {
 		require.Equal(t, parsedOriginal, parsedGot)
 	}
 
+	test("", "*")
 	test("*", "*")
 
 	// Propagate "not".
