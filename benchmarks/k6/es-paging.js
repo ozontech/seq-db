@@ -22,7 +22,7 @@ export default function () {
   });
 
   const res = http.post(
-    `${BASE_URL}/logs/_search?request_cache=false`, 
+    `${BASE_URL}/logs-index/_search?request_cache=false`,
     query,
     { headers: { 'Content-Type': 'application/json' } }
   );
