@@ -266,19 +266,13 @@ func rotateAndSeal(fm *FracManager) frac.Fraction {
 }
 
 func TestFracInfoSavedToCache(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
-
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
-
 	const maxSize = 10000
 
-	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
+	cfg, fm, stop := setupFracManager(t, &Config{
 		FracSize:  100,
 		TotalSize: maxSize * 2,
-		DataDir:   dataDir,
 	})
-	assert.NoError(t, err)
+	defer stop()
 
 	dp := indexer.NewTestDocProvider()
 	metaRoot := insaneJSON.Spawn()
@@ -297,10 +291,10 @@ func TestFracInfoSavedToCache(t *testing.T) {
 		dp.TryReset()
 	}
 
-	err = fm.fracCache.SyncWithDisk()
+	err := fm.fracCache.SyncWithDisk()
 	assert.NoError(t, err)
 
-	fracCacheFromDisk, err := loadFracCache(dataDir)
+	fracCacheFromDisk, err := loadFracCache(cfg.DataDir)
 	assert.NoError(t, err)
 	assert.Equal(t, fracCacheFromDisk, fm.fracCache.cache)
 	assert.Equal(t, fracCacheFromDisk, infos)
@@ -346,23 +340,15 @@ func appendGlob(files []string, dataDir, glob string) []string {
 }
 
 func TestExtraFractionsRemoved(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
-
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
-
 	const maxSize = 5500
 	const times = 10
 
 	q := newEvictingQueue(maxSize)
 
-	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
+	cfg, fm, stop := setupFracManager(t, &Config{
 		FracSize:  100,
 		TotalSize: maxSize,
-		DataDir:   dataDir,
 	})
-
-	assert.NoError(t, err)
 
 	dp := indexer.NewTestDocProvider()
 	infos := map[string]*common.Info{}
@@ -391,10 +377,10 @@ func TestExtraFractionsRemoved(t *testing.T) {
 	sealWG.Wait()
 	suicideWG.Wait()
 
-	fm.Stop()
+	stop()
 
 	fracsOnDisk := []string{}
-	fracCacheFromDisk, err := loadFracCache(dataDir)
+	fracCacheFromDisk, err := loadFracCache(cfg.DataDir)
 
 	assert.NoError(t, err)
 	for k := range fracCacheFromDisk {
@@ -408,20 +394,13 @@ func TestExtraFractionsRemoved(t *testing.T) {
 }
 
 func TestMissingCacheFilesDeleted(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
-
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
-
 	const maxSize = 5500
 	const times = 10
-	// make some fractions
-	fm, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
+
+	cfg, fm, stop := setupFracManager(t, &Config{
 		FracSize:  100,
 		TotalSize: maxSize,
-		DataDir:   dataDir,
 	})
-	assert.NoError(t, err)
 
 	dp := indexer.NewTestDocProvider()
 	metaRoot := insaneJSON.Spawn()
@@ -441,9 +420,10 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	sealWG.Wait()
 	suicideWG.Wait()
 
-	fm.Stop()
+	stop()
 
 	// remove the fraction files
+	dataDir := cfg.DataDir
 	files := []string{}
 	files = appendGlob(files, dataDir, "*.docs")
 	files = appendGlob(files, dataDir, "*.sdocs")
@@ -455,12 +435,8 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	}
 
 	// create a new fracmanager that will read the fraction cache file
-	fm2, err := newFracManagerWithBackgroundStart(t.Context(), &Config{
-		FracSize:  100,
-		TotalSize: maxSize,
-		DataDir:   dataDir,
-	})
-	assert.NoError(t, err)
+
+	_, fm2, stop2 := setupFracManager(t, cfg)
 
 	sealWG2 := sync.WaitGroup{}
 	suicideWG2 := sync.WaitGroup{}
@@ -469,7 +445,7 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	sealWG2.Wait()
 	suicideWG2.Wait()
 
-	fm2.Stop()
+	stop2()
 
 	// make sure the missing files are removed from the fraction cache
 	fracCacheFromDisk, err := loadFracCacheContent(dataDir)
