@@ -42,7 +42,7 @@ const (
 
 	MaxTextFieldValueLength = 32 * 1024
 
-	SealOnExitFracSizePercent = 20 // Percent of the max frac size, above which the fraction is sealed on exit
+	DefaultMinSealPercent = 20 // Percent of the max frac size, above which the fraction is sealed on exit
 
 	IngestorMaxInflightBulks = 32
 
@@ -80,6 +80,8 @@ var (
 	ErrRequestWasRateLimited     = errors.New("request was rate limited")
 	ErrInvalidAggQuery           = errors.New("invalid agg query")
 	ErrInvalidArgument           = errors.New("invalid argument")
-	ErrTooManyUniqValues         = errors.New("aggregation has too many unique values")
+	ErrTooManyFieldTokens        = errors.New("aggregation has too many field tokens")
+	ErrTooManyGroupTokens        = errors.New("aggregation has too many group tokens")
+	ErrTooManyFractionTokens     = errors.New("aggregation has too many fraction tokens")
 	ErrTooManyFractionsHit       = errors.New("too many fractions hit")
 )

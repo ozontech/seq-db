@@ -353,7 +353,7 @@ type SourcedNodeIterator struct {
 
 	tokensCache map[uint32]string
 
-	uniqSourcesLimit int
+	uniqSourcesLimit iteratorLimit
 	countBySource    map[uint32]int
 
 	lastID     uint32
@@ -363,7 +363,7 @@ type SourcedNodeIterator struct {
 	less node.LessFn
 }
 
-func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, limit int, reverse bool) *SourcedNodeIterator {
+func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, limit iteratorLimit, reverse bool) *SourcedNodeIterator {
 	lastID, lastSource, has := sourced.NextSourced()
 	return &SourcedNodeIterator{
 		sourcedNode:      sourced,
@@ -389,14 +389,14 @@ func (s *SourcedNodeIterator) ConsumeTokenSource(lid uint32) (uint32, bool, erro
 		return 0, false, nil
 	}
 
-	if s.uniqSourcesLimit <= 0 {
+	if s.uniqSourcesLimit.limit <= 0 {
 		return s.lastSource, true, nil
 	}
 
 	s.countBySource[s.lastSource]++
 
-	if len(s.countBySource) > s.uniqSourcesLimit {
-		return lid, true, fmt.Errorf("%w: iterator limit is exceeded", consts.ErrTooManyUniqValues)
+	if len(s.countBySource) > s.uniqSourcesLimit.limit {
+		return lid, true, fmt.Errorf("%w: iterator limit is exceeded", s.uniqSourcesLimit.err)
 	}
 
 	return s.lastSource, true, nil

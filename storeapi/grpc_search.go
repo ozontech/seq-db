@@ -166,7 +166,7 @@ func (g *GrpcV1) doSearch(
 	searchTr := tr.NewChild("search iteratively")
 	qpr, err := g.searchData.searcher.SearchDocs(
 		ctx,
-		g.fracManager.GetAllFracs(),
+		g.fracManager.Fractions(),
 		searchParams,
 	)
 	searchTr.Done()
@@ -217,10 +217,6 @@ func (g *GrpcV1) doSearch(
 }
 
 func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, error) {
-	if query == "" {
-		query = seq.TokenAll + ":*"
-	}
-
 	seqql, err := parser.ParseSeqQL(query, g.mappingProvider.GetMapping())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "can't parse query %q: %v", query, err)
@@ -231,7 +227,7 @@ func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, error) {
 }
 
 func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {
-	oldestCt := g.fracManager.OldestCT()
+	oldestCt := g.fracManager.Oldest()
 	return oldestCt == 0 || oldestCt > from
 }
 
