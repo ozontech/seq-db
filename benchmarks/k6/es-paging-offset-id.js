@@ -2,7 +2,7 @@ import http   from 'k6/http';
 import { check, sleep } from 'k6';
 
 /*
-* Elasticsearch has search_after field which is similar to seq-db's offset-id field. In order to use
+* Elasticsearch has search_after field which can be used same way as seq-db's offset-id field. In order to use
 * the field, one must create a PIT (point in time) and then specify _shard_doc as sort field while querying.
 * Elasticsearch will provide sort field in response hits which is a number that can be used for
 * efficient scrolling on the next query.
