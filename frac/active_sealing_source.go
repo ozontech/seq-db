@@ -40,23 +40,23 @@ import (
 // All iterators work with pre-sorted data and return information
 // in an order optimal for creating disk index structures.
 type ActiveSealingSource struct {
-	params        common.SealParams   // Sealing parameters
-	info          *common.Info        // fraction Info
-	created       time.Time           // Creation time of the source
-	sortedLIDs    []uint32            // Sorted LIDs (Local ID)
-	oldToNewLIDs  []uint32            // Mapping from old LIDs to new ones (after sorting)
-	mids          *UInt64s            // MIDs
-	rids          *UInt64s            // RIDs
-	fields        []string            // Sorted field names
-	fieldsMaxTIDs []uint32            // Maximum TIDs for each field
-	tids          []uint32            // Sorted TIDs (Token ID)
-	tokens        [][]byte            // Tokens (values) by TID
-	lids          []*TokenLIDs        // LID lists for each token
-	docPosOrig    []seq.DocPos        // Original document positions
-	docPosSorted  []seq.DocPos        // Document positions after sorting
-	blocksOffsets []uint64            // Document block offsets
-	docsReader    *storage.DocsReader // Document storage reader
-	lastErr       error               // Last error
+	params        common.SealParams     // Sealing parameters
+	info          *common.Info          // fraction Info
+	created       time.Time             // Creation time of the source
+	sortedLIDs    []uint32              // Sorted LIDs (Local ID)
+	oldToNewLIDs  []uint32              // Mapping from old LIDs to new ones (after sorting)
+	mids          *UInt64s              // MIDs
+	rids          *UInt64s              // RIDs
+	fields        []string              // Sorted field names
+	fieldsMaxTIDs []uint32              // Maximum TIDs for each field
+	tids          []uint32              // Sorted TIDs (Token ID)
+	tokens        [][]byte              // Tokens (values) by TID
+	lids          []*TokenLIDs          // LID lists for each token
+	docPosMap     map[seq.ID]seq.DocPos // Original document positions
+	docPosSorted  []seq.DocPos          // Document positions after sorting
+	blocksOffsets []uint64              // Document block offsets
+	docsReader    *storage.DocsReader   // Document storage reader
+	lastErr       error                 // Last error
 }
 
 // NewActiveSealingSource creates a new data source for sealing
@@ -84,7 +84,7 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 		fieldsMaxTIDs: fieldsMaxTIDs,
 		tokens:        active.TokenList.tidToVal,
 		lids:          active.TokenList.tidToLIDs,
-		docPosOrig:    active.DocsPositions.lidToPos,
+		docPosMap:     active.DocsPositions.idToPos,
 		blocksOffsets: active.DocBlocks.vals,
 		docsReader:    &active.sortReader,
 	}
@@ -237,7 +237,7 @@ func (src *ActiveSealingSource) IDsBlocks(blockSize int) iter.Seq2[[]seq.ID, []s
 
 			// Use sorted or original positions
 			if len(src.docPosSorted) == 0 {
-				pos = append(pos, src.docPosOrig[lid])
+				pos = append(pos, src.docPosMap[id])
 			} else {
 				pos = append(pos, src.docPosSorted[i+1]) // +1 for system document
 			}
