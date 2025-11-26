@@ -34,18 +34,18 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	docs, bulks, fromTime, toTime := generatesMessages(numWriters*numMessagesPerWriter, bulkSize)
 
 	tmpDir := common.CreateTempDir()
-	defer common.RemoveDir(tmpDir)
-	baseName := filepath.Join(tmpDir, "test_fraction")
+	fracPath := filepath.Join(tmpDir, "test_fraction")
+	defer common.RemoveDir(fracPath)
 
 	activeIndexer := NewActiveIndexer(numIndexWorkers, 1000)
 	activeIndexer.Start()
 	defer activeIndexer.Stop()
 
 	fraction := NewActive(
-		baseName,
+		fracPath,
 		activeIndexer,
-		storage.NewReadLimiter(1, nil),
-		cache.NewCache[[]byte](nil, nil),
+		storage.NewReadLimiter(numReaders/2, nil),
+		cache.NewCache[[]byte](cache.NewCleaner(4096, nil), nil),
 		cache.NewCache[[]byte](nil, nil),
 		&Config{},
 	)
@@ -75,6 +75,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 		writersGroup.Go(func() error {
 			wg := sync.WaitGroup{}
+			proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
 			for _, bulk := range writerBulks {
 				select {
 				case <-writeCtx.Done():
@@ -92,7 +93,6 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 					return d, nil
 				}
 
-				proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
 				compressor := indexer.GetDocsMetasCompressor(3, 3)
 				_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
 				if err != nil {
