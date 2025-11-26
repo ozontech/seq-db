@@ -97,7 +97,7 @@ func (g *GrpcV1) doSearch(
 	if req.Offset != 0 {
 		// offset+size pagination
 		limit = int(req.Size + req.Offset)
-	} else if len(req.OffsetId) > 0 {
+	} else if req.OffsetId != "" {
 		// offset_id pagination
 		limit = int(req.Size)
 		var err error

@@ -56,11 +56,9 @@ func (d ID) Bytes() []byte {
 func (d ID) Dec() ID {
 	if d.RID != 0 {
 		d.RID -= 1
-	} else {
-		if d.MID != 0 {
-			d.MID -= 1
-			d.RID = math.MaxUint64
-		}
+	} else if d.MID != 0 {
+		d.MID -= 1
+		d.RID = math.MaxUint64
 	}
 	return d
 }
@@ -68,11 +66,9 @@ func (d ID) Dec() ID {
 func (d ID) Inc() ID {
 	if d.RID != math.MaxUint64 {
 		d.RID += 1
-	} else {
-		if d.MID != math.MaxUint64 {
-			d.MID += 1
-			d.RID = 0
-		}
+	} else if d.MID != math.MaxUint64 {
+		d.MID += 1
+		d.RID = 0
 	}
 	return d
 }

@@ -192,7 +192,7 @@ func (g *grpcV1) doSearch(
 	if req.Query.From == nil || req.Query.To == nil {
 		return nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
 	}
-	if req.Offset != 0 && len(req.OffsetId) > 0 {
+	if req.Offset != 0 && req.OffsetId != "" {
 		return nil, status.Error(codes.InvalidArgument, `only one of "offset" and "offset_id" must be provided`)
 	}
 
