@@ -1,7 +1,6 @@
 package frac
 
 import (
-	"context"
 	"fmt"
 	"math/rand/v2"
 	"path/filepath"
@@ -10,16 +9,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+	"github.com/ozontech/seq-db/frac/sealed/sealing"
+	"github.com/ozontech/seq-db/frac/sealed/seqids"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
-	"github.com/ozontech/seq-db/tests/common"
+	test_common "github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
@@ -33,19 +38,19 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 	docs, bulks, fromTime, toTime := generatesMessages(numWriters*numMessagesPerWriter, bulkSize)
 
-	tmpDir := common.CreateTempDir()
+	tmpDir := test_common.CreateTempDir()
 	fracPath := filepath.Join(tmpDir, "test_fraction")
-	defer common.RemoveDir(fracPath)
+	defer test_common.RemoveDir(fracPath)
 
 	activeIndexer := NewActiveIndexer(numIndexWorkers, 1000)
 	activeIndexer.Start()
 	defer activeIndexer.Stop()
 
-	fraction := NewActive(
+	active := NewActive(
 		fracPath,
 		activeIndexer,
 		storage.NewReadLimiter(numReaders/2, nil),
-		cache.NewCache[[]byte](cache.NewCleaner(4096, nil), nil),
+		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		&Config{},
 	)
@@ -63,9 +68,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 	bulksPerWriter := len(bulks) / numWriters
 
-	writeCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	writersGroup, writeCtx := errgroup.WithContext(writeCtx)
+	writersGroup, writeCtx := errgroup.WithContext(t.Context())
 
 	for writerId := 0; writerId < numWriters; writerId++ {
 		start := writerId * bulksPerWriter
@@ -103,7 +106,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 				docsBlock, metasBlock := compressor.DocsMetas()
 
 				wg.Add(1)
-				err = fraction.Append(docsBlock, metasBlock, &wg)
+				err = active.Append(docsBlock, metasBlock, &wg)
 				if err != nil {
 					return fmt.Errorf("writer %d: appending docs failed: %w", writerId, err)
 				}
@@ -120,7 +123,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 					}
 					searchParams.AST = ast.Root
 
-					_, err = fraction.Search(context.Background(), searchParams)
+					_, err = active.Search(t.Context(), searchParams)
 					if err != nil {
 						return err
 					}
@@ -134,8 +137,16 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	err := writersGroup.Wait()
 	assert.NoError(t, err, "concurrent writers should complete without errors")
 
-	ctx := context.Background()
-	readersGroup, ctx := errgroup.WithContext(ctx)
+	readTest(t, active, numReaders, numQueries, docs, fromTime, toTime, mapping)
+
+	sealed, err := seal(active)
+	assert.NoError(t, err, "sealing error")
+
+	readTest(t, sealed, numReaders, numQueries, docs, fromTime, toTime, mapping)
+}
+
+func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs []testDoc, fromTime, toTime time.Time, mapping seq.Mapping) {
+	readersGroup, ctx := errgroup.WithContext(t.Context())
 
 	type queryFilter func(doc *testDoc) bool
 
@@ -215,7 +226,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 		})
 	}
 
-	err = readersGroup.Wait()
+	err := readersGroup.Wait()
 	assert.NoError(t, err, "concurrent queries should complete without errors")
 }
 
@@ -227,7 +238,7 @@ type testDoc = struct {
 	timestamp time.Time
 }
 
-func generatesMessages(numMessages int, bulkSize int) ([]testDoc, [][]string, time.Time, time.Time) {
+func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.Time, time.Time) {
 	services := []string{"gateway", "proxy", "scheduler"}
 	messages := []string{
 		"request started", "request completed", "processing timed out",
@@ -278,4 +289,43 @@ func generatesMessages(numMessages int, bulkSize int) ([]testDoc, [][]string, ti
 		bulks[i], bulks[j] = bulks[j], bulks[i]
 	})
 	return docs, bulks, fromTime, toTime
+}
+
+func seal(active *Active) (*Sealed, error) {
+	sealParams := common.SealParams{
+		IDsZstdLevel:           1,
+		LIDsZstdLevel:          1,
+		TokenListZstdLevel:     1,
+		DocsPositionsZstdLevel: 1,
+		TokenTableZstdLevel:    1,
+		DocBlocksZstdLevel:     1,
+		DocBlockSize:           128 * int(units.KiB),
+	}
+	activeSealingSource, err := NewActiveSealingSource(active, sealParams)
+	if err != nil {
+		return nil, err
+	}
+	preloaded, err := sealing.Seal(activeSealingSource, sealParams)
+	if err != nil {
+		return nil, err
+	}
+	indexCache := &IndexCache{
+		MIDs:       cache.NewCache[[]byte](nil, nil),
+		RIDs:       cache.NewCache[[]byte](nil, nil),
+		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
+		LIDs:       cache.NewCache[*lids.Block](nil, nil),
+		Tokens:     cache.NewCache[*token.Block](nil, nil),
+		TokenTable: cache.NewCache[token.Table](nil, nil),
+		Registry:   cache.NewCache[[]byte](nil, nil),
+	}
+	sealed := NewSealedPreloaded(
+		active.BaseFileName,
+		preloaded,
+		storage.NewReadLimiter(1, nil),
+		indexCache,
+		cache.NewCache[[]byte](nil, nil),
+		&Config{},
+	)
+	active.Release()
+	return sealed, nil
 }
