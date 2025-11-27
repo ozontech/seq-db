@@ -52,17 +52,20 @@ var (
 	asyncSearchDiskUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
-		Name:      "disk_usage_bytes_total",
+		Name:      "disk_usage_bytes",
+		Help:      "",
 	}, []string{"file_type"})
 	asyncSearchStoredRequests = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
 		Name:      "stored_requests",
+		Help:      "",
 	})
 	asyncSearchReadOnly = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
 		Name:      "read_only",
+		Help:      "",
 	})
 )
 

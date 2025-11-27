@@ -17,32 +17,37 @@ var (
 	searchLeavesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
-		Name:      "leaves_total",
+		Name:      "leaves",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
+		Help:      "",
 	})
 	searchNodesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
-		Name:      "nodes_total",
+		Name:      "nodes",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
+		Help:      "",
 	})
 	searchSourcesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
-		Name:      "sources_total",
+		Name:      "sources",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 20),
+		Help:      "",
 	})
 	searchAggNodesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
-		Name:      "agg_nodes_total",
+		Name:      "agg_nodes",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 20),
+		Help:      "",
 	})
 	searchHitsTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
-		Name:      "hits_total",
+		Name:      "hits",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 32),
+		Help:      "",
 	})
 )
 

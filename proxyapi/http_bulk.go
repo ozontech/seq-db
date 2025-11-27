@@ -31,6 +31,7 @@ var (
 		Subsystem: "bulk",
 		Name:      "duration_seconds",
 		Buckets:   metric.SecondsBuckets,
+		Help:      "Bulk processing time (full cycle including saving on stores)",
 	})
 	bulkAPIError = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",

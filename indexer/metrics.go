@@ -33,7 +33,7 @@ var (
 	bulkSizeAfterCompression = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
-		Name:      "bulk_size_after_compression",
+		Name:      "size_after_compression_bytes",
 		Help:      "Bulk request sizes after compression",
 		Buckets:   prometheus.ExponentialBuckets(1024, 2, 16),
 	})

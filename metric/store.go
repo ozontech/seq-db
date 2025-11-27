@@ -16,28 +16,28 @@ var (
 	BulkDuplicateDocsTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "bulk",
-		Name:      "duplicate_docs_total",
+		Name:      "duplicate_docs",
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 16),
 	})
 	BulkDocsTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "bulk",
-		Name:      "docs_total",
+		Name:      "docs",
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 16),
 	})
 	BulkDocBytesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "bulk",
-		Name:      "doc_bytes_total",
+		Name:      "doc_bytes",
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 16),
 	})
 	BulkMetaBytesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "bulk",
-		Name:      "meta_bytes_total",
+		Name:      "meta_bytes",
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 16),
 	})
@@ -45,12 +45,12 @@ var (
 	SearchInFlightQueriesTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
-		Name:      "in_flight_queries_total",
+		Name:      "in_flight_queries",
 		Help:      "",
 	})
 	RejectedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
-		Name:      "rejected_requests",
+		Name:      "rejected_requests_total",
 		Help:      "",
 	}, []string{"method", "type"})
 	SearchDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -71,7 +71,7 @@ var (
 	FetchInFlightQueriesTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "fetch",
-		Name:      "in_flight_queries_total",
+		Name:      "in_flight_queries",
 		Help:      "",
 	})
 	FetchDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -84,7 +84,7 @@ var (
 	FetchDocsTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "fetch",
-		Name:      "docs_total",
+		Name:      "docs",
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 32),
 	})
@@ -98,7 +98,7 @@ var (
 	FetchBytesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "fetch",
-		Name:      "bytes_total",
+		Name:      "bytes",
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(256, 4, 32),
 	})
@@ -107,19 +107,19 @@ var (
 		Namespace: "seq_db_store",
 		Subsystem: "main",
 		Name:      "ready",
-		Help:      "store is ready to accept requests",
+		Help:      "Store is ready to accept requests",
 	})
 
 	StorePanics = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "common",
 		Name:      "panics_total",
-		Help:      "",
+		Help:      "Count of panics in store",
 	})
 
 	skippedIndexes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
-		Name:      "skipped_indexes",
+		Name:      "skipped_indexes_total",
 		Help:      "",
 	}, []string{"type"})
 	SkippedIndexesText    = skippedIndexes.WithLabelValues("text")
@@ -128,7 +128,7 @@ var (
 
 	skippedIndexesBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
-		Name:      "skipped_indexes_bytes",
+		Name:      "skipped_indexes_bytes_total",
 		Help:      "",
 	}, []string{"type"})
 	SkippedIndexesBytesText    = skippedIndexesBytes.WithLabelValues("text")

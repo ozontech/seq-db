@@ -91,14 +91,14 @@ var (
 	DocumentsFetched = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "fetch",
-		Name:      "total_fetched_documents",
+		Name:      "fetched_documents",
 		Help:      "Number of documents returned by the Fetch method",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
 	})
 	DocumentsRequested = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "fetch",
-		Name:      "total_requested_documents",
+		Name:      "requested_documents",
 		Help:      "Number of documents requested using the Fetch method",
 		Buckets:   prometheus.ExponentialBuckets(1, 3, 16),
 	})
@@ -132,13 +132,13 @@ var (
 	CircuitBreakerSuccess = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "circuit_breaker",
-		Name:      "success",
+		Name:      "success_total",
 		Help:      "Count of each time `Execute` does not return an error",
 	}, []string{"name"})
 	CircuitBreakerErr = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "circuit_breaker",
-		Name:      "err",
+		Name:      "errors_total",
 		Help:      "The number of errors that have occurred in the circuit breaker",
 	}, []string{"name", "kind"})
 	CircuitBreakerState = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -151,14 +151,14 @@ var (
 	ExportDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "export",
-		Name:      "duration",
+		Name:      "duration_seconds",
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 25),
 	}, []string{"protocol"})
 	ExportSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "export",
-		Name:      "size",
+		Name:      "size_bytes",
 		Help:      "",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 50),
 	}, []string{"protocol"})
@@ -188,8 +188,8 @@ var (
 	TokenizerIncomingTextLen = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "tokenizer",
-		Name:      "incoming_text_len",
-		Help:      "",
+		Name:      "incoming_text_len_bytes",
+		Help:      "Length of incoming text in bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
 	})
 )

@@ -32,24 +32,28 @@ var (
 		Subsystem: "fetcher",
 		Name:      "fraction_stages_seconds",
 		Buckets:   metric.SecondsBuckets,
+		Help:      "",
 	}, []string{"stage", "fraction_type"})
 	fractionAggSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
-		Name:      "tracer_fraction_agg_search_sec",
+		Name:      "tracer_fraction_agg_search_seconds",
 		Buckets:   metric.SecondsBuckets,
+		Help:      "",
 	}, []string{"stage", "fraction_type"})
 	fractionHistSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
-		Name:      "tracer_fraction_hist_search_sec",
+		Name:      "tracer_fraction_hist_search_seconds",
 		Buckets:   metric.SecondsBuckets,
+		Help:      "",
 	}, []string{"stage", "fraction_type"})
-	fractionRegSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	fractionRegistrySearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
-		Name:      "tracer_fraction_reg_search_sec",
+		Name:      "tracer_fraction_registry_search_seconds",
 		Buckets:   metric.SecondsBuckets,
+		Help:      "",
 	}, []string{"stage", "fraction_type"})
 )
 
@@ -62,7 +66,7 @@ func fractionSearchMetric(
 	if params.HasHist() {
 		return fractionHistSearchSec
 	}
-	return fractionRegSearchSec
+	return fractionRegistrySearchSec
 }
 
 func fracToString(f Fraction, fracType string) string {
