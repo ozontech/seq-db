@@ -259,7 +259,7 @@ func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.T
 			toTime = timestamp
 		}
 
-		doc := fmt.Sprintf(`{"timestamp":"%s","service":"%s","message":"%s","level":"%d"}`,
+		doc := fmt.Sprintf(`{"timestamp":%q,"service":%q,"message":%q,"level":"%d"}`,
 			timestamp.Format(time.RFC3339Nano), service, message, level)
 
 		docs = append(docs, testDoc{
