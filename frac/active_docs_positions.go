@@ -7,17 +7,14 @@ import (
 )
 
 type DocsPositions struct {
-	mu       sync.RWMutex
-	idToPos  map[seq.ID]seq.DocPos
-	lidToPos []seq.DocPos
+	mu      sync.RWMutex
+	idToPos map[seq.ID]seq.DocPos
 }
 
 func NewSyncDocsPositions() *DocsPositions {
 	dp := DocsPositions{
-		lidToPos: make([]seq.DocPos, 0),
-		idToPos:  make(map[seq.ID]seq.DocPos),
+		idToPos: make(map[seq.ID]seq.DocPos),
 	}
-	dp.lidToPos = append(dp.lidToPos, 0) // systemID
 	return &dp
 }
 
@@ -54,7 +51,6 @@ func (dp *DocsPositions) SetMultiple(ids []seq.ID, pos []seq.DocPos) []seq.ID {
 			dp.idToPos[id] = pos[i]
 		}
 
-		dp.lidToPos = append(dp.lidToPos, pos[i])
 		appended = append(appended, id)
 	}
 	return appended

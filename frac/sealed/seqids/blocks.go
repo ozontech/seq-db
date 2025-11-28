@@ -89,13 +89,20 @@ func unpackRawIDsVarint(src []byte, dst []uint64) ([]uint64, error) {
 	dst = dst[:0]
 	id := uint64(0)
 	for len(src) != 0 {
-		delta, n := binary.Varint(src)
+		udelta, n := binary.Uvarint(src)
 		if n <= 0 {
 			return nil, errors.New("varint decoded with error")
 		}
-		src = src[n:]
+
+		delta := int64(udelta >> 1)
+		if udelta&1 != 0 {
+			delta = ^delta
+		}
+
 		id += uint64(delta)
 		dst = append(dst, id)
+
+		src = src[n:]
 	}
 	return dst, nil
 }

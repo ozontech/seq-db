@@ -121,7 +121,7 @@ func NewGrpcV1(cfg APIConfig, fracManager *fracmanager.FracManager, mappingProvi
 		},
 		asyncSearcher: asyncsearcher.MustStartAsync(
 			cfg.Search.Async, mappingProvider,
-			fracManager.GetAllFracs(),
+			fracManager.Fractions(),
 		),
 	}
 
@@ -187,10 +187,15 @@ func tracerSpanToExplainEntry(span *querytracer.Span) *storeapi.ExplainEntry {
 }
 
 func parseStoreError(e error) (storeapi.SearchErrorCode, bool) {
-	if errors.Is(e, consts.ErrTooManyUniqValues) {
-		return storeapi.SearchErrorCode_TOO_MANY_UNIQ_VALUES, true
+	if errors.Is(e, consts.ErrTooManyFieldTokens) {
+		return storeapi.SearchErrorCode_TOO_MANY_FIELD_TOKENS, true
 	}
-
+	if errors.Is(e, consts.ErrTooManyGroupTokens) {
+		return storeapi.SearchErrorCode_TOO_MANY_GROUP_TOKENS, true
+	}
+	if errors.Is(e, consts.ErrTooManyFractionTokens) {
+		return storeapi.SearchErrorCode_TOO_MANY_FRACTION_TOKENS, true
+	}
 	if errors.Is(e, consts.ErrTooManyFractionsHit) {
 		metric.RejectedRequests.WithLabelValues("search", "fracs_exceeding").Inc()
 		return storeapi.SearchErrorCode_TOO_MANY_FRACTIONS_HIT, true

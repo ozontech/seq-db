@@ -579,8 +579,14 @@ func (si *Ingestor) searchShard(
 				// fail fast in this case
 				return nil, source, fmt.Errorf("hot store refuses: %w", consts.ErrIngestorQueryWantsOldData)
 			}
-			if errMessage == consts.ErrTooManyUniqValues.Error() {
-				return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyUniqValues)
+			if errMessage == consts.ErrTooManyFieldTokens.Error() {
+				return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFieldTokens)
+			}
+			if errMessage == consts.ErrTooManyGroupTokens.Error() {
+				return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyGroupTokens)
+			}
+			if errMessage == consts.ErrTooManyFractionTokens.Error() {
+				return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFractionTokens)
 			}
 			errs = append(errs, err)
 			continue
@@ -593,8 +599,12 @@ func (si *Ingestor) searchShard(
 		switch resp.Code {
 		case storeapi.SearchErrorCode_INGESTOR_QUERY_WANTS_OLD_DATA:
 			return nil, source, fmt.Errorf("hot store refuses: %w", consts.ErrIngestorQueryWantsOldData)
-		case storeapi.SearchErrorCode_TOO_MANY_UNIQ_VALUES:
-			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyUniqValues)
+		case storeapi.SearchErrorCode_TOO_MANY_FIELD_TOKENS:
+			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFieldTokens)
+		case storeapi.SearchErrorCode_TOO_MANY_GROUP_TOKENS:
+			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyGroupTokens)
+		case storeapi.SearchErrorCode_TOO_MANY_FRACTION_TOKENS:
+			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFractionTokens)
 		case storeapi.SearchErrorCode_TOO_MANY_FRACTIONS_HIT:
 			return nil, source, fmt.Errorf("store forbids request: %w", consts.ErrTooManyFractionsHit)
 		}

@@ -21,15 +21,22 @@ type StateManager struct {
 	mu       sync.RWMutex
 	current  StorageState
 	filePath string
+	synced   bool
 }
 
 // NewStateManager creates a new storage state manager
 func NewStateManager(dataDir string, defaultState StorageState) (*StateManager, error) {
 	sm := &StateManager{
 		filePath: filepath.Join(dataDir, StateFile),
+		current:  defaultState,
 	}
-	err := sm.init(defaultState)
-	return sm, err
+
+	err := sm.load()
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	return sm, nil
 }
 
 // IsCapacityExceeded returns storage capacity exceeded flag
@@ -44,21 +51,12 @@ func (m *StateManager) setCapacityExceeded(exceeded bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.current.CapacityExceeded == exceeded {
-		return nil
+	if m.current.CapacityExceeded != exceeded {
+		m.current.CapacityExceeded = exceeded
+		m.synced = false
 	}
 
-	m.current.CapacityExceeded = exceeded
 	return m.save()
-}
-
-func (m *StateManager) init(defaultState StorageState) error {
-	err := m.load()
-	if os.IsNotExist(err) {
-		m.current = defaultState
-		return m.save()
-	}
-	return err
 }
 
 func (m *StateManager) load() error {
@@ -71,11 +69,16 @@ func (m *StateManager) load() error {
 		return err
 	}
 
+	m.synced = true
 	m.current = state
 	return nil
 }
 
 func (m *StateManager) save() error {
+	if m.synced {
+		return nil
+	}
+
 	data, err := json.Marshal(m.current)
 	if err != nil {
 		return err

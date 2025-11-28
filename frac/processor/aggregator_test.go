@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -27,7 +28,7 @@ func TestSingleSourceCountAggregator(t *testing.T) {
 	}
 
 	source := node.BuildORTreeAgg(node.MakeStaticNodes(sources), false)
-	iter := NewSourcedNodeIterator(source, nil, nil, 0, false)
+	iter := NewSourcedNodeIterator(source, nil, nil, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
 	agg := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 	for _, id := range searchDocs {
 		if err := agg.Next(id); err != nil {
@@ -55,7 +56,7 @@ func TestSingleSourceCountAggregatorWithInterval(t *testing.T) {
 	}
 
 	source := node.BuildORTreeAgg(node.MakeStaticNodes(sources), false)
-	iter := NewSourcedNodeIterator(source, nil, nil, 0, false)
+	iter := NewSourcedNodeIterator(source, nil, nil, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
 
 	agg := NewSingleSourceCountAggregator(iter, func(l seq.LID) seq.MID {
 		return seq.MID(l) % 3
@@ -90,7 +91,7 @@ func Generate(n int) ([]uint32, uint32) {
 func BenchmarkAggDeep(b *testing.B) {
 	v, _ := Generate(b.N)
 	src := node.NewSourcedNodeWrapper(node.NewStatic(v, false), 0)
-	iter := NewSourcedNodeIterator(src, nil, make([]uint32, 1), 0, false)
+	iter := NewSourcedNodeIterator(src, nil, make([]uint32, 1), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
 	n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 	vals, _ := Generate(b.N)
 	b.ResetTimer()
@@ -115,7 +116,7 @@ func BenchmarkAggWide(b *testing.B) {
 
 	source := node.BuildORTreeAgg(node.MakeStaticNodes(wide), false)
 
-	iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(wide)), 0, false)
+	iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(wide)), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
 	n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 	vals, _ := Generate(b.N)
 	b.ResetTimer()
@@ -177,8 +178,8 @@ func TestTwoSourceAggregator(t *testing.T) {
 
 	fieldTIDs := []uint32{42, 73}
 	groupByTIDs := []uint32{1, 2}
-	groupIterator := NewSourcedNodeIterator(groupBy, dp, groupByTIDs, 0, false)
-	fieldIterator := NewSourcedNodeIterator(field, dp, fieldTIDs, 0, false)
+	groupIterator := NewSourcedNodeIterator(groupBy, dp, groupByTIDs, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
+	fieldIterator := NewSourcedNodeIterator(field, dp, fieldTIDs, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
 	aggregator := NewGroupAndFieldAggregator(
 		fieldIterator, groupIterator, provideExtractTimeFunc(nil, nil, 0), true,
 	)
@@ -229,7 +230,7 @@ func TestSingleTreeCountAggregator(t *testing.T) {
 		},
 	}
 
-	iter := NewSourcedNodeIterator(field, dp, []uint32{0}, 0, false)
+	iter := NewSourcedNodeIterator(field, dp, []uint32{0}, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
 	aggregator := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 
 	r.NoError(aggregator.Next(1))
@@ -249,5 +250,39 @@ func TestSingleTreeCountAggregator(t *testing.T) {
 	r.Equal(len(expectedResult.SamplesByBin), len(result.SamplesByBin))
 	for token, hist := range expectedResult.SamplesByBin {
 		r.Equal(hist.Total, result.SamplesByBin[token].Total)
+	}
+}
+
+func TestAggregatorLimitExceeded(t *testing.T) {
+	// For now input for this test is incorrect since we support
+	// aggregations only for `keyword` index type.
+	// Will be fixed in #310.
+	searchDocs := []uint32{2, 3, 5, 8, 10, 12, 15}
+	sources := [][]uint32{
+		{2, 3, 5, 8, 10, 12},
+		{1, 4, 6, 9, 11, 13},
+		{1, 2, 4, 5, 8, 11, 12},
+	}
+
+	const limit = 1
+
+	for _, expectedErr := range []error{consts.ErrTooManyGroupTokens, consts.ErrTooManyFieldTokens} {
+		source := node.BuildORTreeAgg(node.MakeStaticNodes(sources), false)
+		iter := NewSourcedNodeIterator(source, nil, nil, iteratorLimit{limit: limit, err: expectedErr}, false)
+		agg := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
+
+		var limitErr error
+		var limitIteration int
+
+		for i, id := range searchDocs {
+			if err := agg.Next(id); err != nil {
+				limitErr = err
+				limitIteration = i
+				break
+			}
+		}
+
+		assert.Equal(t, limit, limitIteration)
+		assert.ErrorIs(t, limitErr, expectedErr)
 	}
 }

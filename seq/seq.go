@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/ozontech/seq-db/util"
@@ -19,7 +20,12 @@ type RID uint64 // random part of ID
 type LID uint32 // local id for a fraction
 
 func (m MID) Time() time.Time {
-	return time.UnixMilli(int64(m))
+	if uint64(m) <= math.MaxInt64 {
+		return time.UnixMilli(int64(m))
+	} else {
+		// since MaxInt64 is 292278994 year in milliseconds, so we assume this MID is "infinite future"
+		return time.UnixMilli(math.MaxInt64)
+	}
 }
 
 func (d ID) String() string {
@@ -117,7 +123,7 @@ func DurationToMID(d time.Duration) MID {
 }
 
 func MIDToTime(t MID) time.Time {
-	return time.Unix(0, 0).Add(MIDToDuration(t))
+	return t.Time()
 }
 
 func MIDToDuration(t MID) time.Duration {

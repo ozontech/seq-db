@@ -2,6 +2,7 @@ package proxyapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -100,6 +101,18 @@ func (g *grpcV1) FetchAsyncSearchResult(
 		}
 	}
 
+	var responseErr *seqproxyapi.Error
+	if len(resp.QPR.Errors) > 0 {
+		errs := make([]error, 0, len(resp.QPR.Errors))
+		for _, e := range resp.QPR.Errors {
+			errs = append(errs, errors.New(e.ErrStr))
+		}
+		responseErr = &seqproxyapi.Error{
+			Code:    seqproxyapi.ErrorCode_ERROR_CODE_UNSPECIFIED,
+			Message: util.DeduplicateErrors(errs).Error(),
+		}
+	}
+
 	return &seqproxyapi.FetchAsyncSearchResultResponse{
 		Status:  seqproxyapi.MustProtoAsyncSearchStatus(resp.Status),
 		Request: searchReq,
@@ -108,7 +121,7 @@ func (g *grpcV1) FetchAsyncSearchResult(
 			Docs:    docs,
 			Aggs:    makeProtoAggregation(resp.AggResult),
 			Hist:    makeProtoHistogram(&resp.QPR),
-			Error:   nil,
+			Error:   responseErr,
 			Explain: nil,
 		},
 		StartedAt:  timestamppb.New(resp.StartedAt),
@@ -212,6 +225,12 @@ func makeProtoAsyncSearchesList(in []*search.AsyncSearchesListItem) []*seqproxya
 			}
 		}
 
+		var reqErr *string
+		if s.Error != nil {
+			errStr := s.Error.Error()
+			reqErr = &errStr
+		}
+
 		searches = append(searches, &seqproxyapi.AsyncSearchesListItem{
 			SearchId:   s.ID,
 			Status:     seqproxyapi.MustProtoAsyncSearchStatus(s.Status),
@@ -221,6 +240,7 @@ func makeProtoAsyncSearchesList(in []*search.AsyncSearchesListItem) []*seqproxya
 			CanceledAt: canceledAt,
 			Progress:   s.Progress,
 			DiskUsage:  s.DiskUsage,
+			Error:      reqErr,
 		})
 	}
 

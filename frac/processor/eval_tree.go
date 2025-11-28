@@ -50,7 +50,14 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 }
 
 // evalLeaf finds suitable matching fraction tokens and returns Node that generate corresponding tokens LIDs
-func evalLeaf(ti tokenIndex, token parser.Token, sw *stopwatch.Stopwatch, stats *searchStats, minLID, maxLID uint32, order seq.DocsOrder) (node.Node, error) {
+func evalLeaf(
+	ti tokenIndex,
+	token parser.Token,
+	sw *stopwatch.Stopwatch,
+	stats *searchStats,
+	minLID, maxLID uint32,
+	order seq.DocsOrder,
+) (node.Node, error) {
 	m := sw.Start("get_tids_by_token_expr")
 	tids, err := ti.GetTIDsByTokenExpr(token)
 	m.Stop()
@@ -86,6 +93,13 @@ type AggLimits struct {
 	MaxTIDsPerFraction int
 }
 
+type iteratorLimit struct {
+	// limit value
+	limit int
+	// error to return if limit is exceeded
+	err error
+}
+
 // evalAgg evaluates aggregation with given limits. Returns a suitable aggregator.
 func evalAgg(
 	ti tokenIndex, query AggQuery, sw *stopwatch.Stopwatch,
@@ -96,7 +110,7 @@ func evalAgg(
 	case seq.AggFuncCount, seq.AggFuncUnique:
 		groupIterator, err := iteratorFromLiteral(
 			ti, query.GroupBy, sw, stats, minLID, maxLID,
-			limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order,
+			limits.MaxTIDsPerFraction, iteratorLimit{limit: limits.MaxGroupTokens, err: consts.ErrTooManyGroupTokens}, order,
 		)
 		if err != nil {
 			return nil, err
@@ -111,7 +125,7 @@ func evalAgg(
 	case seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncSum, seq.AggFuncAvg, seq.AggFuncQuantile:
 		fieldIterator, err := iteratorFromLiteral(
 			ti, query.Field, sw, stats, minLID, maxLID,
-			limits.MaxTIDsPerFraction, limits.MaxFieldTokens, order,
+			limits.MaxTIDsPerFraction, iteratorLimit{limit: limits.MaxFieldTokens, err: consts.ErrTooManyFieldTokens}, order,
 		)
 		if err != nil {
 			return nil, err
@@ -128,7 +142,7 @@ func evalAgg(
 
 		groupIterator, err := iteratorFromLiteral(
 			ti, query.GroupBy, sw, stats, minLID, maxLID,
-			limits.MaxTIDsPerFraction, limits.MaxGroupTokens, order,
+			limits.MaxTIDsPerFraction, iteratorLimit{limit: limits.MaxGroupTokens, err: consts.ErrTooManyGroupTokens}, order,
 		)
 		if err != nil {
 			return nil, err
@@ -157,7 +171,16 @@ func haveNotMinMaxQuantiles(quantiles []float64) bool {
 	return have
 }
 
-func iteratorFromLiteral(ti tokenIndex, literal *parser.Literal, sw *stopwatch.Stopwatch, stats *searchStats, minLID, maxLID uint32, maxTIDs, iteratorLimit int, order seq.DocsOrder) (*SourcedNodeIterator, error) {
+func iteratorFromLiteral(
+	ti tokenIndex,
+	literal *parser.Literal,
+	sw *stopwatch.Stopwatch,
+	stats *searchStats,
+	minLID, maxLID uint32,
+	maxTIDs int,
+	iteratorLimit iteratorLimit,
+	order seq.DocsOrder,
+) (*SourcedNodeIterator, error) {
 	m := sw.Start("get_tids_by_token_expr")
 	tids, err := ti.GetTIDsByTokenExpr(literal)
 	m.Stop()
@@ -166,7 +189,10 @@ func iteratorFromLiteral(ti tokenIndex, literal *parser.Literal, sw *stopwatch.S
 	}
 
 	if len(tids) > maxTIDs && maxTIDs > 0 {
-		return nil, fmt.Errorf("%w: tokens length (%d) of field %q more than %d", consts.ErrTooManyUniqValues, len(tids), literal.Field, maxTIDs)
+		return nil, fmt.Errorf(
+			"%w: tokens length (%d) of field %q more than %d",
+			consts.ErrTooManyFractionTokens, len(tids), literal.Field, maxTIDs,
+		)
 	}
 
 	m = sw.Start("get_lids_from_tids")

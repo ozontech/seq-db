@@ -14,7 +14,7 @@ import (
 	"github.com/ozontech/seq-db/logger"
 )
 
-const defaultFilePermission = 0o660
+const defaultFilePermission = 0o664
 
 type fracInfoCache struct {
 	dataDir  string
