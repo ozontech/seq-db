@@ -110,7 +110,3 @@ func (s *Store) WaitIdle() { // tests only
 func (s *Store) SealAll() { // tests only
 	s.FracManager.SealForcedForTests()
 }
-
-func (s *Store) OffloadAll() { // tests only
-	s.FracManager.OffloadForcedForTests()
-}

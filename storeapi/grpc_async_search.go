@@ -69,6 +69,12 @@ func (g *GrpcV1) FetchAsyncSearchResult(
 
 	resp := buildSearchResponse(&fr.QPR)
 
+	errs := make([]string, 0, len(fr.QPR.Errors))
+	for _, e := range fr.QPR.Errors {
+		errs = append(errs, e.ErrStr)
+	}
+	resp.Errors = errs
+
 	var canceledAt *timestamppb.Timestamp
 	if !fr.CanceledAt.IsZero() {
 		canceledAt = timestamppb.New(fr.CanceledAt)
@@ -174,6 +180,7 @@ func convertAsyncSearchesToProto(in []*asyncsearcher.AsyncSearchesListItem) []*s
 			Retention:         durationpb.New(s.Retention),
 			WithDocs:          s.WithDocs,
 			Size:              s.Size,
+			Error:             s.Error,
 		})
 	}
 

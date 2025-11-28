@@ -53,6 +53,10 @@ func parse(q string, mapping seq.Mapping) (SeqQLQuery, error) {
 }
 
 func ParseSeqQL(q string, mapping seq.Mapping) (SeqQLQuery, error) {
+	if q == "" {
+		q = seq.TokenAll + ":*"
+	}
+
 	seqql, err := parse(q, mapping)
 	if err != nil {
 		return SeqQLQuery{}, err

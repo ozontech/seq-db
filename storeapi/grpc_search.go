@@ -217,10 +217,6 @@ func (g *GrpcV1) doSearch(
 }
 
 func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, error) {
-	if query == "" {
-		query = seq.TokenAll + ":*"
-	}
-
 	seqql, err := parser.ParseSeqQL(query, g.mappingProvider.GetMapping())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "can't parse query %q: %v", query, err)

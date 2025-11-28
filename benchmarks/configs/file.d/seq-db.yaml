@@ -6,19 +6,20 @@ pipeline-settings: &pipeline-settings
 
 pipeline-input-settings: &pipeline-input-settings
   type: file
-  workers_count: 16
+  workers_count: 4
   offsets_op: 'reset'
   persistence_mode: 'async'
   paths:
     include:
-      - '/var/file.d/logs/*.log'
+      - '/var/file.d/logs/docs-*.log'
 
 pipeline-output-settings: &pipeline-output-settings
   type: elasticsearch
   index_format: logs-index
   connection_timeout: 20s
-  workers_count: 32
-  batch_flush_timeout: 200ms
+  batch_size: 4096
+  workers_count: 256
+  batch_flush_timeout: 5s
 
 pipelines:
   seqdb:

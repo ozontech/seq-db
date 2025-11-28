@@ -464,12 +464,6 @@ func (s Stores) SealAll() {
 	})
 }
 
-func (s Stores) OffloadAll() {
-	s.apply(func(s *storeapi.Store) {
-		s.OffloadAll()
-	})
-}
-
 func (s Stores) CountInstances() int {
 	sum := 0
 	for _, replicaSet := range s {
@@ -481,11 +475,6 @@ func (s Stores) CountInstances() int {
 func (t *TestingEnv) SealAll() {
 	t.HotStores.SealAll()
 	t.ColdStores.SealAll()
-}
-
-func (t *TestingEnv) OffloadAll() {
-	t.HotStores.OffloadAll()
-	t.ColdStores.OffloadAll()
 }
 
 func (t *TestingEnv) WaitIdle() {

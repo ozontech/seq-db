@@ -1,18 +1,21 @@
 scrape_configs:
   - job_name: 'cadvisor'
-    scrape_interval: 30s
+    scrape_interval: 5s
     metric_relabel_configs:
       - action: labeldrop
         regex: 'container_label_.*'
     static_configs:
       - targets: [ 'cadvisor:8080' ]
   - job_name: 'node'
+    scrape_interval: 5s
     static_configs:
       - targets: [ 'node-exporter:9100' ]
       - targets: [ 'du-exporter:9995' ]
   - job_name: 'filed'
+    scrape_interval: 5s
     static_configs:
       - targets: [ 'filed:9000' ]
   - job_name: 'seq-db'
+    scrape_interval: 5s
     static_configs:
       - targets: [ 'seq-db:9200' ]
