@@ -23,7 +23,7 @@ var (
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "docs_written",
-		Help:      "Total number of successfully stored docs",
+		Help:      "Number of successfully stored docs",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
 	})
 )

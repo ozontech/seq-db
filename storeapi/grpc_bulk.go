@@ -21,7 +21,7 @@ var inflightBulksTotal = promauto.NewGauge(prometheus.GaugeOpts{
 	Namespace: "seq_db_store",
 	Subsystem: "bulk",
 	Name:      "in_flight_queries",
-	Help:      "",
+	Help:      "Number of bulk request being currently processed by store",
 })
 
 func (g *GrpcV1) incBulkCounter() int64 {

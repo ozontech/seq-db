@@ -204,7 +204,7 @@ var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Subsystem: "bulk",
 	Name:      "stages_seconds",
 	Buckets:   metric.SecondsBuckets,
-	Help:      "",
+	Help:      "Bulk processing time by stage",
 }, []string{"stage"})
 
 // Append causes data to be written on disk and sends metas to index workers

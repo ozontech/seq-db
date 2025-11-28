@@ -35,13 +35,13 @@ var (
 		Namespace: "seq_db",
 		Subsystem: "common",
 		Name:      "bytes_pool_get_hits_total",
-		Help:      "Count of hits while obtaining a buffer from the bytes pool",
+		Help:      "Number of hits while obtaining a buffer from the bytes pool",
 	}, []string{"capacity"})
 	missCounter = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db",
 		Subsystem: "common",
 		Name:      "bytes_pool_get_misses_total",
-		Help:      "Count of misses while obtaining a buffer from the bytes pool",
+		Help:      "Number of misses while obtaining a buffer from the bytes pool",
 	}, []string{"capacity"})
 
 	// put metrics
@@ -49,13 +49,13 @@ var (
 		Namespace: "seq_db",
 		Subsystem: "common",
 		Name:      "bytes_pool_puts_total",
-		Help:      "Count of buffers return to the bytes pool",
+		Help:      "Number of buffers returned to the bytes pool",
 	}, []string{"capacity"})
 	putOversizeCounter = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db",
 		Subsystem: "common",
 		Name:      "bytes_pool_put_oversizes_total",
-		Help:      "Count of reject buffers on return due to exceeding capacity",
+		Help:      "Number of buffers rejected on return due to exceeding capacity",
 	})
 )
 

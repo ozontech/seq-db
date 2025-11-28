@@ -47,25 +47,25 @@ var (
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
 		Name:      "in_progress",
-		Help:      "Amount of active async searches in progress",
+		Help:      "Number of active async searches in progress",
 	})
 	asyncSearchDiskUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
 		Name:      "disk_usage_bytes",
-		Help:      "",
+		Help:      "Disk space used by async search files in bytes by file type",
 	}, []string{"file_type"})
 	asyncSearchStoredRequests = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
 		Name:      "stored_requests",
-		Help:      "",
+		Help:      "Number of stored async search requests",
 	})
 	asyncSearchReadOnly = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
 		Name:      "read_only",
-		Help:      "",
+		Help:      "Indicates if store is in async search read-only mode (can not start a new async search) due to disk usage limits",
 	})
 )
 

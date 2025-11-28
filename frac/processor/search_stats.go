@@ -19,35 +19,35 @@ var (
 		Subsystem: metricsSubsystem,
 		Name:      "leaves",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
-		Help:      "",
+		Help:      "Number of leaf nodes in search query tree per search",
 	})
 	searchNodesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
 		Name:      "nodes",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
-		Help:      "",
+		Help:      "Number of nodes in search query tree per search",
 	})
 	searchSourcesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
 		Name:      "sources",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 20),
-		Help:      "",
+		Help:      "Number of LIDs accessed per search",
 	})
 	searchAggNodesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
 		Name:      "agg_nodes",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 20),
-		Help:      "",
+		Help:      "Number of aggregation nodes in search query tree per search",
 	})
 	searchHitsTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
 		Name:      "hits",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 32),
-		Help:      "",
+		Help:      "Number of document hits per search",
 	})
 )
 
