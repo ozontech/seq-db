@@ -77,19 +77,21 @@ func (m *MetaData) UnmarshalBinary(b []byte) error {
 }
 
 func (m *MetaData) unmarshalVersion1(b []byte) error {
-	// Decode seq.ID.
-	m.ID.MID = seq.MID(binary.LittleEndian.Uint64(b))
-	b = b[8:]
-	return m.unmarshalVersion1And2(b)
+	return m.unmarshal(b)
 }
 
 func (m *MetaData) unmarshalVersion2(b []byte) error {
-	m.ID.MID = seq.NanosToMID(binary.LittleEndian.Uint64(b))
-	b = b[8:]
-	return m.unmarshalVersion1And2(b)
+	if err := m.unmarshal(b); err != nil {
+		return err
+	}
+	m.ID.MID = seq.NanosToMID(uint64(m.ID.MID))
+	return nil
 }
 
-func (m *MetaData) unmarshalVersion1And2(b []byte) error {
+func (m *MetaData) unmarshal(b []byte) error {
+	// Decode seq.ID.
+	m.ID.MID = seq.MID(binary.LittleEndian.Uint64(b))
+	b = b[8:]
 	m.ID.RID = seq.RID(binary.LittleEndian.Uint64(b))
 	b = b[8:]
 

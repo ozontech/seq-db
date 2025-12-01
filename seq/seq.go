@@ -111,7 +111,7 @@ func SimpleID(i int) ID {
 }
 
 func NanosToMID(nanos uint64) MID {
-	return MID(nanos / 1000000)
+	return MID(nanos / uint64(time.Millisecond))
 }
 
 func TimeToMID(t time.Time) MID {
