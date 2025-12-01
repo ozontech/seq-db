@@ -132,7 +132,7 @@ func TestQPRVersion1Compatibility(t *testing.T) {
 	}
 
 	rawQPR := marshalQPR(&qpr, nil)
-	rawQPR[0] = qprBinVersion1
+	rawQPR[0] = uint8(qprBinVersion1)
 
 	var outQPR seq.QPR
 	tail, err := unmarshalQPR(&outQPR, rawQPR, math.MaxInt)

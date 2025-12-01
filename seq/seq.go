@@ -20,11 +20,8 @@ type RID uint64 // random part of ID
 type LID uint32 // local id for a fraction
 
 func (m MID) Time() time.Time {
-	nanos := uint64(m)
-	nanosPerSec := uint64(time.Second)
-	secondsPart := nanos / nanosPerSec
-	nanosPart := nanos - secondsPart*nanosPerSec
-	return time.Unix(int64(secondsPart), int64(nanosPart))
+	nanosPerSecond := uint64(time.Second)
+	return time.Unix(int64(uint64(m)/nanosPerSecond), int64(uint64(m)%nanosPerSecond))
 }
 
 func (d ID) String() string {
@@ -88,13 +85,13 @@ func FromString(x string) (ID, error) {
 		return id, err
 	}
 
-	delimiter := x[16]
-	if delimiter == '-' {
-		// legacy format, MID in millis
-		id.MID = MillisToMID(binary.LittleEndian.Uint64(mid))
-	} else if delimiter == '_' {
+	switch delimiter := x[16]; delimiter {
+	case '_':
 		id.MID = MID(binary.LittleEndian.Uint64(mid))
-	} else {
+	case '-':
+		// legacy format, MID in millis. Scale to nanoseconds
+		id.MID = MillisToMID(binary.LittleEndian.Uint64(mid))
+	default:
 		return id, fmt.Errorf("unknown delimiter %c", delimiter)
 	}
 	id.RID = RID(binary.LittleEndian.Uint64(rid))

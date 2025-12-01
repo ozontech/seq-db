@@ -34,7 +34,7 @@ func unpackDoc(data []byte, source uint64, protocolVersion config.StoreProtocolV
 
 	// Convert from milliseconds to nanoseconds if store (protocol version 1) operates in milliseconds
 	if protocolVersion == config.StoreProtocolVersion1 {
-		mid = mid * 1000000
+		mid = uint64(seq.MillisToMID(mid))
 	}
 
 	doc := StreamingDoc{

@@ -14,15 +14,20 @@ import (
 
 var be = binary.BigEndian
 
+type qprBinVersion uint8
+
 const (
-	qprBinVersion1 = uint8(1) // MIDs stored in milliseconds
-	qprBinVersion2 = uint8(2) // MIDs stored in nanoseconds
+	qprBinVersion1 qprBinVersion = iota + 1 // MIDs stored in milliseconds
+	qprBinVersion2                          // MIDs stored in nanoseconds
 )
 
-const qprBinVersion = qprBinVersion2 // Phase 2: write version 2 (nanoseconds)
+var availableVersions = map[qprBinVersion]struct{}{
+	qprBinVersion1: {},
+	qprBinVersion2: {},
+}
 
 func marshalQPR(q *seq.QPR, dst []byte) []byte {
-	dst = append(dst, qprBinVersion)
+	dst = append(dst, uint8(qprBinVersion2))
 
 	blocksLenPos := len(dst)
 	dst = append(dst, make([]byte, 8)...)
@@ -43,10 +48,10 @@ func unmarshalQPR(dst *seq.QPR, src []byte, idsLimit int) (_ []byte, err error) 
 		return nil, fmt.Errorf("invalid QPR format; want %d bytes, got %d", 19, len(src))
 	}
 
-	version := src[0]
+	version := qprBinVersion(src[0])
 	src = src[1:]
-	if version != qprBinVersion1 && version != qprBinVersion2 {
-		return nil, fmt.Errorf("invalid QPR version %d; want %d or %d", version, qprBinVersion1, qprBinVersion2)
+	if _, ok := availableVersions[version]; !ok {
+		return nil, fmt.Errorf("invalid QPR version %d", version)
 	}
 
 	idsBlocksLen := int(be.Uint64(src))
@@ -174,7 +179,7 @@ func marshalIDsBlock(dst []byte, ids []seq.IDSource) ([]byte, idsCodec) {
 	return dst, idsCodecDeltaZstd
 }
 
-func unmarshalIDsBlock(dst *seq.QPR, src []byte, version uint8) (_ []byte, err error) {
+func unmarshalIDsBlock(dst *seq.QPR, src []byte, version qprBinVersion) (_ []byte, err error) {
 	if len(src) == 0 {
 		return src, fmt.Errorf("empty IDs block")
 	}
@@ -213,7 +218,7 @@ func unmarshalIDsBlock(dst *seq.QPR, src []byte, version uint8) (_ []byte, err e
 	}
 }
 
-func unmarshalIDsDelta(dst seq.IDSources, block []byte, version uint8) (seq.IDSources, error) {
+func unmarshalIDsDelta(dst seq.IDSources, block []byte, version qprBinVersion) (seq.IDSources, error) {
 	prevMID := int64(0)
 	for len(block) > 0 {
 		v, n := binary.Varint(block)
@@ -266,7 +271,7 @@ func marshalHistogram(dst []byte, histogram map[seq.MID]uint64) []byte {
 	return dst
 }
 
-func unmarshalHistogram(src []byte, version uint8) (map[seq.MID]uint64, []byte, error) {
+func unmarshalHistogram(src []byte, version qprBinVersion) (map[seq.MID]uint64, []byte, error) {
 	length, n := binary.Uvarint(src)
 	src = src[n:]
 	if n <= 0 {
@@ -368,7 +373,7 @@ func marshalAggs(dst []byte, aggs []seq.AggregatableSamples) []byte {
 	return dst
 }
 
-func unmarshalAggs(dst []seq.AggregatableSamples, src []byte, version uint8) (_ []seq.AggregatableSamples, _ []byte, err error) {
+func unmarshalAggs(dst []seq.AggregatableSamples, src []byte, version qprBinVersion) (_ []seq.AggregatableSamples, _ []byte, err error) {
 	var header aggsBlockHeader
 	src, err = header.Unmarshal(src)
 	if err != nil {
@@ -419,7 +424,7 @@ func marshalAggregatableSamples(s seq.AggregatableSamples, dst []byte) []byte {
 	return dst
 }
 
-func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte, version uint8) ([]byte, error) {
+func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte, version qprBinVersion) ([]byte, error) {
 	if len(src) < 16 {
 		return nil, fmt.Errorf("src too short to unmarshal QPRHistogram, want at least 16 bytes, got %d", len(src))
 	}

@@ -65,7 +65,7 @@ func TestTimeToMIDConversion(t *testing.T) {
 	timestampNow := time.Now()
 	assert.EqualExportedValues(t, timestampNow, MID(timestampNow.UnixNano()).Time())
 
-	timestamp2 := MID(1763984556395).Time().UTC()
+	timestamp2 := MID(1763984556395000000).Time().UTC()
 	assert.Equal(t, 2025, timestamp2.Year())
 	assert.Equal(t, time.Month(11), timestamp2.Month())
 	assert.Equal(t, 24, timestamp2.Day())
@@ -76,6 +76,6 @@ func TestTimeToMIDConversion(t *testing.T) {
 
 	// check that we do not overflow on huge values
 	maxMID := MID(math.MaxUint64)
-	assert.Equal(t, 292278994, maxMID.Time().Year())
-	assert.Equal(t, 292278994, MIDToTime(maxMID).Year())
+	assert.Equal(t, 2554, maxMID.Time().Year())
+	assert.Equal(t, 2554, MIDToTime(maxMID).Year())
 }

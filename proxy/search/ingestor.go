@@ -231,11 +231,10 @@ func (si *Ingestor) singleDocsStream(ctx context.Context, explain bool, source u
 	}
 
 	md, err := stream.Header()
-	protocolVersion := config.StoreProtocolVersion2
+	protocolVersion := config.StoreProtocolVersion1
 	if err != nil {
 		return nil, fmt.Errorf("can't fetch metadata: %s", err.Error())
-	}
-	if md != nil {
+	} else if md != nil {
 		if precisionValues := md.Get(consts.StoreProtocolVersionHeader); len(precisionValues) > 0 {
 			protocolVersion = config.ParseStoreProtocolVersion(precisionValues[0])
 		}
@@ -636,11 +635,10 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 		return nil, 0, err
 	}
 
-	// Check the store's protocol version from response header
 	// If header indicates protocol version 1 (MID in milliseconds), then convert to nanoseconds
-	protocolVersion := config.StoreProtocolVersion2
-	if precisionHeaderValues := md.Get(consts.StoreProtocolVersionHeader); len(precisionHeaderValues) > 0 {
-		protocolVersion = config.ParseStoreProtocolVersion(precisionHeaderValues[0])
+	protocolVersion := config.StoreProtocolVersion1
+	if protocolHeaderValues := md.Get(consts.StoreProtocolVersionHeader); len(protocolHeaderValues) > 0 {
+		protocolVersion = config.ParseStoreProtocolVersion(protocolHeaderValues[0])
 	}
 
 	// Convert legacy store response (protocol version 1) to nanoseconds MID

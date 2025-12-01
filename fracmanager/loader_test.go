@@ -31,7 +31,7 @@ func appendDocs(t *testing.T, active *frac.Active, docCount int) {
 		doc := []byte("{\"timestamp\": 0, \"message\": \"msg\"}")
 		docRoot, err := insaneJSON.DecodeBytes(doc)
 		assert.NoError(t, err)
-		dp.Append(doc, docRoot, seq.SimpleID(i), "service:100500", "k8s_pod", "_all_:")
+		dp.Append(doc, docRoot, seq.SimpleID(int64(i)), "service:100500", "k8s_pod", "_all_:")
 	}
 	docs, metas := dp.Provide()
 

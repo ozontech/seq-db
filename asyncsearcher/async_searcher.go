@@ -40,12 +40,14 @@ const (
 
 	minRetention = 5 * time.Minute
 	maxRetention = 30 * 24 * time.Hour // 30 days
-
-	infoVersion1 = uint8(1) // MIDs stored in milliseconds
-	infoVersion2 = uint8(2) // MIDs stored in nanoseconds
 )
 
-const infoVersion = infoVersion2
+type infoVersion uint8
+
+const (
+	infoVersion1 infoVersion = iota + 1 // MIDs stored in milliseconds
+	infoVersion2                        // MIDs stored in nanoseconds
+)
 
 var (
 	asyncSearchActiveSearches = promauto.NewGauge(prometheus.GaugeOpts{
@@ -147,7 +149,7 @@ type fracSearchState struct {
 }
 
 type asyncSearchInfo struct {
-	Version uint8
+	Version infoVersion
 
 	// Finished is true if there are no fracs waiting to be processed.
 	//
@@ -181,7 +183,7 @@ func newAsyncSearchInfo(r AsyncSearchRequest, list fracmanager.List) asyncSearch
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return asyncSearchInfo{
-		Version:    infoVersion,
+		Version:    infoVersion2,
 		Finished:   false,
 		Error:      "",
 		CanceledAt: time.Time{},
@@ -592,7 +594,7 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 		if info.Version == infoVersion1 {
 			info.Request.Params.From = seq.MillisToMID(uint64(info.Request.Params.From))
 			info.Request.Params.To = seq.MillisToMID(uint64(info.Request.Params.To))
-			info.Version = infoVersion
+			info.Version = infoVersion2
 		}
 
 		info.merged.Store(areQPRsMerged[requestID])
