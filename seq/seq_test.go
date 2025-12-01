@@ -60,3 +60,22 @@ func TestString(t *testing.T) {
 	assert.Equal(t, "2025-10-30 12:21:42.432", MID(1761812502432000000).String())
 	assert.Equal(t, "2025-10-30 12:21:42.432", MID(1761812502432000773).String())
 }
+
+func TestTimeToMIDConversion(t *testing.T) {
+	timestampNow := time.Now()
+	assert.EqualExportedValues(t, timestampNow, MID(timestampNow.UnixNano()).Time())
+
+	timestamp2 := MID(1763984556395).Time().UTC()
+	assert.Equal(t, 2025, timestamp2.Year())
+	assert.Equal(t, time.Month(11), timestamp2.Month())
+	assert.Equal(t, 24, timestamp2.Day())
+	assert.Equal(t, 11, timestamp2.Hour())
+	assert.Equal(t, 42, timestamp2.Minute())
+	assert.Equal(t, 36, timestamp2.Second())
+	assert.Equal(t, 395000000, timestamp2.Nanosecond())
+
+	// check that we do not overflow on huge values
+	maxMID := MID(math.MaxUint64)
+	assert.Equal(t, 292278994, maxMID.Time().Year())
+	assert.Equal(t, 292278994, MIDToTime(maxMID).Year())
+}

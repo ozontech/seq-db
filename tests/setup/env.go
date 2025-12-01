@@ -464,18 +464,6 @@ func (s Stores) SealAll() {
 	})
 }
 
-func (s Stores) OffloadAll() {
-	s.apply(func(s *storeapi.Store) {
-		s.OffloadAll()
-	})
-}
-
-func (s Stores) ResetCache() {
-	s.apply(func(s *storeapi.Store) {
-		s.ResetCache()
-	})
-}
-
 func (s Stores) CountInstances() int {
 	sum := 0
 	for _, replicaSet := range s {
@@ -489,19 +477,9 @@ func (t *TestingEnv) SealAll() {
 	t.ColdStores.SealAll()
 }
 
-func (t *TestingEnv) OffloadAll() {
-	t.HotStores.OffloadAll()
-	t.ColdStores.OffloadAll()
-}
-
 func (t *TestingEnv) WaitIdle() {
 	t.HotStores.WaitIdle()
 	t.ColdStores.WaitIdle()
-}
-
-func (t *TestingEnv) ResetCache() {
-	t.HotStores.ResetCache()
-	t.ColdStores.ResetCache()
 }
 
 func (t *TestingEnv) StopStore() {

@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -124,6 +125,7 @@ type AsyncSearchesListItem struct {
 	DiskUsage uint64
 
 	Request AsyncRequest
+	Error   error
 }
 
 func (si *Ingestor) FetchAsyncSearchResult(
@@ -291,7 +293,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 
 	docsStream := DocsIterator(EmptyDocsStream{})
 	var size int
-	pr.QPR.IDs, size = paginateIDs(pr.QPR.IDs, r.Offset, r.Size)
+	pr.QPR.IDs, size = paginateIDs(pr.QPR.IDs, r.Offset, min(r.Size, int(pr.Request.Size)))
 	if size > 0 {
 		fieldsFilter := tryParseFieldsFilter(pr.Request.Query)
 		var err error
@@ -377,6 +379,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 	for id, items := range responsesByID {
 		fracsDone := 0
 		fracsInQueue := 0
+		storeErrs := make([]error, 0)
 		var searchReq *AsyncRequest
 		search := AsyncSearchesListItem{
 			ID: id,
@@ -419,6 +422,10 @@ func (si *Ingestor) GetAsyncSearchesList(
 					Size:              s.Size,
 				}
 			}
+
+			if s.Error != "" {
+				storeErrs = append(storeErrs, errors.New(s.Error))
+			}
 		}
 
 		if fracsDone != 0 {
@@ -428,6 +435,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 			search.Progress = 1
 		}
 		search.Request = *searchReq
+		search.Error = util.DeduplicateErrors(storeErrs)
 
 		searches = append(searches, &search)
 	}

@@ -967,6 +967,7 @@ type AsyncSearchesListItem struct {
 	Retention    time.Duration
 	WithDocs     bool
 	Size         int64
+	Error        string
 }
 
 func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*AsyncSearchesListItem {
@@ -1024,6 +1025,7 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 			Retention:    info.Request.Retention,
 			WithDocs:     info.Request.WithDocs,
 			Size:         int64(info.Request.Params.Limit),
+			Error:        info.Error,
 		})
 	}
 

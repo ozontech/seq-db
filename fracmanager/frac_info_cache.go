@@ -15,7 +15,7 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
-const defaultFilePermission = 0o660
+const defaultFilePermission = 0o664
 
 // infoJSON is a temporary struct for JSON marshaling/unmarshaling
 // that always stores From and To in milliseconds for backward compatibility
