@@ -268,8 +268,7 @@ type Config struct {
 	// Additional filtering options
 	Filtering Filter `config:"filtering"`
 	DocFilter struct {
-		Concurrency int      `config:"concurrency"`
-		Filters     []Filter `config:"filters"`
+		Filters []Filter `config:"filters"`
 	} `config:"doc_filter"`
 
 	// Experimental provides flags
