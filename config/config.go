@@ -266,8 +266,11 @@ type Config struct {
 	} `config:"tracing"`
 
 	// Additional filtering options
-	Filtering Filtering   `config:"filtering"`
-	Filters   []Filtering `config:"filters"`
+	Filtering Filter `config:"filtering"`
+	DocFilter struct {
+		Concurrency int      `config:"concurrency"`
+		Filters     []Filter `config:"filters"`
+	} `config:"doc_filter"`
 
 	// Experimental provides flags
 	// For configuring experimental features.
@@ -290,7 +293,7 @@ func (b *Bytes) UnmarshalString(s string) error {
 	return nil
 }
 
-type Filtering struct {
+type Filter struct {
 	Query string    `config:"query"`
 	From  time.Time `config:"from"`
 	To    time.Time `config:"to"`
