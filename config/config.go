@@ -266,13 +266,8 @@ type Config struct {
 	} `config:"tracing"`
 
 	// Additional filtering options
-	Filtering struct {
-		// If a search query time range overlaps with the [from; to] range
-		// the search query will be `AND`-ed with an additional predicate with the provided query expression
-		Query string    `config:"query"`
-		From  time.Time `config:"from"`
-		To    time.Time `config:"to"`
-	} `config:"filtering"`
+	Filtering Filtering   `config:"filtering"`
+	Filters   []Filtering `config:"filters"`
 
 	// Experimental provides flags
 	// For configuring experimental features.
@@ -293,4 +288,10 @@ func (b *Bytes) UnmarshalString(s string) error {
 	}
 	*b = Bytes(bytes)
 	return nil
+}
+
+type Filtering struct {
+	Query string    `config:"query"`
+	From  time.Time `config:"from"`
+	To    time.Time `config:"to"`
 }
