@@ -32,13 +32,6 @@ import (
 	"github.com/ozontech/seq-db/zstd"
 )
 
-type infoVersion uint8
-
-const (
-	infoVersion1 infoVersion = iota + 1 // MIDs stored in milliseconds
-	infoVersion2                        // MIDs stored in nanoseconds
-)
-
 const (
 	asyncSearchExtInfo      = ".info"
 	asyncSearchExtQPR       = ".qpr"
@@ -47,6 +40,13 @@ const (
 
 	minRetention = 5 * time.Minute
 	maxRetention = 30 * 24 * time.Hour // 30 days
+)
+
+type infoVersion uint8
+
+const (
+	infoVersion1 infoVersion = iota + 1 // MIDs stored in milliseconds
+	infoVersion2                        // MIDs stored in nanoseconds
 )
 
 var (
