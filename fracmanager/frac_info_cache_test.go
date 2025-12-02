@@ -36,12 +36,6 @@ func loadFracCache(dataDir string) (map[string]*common.Info, error) {
 
 	fracCache := make(map[string]*common.Info)
 	err = json.Unmarshal(content, &fracCache)
-
-	// We must convert "from" and "to" to nanosecond seq.MID, since frac cache is now also doing it
-	for _, info := range fracCache {
-		info.From = seq.MillisToMID(uint64(info.From))
-		info.To = seq.MillisToMID(uint64(info.To))
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +283,10 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	totalSize := uint64(0)
 	cnt := 1
 	for totalSize < maxSize {
-		addDummyDoc(t, fm, dp, seq.SimpleID(int64(cnt*1000000)))
+		// increase doc id by 1000000 (1 milli in nanos) instead of 1
+		// otherwise all docs fall into same millisecond and test breaks
+		id := seq.SimpleID(int64(seq.MillisToMID(uint64(cnt))))
+		addDummyDoc(t, fm, dp, id)
 		cnt++
 		fracInstance := rotateAndSeal(fm)
 		totalSize += fracInstance.Info().FullSize()
@@ -458,55 +455,4 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	fracCacheFromDisk, err := loadFracCacheContent(dataDir)
 	assert.NoError(t, err)
 	assert.Equal(t, fracCacheFromDisk, []byte("{}"))
-}
-
-func TestInfoCacheJSONEntryMarshalUnmarshal(t *testing.T) {
-	originalInfo := &common.Info{
-		Path:          "test-frac",
-		Ver:           "1.0",
-		BinaryDataVer: 2,
-		DocsTotal:     100,
-		DocsOnDisk:    1000,
-		DocsRaw:       2000,
-		MetaOnDisk:    500,
-		IndexOnDisk:   1500,
-		From:          seq.MID(1761812502000000000),
-		To:            seq.MID(1761812503000000000),
-		CreationTime:  1666193044479,
-		SealingTime:   1666193045000,
-	}
-
-	type infoJSON struct {
-		*common.Info
-		From uint64 `json:"from"`
-		To   uint64 `json:"to"`
-	}
-	entry := &infoJSON{
-		Info: originalInfo,
-		From: seq.MIDToMillis(originalInfo.From),
-		To:   seq.MIDToMillis(originalInfo.To),
-	}
-	jsonBytes, err := json.Marshal(entry)
-	assert.NoError(t, err)
-
-	var jsonMap map[string]interface{}
-	err = json.Unmarshal(jsonBytes, &jsonMap)
-	assert.NoError(t, err)
-
-	assert.Equal(t, float64(1761812502000), jsonMap["from"])
-	assert.Equal(t, float64(1761812503000), jsonMap["to"])
-
-	var unmarshaledEntry infoJSON
-	err = json.Unmarshal(jsonBytes, &unmarshaledEntry)
-	assert.NoError(t, err)
-	assert.NotNil(t, unmarshaledEntry.Info)
-
-	unmarshaledEntry.Info.From = seq.MillisToMID(unmarshaledEntry.From)
-	unmarshaledEntry.Info.To = seq.MillisToMID(unmarshaledEntry.To)
-
-	assert.Equal(t, seq.MID(1761812502000000000), unmarshaledEntry.Info.From)
-	assert.Equal(t, seq.MID(1761812503000000000), unmarshaledEntry.Info.To)
-	assert.Equal(t, originalInfo.Path, unmarshaledEntry.Info.Path)
-	assert.Equal(t, originalInfo.Ver, unmarshaledEntry.Info.Ver)
-	assert.Equal(t, originalInfo.DocsTotal, unmarshaledEntry.Info.DocsTotal)
 }

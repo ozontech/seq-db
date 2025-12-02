@@ -133,15 +133,12 @@ func MIDToMillis(t MID) uint64 {
 }
 
 func MIDToCeilingMillis(t MID) uint64 {
-	nanos := uint64(t)
-	nanosPerMilli := uint64(time.Millisecond)
-	millisFloorPart := nanos / uint64(time.Millisecond)
-	nanosPart := nanos % nanosPerMilli
-	if nanosPart != 0 {
-		return millisFloorPart + 1
-	} else {
-		return millisFloorPart
+	millis := uint64(t) / uint64(time.Millisecond)
+	nanosPartOfMilli := uint64(t) % uint64(time.Millisecond)
+	if nanosPartOfMilli != 0 {
+		millis += 1
 	}
+	return millis
 }
 
 func MIDToDuration(t MID) time.Duration {

@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"path"
@@ -116,4 +117,36 @@ func (s *Info) IsIntersecting(from, to seq.MID) bool {
 
 	// check with distribution
 	return s.Distribution.IsIntersecting(from, to)
+}
+
+// MarshalJSON implements custom JSON marshaling to always store From and To in milliseconds
+func (s *Info) MarshalJSON() ([]byte, error) {
+	type InfoAlias Info // type alias to avoid infinite recursion
+
+	tmp := InfoAlias(*s)
+
+	// We convert "from" and "to" to milliseconds in order to guarantee we can rollback on deploy.
+	// When converting nanos to millis we must round "from" down (floor) and round "to" up (ceiling).
+	// This guarantees that a fraction time range (checked on search with Contains and IsIntersecting methods) is not narrowed down,
+	// and we do not lose messages on search.
+	tmp.From = seq.MID(seq.MIDToMillis(s.From))
+	tmp.To = seq.MID(seq.MIDToCeilingMillis(s.To))
+
+	return json.Marshal(tmp)
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling to convert From and To from milliseconds to nanoseconds
+func (s *Info) UnmarshalJSON(data []byte) error {
+	type TmpInfo Info // type alias to avoid infinite recursion
+	var tmp TmpInfo
+
+	err := json.Unmarshal(data, &tmp)
+	if err != nil {
+		return err
+	}
+
+	*s = Info(tmp)
+	s.From = seq.MillisToMID(uint64(tmp.From))
+	s.To = seq.MillisToMID(uint64(tmp.To))
+	return nil
 }

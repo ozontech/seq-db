@@ -92,7 +92,7 @@ func (s *IntegrationTestSuite) TestSubSearch() {
 	defer env.StopAll()
 
 	timeRange := 23 * time.Hour
-	to := time.UnixMilli(time.Now().UnixMilli())
+	to := time.Now()
 	from := to.Add(-timeRange)
 
 	docsTimes := s.ingestData(env, from, to, 5*time.Minute, 100)

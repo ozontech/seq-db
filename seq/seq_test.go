@@ -58,6 +58,7 @@ func TestMIDToCeilingMillis(t *testing.T) {
 func TestString(t *testing.T) {
 	assert.Equal(t, "2025-10-30 12:21:42", MID(1761812502000000000).String())
 	assert.Equal(t, "2025-10-30 12:21:42.432", MID(1761812502432000000).String())
+	// nanoseconds are not printed intentionally
 	assert.Equal(t, "2025-10-30 12:21:42.432", MID(1761812502432000773).String())
 }
 

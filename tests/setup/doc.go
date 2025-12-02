@@ -227,7 +227,7 @@ func splitRange(size int, callback func(from int, to int)) {
 // If timestamp after call is zero, then this function will fill it with deterministic timestamp
 // so you could query each doc by range, if needed
 func GenerateDocs(size int, generator func(int, *ExampleDoc)) []ExampleDoc {
-	start := time.UnixMilli(time.Now().UnixMilli())
+	start := time.Now()
 	docs := make([]ExampleDoc, size)
 	splitRange(size, func(from int, to int) {
 		for i := from; i < to; i++ {
