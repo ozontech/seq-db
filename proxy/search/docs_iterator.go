@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/pkg/storeapi"
@@ -76,20 +77,27 @@ func (u *uniqueIDIterator) Next() (StreamingDoc, error) {
 }
 
 type grpcStreamIterator struct {
-	source   uint64
-	host     string
-	stream   storeapi.StoreApi_FetchClient
-	totalIDs int
+	source          uint64
+	host            string
+	stream          storeapi.StoreApi_FetchClient
+	totalIDs        int
+	protocolVersion config.StoreProtocolVersion
 
 	fetched int
 }
 
-func newGrpcStreamIterator(stream storeapi.StoreApi_FetchClient, host string, source uint64, totalIDs int) *grpcStreamIterator {
+func newGrpcStreamIterator(
+	stream storeapi.StoreApi_FetchClient,
+	host string,
+	source uint64,
+	totalIDs int,
+	protocolVersion config.StoreProtocolVersion) *grpcStreamIterator {
 	return &grpcStreamIterator{
-		stream:   stream,
-		source:   source,
-		host:     host,
-		totalIDs: totalIDs,
+		stream:          stream,
+		source:          source,
+		host:            host,
+		totalIDs:        totalIDs,
+		protocolVersion: protocolVersion,
 	}
 }
 
@@ -108,7 +116,7 @@ func (s *grpcStreamIterator) Next() (StreamingDoc, error) {
 		return StreamingDoc{Source: s.source}, err
 	}
 
-	doc := unpackDoc(data.Data, s.source)
+	doc := unpackDoc(data.Data, s.source, s.protocolVersion)
 	if !doc.Empty() {
 		s.fetched++
 	} else {

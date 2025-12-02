@@ -89,7 +89,15 @@ func FromString(x string) (ID, error) {
 		return id, err
 	}
 
-	id.MID = MID(binary.LittleEndian.Uint64(mid))
+	switch delimiter := x[16]; delimiter {
+	case '_':
+		// new format, MID in nanoseconds. convert to milliseconds
+		id.MID = NanosToMID(binary.LittleEndian.Uint64(mid))
+	case '-':
+		id.MID = MID(binary.LittleEndian.Uint64(mid))
+	default:
+		return id, fmt.Errorf("unknown delimiter %c", delimiter)
+	}
 	id.RID = RID(binary.LittleEndian.Uint64(rid))
 
 	return id, nil
@@ -100,6 +108,10 @@ func SimpleID(i int) ID {
 		MID: MID(i),
 		RID: 0,
 	}
+}
+
+func NanosToMID(nanos uint64) MID {
+	return MID(nanos / uint64(time.Millisecond))
 }
 
 func TimeToMID(t time.Time) MID {

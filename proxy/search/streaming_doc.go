@@ -1,6 +1,7 @@
 package search
 
 import (
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 )
@@ -27,11 +28,16 @@ func NewStreamingDoc(idSource seq.IDSource, data []byte) StreamingDoc {
 	}
 }
 
-func unpackDoc(data []byte, source uint64) StreamingDoc {
+func unpackDoc(data []byte, source uint64, protocolVersion config.StoreProtocolVersion) StreamingDoc {
 	block := storage.DocBlock(data)
+	mid := block.GetExt1()
+
+	if protocolVersion == config.StoreProtocolVersion2 {
+		mid = uint64(seq.NanosToMID(mid))
+	}
 	doc := StreamingDoc{
 		ID: seq.ID{
-			MID: seq.MID(block.GetExt1()),
+			MID: seq.MID(mid),
 			RID: seq.RID(block.GetExt2()),
 		},
 		Source: source,

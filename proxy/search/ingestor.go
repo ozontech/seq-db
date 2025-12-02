@@ -11,8 +11,10 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -40,7 +42,7 @@ type Ingestor struct {
 	clientBySource map[uint64]string
 }
 
-func NewIngestor(config Config, clients map[string]storeapi.StoreApiClient) *Ingestor {
+func NewIngestor(cfg Config, clients map[string]storeapi.StoreApiClient) *Ingestor {
 	sourceByClient := make(map[string]uint64, len(clients))
 	clientBySource := make(map[uint64]string, len(clients))
 	var index uint64
@@ -51,7 +53,7 @@ func NewIngestor(config Config, clients map[string]storeapi.StoreApiClient) *Ing
 	}
 
 	return &Ingestor{
-		config:         config,
+		config:         cfg,
 		clients:        clients,
 		sourceByClient: sourceByClient,
 		clientBySource: clientBySource,
@@ -228,7 +230,17 @@ func (si *Ingestor) singleDocsStream(ctx context.Context, explain bool, source u
 		return nil, fmt.Errorf("can't fetch docs: %s", err.Error())
 	}
 
-	var it DocsIterator = newGrpcStreamIterator(stream, host, source, len(ids))
+	md, err := stream.Header()
+	protocolVersion := config.StoreProtocolVersion1
+	if err != nil {
+		return nil, fmt.Errorf("can't fetch metadata: %s", err.Error())
+	} else if md != nil {
+		if storeProtocolValues := md.Get(consts.StoreProtocolVersionHeader); len(storeProtocolValues) > 0 {
+			protocolVersion = config.ParseStoreProtocolVersion(storeProtocolValues[0])
+		}
+	}
+
+	var it DocsIterator = newGrpcStreamIterator(stream, host, source, len(ids), protocolVersion)
 	if explain {
 		it = newExplainWrapperIterator(it, ids, host, startTime)
 	}
@@ -612,13 +624,36 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 		)
 	}
 
+	var md metadata.MD
 	data, err := client.Search(ctx, req,
 		grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
 		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
 		grpc.UseCompressor(gzip.Name),
+		grpc.Header(&md),
 	)
 	if err != nil {
 		return nil, 0, err
+	}
+
+	// Check the store's protocol version from response header
+	// If header indicates protocol version 2 (MID in nanoseconds), then convert to milliseconds
+	protocolVersion := config.StoreProtocolVersion1
+	if storeProtocolValues := md.Get(consts.StoreProtocolVersionHeader); len(storeProtocolValues) > 0 {
+		protocolVersion = config.ParseStoreProtocolVersion(storeProtocolValues[0])
+	}
+
+	if protocolVersion == config.StoreProtocolVersion2 {
+		for _, id := range data.IdSources {
+			id.Id.Mid = uint64(seq.NanosToMID(id.Id.Mid))
+		}
+
+		if len(data.Histogram) > 0 {
+			newHist := make(map[uint64]uint64, len(data.Histogram))
+			for mid, v := range data.Histogram {
+				newHist[uint64(seq.NanosToMID(mid))] = v
+			}
+			data.Histogram = newHist
+		}
 	}
 
 	return data, si.sourceByClient[host], nil

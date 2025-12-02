@@ -6,8 +6,10 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/seq"
 )
 
 const seqDBMagic = "SEQM"
@@ -38,6 +40,11 @@ func (b *BlockInfo) Unpack(data []byte) error {
 		return errors.New("stats unmarshaling error")
 	}
 	b.Info.MetaOnDisk = 0 // todo: make this correction on sealing and remove this next time
+
+	if b.Info.BinaryDataVer >= config.BinaryDataV2 {
+		b.Info.From = seq.NanosToMID(uint64(b.Info.From))
+		b.Info.To = seq.NanosToMID(uint64(b.Info.To))
+	}
 
 	return nil
 }
