@@ -77,15 +77,15 @@ func (m *MetaData) UnmarshalBinary(b []byte) error {
 }
 
 func (m *MetaData) unmarshalVersion1(b []byte) error {
-	return m.unmarshal(b)
-}
-
-func (m *MetaData) unmarshalVersion2(b []byte) error {
 	if err := m.unmarshal(b); err != nil {
 		return err
 	}
-	m.ID.MID = seq.NanosToMID(uint64(m.ID.MID))
+	m.ID.MID = seq.MillisToMID(uint64(m.ID.MID))
 	return nil
+}
+
+func (m *MetaData) unmarshalVersion2(b []byte) error {
+	return m.unmarshal(b)
 }
 
 func (m *MetaData) unmarshal(b []byte) error {

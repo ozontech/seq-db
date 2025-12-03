@@ -235,8 +235,8 @@ func (si *Ingestor) singleDocsStream(ctx context.Context, explain bool, source u
 	if err != nil {
 		return nil, fmt.Errorf("can't fetch metadata: %s", err.Error())
 	} else if md != nil {
-		if precisionValues := md.Get(consts.StoreProtocolVersionHeader); len(precisionValues) > 0 {
-			protocolVersion = config.ParseStoreProtocolVersion(precisionValues[0])
+		if storeProtocolValues := md.Get(consts.StoreProtocolVersionHeader); len(storeProtocolValues) > 0 {
+			protocolVersion = config.ParseStoreProtocolVersion(storeProtocolValues[0])
 		}
 	}
 

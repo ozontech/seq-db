@@ -169,8 +169,8 @@ func (si *Ingestor) FetchAsyncSearchResult(
 				}
 
 				protocolVersion := config.StoreProtocolVersion1
-				if precisionValues := md.Get(consts.StoreProtocolVersionHeader); len(precisionValues) > 0 {
-					protocolVersion = config.ParseStoreProtocolVersion(precisionValues[0])
+				if protocolVersionValues := md.Get(consts.StoreProtocolVersionHeader); len(protocolVersionValues) > 0 {
+					protocolVersion = config.ParseStoreProtocolVersion(protocolVersionValues[0])
 				}
 
 				if protocolVersion == config.StoreProtocolVersion1 {
