@@ -637,8 +637,8 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 
 	// If header indicates protocol version 1 (MID in milliseconds), then convert to nanoseconds
 	protocolVersion := config.StoreProtocolVersion1
-	if protocolHeaderValues := md.Get(consts.StoreProtocolVersionHeader); len(protocolHeaderValues) > 0 {
-		protocolVersion = config.ParseStoreProtocolVersion(protocolHeaderValues[0])
+	if storeProtocolValues := md.Get(consts.StoreProtocolVersionHeader); len(storeProtocolValues) > 0 {
+		protocolVersion = config.ParseStoreProtocolVersion(storeProtocolValues[0])
 	}
 
 	// Convert legacy store response (protocol version 1) to nanoseconds MID

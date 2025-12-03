@@ -95,8 +95,8 @@ func (l *Loader) loadIDs(fracVersion config.BinaryDataVersion) (idsTable seqids.
 		if header.Len() == 0 {
 			break
 		}
-		var mid seq.MID
 
+		var mid seq.MID
 		if fracVersion < config.BinaryDataV2 {
 			mid = seq.MillisToMID(header.GetExt1())
 		} else {

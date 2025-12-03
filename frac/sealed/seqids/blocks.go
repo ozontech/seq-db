@@ -77,6 +77,8 @@ func (b *BlockParams) Unpack(data []byte) error {
 	return nil
 }
 
+// unpackRawMIDsVarint is a dedicated method for unpacking delta encoded MIDs. The reason a dedicated method exists
+// is that we want to unpack values and potentially convert legacy frac version in one pass.
 func unpackRawMIDsVarint(src []byte, dst []uint64, fracVersion config.BinaryDataVersion) ([]uint64, error) {
 	dst = dst[:0]
 	id := uint64(0)
