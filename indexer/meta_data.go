@@ -66,8 +66,10 @@ func (m *MetaData) UnmarshalBinary(b []byte) error {
 
 	switch version {
 	case 1:
+		// Version 1 meta stores MID in milliseconds
 		return m.unmarshalVersion1(b)
 	case 2:
+		// Version 2 meta stores MID in nanoseconds
 		return m.unmarshalVersion2(b)
 	default:
 		return fmt.Errorf("unimplemented metadata version: %d", version)
@@ -75,20 +77,21 @@ func (m *MetaData) UnmarshalBinary(b []byte) error {
 }
 
 func (m *MetaData) unmarshalVersion1(b []byte) error {
-	// Decode seq.ID.
-	m.ID.MID = seq.MillisToMID(binary.LittleEndian.Uint64(b))
-	b = b[8:]
-	return m.unmarshalVersion1And2(b)
+	return m.unmarshal(b)
 }
 
 func (m *MetaData) unmarshalVersion2(b []byte) error {
+	if err := m.unmarshal(b); err != nil {
+		return err
+	}
+	m.ID.MID = seq.NanosToMID(uint64(m.ID.MID))
+	return nil
+}
+
+func (m *MetaData) unmarshal(b []byte) error {
 	// Decode seq.ID.
 	m.ID.MID = seq.MID(binary.LittleEndian.Uint64(b))
 	b = b[8:]
-	return m.unmarshalVersion1And2(b)
-}
-
-func (m *MetaData) unmarshalVersion1And2(b []byte) error {
 	m.ID.RID = seq.RID(binary.LittleEndian.Uint64(b))
 	b = b[8:]
 

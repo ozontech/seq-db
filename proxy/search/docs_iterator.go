@@ -86,12 +86,17 @@ type grpcStreamIterator struct {
 	fetched int
 }
 
-func newGrpcStreamIterator(stream storeapi.StoreApi_FetchClient, host string, source uint64, totalIDs int, protocolVersion config.StoreProtocolVersion) *grpcStreamIterator {
+func newGrpcStreamIterator(
+	stream storeapi.StoreApi_FetchClient,
+	host string,
+	source uint64,
+	totalIDs int,
+	protocolVersion config.StoreProtocolVersion) *grpcStreamIterator {
 	return &grpcStreamIterator{
-		stream:          stream,
-		source:          source,
-		host:            host,
-		totalIDs:        totalIDs,
+		stream:   stream,
+		source:   source,
+		host:     host,
+		totalIDs: totalIDs,
 		protocolVersion: protocolVersion,
 	}
 }

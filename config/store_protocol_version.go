@@ -1,6 +1,14 @@
 package config
 
-type StoreProtocolVersion uint8
+import (
+	"strconv"
+
+	"go.uber.org/zap"
+
+	"github.com/ozontech/seq-db/logger"
+)
+
+type StoreProtocolVersion int
 
 const (
 	// StoreProtocolVersion1 MID is in milliseconds
@@ -10,24 +18,15 @@ const (
 )
 
 func (p StoreProtocolVersion) String() string {
-	switch p {
-	case StoreProtocolVersion1:
-		return "1"
-	case StoreProtocolVersion2:
-		return "2"
-	default:
-		return "1" // Default to protocol version 1 (milliseconds)
-	}
+	return strconv.Itoa(int(p))
 }
 
 // ParseStoreProtocolVersion parses a protocol version string and returns the corresponding StoreProtocolVersion.
 func ParseStoreProtocolVersion(s string) StoreProtocolVersion {
-	switch s {
-	case "1":
+	version, err := strconv.Atoi(s)
+	if err != nil {
+		logger.Error("failed to parse protocol", zap.Error(err), zap.String("value", s))
 		return StoreProtocolVersion1
-	case "2":
-		return StoreProtocolVersion2
-	default:
-		return StoreProtocolVersion1 // Default to protocol version 1 (milliseconds)
 	}
+	return StoreProtocolVersion(version)
 }

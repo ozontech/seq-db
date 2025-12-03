@@ -42,7 +42,7 @@ type Ingestor struct {
 	clientBySource map[uint64]string
 }
 
-func NewIngestor(config Config, clients map[string]storeapi.StoreApiClient) *Ingestor {
+func NewIngestor(cfg Config, clients map[string]storeapi.StoreApiClient) *Ingestor {
 	sourceByClient := make(map[string]uint64, len(clients))
 	clientBySource := make(map[uint64]string, len(clients))
 	var index uint64
@@ -53,7 +53,7 @@ func NewIngestor(config Config, clients map[string]storeapi.StoreApiClient) *Ing
 	}
 
 	return &Ingestor{
-		config:         config,
+		config:         cfg,
 		clients:        clients,
 		sourceByClient: sourceByClient,
 		clientBySource: clientBySource,

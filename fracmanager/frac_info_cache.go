@@ -59,16 +59,12 @@ func (fc *fracInfoCache) LoadFromDisk(fileName string) {
 		return
 	}
 
-	cacheJSON := make(map[string]*common.Info)
-	err = json.Unmarshal(content, &cacheJSON)
+	err = json.Unmarshal(content, &fc.cache)
 	if err != nil {
 		logger.Warn("can't unmarshal frac-cache, new frac-cache will be created later on",
 			zap.Error(err),
 		)
 		return
-	}
-	for frac, entry := range cacheJSON {
-		fc.cache[frac] = entry
 	}
 	logger.Info("frac-cache loaded from disk",
 		zap.String("filename", fileName),
@@ -115,12 +111,7 @@ func (fc *fracInfoCache) getContentWithVersion() (uint64, []byte, error) {
 		return 0, nil, nil // no changes
 	}
 
-	cacheJSON := make(map[string]*common.Info, len(fc.cache))
-	for k, v := range fc.cache {
-		cacheJSON[k] = v
-	}
-
-	content, err := json.Marshal(cacheJSON)
+	content, err := json.Marshal(fc.cache)
 	if err != nil {
 		return 0, nil, err
 	}

@@ -16,7 +16,7 @@ func TestLegacyMIDFromString(t *testing.T) {
 	assert.Equal(t, MID(1630057901995000000), id.MID)
 }
 
-func TestFromString(t *testing.T) {
+func TestMIDFromString(t *testing.T) {
 	id, err := FromString("abaf05877b010000_2402dc02d60615cc")
 
 	assert.NoError(t, err)
