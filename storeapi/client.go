@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/ozontech/seq-db/pkg/storeapi"
@@ -77,6 +78,10 @@ type storeAPIFetchClient struct {
 
 func newStoreAPIFetchClient(b []*storeapi.BinaryData) *storeAPIFetchClient {
 	return &storeAPIFetchClient{buf: b}
+}
+
+func (x *storeAPIFetchClient) Header() (metadata.MD, error) {
+	return nil, nil
 }
 
 func (x *storeAPIFetchClient) Recv() (*storeapi.BinaryData, error) {
