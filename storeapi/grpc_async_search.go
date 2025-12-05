@@ -149,6 +149,9 @@ func convertAggQueriesToProto(query []processor.AggQuery) []*storeapi.AggQuery {
 		if q.GroupBy != nil {
 			pq.GroupBy = q.GroupBy.Field
 		}
+		if q.Interval != 0 {
+			pq.Interval = q.Interval
+		}
 		res = append(res, pq)
 	}
 	return res
