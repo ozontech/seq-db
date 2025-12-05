@@ -479,7 +479,7 @@ func buildRequestAggs(in []*storeapi.AggQuery) []AggQuery {
 			GroupBy:   agg.GroupBy,
 			Func:      agg.Func.MustAggFunc(),
 			Quantiles: agg.Quantiles,
-			Interval:  seq.MID(agg.Interval),
+			Interval:  seq.MillisToMID(uint64(agg.Interval)),
 		})
 	}
 	return reqAggs
