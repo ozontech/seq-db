@@ -1,4 +1,4 @@
-package frac
+package sealed
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
@@ -24,8 +24,8 @@ import (
 
 type sealedDataProvider struct {
 	ctx    context.Context
-	info   *common.Info
-	config *Config
+	info   *frac.Info
+	config *frac.Config
 
 	idsTable    *seqids.Table
 	idsProvider *seqids.Provider
@@ -85,7 +85,7 @@ func (dp *sealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	sw := stopwatch.New()
 
 	defer sw.Export(
-		fetcherStagesSeconds,
+		frac.FetcherStagesSeconds,
 		stopwatch.SetLabel("fraction_type", dp.fractionTypeLabel),
 	)
 
@@ -107,7 +107,7 @@ func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	sw := stopwatch.New()
 
 	defer sw.Export(
-		fractionSearchMetric(params),
+		frac.FractionSearchMetric(params),
 		stopwatch.SetLabel("fraction_type", dp.fractionTypeLabel),
 	)
 

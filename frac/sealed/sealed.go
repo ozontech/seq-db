@@ -1,4 +1,4 @@
-package frac
+package sealed
 
 import (
 	"context"
@@ -12,9 +12,8 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
-	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -25,15 +24,15 @@ import (
 )
 
 var (
-	_ Fraction = (*Sealed)(nil)
+	_ frac.Fraction = (*Sealed)(nil)
 )
 
 type Sealed struct {
-	Config *Config
+	Config *frac.Config
 
 	BaseFileName string
 
-	info *common.Info
+	info *frac.Info
 
 	docsFile   *os.File
 	docsCache  *cache.Cache[[]byte]
@@ -45,7 +44,7 @@ type Sealed struct {
 
 	loadMu     *sync.RWMutex
 	isLoaded   bool
-	blocksData sealed.BlocksData
+	blocksData BlocksData
 
 	readLimiter *storage.ReadLimiter
 
@@ -61,13 +60,13 @@ const (
 	HalfRemove
 )
 
-func NewSealed(
+func New(
 	baseFile string,
 	readLimiter *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
-	info *common.Info,
-	config *Config,
+	info *frac.Info,
+	config *frac.Config,
 ) *Sealed {
 	f := &Sealed{
 		loadMu: &sync.RWMutex{},
@@ -123,13 +122,13 @@ func (f *Sealed) openDocs() {
 	}
 }
 
-func NewSealedPreloaded(
+func NewPreloaded(
 	baseFile string,
-	preloaded *sealed.PreloadedData,
+	preloaded *PreloadedData,
 	rl *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
-	config *Config,
+	config *frac.Config,
 ) *Sealed {
 	f := &Sealed{
 		blocksData: preloaded.BlocksData,
@@ -296,7 +295,7 @@ func (f *Sealed) Suicide() {
 }
 
 func (f *Sealed) String() string {
-	return fracToString(f, "sealed")
+	return frac.FracToString(f, "sealed")
 }
 
 func (f *Sealed) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
@@ -340,7 +339,7 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 	}
 }
 
-func (f *Sealed) Info() *common.Info {
+func (f *Sealed) Info() *frac.Info {
 	return f.info
 }
 
@@ -352,10 +351,7 @@ func (f *Sealed) IsIntersecting(from, to seq.MID) bool {
 	return f.info.IsIntersecting(from, to)
 }
 
-func loadHeader(
-	indexFile storage.ImmutableFile,
-	indexReader storage.IndexReader,
-) *common.Info {
+func loadHeader(indexFile storage.ImmutableFile, indexReader storage.IndexReader) *frac.Info {
 	block, _, err := indexReader.ReadIndexBlock(0, nil)
 	if err != nil {
 		logger.Fatal(
@@ -365,7 +361,7 @@ func loadHeader(
 		)
 	}
 
-	var bi sealed.BlockInfo
+	var bi BlockInfo
 	if err := bi.Unpack(block); err != nil {
 		logger.Fatal(
 			"error unpacking info block",

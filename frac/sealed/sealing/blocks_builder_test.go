@@ -7,14 +7,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
 )
 
 type mockSource struct {
-	info          common.Info
+	info          frac.Info
 	tokens        [][]byte
 	fields        []string
 	fieldMaxTIDs  []uint32
@@ -25,7 +25,7 @@ type mockSource struct {
 	lastError     error
 }
 
-func (m *mockSource) Info() common.Info { return m.info }
+func (m *mockSource) Info() frac.Info { return m.info }
 
 func (m *mockSource) Fields() iter.Seq2[string, uint32] {
 	return func(yield func(string, uint32) bool) {

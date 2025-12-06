@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -141,8 +141,8 @@ func (cm *CacheMaintainer) CreateSortDocsCache() *cache.Cache[[]byte] {
 	return newCache[[]byte](cm, sortName)
 }
 
-func (cm *CacheMaintainer) CreateIndexCache() *frac.IndexCache {
-	return &frac.IndexCache{
+func (cm *CacheMaintainer) CreateIndexCache() *sealed.IndexCache {
+	return &sealed.IndexCache{
 		MIDs:       newCache[[]byte](cm, midsName),
 		RIDs:       newCache[[]byte](cm, ridsName),
 		Params:     newCache[seqids.BlockParams](cm, paramsName),

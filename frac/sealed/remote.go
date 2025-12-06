@@ -1,4 +1,4 @@
-package frac
+package sealed
 
 import (
 	"context"
@@ -10,9 +10,8 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
-	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -24,7 +23,7 @@ import (
 )
 
 var (
-	_ Fraction = (*Remote)(nil)
+	_ frac.Fraction = (*Remote)(nil)
 )
 
 // Remote fraction is a fraction that is backed by remote storage.
@@ -35,11 +34,11 @@ var (
 type Remote struct {
 	ctx context.Context
 
-	Config *Config
+	Config *frac.Config
 
 	BaseFileName string
 
-	info *common.Info
+	info *frac.Info
 
 	docsFile   storage.ImmutableFile
 	docsCache  *cache.Cache[[]byte]
@@ -51,7 +50,7 @@ type Remote struct {
 
 	loadMu     *sync.RWMutex
 	isLoaded   bool
-	blocksData sealed.BlocksData
+	blocksData BlocksData
 
 	s3cli       *s3.Client
 	readLimiter *storage.ReadLimiter
@@ -63,8 +62,8 @@ func NewRemote(
 	readLimiter *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
-	info *common.Info,
-	config *Config,
+	info *frac.Info,
+	config *frac.Config,
 	s3cli *s3.Client,
 ) *Remote {
 	f := &Remote{
@@ -163,7 +162,7 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 	}, nil
 }
 
-func (f *Remote) Info() *common.Info {
+func (f *Remote) Info() *frac.Info {
 	return f.info
 }
 
@@ -194,7 +193,7 @@ func (f *Remote) Suicide() {
 }
 
 func (f *Remote) String() string {
-	return fracToString(f, "remote")
+	return frac.FracToString(f, "remote")
 }
 
 func (f *Remote) load() error {

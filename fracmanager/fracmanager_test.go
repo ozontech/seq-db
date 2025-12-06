@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -61,7 +63,7 @@ func TestSealingOnShutdown(t *testing.T) {
 
 	assert.Equal(t, 1, len(fm.Fractions()), "should have one fraction")
 	assert.Equal(t, activeName, fm.Fractions()[0].Info().Name(), "fraction should have the same name")
-	_, ok := fm.Fractions()[0].(*fractionProxy).impl.(*frac.Active)
+	_, ok := fm.Fractions()[0].(*fractionProxy).impl.(*active.Active)
 	assert.True(t, ok, "fraction should be active")
 
 	stop()
@@ -70,11 +72,11 @@ func TestSealingOnShutdown(t *testing.T) {
 	_, fm, stop = setupFracManager(t, cfg)
 
 	assert.Equal(t, 2, len(fm.Fractions()), "should have 2 fraction: new active and old sealed")
-	_, ok = fm.Fractions()[0].(*fractionProxy).impl.(*frac.Sealed)
+	_, ok = fm.Fractions()[0].(*fractionProxy).impl.(*sealed.Sealed)
 	assert.True(t, ok, "first fraction should be sealed")
 	assert.Equal(t, activeName, fm.Fractions()[0].Info().Name(), "sealed fraction should have the same name")
 	assert.Equal(t, uint32(0), fm.Fractions()[1].Info().DocsTotal, "active fraction should be empty")
-	_, ok = fm.Fractions()[1].(*fractionProxy).impl.(*frac.Active)
+	_, ok = fm.Fractions()[1].(*fractionProxy).impl.(*active.Active)
 	assert.True(t, ok, "new fraction should be active")
 
 	stop()

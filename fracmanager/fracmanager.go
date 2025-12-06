@@ -11,6 +11,7 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
@@ -39,7 +40,7 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client) (*FracManager, func
 	FillConfigWithDefault(cfg)
 
 	readLimiter := storage.NewReadLimiter(config.ReaderWorkers, storeBytesRead)
-	idx, stopIdx := frac.NewActiveIndexer(config.IndexWorkers, config.IndexWorkers)
+	idx, stopIdx := active.NewIndexer(config.IndexWorkers, config.IndexWorkers)
 	cache := NewCacheMaintainer(cfg.CacheSize, cfg.SortCacheSize, newDefaultCacheMetrics())
 	provider := newFractionProvider(cfg, s3cli, cache, readLimiter, idx)
 	infoCache := NewFracInfoCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix))
@@ -189,7 +190,7 @@ func startMaintWorker(ctx context.Context, cfg *Config, fm *FracManager, wg *syn
 }
 
 // SealOnShutdown seals the active fraction on storage shutdown
-func sealOnShutdown(active *frac.Active, provider *fractionProvider, minSealSize uint64) {
+func sealOnShutdown(active *active.Active, provider *fractionProvider, minSealSize uint64) {
 	fracSize := active.Info().FullSize()
 
 	if minSealSize == 0 {

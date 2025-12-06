@@ -10,14 +10,13 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 )
 
 type testFakeFrac struct {
-	info          *common.Info
+	info          *frac.Info
 	qpr           *seq.QPR
 	searchesCount int
 	fetchCount    int
@@ -25,7 +24,7 @@ type testFakeFrac struct {
 	fetchError    error
 }
 
-func (f *testFakeFrac) Info() *common.Info {
+func (f *testFakeFrac) Info() *frac.Info {
 	return f.info
 }
 
@@ -64,7 +63,7 @@ func (f *testFakeFrac) Search(context.Context, processor.SearchParams) (*seq.QPR
 
 func newFakeFrac(from, to seq.MID, qpr *seq.QPR) *testFakeFrac {
 	return &testFakeFrac{
-		info:      &common.Info{From: from, To: to, DocsTotal: 1},
+		info:      &frac.Info{From: from, To: to, DocsTotal: 1},
 		qpr:       qpr,
 		documents: make(map[seq.ID][]byte),
 	}
@@ -72,14 +71,14 @@ func newFakeFrac(from, to seq.MID, qpr *seq.QPR) *testFakeFrac {
 
 func newFakeFracWithDocs(from, to seq.MID, documents map[seq.ID][]byte) *testFakeFrac {
 	return &testFakeFrac{
-		info:      &common.Info{From: from, To: to, DocsTotal: uint32(len(documents))},
+		info:      &frac.Info{From: from, To: to, DocsTotal: uint32(len(documents))},
 		documents: documents,
 	}
 }
 
 func newFakeFracWithFetchError(from, to seq.MID, fetchError error) *testFakeFrac {
 	return &testFakeFrac{
-		info:       &common.Info{From: from, To: to, DocsTotal: 1},
+		info:       &frac.Info{From: from, To: to, DocsTotal: 1},
 		documents:  make(map[seq.ID][]byte),
 		fetchError: fetchError,
 	}

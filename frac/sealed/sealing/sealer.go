@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
@@ -16,7 +16,7 @@ import (
 // Source interface defines the contract for data sources that can be sealed.
 // Provides access to all necessary data components for index creation.
 type Source interface {
-	Info() *common.Info                                   // Fraction metadata information
+	Info() *frac.Info                                     // Fraction metadata information
 	IDsBlocks(size int) iter.Seq2[[]seq.ID, []seq.DocPos] // Ordered sequence of document IDs and their positions, divided into blocks
 	TokenBlocks(size int) iter.Seq[[][]byte]              // Ordered sequence of tokens divided into blocks
 	Fields() iter.Seq2[string, uint32]                    // Ordered sequence of fields with their max field's TID value
@@ -39,7 +39,7 @@ type Source interface {
 // Returns:
 //   - *sealed.PreloadedData: Preloaded data structures for initialization of sealed fraction
 //   - error: Any error encountered during the sealing process
-func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
+func Seal(src Source, params frac.SealParams) (*sealed.PreloadedData, error) {
 	info := src.Info()
 
 	// Validate that we're not sealing an empty fraction

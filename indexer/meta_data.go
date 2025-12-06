@@ -10,10 +10,11 @@ import (
 )
 
 type MetaData struct {
-	ID seq.ID
-	// Size of an uncompressed document in bytes.
-	Size   uint32
-	Tokens []tokenizer.MetaToken
+	ID          seq.ID
+	Size        uint32 // Size of an uncompressed document in bytes.
+	Tokens      []tokenizer.MetaToken
+	tokensCount uint32
+	tokensBin   []byte
 }
 
 // String used in tests for human-readable output.
@@ -72,6 +73,23 @@ func (m *MetaData) UnmarshalBinary(b []byte) error {
 	}
 }
 
+func (m *MetaData) UnmarshalBinaryLazy(b []byte) error {
+	if !IsItBinaryEncodedMetaData(b) {
+		return fmt.Errorf("invalid metadata magic bytes")
+	}
+	b = b[2:]
+
+	version := binary.LittleEndian.Uint16(b)
+	b = b[2:]
+
+	switch version {
+	case 1:
+		return m.unmarshalVersion1Lazy(b)
+	default:
+		return fmt.Errorf("unimplemented metadata version: %d", version)
+	}
+}
+
 func (m *MetaData) unmarshalVersion1(b []byte) error {
 	// Decode seq.ID.
 	m.ID.MID = seq.MID(binary.LittleEndian.Uint64(b))
@@ -100,4 +118,43 @@ func (m *MetaData) unmarshalVersion1(b []byte) error {
 		m.Tokens = append(m.Tokens, token)
 	}
 	return nil
+}
+
+func (m *MetaData) unmarshalVersion1Lazy(b []byte) error {
+	// Decode seq.ID.
+	m.ID.MID = seq.MID(binary.LittleEndian.Uint64(b))
+	b = b[8:]
+	m.ID.RID = seq.RID(binary.LittleEndian.Uint64(b))
+	b = b[8:]
+
+	// Decode uncompressed document size.
+	m.Size = binary.LittleEndian.Uint32(b)
+	b = b[4:]
+
+	m.tokensCount = binary.LittleEndian.Uint32(b)
+	b = b[4:]
+
+	m.tokensBin = b
+
+	return nil
+}
+
+func (m *MetaData) DecodeTokens(tokens []tokenizer.MetaToken) ([]tokenizer.MetaToken, error) {
+	b := m.tokensBin
+
+	// Decode tokens.
+	tokens = tokens[:0]
+	tokens = slices.Grow(tokens, int(m.tokensCount))[:m.tokensCount]
+
+	for i := range tokens {
+		var err error
+		if b, err = tokens[i].UnmarshalBinary(b); err != nil {
+			return nil, err
+		}
+	}
+	return tokens, nil
+}
+
+func (m *MetaData) TokensCount() uint32 {
+	return m.tokensCount
 }

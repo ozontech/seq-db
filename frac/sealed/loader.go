@@ -1,12 +1,11 @@
-package frac
+package sealed
 
 import (
 	"time"
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/frac/common"
-	"github.com/ozontech/seq-db/frac/sealed"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/logger"
@@ -21,7 +20,7 @@ type Loader struct {
 	blockBuf   []byte
 }
 
-func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, indexReader *storage.IndexReader) {
+func (l *Loader) Load(blocksData *BlocksData, info *frac.Info, indexReader *storage.IndexReader) {
 	t := time.Now()
 
 	l.reader = indexReader
@@ -78,7 +77,7 @@ func (l *Loader) loadIDs() (idsTable seqids.Table, blocksOffsets []uint64, err e
 		return idsTable, nil, err
 	}
 
-	b := sealed.BlockOffsets{}
+	b := BlockOffsets{}
 	if err := b.Unpack(result); err != nil {
 		return idsTable, nil, err
 	}

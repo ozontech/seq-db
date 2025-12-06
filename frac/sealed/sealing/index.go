@@ -11,7 +11,7 @@ import (
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
@@ -29,10 +29,10 @@ import (
 // - Registry for quick access to block locations
 // - PreloadedData structures for fast initialization instance of sealed fraction
 type IndexSealer struct {
-	lastErr error             // Last error encountered during processing
-	buf1    []byte            // Reusable buffer for packing raw data before compression
-	buf2    []byte            // Reusable buffer for compressed data
-	params  common.SealParams // Configuration parameters for sealing process
+	lastErr error           // Last error encountered during processing
+	buf1    []byte          // Reusable buffer for packing raw data before compression
+	buf2    []byte          // Reusable buffer for compressed data
+	params  frac.SealParams // Configuration parameters for sealing process
 
 	// PreloadedData structures built during sealing for fast initialization of sealed fraction
 	idsTable   seqids.Table // Table mapping document IDs to blocks
@@ -41,7 +41,7 @@ type IndexSealer struct {
 }
 
 // NewIndexSealer creates a new IndexSealer instance with the given parameters.
-func NewIndexSealer(params common.SealParams) *IndexSealer {
+func NewIndexSealer(params frac.SealParams) *IndexSealer {
 	return &IndexSealer{
 		params: params,
 		buf1:   make([]byte, 0, consts.RegularBlockSize),

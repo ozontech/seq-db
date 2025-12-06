@@ -1,4 +1,4 @@
-package frac
+package sealed
 
 import (
 	"github.com/ozontech/seq-db/cache"

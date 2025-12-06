@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/mappingprovider"
 	"github.com/ozontech/seq-db/seq"
@@ -17,11 +16,11 @@ import (
 
 type fakeFrac struct {
 	frac.Fraction
-	info common.Info
+	info frac.Info
 	dp   fakeDP
 }
 
-func (f *fakeFrac) Info() *common.Info {
+func (f *fakeFrac) Info() *frac.Info {
 	return &f.info
 }
 
@@ -51,7 +50,7 @@ func TestAsyncSearcherMaintain(t *testing.T) {
 		Retention: time.Hour,
 	}
 	fracs := []frac.Fraction{
-		&fakeFrac{info: common.Info{Path: "1"}},
+		&fakeFrac{info: frac.Info{Path: "1"}},
 	}
 	r.NoError(as.StartSearch(req, fracs))
 

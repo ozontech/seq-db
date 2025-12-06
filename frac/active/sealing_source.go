@@ -1,4 +1,4 @@
-package frac
+package active
 
 import (
 	"bytes"
@@ -17,14 +17,14 @@ import (
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
-// ActiveSealingSource transforms data from in-memory (frac.Active) storage
+// SealingSource transforms data from in-memory (frac.Active) storage
 // into a format suitable for disk writing during index creation.
 //
 // The main purpose of this type is to provide access to sorted data
@@ -39,9 +39,9 @@ import (
 //
 // All iterators work with pre-sorted data and return information
 // in an order optimal for creating disk index structures.
-type ActiveSealingSource struct {
-	params        common.SealParams   // Sealing parameters
-	info          *common.Info        // fraction Info
+type SealingSource struct {
+	params        frac.SealParams     // Sealing parameters
+	info          *frac.Info          // fraction Info
 	created       time.Time           // Creation time of the source
 	sortedLIDs    []uint32            // Sorted LIDs (Local ID)
 	oldToNewLIDs  []uint32            // Mapping from old LIDs to new ones (after sorting)
@@ -59,9 +59,9 @@ type ActiveSealingSource struct {
 	lastErr       error               // Last error
 }
 
-// NewActiveSealingSource creates a new data source for sealing
+// NewSealingSource creates a new data source for sealing
 // based on an active in-memory index.
-func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSealingSource, error) {
+func NewSealingSource(active *Active, params frac.SealParams) (*SealingSource, error) {
 	info := *active.info // copy
 	sortedLIDs := active.GetAllDocuments()
 
@@ -71,7 +71,7 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 	// Sort tokens within each field
 	sortedTIDs := sortTokens(sortedFields, active.TokenList)
 
-	src := ActiveSealingSource{
+	src := SealingSource{
 		params:        params,
 		info:          &info,
 		created:       time.Now(),
@@ -103,7 +103,7 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 
 // sortFields sorts field names and calculates maximum TIDs for each field.
 // Returns sorted field list and array of maximum TIDs.
-func sortFields(tl *TokenList) ([]string, []uint32) {
+func sortFields(tl *tokenList) ([]string, []uint32) {
 	fields := make([]string, 0, len(tl.FieldTIDs))
 	for field := range tl.FieldTIDs {
 		fields = append(fields, field)
@@ -122,7 +122,7 @@ func sortFields(tl *TokenList) ([]string, []uint32) {
 
 // sortTokens sorts tokens lexicographically within each field.
 // Returns sorted list of TIDs.
-func sortTokens(sortedFields []string, tl *TokenList) []uint32 {
+func sortTokens(sortedFields []string, tl *tokenList) []uint32 {
 	pos := 0
 	tids := make([]uint32, 0, len(tl.tidToVal))
 	for _, field := range sortedFields {
@@ -139,26 +139,26 @@ func sortTokens(sortedFields []string, tl *TokenList) []uint32 {
 }
 
 // LastError returns the last error that occurred during processing.
-func (src *ActiveSealingSource) LastError() error {
+func (src *SealingSource) LastError() error {
 	return src.lastErr
 }
 
 // prepareInfo prepares metadata for disk writing.
-func (src *ActiveSealingSource) prepareInfo() {
+func (src *SealingSource) prepareInfo() {
 	src.info.MetaOnDisk = 0
 	src.info.SealingTime = uint64(src.created.UnixMilli())
 	src.info.BuildDistribution(src.mids.vals)
 }
 
 // Info returns index metadata information.
-func (src *ActiveSealingSource) Info() *common.Info {
+func (src *SealingSource) Info() *frac.Info {
 	return src.info
 }
 
 // TokenBlocks returns an iterator for token blocks for disk writing.
 // Tokens are pre-sorted: first by fields, then lexicographically within each field.
 // Each block contains up to blockSize bytes of data for efficient writing.
-func (src *ActiveSealingSource) TokenBlocks(blockSize int) iter.Seq[[][]byte] {
+func (src *SealingSource) TokenBlocks(blockSize int) iter.Seq[[][]byte] {
 	const tokenLengthSize = int(unsafe.Sizeof(uint32(0)))
 	return func(yield func([][]byte) bool) {
 		if len(src.tids) == 0 {
@@ -193,7 +193,7 @@ func (src *ActiveSealingSource) TokenBlocks(blockSize int) iter.Seq[[][]byte] {
 // Fields returns an iterator for sorted fields and their maximum TIDs.
 // Fields are sorted lexicographically, ensuring predictable order
 // when building disk index structures.
-func (src *ActiveSealingSource) Fields() iter.Seq2[string, uint32] {
+func (src *SealingSource) Fields() iter.Seq2[string, uint32] {
 	return func(yield func(string, uint32) bool) {
 		for i, field := range src.fields {
 			if !yield(field, src.fieldsMaxTIDs[i]) {
@@ -206,7 +206,7 @@ func (src *ActiveSealingSource) Fields() iter.Seq2[string, uint32] {
 // IDsBlocks returns an iterator for document ID blocks and corresponding positions.
 // IDs are sorted. Block size is controlled by blockSize parameter for balance between
 // performance and memory usage.
-func (src *ActiveSealingSource) IDsBlocks(blockSize int) iter.Seq2[[]seq.ID, []seq.DocPos] {
+func (src *SealingSource) IDsBlocks(blockSize int) iter.Seq2[[]seq.ID, []seq.DocPos] {
 	return func(yield func([]seq.ID, []seq.DocPos) bool) {
 		mids := src.mids.vals
 		rids := src.rids.vals
@@ -242,7 +242,7 @@ func (src *ActiveSealingSource) IDsBlocks(blockSize int) iter.Seq2[[]seq.ID, []s
 }
 
 // BlocksOffsets returns document block offsets.
-func (src *ActiveSealingSource) BlocksOffsets() []uint64 {
+func (src *SealingSource) BlocksOffsets() []uint64 {
 	return src.blocksOffsets
 }
 
@@ -250,7 +250,7 @@ func (src *ActiveSealingSource) BlocksOffsets() []uint64 {
 // LIDs are converted to new numbering after document sorting.
 // Each iterator call returns a list of documents containing a specific token,
 // in sorted order.
-func (src *ActiveSealingSource) TokenLIDs() iter.Seq[[]uint32] {
+func (src *SealingSource) TokenLIDs() iter.Seq[[]uint32] {
 	return func(yield func([]uint32) bool) {
 		newLIDs := []uint32{}
 
@@ -284,7 +284,7 @@ func makeInverser(sortedLIDs []uint32) []uint32 {
 
 // Docs returns an iterator for documents with their IDs.
 // Handles duplicate IDs (for nested indexes).
-func (src *ActiveSealingSource) Docs() iter.Seq2[seq.ID, []byte] {
+func (src *SealingSource) Docs() iter.Seq2[seq.ID, []byte] {
 	src.lastErr = nil
 	return func(yield func(seq.ID, []byte) bool) {
 		var (
@@ -313,7 +313,7 @@ func (src *ActiveSealingSource) Docs() iter.Seq2[seq.ID, []byte] {
 }
 
 // doc reads a document from storage by its position.
-func (src *ActiveSealingSource) doc(pos seq.DocPos) ([]byte, error) {
+func (src *SealingSource) doc(pos seq.DocPos) ([]byte, error) {
 	blockIndex, docOffset := pos.Unpack()
 	blockOffset := src.blocksOffsets[blockIndex]
 
@@ -330,7 +330,7 @@ func (src *ActiveSealingSource) doc(pos seq.DocPos) ([]byte, error) {
 
 // SortDocs sorts documents and writes them in compressed form to disk.
 // Creates a temporary file that is then renamed to the final one.
-func (src *ActiveSealingSource) SortDocs() error {
+func (src *SealingSource) SortDocs() error {
 	start := time.Now()
 	logger.Info("sorting docs...")
 
@@ -396,7 +396,7 @@ func (src *ActiveSealingSource) SortDocs() error {
 
 // writeDocs compresses and writes document blocks, calculating new offsets
 // and collecting document positions.
-func (src *ActiveSealingSource) writeDocs(blocks iter.Seq2[[]byte, []seq.DocPos], w io.Writer) ([]uint64, []seq.DocPos, error) {
+func (src *SealingSource) writeDocs(blocks iter.Seq2[[]byte, []seq.DocPos], w io.Writer) ([]uint64, []seq.DocPos, error) {
 	offset := 0
 	buf := make([]byte, 0)
 	blocksOffsets := make([]uint64, 0)

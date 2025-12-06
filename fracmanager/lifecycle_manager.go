@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/util"
 )
@@ -142,7 +142,7 @@ func (lc *lifecycleManager) OffloadLocal(ctx context.Context, sizeLimit uint64, 
 
 // TryOffload performs a single offload attempt and records metrics
 // Measures offloading duration and tracks success/failure statistics.
-func (lc *lifecycleManager) TryOffload(ctx context.Context, sealed *frac.Sealed) (*frac.Remote, error) {
+func (lc *lifecycleManager) TryOffload(ctx context.Context, sealed *sealed.Sealed) (*sealed.Remote, error) {
 	now := time.Now()
 	remote, err := lc.provider.Offload(ctx, sealed)
 	offloadingDuration := time.Since(now).Seconds()

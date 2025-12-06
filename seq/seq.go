@@ -1,6 +1,7 @@
 package seq
 
 import (
+	"cmp"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -57,6 +58,13 @@ func LessOrEqual(a, b ID) bool {
 		return a.RID <= b.RID
 	}
 	return a.MID < b.MID
+}
+
+func Compare(a, b ID) int {
+	return cmp.Or(
+		cmp.Compare(a.MID, b.MID),
+		cmp.Compare(a.RID, b.RID),
+	)
 }
 
 func Less(a, b ID) bool {

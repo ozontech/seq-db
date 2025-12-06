@@ -10,8 +10,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
@@ -39,7 +40,7 @@ func (p *fractionProxy) Redirect(f frac.Fraction) {
 	p.impl = f
 }
 
-func (p *fractionProxy) Info() *common.Info {
+func (p *fractionProxy) Info() *frac.Info {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.impl.Info()
@@ -74,8 +75,8 @@ func (p *fractionProxy) Search(ctx context.Context, params processor.SearchParam
 // Lifecycle: Created when fraction becomes active, destroyed after sealing.
 type activeProxy struct {
 	proxy    *fractionProxy // Thread-safe fraction access
-	instance *frac.Active   // Actual active fraction instance
-	sealed   *frac.Sealed   // Sealed version (set after sealing)
+	instance *active.Active // Actual active fraction instance
+	sealed   *sealed.Sealed // Sealed version (set after sealing)
 
 	mu sync.RWMutex   // Protects readonly state
 	wg sync.WaitGroup // Tracks pending write operations
@@ -83,7 +84,7 @@ type activeProxy struct {
 	finalized bool // Whether fraction is frozen for writes
 }
 
-func newActiveProxy(active *frac.Active) *activeProxy {
+func newActiveProxy(active *active.Active) *activeProxy {
 	return &activeProxy{
 		proxy:    &fractionProxy{impl: active},
 		instance: active,
@@ -132,14 +133,14 @@ func (p *activeProxy) Finalize() error {
 // Tracks both local sealed instance and remote version if offloaded.
 type sealedProxy struct {
 	proxy    *fractionProxy // Thread-safe fraction access
-	instance *frac.Sealed   // Local sealed fraction
-	remote   *frac.Remote   // Remote version (if offloaded)
+	instance *sealed.Sealed // Local sealed fraction
+	remote   *sealed.Remote // Remote version (if offloaded)
 }
 
 // remoteProxy represents an offloaded fraction
 type remoteProxy struct {
 	proxy    *fractionProxy // Thread-safe fraction access
-	instance *frac.Remote   // Remote fraction instance
+	instance *sealed.Remote // Remote fraction instance
 }
 
 // emptyFraction represents a missing or deleted fraction
@@ -148,8 +149,8 @@ type remoteProxy struct {
 type emptyFraction struct {
 }
 
-func (emptyFraction) Info() *common.Info {
-	return &common.Info{
+func (emptyFraction) Info() *frac.Info {
+	return &frac.Info{
 		Path: "empty",
 		From: math.MaxUint64,
 		To:   0,

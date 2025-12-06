@@ -1,11 +1,10 @@
-package frac
+package active
 
 import (
 	"context"
 	"io"
 	"math"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -27,23 +26,23 @@ import (
 )
 
 var (
-	_ Fraction = (*Active)(nil)
+	_ frac.Fraction = (*Active)(nil)
 )
 
 type Active struct {
-	Config *Config
+	Config *frac.Config
 
 	BaseFileName string
 
 	infoMu sync.RWMutex
-	info   *common.Info
+	info   *frac.Info
 
 	MIDs *UInt64s
 	RIDs *UInt64s
 
 	DocBlocks *UInt64s
 
-	TokenList *TokenList
+	TokenList *tokenList
 
 	DocsPositions *DocsPositions
 
@@ -56,8 +55,8 @@ type Active struct {
 	metaFile   *os.File
 	metaReader storage.DocBlocksReader
 
-	writer  *ActiveWriter
-	indexer *ActiveIndexer
+	writer  *Writer
+	indexer *Indexer
 }
 
 const (
@@ -70,19 +69,19 @@ var systemSeqID = seq.ID{
 	RID: systemRID,
 }
 
-func NewActive(
+func New(
 	baseFileName string,
-	activeIndexer *ActiveIndexer,
+	activeIndexer *Indexer,
 	readLimiter *storage.ReadLimiter,
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
-	cfg *Config,
+	cfg *frac.Config,
 ) *Active {
-	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
-	metaFile, metaStats := mustOpenFile(baseFileName+consts.MetaFileSuffix, config.SkipFsync)
+	docsFile, docsStats := util.MustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
+	metaFile, metaStats := util.MustOpenFile(baseFileName+consts.MetaFileSuffix, config.SkipFsync)
 
 	f := &Active{
-		TokenList:     NewActiveTokenList(config.IndexWorkers),
+		TokenList:     NewTokenList(config.IndexWorkers),
 		DocsPositions: NewSyncDocsPositions(),
 		MIDs:          NewIDs(),
 		RIDs:          NewIDs(),
@@ -98,10 +97,10 @@ func NewActive(
 		metaReader: storage.NewDocBlocksReader(readLimiter, metaFile),
 
 		indexer: activeIndexer,
-		writer:  NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync),
+		writer:  NewWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync),
 
 		BaseFileName: baseFileName,
-		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
+		info:         frac.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
 		Config:       cfg,
 	}
 
@@ -112,24 +111,6 @@ func NewActive(
 	logger.Info("active fraction created", zap.String("fraction", baseFileName))
 
 	return f
-}
-
-func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
-	file, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o776)
-	if err != nil {
-		logger.Fatal("can't create docs file", zap.String("file", name), zap.Error(err))
-	}
-
-	if !skipFsync {
-		parentDirPath := filepath.Dir(name)
-		util.MustSyncPath(parentDirPath)
-	}
-
-	stat, err := file.Stat()
-	if err != nil {
-		logger.Fatal("can't stat docs file", zap.String("file", name), zap.Error(err))
-	}
-	return file, stat
 }
 
 func (f *Active) Replay(ctx context.Context) error {
@@ -261,7 +242,7 @@ func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount 
 }
 
 func (f *Active) String() string {
-	return fracToString(f, "active")
+	return frac.FracToString(f, "active")
 }
 
 func (f *Active) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
@@ -287,8 +268,8 @@ func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*se
 	return dp.Search(params)
 }
 
-func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
-	return &activeDataProvider{
+func (f *Active) createDataProvider(ctx context.Context) *dataProvider {
+	return &dataProvider{
 		ctx:    ctx,
 		config: f.Config,
 		info:   f.Info(),
@@ -303,7 +284,7 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 	}
 }
 
-func (f *Active) Info() *common.Info {
+func (f *Active) Info() *frac.Info {
 	f.infoMu.RLock()
 	defer f.infoMu.RUnlock()
 

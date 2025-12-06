@@ -9,14 +9,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
 )
 
 type Fraction interface {
-	Info() *common.Info
+	Info() *Info
 	IsIntersecting(from seq.MID, to seq.MID) bool
 	Contains(mid seq.MID) bool
 	Fetch(context.Context, []seq.ID) ([][]byte, error)
@@ -24,7 +23,7 @@ type Fraction interface {
 }
 
 var (
-	fetcherStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	FetcherStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "fetcher",
 		Name:      "fraction_stages_seconds",
@@ -50,7 +49,7 @@ var (
 	}, []string{"stage", "fraction_type"})
 )
 
-func fractionSearchMetric(
+func FractionSearchMetric(
 	params processor.SearchParams,
 ) *prometheus.HistogramVec {
 	if params.HasAgg() {
@@ -62,7 +61,7 @@ func fractionSearchMetric(
 	return fractionRegSearchSec
 }
 
-func fracToString(f Fraction, fracType string) string {
+func FracToString(f Fraction, fracType string) string {
 	info := f.Info()
 	s := fmt.Sprintf(
 		"%s fraction name=%s, creation time=%s, from=%s, to=%s, %s",

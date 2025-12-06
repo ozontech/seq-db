@@ -1,4 +1,4 @@
-package common
+package frac
 
 type SealParams struct {
 	IDsZstdLevel           int

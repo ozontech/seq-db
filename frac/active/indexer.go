@@ -1,4 +1,4 @@
-package frac
+package active
 
 import (
 	"encoding/binary"
@@ -14,7 +14,7 @@ import (
 	"github.com/ozontech/seq-db/storage"
 )
 
-type ActiveIndexer struct {
+type Indexer struct {
 	ch          chan *indexTask
 	chMerge     chan *mergeTask
 	workerCount int
@@ -32,8 +32,8 @@ type mergeTask struct {
 	tokenLIDs *TokenLIDs
 }
 
-func NewActiveIndexer(workerCount, chLen int) (*ActiveIndexer, func()) {
-	idx := ActiveIndexer{
+func NewIndexer(workerCount, chLen int) (*Indexer, func()) {
+	idx := Indexer{
 		ch:          make(chan *indexTask, chLen),
 		chMerge:     make(chan *mergeTask, chLen),
 		workerCount: workerCount,
@@ -42,7 +42,7 @@ func NewActiveIndexer(workerCount, chLen int) (*ActiveIndexer, func()) {
 	return &idx, stopIdx
 }
 
-func (ai *ActiveIndexer) Index(frac *Active, metas []byte, wg *sync.WaitGroup, sw *stopwatch.Stopwatch) {
+func (ai *Indexer) Index(frac *Active, metas []byte, wg *sync.WaitGroup, sw *stopwatch.Stopwatch) {
 	m := sw.Start("send_index_chan")
 	ai.ch <- &indexTask{
 		Pos:   storage.DocBlock(metas).GetExt2(),
@@ -53,7 +53,7 @@ func (ai *ActiveIndexer) Index(frac *Active, metas []byte, wg *sync.WaitGroup, s
 	m.Stop()
 }
 
-func (ai *ActiveIndexer) start() func() {
+func (ai *Indexer) start() func() {
 	wg := sync.WaitGroup{}
 	wg.Add(ai.workerCount)
 
@@ -79,7 +79,7 @@ func (ai *ActiveIndexer) start() func() {
 	}
 }
 
-func (ai *ActiveIndexer) mergeWorker() {
+func (ai *Indexer) mergeWorker() {
 	for task := range ai.chMerge {
 		task.tokenLIDs.GetLIDs(task.frac.MIDs, task.frac.RIDs) // GetLIDs cause sort and merge LIDs from queue
 	}
@@ -91,7 +91,7 @@ var metaDataPool = sync.Pool{
 	},
 }
 
-func (ai *ActiveIndexer) appendWorker(index int) {
+func (ai *Indexer) appendWorker(index int) {
 	// collector of bulk meta data
 	collector := newMetaDataCollector()
 
@@ -169,7 +169,8 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 	}
 }
 
-func (ai *ActiveIndexer) sendTokensToMergeWorkers(frac *Active, tokens []*TokenLIDs) {
+func (ai *Indexer) sendTokensToMergeWorkers(frac *Active, tokens []*TokenLIDs) {
+	return
 	for _, tl := range tokens {
 		task := mergeTask{
 			frac:      frac,

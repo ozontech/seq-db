@@ -10,7 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 )
 
@@ -22,7 +22,7 @@ type fracInfoCache struct {
 	fileName string
 
 	mu      sync.RWMutex
-	cache   map[string]*common.Info
+	cache   map[string]*frac.Info
 	version uint64 // if we increment the counter every second it will take 31 billion years (quite enough)
 
 	saveMu       sync.Mutex
@@ -31,7 +31,7 @@ type fracInfoCache struct {
 
 func NewFracInfoCache(filePath string) *fracInfoCache {
 	fc := &fracInfoCache{
-		cache:    make(map[string]*common.Info),
+		cache:    make(map[string]*frac.Info),
 		mu:       sync.RWMutex{},
 		fullPath: filePath,
 		fileName: filepath.Base(filePath),
@@ -74,7 +74,7 @@ func (fc *fracInfoCache) LoadFromDisk(fileName string) {
 }
 
 // Add adds a new entry to the in-memory [sealedFracCache].
-func (fc *fracInfoCache) Add(info *common.Info) {
+func (fc *fracInfoCache) Add(info *frac.Info) {
 	name := info.Name()
 
 	fc.mu.Lock()
@@ -96,7 +96,7 @@ func (fc *fracInfoCache) Remove(name string) {
 
 // Get returns fraction info and a flag that indicates
 // whether the data is present in the map.
-func (fc *fracInfoCache) Get(name string) (*common.Info, bool) {
+func (fc *fracInfoCache) Get(name string) (*frac.Info, bool) {
 	fc.mu.RLock()
 	defer fc.mu.RUnlock()
 

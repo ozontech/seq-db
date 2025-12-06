@@ -9,7 +9,8 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 )
 
@@ -63,7 +64,7 @@ func (l *Loader) Load(ctx context.Context) (*fractionRegistry, error) {
 
 // replayAndSeal replays active fractions and seals old ones
 // Key method for ensuring data consistency during restart
-func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*frac.Active, []*frac.Sealed, error) {
+func (l *Loader) replayAndSeal(ctx context.Context, actives []*active.Active) (*active.Active, []*sealed.Sealed, error) {
 	if len(actives) == 0 {
 		return nil, nil, nil
 	}
@@ -71,7 +72,7 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(l.config.ReplayWorkers)
 
-	sealed := make([]*frac.Sealed, len(actives)-1)
+	sealed := make([]*sealed.Sealed, len(actives)-1)
 
 	for i, a := range actives[:len(actives)-1] {
 		g.Go(func() error {
@@ -115,7 +116,7 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 
 // discover discovers all fractions in filesystem
 // Returns fractions separated by type: active, local, remote
-func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, []*frac.Remote, error) {
+func (l *Loader) discover(ctx context.Context) ([]*active.Active, []*sealed.Sealed, []*sealed.Remote, error) {
 	// Scan and analyze fraction files. Filter valid fractions
 	manifests, err := analyzeFiles(l.scanFiles())
 	if err != nil {
@@ -125,9 +126,9 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 	total := len(manifests)
 	logProgress := progressLogger(time.Millisecond * 500)
 
-	actives := make([]*frac.Active, 0)
-	locals := make([]*frac.Sealed, 0, total)
-	remotes := make([]*frac.Remote, 0, total)
+	actives := make([]*active.Active, 0)
+	locals := make([]*sealed.Sealed, 0, total)
+	remotes := make([]*sealed.Remote, 0, total)
 
 	loadedInfoCache := NewFracInfoCacheFromDisk(l.infoCache.fullPath)
 
@@ -153,7 +154,7 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 }
 
 // loadSealed loads a sealed fraction using cache
-func (l *Loader) loadSealed(basePath string, loadedInfoCache *fracInfoCache) *frac.Sealed {
+func (l *Loader) loadSealed(basePath string, loadedInfoCache *fracInfoCache) *sealed.Sealed {
 	info, found := loadedInfoCache.Get(filepath.Base(basePath))
 	l.updateStats(found)
 
@@ -163,7 +164,7 @@ func (l *Loader) loadSealed(basePath string, loadedInfoCache *fracInfoCache) *fr
 }
 
 // loadRemote loads a remote fraction
-func (l *Loader) loadRemote(ctx context.Context, basePath string, loadedInfoCache *fracInfoCache) *frac.Remote {
+func (l *Loader) loadRemote(ctx context.Context, basePath string, loadedInfoCache *fracInfoCache) *sealed.Remote {
 	info, found := loadedInfoCache.Get(filepath.Base(basePath))
 	l.updateStats(found)
 

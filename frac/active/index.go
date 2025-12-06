@@ -1,9 +1,9 @@
-package frac
+package active
 
 import (
 	"context"
 
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -13,24 +13,24 @@ import (
 	"github.com/ozontech/seq-db/storage"
 )
 
-type activeDataProvider struct {
+type dataProvider struct {
 	ctx    context.Context
-	config *Config
-	info   *common.Info
+	config *frac.Config
+	info   *frac.Info
 
 	mids *UInt64s
 	rids *UInt64s
 
-	tokenList *TokenList
+	tokenList *tokenList
 
 	blocksOffsets []uint64
 	docsPositions *DocsPositions
 	docsReader    *storage.DocsReader
 
-	idsIndex *activeIDsIndex
+	idsIndex *idsIndex
 }
 
-func (dp *activeDataProvider) release() {
+func (dp *dataProvider) release() {
 	if dp.idsIndex != nil {
 		dp.idsIndex.inverser.Release()
 	}
@@ -38,13 +38,13 @@ func (dp *activeDataProvider) release() {
 
 // getIDsIndex creates on demand and returns ActiveIDsIndex.
 // Creation of inverser for ActiveIDsIndex is expensive operation
-func (dp *activeDataProvider) getIDsIndex() *activeIDsIndex {
+func (dp *dataProvider) getIDsIndex() *idsIndex {
 	if dp.idsIndex == nil {
 		// creation order is matter
 		mapping := dp.tokenList.GetAllTokenLIDs().GetLIDs(dp.mids, dp.rids)
 		mids := dp.mids.GetVals() // mids and rids should be created after mapping to ensure that
 		rids := dp.rids.GetVals() // they contain all the ids that mapping contains.
-		dp.idsIndex = &activeIDsIndex{
+		dp.idsIndex = &idsIndex{
 			inverser: newInverser(mapping, len(mids)),
 			mids:     mids,
 			rids:     rids,
@@ -53,8 +53,8 @@ func (dp *activeDataProvider) getIDsIndex() *activeIDsIndex {
 	return dp.idsIndex
 }
 
-func (dp *activeDataProvider) getTokenIndex() *activeTokenIndex {
-	return &activeTokenIndex{
+func (dp *dataProvider) getTokenIndex() *tokenIndex {
+	return &tokenIndex{
 		ctx:       dp.ctx,
 		mids:      dp.mids,
 		rids:      dp.rids,
@@ -63,17 +63,17 @@ func (dp *activeDataProvider) getTokenIndex() *activeTokenIndex {
 	}
 }
 
-func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
+func (dp *dataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	sw := stopwatch.New()
 
 	defer sw.Export(
-		fetcherStagesSeconds,
+		frac.FetcherStagesSeconds,
 		stopwatch.SetLabel("fraction_type", "active"),
 	)
 
 	res := make([][]byte, len(ids))
 
-	indexes := []activeFetchIndex{{
+	indexes := []fetchIndex{{
 		blocksOffsets: dp.blocksOffsets,
 		docsPositions: dp.docsPositions,
 		docsReader:    dp.docsReader,
@@ -88,7 +88,7 @@ func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	return res, nil
 }
 
-func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, error) {
+func (dp *dataProvider) Search(params processor.SearchParams) (*seq.QPR, error) {
 	// The index of the active fraction changes in parts and at a single moment in time may not be consistent.
 	// So we can add new IDs to the index but update the range [from; to] with a delay.
 	// Because of this, at the Search stage, we can get IDs that are outside the fraction range [from; to].
@@ -106,16 +106,16 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	sw := stopwatch.New()
 
 	defer sw.Export(
-		fractionSearchMetric(params),
+		frac.FractionSearchMetric(params),
 		stopwatch.SetLabel("fraction_type", "active"),
 	)
 
 	t := sw.Start("total")
 
 	m := sw.Start("new_search_index")
-	indexes := []activeSearchIndex{{
-		activeIDsIndex:   dp.getIDsIndex(),
-		activeTokenIndex: dp.getTokenIndex(),
+	indexes := []searchIndex{{
+		idsIndex:   dp.getIDsIndex(),
+		tokenIndex: dp.getTokenIndex(),
 	}}
 	m.Stop()
 
@@ -136,27 +136,27 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	return res, nil
 }
 
-type activeIDsIndex struct {
+type idsIndex struct {
 	mids     []uint64
 	rids     []uint64
 	inverser *inverser
 }
 
-func (p *activeIDsIndex) GetMID(lid seq.LID) seq.MID {
+func (p *idsIndex) GetMID(lid seq.LID) seq.MID {
 	restoredLID := p.inverser.Revert(uint32(lid))
 	return seq.MID(p.mids[restoredLID])
 }
 
-func (p *activeIDsIndex) GetRID(lid seq.LID) seq.RID {
+func (p *idsIndex) GetRID(lid seq.LID) seq.RID {
 	restoredLID := p.inverser.Revert(uint32(lid))
 	return seq.RID(p.rids[restoredLID])
 }
 
-func (p *activeIDsIndex) Len() int {
+func (p *idsIndex) Len() int {
 	return p.inverser.Len()
 }
 
-func (p *activeIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
+func (p *idsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 	checkedMID := p.GetMID(lid)
 	if checkedMID == id.MID {
 		return p.GetRID(lid) <= id.RID
@@ -164,28 +164,28 @@ func (p *activeIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 	return checkedMID < id.MID
 }
 
-type activeSearchIndex struct {
-	*activeIDsIndex
-	*activeTokenIndex
+type searchIndex struct {
+	*idsIndex
+	*tokenIndex
 }
 
-type activeTokenIndex struct {
+type tokenIndex struct {
 	ctx       context.Context
 	mids      *UInt64s
 	rids      *UInt64s
-	tokenList *TokenList
+	tokenList *tokenList
 	inverser  *inverser
 }
 
-func (si *activeTokenIndex) GetValByTID(tid uint32) []byte {
+func (si *tokenIndex) GetValByTID(tid uint32) []byte {
 	return si.tokenList.GetValByTID(tid)
 }
 
-func (si *activeTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
+func (si *tokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
 	return si.tokenList.FindPattern(si.ctx, t)
 }
 
-func (si *activeTokenIndex) GetLIDsFromTIDs(tids []uint32, _ lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
+func (si *tokenIndex) GetLIDsFromTIDs(tids []uint32, _ lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
 	nodes := make([]node.Node, 0, len(tids))
 	for _, tid := range tids {
 		tlids := si.tokenList.Provide(tid)
@@ -209,17 +209,17 @@ func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint
 	return result
 }
 
-type activeFetchIndex struct {
+type fetchIndex struct {
 	blocksOffsets []uint64
 	docsPositions *DocsPositions
 	docsReader    *storage.DocsReader
 }
 
-func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
+func (di *fetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return di.blocksOffsets[num]
 }
 
-func (di *activeFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
+func (di *fetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
 	docsPos := make([]seq.DocPos, len(ids))
 	for i, id := range ids {
 		docsPos[i] = di.docsPositions.GetSync(id)
@@ -227,6 +227,6 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
 	return docsPos
 }
 
-func (di *activeFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
+func (di *fetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
 	return di.docsReader.ReadDocs(blockOffset, docOffsets)
 }

@@ -1,4 +1,4 @@
-package frac
+package active
 
 import (
 	"context"
@@ -28,36 +28,36 @@ type tokenTask struct {
 	tlids         []*TokenLIDs
 }
 
-type activeTokenProvider struct {
+type tokenProvider struct {
 	inverseIndex []uint32
 	tidToVal     [][]byte
 }
 
-func (tp *activeTokenProvider) GetToken(tid uint32) []byte {
+func (tp *tokenProvider) GetToken(tid uint32) []byte {
 	id := tp.inverseIndex[tid-1]
 	return tp.tidToVal[id]
 }
 
-func (tp *activeTokenProvider) FirstTID() uint32 {
+func (tp *tokenProvider) FirstTID() uint32 {
 	return 1
 }
 
-func (tp *activeTokenProvider) LastTID() uint32 {
+func (tp *tokenProvider) LastTID() uint32 {
 	return uint32(len(tp.inverseIndex))
 }
 
-func (tp *activeTokenProvider) Ordered() bool {
+func (tp *tokenProvider) Ordered() bool {
 	return false
 }
 
-func (tp *activeTokenProvider) inverseTIDs(tids []uint32) []uint32 {
+func (tp *tokenProvider) inverseTIDs(tids []uint32) []uint32 {
 	for i, tid := range tids {
 		tids[i] = tp.inverseIndex[tid-1]
 	}
 	return tids
 }
 
-type TokenList struct {
+type tokenList struct {
 	chList []chan tokenTask
 
 	fieldsMu  sync.RWMutex
@@ -73,8 +73,8 @@ type TokenList struct {
 	tidToLIDs []*TokenLIDs
 }
 
-func NewActiveTokenList(workers int) *TokenList {
-	tl := &TokenList{
+func NewTokenList(workers int) *tokenList {
+	tl := &tokenList{
 		chList:     make([]chan tokenTask, workers),
 		FieldTIDs:  make(map[string][]uint32),
 		fieldSizes: make(map[string]uint32),
@@ -91,13 +91,13 @@ func NewActiveTokenList(workers int) *TokenList {
 
 	return tl
 }
-func (tl *TokenList) Stop() {
+func (tl *tokenList) Stop() {
 	for _, c := range tl.chList {
 		close(c)
 	}
 }
 
-func (tl *TokenList) tokenLIDsWorker(ch chan tokenTask, tokenToLIDs map[string]*TokenLIDs) {
+func (tl *tokenList) tokenLIDsWorker(ch chan tokenTask, tokenToLIDs map[string]*TokenLIDs) {
 	nonExistent := make([]int, 0)
 	for task := range ch {
 		bufSize := 0
@@ -138,13 +138,13 @@ func copyAndSplit(token []byte, fLen int, dest []byte) (string, string, []byte, 
 		dest
 }
 
-func (tl *TokenList) initSystemTokens() {
+func (tl *tokenList) initSystemTokens() {
 	token := []byte(seq.TokenAll + ":")
 	tlids := tl.Append([][]byte{token}, []int{len(seq.TokenAll)}, []*TokenLIDs{nil})
 	tl.allTokenLIDs = tlids[0]
 }
 
-func (tl *TokenList) GetValByTID(tid uint32) []byte {
+func (tl *tokenList) GetValByTID(tid uint32) []byte {
 	tl.tidMu.RLock()
 	defer tl.tidMu.RUnlock()
 
@@ -152,7 +152,7 @@ func (tl *TokenList) GetValByTID(tid uint32) []byte {
 	return tl.tidToVal[tid]
 }
 
-func (tl *TokenList) Provide(tid uint32) *TokenLIDs {
+func (tl *tokenList) Provide(tid uint32) *TokenLIDs {
 	tl.tidMu.RLock()
 	defer tl.tidMu.RUnlock()
 
@@ -160,31 +160,31 @@ func (tl *TokenList) Provide(tid uint32) *TokenLIDs {
 	return tl.tidToLIDs[tid]
 }
 
-func (tl *TokenList) GetAllTokenLIDs() *TokenLIDs {
+func (tl *tokenList) GetAllTokenLIDs() *TokenLIDs {
 	return tl.allTokenLIDs
 }
 
-func (tl *TokenList) GetTIDsByField(f string) []uint32 {
+func (tl *tokenList) GetTIDsByField(f string) []uint32 {
 	tl.fieldsMu.RLock()
 	defer tl.fieldsMu.RUnlock()
 
 	return tl.FieldTIDs[f]
 }
 
-func (tl *TokenList) getTokenProvider(field string) *activeTokenProvider {
+func (tl *tokenList) getTokenProvider(field string) *tokenProvider {
 	inverseIndex := tl.GetTIDsByField(field)
 
 	tl.tidMu.RLock()
 	tidToVal := tl.tidToVal
 	tl.tidMu.RUnlock()
 
-	return &activeTokenProvider{
+	return &tokenProvider{
 		tidToVal:     tidToVal,
 		inverseIndex: inverseIndex,
 	}
 }
 
-func (tl *TokenList) FindPattern(ctx context.Context, t parser.Token) ([]uint32, error) {
+func (tl *tokenList) FindPattern(ctx context.Context, t parser.Token) ([]uint32, error) {
 	field := parser.GetField(t)
 	tp := tl.getTokenProvider(field)
 	tids, err := pattern.Search(ctx, t, tp)
@@ -198,7 +198,7 @@ func getTokenHash(token []byte) uint32 {
 	return crc32.ChecksumIEEE(token)
 }
 
-func (tl *TokenList) getTokenLIDs(tokens [][]byte, fieldsLengths []int, tlids []*TokenLIDs) []tokenData {
+func (tl *tokenList) getTokenLIDs(tokens [][]byte, fieldsLengths []int, tlids []*TokenLIDs) []tokenData {
 	n := len(tl.chList)
 	remap := make([][]int, n)
 	for i, token := range tokens {
@@ -234,7 +234,7 @@ func (tl *TokenList) getTokenLIDs(tokens [][]byte, fieldsLengths []int, tlids []
 	return newTokensData
 }
 
-func (tl *TokenList) Append(tokens [][]byte, fieldsLengths []int, tokenLIDsPlaces []*TokenLIDs) []*TokenLIDs {
+func (tl *tokenList) Append(tokens [][]byte, fieldsLengths []int, tokenLIDsPlaces []*TokenLIDs) []*TokenLIDs {
 	newTokensData := tl.getTokenLIDs(tokens, fieldsLengths, tokenLIDsPlaces)
 
 	tl.createTIDs(newTokensData)
@@ -244,7 +244,7 @@ func (tl *TokenList) Append(tokens [][]byte, fieldsLengths []int, tokenLIDsPlace
 	return tokenLIDsPlaces
 }
 
-func (tl *TokenList) createTIDs(newTokensData []tokenData) {
+func (tl *tokenList) createTIDs(newTokensData []tokenData) {
 	tl.tidMu.Lock()
 	for i, token := range newTokensData {
 		newTokensData[i].tid = uint32(len(tl.tidToVal))
@@ -254,7 +254,7 @@ func (tl *TokenList) createTIDs(newTokensData []tokenData) {
 	tl.tidMu.Unlock()
 }
 
-func (tl *TokenList) fillFieldTIDs(newTokensData []tokenData) {
+func (tl *tokenList) fillFieldTIDs(newTokensData []tokenData) {
 	tl.fieldsMu.Lock()
 	for _, token := range newTokensData {
 		field := token.field
@@ -263,7 +263,7 @@ func (tl *TokenList) fillFieldTIDs(newTokensData []tokenData) {
 	tl.fieldsMu.Unlock()
 }
 
-func (tl *TokenList) fillSizes(newTokensData []tokenData) {
+func (tl *tokenList) fillSizes(newTokensData []tokenData) {
 	tl.sizesMu.Lock()
 	for _, token := range newTokensData {
 		tl.fieldSizes[token.field] += uint32(len(token.value))
@@ -271,7 +271,7 @@ func (tl *TokenList) fillSizes(newTokensData []tokenData) {
 	tl.sizesMu.Unlock()
 }
 
-func (tl *TokenList) GetFieldSizes() map[string]uint32 {
+func (tl *tokenList) GetFieldSizes() map[string]uint32 {
 	tl.sizesMu.Lock()
 	defer tl.sizesMu.Unlock()
 
