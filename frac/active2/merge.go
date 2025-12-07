@@ -27,7 +27,7 @@ func mergeIndexes(indexes []*memIndex) *memIndex {
 		ids:           make([]seq.ID, 0, docsCount),
 		positions:     make([]seq.DocPos, docsCount),
 		idToLID:       make(map[seq.ID]uint32, docsCount),
-		fieldsTokens:  make(map[string]tokensRange, fieldsCount),
+		fieldsTokens:  make(map[string]tokenRange, fieldsCount),
 		blocksOffsets: make([]uint64, 0, blocksCount),
 		docsSize:      docsSize,
 	}
@@ -114,7 +114,7 @@ func mergeTokens(dst *memIndex, orig []mergeIterator) {
 				dst.fieldsTokens[string(prevField)] = tr
 			}
 			dst.fields = append(dst.fields, minToken.Key)
-			dst.fieldsTokens[string(minToken.Key)] = tokensRange{start: uint32(len(dst.tokens))}
+			dst.fieldsTokens[string(minToken.Key)] = tokenRange{start: uint32(len(dst.tokens))}
 			prevField = minToken.Key
 		}
 

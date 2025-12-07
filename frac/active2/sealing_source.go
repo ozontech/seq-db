@@ -1,8 +1,19 @@
 package active2
 
 /*
+import (
+	"iter"
+	"time"
+	"unsafe"
+
+	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed/sealing"
+	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
+)
+
 type SealingSource struct {
-	info    *common.Info
+	info    *frac.Info
 	created time.Time
 	index   *memIndex
 	lastErr error

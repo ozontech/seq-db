@@ -27,8 +27,8 @@ func (si *fetchIndex) GetBlocksOffsets(blockIndex uint32) uint64 {
 func (si *fetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
 	docsPos := make([]seq.DocPos, len(ids))
 	for i, id := range ids {
-		if lid, ok := si.index.idToLID[id]; ok {
-			docsPos[i] = si.index.positions[lid]
+		if lid, ok := si.index.GetLIDByID(id); ok {
+			docsPos[i] = si.index.positions[lid-1]
 			continue
 		}
 		docsPos[i] = seq.DocPosNotFound
