@@ -189,6 +189,11 @@ func (m *SearchResponse_Histogram) CloneVT() *SearchResponse_Histogram {
 		copy(tmpContainer, rhs)
 		r.Samples = tmpContainer
 	}
+	if rhs := m.Values; rhs != nil {
+		tmpContainer := make([]uint32, len(rhs))
+		copy(tmpContainer, rhs)
+		r.Values = tmpContainer
+	}
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
 		copy(r.unknownFields, m.unknownFields)
@@ -245,6 +250,11 @@ func (m *SearchResponse_Agg) CloneVT() *SearchResponse_Agg {
 			tmpContainer[k] = v.CloneVT()
 		}
 		r.Timeseries = tmpContainer
+	}
+	if rhs := m.ValuesPool; rhs != nil {
+		tmpContainer := make([]string, len(rhs))
+		copy(tmpContainer, rhs)
+		r.ValuesPool = tmpContainer
 	}
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
@@ -914,6 +924,15 @@ func (this *SearchResponse_Histogram) EqualVT(that *SearchResponse_Histogram) bo
 			return false
 		}
 	}
+	if len(this.Values) != len(that.Values) {
+		return false
+	}
+	for i, vx := range this.Values {
+		vy := that.Values[i]
+		if vx != vy {
+			return false
+		}
+	}
 	return string(this.unknownFields) == string(that.unknownFields)
 }
 
@@ -1005,6 +1024,15 @@ func (this *SearchResponse_Agg) EqualVT(that *SearchResponse_Agg) bool {
 			if !p.EqualVT(q) {
 				return false
 			}
+		}
+	}
+	if len(this.ValuesPool) != len(that.ValuesPool) {
+		return false
+	}
+	for i, vx := range this.ValuesPool {
+		vy := that.ValuesPool[i]
+		if vx != vy {
+			return false
 		}
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
@@ -2469,11 +2497,31 @@ func (m *SearchResponse_Histogram) MarshalToSizedBufferVT(dAtA []byte) (int, err
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.Values) > 0 {
+		var pksize2 int
+		for _, num := range m.Values {
+			pksize2 += protohelpers.SizeOfVarint(uint64(num))
+		}
+		i -= pksize2
+		j1 := i
+		for _, num := range m.Values {
+			for num >= 1<<7 {
+				dAtA[j1] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j1++
+			}
+			dAtA[j1] = uint8(num)
+			j1++
+		}
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(pksize2))
+		i--
+		dAtA[i] = 0x3a
+	}
 	if len(m.Samples) > 0 {
 		for iNdEx := len(m.Samples) - 1; iNdEx >= 0; iNdEx-- {
-			f1 := math.Float64bits(float64(m.Samples[iNdEx]))
+			f3 := math.Float64bits(float64(m.Samples[iNdEx]))
 			i -= 8
-			binary.LittleEndian.PutUint64(dAtA[i:], uint64(f1))
+			binary.LittleEndian.PutUint64(dAtA[i:], uint64(f3))
 		}
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Samples)*8))
 		i--
@@ -2599,6 +2647,15 @@ func (m *SearchResponse_Agg) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.ValuesPool) > 0 {
+		for iNdEx := len(m.ValuesPool) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.ValuesPool[iNdEx])
+			copy(dAtA[i:], m.ValuesPool[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ValuesPool[iNdEx])))
+			i--
+			dAtA[i] = 0x2a
+		}
 	}
 	if len(m.Timeseries) > 0 {
 		for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
@@ -4235,11 +4292,31 @@ func (m *SearchResponse_Histogram) MarshalToSizedBufferVTStrict(dAtA []byte) (in
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.Values) > 0 {
+		var pksize2 int
+		for _, num := range m.Values {
+			pksize2 += protohelpers.SizeOfVarint(uint64(num))
+		}
+		i -= pksize2
+		j1 := i
+		for _, num := range m.Values {
+			for num >= 1<<7 {
+				dAtA[j1] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j1++
+			}
+			dAtA[j1] = uint8(num)
+			j1++
+		}
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(pksize2))
+		i--
+		dAtA[i] = 0x3a
+	}
 	if len(m.Samples) > 0 {
 		for iNdEx := len(m.Samples) - 1; iNdEx >= 0; iNdEx-- {
-			f1 := math.Float64bits(float64(m.Samples[iNdEx]))
+			f3 := math.Float64bits(float64(m.Samples[iNdEx]))
 			i -= 8
-			binary.LittleEndian.PutUint64(dAtA[i:], uint64(f1))
+			binary.LittleEndian.PutUint64(dAtA[i:], uint64(f3))
 		}
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Samples)*8))
 		i--
@@ -4365,6 +4442,15 @@ func (m *SearchResponse_Agg) MarshalToSizedBufferVTStrict(dAtA []byte) (int, err
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.ValuesPool) > 0 {
+		for iNdEx := len(m.ValuesPool) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.ValuesPool[iNdEx])
+			copy(dAtA[i:], m.ValuesPool[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ValuesPool[iNdEx])))
+			i--
+			dAtA[i] = 0x2a
+		}
 	}
 	if len(m.Timeseries) > 0 {
 		for iNdEx := len(m.Timeseries) - 1; iNdEx >= 0; iNdEx-- {
@@ -5775,6 +5861,13 @@ func (m *SearchResponse_Histogram) SizeVT() (n int) {
 	if len(m.Samples) > 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(len(m.Samples)*8)) + len(m.Samples)*8
 	}
+	if len(m.Values) > 0 {
+		l = 0
+		for _, e := range m.Values {
+			l += protohelpers.SizeOfVarint(uint64(e))
+		}
+		n += 1 + protohelpers.SizeOfVarint(uint64(l)) + l
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -5834,6 +5927,12 @@ func (m *SearchResponse_Agg) SizeVT() (n int) {
 	if len(m.Timeseries) > 0 {
 		for _, e := range m.Timeseries {
 			l = e.SizeVT()
+			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+		}
+	}
+	if len(m.ValuesPool) > 0 {
+		for _, s := range m.ValuesPool {
+			l = len(s)
 			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 		}
 	}
@@ -7433,6 +7532,82 @@ func (m *SearchResponse_Histogram) UnmarshalVT(dAtA []byte) error {
 			} else {
 				return fmt.Errorf("proto: wrong wireType = %d for field Samples", wireType)
 			}
+		case 7:
+			if wireType == 0 {
+				var v uint32
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protohelpers.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint32(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.Values = append(m.Values, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protohelpers.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return protohelpers.ErrInvalidLength
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return protohelpers.ErrInvalidLength
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.Values) == 0 {
+					m.Values = make([]uint32, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint32
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return protohelpers.ErrIntOverflow
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint32(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.Values = append(m.Values, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field Values", wireType)
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -7933,6 +8108,38 @@ func (m *SearchResponse_Agg) UnmarshalVT(dAtA []byte) error {
 			if err := m.Timeseries[len(m.Timeseries)-1].UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ValuesPool", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ValuesPool = append(m.ValuesPool, string(dAtA[iNdEx:postIndex]))
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -12100,6 +12307,82 @@ func (m *SearchResponse_Histogram) UnmarshalVTUnsafe(dAtA []byte) error {
 			} else {
 				return fmt.Errorf("proto: wrong wireType = %d for field Samples", wireType)
 			}
+		case 7:
+			if wireType == 0 {
+				var v uint32
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protohelpers.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint32(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.Values = append(m.Values, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protohelpers.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return protohelpers.ErrInvalidLength
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return protohelpers.ErrInvalidLength
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.Values) == 0 {
+					m.Values = make([]uint32, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint32
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return protohelpers.ErrIntOverflow
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint32(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.Values = append(m.Values, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field Values", wireType)
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -12612,6 +12895,42 @@ func (m *SearchResponse_Agg) UnmarshalVTUnsafe(dAtA []byte) error {
 			if err := m.Timeseries[len(m.Timeseries)-1].UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ValuesPool", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var stringValue string
+			if intStringLen > 0 {
+				stringValue = unsafe.String(&dAtA[iNdEx], intStringLen)
+			}
+			m.ValuesPool = append(m.ValuesPool, stringValue)
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

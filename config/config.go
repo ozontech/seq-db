@@ -128,6 +128,10 @@ type Config struct {
 			// that can be processed in single aggregation requests.
 			// Setting this field to 0 disables limit.
 			FieldTokens int `config:"field_tokens" default:"1000000"`
+			// FieldValues specifies maximum amount of unique field values
+			// that partial aggregation results (buckets) can contain in single aggregation requests.
+			// Setting this field to 0 disables limit.
+			FieldValues int `config:"field_values" default:"1000000"`
 			// GroupTokens specifies maximum amount of unique group tokens
 			// that can be processed in single aggregation requests.
 			// Setting this field to 0 disables limit.

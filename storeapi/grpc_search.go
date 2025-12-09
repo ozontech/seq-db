@@ -274,6 +274,13 @@ func buildSearchResponse(qpr *seq.QPR) *storeapi.SearchResponse {
 				NotExists: hist.NotExists,
 			}
 
+			if len(hist.Values) > 0 {
+				pbhist.Values = make([]uint32, 0, len(hist.Values))
+				for idx := range hist.Values {
+					pbhist.Values = append(pbhist.Values, idx)
+				}
+			}
+
 			curAgg.Timeseries = append(curAgg.Timeseries,
 				&storeapi.SearchResponse_Bin{
 					Label: bin.Token,
@@ -289,6 +296,7 @@ func buildSearchResponse(qpr *seq.QPR) *storeapi.SearchResponse {
 		curAgg.NotExists = fromAgg.NotExists
 		curAgg.AggHistogram = to
 		curAgg.Agg = toAgg
+		curAgg.ValuesPool = fromAgg.ValuesPool
 
 		aggs[i] = curAgg
 	}

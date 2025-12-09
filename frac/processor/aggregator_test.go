@@ -180,8 +180,9 @@ func TestTwoSourceAggregator(t *testing.T) {
 	groupByTIDs := []uint32{1, 2}
 	groupIterator := NewSourcedNodeIterator(groupBy, dp, groupByTIDs, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
 	fieldIterator := NewSourcedNodeIterator(field, dp, fieldTIDs, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
+	limits := AggLimits{}
 	aggregator := NewGroupAndFieldAggregator(
-		fieldIterator, groupIterator, provideExtractTimeFunc(nil, nil, 0), true,
+		fieldIterator, groupIterator, provideExtractTimeFunc(nil, nil, 0), true, false, limits,
 	)
 
 	// Call Next for two data points.

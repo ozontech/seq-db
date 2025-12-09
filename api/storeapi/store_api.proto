@@ -46,6 +46,7 @@ enum AggFunc {
   AGG_FUNC_AVG = 4;
   AGG_FUNC_QUANTILE = 5;
   AGG_FUNC_UNIQUE = 6;
+  AGG_FUNC_UNIQUE_COUNT = 7;
 }
 
 enum Order {
@@ -95,6 +96,7 @@ message SearchResponse {
     int64 total = 4;
     int64 not_exists = 5;
     repeated double samples = 6;
+    repeated uint32 values = 7;
   }
 
   message Bin {
@@ -114,6 +116,7 @@ message SearchResponse {
     //   { (foo, ts2) -> (val) }
     // ]
     repeated Bin timeseries = 4;
+    repeated string values_pool = 5;
   }
 
   bytes data = 1 [deprecated = true];

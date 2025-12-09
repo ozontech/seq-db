@@ -509,12 +509,22 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 		from := agg.Timeseries
 		to := make(map[seq.AggBin]*seq.SamplesContainer)
 
+		stringPool := agg.ValuesPool
+
 		for _, bin := range from {
 			pbhist := bin.Hist
 
 			tbin := seq.AggBin{
 				MID:   seq.MID(bin.Ts.AsTime().UnixMilli()),
 				Token: bin.Label,
+			}
+
+			var values map[uint32]struct{}
+			if len(pbhist.Values) > 0 {
+				values = make(map[uint32]struct{}, len(pbhist.Values))
+				for _, idx := range pbhist.Values {
+					values[idx] = struct{}{}
+				}
 			}
 
 			to[tbin] = &seq.SamplesContainer{
@@ -524,12 +534,14 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 				Total:     pbhist.Total,
 				Samples:   pbhist.Samples,
 				NotExists: pbhist.NotExists,
+				Values:    values,
 			}
 		}
 
 		aggs[i] = seq.AggregatableSamples{
 			SamplesByBin: to,
 			NotExists:    agg.NotExists,
+			ValuesPool:   stringPool,
 		}
 	}
 
@@ -581,6 +593,9 @@ func (si *Ingestor) searchShard(
 			}
 			if errMessage == consts.ErrTooManyFieldTokens.Error() {
 				return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFieldTokens)
+			}
+			if errMessage == consts.ErrTooManyFieldValues.Error() {
+				return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFieldValues)
 			}
 			if errMessage == consts.ErrTooManyGroupTokens.Error() {
 				return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyGroupTokens)
