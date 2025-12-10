@@ -18,6 +18,7 @@ import (
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
@@ -40,23 +41,23 @@ import (
 // All iterators work with pre-sorted data and return information
 // in an order optimal for creating disk index structures.
 type SealingSource struct {
-	params        frac.SealParams     // Sealing parameters
-	info          *frac.Info          // fraction Info
-	created       time.Time           // Creation time of the source
-	sortedLIDs    []uint32            // Sorted LIDs (Local ID)
-	oldToNewLIDs  []uint32            // Mapping from old LIDs to new ones (after sorting)
-	mids          *UInt64s            // MIDs
-	rids          *UInt64s            // RIDs
-	fields        []string            // Sorted field names
-	fieldsMaxTIDs []uint32            // Maximum TIDs for each field
-	tids          []uint32            // Sorted TIDs (Token ID)
-	tokens        [][]byte            // Tokens (values) by TID
-	lids          []*TokenLIDs        // LID lists for each token
-	docPosOrig    []seq.DocPos        // Original document positions
-	docPosSorted  []seq.DocPos        // Document positions after sorting
-	blocksOffsets []uint64            // Document block offsets
-	docsReader    *storage.DocsReader // Document storage reader
-	lastErr       error               // Last error
+	params        frac.SealParams       // Sealing parameters
+	info          *frac.Info            // fraction Info
+	created       time.Time             // Creation time of the source
+	sortedLIDs    []uint32              // Sorted LIDs (Local ID)
+	oldToNewLIDs  []uint32              // Mapping from old LIDs to new ones (after sorting)
+	mids          *UInt64s              // MIDs
+	rids          *UInt64s              // RIDs
+	fields        []string              // Sorted field names
+	fieldsMaxTIDs []uint32              // Maximum TIDs for each field
+	tids          []uint32              // Sorted TIDs (Token ID)
+	tokens        [][]byte              // Tokens (values) by TID
+	lids          []*TokenLIDs          // LID lists for each token
+	docPosOrig    map[seq.ID]seq.DocPos // Original document positions
+	docPosSorted  []seq.DocPos          // Document positions after sorting
+	blocksOffsets []uint64              // Document block offsets
+	docsReader    *storage.DocsReader   // Document storage reader
+	lastErr       error                 // Last error
 }
 
 // NewSealingSource creates a new data source for sealing
@@ -84,7 +85,7 @@ func NewSealingSource(active *Active, params frac.SealParams) (*SealingSource, e
 		fieldsMaxTIDs: fieldsMaxTIDs,
 		tokens:        active.TokenList.tidToVal,
 		lids:          active.TokenList.tidToLIDs,
-		docPosOrig:    active.DocsPositions.lidToPos,
+		docPosOrig:    active.DocsPositions.idToPos,
 		blocksOffsets: active.DocBlocks.vals,
 		docsReader:    &active.sortReader,
 	}
@@ -93,9 +94,14 @@ func NewSealingSource(active *Active, params frac.SealParams) (*SealingSource, e
 
 	// Sort documents if not skipped in configuration
 	if !active.Config.SkipSortDocs {
-		if err := src.SortDocs(); err != nil {
+		ds := NewDocsSource(&src, src.blocksOffsets, &active.sortReader)
+		blocksOffsets, positions, onDiskSize, err := sealing.SortDocs(info.Path, params, ds)
+		if err != nil {
 			return nil, err
 		}
+		src.docPosSorted = positions[1:]
+		src.blocksOffsets = blocksOffsets
+		src.info.DocsOnDisk = uint64(onDiskSize)
 	}
 
 	return &src, nil
@@ -232,9 +238,9 @@ func (src *SealingSource) IDsBlocks(blockSize int) iter.Seq2[[]seq.ID, []seq.Doc
 
 			// Use sorted or original positions
 			if len(src.docPosSorted) == 0 {
-				pos = append(pos, src.docPosOrig[lid])
+				pos = append(pos, src.docPosOrig[id])
 			} else {
-				pos = append(pos, src.docPosSorted[i+1]) // +1 for system document
+				pos = append(pos, src.docPosSorted[i]) // +1 for system document
 			}
 		}
 		yield(ids, pos)

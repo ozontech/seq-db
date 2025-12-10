@@ -71,13 +71,13 @@ func (p *memIndexPool) markAsMerging(items []memIndexExt) {
 	}
 }
 
-func (p *memIndexPool) replace(processed []memIndexExt, merged *memIndex) {
-	mergedMeta := p.wrapIndex(merged)
+func (p *memIndexPool) replace(oldIndexes []memIndexExt, newIndex *memIndex) {
+	mergedMeta := p.wrapIndex(newIndex)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for _, metaIndex := range processed {
+	for _, metaIndex := range oldIndexes {
 		delete(p.underMerging, metaIndex.id)
 	}
 	p.readyToMerge[mergedMeta.id] = mergedMeta

@@ -59,6 +59,7 @@ func (m *MergeManager) MergeAll() *memIndex {
 	m.wg.Wait()
 
 	indexesToMerge := m.indexes.ReadyToMerge()
+	m.indexes.markAsMerging(indexesToMerge)
 	mergedIndex := mergeIndexes(extractIndexes(indexesToMerge))
 	m.indexes.replace(indexesToMerge, mergedIndex)
 
@@ -115,10 +116,10 @@ func (m *MergeManager) mergeScheduler() {
 				break
 			}
 
-			for _, groupToMerge := range preparedGroups {
+			for _, toMerge := range preparedGroups {
 				go func() {
-					mergedIndex := mergeIndexes(extractIndexes(groupToMerge))
-					m.indexes.replace(groupToMerge, mergedIndex)
+					mergedIndex := mergeIndexes(extractIndexes(toMerge))
+					m.indexes.replace(toMerge, mergedIndex)
 					m.releaseWorker()
 					m.triggerMerge() // check if new merge is needed
 					m.wg.Done()

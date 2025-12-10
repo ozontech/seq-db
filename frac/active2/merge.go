@@ -14,7 +14,7 @@ func mergeIndexes(indexes []*memIndex) *memIndex {
 	blocksCount := 0
 	fieldsCount := 0
 	docsSize := uint64(0)
-	iterators := make([]mergeIterator, 0, len(indexes))
+	iterators := make([]*mergeIterator, 0, len(indexes))
 	for _, index := range indexes {
 		docsSize += index.docsSize
 		docsCount += len(index.ids)
@@ -25,30 +25,32 @@ func mergeIndexes(indexes []*memIndex) *memIndex {
 
 	dst := &memIndex{
 		ids:           make([]seq.ID, 0, docsCount),
-		positions:     make([]seq.DocPos, docsCount),
+		positions:     make([]seq.DocPos, 0, docsCount),
 		idToLID:       make(map[seq.ID]uint32, docsCount),
 		fieldsTokens:  make(map[string]tokenRange, fieldsCount),
 		blocksOffsets: make([]uint64, 0, blocksCount),
 		docsSize:      docsSize,
+		docsCount:     uint32(docsCount),
 	}
+
+	mergeBlocksOffsets(dst, iterators)
 
 	doubles := mergeIDs(dst, iterators)
 	mergeTokens(dst, iterators)
-	mergePositions(dst, iterators)
 
-	dst.docsCount = uint32(len(dst.ids))
 	dst.allTID = dst.fieldsTokens[seq.TokenAll].start
 
 	if len(doubles) > 0 {
+		dst.docsCount = uint32(len(doubles))
 		logger.Warn("there are duplicate IDs when compaction", zap.Int("doubles", len(doubles)))
 	}
 
 	return dst
 }
 
-func mergeIDs(dst *memIndex, orig []mergeIterator) []seq.ID {
+func mergeIDs(dst *memIndex, orig []*mergeIterator) []seq.ID {
 	doubles := []seq.ID{}
-	iterators := append([]mergeIterator{}, orig...) // make copy
+	iterators := append([]*mergeIterator{}, orig...) // make copy
 
 	for len(iterators) > 0 {
 		// try select first
@@ -64,14 +66,19 @@ func mergeIDs(dst *memIndex, orig []mergeIterator) []seq.ID {
 			}
 		}
 
-		lid := uint32(len(dst.ids))
+		lid := uint32(len(dst.ids)) + 1
+		dst.ids = append(dst.ids, maxID)
+		dst.idToLID[maxID] = lid
+		dst.positions = append(dst.positions, iterators[selected[0]].CurrentPos())
+
+		k := 0
 		for _, i := range selected {
-			iterators[i].AddNewLID(lid)
-			if !iterators[i].ShiftID() {
-				removeItem(iterators, i)
+			iterators[i-k].AddNewLID(lid)
+			if !iterators[i-k].ShiftID() {
+				iterators = removeItem(iterators, i-k)
+				k++
 			}
 		}
-		dst.ids = append(dst.ids, maxID)
 
 		if len(selected) > 1 {
 			doubles = append(doubles, maxID)
@@ -80,11 +87,11 @@ func mergeIDs(dst *memIndex, orig []mergeIterator) []seq.ID {
 	return doubles
 }
 
-func mergeTokens(dst *memIndex, orig []mergeIterator) {
+func mergeTokens(dst *memIndex, orig []*mergeIterator) {
 	// todo copy tokens to compact mem usage
 	// todo allocate for all lids at once to optimize allocations
 	var prevField []byte
-	iterators := append([]mergeIterator{}, orig...) // make copy
+	iterators := append([]*mergeIterator{}, orig...) // make copy
 	for len(iterators) > 0 {
 		// try select first
 		selected := []int{0}
@@ -100,11 +107,13 @@ func mergeTokens(dst *memIndex, orig []mergeIterator) {
 			}
 		}
 
+		k := 0
 		lids := make([][]uint32, 0, len(selected))
 		for _, i := range selected {
-			lids = append(lids, iterators[i].CurrentTokenLIDs())
-			if !iterators[i].ShiftToken() {
-				removeItem(iterators, i)
+			lids = append(lids, iterators[i-k].CurrentTokenLIDs())
+			if !iterators[i-k].ShiftToken() {
+				iterators = removeItem(iterators, i-k)
+				k++
 			}
 		}
 
@@ -127,35 +136,17 @@ func mergeTokens(dst *memIndex, orig []mergeIterator) {
 	}
 }
 
-func mergePositions(dst *memIndex, orig []mergeIterator) {
-	iterators := append([]mergeIterator{}, orig...) // make copy
-	for len(iterators) > 0 {
-		// try select first
-		selected := []int{0}
-		minOffset := iterators[0].CurrentBlocksOffset()
-
-		for i := 1; i < len(iterators); i++ {
-			if cur := iterators[i].CurrentBlocksOffset(); cur == minOffset {
-				selected = append(selected, i)
-			} else if cur < minOffset {
-				minOffset = cur
-				selected = []int{i}
-			}
+func mergeBlocksOffsets(dst *memIndex, src []*mergeIterator) {
+	var offset uint32
+	for _, it := range src {
+		for _, offset := range it.index.blocksOffsets {
+			dst.blocksOffsets = append(dst.blocksOffsets, offset)
 		}
-
-		newBlockIndex := len(dst.blocksOffsets)
-		dst.blocksOffsets = append(dst.blocksOffsets, minOffset)
-
-		for _, i := range selected {
-			iterators[i].AddNewBlockIndex(newBlockIndex)
-			if !iterators[i].ShiftBlocksOffset() {
-				removeItem(iterators, i)
-			}
+		for _, p := range it.index.positions {
+			oldIdx, docOffset := p.Unpack()
+			it.AddPos(seq.PackDocPos(oldIdx+offset, docOffset))
 		}
-	}
-
-	for _, iterator := range orig {
-		iterator.RepackDocPositions(dst.positions)
+		offset += uint32(len(it.index.blocksOffsets))
 	}
 }
 
@@ -191,9 +182,12 @@ func mergeLIDs(lids [][]uint32) []uint32 {
 
 		res = append(res, minLID)
 
+		k := 0
 		for _, i := range selected {
-			if lids[i] = lids[i][1:]; len(lids[i]) == 0 {
-				removeItem(lids, i)
+			lids[i-k] = lids[i-k][1:]
+			if len(lids[i-k]) == 0 {
+				lids = removeItem(lids, i-k)
+				k++
 			}
 		}
 	}
@@ -202,8 +196,14 @@ func mergeLIDs(lids [][]uint32) []uint32 {
 }
 
 func removeItem[V any](items []V, i int) []V {
-	last := len(items) - 1
-	items[i] = items[last]
-	items = items[:last]
+	k := 0
+	for j, v := range items {
+		if i == j {
+			continue
+		}
+		items[k] = v
+		k++
+	}
+	items = items[:k]
 	return items
 }

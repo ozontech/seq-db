@@ -3,20 +3,19 @@ package active
 import (
 	"os"
 
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/storage"
 )
 
 type Writer struct {
-	docs *frac.FileWriter
-	meta *frac.FileWriter
+	docs *FileWriter
+	meta *FileWriter
 }
 
 func NewWriter(docsFile, metaFile *os.File, docsOffset, metaOffset int64, skipFsync bool) *Writer {
 	return &Writer{
-		docs: frac.NewFileWriter(docsFile, docsOffset, skipFsync),
-		meta: frac.NewFileWriter(metaFile, metaOffset, skipFsync),
+		docs: NewFileWriter(docsFile, docsOffset, skipFsync),
+		meta: NewFileWriter(metaFile, metaOffset, skipFsync),
 	}
 }
 

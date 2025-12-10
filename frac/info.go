@@ -79,6 +79,15 @@ func (s *Info) BuildDistribution(mids []uint64) {
 	}
 }
 
+func (s *Info) BuildDistributionWithIDs(ids []seq.ID) {
+	if !s.InitEmptyDistribution() {
+		return
+	}
+	for _, id := range ids {
+		s.Distribution.Add(id.MID)
+	}
+}
+
 func (s *Info) InitEmptyDistribution() bool {
 	from := time.UnixMilli(int64(s.From))
 	creationTime := time.UnixMilli(int64(s.CreationTime))

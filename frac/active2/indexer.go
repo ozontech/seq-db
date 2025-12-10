@@ -29,11 +29,11 @@ func NewIndexer(workerCount int) *Indexer {
 }
 
 // Index starts asynchronous document indexing
-func (idxr *Indexer) Index(block storage.DocBlock, apply func(index *memIndex, err error)) {
-	idxr.sem <- struct{}{}
+func (idx *Indexer) Index(block storage.DocBlock, apply func(index *memIndex, err error)) {
+	idx.sem <- struct{}{}
 	go func() {
 		apply(NewMemIndex(block))
-		<-idxr.sem
+		<-idx.sem
 	}()
 }
 

@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alecthomas/units"
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"github.com/stretchr/testify/suite"
@@ -37,6 +36,7 @@ import (
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
+// TODO сделать разные тесты для сортированных и не сортированных доков
 type FractionTestSuite struct {
 	suite.Suite
 	tmpDir         string
@@ -63,7 +63,9 @@ func (s *FractionTestSuite) TearDownSuiteCommon() {
 }
 
 func (s *FractionTestSuite) SetupTestCommon() {
-	s.config = &frac.Config{}
+	s.config = &frac.Config{
+		SkipSortDocs: true,
+	}
 	s.tokenizers = map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(20, false, true),
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 100),
@@ -92,7 +94,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		DocsPositionsZstdLevel: 1,
 		TokenTableZstdLevel:    1,
 		DocBlocksZstdLevel:     1,
-		DocBlockSize:           128 * int(units.KiB),
+		DocBlockSize:           128, // Using a small block size to test multi-block sorting output.
 	}
 
 	var err error
@@ -1057,28 +1059,28 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	switch s.fraction.(type) {
 	case *active.Active:
 		// it varies depending on params and docs shuffled
-		s.Require().True(info.DocsOnDisk > uint64(350) && info.DocsOnDisk < uint64(400),
+		s.Require().True(info.DocsOnDisk > uint64(450) && info.DocsOnDisk < uint64(500),
 			"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
-		s.Require().True(info.MetaOnDisk >= uint64(350) && info.MetaOnDisk <= uint64(450),
+		s.Require().True(info.MetaOnDisk >= uint64(450) && info.MetaOnDisk <= uint64(550),
 			"meta on disk doesn't match. actual value: %d", info.MetaOnDisk)
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
 	case *active2.Active2:
 		// it varies depending on params and docs shuffled
-		s.Require().True(info.DocsOnDisk > uint64(350) && info.DocsOnDisk < uint64(400),
+		s.Require().True(info.DocsOnDisk > uint64(450) && info.DocsOnDisk < uint64(500),
 			"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
-		s.Require().True(info.MetaOnDisk >= uint64(350) && info.MetaOnDisk <= uint64(450),
+		s.Require().True(info.MetaOnDisk >= uint64(450) && info.MetaOnDisk <= uint64(550),
 			"meta on disk doesn't match. actual value: %d", info.MetaOnDisk)
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
 	case *sealed.Sealed:
 		// it varies depending on params and docs shuffled and docs sorting
-		s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(300),
+		s.Require().True(info.DocsOnDisk > uint64(460) && info.DocsOnDisk < uint64(540),
 			"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
 		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1600),
 			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
 	case *sealed.Remote:
 		// it varies depending on params and docs shuffled and docs sorting
-		s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(300),
+		s.Require().True(info.DocsOnDisk > uint64(460) && info.DocsOnDisk < uint64(540),
 			"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
 		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1500),
@@ -1294,7 +1296,7 @@ func (s *FractionTestSuite) AppendBulks(a appender, bulks ...[]string) {
 	var wg sync.WaitGroup
 
 	for _, bulk := range bulks {
-		bulkSize := (len(bulk)-1)/2 + 1
+		bulkSize := (len(bulk)-1)/3 + 1
 		for len(bulk) > 0 {
 			l := min(bulkSize, len(bulk))
 			docs := bulk[:l]
@@ -1408,8 +1410,6 @@ func (s *ActiveReplayedFractionTestSuite) SetupSuite() {
 func (s *ActiveReplayedFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 	// Setting this flags allows to keep meta and docs files on disk after Active.Release() is called
-	s.config.SkipSortDocs = true
-	s.config.KeepMetaFile = true
 
 	s.insertDocuments = func(bulks ...[]string) {
 		if s.fraction != nil {
@@ -1421,7 +1421,6 @@ func (s *ActiveReplayedFractionTestSuite) SetupTest() {
 
 func (s *ActiveReplayedFractionTestSuite) Replay(f *active.Active) frac.Fraction {
 	fracFileName := f.BaseFileName
-	f.Release()
 	replayedFrac := active.New(
 		fracFileName,
 		s.activeIndexer,
@@ -1645,6 +1644,10 @@ func TestActive2FractionTestSuite(t *testing.T) {
 	suite.Run(t, new(Active2FractionTestSuite))
 }
 
+func TestSealed2FractionTestSuite(t *testing.T) {
+	suite.Run(t, new(Sealed2FractionTestSuite))
+}
+
 type Active2FractionTestSuite struct {
 	FractionTestSuite
 }
@@ -1692,4 +1695,67 @@ func (s *Active2FractionTestSuite) TearDownTest() {
 
 func (s *Active2FractionTestSuite) TearDownSuite() {
 	s.TearDownSuiteCommon()
+}
+
+type Sealed2FractionTestSuite struct {
+	Active2FractionTestSuite
+}
+
+func (s *Sealed2FractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
+}
+
+func (s *Sealed2FractionTestSuite) SetupTest() {
+	s.SetupTestCommon()
+
+	s.insertDocuments = func(docs ...[]string) {
+		if s.fraction != nil {
+			s.Require().Fail("can insert docs only once")
+		}
+		s.fraction = s.newSealed2(docs...)
+	}
+}
+
+func (s *Sealed2FractionTestSuite) TearDownTest() {
+	if f, ok := s.fraction.(*sealed.Sealed); ok {
+		f.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
+	}
+	s.TearDownTestCommon()
+}
+
+func (s *Sealed2FractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
+}
+
+func (s *Sealed2FractionTestSuite) newSealed2(bulks ...[]string) *sealed.Sealed {
+	a := s.newActive2(bulks...)
+
+	activeSealingSource, err := active2.NewSealingSource(a, s.sealParams)
+	s.Require().NoError(err, "Sealing source creation failed")
+
+	preloaded, err := sealing.Seal(activeSealingSource, s.sealParams)
+	s.Require().NoError(err, "Sealing failed")
+
+	indexCache := &sealed.IndexCache{
+		MIDs:       cache.NewCache[[]byte](nil, nil),
+		RIDs:       cache.NewCache[[]byte](nil, nil),
+		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
+		LIDs:       cache.NewCache[*lids.Block](nil, nil),
+		Tokens:     cache.NewCache[*token.Block](nil, nil),
+		TokenTable: cache.NewCache[token.Table](nil, nil),
+		Registry:   cache.NewCache[[]byte](nil, nil),
+	}
+
+	f := sealed.NewPreloaded(
+		a.BaseFileName,
+		preloaded,
+		storage.NewReadLimiter(1, nil),
+		indexCache,
+		cache.NewCache[[]byte](nil, nil),
+		s.config,
+	)
+	a.Release()
+	return f
 }
