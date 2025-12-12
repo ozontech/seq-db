@@ -60,8 +60,55 @@ func BenchmarkIndexer(b *testing.B) {
 				wg.Done()
 			})
 		}
-		// runtime.GC()
 		wg.Wait()
+	}
+}
+
+func BenchmarkMerge(b *testing.B) {
+	logger.SetLevel(zapcore.FatalLevel)
+	idx := NewIndexer(8)
+
+	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
+	readers := splitLogsToBulks(allLogs, 2000)
+	assert.NoError(b, err)
+
+	processor := getTestProcessor()
+
+	b.StopTimer()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+
+		active := New(
+			filepath.Join(b.TempDir(), "test"),
+			&frac.Config{},
+			idx,
+			storage.NewReadLimiter(1, nil),
+			cache.NewCache[[]byte](nil, nil),
+			cache.NewCache[[]byte](nil, nil),
+		)
+
+		bulks := make([][]byte, 0, len(readers))
+		for _, readNext := range readers {
+			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
+			bulks = append(bulks, storage.CompressDocBlock(meta, nil, 3))
+		}
+
+		wg := sync.WaitGroup{}
+		for _, meta := range bulks {
+			wg.Add(1)
+			idx.Index(meta, func(index *memIndex, err error) {
+				if err != nil {
+					logger.Fatal("bulk indexing error", zap.Error(err))
+				}
+				active.addIndex(index)
+				wg.Done()
+			})
+		}
+		wg.Wait()
+
+		b.StartTimer()
+		active.indexes.MergeAll()
+		b.StopTimer()
 	}
 }
 

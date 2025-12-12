@@ -23,6 +23,7 @@ func newIndexIterator(index *memIndex) *mergeIterator {
 		index:          index,
 		newLIDs:        make([]uint32, 0, len(index.ids)),
 		newBlocks:      make([]int, 0, len(index.blocksOffsets)),
+		newPositions:   make([]seq.DocPos, 0, len(index.positions)),
 		lastFieldToken: int(index.fieldsTokens[string(index.fields[0])].count) - 1,
 	}
 

@@ -2,6 +2,7 @@ package active2
 
 import (
 	"bytes"
+	"slices"
 
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
@@ -26,7 +27,6 @@ func mergeIndexes(indexes []*memIndex) *memIndex {
 	dst := &memIndex{
 		ids:           make([]seq.ID, 0, docsCount),
 		positions:     make([]seq.DocPos, 0, docsCount),
-		idToLID:       make(map[seq.ID]uint32, docsCount),
 		fieldsTokens:  make(map[string]tokenRange, fieldsCount),
 		blocksOffsets: make([]uint64, 0, blocksCount),
 		docsSize:      docsSize,
@@ -52,9 +52,11 @@ func mergeIDs(dst *memIndex, orig []*mergeIterator) []seq.ID {
 	doubles := []seq.ID{}
 	iterators := append([]*mergeIterator{}, orig...) // make copy
 
+	selected := make([]int, 0, len(iterators))
+
 	for len(iterators) > 0 {
 		// try select first
-		selected := []int{0}
+		selected = append(selected[:0], 0)
 		maxID := iterators[0].CurrentID()
 
 		for i := 1; i < len(iterators); i++ {
@@ -62,13 +64,12 @@ func mergeIDs(dst *memIndex, orig []*mergeIterator) []seq.ID {
 				selected = append(selected, i)
 			} else if seq.Less(maxID, cur) {
 				maxID = cur
-				selected = []int{i}
+				selected = append(selected[:0], i)
 			}
 		}
 
 		lid := uint32(len(dst.ids)) + 1
 		dst.ids = append(dst.ids, maxID)
-		dst.idToLID[maxID] = lid
 		dst.positions = append(dst.positions, iterators[selected[0]].CurrentPos())
 
 		k := 0
@@ -92,16 +93,29 @@ func mergeTokens(dst *memIndex, orig []*mergeIterator) {
 	// todo allocate for all lids at once to optimize allocations
 	var prevField []byte
 	iterators := append([]*mergeIterator{}, orig...) // make copy
+
+	selected := make([]int, 0, len(iterators))
+
+	s := 0
+	for _, it := range iterators {
+		for _, l := range it.index.tokenLIDs {
+			s += len(l)
+		}
+	}
+	allTokenLIDs := make([]uint32, 0, s)
+
+	p := &streamsPool[uint32]{}
+
 	for len(iterators) > 0 {
 		// try select first
-		selected := []int{0}
+		selected = append(selected[:0], 0)
 		minToken := iterators[0].CurrentToken()
 
 		for i := 1; i < len(iterators); i++ {
 			cur := iterators[i].CurrentToken()
 			if cmp := compareMetaToken(cur, minToken); cmp < 0 {
 				minToken = cur
-				selected = []int{i}
+				selected = append(selected[:0], i)
 			} else if cmp == 0 {
 				selected = append(selected, i)
 			}
@@ -110,7 +124,7 @@ func mergeTokens(dst *memIndex, orig []*mergeIterator) {
 		k := 0
 		lids := make([][]uint32, 0, len(selected))
 		for _, i := range selected {
-			lids = append(lids, iterators[i-k].CurrentTokenLIDs())
+			lids = append(lids, iterators[i-k].CurrentTokenLIDs()) // todo переиспольовать CurrentTokenLIDs / lids
 			if !iterators[i-k].ShiftToken() {
 				iterators = removeItem(iterators, i-k)
 				k++
@@ -128,8 +142,16 @@ func mergeTokens(dst *memIndex, orig []*mergeIterator) {
 		}
 
 		dst.tokens = append(dst.tokens, minToken.Value)
-		dst.tokenLIDs = append(dst.tokenLIDs, mergeLIDs(lids))
+
+		start := len(allTokenLIDs)
+		if string(minToken.Key) == "_all_" {
+			allTokenLIDs = fillAllLIDs(allTokenLIDs, len(dst.ids))
+		} else {
+			allTokenLIDs = mergeLIDs(lids, allTokenLIDs, p)
+		}
+		dst.tokenLIDs = append(dst.tokenLIDs, allTokenLIDs[start:])
 	}
+
 	if tr, ok := dst.fieldsTokens[string(prevField)]; ok {
 		tr.count = uint32(len(dst.tokens)) - tr.start
 		dst.fieldsTokens[string(prevField)] = tr
@@ -144,7 +166,7 @@ func mergeBlocksOffsets(dst *memIndex, src []*mergeIterator) {
 		}
 		for _, p := range it.index.positions {
 			oldIdx, docOffset := p.Unpack()
-			it.AddPos(seq.PackDocPos(oldIdx+offset, docOffset))
+			it.AddPos(seq.PackDocPos(oldIdx+offset, docOffset)) // todo - много аллокаций space
 		}
 		offset += uint32(len(it.index.blocksOffsets))
 	}
@@ -155,43 +177,6 @@ func compareMetaToken(mt1, mt2 tokenizer.MetaToken) int {
 	if res == 0 {
 		return bytes.Compare(mt1.Value, mt2.Value)
 	}
-	return res
-}
-
-func mergeLIDs(lids [][]uint32) []uint32 {
-	size := 0
-	for i := range lids {
-		size += len(lids[i])
-	}
-	res := make([]uint32, 0, size)
-
-	for len(lids) > 0 {
-		// try select first
-		selected := []int{0}
-		minLID := lids[0][0]
-
-		for i := 1; i < len(lids); i++ {
-			cur := lids[i][0]
-			if cur == minLID { // can be doubles
-				selected = append(selected, i)
-			} else if cur < minLID {
-				selected = []int{i}
-				minLID = cur
-			}
-		}
-
-		res = append(res, minLID)
-
-		k := 0
-		for _, i := range selected {
-			lids[i-k] = lids[i-k][1:]
-			if len(lids[i-k]) == 0 {
-				lids = removeItem(lids, i-k)
-				k++
-			}
-		}
-	}
-
 	return res
 }
 
@@ -206,4 +191,40 @@ func removeItem[V any](items []V, i int) []V {
 	}
 	items = items[:k]
 	return items
+}
+
+////////////////////////
+
+func fillAllLIDs(buf []uint32, cnt int) []uint32 {
+	cnt++
+	for lid := 1; lid < cnt; lid++ {
+		buf = append(buf, uint32(lid))
+	}
+	return buf
+}
+
+func mergeLIDs(lids [][]uint32, buf []uint32, p *streamsPool[uint32]) []uint32 {
+	return mergeLIDsSort(lids, buf, p)
+	return mergeLIDsTree(lids, buf, p)
+}
+
+func mergeLIDsSort(lids [][]uint32, buf []uint32, p *streamsPool[uint32]) []uint32 {
+	start := len(buf)
+	for _, l := range lids {
+		buf = append(buf, l...)
+	}
+	slices.Sort(buf[start:])
+	return buf
+}
+
+func mergeLIDsTree(lids [][]uint32, buf []uint32, p *streamsPool[uint32]) []uint32 {
+	orderedLIDs := MergeSortNSlices(lids, p)
+	defer p.Reset()
+
+	lid, has := orderedLIDs.Next()
+	for has {
+		buf = append(buf, lid)
+		lid, has = orderedLIDs.Next()
+	}
+	return buf
 }

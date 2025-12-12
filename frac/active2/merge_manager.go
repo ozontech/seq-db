@@ -58,6 +58,12 @@ func (m *MergeManager) MergeAll() *memIndex {
 
 	m.wg.Wait()
 
+	if len(m.indexes.indexes) == 1 {
+		return m.indexes.indexes[0]
+	}
+
+	// todo обработать случай когда нет индексов вообще
+
 	indexesToMerge := m.indexes.ReadyToMerge()
 	m.indexes.markAsMerging(indexesToMerge)
 	mergedIndex := mergeIndexes(extractIndexes(indexesToMerge))

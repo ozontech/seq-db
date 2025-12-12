@@ -59,7 +59,6 @@ func NewMemIndex(block storage.DocBlock) (*memIndex, error) {
 	}
 	// Initialize index
 	idx := &memIndex{
-		idToLID:       make(map[seq.ID]uint32, len(meta)),
 		docsCount:     uint32(len(meta)),
 		blocksOffsets: []uint64{block.GetExt2()}, // Only one block per bulk
 	}
@@ -140,7 +139,6 @@ func extractTokens(
 		docMeta := meta[origIdx]
 		ids[lid] = docMeta.ID
 		idx.docsSize += uint64(docMeta.Size)
-		idx.idToLID[docMeta.ID] = uint32(lid) + 1 // store lid+1 (1-based indexing for internal use)
 		pos[lid] = seq.DocPos(positions[origIdx])
 	}
 

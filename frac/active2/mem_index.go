@@ -18,7 +18,6 @@ type memIndex struct {
 	fieldsTokens  map[string]tokenRange // tokens locator for each field
 	fields        [][]byte              // fields ordered ASC
 	blocksOffsets []uint64              // blocks offsets ordered by offset
-	idToLID       map[seq.ID]uint32
 	positions     []seq.DocPos
 	allTID        uint32
 
@@ -52,11 +51,6 @@ func (index *memIndex) IsIntersecting(from, to seq.MID) bool {
 }
 
 func (index *memIndex) GetLIDByID(id seq.ID) (uint32, bool) {
-	lid, ok := index.idToLID[id]
-	return lid, ok
-
-	// alternative
-	// todo check to use 1-based lids
 	i, ok := sort.Find(len(index.ids), func(i int) int { return seq.Compare(index.ids[i], id) })
-	return uint32(i), ok
+	return uint32(i + 1), ok
 }
