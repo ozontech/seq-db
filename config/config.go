@@ -266,10 +266,12 @@ type Config struct {
 	} `config:"tracing"`
 
 	// Additional filtering options
-	Filtering Filter `config:"filtering"`
-	DocFilter struct {
-		Filters []Filter `config:"filters"`
-	} `config:"doc_filter"`
+	Filtering  Filter `config:"filtering"`
+	DocsFilter struct {
+		DataDir     string   `config:"data_dir"`
+		Concurrency int      `config:"concurrency"`
+		Filters     []Filter `config:"filters"`
+	} `config:"docs_filter"`
 
 	// Experimental provides flags
 	// For configuring experimental features.

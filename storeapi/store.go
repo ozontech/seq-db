@@ -9,6 +9,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/docsfilter"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -35,6 +36,7 @@ type Store struct {
 type StoreConfig struct {
 	API         APIConfig
 	FracManager fracmanager.Config
+	Filters     docsfilter.Config
 }
 
 func (c *StoreConfig) setDefaults() error {
@@ -44,10 +46,19 @@ func (c *StoreConfig) setDefaults() error {
 	if c.API.Search.Async.DataDir == "" {
 		c.API.Search.Async.DataDir = path.Join(c.FracManager.DataDir, "async_searches")
 	}
+	if c.Filters.DataDir == "" {
+		c.Filters.DataDir = path.Join(c.FracManager.DataDir, "filters")
+	}
 	return nil
 }
 
-func NewStore(ctx context.Context, c StoreConfig, s3cli *s3.Client, mappingProvider MappingProvider) (*Store, error) {
+func NewStore(
+	ctx context.Context,
+	c StoreConfig,
+	s3cli *s3.Client,
+	mappingProvider MappingProvider,
+	docFilters []*docsfilter.Filter,
+) (*Store, error) {
 	if err := c.setDefaults(); err != nil {
 		return nil, err
 	}
@@ -56,6 +67,9 @@ func NewStore(ctx context.Context, c StoreConfig, s3cli *s3.Client, mappingProvi
 	if err != nil {
 		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
+
+	// TODO: do we need to store DocsFilter somewhere?
+	_ = docsfilter.Start(ctx, c.Filters, docFilters, mappingProvider, fracManager.Fractions())
 
 	return &Store{
 		Config: c,
