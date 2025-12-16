@@ -2,8 +2,6 @@ package docsfilter
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"os"
@@ -35,69 +33,9 @@ type MappingProvider interface {
 	GetMapping() seq.Mapping
 }
 
-type FilterStatus byte
-
-const (
-	StatusCreated FilterStatus = iota
-	StatusInProgress
-	StatusDone
-	StatusError
-)
-
 type Config struct {
 	DataDir string
 	Workers int
-}
-
-type DocsFilterBin struct {
-	LIDs []seq.LID
-}
-
-type Filter struct {
-	Query string
-	From  int64
-	To    int64
-
-	status FilterStatus
-
-	ast parser.SeqQLQuery
-
-	hash    string
-	dirPath string
-
-	processWg *sync.WaitGroup
-}
-
-func NewFilter(
-	query string,
-	from int64,
-	to int64,
-) *Filter {
-	return &Filter{
-		Query:     query,
-		From:      from,
-		To:        to,
-		status:    StatusCreated,
-		processWg: &sync.WaitGroup{},
-	}
-}
-
-func (f *Filter) String() string {
-	return fmt.Sprintf("%s_%d_%d", f.Query, f.From, f.To)
-}
-
-func (f *Filter) Hash() string {
-	if f.hash == "" {
-		h := sha256.New()
-		h.Write([]byte(f.String()))
-		bs := h.Sum(nil)
-		f.hash = hex.EncodeToString(bs)
-	}
-	return f.hash
-}
-
-func (f *Filter) markAsDone() {
-	f.status = StatusDone
 }
 
 type DocsFilter struct {
@@ -105,6 +43,9 @@ type DocsFilter struct {
 
 	config  Config
 	filters map[string]*Filter
+
+	fracs   map[string][]string
+	fracsMu *sync.RWMutex
 
 	mp MappingProvider
 
@@ -115,7 +56,7 @@ type DocsFilter struct {
 func Start(
 	ctx context.Context,
 	cfg Config,
-	filters []*Filter,
+	params []Params,
 	mp MappingProvider,
 	fracs fracmanager.List,
 ) *DocsFilter {
@@ -124,9 +65,10 @@ func Start(
 		workers = runtime.GOMAXPROCS(0)
 	}
 
-	filtersMap := make(map[string]*Filter, len(filters))
+	filtersMap := make(map[string]*Filter, len(params))
 
-	for _, f := range filters {
+	for _, p := range params {
+		f := NewFilter(p)
 		filtersMap[string(f.Hash())] = f
 	}
 
@@ -134,6 +76,8 @@ func Start(
 		ctx:           ctx,
 		config:        cfg,
 		filters:       filtersMap,
+		fracs:         make(map[string][]string),
+		fracsMu:       &sync.RWMutex{},
 		mp:            mp,
 		rateLimit:     make(chan struct{}, workers),
 		createDirOnce: &sync.Once{},
@@ -154,16 +98,23 @@ func Start(
 	mapping := df.mp.GetMapping()
 
 	for _, f := range df.filters {
-		ast, err := parser.ParseSeqQL(f.Query, mapping)
+		ast, err := parser.ParseSeqQL(f.params.Query, mapping)
 		if err != nil {
 			panic(fmt.Errorf("BUG: search query must be valid: %s", err))
 		}
 		f.ast = ast
 
-		df.processFilter(f, fracs.FilterInRange(seq.MID(f.From), seq.MID(f.To)))
+		df.processFilter(f, fracs.FilterInRange(seq.MID(f.params.From), seq.MID(f.params.To)))
 	}
 
 	return df
+}
+
+func (df *DocsFilter) addDoneFrac(fracName string, fracPath string) {
+	df.fracsMu.Lock()
+	defer df.fracsMu.Unlock()
+
+	df.fracs[fracName] = append(df.fracs[fracName], fracPath)
 }
 
 // loadFilters loads existing filters
@@ -200,12 +151,19 @@ func (df *DocsFilter) loadFilters() error {
 		}
 
 		var hasFracsInQueue bool
-		findFracsInQueue := func(name string) error {
-			hasFracsInQueue = true
-			return nil
-		}
-		if err := util.VisitFilesWithExt(filterDes, fracInQueueExt, findFracsInQueue); err != nil {
-			return err
+
+		for _, fde := range filterDes {
+			if fde.IsDir() {
+				continue
+			}
+			name := fde.Name()
+
+			switch path.Ext(name) {
+			case fracInQueueExt:
+				hasFracsInQueue = true
+			case fracDoneExt:
+				df.addDoneFrac(fracNameFromFilePath(name), path.Join(f.dirPath, name))
+			}
 		}
 
 		if !hasFracsInQueue {
@@ -229,7 +187,7 @@ func (df *DocsFilter) buildQueue(fracs fracmanager.List) error {
 		filter.dirPath = path.Join(df.config.DataDir, filter.Hash())
 		util.MustCreateDir(filter.dirPath)
 
-		filterFracs := fracs.FilterInRange(seq.MID(filter.From), seq.MID(filter.To))
+		filterFracs := fracs.FilterInRange(seq.MID(filter.params.From), seq.MID(filter.params.To))
 		for _, f := range filterFracs {
 			queueFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracInQueueExt))
 			util.MustWriteFileAtomic(queueFilePath, []byte{}, tmpExt)
@@ -256,12 +214,7 @@ func (df *DocsFilter) processFilter(filter *Filter, fracs fracmanager.List) {
 	}
 
 	processFracInQueue := func(name string) error {
-		parts := strings.Split(name, ".")
-		if len(parts) != 2 {
-			return fmt.Errorf("unknown mqpr filename format: %s", name)
-		}
-
-		f := fracsByName[parts[0]]
+		f := fracsByName[fracNameFromFilePath(name)]
 		filter.processWg.Add(1)
 		go df.processFrac(f, filter) // nolint:errcheck // in progress
 
@@ -283,8 +236,8 @@ func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter) error {
 
 	qpr, err := f.Search(df.ctx, processor.SearchParams{
 		AST:   filter.ast.Root,
-		From:  seq.MID(filter.From),
-		To:    seq.MID(filter.To),
+		From:  seq.MID(filter.params.From),
+		To:    seq.MID(filter.params.To),
 		Limit: math.MaxInt64,
 	})
 	if err != nil {
@@ -295,23 +248,31 @@ func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter) error {
 		return nil
 	}
 
+	doneFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracDoneExt))
+
 	storeDocsFilter := func(rawDocsFilter []byte) error {
-		doneFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracDoneExt))
 		util.MustWriteFileAtomic(doneFilePath, rawDocsFilter, tmpExt)
 		tmpFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracInQueueExt))
 		util.RemoveFile(tmpFilePath)
 		return nil
 	}
+
 	docsFilterBin := DocsFilterBin{LIDs: f.FindLIDs(df.ctx, qpr.IDs.IDs())}
 	if err := compressDocsFilter(&docsFilterBin, storeDocsFilter); err != nil {
 		return err
 	}
+
+	df.addDoneFrac(f.Info().Name(), doneFilePath)
 
 	return nil
 }
 
 func makeFileName(name, ext string) string {
 	return name + ext
+}
+
+func fracNameFromFilePath(filterFilePath string) string {
+	return strings.Split(path.Base(filterFilePath), ".")[0]
 }
 
 var marshalBufferPool util.BufferPool

@@ -57,7 +57,7 @@ func NewStore(
 	c StoreConfig,
 	s3cli *s3.Client,
 	mappingProvider MappingProvider,
-	docFilters []*docsfilter.Filter,
+	docFilterParams []docsfilter.Params,
 ) (*Store, error) {
 	if err := c.setDefaults(); err != nil {
 		return nil, err
@@ -68,8 +68,7 @@ func NewStore(
 		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
 
-	// TODO: do we need to store DocsFilter somewhere?
-	_ = docsfilter.Start(ctx, c.Filters, docFilters, mappingProvider, fracManager.Fractions())
+	_ = docsfilter.Start(ctx, c.Filters, docFilterParams, mappingProvider, fracManager.Fractions())
 
 	return &Store{
 		Config: c,

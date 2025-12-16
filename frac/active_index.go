@@ -136,6 +136,21 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	return res, nil
 }
 
+func (dp *activeDataProvider) FindLIDs(ids []seq.ID) []seq.LID {
+	index := activeFetchIndex{
+		blocksOffsets: dp.blocksOffsets,
+		docsPositions: dp.docsPositions,
+		docsReader:    dp.docsReader,
+	}
+
+	docsPos := index.GetDocPos(ids)
+	res := make([]seq.LID, 0, len(docsPos))
+	for _, docPos := range docsPos {
+		res = append(res, seq.LID(docPos))
+	}
+	return res
+}
+
 type activeIDsIndex struct {
 	mids     []uint64
 	rids     []uint64

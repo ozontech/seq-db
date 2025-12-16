@@ -7,6 +7,10 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
+type DocsFilterBin struct {
+	LIDs []seq.LID
+}
+
 type docsFilterBinVersion uint8
 
 const (
@@ -25,6 +29,9 @@ func marshalDocsFilter(dst []byte, in *DocsFilterBin) []byte {
 }
 
 func marshalLIDsBlock(dst []byte, in []seq.LID) []byte {
+	// TODO: zstd (???)
+	// TODO: buffer pool (???)
+
 	dst = binary.BigEndian.AppendUint64(dst, uint64(len(in)))
 
 	prev := seq.LID(0)
@@ -38,7 +45,7 @@ func marshalLIDsBlock(dst []byte, in []seq.LID) []byte {
 	return dst
 }
 
-const minLIDsFIlterBytesLen = 10 // 1 byte lidsBinVersion + 8 byte number of LIDs + N bytes varint + delta encoded LIDs
+const minLIDsFIlterBytesLen = 10 // 1 byte lidsBinVersion + 8 byte number of LIDs + N (min 1) bytes varint + delta encoded LIDs
 
 func unmarshalDocsFilter(dst *DocsFilterBin, src []byte) (_ []byte, err error) {
 	if len(src) < minLIDsFIlterBytesLen {

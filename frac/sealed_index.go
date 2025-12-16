@@ -122,6 +122,10 @@ func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	return qpr, nil
 }
 
+func (dp *sealedDataProvider) FindLIDs(ids []seq.ID) []seq.LID {
+	return dp.getFetchIndex().findLIDs(ids)
+}
+
 type sealedIDsIndex struct {
 	fracName string
 	table    *seqids.Table

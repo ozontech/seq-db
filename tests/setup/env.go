@@ -276,7 +276,7 @@ func (cfg *TestingEnvConfig) MakeStores(
 			logger.Fatal("can't create mapping", zap.Error(err))
 		}
 
-		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider, []*docsfilter.Filter{})
+		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider, []docsfilter.Params{})
 		if err != nil {
 			panic(err)
 		}

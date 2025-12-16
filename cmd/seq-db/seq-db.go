@@ -320,7 +320,7 @@ func startStore(
 	}
 
 	s3cli := initS3Client(cfg)
-	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp, docFiltersFromCfg(cfg.DocsFilter.Filters))
+	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp, docFilterParamsFromCfg(cfg.DocsFilter.Filters))
 	if err != nil {
 		logger.Fatal("initializing store", zap.Error(err))
 	}
@@ -364,10 +364,14 @@ func enableIndexingForAllFields(mappingPath string) bool {
 	return mappingPath == "auto"
 }
 
-func docFiltersFromCfg(in []config.Filter) []*docsfilter.Filter {
-	out := make([]*docsfilter.Filter, 0, len(in))
+func docFilterParamsFromCfg(in []config.Filter) []docsfilter.Params {
+	out := make([]docsfilter.Params, 0, len(in))
 	for _, f := range in {
-		out = append(out, docsfilter.NewFilter(f.Query, f.From.UnixMilli(), f.To.UnixMilli()))
+		out = append(out, docsfilter.Params{
+			Query: f.Query,
+			From:  f.From.UnixMilli(), // TODO: nano after rebase
+			To:    f.To.UnixMilli(),   // TODO: nano after rebase
+		})
 	}
 	return out
 }

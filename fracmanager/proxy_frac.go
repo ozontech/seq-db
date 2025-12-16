@@ -69,6 +69,10 @@ func (p *fractionProxy) Search(ctx context.Context, params processor.SearchParam
 	return p.impl.Search(ctx, params)
 }
 
+func (p *fractionProxy) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
+	return p.impl.FindLIDs(ctx, ids)
+}
+
 // activeProxy manages an active (writable) fraction
 // Tracks pending write operations and provides freeze capability.
 // Lifecycle: Created when fraction becomes active, destroyed after sealing.

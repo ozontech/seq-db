@@ -288,6 +288,17 @@ func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*se
 	return dp.Search(params)
 }
 
+func (f *Active) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		return nil, nil
+	}
+
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.FindLIDs(ids)
+}
+
 func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 	return &activeDataProvider{
 		ctx:    ctx,
