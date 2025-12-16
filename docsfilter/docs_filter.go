@@ -14,6 +14,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -21,6 +22,7 @@ import (
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
+	"github.com/ozontech/seq-db/zstd"
 )
 
 const (
@@ -45,6 +47,10 @@ const (
 type Config struct {
 	DataDir string
 	Workers int
+}
+
+type DocsFilterBin struct {
+	LIDs []seq.LID
 }
 
 type Filter struct {
@@ -285,21 +291,56 @@ func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter) error {
 		return err
 	}
 
-	marshaled, err := marshalIDs(qpr.IDs)
-	if err != nil {
-		return err
+	if len(qpr.IDs) == 0 {
+		return nil
 	}
 
-	doneFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracDoneExt))
-	util.MustWriteFileAtomic(doneFilePath, marshaled, tmpExt)
-	tmpFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracInQueueExt))
-	util.RemoveFile(tmpFilePath)
+	storeDocsFilter := func(rawDocsFilter []byte) error {
+		doneFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracDoneExt))
+		util.MustWriteFileAtomic(doneFilePath, rawDocsFilter, tmpExt)
+		tmpFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracInQueueExt))
+		util.RemoveFile(tmpFilePath)
+		return nil
+	}
+	docsFilterBin := DocsFilterBin{LIDs: f.FindLIDs(df.ctx, qpr.IDs.IDs())}
+	if err := compressDocsFilter(&docsFilterBin, storeDocsFilter); err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func makeFileName(name, ext string) string {
 	return name + ext
+}
+
+var marshalBufferPool util.BufferPool
+
+func compressDocsFilter(df *DocsFilterBin, cb func(compressed []byte) error) error {
+	rawDocsFilter := marshalBufferPool.Get()
+	defer marshalBufferPool.Put(rawDocsFilter)
+
+	rawDocsFilter.B = marshalDocsFilter(rawDocsFilter.B, df)
+
+	compressed := bytespool.Acquire(len(rawDocsFilter.B))
+	defer bytespool.Release(compressed)
+
+	level := getCompressLevel(len(rawDocsFilter.B))
+	compressed.B = zstd.CompressLevel(rawDocsFilter.B, compressed.B, level)
+	if err := cb(compressed.B); err != nil {
+		return err
+	}
+	return nil
+}
+
+func getCompressLevel(size int) int {
+	level := 3
+	if size <= 512 {
+		level = 1
+	} else if size <= 4*1024 {
+		level = 2
+	}
+	return level
 }
 
 // createDataDir creates dir data lazily to avoid creating extra folders.

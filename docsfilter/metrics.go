@@ -16,7 +16,7 @@ var (
 	diskUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "filters",
-		Name:      "disk_usage_bytes_total",
+		Name:      "disk_usage_bytes",
 	}, []string{"file_type"})
 	storedFilters = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
