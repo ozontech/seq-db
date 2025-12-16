@@ -8,11 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -110,5 +113,64 @@ func BenchmarkIndexer(b *testing.B) {
 			idx.Index(active, meta, &wg, stopwatch.New())
 		}
 		wg.Wait()
+	}
+}
+
+func defaultSealingParams() frac.SealParams {
+	const minZstdLevel = 1
+	return frac.SealParams{
+		IDsZstdLevel:           minZstdLevel,
+		LIDsZstdLevel:          minZstdLevel,
+		TokenListZstdLevel:     minZstdLevel,
+		DocsPositionsZstdLevel: minZstdLevel,
+		TokenTableZstdLevel:    minZstdLevel,
+		DocBlocksZstdLevel:     minZstdLevel,
+		DocBlockSize:           128 * int(units.KiB),
+	}
+}
+
+func BenchmarkFullWrite(b *testing.B) {
+	logger.SetLevel(zapcore.FatalLevel)
+	idx, stop := NewIndexer(8, 8)
+	defer stop()
+
+	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
+	readers := splitLogsToBulks(allLogs, 1000)
+	assert.NoError(b, err)
+
+	params := defaultSealingParams()
+
+	processor := getTestProcessor()
+	allDocs := make([][]byte, 0, len(readers))
+	allMeta := make([][]byte, 0, len(readers))
+	for _, readNext := range readers {
+		_, docs, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
+		allDocs = append(allDocs, storage.CompressDocBlock(docs, nil, 1))
+		allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
+	}
+
+	for b.Loop() {
+		active := New(
+			filepath.Join(b.TempDir(), "test"),
+			idx,
+			storage.NewReadLimiter(1, nil),
+			cache.NewCache[[]byte](nil, nil),
+			cache.NewCache[[]byte](nil, nil),
+			&frac.Config{},
+		)
+
+		wg := sync.WaitGroup{}
+		for i, meta := range allMeta {
+			wg.Add(1)
+			err := active.Append(allDocs[i], meta, &wg)
+			assert.NoError(b, err)
+		}
+		wg.Wait()
+
+		src, err := NewSealingSource(active, params)
+		require.NoError(b, err)
+		sealed, err := sealing.Seal(src, params)
+		require.NoError(b, err)
+		assert.Greater(b, int(sealed.Info.DocsTotal), 0)
 	}
 }

@@ -30,10 +30,9 @@ func mergeIndexes(indexes []*memIndex) *memIndex {
 		docsCount:     uint32(docsCount),
 	}
 
-	newPositions := mergeBlocksOffsets(dst, indexes)
-
-	reLIDs := mergeIDs(dst, indexes, newPositions)
-	mergeTokens(dst, indexes, reLIDs)
+	posMap := mergeBlocksOffsets(dst, indexes)
+	lidsMap := mergeIDs(dst, indexes, posMap)
+	mergeTokens(dst, indexes, lidsMap)
 
 	dst.allTID = dst.fieldsTokens[seq.TokenAll].start
 
@@ -46,35 +45,18 @@ func mergeIndexes(indexes []*memIndex) *memIndex {
 	return dst
 }
 
-type IDIteratorItem struct {
-	i  int
-	id seq.ID
-}
-
-type IDIterator struct {
-	i      int
-	offset int
-	idx    *memIndex
-}
-
-func (i *IDIterator) Next() (v IDIteratorItem, has bool) {
-	if i.offset < len(i.idx.ids) {
-		v.i = i.i
-		v.id = i.idx.ids[i.offset]
-		has = true
-		i.offset++
-	}
-	return v, has
-}
-
-func mergeIDs(dst *memIndex, indexes []*memIndex, newPositions [][]seq.DocPos) [][]uint32 {
+func mergeIDs(dst *memIndex, indexes []*memIndex, posMap [][]seq.DocPos) [][]uint32 {
 	// todo doubles := []seq.ID{}
 
-	newLIDs := make([][]uint32, len(indexes))
+	lidsMap := make([][]uint32, len(indexes))
 	iters := make([]IOrderedIterator[IDIteratorItem], len(indexes))
 	for i, idx := range indexes {
-		iters[i] = &IDIterator{idx: idx, i: i}
-		newLIDs[i] = make([]uint32, 0, len(idx.ids))
+		iters[i] = &IDIterator{
+			i:      i,
+			idx:    idx,
+			posMap: posMap[i],
+		}
+		lidsMap[i] = make([]uint32, 0, len(idx.ids))
 	}
 
 	orderedIDs := MergeKSortIterators(iters, func(a, b IDIteratorItem) int { return seq.Compare(b.id, a.id) })
@@ -83,84 +65,22 @@ func mergeIDs(dst *memIndex, indexes []*memIndex, newPositions [][]seq.DocPos) [
 
 	for has {
 		dst.ids = append(dst.ids, cur.id)
-		dst.positions = append(dst.positions, newPositions[cur.i][len(newLIDs[cur.i])])
+		dst.positions = append(dst.positions, cur.pos)
 		lid := uint32(len(dst.ids))
-		newLIDs[cur.i] = append(newLIDs[cur.i], lid)
+		lidsMap[cur.i] = append(lidsMap[cur.i], lid)
 		cur, has = orderedIDs.Next()
 	}
-	return newLIDs
+	return lidsMap
 }
 
-type TokenIteratorPayload struct {
-	idx     *memIndex
-	newLIDs []uint32
-}
-
-type TokenIteratorItem struct {
-	tid     uint32
-	fid     uint32
-	payload *TokenIteratorPayload
-}
-
-func (i *TokenIteratorItem) Field() []byte {
-	return i.payload.idx.fields[i.fid]
-}
-
-func (i *TokenIteratorItem) Token() []byte {
-	return i.payload.idx.tokens[i.tid]
-}
-
-func (i *TokenIteratorItem) LIDs() []uint32 {
-	return i.payload.idx.tokenLIDs[i.tid]
-}
-
-func (i *TokenIteratorItem) NewLIDs() []uint32 {
-	return i.payload.newLIDs
-}
-
-type TokenIterator struct {
-	tid          uint32
-	fid          uint32
-	fieldLastTID uint32
-	payload      TokenIteratorPayload
-}
-
-func NewTokenIterator(idx *memIndex, newLIDs []uint32) *TokenIterator {
-	return &TokenIterator{
-		fieldLastTID: idx.fieldsTokens[string(idx.fields[0])].count - 1,
-		payload: TokenIteratorPayload{
-			idx:     idx,
-			newLIDs: newLIDs,
-		},
-	}
-}
-
-func (it *TokenIterator) Next() (v TokenIteratorItem, has bool) {
-	if int(it.tid) < len(it.payload.idx.tokens) {
-		v.tid = uint32(it.tid)
-		v.fid = uint32(it.fid)
-		v.payload = &it.payload
-		has = true
-		it.tid++
-
-		if it.tid > it.fieldLastTID {
-			it.fid++
-			if int(it.fid) < len(it.payload.idx.fields) {
-				it.fieldLastTID += it.payload.idx.fieldsTokens[string(it.payload.idx.fields[it.fid])].count
-			}
-		}
-	}
-	return v, has
-}
-
-func mergeTokens(dst *memIndex, indexes []*memIndex, reLIDs [][]uint32) {
+func mergeTokens(dst *memIndex, indexes []*memIndex, lidsMap [][]uint32) {
 	allCount := 0
 	totalTokens := 0
 	totalLIDsSize := 0
 	TokensIterators := make([]IOrderedIterator[TokenIteratorItem], len(indexes))
 	for i, index := range indexes {
 		allCount += len(index.ids)
-		TokensIterators[i] = NewTokenIterator(index, reLIDs[i])
+		TokensIterators[i] = NewTokenIterator(index, lidsMap[i])
 		totalTokens += len(index.tokens)
 		for _, lids := range index.tokenLIDs {
 			totalLIDsSize += len(lids)
@@ -183,31 +103,34 @@ func mergeTokens(dst *memIndex, indexes []*memIndex, reLIDs [][]uint32) {
 	uniqFieldsSize := 0
 	uniqFieldsCount := 0
 
-	prv := TokenIteratorItem{}
-	var prevField []byte
-	cur, has := orderedTokens.Next()
-	items := make([]TokenIteratorItem, 0, totalTokens)
+	var (
+		prevField []byte
+		prevToken TokenIteratorItem
+	)
+
 	borders := make([]uint8, 0, totalTokens)
-	for has {
+	items := make([]TokenIteratorItem, 0, totalTokens)
+
+	for cur, has := orderedTokens.Next(); has; cur, has = orderedTokens.Next() {
 		var border uint8
 
-		if prv.payload == nil || cmpToken(prv, cur) != 0 {
+		if prevToken.payload == nil || cmpToken(prevToken, cur) != 0 {
 			uniqTokensCount++
 			uniqTokensSize += len(cur.Token())
 			border++
 
-			if !bytes.Equal(prevField, cur.Field()) {
+			field := cur.Field()
+			if !bytes.Equal(prevField, field) {
 				uniqFieldsCount++
-				uniqFieldsSize += len(cur.Field())
+				uniqFieldsSize += len(field)
 				border++
-				prevField = cur.Field()
+				prevField = field
 			}
 		}
 
-		prv = cur
-		items = append(items, cur)
 		borders = append(borders, border)
-		cur, has = orderedTokens.Next()
+		items = append(items, cur)
+		prevToken = cur
 	}
 
 	dst.fields = make([][]byte, 0, uniqFieldsCount)
@@ -218,14 +141,14 @@ func mergeTokens(dst *memIndex, indexes []*memIndex, reLIDs [][]uint32) {
 	allFields := make([]byte, 0, uniqFieldsSize)
 	tokenRanges := make([]tokenRange, 0, uniqFieldsCount)
 
-	var all bool
-	lidsSorter := NewLIDsSorter(totalLIDsSize, allCount)
+	var isAllToken bool
+	lidsCollector := NewLIDsCollector(totalLIDsSize, allCount)
 
 	for i, item := range items {
 		if borders[i] > 0 {
 
 			if i > 0 {
-				dst.tokenLIDs = append(dst.tokenLIDs, lidsSorter.Get())
+				dst.tokenLIDs = append(dst.tokenLIDs, lidsCollector.GetSorted())
 			}
 
 			if borders[i] > 1 {
@@ -249,7 +172,7 @@ func mergeTokens(dst *memIndex, indexes []*memIndex, reLIDs [][]uint32) {
 				tr := tokenRanges[len(tokenRanges)-1]
 				dst.fieldsTokens[fieldStr] = tr
 
-				all = fieldStr == "_all_"
+				isAllToken = fieldStr == seq.TokenAll
 			}
 
 			start := len(allTokens)
@@ -257,38 +180,38 @@ func mergeTokens(dst *memIndex, indexes []*memIndex, reLIDs [][]uint32) {
 			dst.tokens = append(dst.tokens, allTokens[start:])
 		}
 
-		if all {
+		if isAllToken {
 			for range item.LIDs() {
-				lidsSorter.Add(0)
+				lidsCollector.Add(0)
 			}
 		} else {
-			newLIDs := item.NewLIDs()
+			lidsMap := item.lidsMap()
 			for _, oldLID := range item.LIDs() {
-				newLID := newLIDs[oldLID-1]
-				lidsSorter.Add(newLID)
+				newLID := lidsMap[oldLID-1]
+				lidsCollector.Add(newLID)
 			}
 		}
 	}
 
-	dst.tokenLIDs = append(dst.tokenLIDs, lidsSorter.Get())
+	dst.tokenLIDs = append(dst.tokenLIDs, lidsCollector.GetSorted())
 
 	tid := uint32(len(dst.tokens)) - 1
-	fstr := util.ByteToStringUnsafe(dst.fields[len(dst.fields)-1])
-	tr := dst.fieldsTokens[fstr]
+	fieldStr := util.ByteToStringUnsafe(dst.fields[len(dst.fields)-1])
+	tr := dst.fieldsTokens[fieldStr]
 	tr.count = tid - tr.start + 1
-	dst.fieldsTokens[fstr] = tr
+	dst.fieldsTokens[fieldStr] = tr
 
 }
 
-type LIDsSorter struct {
+type LIDsCollector struct {
 	all    []uint32
 	lids   []uint32
 	offset int
 	bitmap *roaring.Bitmap
 }
 
-func NewLIDsSorter(size, allCount int) *LIDsSorter {
-	ls := &LIDsSorter{
+func NewLIDsCollector(size, allCount int) *LIDsCollector {
+	ls := &LIDsCollector{
 		lids:   make([]uint32, 0, size),
 		all:    make([]uint32, allCount),
 		bitmap: roaring.New(),
@@ -299,11 +222,11 @@ func NewLIDsSorter(size, allCount int) *LIDsSorter {
 	return ls
 }
 
-func (s *LIDsSorter) Add(lid uint32) {
+func (s *LIDsCollector) Add(lid uint32) {
 	s.lids = append(s.lids, lid)
 }
 
-func (s *LIDsSorter) Get() (dst []uint32) {
+func (s *LIDsCollector) GetSorted() (dst []uint32) {
 	dst = s.lids[s.offset:]
 
 	if len(dst) == len(s.all) {

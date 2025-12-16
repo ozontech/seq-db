@@ -2,27 +2,17 @@ package active
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
-	"io"
 	"iter"
-	"os"
-	"path/filepath"
 	"slices"
 	"time"
 	"unsafe"
 
-	"github.com/alecthomas/units"
-	"go.uber.org/zap"
-
-	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
-	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
-	"github.com/ozontech/seq-db/util"
 )
 
 // SealingSource transforms data from in-memory (frac.Active) storage
@@ -41,7 +31,6 @@ import (
 // All iterators work with pre-sorted data and return information
 // in an order optimal for creating disk index structures.
 type SealingSource struct {
-	params        frac.SealParams       // Sealing parameters
 	info          *frac.Info            // fraction Info
 	created       time.Time             // Creation time of the source
 	sortedLIDs    []uint32              // Sorted LIDs (Local ID)
@@ -73,7 +62,6 @@ func NewSealingSource(active *Active, params frac.SealParams) (*SealingSource, e
 	sortedTIDs := sortTokens(sortedFields, active.TokenList)
 
 	src := SealingSource{
-		params:        params,
 		info:          &info,
 		created:       time.Now(),
 		sortedLIDs:    sortedLIDs,
@@ -332,141 +320,4 @@ func (src *SealingSource) doc(pos seq.DocPos) ([]byte, error) {
 		return nil, err
 	}
 	return doc, nil
-}
-
-// SortDocs sorts documents and writes them in compressed form to disk.
-// Creates a temporary file that is then renamed to the final one.
-func (src *SealingSource) SortDocs() error {
-	start := time.Now()
-	logger.Info("sorting docs...")
-
-	// Create temporary file for sorted documents
-	sdocsFile, err := os.Create(src.info.Path + consts.SdocsTmpFileSuffix)
-	if err != nil {
-		return err
-	}
-
-	bw := bytespool.AcquireWriterSize(sdocsFile, int(units.MiB))
-	defer bytespool.ReleaseWriter(bw)
-
-	// Group documents into blocks
-	blocks := docBlocks(src.Docs(), src.params.DocBlockSize)
-
-	// Write blocks and get new offsets and positions
-	blocksOffsets, positions, err := src.writeDocs(blocks, bw)
-
-	if err := util.CollapseErrors([]error{src.lastErr, err}); err != nil {
-		return err
-	}
-	if err := bw.Flush(); err != nil {
-		return err
-	}
-
-	src.docPosSorted = positions
-	src.blocksOffsets = blocksOffsets
-
-	// Get file statistics
-	stat, err := sdocsFile.Stat()
-	if err != nil {
-		return err
-	}
-	src.info.DocsOnDisk = uint64(stat.Size())
-
-	// Synchronize and rename file
-	if err := sdocsFile.Sync(); err != nil {
-		return err
-	}
-	if err := sdocsFile.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(sdocsFile.Name(), src.info.Path+consts.SdocsFileSuffix); err != nil {
-		return err
-	}
-	if err := util.SyncPath(filepath.Dir(src.info.Path)); err != nil {
-		return err
-	}
-
-	// Log compression statistics
-	ratio := float64(src.info.DocsRaw) / float64(src.info.DocsOnDisk)
-	logger.Info("docs sorting stat",
-		util.ZapUint64AsSizeStr("raw", src.info.DocsRaw),
-		util.ZapUint64AsSizeStr("compressed", src.info.DocsOnDisk),
-		util.ZapFloat64WithPrec("ratio", ratio, 2),
-		zap.Int("blocks_count", len(blocksOffsets)),
-		zap.Int("docs_total", len(positions)),
-		util.ZapDurationWithPrec("write_duration_ms", time.Since(start), "ms", 0),
-	)
-
-	return nil
-}
-
-// writeDocs compresses and writes document blocks, calculating new offsets
-// and collecting document positions.
-func (src *SealingSource) writeDocs(blocks iter.Seq2[[]byte, []seq.DocPos], w io.Writer) ([]uint64, []seq.DocPos, error) {
-	offset := 0
-	buf := make([]byte, 0)
-	blocksOffsets := make([]uint64, 0)
-	allPositions := make([]seq.DocPos, 0, len(src.mids.vals))
-
-	// Process each document block
-	for block, positions := range blocks {
-		allPositions = append(allPositions, positions...)
-		blocksOffsets = append(blocksOffsets, uint64(offset))
-
-		// Compress document block
-		buf = storage.CompressDocBlock(block, buf[:0], src.params.DocBlocksZstdLevel)
-		if _, err := w.Write(buf); err != nil {
-			return nil, nil, err
-		}
-		offset += len(buf)
-	}
-	return blocksOffsets, allPositions, nil
-}
-
-// docBlocks groups documents into fixed-size blocks.
-// Returns an iterator for blocks and corresponding document positions.
-func docBlocks(docs iter.Seq2[seq.ID, []byte], blockSize int) iter.Seq2[[]byte, []seq.DocPos] {
-	return func(yield func([]byte, []seq.DocPos) bool) {
-		const defaultBlockSize = 128 * units.KiB
-		if blockSize <= 0 {
-			blockSize = int(defaultBlockSize)
-			logger.Warn("document block size not specified", zap.Int("default_size", blockSize))
-		}
-
-		var (
-			prev  seq.ID
-			index uint32 // Current block index
-		)
-		pos := make([]seq.DocPos, 0)
-		buf := make([]byte, 0, blockSize)
-
-		// Iterate through documents
-		for id, doc := range docs {
-			if id == prev {
-				// Duplicate IDs (for nested indexes) - store document once,
-				// but create positions for each LID
-				pos = append(pos, seq.PackDocPos(index, uint64(len(buf))))
-				continue
-			}
-			prev = id
-
-			// If block is full, yield it
-			if len(buf) >= blockSize {
-				if !yield(buf, pos) {
-					return
-				}
-				index++
-				buf = buf[:0]
-				pos = pos[:0]
-			}
-
-			// Add document position
-			pos = append(pos, seq.PackDocPos(index, uint64(len(buf))))
-
-			// Write document size and the document itself
-			buf = binary.LittleEndian.AppendUint32(buf, uint32(len(doc)))
-			buf = append(buf, doc...)
-		}
-		yield(buf, pos)
-	}
 }
