@@ -32,13 +32,13 @@ func marshalLIDsBlock(dst []byte, in []seq.LID) []byte {
 		lid := in[i]
 		deltaLID := lid - prev
 		prev = lid
-		dst = binary.BigEndian.AppendUint32(dst, uint32(deltaLID))
+		dst = binary.AppendVarint(dst, int64(deltaLID))
 	}
 
 	return dst
 }
 
-const minLIDsFIlterBytesLen = 13 // 1 byte lidsBinVersion + 8 byte number of LIDs + 4 * N bytes LIDs
+const minLIDsFIlterBytesLen = 10 // 1 byte lidsBinVersion + 8 byte number of LIDs + N bytes varint + delta encoded LIDs
 
 func unmarshalDocsFilter(dst *DocsFilterBin, src []byte) (_ []byte, err error) {
 	if len(src) < minLIDsFIlterBytesLen {
@@ -62,16 +62,16 @@ func unmarshalDocsFilter(dst *DocsFilterBin, src []byte) (_ []byte, err error) {
 func unmarshalLIDsBlock(dst []seq.LID, src []byte) ([]seq.LID, []byte, error) {
 	numberOfLIDs := int(binary.BigEndian.Uint64(src))
 	src = src[8:]
-	if numberOfLIDs > len(src)/4 {
-		return nil, src, fmt.Errorf("invalid LIDs block length %d; want %d", len(src)/4, numberOfLIDs)
+	if numberOfLIDs > len(src) {
+		return nil, src, fmt.Errorf("invalid LIDs block length %d; want %d", len(src), numberOfLIDs)
 	}
 
 	prevLID := uint32(0)
 	for range numberOfLIDs {
-		v := binary.BigEndian.Uint32(src)
-		lid := prevLID + v
+		v, n := binary.Varint(src)
+		src = src[n:]
+		lid := prevLID + uint32(v)
 		prevLID = lid
-		src = src[4:]
 		dst = append(dst, seq.LID(lid))
 	}
 
