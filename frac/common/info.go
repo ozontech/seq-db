@@ -121,9 +121,9 @@ func (s *Info) IsIntersecting(from, to seq.MID) bool {
 
 // MarshalJSON implements custom JSON marshaling to always store From and To in milliseconds
 func (s *Info) MarshalJSON() ([]byte, error) {
-	type InfoAlias Info // type alias to avoid infinite recursion
+	type TmpInfo Info // type alias to avoid infinite recursion
 
-	tmp := InfoAlias(*s)
+	tmp := TmpInfo(*s)
 
 	// We convert "from" and "to" to milliseconds in order to guarantee we can rollback on deploy.
 	// When converting nanos to millis we must round "from" down (floor) and round "to" up (ceiling).
