@@ -135,12 +135,13 @@ func convertHistToMap(params SearchParams, hist []uint64) map[seq.MID]uint64 {
 		return nil
 	}
 	res := make(map[seq.MID]uint64, len(hist))
-	bucket := params.From - params.From%seq.MillisToMID(params.HistInterval)
+	histIntervalMID := seq.MillisToMID(params.HistInterval)
+	bucket := params.From - params.From%histIntervalMID
 	for _, cnt := range hist {
 		if cnt > 0 {
 			res[bucket] = cnt
 		}
-		bucket += seq.MillisToMID(params.HistInterval)
+		bucket += histIntervalMID
 	}
 	return res
 }
@@ -157,12 +158,14 @@ func iterateEvalTree(
 	needScanAllRange := params.IsScanAllRequest()
 
 	var (
-		histBase  uint64
-		histogram []uint64
+		histBase     uint64
+		histogram    []uint64
+		histInterval seq.MID
 	)
 	if hasHist {
-		histBase = seq.MIDToMillis(params.From) / params.HistInterval
-		histSize := seq.MIDToMillis(params.To)/params.HistInterval - histBase + 1
+		histInterval = seq.MillisToMID(params.HistInterval)
+		histBase = uint64(params.From) / uint64(histInterval)
+		histSize := uint64(params.To)/uint64(histInterval) - histBase + 1
 		histogram = make([]uint64, histSize)
 	}
 
@@ -206,7 +209,7 @@ func iterateEvalTree(
 						zap.Time("mid", mid.Time()))
 					continue
 				}
-				bucketIndex := seq.MIDToMillis(mid)/params.HistInterval - histBase
+				bucketIndex := uint64(mid)/uint64(histInterval) - histBase
 				histogram[bucketIndex]++
 			}
 
