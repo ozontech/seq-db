@@ -92,8 +92,8 @@ func prepareGetAggregationTestData(t *testing.T, cData getAggregationTestCaseDat
 		sr := &search.SearchRequest{
 			Explain: req.Query.Explain,
 			Q:       []byte(req.Query.Query),
-			From:    seq.MillisToMID(uint64(req.Query.From.AsTime().UnixMilli())),
-			To:      seq.MillisToMID(uint64(req.Query.To.AsTime().UnixMilli())),
+			From:    seq.MID(req.Query.From.AsTime().UnixNano()),
+			To:      seq.MID(req.Query.To.AsTime().UnixNano()),
 		}
 		if len(cData.aggQ) > 0 {
 			for _, query := range cData.aggQ {

@@ -226,8 +226,8 @@ func (g *grpcV1) doSearch(
 
 	proxyReq := &search.SearchRequest{
 		Q:           []byte(req.Query.Query),
-		From:        seq.MillisToMID(uint64(fromTime.UnixMilli())),
-		To:          seq.MillisToMID(uint64(toTime.UnixMilli())),
+		From:        seq.MID(fromTime.UnixNano()),
+		To:          seq.MID(toTime.UnixNano()),
 		Explain:     req.Query.Explain,
 		Size:        int(req.Size),
 		Offset:      int(req.Offset),
@@ -253,7 +253,7 @@ func (g *grpcV1) doSearch(
 				err,
 			)
 		}
-		proxyReq.Interval = seq.MillisToMID(uint64(intervalDuration.Milliseconds()))
+		proxyReq.Interval = seq.MID(intervalDuration.Nanoseconds())
 	}
 
 	qpr, docsStream, _, err := g.searchIngestor.Search(ctx, proxyReq, tr)
@@ -329,7 +329,7 @@ func convertAggsQuery(aggs []*seqproxyapi.AggQuery) ([]search.AggQuery, error) {
 			)
 		}
 
-		aggQuery.Interval = seq.MillisToMID(uint64(interval.Milliseconds()))
+		aggQuery.Interval = seq.MID(interval.Nanoseconds())
 		result = append(result, aggQuery)
 	}
 	return result, nil

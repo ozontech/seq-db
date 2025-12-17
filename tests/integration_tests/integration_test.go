@@ -1521,7 +1521,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 				Quantiles: []float64{0.99, 0.95, 0.50},
 			},
 		},
-		HistogramInterval: seq.MillisToMID(uint64(time.Second.Milliseconds())),
+		HistogramInterval: seq.MID(time.Second.Nanoseconds()),
 		WithDocs:          true,
 		Size:              100,
 	}

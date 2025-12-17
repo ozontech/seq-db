@@ -513,7 +513,7 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 			pbhist := bin.Hist
 
 			tbin := seq.AggBin{
-				MID:   seq.MillisToMID(uint64(bin.Ts.AsTime().UnixMilli())),
+				MID:   seq.MID(bin.Ts.AsTime().UnixNano()),
 				Token: bin.Label,
 			}
 
