@@ -3,6 +3,7 @@ package active2
 import (
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/resources"
+	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
@@ -22,11 +23,14 @@ type Resources struct {
 	uint32s         resources.SliceOnBytes[uint32]
 	uint64s         resources.SliceOnBytes[uint64]
 	bytes           resources.SliceAllocator[byte]
+	bytesSlices     resources.SliceAllocator[[]byte]
 	uint32Slices    resources.SliceAllocator[[]uint32]
 	tokenKeys       resources.SliceAllocator[token]
 	indexerMetaData resources.SliceAllocator[indexer.MetaData]
 	tokenMap        resources.MapAllocator[token, uint32]
 	buf             resources.ObjectAllocator[indexBuffer]
+	ids             resources.SliceOnBytes[seq.ID]
+	docPos          resources.SliceOnBytes[seq.DocPos]
 }
 
 func NewResources() (*Resources, func()) {
@@ -39,10 +43,13 @@ func NewResources() (*Resources, func()) {
 			uint64s:         resources.NewUint64s(&s),
 			bytes:           resources.NewBytes(&s),
 			uint32Slices:    resources.NewUint32Slices(&s),
+			bytesSlices:     resources.NewBytesSlices(&s),
 			indexerMetaData: resources.NewSliceAllocator(&indexerMetaDataPool, &s),
 			tokenKeys:       resources.NewSliceAllocator(&tokenKeyPool, &s),
 			tokenMap:        resources.NewMapAllocator(&tokenMapPool, &s),
 			buf:             resources.NewObjectAllocator(&bufPool, &s),
+			ids:             resources.NewSliceOnBytes[seq.ID](&s),
+			docPos:          resources.NewSliceOnBytes[seq.DocPos](&s),
 		}
 	}
 	return r, func() {
@@ -51,12 +58,24 @@ func NewResources() (*Resources, func()) {
 	}
 }
 
+func (r *Resources) BytesSlices() resources.SliceAllocator[[]byte] {
+	return r.bytesSlices
+}
+
 func (r *Resources) Bytes() resources.SliceAllocator[byte] {
 	return r.bytes
 }
 
 func (r *Resources) Uint32s() resources.SliceOnBytes[uint32] {
 	return r.uint32s
+}
+
+func (r *Resources) IDs() resources.SliceOnBytes[seq.ID] {
+	return r.ids
+}
+
+func (r *Resources) DocPos() resources.SliceOnBytes[seq.DocPos] {
+	return r.docPos
 }
 
 func (r *Resources) Uint64s() resources.SliceOnBytes[uint64] {

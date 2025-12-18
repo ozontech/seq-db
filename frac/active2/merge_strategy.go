@@ -59,7 +59,7 @@ import (
    Пример для окна Tier 3-4:
    ┌─────────────────────────────────────────┐
    │ До:     [1, 2, 0, 3, 1, 2, 1]           │
-   │ Выбор:          ██ ██                    │
+   │ Выбор:            ██ ██                 │
    │ Результат: 3 элемента из Tier 3         │
    │           + 1 элемент из Tier 4         │
    │           = 4 элемента всего            │
@@ -104,15 +104,15 @@ func selectForMerge(items []memIndexExt, minToMerge int) [][]memIndexExt {
 }
 
 func buildTiersDistribution(items []memIndexExt) []int {
-	lastTier := 0
+	maxTier := 0
 	tiersDist := make([]int, maxTierCount)
 	for _, index := range items {
 		tiersDist[index.tier]++
-		if index.tier > lastTier {
-			lastTier = index.tier
+		if index.tier > maxTier {
+			maxTier = index.tier
 		}
 	}
-	return tiersDist[:lastTier]
+	return tiersDist[:maxTier+1]
 }
 
 func extractIndexesInRange(items, buf []memIndexExt, firstTier, lastTier int, tiersDist []int) []memIndexExt {

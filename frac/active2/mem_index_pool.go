@@ -4,6 +4,8 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+
+	"github.com/alecthomas/units"
 )
 
 // memIndexExt contains index metadata for merge management
@@ -28,7 +30,7 @@ func newIndexPool() *memIndexPool {
 		readyToMerge: make(map[uint64]memIndexExt),
 		underMerging: make(map[uint64]memIndexExt),
 
-		tiers: newSizeTiers(firstTierMaxSize, maxTierCount, tierSizeDeltaPercent),
+		tiers: newSizeTiers(firstTierMaxSizeKb, maxTierCount, tierSizeDeltaPercent),
 	}
 }
 
@@ -92,12 +94,16 @@ func (p *memIndexPool) replace(oldIndexes []memIndexExt, newIndex *memIndex) {
 	for _, metaIndex := range p.underMerging {
 		p.indexes = append(p.indexes, metaIndex.index) // add indexes currently being merged
 	}
+
+	for _, metaIndex := range oldIndexes {
+		metaIndex.index.Release()
+	}
 }
 
 func (p *memIndexPool) wrapIndex(index *memIndex) memIndexExt {
 	return memIndexExt{
-		id:    p.counter.Add(1),              // atomically increment counter
-		tier:  p.tiers.Calc(index.docsCount), // determine size tier
+		id:    p.counter.Add(1),                                  // atomically increment counter
+		tier:  p.tiers.Calc(index.docsCount / uint32(units.KiB)), // determine size tier
 		index: index,
 	}
 }

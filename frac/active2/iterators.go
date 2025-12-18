@@ -30,13 +30,9 @@ func NewMergeIterator[T any](src1, src2 IOrderedIterator[T], cmp func(T, T) int)
 		src2: src2,
 		cmp:  cmp,
 	}
-	r.Init()
+	r.v1, r.has1 = r.src1.Next()
+	r.v2, r.has2 = r.src2.Next()
 	return &r
-}
-
-func (s *MergeIterator[T]) Init() {
-	s.v1, s.has1 = s.src1.Next()
-	s.v2, s.has2 = s.src2.Next()
 }
 
 func (s *MergeIterator[T]) Next() (v T, has bool) {

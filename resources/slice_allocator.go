@@ -12,6 +12,10 @@ func NewUint32Slices(releases *CallStack) SliceAllocator[[]uint32] {
 	return NewSliceAllocator(&Uint32SlicesPool, releases)
 }
 
+func NewBytesSlices(releases *CallStack) SliceAllocator[[]byte] {
+	return NewSliceAllocator(&BytesSlicesPool, releases)
+}
+
 type SliceAllocator[T any] struct {
 	pool     *SizedPool[T]
 	releases *CallStack

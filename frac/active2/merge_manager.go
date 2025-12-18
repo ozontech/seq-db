@@ -6,10 +6,10 @@ import (
 
 const (
 	minIndexesToMerge    = 4    // minimum number of indexes to trigger merge
-	forceMergeThreshold  = 100  // index count threshold for forced merge
+	forceMergeThreshold  = 64   // index count threshold for forced merge
 	tierSizeDeltaPercent = 10   // percentage difference between size tiers
-	firstTierMaxSize     = 100  // maximum size of the first tier
-	maxTierCount         = 1000 // maximum number of size tiers allowed
+	firstTierMaxSizeKb   = 8    // maximum size of the first tier
+	maxTierCount         = 1000 // todo  maximum number of size tiers allowed
 	bucketSizePercent    = 50   // percentage difference between size buckets
 )
 
@@ -33,9 +33,9 @@ func newMergeManager(maxConcurrentMerges int) *MergeManager {
 		indexes: newIndexPool(),
 	}
 
-	// todo
 	// Start background goroutine for merge scheduling
-	// go m.mergeScheduler()
+	go m.mergeScheduler()
+
 	return &m
 }
 

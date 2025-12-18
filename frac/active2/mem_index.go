@@ -23,6 +23,17 @@ type memIndex struct {
 
 	docsSize  uint64
 	docsCount uint32
+
+	res     *Resources
+	release func()
+}
+
+func newMemIndex() *memIndex {
+	res, release := NewResources()
+	return &memIndex{
+		res:     res,
+		release: release,
+	}
 }
 
 func (index *memIndex) getTokenProvider(field string) *tokenProvider {
@@ -53,4 +64,8 @@ func (index *memIndex) IsIntersecting(from, to seq.MID) bool {
 func (index *memIndex) GetLIDByID(id seq.ID) (uint32, bool) {
 	i, ok := sort.Find(len(index.ids), func(i int) int { return seq.Compare(index.ids[i], id) })
 	return uint32(i + 1), ok
+}
+
+func (index *memIndex) Release() {
+	// index.release()
 }
