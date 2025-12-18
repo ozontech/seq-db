@@ -35,7 +35,7 @@ func (m *MetaData) MarshalBinaryTo(b []byte) []byte {
 	b = binary.LittleEndian.AppendUint16(b, metadataMagic)
 
 	// Append current binary version of the metadata.
-	const version = 1
+	const version = 2
 	b = binary.LittleEndian.AppendUint16(b, version)
 
 	// Encode seq.ID.
@@ -77,15 +77,15 @@ func (m *MetaData) UnmarshalBinary(b []byte) error {
 }
 
 func (m *MetaData) unmarshalVersion1(b []byte) error {
-	return m.unmarshal(b)
-}
-
-func (m *MetaData) unmarshalVersion2(b []byte) error {
 	if err := m.unmarshal(b); err != nil {
 		return err
 	}
-	m.ID.MID = seq.NanosToMID(uint64(m.ID.MID))
+	m.ID.MID = seq.MillisToMID(uint64(m.ID.MID))
 	return nil
+}
+
+func (m *MetaData) unmarshalVersion2(b []byte) error {
+	return m.unmarshal(b)
 }
 
 func (m *MetaData) unmarshal(b []byte) error {

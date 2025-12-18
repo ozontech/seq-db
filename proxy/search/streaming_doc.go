@@ -32,9 +32,11 @@ func unpackDoc(data []byte, source uint64, protocolVersion config.StoreProtocolV
 	block := storage.DocBlock(data)
 	mid := block.GetExt1()
 
-	if protocolVersion == config.StoreProtocolVersion2 {
-		mid = uint64(seq.NanosToMID(mid))
+	// Convert from milliseconds to nanoseconds if store (protocol version 1) operates in milliseconds
+	if protocolVersion == config.StoreProtocolVersion1 {
+		mid = uint64(seq.MillisToMID(mid))
 	}
+
 	doc := StreamingDoc{
 		ID: seq.ID{
 			MID: seq.MID(mid),

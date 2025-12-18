@@ -55,7 +55,7 @@ func (si *Ingestor) StartAsyncSearch(ctx context.Context, r AsyncRequest) (Async
 		From:              r.From.UnixMilli(),
 		To:                r.To.UnixMilli(),
 		Aggs:              convertToAggsQuery(r.Aggregations),
-		HistogramInterval: int64(r.HistogramInterval),
+		HistogramInterval: int64(seq.MIDToMillis(r.HistogramInterval)),
 		Retention:         durationpb.New(r.Retention),
 		WithDocs:          r.WithDocs,
 		Size:              r.Size,
@@ -173,16 +173,16 @@ func (si *Ingestor) FetchAsyncSearchResult(
 					protocolVersion = config.ParseStoreProtocolVersion(protocolVersionValues[0])
 				}
 
-				if protocolVersion == config.StoreProtocolVersion2 {
+				if protocolVersion == config.StoreProtocolVersion1 {
 					response := storeResp.Response
 					for _, id := range response.IdSources {
-						id.Id.Mid = uint64(seq.NanosToMID(id.Id.Mid))
+						id.Id.Mid = uint64(seq.MillisToMID(id.Id.Mid))
 					}
 
 					if len(response.Histogram) > 0 {
 						newHist := make(map[uint64]uint64, len(response.Histogram))
 						for mid, v := range response.Histogram {
-							newHist[uint64(seq.NanosToMID(mid))] = v
+							newHist[uint64(seq.MillisToMID(mid))] = v
 						}
 						response.Histogram = newHist
 					}
@@ -213,7 +213,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		fracsInQueue += int(sr.FracsQueue)
 		fracsDone += int(sr.FracsDone)
 
-		histInterval = seq.MID(sr.HistogramInterval)
+		histInterval = seq.MillisToMID(uint64(sr.HistogramInterval))
 
 		ss := sr.Status.MustAsyncSearchStatus()
 		pr.Status = mergeAsyncSearchStatus(pr.Status, ss)
@@ -417,7 +417,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 					From:              s.From.AsTime(),
 					To:                s.To.AsTime(),
 					Aggregations:      buildRequestAggs(s.Aggs),
-					HistogramInterval: seq.MID(s.HistogramInterval),
+					HistogramInterval: seq.MillisToMID(uint64(s.HistogramInterval)),
 					WithDocs:          s.WithDocs,
 					Size:              s.Size,
 				}
@@ -479,7 +479,7 @@ func buildRequestAggs(in []*storeapi.AggQuery) []AggQuery {
 			GroupBy:   agg.GroupBy,
 			Func:      agg.Func.MustAggFunc(),
 			Quantiles: agg.Quantiles,
-			Interval:  seq.MID(agg.Interval),
+			Interval:  seq.MillisToMID(uint64(agg.Interval)),
 		})
 	}
 	return reqAggs

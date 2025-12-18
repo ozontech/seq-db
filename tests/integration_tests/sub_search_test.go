@@ -75,7 +75,7 @@ func makeHist(data []time.Time, interval time.Duration) map[seq.MID]uint64 {
 	for _, ts := range data {
 		t := ts.UnixMilli()
 		t -= t % int64(mid)
-		r[seq.MID(t)]++
+		r[seq.MillisToMID(uint64(t))]++
 	}
 	return r
 }

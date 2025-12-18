@@ -27,7 +27,7 @@ var availableVersions = map[qprBinVersion]struct{}{
 }
 
 func marshalQPR(q *seq.QPR, dst []byte) []byte {
-	dst = append(dst, uint8(qprBinVersion1))
+	dst = append(dst, uint8(qprBinVersion2))
 
 	blocksLenPos := len(dst)
 	dst = append(dst, make([]byte, 8)...)
@@ -238,8 +238,8 @@ func unmarshalIDsDelta(dst seq.IDSources, block []byte, version qprBinVersion) (
 		block = block[hintSize:]
 
 		var midValue seq.MID
-		if version == qprBinVersion2 {
-			midValue = seq.NanosToMID(uint64(mid))
+		if version == qprBinVersion1 {
+			midValue = seq.MillisToMID(uint64(mid))
 		} else {
 			midValue = seq.MID(mid)
 		}
@@ -296,8 +296,8 @@ func unmarshalHistogram(src []byte, version qprBinVersion) (map[seq.MID]uint64, 
 		}
 
 		var midValue seq.MID
-		if version == qprBinVersion2 {
-			midValue = seq.NanosToMID(uint64(mid))
+		if version == qprBinVersion1 {
+			midValue = seq.MillisToMID(uint64(mid))
 		} else {
 			midValue = seq.MID(mid)
 		}
@@ -460,8 +460,8 @@ func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte, versio
 		src = tail
 
 		var midValue seq.MID
-		if version == qprBinVersion2 {
-			midValue = seq.NanosToMID(uint64(mid))
+		if version == qprBinVersion1 {
+			midValue = seq.MillisToMID(uint64(mid))
 		} else {
 			midValue = seq.MID(mid)
 		}

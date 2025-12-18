@@ -8,8 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
+
+	insaneJSON "github.com/ozontech/insane-json"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
@@ -282,7 +283,10 @@ func TestFracInfoSavedToCache(t *testing.T) {
 	totalSize := uint64(0)
 	cnt := 1
 	for totalSize < maxSize {
-		addDummyDoc(t, fm, dp, seq.SimpleID(cnt))
+		// increase doc id by 1000000 (1 milli in nanos) instead of 1
+		// otherwise all docs fall into same millisecond and test breaks
+		id := seq.SimpleID(int64(seq.MillisToMID(uint64(cnt))))
+		addDummyDoc(t, fm, dp, id)
 		cnt++
 		fracInstance := rotateAndSeal(fm)
 		totalSize += fracInstance.Info().FullSize()
@@ -354,7 +358,7 @@ func TestExtraFractionsRemoved(t *testing.T) {
 	infos := map[string]*common.Info{}
 
 	for i := 1; i < times+1; i++ {
-		addDummyDoc(t, fm, dp, seq.SimpleID(i))
+		addDummyDoc(t, fm, dp, seq.SimpleID(int64(i)))
 		fracInstance := rotateAndSeal(fm)
 		info := fracInstance.Info()
 		q.Add(item{
@@ -407,7 +411,7 @@ func TestMissingCacheFilesDeleted(t *testing.T) {
 	defer insaneJSON.Release(metaRoot)
 
 	for i := 1; i < times+1; i++ {
-		addDummyDoc(t, fm, dp, seq.SimpleID(i))
+		addDummyDoc(t, fm, dp, seq.SimpleID(int64(i)))
 		rotateAndSeal(fm)
 		dp.TryReset()
 	}

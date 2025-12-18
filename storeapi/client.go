@@ -9,6 +9,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 )
 
@@ -20,35 +22,53 @@ func NewClient(store *Store) storeapi.StoreApiClient {
 	return &inMemoryAPIClient{store: store}
 }
 
-func (i inMemoryAPIClient) Bulk(ctx context.Context, in *storeapi.BulkRequest, _ ...grpc.CallOption) (*emptypb.Empty, error) {
+func (i inMemoryAPIClient) Bulk(ctx context.Context, in *storeapi.BulkRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	// NOTE: We copy `Metas` to prevent dataraces because `store` might work
 	// with this memory even when it returned response to client.
 	in.Metas = slices.Clone(in.Metas)
+	setProtocolVersionHeader(opts...)
 	return i.store.GrpcV1().Bulk(ctx, in)
 }
 
-func (i inMemoryAPIClient) Search(ctx context.Context, in *storeapi.SearchRequest, _ ...grpc.CallOption) (*storeapi.SearchResponse, error) {
+func (i inMemoryAPIClient) Search(ctx context.Context, in *storeapi.SearchRequest, opts ...grpc.CallOption) (*storeapi.SearchResponse, error) {
+	setProtocolVersionHeader(opts...)
 	return i.store.GrpcV1().Search(ctx, in)
 }
 
-func (i inMemoryAPIClient) StartAsyncSearch(ctx context.Context, in *storeapi.StartAsyncSearchRequest, _ ...grpc.CallOption) (*storeapi.StartAsyncSearchResponse, error) {
+func (i inMemoryAPIClient) StartAsyncSearch(ctx context.Context, in *storeapi.StartAsyncSearchRequest, opts ...grpc.CallOption) (*storeapi.StartAsyncSearchResponse, error) {
+	setProtocolVersionHeader(opts...)
 	return i.store.GrpcV1().StartAsyncSearch(ctx, in)
 }
 
-func (i inMemoryAPIClient) FetchAsyncSearchResult(ctx context.Context, in *storeapi.FetchAsyncSearchResultRequest, _ ...grpc.CallOption) (*storeapi.FetchAsyncSearchResultResponse, error) {
+func (i inMemoryAPIClient) FetchAsyncSearchResult(ctx context.Context, in *storeapi.FetchAsyncSearchResultRequest, opts ...grpc.CallOption) (*storeapi.FetchAsyncSearchResultResponse, error) {
+	setProtocolVersionHeader(opts...)
 	return i.store.GrpcV1().FetchAsyncSearchResult(ctx, in)
 }
 
-func (i inMemoryAPIClient) CancelAsyncSearch(ctx context.Context, in *storeapi.CancelAsyncSearchRequest, _ ...grpc.CallOption) (*storeapi.CancelAsyncSearchResponse, error) {
+func (i inMemoryAPIClient) CancelAsyncSearch(ctx context.Context, in *storeapi.CancelAsyncSearchRequest, opts ...grpc.CallOption) (*storeapi.CancelAsyncSearchResponse, error) {
+	setProtocolVersionHeader(opts...)
 	return i.store.GrpcV1().CancelAsyncSearch(ctx, in)
 }
 
-func (i inMemoryAPIClient) DeleteAsyncSearch(ctx context.Context, in *storeapi.DeleteAsyncSearchRequest, _ ...grpc.CallOption) (*storeapi.DeleteAsyncSearchResponse, error) {
+func (i inMemoryAPIClient) DeleteAsyncSearch(ctx context.Context, in *storeapi.DeleteAsyncSearchRequest, opts ...grpc.CallOption) (*storeapi.DeleteAsyncSearchResponse, error) {
+	setProtocolVersionHeader(opts...)
 	return i.store.GrpcV1().DeleteAsyncSearch(ctx, in)
 }
 
-func (i inMemoryAPIClient) GetAsyncSearchesList(ctx context.Context, in *storeapi.GetAsyncSearchesListRequest, _ ...grpc.CallOption) (*storeapi.GetAsyncSearchesListResponse, error) {
+func (i inMemoryAPIClient) GetAsyncSearchesList(ctx context.Context, in *storeapi.GetAsyncSearchesListRequest, opts ...grpc.CallOption) (*storeapi.GetAsyncSearchesListResponse, error) {
+	setProtocolVersionHeader(opts...)
 	return i.store.GrpcV1().GetAsyncSearchesList(ctx, in)
+}
+
+func setProtocolVersionHeader(opts ...grpc.CallOption) {
+	for _, opt := range opts {
+		if headerOpt, ok := opt.(grpc.HeaderCallOption); ok && headerOpt.HeaderAddr != nil {
+			if *headerOpt.HeaderAddr == nil {
+				*headerOpt.HeaderAddr = make(metadata.MD)
+			}
+			(*headerOpt.HeaderAddr)[consts.StoreProtocolVersionHeader] = []string{config.StoreProtocolVersion2.String()}
+		}
+	}
 }
 
 type storeAPIFetchServer struct {
@@ -81,7 +101,9 @@ func newStoreAPIFetchClient(b []*storeapi.BinaryData) *storeAPIFetchClient {
 }
 
 func (x *storeAPIFetchClient) Header() (metadata.MD, error) {
-	return nil, nil
+	md := make(metadata.MD)
+	md[consts.StoreProtocolVersionHeader] = []string{config.StoreProtocolVersion2.String()}
+	return md, nil
 }
 
 func (x *storeAPIFetchClient) Recv() (*storeapi.BinaryData, error) {
@@ -95,8 +117,9 @@ func (x *storeAPIFetchClient) Recv() (*storeapi.BinaryData, error) {
 	return res, nil
 }
 
-func (i inMemoryAPIClient) Fetch(ctx context.Context, in *storeapi.FetchRequest, _ ...grpc.CallOption) (storeapi.StoreApi_FetchClient, error) {
+func (i inMemoryAPIClient) Fetch(ctx context.Context, in *storeapi.FetchRequest, opts ...grpc.CallOption) (storeapi.StoreApi_FetchClient, error) {
 	s := newStoreAPIFetchServer(ctx)
+	setProtocolVersionHeader(opts...)
 	if err := i.store.GrpcV1().Fetch(in, s); err != nil {
 		return nil, err
 	}

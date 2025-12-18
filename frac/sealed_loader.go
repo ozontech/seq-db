@@ -98,9 +98,9 @@ func (l *Loader) loadIDs(fracVersion config.BinaryDataVersion) (idsTable seqids.
 
 		var mid seq.MID
 		if fracVersion < config.BinaryDataV2 {
-			mid = seq.MID(header.GetExt1())
+			mid = seq.MillisToMID(header.GetExt1())
 		} else {
-			mid = seq.NanosToMID(header.GetExt1())
+			mid = seq.MID(header.GetExt1())
 		}
 
 		idsTable.MinBlockIDs = append(idsTable.MinBlockIDs, seq.ID{

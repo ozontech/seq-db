@@ -92,18 +92,18 @@ func TestQPRMarshalUnmarshal(t *testing.T) {
 	}
 }
 
-// TestQPRVersion2Compatibility tests that it's possible to unmarshall and read version 2 async search result encoded.
-// MIDs in IDs and a histogram must be converted to milliseconds
-func TestQPRVersion2Compatibility(t *testing.T) {
+// TestQPRVersion1Compatibility tests that it's possible to unmarshall and read version 1 async search result encoded.
+// MIDs in IDs and a histogram must be converted from millis to nanos
+func TestQPRVersion1Compatibility(t *testing.T) {
 	qpr := seq.QPR{
 		IDs: seq.IDSources{
 			{
-				ID: seq.ID{MID: 1761812502573000000, RID: 34734732392},
+				ID: seq.ID{MID: seq.MID(1761812502573), RID: 34734732392},
 			},
 		},
 		Histogram: map[seq.MID]uint64{
-			1761812502573000000: 433,
-			1761812502463000000: 743,
+			seq.MID(1761812502573): 433,
+			seq.MID(1761812502463): 743,
 		},
 		Aggs: []seq.AggregatableSamples{
 			{
@@ -111,7 +111,7 @@ func TestQPRVersion2Compatibility(t *testing.T) {
 					{Token: "_not_exists"}: {
 						Total: 1,
 					},
-					{Token: "seq-db store", MID: seq.MID(1761812502953000000)}: {
+					{Token: "seq-db store", MID: seq.MID(1761812502953)}: {
 						Min:       3,
 						Max:       5,
 						Sum:       794,
@@ -119,7 +119,7 @@ func TestQPRVersion2Compatibility(t *testing.T) {
 						NotExists: 7,
 						Samples:   []float64{324},
 					},
-					{Token: "seq-db store", MID: seq.MID(1761812502456000000)}: {
+					{Token: "seq-db store", MID: seq.MID(1761812502456)}: {
 						Min:       2,
 						Max:       6,
 						Sum:       544,
@@ -132,27 +132,30 @@ func TestQPRVersion2Compatibility(t *testing.T) {
 			},
 		},
 	}
+
 	rawQPR := marshalQPR(&qpr, nil)
-	rawQPR[0] = uint8(qprBinVersion2)
-	var outQpr seq.QPR
-	tail, err := unmarshalQPR(&outQpr, rawQPR, math.MaxInt)
+	rawQPR[0] = uint8(qprBinVersion1)
+
+	var outQPR seq.QPR
+	tail, err := unmarshalQPR(&outQPR, rawQPR, math.MaxInt)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(tail))
-	require.Equal(t, seq.MID(1761812502573), outQpr.IDs[0].ID.MID, "mid doesn't match, should convert to milliseconds")
 
-	require.Equal(t, 2, len(outQpr.Histogram))
-	require.Equal(t, uint64(433), outQpr.Histogram[seq.MID(1761812502573)], "histogram bucket doesn't match")
-	require.Equal(t, uint64(743), outQpr.Histogram[seq.MID(1761812502463)], "histogram bucket doesn't match")
+	require.Equal(t, seq.MID(1761812502573000000), outQPR.IDs[0].ID.MID, "mid doesn't match, should convert to nanoseconds")
 
-	require.Equal(t, 1, len(outQpr.Aggs), "should have one AggregatableSamples")
-	agg := outQpr.Aggs[0]
-	require.Equal(t, 3, len(agg.SamplesByBin), "should have 3 samples in bin")
+	require.Len(t, outQPR.Histogram, 2)
+	require.Equal(t, uint64(433), outQPR.Histogram[seq.MID(1761812502573000000)], "histogram bucket doesn't match")
+	require.Equal(t, uint64(743), outQPR.Histogram[seq.MID(1761812502463000000)], "histogram bucket doesn't match")
+
+	require.Len(t, outQPR.Aggs, 1, "should have one AggregatableSamples")
+	agg := outQPR.Aggs[0]
+	require.Len(t, agg.SamplesByBin, 3, "should have 3 samples in bin")
 
 	notExistsBin := seq.AggBin{Token: "_not_exists"}
 	require.Equal(t, int64(1), agg.SamplesByBin[notExistsBin].Total, "bucket doesn't match")
-	bin1 := seq.AggBin{Token: "seq-db store", MID: seq.MID(1761812502953)}
+	bin1 := seq.AggBin{Token: "seq-db store", MID: seq.MID(1761812502953000000)}
 	require.Equal(t, int64(1), agg.SamplesByBin[bin1].Total, "bucket doesn't match")
-	bin2 := seq.AggBin{Token: "seq-db store", MID: seq.MID(1761812502456)}
+	bin2 := seq.AggBin{Token: "seq-db store", MID: seq.MID(1761812502456000000)}
 	require.Equal(t, int64(2), agg.SamplesByBin[bin2].Total, "bucket doesn't match")
 }
 
