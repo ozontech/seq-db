@@ -110,6 +110,41 @@ func Start(
 	return df
 }
 
+func (df *DocsFilter) GetFilteredLIDsByFrac(fracName string) ([]seq.LID, error) {
+	df.fracsMu.RLock()
+	defer df.fracsMu.RUnlock()
+
+	fracFiles, has := df.fracs[fracName]
+	if !has {
+		return nil, nil
+	}
+
+	var lids []seq.LID
+
+	for _, f := range fracFiles {
+		rawLIDs, err := os.ReadFile(f)
+		if err != nil {
+			logger.Error("can't open filtered lids file", zap.String("path", f), zap.Error(err))
+			return nil, err
+		}
+
+		dst := DocsFilterBin{}
+		tail, err := unmarshalDocsFilter(&dst, rawLIDs)
+		if err != nil {
+			logger.Error("can't unmarshal filtered lids file", zap.String("path", f), zap.Error(err))
+			return nil, err
+		}
+		if len(tail) > 0 {
+			logger.Error("unexpected tail when unmarshaling filtered lids file", zap.String("path", f), zap.Error(err))
+			return nil, err
+		}
+
+		lids = append(lids, dst.LIDs...)
+	}
+
+	return lids, nil
+}
+
 func (df *DocsFilter) addDoneFrac(fracName string, fracPath string) {
 	df.fracsMu.Lock()
 	defer df.fracsMu.Unlock()
@@ -256,7 +291,6 @@ func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter) error {
 		util.RemoveFile(tmpFilePath)
 		return nil
 	}
-
 	docsFilterBin := DocsFilterBin{LIDs: f.FindLIDs(df.ctx, qpr.IDs.IDs())}
 	if err := compressDocsFilter(&docsFilterBin, storeDocsFilter); err != nil {
 		return err
