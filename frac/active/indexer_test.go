@@ -138,16 +138,21 @@ func BenchmarkFullWrite(b *testing.B) {
 	readers := splitLogsToBulks(allLogs, 1000)
 	assert.NoError(b, err)
 
-	params := defaultSealingParams()
-
 	processor := getTestProcessor()
-	allDocs := make([][]byte, 0, len(readers))
-	allMeta := make([][]byte, 0, len(readers))
-	for _, readNext := range readers {
-		_, docs, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-		allDocs = append(allDocs, storage.CompressDocBlock(docs, nil, 1))
-		allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
+
+	n := 2
+	allDocs := make([][]byte, 0, len(readers)*n)
+	allMeta := make([][]byte, 0, len(readers)*n)
+
+	for range n {
+		for _, readNext := range readers {
+			_, docs, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
+			allDocs = append(allDocs, storage.CompressDocBlock(docs, nil, 1))
+			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
+		}
 	}
+
+	params := defaultSealingParams()
 
 	for b.Loop() {
 		active := New(
@@ -156,14 +161,16 @@ func BenchmarkFullWrite(b *testing.B) {
 			storage.NewReadLimiter(1, nil),
 			cache.NewCache[[]byte](nil, nil),
 			cache.NewCache[[]byte](nil, nil),
-			&frac.Config{},
+			&frac.Config{SkipSortDocs: true},
 		)
 
 		wg := sync.WaitGroup{}
 		for i, meta := range allMeta {
 			wg.Add(1)
-			err := active.Append(allDocs[i], meta, &wg)
-			assert.NoError(b, err)
+			go func() {
+				err := active.Append(allDocs[i], meta, &wg)
+				assert.NoError(b, err)
+			}()
 		}
 		wg.Wait()
 
@@ -172,5 +179,6 @@ func BenchmarkFullWrite(b *testing.B) {
 		sealed, err := sealing.Seal(src, params)
 		require.NoError(b, err)
 		assert.Greater(b, int(sealed.Info.DocsTotal), 0)
+		active.Release()
 	}
 }

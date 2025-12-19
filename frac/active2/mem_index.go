@@ -2,6 +2,7 @@ package active2
 
 import (
 	"sort"
+	"sync"
 
 	"github.com/ozontech/seq-db/seq"
 )
@@ -24,48 +25,50 @@ type memIndex struct {
 	docsSize  uint64
 	docsCount uint32
 
+	wg      sync.WaitGroup
 	res     *Resources
 	release func()
 }
 
 func newMemIndex() *memIndex {
-	res, release := NewResources()
+	res, release := AcquireResources()
 	return &memIndex{
 		res:     res,
 		release: release,
 	}
 }
 
-func (index *memIndex) getTokenProvider(field string) *tokenProvider {
-	if r, ok := index.fieldsTokens[field]; ok {
+func (idx *memIndex) getTokenProvider(field string) *tokenProvider {
+	if r, ok := idx.fieldsTokens[field]; ok {
 		return &tokenProvider{
 			firstTID: r.start,
 			lastTID:  r.start + r.count - 1,
-			tokens:   index.tokens,
+			tokens:   idx.tokens,
 		}
 	}
 	// Field is not indexed - return empty token provider
 	return &tokenProvider{
 		firstTID: 1,
 		lastTID:  0, // firstTID > lastTID = no tokens available
-		tokens:   index.tokens,
+		tokens:   idx.tokens,
 	}
 }
 
-func (index *memIndex) IsIntersecting(from, to seq.MID) bool {
-	maxMID := index.ids[0].MID
-	minMID := index.ids[len(index.ids)-1].MID
+func (idx *memIndex) IsIntersecting(from, to seq.MID) bool {
+	maxMID := idx.ids[0].MID
+	minMID := idx.ids[len(idx.ids)-1].MID
 	if to < minMID || maxMID < from {
 		return false
 	}
 	return true
 }
 
-func (index *memIndex) GetLIDByID(id seq.ID) (uint32, bool) {
-	i, ok := sort.Find(len(index.ids), func(i int) int { return seq.Compare(index.ids[i], id) })
+func (idx *memIndex) GetLIDByID(id seq.ID) (uint32, bool) {
+	i, ok := sort.Find(len(idx.ids), func(i int) int { return seq.Compare(idx.ids[i], id) })
 	return uint32(i + 1), ok
 }
 
-func (index *memIndex) Release() {
-	// index.release()
+func (idx *memIndex) Release() {
+	idx.wg.Wait()
+	idx.release()
 }

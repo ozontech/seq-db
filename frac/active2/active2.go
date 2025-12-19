@@ -27,10 +27,10 @@ type Active2 struct {
 
 	BaseFileName string
 
-	indexMu sync.RWMutex
-	info    *frac.Info
-	indexes *MergeManager
 	indexer *Indexer
+
+	indexes *memIndexPool
+	merger  *MergeManager
 
 	docsFile   *os.File
 	docsReader storage.DocsReader
@@ -44,10 +44,7 @@ type Active2 struct {
 	writer *active.Writer
 }
 
-type indexSnapshot struct {
-	info    *frac.Info
-	indexes []*memIndex
-}
+const MergerWorkers = 2
 
 func New(
 	baseFileName string,
@@ -60,12 +57,16 @@ func New(
 	docsFile, docsStats := util.MustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
 	metaFile, metaStats := util.MustOpenFile(baseFileName+consts.MetaFileSuffix, config.SkipFsync)
 
+	info := frac.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size()))
+	indexes := NewIndexPool(info)
+	merger := NewMergeManager(indexes, MergerWorkers)
+
 	f := &Active2{
 		BaseFileName: baseFileName,
 		Config:       cfg,
-		info:         frac.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
 		indexer:      indexer,
-		indexes:      newMergeManager(2),
+		indexes:      indexes,
+		merger:       merger,
 
 		docsFile:   docsFile,
 		docsCache:  docsCache,
@@ -85,12 +86,15 @@ func New(
 }
 
 func (f *Active2) Replay(ctx context.Context) error {
-	logger.Info("start replaying...", zap.String("name", f.info.Name()))
+
+	info := f.indexes.info
+
+	logger.Info("start replaying...", zap.String("name", info.Name()))
 
 	t := time.Now()
 
 	offset := uint64(0)
-	step := f.info.MetaOnDisk / 10
+	step := info.MetaOnDisk / 10
 	wg := sync.WaitGroup{}
 	next := step
 
@@ -113,12 +117,12 @@ out:
 
 			if offset > next {
 				next += step
-				progress := float64(offset) / float64(f.info.MetaOnDisk) * 100
+				progress := float64(offset) / float64(info.MetaOnDisk) * 100
 				logger.Info("replaying batch, meta",
-					zap.String("name", f.info.Name()),
+					zap.String("name", info.Name()),
 					zap.Uint64("from", offset),
 					zap.Uint64("to", offset+metaSize),
-					zap.Uint64("target", f.info.MetaOnDisk),
+					zap.Uint64("target", info.MetaOnDisk),
 					util.ZapFloat64WithPrec("progress_percentage", progress, 2),
 				)
 			}
@@ -129,7 +133,8 @@ out:
 				if err != nil {
 					logger.Fatal("bulk indexing error", zap.Error(err))
 				}
-				f.addIndex(idx)
+				f.indexes.Add(idx, 0, 0)
+				f.merger.triggerMerge()
 				wg.Done()
 			})
 		}
@@ -138,12 +143,12 @@ out:
 	wg.Wait()
 
 	tookSeconds := util.DurationToUnit(time.Since(t), "s")
-	throughputRaw := util.SizeToUnit(f.info.DocsRaw, "mb") / tookSeconds
-	throughputMeta := util.SizeToUnit(f.info.MetaOnDisk, "mb") / tookSeconds
+	throughputRaw := util.SizeToUnit(info.DocsRaw, "mb") / tookSeconds
+	throughputMeta := util.SizeToUnit(info.MetaOnDisk, "mb") / tookSeconds
 	logger.Info("active fraction replayed",
-		zap.String("name", f.info.Name()),
-		zap.Uint32("docs_total", f.info.DocsTotal),
-		util.ZapUint64AsSizeStr("docs_size", f.info.DocsOnDisk),
+		zap.String("name", info.Name()),
+		zap.Uint32("docs_total", info.DocsTotal),
+		util.ZapUint64AsSizeStr("docs_size", info.DocsOnDisk),
 		util.ZapFloat64WithPrec("took_s", tookSeconds, 1),
 		util.ZapFloat64WithPrec("throughput_raw_mb_sec", throughputRaw, 1),
 		util.ZapFloat64WithPrec("throughput_meta_mb_sec", throughputMeta, 1),
@@ -158,14 +163,14 @@ func (f *Active2) Append(docs, meta []byte, wg *sync.WaitGroup) (err error) {
 		ma.Stop()
 		return err
 	}
-	f.updateDiskStats(uint64(len(docs)), uint64(len(meta)))
 
 	mi := sw.Start("send_to_indexer")
 	f.indexer.Index(meta, func(idx *memIndex, err error) {
 		if err != nil {
 			logger.Fatal("bulk indexing error", zap.Error(err))
 		}
-		f.addIndex(idx)
+		f.indexes.Add(idx, uint64(len(docs)), uint64(len(meta)))
+		f.merger.triggerMerge()
 		wg.Done()
 	})
 	mi.Stop()
@@ -173,32 +178,6 @@ func (f *Active2) Append(docs, meta []byte, wg *sync.WaitGroup) (err error) {
 	ma.Stop()
 	sw.Export(bulkStagesSeconds)
 	return nil
-}
-
-func (f *Active2) updateDiskStats(docsLen, metaLen uint64) {
-	f.indexMu.Lock()
-	f.info.DocsOnDisk += docsLen
-	f.info.MetaOnDisk += metaLen
-	f.indexMu.Unlock()
-}
-
-func (f *Active2) addIndex(index *memIndex) {
-	maxMID := index.ids[0].MID
-	minMID := index.ids[len(index.ids)-1].MID
-
-	f.indexMu.Lock()
-	defer f.indexMu.Unlock()
-
-	f.indexes.Add(index)
-
-	if f.info.From > minMID {
-		f.info.From = minMID
-	}
-	if f.info.To < maxMID {
-		f.info.To = maxMID
-	}
-	f.info.DocsRaw += index.docsSize
-	f.info.DocsTotal += index.docsCount
 }
 
 func (f *Active2) String() string {
@@ -211,7 +190,9 @@ func (f *Active2) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
 
 	t := sw.Start("total")
 
-	ss := f.indexSnapshot(ctx)
+	ss, release := f.indexes.Snapshot()
+	defer release()
+
 	if ss.info.DocsTotal == 0 { // it is empty active fraction state
 		return nil, nil
 	}
@@ -229,7 +210,8 @@ func (f *Active2) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
 }
 
 func (f *Active2) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
-	ss := f.indexSnapshot(ctx)
+	ss, release := f.indexes.Snapshot()
+	defer release()
 
 	if ss.info.DocsTotal == 0 { // it is empty active fraction state
 		metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()
@@ -262,24 +244,8 @@ func (f *Active2) Search(ctx context.Context, params processor.SearchParams) (*s
 	return res, nil
 }
 
-func (f *Active2) indexSnapshot(ctx context.Context) *indexSnapshot {
-	f.indexMu.RLock()
-	info := *f.info // copy
-	indexes := f.indexes.Indexes()
-	f.indexMu.RUnlock()
-
-	return &indexSnapshot{
-		info:    &info,
-		indexes: indexes,
-	}
-}
-
 func (f *Active2) Info() *frac.Info {
-	f.indexMu.RLock()
-	defer f.indexMu.RUnlock()
-
-	cp := *f.info // copy
-	return &cp
+	return f.indexes.Info()
 }
 
 func (f *Active2) Contains(id seq.MID) bool {
@@ -314,7 +280,8 @@ func (f *Active2) Suicide() {
 
 func (f *Active2) releaseMem() {
 	f.writer.Stop()
-	f.indexes.Stop()
+	f.merger.Stop()
+	f.indexes.Release()
 
 	f.docsCache.Release()
 	f.sortCache.Release()

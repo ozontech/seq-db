@@ -5,12 +5,12 @@ import (
 )
 
 const (
-	minIndexesToMerge    = 4    // minimum number of indexes to trigger merge
-	forceMergeThreshold  = 64   // index count threshold for forced merge
-	tierSizeDeltaPercent = 10   // percentage difference between size tiers
-	firstTierMaxSizeKb   = 8    // maximum size of the first tier
-	maxTierCount         = 1000 // todo  maximum number of size tiers allowed
-	bucketSizePercent    = 50   // percentage difference between size buckets
+	minIndexesToMerge    = 4  // minimum number of indexes to trigger merge
+	forceMergeThreshold  = 64 // index count threshold for forced merge
+	firstTierMaxSizeKb   = 8  // maximum size of the first tier
+	maxTierCount         = 64 // maximum number of size tiers allowed
+	tierSizeDeltaPercent = 25 // percentage difference between size tiers
+	bucketSizePercent    = 50 // percentage difference between size buckets
 )
 
 // MergeManager manages in-memory index collection and merging
@@ -25,12 +25,12 @@ type MergeManager struct {
 	mergeCh chan struct{} // channel to trigger merge process
 }
 
-// newMergeManager creates a new index manager
-func newMergeManager(maxConcurrentMerges int) *MergeManager {
+// NewMergeManager creates a new index manager
+func NewMergeManager(indexes *memIndexPool, maxConcurrentMerges int) *MergeManager {
 	m := MergeManager{
+		indexes: indexes,
 		workers: make(chan struct{}, maxConcurrentMerges),
 		mergeCh: make(chan struct{}, 1),
-		indexes: newIndexPool(),
 	}
 
 	// Start background goroutine for merge scheduling
@@ -52,41 +52,25 @@ func (m *MergeManager) Stop() {
 }
 
 // MergeAll performs full merge of all available indexes
-func (m *MergeManager) MergeAll() *memIndex {
+func (m *MergeManager) MergeAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.wg.Wait()
 
-	if len(m.indexes.indexes) == 1 {
-		return m.indexes.indexes[0]
+	if toMerge := m.indexes.ReadyToMerge(); len(toMerge) > 1 {
+		m.indexes.markAsMerging(toMerge)
+		merged := mergeIndexes(extractIndexes(toMerge))
+		m.indexes.replace(toMerge, merged)
 	}
-
-	// todo обработать случай когда нет индексов вообще
-
-	indexesToMerge := m.indexes.ReadyToMerge()
-	m.indexes.markAsMerging(indexesToMerge)
-	mergedIndex := mergeIndexes(extractIndexes(indexesToMerge))
-	m.indexes.replace(indexesToMerge, mergedIndex)
-
-	return mergedIndex
 }
 
-func extractIndexes(metadataList []memIndexExt) []*memIndex {
-	result := make([]*memIndex, 0, len(metadataList))
-	for _, metadata := range metadataList {
-		result = append(result, metadata.index)
+func extractIndexes(indexesExt []memIndexExt) []*memIndex {
+	result := make([]*memIndex, 0, len(indexesExt))
+	for _, eIdx := range indexesExt {
+		result = append(result, eIdx.index)
 	}
 	return result
-}
-
-func (m *MergeManager) Indexes() []*memIndex {
-	return m.indexes.Indexes()
-}
-
-func (m *MergeManager) Add(index *memIndex) {
-	m.indexes.Add(index)
-	m.triggerMerge()
 }
 
 // prepareForMerging prepares index groups for merging
@@ -98,7 +82,7 @@ func (m *MergeManager) prepareForMerging() [][]memIndexExt {
 		return nil
 	}
 
-	mergeCandidates := selectForMerge(m.indexes.ReadyToMerge(), minIndexesToMerge)
+	mergeCandidates := pickMergeCandidates(m.indexes.ReadyToMerge(), minIndexesToMerge)
 
 	for i, candidateGroup := range mergeCandidates {
 		if !m.acquireWorker() { // no free workers

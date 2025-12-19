@@ -1,6 +1,7 @@
 package active2
 
 import (
+	"errors"
 	"iter"
 	"math"
 	"time"
@@ -28,18 +29,24 @@ type SealingSource struct {
 }
 
 func NewSealingSource(a *Active2, params frac.SealParams) (sealing.Source, error) {
-	info := *a.info                // copy
-	index := *a.indexes.MergeAll() // copy
+	a.merger.MergeAll()
+
+	iss, release := a.indexes.Snapshot()
+	defer release()
+
+	if len(iss.indexes) != 1 {
+		return nil, errors.New("wrong count of fraction memIndexes")
+	}
 
 	ss := &SealingSource{
-		info:  &info,
-		index: &index,
+		info:  iss.info,
+		index: iss.indexes[0],
 	}
 
 	// Sort documents if not skipped in configuration
 	if !a.Config.SkipSortDocs {
-		ds := active.NewDocsSource(ss, index.blocksOffsets, &a.sortReader)
-		blocksOffsets, positions, onDiskSize, err := sealing.SortDocs(info.Path, params, ds)
+		ds := active.NewDocsSource(ss, ss.index.blocksOffsets, &a.sortReader)
+		blocksOffsets, positions, onDiskSize, err := sealing.SortDocs(ss.info.Path, params, ds)
 		if err != nil {
 			return nil, err
 		}
@@ -50,7 +57,7 @@ func NewSealingSource(a *Active2, params frac.SealParams) (sealing.Source, error
 
 	ss.info.MetaOnDisk = 0
 	ss.info.SealingTime = uint64(time.Now().UnixMilli())
-	ss.info.BuildDistributionWithIDs(index.ids)
+	ss.info.BuildDistributionWithIDs(ss.index.ids)
 
 	return ss, nil
 }

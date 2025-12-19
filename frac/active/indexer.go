@@ -170,7 +170,6 @@ func (ai *Indexer) appendWorker(index int) {
 }
 
 func (ai *Indexer) sendTokensToMergeWorkers(frac *Active, tokens []*TokenLIDs) {
-	return
 	for _, tl := range tokens {
 		task := mergeTask{
 			frac:      frac,
