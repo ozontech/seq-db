@@ -10,6 +10,7 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/indexer"
@@ -20,32 +21,35 @@ import (
 	"github.com/ozontech/seq-db/tokenizer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 func BenchmarkIndexer(b *testing.B) {
 	logger.SetLevel(zapcore.FatalLevel)
-	idx := NewIndexer(8)
 
 	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
-	readers := splitLogsToBulks(allLogs, 2000)
+	readers := splitLogsToBulks(allLogs, 1000)
 	assert.NoError(b, err)
 
 	processor := getTestProcessor()
 
+	n := 2
+	allMeta := make([][]byte, 0, len(readers)*n)
+
+	for range n {
+		for _, readNext := range readers {
+			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
+			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
+		}
+	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		bulks := make([][]byte, 0, len(readers))
-		for _, readNext := range readers {
-			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-			bulks = append(bulks, storage.CompressDocBlock(meta, nil, 3))
-		}
 		active := New(
 			filepath.Join(b.TempDir(), "test"),
 			&frac.Config{},
-			idx,
+			config.NumCPU,
 			storage.NewReadLimiter(1, nil),
 			cache.NewCache[[]byte](nil, nil),
 			cache.NewCache[[]byte](nil, nil),
@@ -53,12 +57,9 @@ func BenchmarkIndexer(b *testing.B) {
 		b.StartTimer()
 
 		wg := sync.WaitGroup{}
-		for _, meta := range bulks {
+		for _, meta := range allMeta {
 			wg.Add(1)
-			idx.Index(meta, func(idx *memIndex, err error) {
-				if err != nil {
-					logger.Fatal("bulk indexing error", zap.Error(err))
-				}
+			active.indexer.Index(meta, func(idx *memIndex, err error) {
 				active.indexes.Add(idx, 0, 0)
 				wg.Done()
 			})
@@ -69,39 +70,40 @@ func BenchmarkIndexer(b *testing.B) {
 
 func BenchmarkMerge(b *testing.B) {
 	logger.SetLevel(zapcore.FatalLevel)
-	idx := NewIndexer(8)
 
 	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
-	readers := splitLogsToBulks(allLogs, 2000)
+	readers := splitLogsToBulks(allLogs, 1000)
 	assert.NoError(b, err)
 
 	processor := getTestProcessor()
 
+	n := 2
+	allMeta := make([][]byte, 0, len(readers)*n)
+
+	for range n {
+		for _, readNext := range readers {
+			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
+			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
+		}
+	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		bulks := make([][]byte, 0, len(readers))
-		for _, readNext := range readers {
-			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-			bulks = append(bulks, storage.CompressDocBlock(meta, nil, 3))
-		}
 
 		active := New(
 			filepath.Join(b.TempDir(), "test"),
 			&frac.Config{},
-			idx,
+			config.NumCPU,
 			storage.NewReadLimiter(1, nil),
 			cache.NewCache[[]byte](nil, nil),
 			cache.NewCache[[]byte](nil, nil),
 		)
 
 		wg := sync.WaitGroup{}
-		for _, meta := range bulks {
+		for _, meta := range allMeta {
 			wg.Add(1)
-			idx.Index(meta, func(idx *memIndex, err error) {
-				if err != nil {
-					logger.Fatal("bulk indexing error", zap.Error(err))
-				}
+			active.indexer.Index(meta, func(idx *memIndex, err error) {
 				active.indexes.Add(idx, 0, 0)
 				wg.Done()
 			})
@@ -128,7 +130,6 @@ func defaultSealingParams() frac.SealParams {
 
 func BenchmarkFullWrite(b *testing.B) {
 	logger.SetLevel(zapcore.FatalLevel)
-	idx := NewIndexer(8)
 
 	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
 	readers := splitLogsToBulks(allLogs, 1000)
@@ -136,7 +137,7 @@ func BenchmarkFullWrite(b *testing.B) {
 
 	processor := getTestProcessor()
 
-	n := 2
+	n := 10
 	allDocs := make([][]byte, 0, len(readers)*n)
 	allMeta := make([][]byte, 0, len(readers)*n)
 
@@ -154,7 +155,7 @@ func BenchmarkFullWrite(b *testing.B) {
 		active := New(
 			filepath.Join(b.TempDir(), "test"),
 			&frac.Config{SkipSortDocs: true},
-			idx,
+			config.NumCPU,
 			storage.NewReadLimiter(1, nil),
 			cache.NewCache[[]byte](nil, nil),
 			cache.NewCache[[]byte](nil, nil),

@@ -5,7 +5,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/alecthomas/units"
 	"github.com/ozontech/seq-db/frac"
 )
 
@@ -13,7 +12,7 @@ import (
 type memIndexExt struct {
 	id    uint64    // unique runtime ID
 	index *memIndex // actual index
-	tier  int       // size tier of the index
+	gen   int
 }
 
 type memIndexPool struct {
@@ -23,7 +22,6 @@ type memIndexPool struct {
 	readyToMerge map[uint64]memIndexExt
 	underMerging map[uint64]memIndexExt
 
-	tiers   sizeTiers     // index size tier classifier
 	counter atomic.Uint64 // atomic counter for generating index IDs
 }
 
@@ -32,8 +30,6 @@ func NewIndexPool(info *frac.Info) *memIndexPool {
 		info:         info,
 		readyToMerge: make(map[uint64]memIndexExt),
 		underMerging: make(map[uint64]memIndexExt),
-
-		tiers: newSizeTiers(firstTierMaxSizeKb, maxTierCount, tierSizeDeltaPercent),
 	}
 }
 
@@ -74,7 +70,7 @@ func (p *memIndexPool) Info() *frac.Info {
 func (p *memIndexPool) Add(idx *memIndex, docsLen, metaLen uint64) {
 	maxMID := idx.ids[0].MID
 	minMID := idx.ids[len(idx.ids)-1].MID
-	idxExt := p.wrapIndex(idx)
+	item := p.wrapIndex(idx, 0)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -91,7 +87,7 @@ func (p *memIndexPool) Add(idx *memIndex, docsLen, metaLen uint64) {
 	p.info.DocsOnDisk += docsLen
 	p.info.MetaOnDisk += metaLen
 
-	p.readyToMerge[idxExt.id] = idxExt
+	p.readyToMerge[item.id] = item
 	p.indexes = append(p.indexes, idx)
 }
 
@@ -117,31 +113,36 @@ func (p *memIndexPool) markAsMerging(items []memIndexExt) {
 	}
 }
 
-func (p *memIndexPool) replace(oldIndexes []memIndexExt, newIndex *memIndex) {
-	mergedMeta := p.wrapIndex(newIndex)
+func (p *memIndexPool) replace(old []memIndexExt, newIndex *memIndex) {
+	gen := 0
+	for _, item := range old {
+		gen += item.gen
+	}
+	merged := p.wrapIndex(newIndex, gen/len(old)+1)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for _, metaIndex := range oldIndexes {
-		delete(p.underMerging, metaIndex.id)
+	for _, eIndex := range old {
+		delete(p.underMerging, eIndex.id)
 	}
-	p.readyToMerge[mergedMeta.id] = mergedMeta
+	p.readyToMerge[merged.id] = merged
 
 	// Rebuild the index list for reading
 	p.indexes = p.indexes[:0]
 	p.indexes = slices.Grow(p.indexes, len(p.readyToMerge)+len(p.underMerging))
 
-	for _, idxExt := range p.readyToMerge {
-		p.indexes = append(p.indexes, idxExt.index) // add all ready indexes
+	for _, item := range p.readyToMerge {
+		p.indexes = append(p.indexes, item.index) // add all ready indexes
 	}
-	for _, idxExt := range p.underMerging {
-		p.indexes = append(p.indexes, idxExt.index) // add indexes currently being merged
+	for _, item := range p.underMerging {
+		p.indexes = append(p.indexes, item.index) // add indexes currently being merged
 	}
 
 	go func() {
-		for _, idxExt := range oldIndexes {
-			idxExt.index.Release()
+		// todo do we need wg here?
+		for _, item := range old {
+			item.index.Release()
 		}
 	}()
 }
@@ -156,10 +157,10 @@ func (p *memIndexPool) Release() {
 	}
 }
 
-func (p *memIndexPool) wrapIndex(index *memIndex) memIndexExt {
+func (p *memIndexPool) wrapIndex(index *memIndex, gen int) memIndexExt {
 	return memIndexExt{
-		id:    p.counter.Add(1),                                  // atomically increment counter
-		tier:  p.tiers.Calc(index.docsCount / uint32(units.KiB)), // determine size tier
+		id:    p.counter.Add(1),
+		gen:   gen,
 		index: index,
 	}
 }

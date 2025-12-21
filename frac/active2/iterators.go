@@ -98,7 +98,7 @@ func (i *TokenIteratorItem) Field() []byte {
 	return i.payload.idx.fields[i.fid]
 }
 
-func (i *TokenIteratorItem) Token() []byte {
+func (i *TokenIteratorItem) Value() []byte {
 	return i.payload.idx.tokens[i.tid]
 }
 

@@ -18,22 +18,22 @@ const uint32Size = uint32(unsafe.Sizeof(uint32(0)))
 
 // Indexer indexes documents with concurrency limitation
 type Indexer struct {
-	sem chan struct{}
+	workerPool Semaphore
 }
 
 // NewIndexer creates a new indexer with specified number of workers
-func NewIndexer(workerCount int) *Indexer {
+func NewIndexer(workerPool Semaphore) *Indexer {
 	return &Indexer{
-		sem: make(chan struct{}, workerCount),
+		workerPool: workerPool,
 	}
 }
 
 // Index starts asynchronous document indexing
 func (idx *Indexer) Index(block storage.DocBlock, apply func(index *memIndex, err error)) {
-	idx.sem <- struct{}{}
+	idx.workerPool.Acquire()
 	go func() {
 		apply(NewMemIndex(block))
-		<-idx.sem
+		idx.workerPool.Release()
 	}()
 }
 
@@ -41,8 +41,8 @@ func (idx *Indexer) Index(block storage.DocBlock, apply func(index *memIndex, er
 func NewMemIndex(block storage.DocBlock) (*memIndex, error) {
 	sw := stopwatch.New()
 
-	res, cleanup := AcquireResources()
-	defer cleanup()
+	res, release := AcquireResources()
+	defer release()
 
 	// Decompress metadata
 	payload, err := decompressMeta(res, block, sw)
@@ -72,10 +72,10 @@ func NewMemIndex(block storage.DocBlock) (*memIndex, error) {
 	}
 
 	// Group documents by token
-	tokenDocGroups := groupLIDsByTID(idx, res, tids, lids, len(tokens))
+	tokenLIDs := groupLIDsByTID(idx, res, tids, lids, len(tokens))
 
 	// Organize tokens and fields
-	organizeTokens(idx, res, buf, tokens, tokenDocGroups)
+	organizeTokens(idx, res, buf, tokens, tokenLIDs)
 
 	// Set special "all" token
 	idx.allTID = uint32(idx.fieldsTokens[seq.TokenAll].start)
@@ -83,15 +83,15 @@ func NewMemIndex(block storage.DocBlock) (*memIndex, error) {
 	return idx, nil
 }
 
-// token represents a unique token as a (field, value) pair.
+// tokenStr represents a unique token as a (field, value) pair.
 // Used as a map key during token deduplication.
-type token struct {
+type tokenStr struct {
 	value string
 	field string
 }
 
-func toToken(t tokenizer.MetaToken) token {
-	return token{
+func toToken(t tokenizer.MetaToken) tokenStr {
+	return tokenStr{
 		value: util.ByteToStringUnsafe(t.Value),
 		field: util.ByteToStringUnsafe(t.Key),
 	}
@@ -103,7 +103,7 @@ func extractTokens(
 	res *Resources,
 	buf *indexBuffer,
 	meta []indexer.MetaData,
-) ([]uint32, []uint32, []token, error) {
+) ([]uint32, []uint32, []tokenStr, error) {
 	var docOffset uint64
 	var totalTokens uint32
 
@@ -115,7 +115,6 @@ func extractTokens(
 	for i := range meta {
 		docMeta := meta[i]
 		if docMeta.Size > 0 {
-			// Start new document group
 			prev = seq.PackDocPos(0, docOffset)
 			docOffset += uint64(docMeta.Size) + uint64(uint32Size)
 		}
@@ -143,7 +142,7 @@ func extractTokens(
 
 	// Extract and process tokens from all documents
 	var err error
-	var token token
+	var token tokenStr
 
 	// Allocate slices for token-document relationships
 	lids := res.AllocUint32s(int(totalTokens))[:0] // Local document ID for each token occurrence
@@ -195,6 +194,7 @@ func groupLIDsByTID(idx *memIndex, res *Resources, tids, lids []uint32, tokenCou
 	// We use a single large buffer and slice it for efficiency
 	tokenLIDs := res.AllocUint32Slices(tokenCount)
 	allTokenLIDs := idx.res.AllocUint32s(len(lids))
+	idx.allTokenLIDsCount = len(lids)
 
 	tokenLIDs = tokenLIDs[:len(counts)]
 	for tid, count := range counts {
@@ -206,14 +206,24 @@ func groupLIDsByTID(idx *memIndex, res *Resources, tids, lids []uint32, tokenCou
 	// We reuse docIDs slice bounds for safety
 	lids = lids[:len(tids)]
 	for i, tid := range tids {
+		if len(tokenLIDs[tid]) > 0 {
+			if lids[i] == lastLID(tokenLIDs[tid]) { // deduplication
+				idx.allTokenLIDsCount--
+				continue
+			}
+		}
 		tokenLIDs[tid] = append(tokenLIDs[tid], lids[i])
 	}
 
 	return tokenLIDs
 }
 
+func lastLID(s []uint32) uint32 {
+	return s[len(s)-1]
+}
+
 // organizeTokens organizes tokens and fields in the index with proper sorting
-func organizeTokens(idx *memIndex, res *Resources, buf *indexBuffer, tokens []token, tokenLIDs [][]uint32) {
+func organizeTokens(idx *memIndex, res *Resources, buf *indexBuffer, tokens []tokenStr, tokenLIDs [][]uint32) {
 	tokenSize := 0
 	order := res.AllocUint32s(len(tokens))
 	order = order[:len(tokens)]

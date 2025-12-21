@@ -39,14 +39,13 @@ import (
 // TODO сделать разные тесты для сортированных и не сортированных доков
 type FractionTestSuite struct {
 	suite.Suite
-	tmpDir         string
-	config         *frac.Config
-	mapping        seq.Mapping
-	tokenizers     map[seq.TokenizerType]tokenizer.Tokenizer
-	activeIndexer  *active.Indexer
-	activeIndexer2 *active2.Indexer
-	stopIndexer    func()
-	sealParams     frac.SealParams
+	tmpDir        string
+	config        *frac.Config
+	mapping       seq.Mapping
+	tokenizers    map[seq.TokenizerType]tokenizer.Tokenizer
+	activeIndexer *active.Indexer
+	stopIndexer   func()
+	sealParams    frac.SealParams
 
 	fraction frac.Fraction
 
@@ -55,7 +54,6 @@ type FractionTestSuite struct {
 
 func (s *FractionTestSuite) SetupSuiteCommon() {
 	s.activeIndexer, s.stopIndexer = active.NewIndexer(4, 10)
-	s.activeIndexer2 = active2.NewIndexer(4)
 }
 
 func (s *FractionTestSuite) TearDownSuiteCommon() {
@@ -1670,7 +1668,7 @@ func (s *Active2FractionTestSuite) newActive2(bulks ...[]string) *active2.Active
 	a := active2.New(
 		baseName,
 		s.config,
-		s.activeIndexer2,
+		4,
 		storage.NewReadLimiter(1, nil),
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),

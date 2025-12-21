@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	tokenKeyPool        = resources.NewSizedPool[token](24)
+	tokenKeyPool        = resources.NewSizedPool[tokenStr](24)
 	indexerMetaDataPool = resources.NewSizedPool[indexer.MetaData](24)
 	docPosSlicesPool    = resources.NewSizedPool[[]seq.DocPos](24)
 	bufPool             = resources.TypedPool[*indexBuffer]{}
@@ -25,7 +25,7 @@ type Resources struct {
 	bytes           resources.SliceAllocator[byte]
 	bytesSlices     resources.SliceAllocator[[]byte]
 	uint32Slices    resources.SliceAllocator[[]uint32]
-	tokenKeys       resources.SliceAllocator[token]
+	tokenKeys       resources.SliceAllocator[tokenStr]
 	indexerMetaData resources.SliceAllocator[indexer.MetaData]
 	buf             resources.ObjectAllocator[indexBuffer]
 	ids             resources.SliceOnBytes[seq.ID]
@@ -95,7 +95,7 @@ func (r *Resources) AllocMetadata(s int) []indexer.MetaData {
 	return r.indexerMetaData.AllocSlice(s)
 }
 
-func (r *Resources) AllocTokens(s int) []token {
+func (r *Resources) AllocTokens(s int) []tokenStr {
 	return r.tokenKeys.AllocSlice(s)
 }
 
@@ -106,7 +106,7 @@ func (r *Resources) Buffer() *indexBuffer {
 			fields:    make([]string, 0, 100),
 			fieldTIDs: make([]uint32, 0, 100),
 			tokens:    make([]tokenizer.MetaToken, 0, 100),
-			tokenMap:  make(map[token]uint32, 1000),
+			tokenMap:  make(map[tokenStr]uint32, 1000),
 		}
 	}, func(b *indexBuffer) {
 		b.fields = b.fields[:0]
@@ -124,5 +124,5 @@ type indexBuffer struct {
 	fields    []string
 	fieldTIDs []uint32
 	tokens    []tokenizer.MetaToken
-	tokenMap  map[token]uint32
+	tokenMap  map[tokenStr]uint32
 }

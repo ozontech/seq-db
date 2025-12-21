@@ -4,30 +4,26 @@ import (
 	"bytes"
 	"slices"
 
-	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
 
 func mergeIndexes(indexes []*memIndex) *memIndex {
-	docsCount := 0
 	blocksCount := 0
-	docsSize := uint64(0)
-	for _, index := range indexes {
-		docsSize += index.docsSize
-		docsCount += len(index.ids)
-		blocksCount += len(index.blocksOffsets)
+	dst := newMemIndex()
+	for _, idx := range indexes {
+		dst.docsSize += idx.docsSize
+		dst.docsCount += idx.docsCount
+		dst.allTokenLIDsCount += idx.allTokenLIDsCount
+		blocksCount += len(idx.blocksOffsets)
 	}
 
 	res, release := AcquireResources()
 	defer release()
 
-	dst := newMemIndex()
-	dst.docsCount = uint32(docsCount)
-	dst.ids = dst.res.AllocIDs(docsCount)[:0]
-	dst.positions = dst.res.AllocDocPos(docsCount)[:0]
+	dst.ids = dst.res.AllocIDs(int(dst.docsCount))[:0]
+	dst.positions = dst.res.AllocDocPos(int(dst.docsCount))[:0]
 	dst.blocksOffsets = dst.res.AllocUint64s(blocksCount)[:0]
-	dst.docsSize = docsSize
 
 	posMap := mergeBlocksOffsets(dst, res, indexes)
 	lidsMap := mergeIDs(dst, res, indexes, posMap)
@@ -47,7 +43,7 @@ func mergeIDs(dst *memIndex, res *Resources, indexes []*memIndex, posMap [][]seq
 			idx:    idx,
 			posMap: posMap[i],
 		}
-		lidsMap[i] = res.uint32s.AllocSlice(int(idx.docsCount))[:0]
+		lidsMap[i] = res.uint32s.AllocSlice(int(idx.docsCount) + 1)[:1] // 1-based
 	}
 
 	orderedIDs := MergeKSortIterators(iters, func(a, b IDIteratorItem) int { return seq.Compare(b.id, a.id) })
@@ -64,28 +60,22 @@ func mergeIDs(dst *memIndex, res *Resources, indexes []*memIndex, posMap [][]seq
 }
 
 func mergeTokens(dst *memIndex, res *Resources, indexes []*memIndex, lidsMap [][]uint32) {
-	allCount := 0
 	totalTokens := 0
-	totalLIDsSize := 0
-	TokensIterators := make([]IOrderedIterator[TokenIteratorItem], len(indexes))
-	for i, index := range indexes {
-		allCount += len(index.ids)
-		TokensIterators[i] = NewTokenIterator(index, lidsMap[i])
-		totalTokens += len(index.tokens)
-		for _, lids := range index.tokenLIDs {
-			totalLIDsSize += len(lids)
-		}
+	tokensIterators := make([]IOrderedIterator[TokenIteratorItem], len(indexes))
+	for i, idx := range indexes {
+		totalTokens += len(idx.tokens)
+		tokensIterators[i] = NewTokenIterator(idx, lidsMap[i])
 	}
 
 	cmpToken := func(a, b TokenIteratorItem) int {
 		r := bytes.Compare(a.Field(), b.Field())
 		if r == 0 {
-			return bytes.Compare(a.Token(), b.Token())
+			return bytes.Compare(a.Value(), b.Value())
 		}
 		return r
 	}
 
-	orderedTokens := MergeKSortIterators(TokensIterators, cmpToken)
+	orderedTokens := MergeKSortIterators(tokensIterators, cmpToken)
 
 	uniqTokensSize := 0
 	uniqTokensCount := 0
@@ -99,14 +89,14 @@ func mergeTokens(dst *memIndex, res *Resources, indexes []*memIndex, lidsMap [][
 	)
 
 	borders := res.AllocBytes(totalTokens)[:0]
-	items := make([]TokenIteratorItem, 0, totalTokens)
+	tokens := make([]TokenIteratorItem, 0, totalTokens)
 
 	for cur, has := orderedTokens.Next(); has; cur, has = orderedTokens.Next() {
 		var border uint8
 
 		if prevToken.payload == nil || cmpToken(prevToken, cur) != 0 {
 			uniqTokensCount++
-			uniqTokensSize += len(cur.Token())
+			uniqTokensSize += len(cur.Value())
 			border++
 
 			field := cur.Field()
@@ -119,7 +109,7 @@ func mergeTokens(dst *memIndex, res *Resources, indexes []*memIndex, lidsMap [][
 		}
 
 		borders = append(borders, border)
-		items = append(items, cur)
+		tokens = append(tokens, cur)
 		prevToken = cur
 	}
 
@@ -130,12 +120,17 @@ func mergeTokens(dst *memIndex, res *Resources, indexes []*memIndex, lidsMap [][
 
 	allTokens := dst.res.AllocBytes(uniqTokensSize)[:0]
 	allFields := dst.res.AllocBytes(uniqFieldsSize)[:0]
-	allTokenLIDs := dst.res.AllocUint32s(totalLIDsSize)[:0]
 
-	lidsCollector := NewLIDsCollector(allTokenLIDs, genAllLIDs(res, allCount))
+	lidsCollector := NewLIDsCollector(
+		res.AllocUint32s(int(dst.docsCount)),                                 // tmp buf
+		dst.res.AllocUint32s(dst.allTokenLIDsCount - int(dst.docsCount))[:0], // all token LIDs
+		dst.res.AllocUint32s(int(dst.docsCount)),                             // ALL LIDs for token _all_
+		res.AllocBytes((int(dst.docsCount) + 1)),                             // sort buffer
+	)
 
 	var isAllToken bool
-	for i, item := range items {
+	for i, token := range tokens {
+		token := token
 		if borders[i] > 0 {
 
 			if i > 0 {
@@ -154,7 +149,7 @@ func mergeTokens(dst *memIndex, res *Resources, indexes []*memIndex, lidsMap [][
 				}
 
 				start := len(allFields)
-				allFields = append(allFields, item.Field()...)
+				allFields = append(allFields, token.Field()...)
 				field := allFields[start:]
 				dst.fields = append(dst.fields, field)
 
@@ -165,19 +160,18 @@ func mergeTokens(dst *memIndex, res *Resources, indexes []*memIndex, lidsMap [][
 			}
 
 			start := len(allTokens)
-			allTokens = append(allTokens, item.Token()...)
+			allTokens = append(allTokens, token.Value()...)
 			dst.tokens = append(dst.tokens, allTokens[start:])
 		}
 
 		if isAllToken {
-			for range item.LIDs() {
+			for range token.LIDs() {
 				lidsCollector.Add(0)
 			}
 		} else {
-			lidsMap := item.lidsMap()
-			for _, oldLID := range item.LIDs() {
-				newLID := lidsMap[oldLID-1]
-				lidsCollector.Add(newLID)
+			newLIDsMap := token.lidsMap()
+			for _, oldLID := range token.LIDs() {
+				lidsCollector.Add(newLIDsMap[oldLID])
 			}
 		}
 	}
@@ -193,52 +187,59 @@ func mergeTokens(dst *memIndex, res *Resources, indexes []*memIndex, lidsMap [][
 }
 
 type LIDsCollector struct {
-	all    []uint32
-	lids   []uint32
-	offset int
-	bitmap *roaring.Bitmap
+	tmp  []uint32
+	lids []uint32
+	all  []uint32
+	buf  []uint8
 }
 
-func genAllLIDs(res *Resources, s int) []uint32 {
-	all := res.AllocUint32s(s)
+func NewLIDsCollector(tmp, lids, all []uint32, buf []uint8) *LIDsCollector {
+	clear(buf)
 	for i := range all {
 		all[i] = uint32(i) + 1
 	}
-	return all
-}
-
-func NewLIDsCollector(allTokenLIDs, all []uint32) *LIDsCollector {
 	return &LIDsCollector{
-		lids:   allTokenLIDs[:0],
-		all:    all,
-		bitmap: roaring.New(),
+		tmp:  tmp[:0],
+		lids: lids[:0],
+		all:  all,
+		buf:  buf,
 	}
 }
 
 func (s *LIDsCollector) Add(lid uint32) {
-	s.lids = append(s.lids, lid)
+	s.tmp = append(s.tmp, lid)
 }
 
 func (s *LIDsCollector) GetSorted() (dst []uint32) {
-	dst = s.lids[s.offset:]
+	n := len(s.tmp)
 
-	if len(dst) == len(s.all) {
-		s.lids = append(s.lids[:s.offset], s.all...)
-		s.offset = len(s.lids)
-		return dst
+	if n == len(s.all) {
+		s.tmp = s.tmp[:0]
+		return s.all
 	}
 
-	if len(dst) > 64_000 {
-		s.bitmap.AddMany(dst)
-		s.bitmap.ToExistingArray(&dst)
-		s.bitmap.Clear()
-		s.offset = len(s.lids)
-		return dst
+	if n > 16_000 {
+		for _, v := range s.tmp {
+			s.buf[v] = 1
+		}
+		start := len(s.lids)
+		for lid, ok := range s.buf {
+			if ok == 1 {
+				s.buf[lid] = 0
+				s.lids = append(s.lids, uint32(lid))
+			}
+		}
+		s.tmp = s.tmp[:0]
+		return s.lids[start:]
 	}
 
-	slices.Sort(dst)
-	s.offset = len(s.lids)
-	return dst
+	if n > 1 {
+		slices.Sort(s.tmp)
+	}
+	start := len(s.lids)
+	s.lids = append(s.lids, s.tmp...)
+	s.tmp = s.tmp[:0]
+	return s.lids[start:]
 }
 
 func mergeBlocksOffsets(dst *memIndex, res *Resources, indexes []*memIndex) [][]seq.DocPos {

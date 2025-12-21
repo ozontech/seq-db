@@ -2,16 +2,22 @@ package active2
 
 import (
 	"sync"
+
+	"github.com/ozontech/seq-db/logger"
+	"go.uber.org/zap"
 )
 
 const (
-	minIndexesToMerge    = 4  // minimum number of indexes to trigger merge
-	forceMergeThreshold  = 64 // index count threshold for forced merge
-	firstTierMaxSizeKb   = 8  // maximum size of the first tier
-	maxTierCount         = 64 // maximum number of size tiers allowed
-	tierSizeDeltaPercent = 25 // percentage difference between size tiers
-	bucketSizePercent    = 50 // percentage difference between size buckets
+	maxGenerations      = 32
+	minIndexesToMerge   = 16   // minimum number of indexes to trigger merge
+	forceMergeThreshold = 4096 // index count threshold for forced merge
 )
+
+type Semaphore interface {
+	Acquire()
+	Release()
+	Capacity() int
+}
 
 // MergeManager manages in-memory index collection and merging
 type MergeManager struct {
@@ -21,16 +27,16 @@ type MergeManager struct {
 	stopped bool
 	indexes *memIndexPool
 
-	workers chan struct{} // semaphore to limit concurrent merge operations
-	mergeCh chan struct{} // channel to trigger merge process
+	workerPool Semaphore
+	mergeCh    chan struct{} // channel to trigger merge process
 }
 
 // NewMergeManager creates a new index manager
-func NewMergeManager(indexes *memIndexPool, maxConcurrentMerges int) *MergeManager {
+func NewMergeManager(indexes *memIndexPool, workerPool Semaphore) *MergeManager {
 	m := MergeManager{
-		indexes: indexes,
-		workers: make(chan struct{}, maxConcurrentMerges),
-		mergeCh: make(chan struct{}, 1),
+		indexes:    indexes,
+		workerPool: workerPool,
+		mergeCh:    make(chan struct{}, 1),
 	}
 
 	// Start background goroutine for merge scheduling
@@ -59,77 +65,54 @@ func (m *MergeManager) MergeAll() {
 	m.wg.Wait()
 
 	if toMerge := m.indexes.ReadyToMerge(); len(toMerge) > 1 {
+		logger.Debug("merge all mini-indexes", zap.Int("batch", len(toMerge)))
 		m.indexes.markAsMerging(toMerge)
 		merged := mergeIndexes(extractIndexes(toMerge))
 		m.indexes.replace(toMerge, merged)
 	}
 }
 
-func extractIndexes(indexesExt []memIndexExt) []*memIndex {
-	result := make([]*memIndex, 0, len(indexesExt))
-	for _, eIdx := range indexesExt {
-		result = append(result, eIdx.index)
+func extractIndexes(items []memIndexExt) []*memIndex {
+	result := make([]*memIndex, 0, len(items))
+	for _, item := range items {
+		result = append(result, item.index)
 	}
 	return result
 }
 
-// prepareForMerging prepares index groups for merging
-func (m *MergeManager) prepareForMerging() [][]memIndexExt {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.stopped {
-		return nil
-	}
-
-	mergeCandidates := pickMergeCandidates(m.indexes.ReadyToMerge(), minIndexesToMerge)
-
-	for i, candidateGroup := range mergeCandidates {
-		if !m.acquireWorker() { // no free workers
-			mergeCandidates = mergeCandidates[:i] // truncate unprocessable tail
-			break
-		}
-		m.indexes.markAsMerging(candidateGroup)
-	}
-
-	// Important: call Add() inside lock to prevent races during shutdown
-	m.wg.Add(len(mergeCandidates))
-
-	return mergeCandidates
-}
-
 func (m *MergeManager) mergeScheduler() {
 	for range m.mergeCh {
-		for {
-			preparedGroups := m.prepareForMerging()
-			if len(preparedGroups) == 0 {
-				break
-			}
+		m.workerPool.Acquire() // wait for a free worker
 
-			for _, toMerge := range preparedGroups {
-				go func() {
-					mergedIndex := mergeIndexes(extractIndexes(toMerge))
-					m.indexes.replace(toMerge, mergedIndex)
-					m.releaseWorker()
-					m.triggerMerge() // check if new merge is needed
-					m.wg.Done()
-				}()
-			}
+		m.mu.Lock()
+
+		if m.stopped {
+			m.mu.Unlock()
+			m.workerPool.Release()
+			continue
 		}
-	}
-}
 
-func (m *MergeManager) acquireWorker() bool {
-	select {
-	case m.workers <- struct{}{}:
-		return true
-	default:
-		return false
-	}
-}
+		batch := pickToMerge(m.indexes.ReadyToMerge(), minIndexesToMerge)
+		if len(batch) == 0 {
+			m.mu.Unlock()
+			m.workerPool.Release()
+			continue
+		}
 
-func (m *MergeManager) releaseWorker() {
-	<-m.workers
+		m.indexes.markAsMerging(batch)
+		m.wg.Add(1) // important to inc wg inside the lock
+		m.mu.Unlock()
+
+		logger.Debug("merge indexes", zap.Int("gen", batch[0].gen), zap.Int("batch", len(batch)))
+
+		go func() {
+			merged := mergeIndexes(extractIndexes(batch))
+			m.workerPool.Release()
+			m.indexes.replace(batch, merged)
+			m.triggerMerge() // check if new merge is needed
+			m.wg.Done()
+		}()
+	}
 }
 
 func (m *MergeManager) triggerMerge() {
@@ -138,4 +121,33 @@ func (m *MergeManager) triggerMerge() {
 	default:
 		// Trigger already set, no need for additional notification
 	}
+}
+
+func pickToMerge(items []memIndexExt, minBatchSize int) []memIndexExt {
+	if len(items) < minBatchSize {
+		return nil
+	}
+
+	if len(items) > forceMergeThreshold {
+		return items
+	}
+
+	batch := largestBatch(items)
+	if len(batch) < minBatchSize {
+		return nil
+	}
+	return batch
+}
+
+func largestBatch(items []memIndexExt) []memIndexExt {
+	maxGen := 0
+	batches := make([][]memIndexExt, maxGenerations)
+	for _, item := range items {
+		gen := min(maxGenerations, item.gen)
+		batches[gen] = append(batches[gen], item)
+		if len(batches[gen]) > len(batches[maxGen]) || len(batches[gen]) == len(batches[maxGen]) && gen > maxGen {
+			maxGen = gen
+		}
+	}
+	return batches[maxGen]
 }

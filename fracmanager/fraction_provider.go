@@ -9,6 +9,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/frac/active2"
@@ -23,27 +24,25 @@ const fileBasePattern = "seq-db-"
 // fractionProvider is a factory for creating different types of fractions
 // Contains all necessary dependencies for creating and managing fractions
 type fractionProvider struct {
-	s3cli          *s3.Client       // Client for S3 storage operations
-	config         *Config          // Fraction manager configuration
-	cacheProvider  *CacheMaintainer // Cache provider for data access optimization
-	activeIndexer  *active.Indexer  // Indexer for active fractions
-	activeIndexer2 *active2.Indexer
-	readLimiter    *storage.ReadLimiter // Read rate limiter
-	ulidEntropy    io.Reader            // Entropy source for ULID generation
+	s3cli         *s3.Client           // Client for S3 storage operations
+	config        *Config              // Fraction manager configuration
+	cacheProvider *CacheMaintainer     // Cache provider for data access optimization
+	activeIndexer *active.Indexer      // Indexer for active fractions
+	readLimiter   *storage.ReadLimiter // Read rate limiter
+	ulidEntropy   io.Reader            // Entropy source for ULID generation
 }
 
 func newFractionProvider(
 	cfg *Config, s3cli *s3.Client, cp *CacheMaintainer,
-	readLimiter *storage.ReadLimiter, indexer *active.Indexer, indexer2 *active2.Indexer,
+	readLimiter *storage.ReadLimiter, indexer *active.Indexer,
 ) *fractionProvider {
 	return &fractionProvider{
-		s3cli:          s3cli,
-		config:         cfg,
-		cacheProvider:  cp,
-		activeIndexer:  indexer,
-		activeIndexer2: indexer2,
-		readLimiter:    readLimiter,
-		ulidEntropy:    ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
+		s3cli:         s3cli,
+		config:        cfg,
+		cacheProvider: cp,
+		activeIndexer: indexer,
+		readLimiter:   readLimiter,
+		ulidEntropy:   ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
 	}
 }
 
@@ -62,7 +61,7 @@ func (fp *fractionProvider) NewActive2(name string) *active2.Active2 {
 	return active2.New(
 		name,
 		&fp.config.Fraction,
-		fp.activeIndexer2,
+		config.NumCPU,
 		fp.readLimiter,
 		fp.cacheProvider.CreateDocBlockCache(),
 		fp.cacheProvider.CreateSortDocsCache(),

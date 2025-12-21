@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/indexer"
@@ -80,7 +81,7 @@ func getTestProcessor() *indexer.Processor {
 
 func BenchmarkIndexer(b *testing.B) {
 	logger.SetLevel(zapcore.FatalLevel)
-	idx, stop := NewIndexer(8, 8)
+	idx, stop := NewIndexer(config.NumCPU, config.NumCPU)
 	defer stop()
 
 	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
@@ -131,7 +132,7 @@ func defaultSealingParams() frac.SealParams {
 
 func BenchmarkFullWrite(b *testing.B) {
 	logger.SetLevel(zapcore.FatalLevel)
-	idx, stop := NewIndexer(8, 8)
+	idx, stop := NewIndexer(config.NumCPU, config.NumCPU)
 	defer stop()
 
 	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
@@ -140,7 +141,7 @@ func BenchmarkFullWrite(b *testing.B) {
 
 	processor := getTestProcessor()
 
-	n := 2
+	n := 10
 	allDocs := make([][]byte, 0, len(readers)*n)
 	allMeta := make([][]byte, 0, len(readers)*n)
 

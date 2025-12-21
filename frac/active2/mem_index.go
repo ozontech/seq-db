@@ -22,8 +22,9 @@ type memIndex struct {
 	positions     []seq.DocPos
 	allTID        uint32
 
-	docsSize  uint64
-	docsCount uint32
+	docsSize          uint64
+	docsCount         uint32
+	allTokenLIDsCount int
 
 	wg      sync.WaitGroup
 	res     *Resources

@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/frac/active"
-	"github.com/ozontech/seq-db/frac/active2"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 )
@@ -38,9 +37,8 @@ func setupFractionProvider(t testing.TB, cfg *Config) (*fractionProvider, func()
 	rl := storage.NewReadLimiter(1, nil)
 	s3cli, stopS3 := setupS3Client(t)
 	idx, stopIdx := active.NewIndexer(1, 1)
-	idx2 := active2.NewIndexer(1)
 	cache := NewCacheMaintainer(uint64(units.MB), uint64(units.MB), nil)
-	provider := newFractionProvider(cfg, s3cli, cache, rl, idx, idx2)
+	provider := newFractionProvider(cfg, s3cli, cache, rl, idx)
 	return provider, func() {
 		stopIdx()
 		stopS3()
@@ -48,7 +46,7 @@ func setupFractionProvider(t testing.TB, cfg *Config) (*fractionProvider, func()
 }
 
 func TestFractionID(t *testing.T) {
-	fp := newFractionProvider(nil, nil, nil, nil, nil, nil)
+	fp := newFractionProvider(nil, nil, nil, nil, nil)
 	ulid1 := fp.nextFractionID()
 	ulid2 := fp.nextFractionID()
 	assert.NotEqual(t, ulid1, ulid2, "ULIDs should be different")

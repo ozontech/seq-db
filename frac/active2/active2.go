@@ -44,12 +44,10 @@ type Active2 struct {
 	writer *active.Writer
 }
 
-const MergerWorkers = 2
-
 func New(
 	baseFileName string,
 	cfg *frac.Config,
-	indexer *Indexer,
+	workers int,
 	readLimiter *storage.ReadLimiter,
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
@@ -59,14 +57,13 @@ func New(
 
 	info := frac.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size()))
 	indexes := NewIndexPool(info)
-	merger := NewMergeManager(indexes, MergerWorkers)
 
 	f := &Active2{
 		BaseFileName: baseFileName,
 		Config:       cfg,
-		indexer:      indexer,
+		indexer:      NewIndexer(util.NewSemaphore(workers)),
+		merger:       NewMergeManager(indexes, util.NewSemaphore(workers)),
 		indexes:      indexes,
-		merger:       merger,
 
 		docsFile:   docsFile,
 		docsCache:  docsCache,
@@ -130,11 +127,7 @@ out:
 
 			wg.Add(1)
 			f.indexer.Index(meta, func(idx *memIndex, err error) {
-				if err != nil {
-					logger.Fatal("bulk indexing error", zap.Error(err))
-				}
-				f.indexes.Add(idx, 0, 0)
-				f.merger.triggerMerge()
+				f.AddIndex(idx, 0, 0, err)
 				wg.Done()
 			})
 		}
@@ -165,19 +158,25 @@ func (f *Active2) Append(docs, meta []byte, wg *sync.WaitGroup) (err error) {
 	}
 
 	mi := sw.Start("send_to_indexer")
+
 	f.indexer.Index(meta, func(idx *memIndex, err error) {
-		if err != nil {
-			logger.Fatal("bulk indexing error", zap.Error(err))
-		}
-		f.indexes.Add(idx, uint64(len(docs)), uint64(len(meta)))
-		f.merger.triggerMerge()
+		f.AddIndex(idx, uint64(len(docs)), uint64(len(meta)), err)
 		wg.Done()
 	})
+
 	mi.Stop()
 
 	ma.Stop()
 	sw.Export(bulkStagesSeconds)
 	return nil
+}
+
+func (f *Active2) AddIndex(idx *memIndex, docsLen, metaLen uint64, err error) {
+	if err != nil {
+		logger.Fatal("bulk indexing error", zap.Error(err))
+	}
+	f.indexes.Add(idx, docsLen, metaLen)
+	f.merger.triggerMerge()
 }
 
 func (f *Active2) String() string {

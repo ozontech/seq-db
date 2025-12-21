@@ -42,7 +42,7 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client) (*FracManager, func
 	readLimiter := storage.NewReadLimiter(config.ReaderWorkers, storeBytesRead)
 	idx, stopIdx := active.NewIndexer(config.IndexWorkers, config.IndexWorkers)
 	cache := NewCacheMaintainer(cfg.CacheSize, cfg.SortCacheSize, newDefaultCacheMetrics())
-	provider := newFractionProvider(cfg, s3cli, cache, readLimiter, idx, nil)
+	provider := newFractionProvider(cfg, s3cli, cache, readLimiter, idx)
 	infoCache := NewFracInfoCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix))
 
 	// Load existing fractions into registry
