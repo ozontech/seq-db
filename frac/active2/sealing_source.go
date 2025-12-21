@@ -29,7 +29,7 @@ type SealingSource struct {
 }
 
 func NewSealingSource(a *Active2, params frac.SealParams) (sealing.Source, error) {
-	a.merger.MergeAll()
+	a.merger.ForceMergeAll()
 
 	iss, release := a.indexes.Snapshot()
 	defer release()

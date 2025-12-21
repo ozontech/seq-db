@@ -32,7 +32,7 @@ type memIndex struct {
 }
 
 func newMemIndex() *memIndex {
-	res, release := AcquireResources()
+	res, release := NewResources()
 	return &memIndex{
 		res:     res,
 		release: release,
@@ -70,6 +70,8 @@ func (idx *memIndex) GetLIDByID(id seq.ID) (uint32, bool) {
 }
 
 func (idx *memIndex) Release() {
-	idx.wg.Wait()
-	idx.release()
+	go func() { // non blocking call
+		idx.wg.Wait()
+		idx.release()
+	}()
 }

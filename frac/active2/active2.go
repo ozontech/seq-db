@@ -30,7 +30,7 @@ type Active2 struct {
 	indexer *Indexer
 
 	indexes *memIndexPool
-	merger  *MergeManager
+	merger  *mergeManager
 
 	docsFile   *os.File
 	docsReader storage.DocsReader
@@ -62,7 +62,7 @@ func New(
 		BaseFileName: baseFileName,
 		Config:       cfg,
 		indexer:      NewIndexer(util.NewSemaphore(workers)),
-		merger:       NewMergeManager(indexes, util.NewSemaphore(workers)),
+		merger:       newMergeManager(indexes, util.NewSemaphore(workers)),
 		indexes:      indexes,
 
 		docsFile:   docsFile,
@@ -176,7 +176,7 @@ func (f *Active2) AddIndex(idx *memIndex, docsLen, metaLen uint64, err error) {
 		logger.Fatal("bulk indexing error", zap.Error(err))
 	}
 	f.indexes.Add(idx, docsLen, metaLen)
-	f.merger.triggerMerge()
+	f.merger.requestMerge()
 }
 
 func (f *Active2) String() string {

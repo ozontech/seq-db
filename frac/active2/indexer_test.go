@@ -111,7 +111,7 @@ func BenchmarkMerge(b *testing.B) {
 		wg.Wait()
 		b.StartTimer()
 
-		active.merger.MergeAll()
+		active.merger.ForceMergeAll()
 	}
 }
 
@@ -137,7 +137,7 @@ func BenchmarkFullWrite(b *testing.B) {
 
 	processor := getTestProcessor()
 
-	n := 10
+	n := 2
 	allDocs := make([][]byte, 0, len(readers)*n)
 	allMeta := make([][]byte, 0, len(readers)*n)
 

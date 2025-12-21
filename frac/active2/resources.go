@@ -11,7 +11,7 @@ var (
 	tokenKeyPool        = resources.NewSizedPool[tokenStr](24)
 	indexerMetaDataPool = resources.NewSizedPool[indexer.MetaData](24)
 	docPosSlicesPool    = resources.NewSizedPool[[]seq.DocPos](24)
-	bufPool             = resources.TypedPool[*indexBuffer]{}
+	bufPool             = resources.TypedPool[*indexerBuffer]{}
 	resPool             = resources.TypedPool[*Resources]{}
 )
 
@@ -22,18 +22,18 @@ type Resources struct {
 
 	uint32s         resources.SliceOnBytes[uint32]
 	uint64s         resources.SliceOnBytes[uint64]
-	bytes           resources.SliceAllocator[byte]
-	bytesSlices     resources.SliceAllocator[[]byte]
-	uint32Slices    resources.SliceAllocator[[]uint32]
-	tokenKeys       resources.SliceAllocator[tokenStr]
-	indexerMetaData resources.SliceAllocator[indexer.MetaData]
-	buf             resources.ObjectAllocator[indexBuffer]
+	bytes           resources.SlicesPool[byte]
+	bytesSlices     resources.SlicesPool[[]byte]
+	uint32Slices    resources.SlicesPool[[]uint32]
+	tokenKeys       resources.SlicesPool[tokenStr]
+	indexerMetaData resources.SlicesPool[indexer.MetaData]
+	buf             resources.ObjectsPool[indexerBuffer]
 	ids             resources.SliceOnBytes[seq.ID]
 	docPos          resources.SliceOnBytes[seq.DocPos]
-	docPosSlices    resources.SliceAllocator[[]seq.DocPos]
+	docPosSlices    resources.SlicesPool[[]seq.DocPos]
 }
 
-func AcquireResources() (*Resources, func()) {
+func NewResources() (*Resources, func()) {
 	r, ok := resPool.Get()
 	if !ok {
 		s := resources.CallStack{}
@@ -47,10 +47,10 @@ func AcquireResources() (*Resources, func()) {
 			bytesSlices:     resources.NewBytesSlices(&s),
 			ids:             resources.NewSliceOnBytes[seq.ID](&s),
 			docPos:          resources.NewSliceOnBytes[seq.DocPos](&s),
-			docPosSlices:    resources.NewSliceAllocator(&docPosSlicesPool, &s),
-			indexerMetaData: resources.NewSliceAllocator(&indexerMetaDataPool, &s),
-			tokenKeys:       resources.NewSliceAllocator(&tokenKeyPool, &s),
-			buf:             resources.NewObjectAllocator(&bufPool, &s),
+			docPosSlices:    resources.NewSlicesPool(&docPosSlicesPool, &s),
+			indexerMetaData: resources.NewSlicesPool(&indexerMetaDataPool, &s),
+			tokenKeys:       resources.NewSlicesPool(&tokenKeyPool, &s),
+			buf:             resources.NewObjectsPool(&bufPool, &s),
 		}
 	}
 	return r, func() {
@@ -59,70 +59,60 @@ func AcquireResources() (*Resources, func()) {
 	}
 }
 
-func (r *Resources) AllocBytesSlices(s int) [][]byte {
-	return r.bytesSlices.AllocSlice(s)
+func (r *Resources) GetBytesSlices(s int) [][]byte {
+	return r.bytesSlices.GetSlice(s)
 }
 
-func (r *Resources) AllocBytes(s int) []byte {
-	return r.bytes.AllocSlice(s)
+func (r *Resources) GetBytes(s int) []byte {
+	return r.bytes.GetSlice(s)
 }
 
-func (r *Resources) AllocUint32s(s int) []uint32 {
-	return r.uint32s.AllocSlice(s)
+func (r *Resources) GetUint32s(s int) []uint32 {
+	return r.uint32s.GetSlice(s)
 }
 
-func (r *Resources) AllocIDs(s int) []seq.ID {
-	return r.ids.AllocSlice(s)
+func (r *Resources) GetIDs(s int) []seq.ID {
+	return r.ids.GetSlice(s)
 }
 
-func (r *Resources) AllocDocPos(s int) []seq.DocPos {
-	return r.docPos.AllocSlice(s)
+func (r *Resources) GetDocPos(s int) []seq.DocPos {
+	return r.docPos.GetSlice(s)
 }
 
-func (r *Resources) AllocDocPosSlices(s int) [][]seq.DocPos {
-	return r.docPosSlices.AllocSlice(s)
+func (r *Resources) GetDocPosSlices(s int) [][]seq.DocPos {
+	return r.docPosSlices.GetSlice(s)
 }
 
-func (r *Resources) AllocUint64s(s int) []uint64 {
-	return r.uint64s.AllocSlice(s)
+func (r *Resources) GetUint64s(s int) []uint64 {
+	return r.uint64s.GetSlice(s)
 }
 
-func (r *Resources) AllocUint32Slices(s int) [][]uint32 {
-	return r.uint32Slices.AllocSlice(s)
+func (r *Resources) GetUint32Slices(s int) [][]uint32 {
+	return r.uint32Slices.GetSlice(s)
 }
 
-func (r *Resources) AllocMetadata(s int) []indexer.MetaData {
-	return r.indexerMetaData.AllocSlice(s)
+func (r *Resources) GetMetadata(s int) []indexer.MetaData {
+	return r.indexerMetaData.GetSlice(s)
 }
 
-func (r *Resources) AllocTokens(s int) []tokenStr {
-	return r.tokenKeys.AllocSlice(s)
+func (r *Resources) GetTokens(s int) []tokenStr {
+	return r.tokenKeys.GetSlice(s)
 }
 
-func (r *Resources) Buffer() *indexBuffer {
-	return r.buf.Alloc(func() *indexBuffer {
-		return &indexBuffer{
+func (r *Resources) GetBuffer() *indexerBuffer {
+	return r.buf.Get(func() *indexerBuffer {
+		return &indexerBuffer{
 			sizes:     make([]uint32, 0, 1000),
 			fields:    make([]string, 0, 100),
 			fieldTIDs: make([]uint32, 0, 100),
 			tokens:    make([]tokenizer.MetaToken, 0, 100),
 			tokenMap:  make(map[tokenStr]uint32, 1000),
 		}
-	}, func(b *indexBuffer) {
+	}, func(b *indexerBuffer) {
 		b.fields = b.fields[:0]
 		b.tokens = b.tokens[:0]
 		b.fieldTIDs = b.fieldTIDs[:0]
 		b.sizes = b.sizes[:0]
 		clear(b.tokenMap)
 	})
-}
-
-// indexBuffer is a temporary buffer used during index construction to avoid allocations.
-// It holds intermediate data structures that are needed during processing but not in the final index.
-type indexBuffer struct {
-	sizes     []uint32
-	fields    []string
-	fieldTIDs []uint32
-	tokens    []tokenizer.MetaToken
-	tokenMap  map[tokenStr]uint32
 }

@@ -88,28 +88,33 @@ func BenchmarkIndexer(b *testing.B) {
 	readers := splitLogsToBulks(allLogs, 1000)
 	assert.NoError(b, err)
 
-	active := New(
-		filepath.Join(b.TempDir(), "test"),
-		idx,
-		storage.NewReadLimiter(1, nil),
-		cache.NewCache[[]byte](nil, nil),
-		cache.NewCache[[]byte](nil, nil),
-		&frac.Config{},
-	)
-
 	processor := getTestProcessor()
 
-	for i := 0; i < b.N; i++ {
-		b.StopTimer()
-		bulks := make([][]byte, 0, len(readers))
+	n := 2
+	allMeta := make([][]byte, 0, len(readers)*n)
+
+	for range n {
 		for _, readNext := range readers {
 			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-			bulks = append(bulks, storage.CompressDocBlock(meta, nil, 3))
+			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
 		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		active := New(
+			filepath.Join(b.TempDir(), "test"),
+			idx,
+			storage.NewReadLimiter(1, nil),
+			cache.NewCache[[]byte](nil, nil),
+			cache.NewCache[[]byte](nil, nil),
+			&frac.Config{},
+		)
 		b.StartTimer()
 
 		wg := sync.WaitGroup{}
-		for _, meta := range bulks {
+		for _, meta := range allMeta {
 			wg.Add(1)
 			idx.Index(active, meta, &wg, stopwatch.New())
 		}
@@ -141,7 +146,7 @@ func BenchmarkFullWrite(b *testing.B) {
 
 	processor := getTestProcessor()
 
-	n := 10
+	n := 2
 	allDocs := make([][]byte, 0, len(readers)*n)
 	allMeta := make([][]byte, 0, len(readers)*n)
 

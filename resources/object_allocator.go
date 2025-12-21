@@ -1,18 +1,18 @@
 package resources
 
-type MapAllocator[K comparable, V any] struct {
+type MapsPool[K comparable, V any] struct {
 	pool     *TypedPool[map[K]V]
 	releases *CallStack
 }
 
-func NewMapAllocator[K comparable, V any](pool *TypedPool[map[K]V], releases *CallStack) MapAllocator[K, V] {
-	return MapAllocator[K, V]{
+func NewMapsPool[K comparable, V any](pool *TypedPool[map[K]V], releases *CallStack) MapsPool[K, V] {
+	return MapsPool[K, V]{
 		pool:     pool,
 		releases: releases,
 	}
 }
 
-func (a MapAllocator[K, V]) Alloc(size int) map[K]V {
+func (a MapsPool[K, V]) Alloc(size int) map[K]V {
 	obj, ok := a.pool.Get()
 	if ok {
 		clear(obj)
@@ -23,19 +23,19 @@ func (a MapAllocator[K, V]) Alloc(size int) map[K]V {
 	return obj
 }
 
-type ObjectAllocator[T any] struct {
+type ObjectsPool[T any] struct {
 	pool     *TypedPool[*T]
 	releases *CallStack
 }
 
-func NewObjectAllocator[T any](pool *TypedPool[*T], releases *CallStack) ObjectAllocator[T] {
-	return ObjectAllocator[T]{
+func NewObjectsPool[T any](pool *TypedPool[*T], releases *CallStack) ObjectsPool[T] {
+	return ObjectsPool[T]{
 		pool:     pool,
 		releases: releases,
 	}
 }
 
-func (a ObjectAllocator[T]) Alloc(newFn func() *T, resetFn func(*T)) *T {
+func (a ObjectsPool[T]) Get(newFn func() *T, resetFn func(*T)) *T {
 	obj, ok := a.pool.Get()
 	if ok {
 		resetFn(obj)
