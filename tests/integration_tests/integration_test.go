@@ -811,7 +811,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 			Field:    "level",
 			GroupBy:  "service",
 			Func:     seq.AggFuncMin,
-			Interval: 30 * 1000, // 30 sec interval
+			Interval: seq.DurationToMID(30 * time.Second),
 		}))
 		require.NoError(t, err)
 
