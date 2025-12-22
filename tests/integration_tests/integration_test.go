@@ -804,27 +804,6 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}
 	})
 
-	t.Run("min2", func(t *testing.T) {
-		bulkDataset("nginx-mminn", func(i int) int { return i })
-
-		qpr, _, _, err := env.Search(`service:"nginx-mminn"`, 1024, setup.WithAggQuery(search.AggQuery{
-			Field:    "level",
-			GroupBy:  "service",
-			Func:     seq.AggFuncMin,
-			Interval: 30 * 1000, // 30 sec interval
-		}))
-		require.NoError(t, err)
-
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
-		for i := range timeBinsCount {
-			require.Equal(t, float64(nextBin*i), hist[bins[i]].Min)
-			require.Equal(t, "nginx-mminn", bins[i].Token)
-		}
-	})
-
 	t.Run("max", func(t *testing.T) {
 		bulkDataset("nginx-max", func(i int) int { return i })
 
@@ -902,44 +881,18 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}
 	})
 
-	/*t.Run("unique_count", func(t *testing.T) {
-		bulkDataset("nginx-uniq-count", func(i int) int { return i })
-
-		qpr, _, _, err := env.Search(`service:"nginx-uniq-count"`, 1024, setup.WithAggQuery(search.AggQuery{
-			Field:    "level",
-			GroupBy:  "service",
-			Func:     seq.AggFuncMin,
-			Interval: 30 * 1000, // 30 sec interval
-		}))
-		require.NoError(t, err)
-
-		hist := qpr.Aggs[0].SamplesByBin
-		for k, v := range hist {
-			println(k.MID, ", ", k.Token, "->", v.Values)
-		}
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
-		for i := range timeBinsCount {
-			require.Equal(t, "nginx-uniq-count", bins[i].Token)
-		}
-	})*/
-
-	/*t.Run("unique_count", func(t *testing.T) {
+	t.Run("unique_count", func(t *testing.T) {
 		bulkDataset("nginx-unique-count", func(i int) int { return i % nextBin })
 
 		qpr, _, _, err := env.Search(`service:"nginx-unique-count"`, 1024, setup.WithAggQuery(search.AggQuery{
 			Field:    "level",
 			GroupBy:  "service",
-			Func:     seq.AggFuncSum,
-			Interval: 30 * 1000, // 30 sec interval
+			Func:     seq.AggFuncUniqueCount,
+			Interval: seq.DurationToMID(30 * time.Second),
 		}))
 		require.NoError(t, err)
 
 		hist := qpr.Aggs[0].SamplesByBin
-		for k, v := range hist {
-			println(k.MID, ", ", k.Token, "->", v.Values)
-		}
 		require.Len(t, hist, timeBinsCount)
 
 		bins := sortedTimeBins(hist)
@@ -957,7 +910,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 			delete(levelStrings, val)
 		}
 		require.Empty(t, levelStrings)
-	})*/
+	})
 }
 
 func sortedTimeBins(hist map[seq.AggBin]*seq.SamplesContainer) []seq.AggBin {

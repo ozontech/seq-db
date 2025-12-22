@@ -108,7 +108,6 @@ func evalAgg(
 	stats *searchStats, minLID, maxLID uint32, limits AggLimits,
 	extractMID ExtractMIDFunc, order seq.DocsOrder,
 ) (Aggregator, error) {
-	println("query.Interval", query.Interval)
 	switch query.Func {
 	case seq.AggFuncCount, seq.AggFuncUnique:
 		groupIterator, err := iteratorFromLiteral(
