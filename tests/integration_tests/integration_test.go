@@ -880,6 +880,63 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 			require.Equal(t, float64(nextBin*i+5), hist[bins[i]].Quantile(0.5))
 		}
 	})
+
+	t.Run("unique_count", func(t *testing.T) {
+		bulkDataset("nginx-uniq-count", func(i int) int { return i })
+
+		qpr, _, _, err := env.Search(`service:"nginx-uniq-count"`, 1024, setup.WithAggQuery(search.AggQuery{
+			Field:    "level",
+			GroupBy:  "service",
+			Func:     seq.AggFuncMin,
+			Interval: 30 * 1000, // 30 sec interval
+		}))
+		require.NoError(t, err)
+
+		hist := qpr.Aggs[0].SamplesByBin
+		for k, v := range hist {
+			println(k.MID, ", ", k.Token, "->", v.Values)
+		}
+		require.Len(t, hist, timeBinsCount)
+
+		bins := sortedTimeBins(hist)
+		for i := range timeBinsCount {
+			require.Equal(t, "nginx-uniq-count", bins[i].Token)
+		}
+	})
+
+	/*t.Run("unique_count", func(t *testing.T) {
+		bulkDataset("nginx-unique-count", func(i int) int { return i % nextBin })
+
+		qpr, _, _, err := env.Search(`service:"nginx-unique-count"`, 1024, setup.WithAggQuery(search.AggQuery{
+			Field:    "level",
+			GroupBy:  "service",
+			Func:     seq.AggFuncSum,
+			Interval: 30 * 1000, // 30 sec interval
+		}))
+		require.NoError(t, err)
+
+		hist := qpr.Aggs[0].SamplesByBin
+		for k, v := range hist {
+			println(k.MID, ", ", k.Token, "->", v.Values)
+		}
+		require.Len(t, hist, timeBinsCount)
+
+		bins := sortedTimeBins(hist)
+		for i := range timeBinsCount {
+			require.Equal(t, "nginx-unique-count", bins[i].Token)
+			require.Equal(t, int64(nextBin), int64(len(hist[bins[i]].Values)))
+		}
+
+		require.NotEmpty(t, qpr.Aggs[0].ValuesPool)
+		levelStrings := make(map[string]bool)
+		for i := 0; i < nextBin; i++ {
+			levelStrings[strconv.Itoa(i)] = true
+		}
+		for _, val := range qpr.Aggs[0].ValuesPool {
+			delete(levelStrings, val)
+		}
+		require.Empty(t, levelStrings)
+	})*/
 }
 
 func sortedTimeBins(hist map[seq.AggBin]*seq.SamplesContainer) []seq.AggBin {
