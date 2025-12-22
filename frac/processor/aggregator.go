@@ -459,6 +459,6 @@ func provideExtractTimeFunc(sw *stopwatch.Stopwatch, idx idsIndex, interval int6
 		timer.Start()
 		mid := idx.GetMID(seq.LID(lid))
 		timer.Stop()
-		return mid - (mid % seq.MID(interval))
+		return mid - (mid % seq.MillisToMID(uint64(interval)))
 	})
 }

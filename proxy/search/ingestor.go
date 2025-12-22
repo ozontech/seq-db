@@ -515,7 +515,7 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 			pbhist := bin.Hist
 
 			tbin := seq.AggBin{
-				MID:   seq.MID(bin.Ts.AsTime().UnixMilli()),
+				MID:   seq.MID(bin.Ts.AsTime().UnixNano()),
 				Token: bin.Label,
 			}
 
@@ -650,22 +650,22 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 		return nil, 0, err
 	}
 
-	// Check the store's protocol version from response header
-	// If header indicates protocol version 2 (MID in nanoseconds), then convert to milliseconds
+	// If header indicates protocol version 1 (MID in milliseconds), then convert to nanoseconds
 	protocolVersion := config.StoreProtocolVersion1
 	if storeProtocolValues := md.Get(consts.StoreProtocolVersionHeader); len(storeProtocolValues) > 0 {
 		protocolVersion = config.ParseStoreProtocolVersion(storeProtocolValues[0])
 	}
 
-	if protocolVersion == config.StoreProtocolVersion2 {
+	// Convert legacy store response (protocol version 1) to nanoseconds MID
+	if protocolVersion == config.StoreProtocolVersion1 {
 		for _, id := range data.IdSources {
-			id.Id.Mid = uint64(seq.NanosToMID(id.Id.Mid))
+			id.Id.Mid = uint64(seq.MillisToMID(id.Id.Mid))
 		}
 
 		if len(data.Histogram) > 0 {
 			newHist := make(map[uint64]uint64, len(data.Histogram))
 			for mid, v := range data.Histogram {
-				newHist[uint64(seq.NanosToMID(mid))] = v
+				newHist[uint64(seq.MillisToMID(mid))] = v
 			}
 			data.Histogram = newHist
 		}

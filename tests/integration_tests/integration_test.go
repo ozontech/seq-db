@@ -354,7 +354,7 @@ func (s *IntegrationTestSuite) envWithDummyDocs(n int) (*setup.TestingEnv, []str
 	origDocs := make([]string, 0, allDocsNum)
 	docsBulk := make([]string, 2*n)
 
-	getNextTs := getAutoTsGenerator(time.Now(), -time.Second)
+	getNextTs := getAutoTsGenerator(time.Now(), -time.Nanosecond)
 
 	for i := 0; i < bulksNum; i++ {
 
@@ -431,7 +431,7 @@ func (s *IntegrationTestSuite) TestFetchNotFound() {
 
 func (s *IntegrationTestSuite) TestMulti() {
 	// ingest
-	getNextTs := getAutoTsGenerator(time.Now(), -time.Second)
+	getNextTs := getAutoTsGenerator(time.Now(), -time.Nanosecond)
 	origDocs := []string{
 		fmt.Sprintf(`{"service":"b1", "k8s_pod":"pod1", "yyyy":"xxxx1", "ts":%q}`, getNextTs()),
 		fmt.Sprintf(`{"service":"b2", "k8s_pod":"pod2", "yyyy":"xxxx2", "ts":%q}`, getNextTs()),
@@ -770,7 +770,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		qpr, _, _, err := env.Search(`service:"nginx-count"`, 1024, setup.WithAggQuery(search.AggQuery{
 			GroupBy:  "level",
 			Func:     seq.AggFuncCount,
-			Interval: 30 * 1000, // 30 sec interval
+			Interval: seq.DurationToMID(30 * time.Second),
 		}))
 		require.NoError(t, err)
 
@@ -790,7 +790,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 			Field:    "level",
 			GroupBy:  "service",
 			Func:     seq.AggFuncMin,
-			Interval: 30 * 1000, // 30 sec interval
+			Interval: seq.DurationToMID(30 * time.Second),
 		}))
 		require.NoError(t, err)
 
@@ -831,7 +831,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		qpr, _, _, err := env.Search(`service:"nginx-max"`, 1024, setup.WithAggQuery(search.AggQuery{
 			Field:    "level",
 			Func:     seq.AggFuncMax,
-			Interval: 30 * 1000, // 30 sec interval
+			Interval: seq.DurationToMID(30 * time.Second),
 		}))
 		require.NoError(t, err)
 
@@ -850,7 +850,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		qpr, _, _, err := env.Search(`service:"nginx-avg"`, 1024, setup.WithAggQuery(search.AggQuery{
 			Field:    "level",
 			Func:     seq.AggFuncAvg,
-			Interval: 30 * 1000, // 30 sec interval
+			Interval: seq.DurationToMID(30 * time.Second),
 		}))
 		require.NoError(t, err)
 
@@ -869,7 +869,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		qpr, _, _, err := env.Search(`service:"nginx-sum"`, 1024, setup.WithAggQuery(search.AggQuery{
 			Field:    "level",
 			Func:     seq.AggFuncSum,
-			Interval: 30 * 1000, // 30 sec interval
+			Interval: seq.DurationToMID(30 * time.Second),
 		}))
 		require.NoError(t, err)
 
@@ -889,7 +889,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 			Field:     "level",
 			Func:      seq.AggFuncQuantile,
 			Quantiles: []float64{0.5},
-			Interval:  30 * 1000, // 30 sec interval
+			Interval:  seq.DurationToMID(30 * time.Second),
 		}))
 		require.NoError(t, err)
 
@@ -1599,7 +1599,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 				Quantiles: []float64{0.99, 0.95, 0.50},
 			},
 		},
-		HistogramInterval: seq.MID(time.Second.Milliseconds()),
+		HistogramInterval: seq.MID(time.Second.Nanoseconds()),
 		WithDocs:          true,
 		Size:              100,
 	}

@@ -109,7 +109,7 @@ func TestCapacityExceeded(t *testing.T) {
 	dp := indexer.NewTestDocProvider()
 	makeSealedFrac := func(fm *FracManager, docsPerFrac int) {
 		for i := 0; i < docsPerFrac; i++ {
-			addDummyDoc(t, fm, dp, seq.SimpleID(id))
+			addDummyDoc(t, fm, dp, seq.SimpleID(int64(id)))
 			id++
 		}
 		fm.seal(fm.rotate())

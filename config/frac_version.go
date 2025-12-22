@@ -11,4 +11,4 @@ const (
 	BinaryDataV2
 )
 
-const CurrentFracVersion = BinaryDataV1
+const CurrentFracVersion = BinaryDataV2

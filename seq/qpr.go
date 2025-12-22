@@ -456,6 +456,13 @@ func MergeQPRs(dst *QPR, qprs []*QPR, limit int, histInterval MID, order DocsOrd
 	dst.IDs = ids[:l]
 }
 
+// remove repetition from histogram
+func removeHistogramRepetition(repetition IDSource, histogram map[MID]uint64, histInterval MID) {
+	bucket := repetition.ID.MID
+	bucket -= bucket % histInterval
+	histogram[bucket]--
+}
+
 // removes repetitions from both ids and histogram
 func removeRepetitionsAdvanced(ids IDSources, histogram map[MID]uint64, histInterval MID) (IDSources, uint64) {
 	if len(ids) == 0 {
@@ -479,11 +486,4 @@ func removeRepetitionsAdvanced(ids IDSources, histogram map[MID]uint64, histInte
 	}
 
 	return ids[:len(ids)-removeCount], uint64(removeCount)
-}
-
-// remove repetition from histogram
-func removeHistogramRepetition(repetition IDSource, histogram map[MID]uint64, histInterval MID) {
-	bucket := repetition.ID.MID
-	bucket -= bucket % histInterval
-	histogram[bucket]--
 }
