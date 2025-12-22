@@ -63,12 +63,14 @@ func NewStore(
 		return nil, err
 	}
 
-	fracManager, stop, err := fracmanager.New(ctx, &c.FracManager, s3cli)
+	df := docsfilter.New(ctx, c.Filters, docFilterParams, mappingProvider)
+
+	fracManager, stop, err := fracmanager.New(ctx, &c.FracManager, s3cli, df)
 	if err != nil {
 		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
 
-	_ = docsfilter.Start(ctx, c.Filters, docFilterParams, mappingProvider, fracManager.Fractions())
+	df.Start(fracManager.Fractions())
 
 	return &Store{
 		Config: c,

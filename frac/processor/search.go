@@ -33,12 +33,12 @@ type tokenIndex interface {
 	GetValByTID(tid uint32) []byte
 	GetTIDsByTokenExpr(token parser.Token) ([]uint32, error)
 	GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node
-	// GetTombstones() []seq.LID
 }
 
 type searchIndex interface {
 	tokenIndex
 	idsIndex
+	GetTombstones() ([]uint32, error)
 }
 
 func IndexSearch(
@@ -93,6 +93,17 @@ func IndexSearch(
 			return aggs, nil
 		}
 	}
+
+	m = sw.Start("get_tombstones")
+	tombstones, err := index.GetTombstones()
+	m.Stop()
+	if err != nil {
+		return nil, err
+	}
+
+	m = sw.Start("eval_tombstones")
+	evalTree = evalTombstones(evalTree, tombstones, params.Order.IsReverse(), stats)
+	m.Stop()
 
 	m = sw.Start("iterate_eval_tree")
 	total, ids, histogram, aggs, err := iterateEvalTree(ctx, params, index, evalTree, aggSupplier, sw)
@@ -198,7 +209,7 @@ func iterateEvalTree(
 		}
 
 		timerEval.Start()
-		lid, has := evalTree.Next()
+		lid, has := evalTree.Next() // TODO: here ???
 		timerEval.Stop()
 
 		if !has {

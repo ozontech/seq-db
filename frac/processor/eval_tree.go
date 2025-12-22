@@ -79,6 +79,14 @@ func evalLeaf(
 	return node.BuildORTree(lidsTids, order.IsReverse()), nil
 }
 
+func evalTombstones(root node.Node, tombstones []uint32, reverse bool, stats *searchStats) node.Node {
+	if len(tombstones) == 0 {
+		return root
+	}
+	stats.NodesTotal++
+	return node.NewNAnd(node.NewStatic(tombstones, reverse), root, reverse)
+}
+
 type Aggregator interface {
 	// Next iterates to count the next lid.
 	Next(lid uint32) error

@@ -53,12 +53,11 @@ type DocsFilter struct {
 	createDirOnce *sync.Once
 }
 
-func Start(
+func New(
 	ctx context.Context,
 	cfg Config,
 	params []Params,
 	mp MappingProvider,
-	fracs fracmanager.List,
 ) *DocsFilter {
 	workers := cfg.Workers
 	if workers <= 0 {
@@ -72,7 +71,7 @@ func Start(
 		filtersMap[string(f.Hash())] = f
 	}
 
-	df := &DocsFilter{
+	return &DocsFilter{
 		ctx:           ctx,
 		config:        cfg,
 		filters:       filtersMap,
@@ -82,7 +81,9 @@ func Start(
 		rateLimit:     make(chan struct{}, workers),
 		createDirOnce: &sync.Once{},
 	}
+}
 
+func (df *DocsFilter) Start(fracs fracmanager.List) {
 	df.createDataDir()
 
 	err := df.loadFilters()
@@ -106,8 +107,6 @@ func Start(
 
 		df.processFilter(f, fracs.FilterInRange(seq.MID(f.params.From), seq.MID(f.params.To)))
 	}
-
-	return df
 }
 
 func (df *DocsFilter) GetFilteredLIDsByFrac(fracName string) ([]seq.LID, error) {
@@ -122,9 +121,15 @@ func (df *DocsFilter) GetFilteredLIDsByFrac(fracName string) ([]seq.LID, error) 
 	var lids []seq.LID
 
 	for _, f := range fracFiles {
-		rawLIDs, err := os.ReadFile(f)
+		compressedLIDs, err := os.ReadFile(f)
 		if err != nil {
-			logger.Error("can't open filtered lids file", zap.String("path", f), zap.Error(err))
+			logger.Error("can't read filtered lids from file", zap.String("path", f), zap.Error(err))
+			return nil, err
+		}
+
+		rawLIDs, err := zstd.Decompress(compressedLIDs, nil)
+		if err != nil {
+			logger.Error("can't decompress filtered lids from file", zap.String("path", f), zap.Error(err))
 			return nil, err
 		}
 
@@ -145,7 +150,7 @@ func (df *DocsFilter) GetFilteredLIDsByFrac(fracName string) ([]seq.LID, error) 
 	return lids, nil
 }
 
-func (df *DocsFilter) addDoneFrac(fracName string, fracPath string) {
+func (df *DocsFilter) addDoneFrac(fracName, fracPath string) {
 	df.fracsMu.Lock()
 	defer df.fracsMu.Unlock()
 

@@ -28,6 +28,8 @@ type activeDataProvider struct {
 	docsReader    *storage.DocsReader
 
 	idsIndex *activeIDsIndex
+
+	docsFilter DocsFilter
 }
 
 func (dp *activeDataProvider) release() {
@@ -116,6 +118,8 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	indexes := []activeSearchIndex{{
 		activeIDsIndex:   dp.getIDsIndex(),
 		activeTokenIndex: dp.getTokenIndex(),
+		docsFilter:       dp.docsFilter,
+		fracName:         dp.info.Name(),
 	}}
 	m.Stop()
 
@@ -182,6 +186,23 @@ func (p *activeIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 type activeSearchIndex struct {
 	*activeIDsIndex
 	*activeTokenIndex
+	docsFilter DocsFilter
+	fracName   string
+}
+
+func (si *activeSearchIndex) GetTombstones() ([]uint32, error) {
+	filteredLids, err := si.docsFilter.GetFilteredLIDsByFrac(si.fracName)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: return []uint32 from docsFilter (???)
+	res := make([]uint32, 0, len(filteredLids))
+	for _, lid := range filteredLids {
+		res = append(res, uint32(lid))
+	}
+
+	return res, nil
 }
 
 type activeTokenIndex struct {

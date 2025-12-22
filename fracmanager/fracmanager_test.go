@@ -25,7 +25,7 @@ func setupDataDir(t testing.TB, cfg *Config) *Config {
 
 func setupFracManager(t testing.TB, cfg *Config) (*Config, *FracManager, func()) {
 	cfg = setupDataDir(t, cfg)
-	fm, stop, err := New(t.Context(), cfg, nil)
+	fm, stop, err := New(t.Context(), cfg, nil, nil)
 	assert.NoError(t, err)
 	return cfg, fm, stop
 }

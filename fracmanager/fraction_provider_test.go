@@ -38,7 +38,7 @@ func setupFractionProvider(t testing.TB, cfg *Config) (*fractionProvider, func()
 	s3cli, stopS3 := setupS3Client(t)
 	idx, stopIdx := frac.NewActiveIndexer(1, 1)
 	cache := NewCacheMaintainer(uint64(units.MB), uint64(units.MB), nil)
-	provider := newFractionProvider(cfg, s3cli, cache, rl, idx)
+	provider := newFractionProvider(cfg, s3cli, cache, rl, idx, nil)
 	return provider, func() {
 		stopIdx()
 		stopS3()
@@ -46,7 +46,7 @@ func setupFractionProvider(t testing.TB, cfg *Config) (*fractionProvider, func()
 }
 
 func TestFractionID(t *testing.T) {
-	fp := newFractionProvider(nil, nil, nil, nil, nil)
+	fp := newFractionProvider(nil, nil, nil, nil, nil, nil)
 	ulid1 := fp.nextFractionID()
 	ulid2 := fp.nextFractionID()
 	assert.NotEqual(t, ulid1, ulid2, "ULIDs should be different")

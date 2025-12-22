@@ -58,6 +58,8 @@ type Active struct {
 
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
+
+	docsFilter DocsFilter
 }
 
 const (
@@ -77,6 +79,7 @@ func NewActive(
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
 	cfg *Config,
+	docsFilter DocsFilter,
 ) *Active {
 	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
 	metaFile, metaStats := mustOpenFile(baseFileName+consts.MetaFileSuffix, config.SkipFsync)
@@ -103,6 +106,8 @@ func NewActive(
 		BaseFileName: baseFileName,
 		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
 		Config:       cfg,
+
+		docsFilter: docsFilter,
 	}
 
 	// use of 0 as keys in maps is prohibited – it's system key, so add first element
@@ -312,6 +317,8 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 		blocksOffsets: f.DocBlocks.GetVals(),
 		docsPositions: f.DocsPositions,
 		docsReader:    &f.docsReader,
+
+		docsFilter: f.docsFilter,
 	}
 }
 

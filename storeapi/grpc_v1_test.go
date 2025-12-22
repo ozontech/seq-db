@@ -71,7 +71,7 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 		FracSize:  500,
 		TotalSize: 5000,
 		DataDir:   dataDir,
-	}, nil)
+	}, nil, nil)
 	assert.NoError(t, err)
 
 	config := APIConfig{

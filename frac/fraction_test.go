@@ -1842,6 +1842,7 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
+		nil,
 	)
 
 	var wg sync.WaitGroup
@@ -1904,6 +1905,7 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 		indexCache,
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
+		nil,
 	)
 	active.Release()
 	return sealed
@@ -1980,7 +1982,9 @@ func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
 		storage.NewReadLimiter(1, nil),
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
-		&Config{})
+		&Config{},
+		nil,
+	)
 	err := replayedFrac.Replay(context.Background())
 	s.Require().NoError(err, "replay failed")
 	return replayedFrac
@@ -2091,7 +2095,9 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 		indexCache,
 		cache.NewCache[[]byte](nil, nil),
 		nil,
-		s.config)
+		s.config,
+		nil,
+	)
 	s.fraction = sealed
 	return sealed
 }
@@ -2160,7 +2166,9 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			cache.NewCache[[]byte](nil, nil),
 			sealed.info,
 			s.config,
-			s3cli)
+			s3cli,
+			nil,
+		)
 		s.fraction = remoteFrac
 	}
 }

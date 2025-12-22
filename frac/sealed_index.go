@@ -22,6 +22,10 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
+type DocsFilter interface {
+	GetFilteredLIDsByFrac(fracName string) ([]seq.LID, error)
+}
+
 type sealedDataProvider struct {
 	ctx    context.Context
 	info   *common.Info
@@ -42,6 +46,8 @@ type sealedDataProvider struct {
 	// fractionTypeLabel can be either 'sealed' or 'remote'.
 	// This value is used in metrics to distinguish between operations over local and remote fractions.
 	fractionTypeLabel string
+
+	docsFilter DocsFilter
 }
 
 func (dp *sealedDataProvider) getIDsIndex() *sealedIDsIndex {
@@ -74,6 +80,7 @@ func (dp *sealedDataProvider) getSearchIndex() *sealedSearchIndex {
 	return &sealedSearchIndex{
 		sealedIDsIndex:   dp.getIDsIndex(),
 		sealedTokenIndex: dp.getTokenIndex(),
+		docsFilter:       dp.docsFilter,
 	}
 }
 
@@ -324,4 +331,20 @@ func (fi *sealedFetchIndex) getDocPosByLIDs(localIDs []seq.LID) []seq.DocPos {
 type sealedSearchIndex struct {
 	*sealedIDsIndex
 	*sealedTokenIndex
+	docsFilter DocsFilter
+}
+
+func (si *sealedSearchIndex) GetTombstones() ([]uint32, error) {
+	filteredLids, err := si.docsFilter.GetFilteredLIDsByFrac(si.fracName)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: return []uint32 from docsFilter (???)
+	res := make([]uint32, 0, len(filteredLids))
+	for _, lid := range filteredLids {
+		res = append(res, uint32(lid))
+	}
+
+	return res, nil
 }
