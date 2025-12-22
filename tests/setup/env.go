@@ -551,14 +551,14 @@ func WithAggQuery(aggQueries ...any) SearchOption {
 
 func WithInterval(interval time.Duration) SearchOption {
 	return func(sr *search.SearchRequest) {
-		sr.Interval = seq.MID(interval / time.Millisecond)
+		sr.Interval = seq.DurationToMID(interval)
 	}
 }
 
 func WithTimeRange(from, to time.Time) SearchOption {
 	return func(sr *search.SearchRequest) {
-		sr.From = seq.MID(from.UnixMilli())
-		sr.To = seq.MID(to.UnixMilli())
+		sr.From = seq.TimeToMID(from)
+		sr.To = seq.TimeToMID(to)
 	}
 }
 

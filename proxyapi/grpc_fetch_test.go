@@ -43,7 +43,7 @@ func prepareFetchTestData(cData fetchTestCaseData) fetchTestData {
 	docs := [][]byte{}
 	apiDocs := make([]*seqproxyapi.Document, 0)
 	for i := 0; i < cData.size; i++ {
-		id := seq.SimpleID(cData.startID + i)
+		id := seq.SimpleID(int64(cData.startID + i))
 		ids = append(ids, seq.IDSource{ID: id})
 		idsStr = append(idsStr, id.String())
 		if !cData.noResp {

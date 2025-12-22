@@ -157,7 +157,7 @@ func (s *SingleTestSuite) TestSearchNestedWithAND() {
 		doc       = `{"timestamp":%q, "trace_id": "%d", "spans": [%s]}`
 	)
 	docs := make([]string, 0, numTraces)
-	getNextTs := getAutoTsGenerator(time.Now(), time.Second)
+	getNextTs := getAutoTsGenerator(time.Now(), time.Nanosecond)
 	for i := range numTraces {
 		spans := make([]string, 0, numSpans)
 		for j := range numSpans {

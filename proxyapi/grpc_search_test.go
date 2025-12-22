@@ -88,8 +88,8 @@ func prepareSearchTestData(t *testing.T, cData searchTestCaseData) searchTestDat
 			Q:           []byte(req.Query.Query),
 			Size:        int(req.Size),
 			Offset:      int(req.Offset),
-			From:        seq.MID(req.Query.From.AsTime().UnixMilli()),
-			To:          seq.MID(req.Query.To.AsTime().UnixMilli()),
+			From:        seq.MID(req.Query.From.AsTime().UnixNano()),
+			To:          seq.MID(req.Query.To.AsTime().UnixNano()),
 			WithTotal:   req.WithTotal,
 			ShouldFetch: true,
 		}

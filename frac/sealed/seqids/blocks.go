@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/seq"
 )
 
 type BlockMIDs struct {
@@ -20,8 +21,8 @@ func (b BlockMIDs) Pack(dst []byte) []byte {
 	return dst
 }
 
-func (b *BlockMIDs) Unpack(data []byte) error {
-	values, err := unpackRawIDsVarint(data, b.Values)
+func (b *BlockMIDs) Unpack(data []byte, fracVersion config.BinaryDataVersion) error {
+	values, err := unpackRawMIDsVarint(data, b.Values, fracVersion)
 	if err != nil {
 		return err
 	}
@@ -76,17 +77,53 @@ func (b *BlockParams) Unpack(data []byte) error {
 	return nil
 }
 
+// unpackRawMIDsVarint is a dedicated method for unpacking delta encoded MIDs. The reason a dedicated method exists
+// is that we want to unpack values and potentially convert legacy frac version in one pass.
+func unpackRawMIDsVarint(src []byte, dst []uint64, fracVersion config.BinaryDataVersion) ([]uint64, error) {
+	dst = dst[:0]
+	id := uint64(0)
+	for len(src) != 0 {
+		udelta, n := binary.Uvarint(src)
+		if n <= 0 {
+			return nil, errors.New("varint decoded with error")
+		}
+
+		delta := int64(udelta >> 1)
+		if udelta&1 != 0 {
+			delta = ^delta
+		}
+
+		id += uint64(delta)
+		if fracVersion >= config.BinaryDataV2 {
+			dst = append(dst, id)
+		} else {
+			// Legacy format - scale millis to nanos
+			dst = append(dst, uint64(seq.MillisToMID(id)))
+		}
+
+		src = src[n:]
+	}
+	return dst, nil
+}
+
 func unpackRawIDsVarint(src []byte, dst []uint64) ([]uint64, error) {
 	dst = dst[:0]
 	id := uint64(0)
 	for len(src) != 0 {
-		delta, n := binary.Varint(src)
+		udelta, n := binary.Uvarint(src)
 		if n <= 0 {
 			return nil, errors.New("varint decoded with error")
 		}
-		src = src[n:]
+
+		delta := int64(udelta >> 1)
+		if udelta&1 != 0 {
+			delta = ^delta
+		}
+
 		id += uint64(delta)
 		dst = append(dst, id)
+
+		src = src[n:]
 	}
 	return dst, nil
 }
