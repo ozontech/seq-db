@@ -804,6 +804,27 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}
 	})
 
+	t.Run("min2", func(t *testing.T) {
+		bulkDataset("nginx-mminn", func(i int) int { return i })
+
+		qpr, _, _, err := env.Search(`service:"nginx-mminn"`, 1024, setup.WithAggQuery(search.AggQuery{
+			Field:    "level",
+			GroupBy:  "service",
+			Func:     seq.AggFuncMin,
+			Interval: 30 * 1000, // 30 sec interval
+		}))
+		require.NoError(t, err)
+
+		hist := qpr.Aggs[0].SamplesByBin
+		require.Len(t, hist, timeBinsCount)
+
+		bins := sortedTimeBins(hist)
+		for i := range timeBinsCount {
+			require.Equal(t, float64(nextBin*i), hist[bins[i]].Min)
+			require.Equal(t, "nginx-mminn", bins[i].Token)
+		}
+	})
+
 	t.Run("max", func(t *testing.T) {
 		bulkDataset("nginx-max", func(i int) int { return i })
 
