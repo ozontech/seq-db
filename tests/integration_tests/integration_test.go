@@ -1706,9 +1706,6 @@ func (s *IntegrationTestSuite) TestPaginationWithOffsetId() {
 
 			for i, doc := range docs {
 				docID := qpr.IDs[i].ID.String()
-				if fetchedIDs[docID] == true {
-					fmt.Println("bro")
-				}
 				r.False(fetchedIDs[docID], "doc ID has appeared more than once")
 				fetchedIDs[docID] = true
 				docStr := string(doc)
