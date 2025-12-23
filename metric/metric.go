@@ -31,6 +31,8 @@ var (
 
 	// SecondsBuckets covers range from 1ms to 177s.
 	SecondsBuckets = prometheus.ExponentialBuckets(0.001, 3, 12)
+	// SecondsBucketsDoublePrecision covers range from 1ms to 4hrs.
+	SecondsBucketsDoublePrecision = prometheus.ExponentialBuckets(0.001, 3, 16)
 	// SecondsBucketsDelay covers range from 1min to 2048min.
 	SecondsBucketsDelay = prometheus.ExponentialBuckets(60, 2, 12)
 	// SecondsRanges covers range from 1min to 47day.

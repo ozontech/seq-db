@@ -153,14 +153,14 @@ var (
 		Subsystem: "export",
 		Name:      "duration_seconds",
 		Help:      "Time taken to export data by protocol in seconds",
-		Buckets:   prometheus.ExponentialBuckets(1, 2, 25),
+		Buckets:   SecondsBucketsDoublePrecision,
 	}, []string{"protocol"})
 	ExportSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "export",
 		Name:      "size_bytes",
 		Help:      "Size of exported data by protocol in bytes",
-		Buckets:   prometheus.ExponentialBuckets(1, 2, 50),
+		Buckets:   prometheus.ExponentialBuckets(1, 3, 20),
 	}, []string{"protocol"})
 	CurrentExportersCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_ingestor",
