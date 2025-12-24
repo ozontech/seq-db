@@ -20,7 +20,7 @@ import (
 var inflightBulksTotal = promauto.NewGauge(prometheus.GaugeOpts{
 	Namespace: "seq_db_store",
 	Subsystem: "bulk",
-	Name:      "in_flight_queries",
+	Name:      "in_flight",
 	Help:      "Number of bulk request being currently processed by store",
 })
 

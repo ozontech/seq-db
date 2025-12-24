@@ -10,8 +10,8 @@ import (
 var (
 	Version = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db",
-		Name:      "version_info_total",
-		Help:      "Number of seq-db instances with a particular version",
+		Name:      "version_starts_total",
+		Help:      "Number of seq-db instances started with a particular version",
 	},
 		[]string{"version"})
 

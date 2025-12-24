@@ -37,21 +37,21 @@ var (
 	fractionAggSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
-		Name:      "tracer_fraction_agg_search_seconds",
+		Name:      "fraction_agg_search_seconds",
 		Buckets:   metric.SecondsBuckets,
 		Help:      "Search with aggregation processing time by stage",
 	}, []string{"stage", "fraction_type"})
 	fractionHistSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
-		Name:      "tracer_fraction_hist_search_seconds",
+		Name:      "fraction_hist_search_seconds",
 		Buckets:   metric.SecondsBuckets,
 		Help:      "Search with histogram processing time by stage",
 	}, []string{"stage", "fraction_type"})
 	fractionRegularSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
-		Name:      "tracer_fraction_regular_search_seconds",
+		Name:      "fraction_regular_search_seconds",
 		Buckets:   metric.SecondsBuckets,
 		Help:      "Regular search processing time by stage",
 	}, []string{"stage", "fraction_type"})
