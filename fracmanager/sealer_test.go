@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/active2"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/indexer"
@@ -35,7 +35,7 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-func fillActiveFraction(active *active2.Active2) error {
+func fillActiveFraction(active *active.Active) error {
 	const muliplier = 10
 
 	file, err := os.Open(filepath.Join(testscommon.TestDataDir, "k8s.logs"))
@@ -106,8 +106,8 @@ func runSealingBench(b *testing.B, cfg *frac.Config) {
 	err := fillActiveFraction(a)
 	assert.NoError(b, err)
 
-	seal := func(a *active2.Active2, params frac.SealParams) (*sealed.PreloadedData, error) {
-		src, err := active2.NewSealingSource(a, params)
+	seal := func(a *active.Active, params frac.SealParams) (*sealed.PreloadedData, error) {
+		src, err := active.NewSealingSource(a, params)
 		assert.NoError(b, err)
 		return sealing.Seal(src, params)
 	}

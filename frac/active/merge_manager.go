@@ -1,4 +1,4 @@
-package active2
+package active
 
 import (
 	"sync"

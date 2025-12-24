@@ -12,7 +12,8 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/active"
-	"github.com/ozontech/seq-db/frac/active2"
+	active1 "github.com/ozontech/seq-db/frac/active"
+	"github.com/ozontech/seq-db/frac/active_old"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/storage"
@@ -27,14 +28,14 @@ type fractionProvider struct {
 	s3cli         *s3.Client           // Client for S3 storage operations
 	config        *Config              // Fraction manager configuration
 	cacheProvider *CacheMaintainer     // Cache provider for data access optimization
-	activeIndexer *active.Indexer      // Indexer for active fractions
+	activeIndexer *active_old.Indexer  // Indexer for active fractions
 	readLimiter   *storage.ReadLimiter // Read rate limiter
 	ulidEntropy   io.Reader            // Entropy source for ULID generation
 }
 
 func newFractionProvider(
 	cfg *Config, s3cli *s3.Client, cp *CacheMaintainer,
-	readLimiter *storage.ReadLimiter, indexer *active.Indexer,
+	readLimiter *storage.ReadLimiter, indexer *active_old.Indexer,
 ) *fractionProvider {
 	return &fractionProvider{
 		s3cli:         s3cli,
@@ -49,22 +50,22 @@ func newFractionProvider(
 func (fp *fractionProvider) NewActive(name string) *active.Active {
 	return active.New(
 		name,
-		fp.activeIndexer,
-		fp.readLimiter,
-		fp.cacheProvider.CreateDocBlockCache(),
-		fp.cacheProvider.CreateSortDocsCache(),
-		&fp.config.Fraction,
-	)
-}
-
-func (fp *fractionProvider) NewActive2(name string) *active2.Active2 {
-	return active2.New(
-		name,
 		&fp.config.Fraction,
 		config.NumCPU,
 		fp.readLimiter,
 		fp.cacheProvider.CreateDocBlockCache(),
 		fp.cacheProvider.CreateSortDocsCache(),
+	)
+}
+
+func (fp *fractionProvider) NewActiveOld(name string) *active_old.Active {
+	return active_old.New(
+		name,
+		fp.activeIndexer,
+		fp.readLimiter,
+		fp.cacheProvider.CreateDocBlockCache(),
+		fp.cacheProvider.CreateSortDocsCache(),
+		&fp.config.Fraction,
 	)
 }
 
@@ -120,10 +121,10 @@ func (fp *fractionProvider) CreateActive() *active.Active {
 
 // CreateActive creates a new active fraction with auto-generated filename
 // Filename pattern: base_pattern + ULID
-func (fp *fractionProvider) CreateActive2() *active2.Active2 {
+func (fp *fractionProvider) CreateActive2() *active1.Active {
 	filePath := fileBasePattern + fp.nextFractionID()
 	baseFilePath := filepath.Join(fp.config.DataDir, filePath)
-	return fp.NewActive2(baseFilePath)
+	return fp.NewActive(baseFilePath)
 }
 
 // Seal converts an active fraction to a sealed one

@@ -1,6 +1,7 @@
-package active2
+package active
 
 import (
+	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -40,3 +41,14 @@ var (
 		Buckets:   metric.SecondsBuckets,
 	}, []string{"stage"})
 )
+
+// getActiveSearchMetric selects a Prometheus metric depending on the type of search query.
+func getActiveSearchMetric(params processor.SearchParams) *prometheus.HistogramVec {
+	if params.HasAgg() {
+		return searchAggSec
+	}
+	if params.HasHist() {
+		return searchHstSec
+	}
+	return searchSimpleSec
+}

@@ -9,22 +9,176 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
-
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tokenizer"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 )
+
+func BenchmarkIndexer(b *testing.B) {
+	logger.SetLevel(zapcore.FatalLevel)
+
+	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
+	readers := splitLogsToBulks(allLogs, 1000)
+	assert.NoError(b, err)
+
+	processor := getTestProcessor()
+
+	n := 2
+	allMeta := make([][]byte, 0, len(readers)*n)
+
+	for range n {
+		for _, readNext := range readers {
+			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
+			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		active := New(
+			filepath.Join(b.TempDir(), "test"),
+			&frac.Config{},
+			config.NumCPU,
+			storage.NewReadLimiter(1, nil),
+			cache.NewCache[[]byte](nil, nil),
+			cache.NewCache[[]byte](nil, nil),
+		)
+		b.StartTimer()
+
+		wg := sync.WaitGroup{}
+		for _, meta := range allMeta {
+			wg.Add(1)
+			active.indexer.Index(meta, func(idx *memIndex, err error) {
+				active.indexes.Add(idx, 0, 0)
+				wg.Done()
+			})
+		}
+		wg.Wait()
+	}
+}
+
+func BenchmarkMerge(b *testing.B) {
+	logger.SetLevel(zapcore.FatalLevel)
+
+	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
+	readers := splitLogsToBulks(allLogs, 1000)
+	assert.NoError(b, err)
+
+	processor := getTestProcessor()
+
+	n := 2
+	allMeta := make([][]byte, 0, len(readers)*n)
+
+	for range n {
+		for _, readNext := range readers {
+			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
+			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+
+		active := New(
+			filepath.Join(b.TempDir(), "test"),
+			&frac.Config{},
+			config.NumCPU,
+			storage.NewReadLimiter(1, nil),
+			cache.NewCache[[]byte](nil, nil),
+			cache.NewCache[[]byte](nil, nil),
+		)
+
+		wg := sync.WaitGroup{}
+		for _, meta := range allMeta {
+			wg.Add(1)
+			active.indexer.Index(meta, func(idx *memIndex, err error) {
+				active.indexes.Add(idx, 0, 0)
+				wg.Done()
+			})
+		}
+		wg.Wait()
+		b.StartTimer()
+
+		active.merger.ForceMergeAll()
+	}
+}
+
+func defaultSealingParams() frac.SealParams {
+	const minZstdLevel = 1
+	return frac.SealParams{
+		IDsZstdLevel:           minZstdLevel,
+		LIDsZstdLevel:          minZstdLevel,
+		TokenListZstdLevel:     minZstdLevel,
+		DocsPositionsZstdLevel: minZstdLevel,
+		TokenTableZstdLevel:    minZstdLevel,
+		DocBlocksZstdLevel:     minZstdLevel,
+		DocBlockSize:           128 * int(units.KiB),
+	}
+}
+
+func BenchmarkFullWrite(b *testing.B) {
+	logger.SetLevel(zapcore.FatalLevel)
+
+	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
+	readers := splitLogsToBulks(allLogs, 1000)
+	assert.NoError(b, err)
+
+	processor := getTestProcessor()
+
+	n := 2
+	allDocs := make([][]byte, 0, len(readers)*n)
+	allMeta := make([][]byte, 0, len(readers)*n)
+
+	for range n {
+		for _, readNext := range readers {
+			_, docs, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
+			allDocs = append(allDocs, storage.CompressDocBlock(docs, nil, 1))
+			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
+		}
+	}
+
+	params := defaultSealingParams()
+
+	for b.Loop() {
+		active := New(
+			filepath.Join(b.TempDir(), "test"),
+			&frac.Config{SkipSortDocs: true},
+			config.NumCPU,
+			storage.NewReadLimiter(1, nil),
+			cache.NewCache[[]byte](nil, nil),
+			cache.NewCache[[]byte](nil, nil),
+		)
+
+		wg := sync.WaitGroup{}
+		for i, meta := range allMeta {
+			wg.Add(1)
+			go func() {
+				err := active.Append(allDocs[i], meta, &wg)
+				assert.NoError(b, err)
+			}()
+		}
+		wg.Wait()
+
+		src, err := NewSealingSource(active, params)
+		require.NoError(b, err)
+		sealed, err := sealing.Seal(src, params)
+		require.NoError(b, err)
+		assert.Greater(b, int(sealed.Info.DocsTotal), 0)
+		active.Release()
+	}
+}
 
 func readFileAllAtOnce(filename string) ([][]byte, error) {
 	content, err := os.ReadFile(filename)
@@ -77,114 +231,4 @@ func getTestProcessor() *indexer.Processor {
 	}
 
 	return indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
-}
-
-func BenchmarkIndexer(b *testing.B) {
-	logger.SetLevel(zapcore.FatalLevel)
-	idx, stop := NewIndexer(config.NumCPU, config.NumCPU)
-	defer stop()
-
-	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
-	readers := splitLogsToBulks(allLogs, 1000)
-	assert.NoError(b, err)
-
-	processor := getTestProcessor()
-
-	n := 2
-	allMeta := make([][]byte, 0, len(readers)*n)
-
-	for range n {
-		for _, readNext := range readers {
-			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
-		}
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		b.StopTimer()
-		active := New(
-			filepath.Join(b.TempDir(), "test"),
-			idx,
-			storage.NewReadLimiter(1, nil),
-			cache.NewCache[[]byte](nil, nil),
-			cache.NewCache[[]byte](nil, nil),
-			&frac.Config{},
-		)
-		b.StartTimer()
-
-		wg := sync.WaitGroup{}
-		for _, meta := range allMeta {
-			wg.Add(1)
-			idx.Index(active, meta, &wg, stopwatch.New())
-		}
-		wg.Wait()
-	}
-}
-
-func defaultSealingParams() frac.SealParams {
-	const minZstdLevel = 1
-	return frac.SealParams{
-		IDsZstdLevel:           minZstdLevel,
-		LIDsZstdLevel:          minZstdLevel,
-		TokenListZstdLevel:     minZstdLevel,
-		DocsPositionsZstdLevel: minZstdLevel,
-		TokenTableZstdLevel:    minZstdLevel,
-		DocBlocksZstdLevel:     minZstdLevel,
-		DocBlockSize:           128 * int(units.KiB),
-	}
-}
-
-func BenchmarkFullWrite(b *testing.B) {
-	logger.SetLevel(zapcore.FatalLevel)
-	idx, stop := NewIndexer(config.NumCPU, config.NumCPU)
-	defer stop()
-
-	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
-	readers := splitLogsToBulks(allLogs, 1000)
-	assert.NoError(b, err)
-
-	processor := getTestProcessor()
-
-	n := 2
-	allDocs := make([][]byte, 0, len(readers)*n)
-	allMeta := make([][]byte, 0, len(readers)*n)
-
-	for range n {
-		for _, readNext := range readers {
-			_, docs, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-			allDocs = append(allDocs, storage.CompressDocBlock(docs, nil, 1))
-			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
-		}
-	}
-
-	params := defaultSealingParams()
-
-	for b.Loop() {
-		active := New(
-			filepath.Join(b.TempDir(), "test"),
-			idx,
-			storage.NewReadLimiter(1, nil),
-			cache.NewCache[[]byte](nil, nil),
-			cache.NewCache[[]byte](nil, nil),
-			&frac.Config{SkipSortDocs: true},
-		)
-
-		wg := sync.WaitGroup{}
-		for i, meta := range allMeta {
-			wg.Add(1)
-			go func() {
-				err := active.Append(allDocs[i], meta, &wg)
-				assert.NoError(b, err)
-			}()
-		}
-		wg.Wait()
-
-		src, err := NewSealingSource(active, params)
-		require.NoError(b, err)
-		sealed, err := sealing.Seal(src, params)
-		require.NoError(b, err)
-		assert.Greater(b, int(sealed.Info.DocsTotal), 0)
-		active.Release()
-	}
 }

@@ -3,19 +3,15 @@ package active
 import (
 	"context"
 	"io"
-	"math"
 	"os"
 	"sync"
 	"time"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active_old"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -23,10 +19,7 @@ import (
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
-)
-
-var (
-	_ frac.Fraction = (*Active)(nil)
+	"go.uber.org/zap"
 )
 
 type Active struct {
@@ -34,17 +27,10 @@ type Active struct {
 
 	BaseFileName string
 
-	infoMu sync.RWMutex
-	info   *frac.Info
+	indexer *Indexer
 
-	MIDs *UInt64s
-	RIDs *UInt64s
-
-	DocBlocks *UInt64s
-
-	TokenList *tokenList
-
-	DocsPositions *DocsPositions
+	indexes *memIndexPool
+	merger  *mergeManager
 
 	docsFile   *os.File
 	docsReader storage.DocsReader
@@ -55,37 +41,29 @@ type Active struct {
 	metaFile   *os.File
 	metaReader storage.DocBlocksReader
 
-	writer  *Writer
-	indexer *Indexer
-}
-
-const (
-	systemMID = math.MaxUint64
-	systemRID = math.MaxUint64
-)
-
-var systemSeqID = seq.ID{
-	MID: systemMID,
-	RID: systemRID,
+	writer *active_old.Writer
 }
 
 func New(
 	baseFileName string,
-	activeIndexer *Indexer,
+	cfg *frac.Config,
+	workers int,
 	readLimiter *storage.ReadLimiter,
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
-	cfg *frac.Config,
 ) *Active {
 	docsFile, docsStats := util.MustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
 	metaFile, metaStats := util.MustOpenFile(baseFileName+consts.MetaFileSuffix, config.SkipFsync)
 
+	info := frac.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size()))
+	indexes := NewIndexPool(info)
+
 	f := &Active{
-		TokenList:     NewTokenList(config.IndexWorkers),
-		DocsPositions: NewSyncDocsPositions(),
-		MIDs:          NewIDs(),
-		RIDs:          NewIDs(),
-		DocBlocks:     NewIDs(),
+		BaseFileName: baseFileName,
+		Config:       cfg,
+		indexer:      NewIndexer(util.NewSemaphore(workers)),
+		merger:       newMergeManager(indexes, util.NewSemaphore(workers)),
+		indexes:      indexes,
 
 		docsFile:   docsFile,
 		docsCache:  docsCache,
@@ -96,17 +74,8 @@ func New(
 		metaFile:   metaFile,
 		metaReader: storage.NewDocBlocksReader(readLimiter, metaFile),
 
-		indexer: activeIndexer,
-		writer:  NewWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync),
-
-		BaseFileName: baseFileName,
-		info:         frac.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
-		Config:       cfg,
+		writer: active_old.NewWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync),
 	}
-
-	// use of 0 as keys in maps is prohibited – it's system key, so add first element
-	f.MIDs.Append(systemMID)
-	f.RIDs.Append(systemRID)
 
 	logger.Info("active fraction created", zap.String("fraction", baseFileName))
 
@@ -114,16 +83,17 @@ func New(
 }
 
 func (f *Active) Replay(ctx context.Context) error {
-	logger.Info("start replaying...", zap.String("name", f.info.Name()))
+
+	info := f.indexes.info
+
+	logger.Info("start replaying...", zap.String("name", info.Name()))
 
 	t := time.Now()
 
 	offset := uint64(0)
-	step := f.info.MetaOnDisk / 10
-	next := step
-
-	sw := stopwatch.New()
+	step := info.MetaOnDisk / 10
 	wg := sync.WaitGroup{}
+	next := step
 
 out:
 	for {
@@ -144,31 +114,34 @@ out:
 
 			if offset > next {
 				next += step
-				progress := float64(offset) / float64(f.info.MetaOnDisk) * 100
+				progress := float64(offset) / float64(info.MetaOnDisk) * 100
 				logger.Info("replaying batch, meta",
-					zap.String("name", f.info.Name()),
+					zap.String("name", info.Name()),
 					zap.Uint64("from", offset),
 					zap.Uint64("to", offset+metaSize),
-					zap.Uint64("target", f.info.MetaOnDisk),
+					zap.Uint64("target", info.MetaOnDisk),
 					util.ZapFloat64WithPrec("progress_percentage", progress, 2),
 				)
 			}
 			offset += metaSize
 
 			wg.Add(1)
-			f.indexer.Index(f, meta, &wg, sw)
+			f.indexer.Index(meta, func(idx *memIndex, err error) {
+				f.AddIndex(idx, 0, 0, err)
+				wg.Done()
+			})
 		}
 	}
 
 	wg.Wait()
 
 	tookSeconds := util.DurationToUnit(time.Since(t), "s")
-	throughputRaw := util.SizeToUnit(f.info.DocsRaw, "mb") / tookSeconds
-	throughputMeta := util.SizeToUnit(f.info.MetaOnDisk, "mb") / tookSeconds
+	throughputRaw := util.SizeToUnit(info.DocsRaw, "mb") / tookSeconds
+	throughputMeta := util.SizeToUnit(info.MetaOnDisk, "mb") / tookSeconds
 	logger.Info("active fraction replayed",
-		zap.String("name", f.info.Name()),
-		zap.Uint32("docs_total", f.info.DocsTotal),
-		util.ZapUint64AsSizeStr("docs_size", f.info.DocsOnDisk),
+		zap.String("name", info.Name()),
+		zap.Uint32("docs_total", info.DocsTotal),
+		util.ZapUint64AsSizeStr("docs_size", info.DocsOnDisk),
 		util.ZapFloat64WithPrec("took_s", tookSeconds, 1),
 		util.ZapFloat64WithPrec("throughput_raw_mb_sec", throughputRaw, 1),
 		util.ZapFloat64WithPrec("throughput_meta_mb_sec", throughputMeta, 1),
@@ -176,69 +149,34 @@ out:
 	return nil
 }
 
-var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Namespace: "seq_db_store",
-	Subsystem: "bulk",
-	Name:      "stages_seconds",
-	Buckets:   metric.SecondsBuckets,
-}, []string{"stage"})
-
-// Append causes data to be written on disk and sends metas to index workers
-func (f *Active) Append(docs, metas []byte, wg *sync.WaitGroup) (err error) {
+func (f *Active) Append(docs, meta []byte, wg *sync.WaitGroup) (err error) {
 	sw := stopwatch.New()
-	m := sw.Start("append")
-	if err = f.writer.Write(docs, metas, sw); err != nil {
-		m.Stop()
+	ma := sw.Start("append")
+	if err = f.writer.Write(docs, meta, sw); err != nil {
+		ma.Stop()
 		return err
 	}
-	f.updateDiskStats(uint64(len(docs)), uint64(len(metas)))
-	f.indexer.Index(f, metas, wg, sw)
-	m.Stop()
+
+	mi := sw.Start("send_to_indexer")
+
+	f.indexer.Index(meta, func(idx *memIndex, err error) {
+		f.AddIndex(idx, uint64(len(docs)), uint64(len(meta)), err)
+		wg.Done()
+	})
+
+	mi.Stop()
+
+	ma.Stop()
 	sw.Export(bulkStagesSeconds)
 	return nil
 }
 
-func (f *Active) GetAllDocuments() []uint32 {
-	return f.TokenList.GetAllTokenLIDs().GetLIDs(f.MIDs, f.RIDs)
-}
-
-func (f *Active) updateDiskStats(docsLen, metaLen uint64) {
-	f.infoMu.Lock()
-	f.info.DocsOnDisk += docsLen
-	f.info.MetaOnDisk += metaLen
-	f.infoMu.Unlock()
-}
-
-func (f *Active) AppendIDs(ids []seq.ID) []uint32 {
-	// take both locks, append in both arrays at once
-	// i.e. so one thread wouldn't append between other thread appends
-
-	lidsList := make([]uint32, 0, len(ids))
-	f.MIDs.mu.Lock()
-	f.RIDs.mu.Lock()
-	defer f.RIDs.mu.Unlock()
-	defer f.MIDs.mu.Unlock()
-
-	for _, id := range ids {
-		lidsList = append(lidsList, f.MIDs.append(uint64(id.MID)))
-		f.RIDs.append(uint64(id.RID))
+func (f *Active) AddIndex(idx *memIndex, docsLen, metaLen uint64, err error) {
+	if err != nil {
+		logger.Fatal("bulk indexing error", zap.Error(err))
 	}
-
-	return lidsList
-}
-
-func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount uint64) {
-	f.infoMu.Lock()
-	defer f.infoMu.Unlock()
-
-	if f.info.From > minMID {
-		f.info.From = minMID
-	}
-	if f.info.To < maxMID {
-		f.info.To = maxMID
-	}
-	f.info.DocsTotal += docCount
-	f.info.DocsRaw += sizeCount
+	f.indexes.Add(idx, docsLen, metaLen)
+	f.merger.requestMerge()
 }
 
 func (f *Active) String() string {
@@ -246,50 +184,67 @@ func (f *Active) String() string {
 }
 
 func (f *Active) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
-	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+	sw := stopwatch.New()
+	defer sw.Export(fetcherStagesSec)
+
+	t := sw.Start("total")
+
+	ss, release := f.indexes.Snapshot()
+	defer release()
+
+	if ss.info.DocsTotal == 0 { // it is empty active fraction state
 		return nil, nil
 	}
 
-	dp := f.createDataProvider(ctx)
-	defer dp.release()
+	res := make([][]byte, len(ids))
+	for _, index := range ss.indexes {
+		fetchIndex := fetchIndex{index: index, docsReader: &f.docsReader}
+		if err := processor.IndexFetch(ids, sw, &fetchIndex, res); err != nil {
+			return nil, err
+		}
+	}
+	t.Stop()
 
-	return dp.Fetch(ids)
+	return res, nil
 }
 
 func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
-	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+	ss, release := f.indexes.Snapshot()
+	defer release()
+
+	if ss.info.DocsTotal == 0 { // it is empty active fraction state
 		metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()
 		return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, nil
 	}
 
-	dp := f.createDataProvider(ctx)
-	defer dp.release()
+	aggLimits := processor.AggLimits(f.Config.Search.AggLimits)
 
-	return dp.Search(params)
-}
+	// Limit the parameter range to data boundaries to prevent histogram overflow
+	params.From = max(params.From, ss.info.From)
+	params.To = min(params.To, ss.info.To)
 
-func (f *Active) createDataProvider(ctx context.Context) *dataProvider {
-	return &dataProvider{
-		ctx:    ctx,
-		config: f.Config,
-		info:   f.Info(),
+	sw := stopwatch.New()
+	defer sw.Export(getActiveSearchMetric(params))
 
-		mids:      f.MIDs,
-		rids:      f.RIDs,
-		tokenList: f.TokenList,
-
-		blocksOffsets: f.DocBlocks.GetVals(),
-		docsPositions: f.DocsPositions,
-		docsReader:    &f.docsReader,
+	t := sw.Start("total")
+	qprs := make([]*seq.QPR, 0, len(ss.indexes))
+	for _, index := range ss.indexes {
+		si := searchIndex{ctx: ctx, index: index}
+		qpr, err := processor.IndexSearch(ctx, params, &si, aggLimits, sw)
+		if err != nil {
+			return nil, err
+		}
+		qprs = append(qprs, qpr)
 	}
+	res := processor.MergeQPRs(qprs, params)
+	res.IDs.ApplyHint(ss.info.Name())
+	t.Stop()
+
+	return res, nil
 }
 
 func (f *Active) Info() *frac.Info {
-	f.infoMu.RLock()
-	defer f.infoMu.RUnlock()
-
-	cp := *f.info // copy
-	return &cp
+	return f.indexes.Info()
 }
 
 func (f *Active) Contains(id seq.MID) bool {
@@ -311,6 +266,7 @@ func (f *Active) Release() {
 		// we use sorted docs in sealed fraction so we can remove original docs of active fraction
 		util.RemoveFile(f.docsFile.Name())
 	}
+
 }
 
 func (f *Active) Suicide() {
@@ -323,7 +279,8 @@ func (f *Active) Suicide() {
 
 func (f *Active) releaseMem() {
 	f.writer.Stop()
-	f.TokenList.Stop()
+	f.merger.Stop()
+	f.indexes.Release()
 
 	f.docsCache.Release()
 	f.sortCache.Release()
@@ -334,9 +291,4 @@ func (f *Active) releaseMem() {
 	if err := f.docsFile.Close(); err != nil {
 		logger.Error("can't close docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
 	}
-
-	f.RIDs = nil
-	f.MIDs = nil
-	f.TokenList = nil
-	f.DocsPositions = nil
 }

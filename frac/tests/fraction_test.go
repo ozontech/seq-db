@@ -21,7 +21,8 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/active"
-	"github.com/ozontech/seq-db/frac/active2"
+	active1 "github.com/ozontech/seq-db/frac/active"
+	"github.com/ozontech/seq-db/frac/active_old"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
@@ -43,7 +44,7 @@ type FractionTestSuite struct {
 	config        *frac.Config
 	mapping       seq.Mapping
 	tokenizers    map[seq.TokenizerType]tokenizer.Tokenizer
-	activeIndexer *active.Indexer
+	activeIndexer *active_old.Indexer
 	stopIndexer   func()
 	sealParams    frac.SealParams
 
@@ -53,7 +54,7 @@ type FractionTestSuite struct {
 }
 
 func (s *FractionTestSuite) SetupSuiteCommon() {
-	s.activeIndexer, s.stopIndexer = active.NewIndexer(4, 10)
+	s.activeIndexer, s.stopIndexer = active_old.NewIndexer(4, 10)
 }
 
 func (s *FractionTestSuite) TearDownSuiteCommon() {
@@ -1053,14 +1054,14 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	s.Require().Equal(seq.MID(946731654000), info.To, "to doesn't match")
 
 	switch s.fraction.(type) {
-	case *active.Active:
+	case *active_old.Active:
 		// it varies depending on params and docs shuffled
 		s.Require().True(info.DocsOnDisk > uint64(450) && info.DocsOnDisk < uint64(500),
 			"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
 		s.Require().True(info.MetaOnDisk >= uint64(450) && info.MetaOnDisk <= uint64(550),
 			"meta on disk doesn't match. actual value: %d", info.MetaOnDisk)
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
-	case *active2.Active2:
+	case *active.Active:
 		// it varies depending on params and docs shuffled
 		s.Require().True(info.DocsOnDisk > uint64(450) && info.DocsOnDisk < uint64(500),
 			"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
@@ -1270,13 +1271,13 @@ func (s *FractionTestSuite) AssertHist(
 
 func (s *FractionTestSuite) newActive(bulks ...[]string) *active.Active {
 	baseName := filepath.Join(s.tmpDir, "test_fraction")
-	a := active.New(
+	a := active1.New(
 		baseName,
-		s.activeIndexer,
+		s.config,
+		4,
 		storage.NewReadLimiter(1, nil),
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
-		s.config,
 	)
 
 	s.AppendBulks(a, bulks...)
@@ -1419,11 +1420,12 @@ func (s *ActiveReplayedFractionTestSuite) Replay(f *active.Active) frac.Fraction
 	fracFileName := f.BaseFileName
 	replayedFrac := active.New(
 		fracFileName,
-		s.activeIndexer,
+		s.config,
+		4,
 		storage.NewReadLimiter(1, nil),
 		cache.NewCache[[]byte](nil, nil),
-		cache.NewCache[[]byte](nil, nil),
-		&frac.Config{})
+		cache.NewCache[[]byte](nil, nil))
+
 	err := replayedFrac.Replay(context.Background())
 	s.Require().NoError(err, "replay failed")
 	return replayedFrac
@@ -1663,15 +1665,16 @@ func (s *Active2FractionTestSuite) SetupTest() {
 	}
 }
 
-func (s *Active2FractionTestSuite) newActive2(bulks ...[]string) *active2.Active2 {
+func (s *Active2FractionTestSuite) newActive2(bulks ...[]string) *active_old.Active {
+
 	baseName := filepath.Join(s.tmpDir, "test_fraction")
-	a := active2.New(
+	a := active_old.New(
 		baseName,
-		s.config,
-		4,
+		s.activeIndexer,
 		storage.NewReadLimiter(1, nil),
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
+		s.config,
 	)
 
 	s.AppendBulks(a, bulks...)
@@ -1680,7 +1683,7 @@ func (s *Active2FractionTestSuite) newActive2(bulks ...[]string) *active2.Active
 }
 
 func (s *Active2FractionTestSuite) TearDownTest() {
-	if f, ok := s.fraction.(*active2.Active2); ok {
+	if f, ok := s.fraction.(*active1.Active); ok {
 		f.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Active type")
@@ -1728,7 +1731,7 @@ func (s *Sealed2FractionTestSuite) TearDownSuite() {
 func (s *Sealed2FractionTestSuite) newSealed2(bulks ...[]string) *sealed.Sealed {
 	a := s.newActive2(bulks...)
 
-	activeSealingSource, err := active2.NewSealingSource(a, s.sealParams)
+	activeSealingSource, err := active_old.NewSealingSource(a, s.sealParams)
 	s.Require().NoError(err, "Sealing source creation failed")
 
 	preloaded, err := sealing.Seal(activeSealingSource, s.sealParams)
