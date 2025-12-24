@@ -61,7 +61,7 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 			return nil, err
 		}
 
-		seq.MergeQPRs(total, subQPRs, origLimit, seq.MID(params.HistInterval), params.Order)
+		seq.MergeQPRs(total, subQPRs, origLimit, seq.MillisToMID(params.HistInterval), params.Order)
 
 		// reduce the limit on the number of ensured docs in response
 		params.Limit = origLimit - calcEnsuredIDsCount(total.IDs, remainingFracs, params.Order)

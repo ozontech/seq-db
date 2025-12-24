@@ -38,6 +38,5 @@ func (b *BlockInfo) Unpack(data []byte) error {
 		return errors.New("stats unmarshaling error")
 	}
 	b.Info.MetaOnDisk = 0 // todo: make this correction on sealing and remove this next time
-
 	return nil
 }
