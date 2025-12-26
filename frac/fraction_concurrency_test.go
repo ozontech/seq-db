@@ -261,7 +261,7 @@ type testDoc = struct {
 }
 
 func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.Time, time.Time) {
-	services := []string{"gateway", "proxy", "scheduler"}
+	services := []string{"gateway", "proxy", "scheduler", "database", "bus"}
 	messages := []string{
 		"request started", "request completed", "processing timed out",
 		"processing data", "processing failed", "processing retry",

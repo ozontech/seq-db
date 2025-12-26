@@ -1038,9 +1038,9 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			limit:    100,
 		},
 		{
-			name:     "service:gateway",
-			query:    "service:gateway",
-			filter:   func(doc *testDoc) bool { return doc.service == "gateway" },
+			name:     "service:bus",
+			query:    "service:bus",
+			filter:   func(doc *testDoc) bool { return doc.service == "bus" },
 			fromTime: &fromTime,
 			toTime:   &toTime,
 		},
@@ -1183,10 +1183,10 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
 	})
 
-	s.Run("service:gateway AND level:3 | hist 1s", func() {
+	s.Run("service:database AND level:3 | hist 1s", func() {
 		histBuckets := make(map[string]uint64)
 		for _, doc := range testDocs {
-			if doc.service == "gateway" && doc.level == 3 {
+			if doc.service == "database" && doc.level == 3 {
 				bucketTime := doc.timestamp.Truncate(time.Second)
 				bucketKey := bucketTime.Format(time.RFC3339Nano)
 				histBuckets[bucketKey]++
@@ -1194,7 +1194,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		}
 
 		s.AssertHist(
-			s.query("service:gateway AND level:3", withTo(toTime.Format(time.RFC3339Nano)), withHist(1000)),
+			s.query("service:database AND level:3", withTo(toTime.Format(time.RFC3339Nano)), withHist(1000)),
 			histBuckets)
 	})
 }
