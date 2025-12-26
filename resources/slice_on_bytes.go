@@ -23,6 +23,8 @@ func NewSliceOnBytes[T any](releases *CallStack) SliceOnBytes[T] {
 }
 
 func (a SliceOnBytes[T]) GetSlice(size int) []T {
+	return make([]T, size)
+
 	data, buf := a.getBuf(size)
 	a.releases.Defer(func() { a.pool.Put(buf) })
 	return data
