@@ -86,7 +86,7 @@ func Seal(src Source, params frac.SealParams) (*sealed.PreloadedData, error) {
 	util.MustSyncPath(filepath.Dir(info.Path))
 
 	// copy this because it uses active fraction structures under the hood that must be released
-	tokenTable := indexSealer.TokenTable().Clone()
+	tokenTable := indexSealer.TokenTable()
 	blocksOffsets := slices.Clone(src.BlocksOffsets())
 
 	// Build preloaded data structure for fast query access

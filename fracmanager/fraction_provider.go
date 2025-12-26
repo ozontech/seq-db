@@ -129,7 +129,7 @@ func (fp *fractionProvider) CreateActive2() *active1.Active {
 
 // Seal converts an active fraction to a sealed one
 // Process includes sorting, indexing, and data optimization for reading
-func (fp *fractionProvider) Seal(a *active.Active) (*sealed.Sealed, error) {
+func (fp *fractionProvider) Seal1(a *active.Active) (*sealed.Sealed, error) {
 	src, err := active.NewSealingSource(a, fp.config.SealParams)
 	if err != nil {
 		return nil, err
@@ -140,6 +140,21 @@ func (fp *fractionProvider) Seal(a *active.Active) (*sealed.Sealed, error) {
 	}
 
 	return fp.NewSealedPreloaded(a.BaseFileName, preloaded), nil
+}
+
+// Seal converts an active fraction to a sealed one
+// Process includes sorting, indexing, and data optimization for reading
+func (fp *fractionProvider) Seal(a *active.Active) (*sealed.Sealed, error) {
+	src, err := active.NewSealingSource(a, fp.config.SealParams)
+	if err != nil {
+		return nil, err
+	}
+	_, err = sealing.Seal(src, fp.config.SealParams)
+	if err != nil {
+		return nil, err
+	}
+
+	return fp.NewSealed(a.BaseFileName, nil), nil
 }
 
 // Offload uploads fraction to S3 storage and returns a remote fraction

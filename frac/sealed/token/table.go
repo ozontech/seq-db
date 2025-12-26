@@ -2,7 +2,6 @@ package token
 
 import (
 	"sort"
-	"strings"
 	"unsafe"
 
 	"go.uber.org/zap"
@@ -99,23 +98,4 @@ func (t Table) Size() int {
 		}
 	}
 	return size
-}
-
-func (t Table) Clone() Table {
-	res := make(Table, len(t))
-	for k, v := range t {
-		res[strings.Clone(k)] = v.Clone()
-	}
-	return res
-}
-
-func (fd *FieldData) Clone() *FieldData {
-	res := FieldData{
-		MinVal:  strings.Clone(fd.MinVal),
-		Entries: make([]*TableEntry, 0, len(fd.Entries)),
-	}
-	for _, e := range fd.Entries {
-		res.Entries = append(res.Entries, e.Clone())
-	}
-	return &res
 }
