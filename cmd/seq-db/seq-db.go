@@ -369,8 +369,8 @@ func docFilterParamsFromCfg(in []config.Filter) []docsfilter.Params {
 	for _, f := range in {
 		out = append(out, docsfilter.Params{
 			Query: f.Query,
-			From:  f.From.UnixMilli(), // TODO: nano after rebase
-			To:    f.To.UnixMilli(),   // TODO: nano after rebase
+			From:  f.From.UnixNano(),
+			To:    f.To.UnixNano(),
 		})
 	}
 	return out

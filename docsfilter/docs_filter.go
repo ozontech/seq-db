@@ -296,6 +296,7 @@ func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter) error {
 		util.RemoveFile(tmpFilePath)
 		return nil
 	}
+	// TODO: don't read lids twice: f.Search() and f.FindLIDs()
 	docsFilterBin := DocsFilterBin{LIDs: f.FindLIDs(df.ctx, qpr.IDs.IDs())}
 	if err := compressDocsFilter(&docsFilterBin, storeDocsFilter); err != nil {
 		return err

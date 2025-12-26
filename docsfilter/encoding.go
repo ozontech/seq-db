@@ -32,6 +32,8 @@ func marshalLIDsBlock(dst []byte, in []seq.LID) []byte {
 	// TODO: zstd (???)
 	// TODO: buffer pool (???)
 
+	// TODO: organize lids in blocks
+
 	dst = binary.BigEndian.AppendUint64(dst, uint64(len(in)))
 
 	prev := seq.LID(0)

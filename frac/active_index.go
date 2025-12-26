@@ -141,6 +141,8 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 }
 
 func (dp *activeDataProvider) FindLIDs(ids []seq.ID) []seq.LID {
+	// TODO: this doesn't work, need to get lids not docpos and then inverse it with inverses
+
 	index := activeFetchIndex{
 		blocksOffsets: dp.blocksOffsets,
 		docsPositions: dp.docsPositions,
