@@ -30,9 +30,13 @@ func (a SliceOnBytes[T]) GetSlice(size int) []T {
 
 func (a SliceOnBytes[T]) getBuf(size int) ([]T, []byte) {
 	var tmp T
+
 	itemSize := int(unsafe.Sizeof(tmp))
 	buf := a.pool.Get(size * itemSize)
 	capacity := cap(buf) / itemSize
+
 	data := unsafe.Slice((*T)(unsafe.Pointer(unsafe.SliceData(buf))), capacity)[:size]
+	clear(data[size:])
+
 	return data, buf
 }
