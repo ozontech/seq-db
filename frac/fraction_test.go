@@ -1011,102 +1011,102 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		name     string
 		query    string
 		filter   docFilter
-		fromTime *time.Time
-		toTime   *time.Time
+		fromTime time.Time
+		toTime   time.Time
 		limit    int
 	}{
 		{
 			name:     "message:request",
 			query:    "message:request",
 			filter:   func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
-			fromTime: &fromTime,
-			toTime:   &toTime,
+			fromTime: fromTime,
+			toTime:   toTime,
 		},
 		{
 			name:     "message:request (time range)",
 			query:    "message:request",
 			filter:   func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
-			fromTime: &fromTime,
-			toTime:   &midTime,
+			fromTime: fromTime,
+			toTime:   midTime,
 		},
 		{
 			name:     "message:request (time range + limit)",
 			query:    "message:request",
 			filter:   func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
-			fromTime: &fromTime,
-			toTime:   &midTime,
+			fromTime: fromTime,
+			toTime:   midTime,
 			limit:    100,
 		},
 		{
 			name:     "service:bus",
 			query:    "service:bus",
 			filter:   func(doc *testDoc) bool { return doc.service == "bus" },
-			fromTime: &fromTime,
-			toTime:   &toTime,
+			fromTime: fromTime,
+			toTime:   toTime,
 		},
 		{
 			name:     "service:proxy (time range)",
 			query:    "service:proxy",
 			filter:   func(doc *testDoc) bool { return doc.service == "proxy" },
-			fromTime: &fromTime,
-			toTime:   &midTime,
+			fromTime: fromTime,
+			toTime:   midTime,
 		},
 		{
 			name:     "service:scheduler (time range + limit)",
 			query:    "service:scheduler",
 			filter:   func(doc *testDoc) bool { return doc.service == "scheduler" },
-			fromTime: &fromTime,
-			toTime:   &midTime,
+			fromTime: fromTime,
+			toTime:   midTime,
 			limit:    100,
 		},
 		{
 			name:     "level:5",
 			query:    "level:5",
 			filter:   func(doc *testDoc) bool { return doc.level == 5 },
-			fromTime: &fromTime,
-			toTime:   &toTime,
+			fromTime: fromTime,
+			toTime:   toTime,
 		},
 		{
 			name:     "level:228",
 			query:    "level:228",
 			filter:   func(doc *testDoc) bool { return false }, // no such data, just validate than frac returns empty IDs
-			fromTime: &fromTime,
-			toTime:   &toTime,
+			fromTime: fromTime,
+			toTime:   toTime,
 		},
 		{
 			name:     "level:5 (time range)",
 			query:    "level:5",
 			filter:   func(doc *testDoc) bool { return doc.level == 5 },
-			fromTime: &fromTime,
-			toTime:   &midTime,
+			fromTime: fromTime,
+			toTime:   midTime,
 		},
 		{
 			name:     "trace_id:trace-777",
 			query:    "trace_id:trace-777",
 			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-777" },
-			fromTime: &fromTime,
-			toTime:   &toTime,
+			fromTime: fromTime,
+			toTime:   toTime,
 		},
 		{
 			name:     "trace_id:trace-100 (time range)",
 			query:    "trace_id:trace-100",
 			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-100" },
-			fromTime: &fromTime,
-			toTime:   &midTime,
+			fromTime: fromTime,
+			toTime:   midTime,
 		},
 		{
 			name:     "trace_id:trace-4999",
 			query:    "trace_id:trace-4999",
 			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-4999" },
-			fromTime: &fromTime,
-			toTime:   &toTime,
+			fromTime: fromTime,
+			toTime:   toTime,
 		},
 		{
 			name:     "trace_id:trace-2025 (time range)",
 			query:    "trace_id:trace-2025",
 			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-2025" },
-			fromTime: &fromTime,
-			toTime:   &midTime,
+			fromTime: fromTime,
+			toTime:   midTime,
 		},
 	}
 
@@ -1116,10 +1116,10 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			for i := len(testDocs) - 1; i >= 0; i-- {
 				doc := &testDocs[i]
 
-				if tc.fromTime != nil && doc.timestamp.Before(*tc.fromTime) {
+				if doc.timestamp.Before(tc.fromTime) {
 					continue
 				}
-				if tc.toTime != nil && doc.timestamp.After(*tc.toTime) {
+				if doc.timestamp.After(tc.toTime) {
 					continue
 				}
 
@@ -1132,12 +1132,8 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			}
 
 			var options []searchOption
-			if tc.fromTime != nil {
-				options = append(options, withFrom(tc.fromTime.Format(time.RFC3339Nano)))
-			}
-			if tc.toTime != nil {
-				options = append(options, withTo(tc.toTime.Format(time.RFC3339Nano)))
-			}
+			options = append(options, withFrom(tc.fromTime.Format(time.RFC3339Nano)))
+			options = append(options, withTo(tc.toTime.Format(time.RFC3339Nano)))
 			if tc.limit > 0 {
 				options = append(options, withLimit(tc.limit))
 			}
