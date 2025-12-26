@@ -185,14 +185,14 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 						return doc.traceId == "trace-1999"
 					}
 				case 4:
-					query = "trace_id:trace-777"
+					query = "trace_id:trace-500"
 					filter = func(doc *testDoc) bool {
-						return doc.traceId == "trace-777"
+						return doc.traceId == "trace-500"
 					}
 				case 5:
-					query = "trace_id:trace-4999"
+					query = "trace_id:trace-4444"
 					filter = func(doc *testDoc) bool {
-						return doc.traceId == "trace-4999"
+						return doc.traceId == "trace-4444"
 					}
 				case 6:
 					query = "service:gateway AND level:3"
