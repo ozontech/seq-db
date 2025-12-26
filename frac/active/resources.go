@@ -75,7 +75,7 @@ func (r *Resources) GetIDs(s int) []seq.ID {
 	return r.ids.GetSlice(s)
 }
 
-func (r *Resources) GetDocPos(s int) []seq.DocPos {
+func (r *Resources) GetDocPosSlice(s int) []seq.DocPos {
 	return r.docPos.GetSlice(s)
 }
 

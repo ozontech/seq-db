@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/logger"
 )
 
 // indexEntry is an internal structure that describes a memIndex
@@ -21,8 +22,9 @@ type indexEntry struct {
 //   - tracks indexes currently participating in merge
 //   - provides consistent snapshots for readers
 type memIndexPool struct {
-	mu   sync.RWMutex // protects all fields below
-	info *frac.Info   // aggregated information for all indexes
+	mu     sync.RWMutex // protects all fields below
+	info   *frac.Info   // aggregated information for all indexes
+	hashes map[uint64]struct{}
 
 	ready   map[uint64]indexEntry // indexes ready to be merged
 	merging map[uint64]indexEntry // indexes currently being merged
@@ -38,6 +40,7 @@ type memIndexPool struct {
 func NewIndexPool(info *frac.Info) *memIndexPool {
 	return &memIndexPool{
 		info:    info,
+		hashes:  make(map[uint64]struct{}, 1000),
 		ready:   make(map[uint64]indexEntry),
 		merging: make(map[uint64]indexEntry),
 	}
@@ -97,6 +100,14 @@ func (p *memIndexPool) Add(idx *memIndex, docsLen, metaLen uint64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if idx.hash > 0 {
+		if _, ok := p.hashes[idx.hash]; ok {
+			logger.Warn("a duplicate index (bulk) has been detected")
+			return
+		}
+		p.hashes[idx.hash] = struct{}{}
+	}
+
 	if p.info.From > minMID {
 		p.info.From = minMID
 	}
@@ -150,10 +161,20 @@ func (p *memIndexPool) replace(old []indexEntry, merged *memIndex) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	var docsCountToRemove uint32
 	for _, entry := range old {
+		docsCountToRemove += entry.index.docsCount
 		delete(p.merging, entry.id)
 	}
 	p.ready[newEntry.id] = newEntry
+
+	// update info: the number of documents to be deleted may be greater
+	// than the number to be added due to deduplication
+	if docsCountToRemove > p.info.DocsTotal {
+		panic("inconsistent state of index pool")
+	}
+	p.info.DocsTotal -= uint32(docsCountToRemove)
+	p.info.DocsTotal += newEntry.index.docsCount
 
 	p.rebuildReadable()
 }

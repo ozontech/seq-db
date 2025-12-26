@@ -112,28 +112,30 @@ func TestReplayMultiple(t *testing.T) {
 	defer tearDown()
 
 	// fill data
-	actives := make([]*active.Active, 0, fracCount)
+	actives := make([]*active.Active, 0, fracCount) // empty active fractions for replay
 	for i := 0; i < fracCount; i++ {
-		active := fp.CreateActive()
-		appendDocsToActive(t, active, 500+rand.Intn(100))
-		actives = append(actives, active)
+		a := fp.CreateActive()
+		appendDocsToActive(t, a, 500+rand.Intn(100))
+		actives = append(actives, fp.NewActive(a.BaseFileName))
 	}
-	active := fp.CreateActive()
-	appendDocsToActive(t, active, 5)
-	actives = append(actives, active)
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 5)
+	actives = append(actives, fp.NewActive(a.BaseFileName))
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	a, s, err := loader.replayAndSeal(t.Context(), actives)
 	assert.NoError(t, err)
 
 	// checks
-	assert.Equal(t, len(actives), len(sealed)+1, "should replay same number of fractions")
+	assert.Equal(t, len(actives)-1, len(s), "should replay same number of fractions")
 	for i := 0; i < fracCount; i++ {
-		assert.Equal(t, actives[i].Info().Name(), sealed[i].Info().Name(), "fraction %d should have the same name", i)
-		assert.Equal(t, actives[i].Info().DocsTotal, sealed[i].Info().DocsTotal, "fraction %d should have the same doc count", i)
+		assert.Equal(t, actives[i].Info().Name(), s[i].Info().Name(), "fraction %d should have the same name", i)
+		assert.Equal(t, actives[i].Info().DocsTotal, s[i].Info().DocsTotal, "fraction %d should have the same doc count", i)
 	}
-	assert.Equal(t, actives[fracCount].Info().Name(), active.Info().Name(), "new active fraction should have the same name")
-	assert.Equal(t, uint32(5), active.Info().DocsTotal, "new active fraction should not be empty")
+	assert.Equal(t, actives[fracCount].Info().Name(), a.Info().Name(), "new active fraction should have the same name")
+	assert.Equal(t, uint32(5), a.Info().DocsTotal,
+		"new active fraction should have exact 5 docs but %d given", a.Info().DocsTotal,
+	)
 }
 
 func TestReplaySingleEmpty(t *testing.T) {

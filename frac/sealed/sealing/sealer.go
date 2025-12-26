@@ -5,6 +5,7 @@ import (
 	"iter"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
@@ -84,15 +85,19 @@ func Seal(src Source, params frac.SealParams) (*sealed.PreloadedData, error) {
 	// Ensure directory metadata is synced to disk
 	util.MustSyncPath(filepath.Dir(info.Path))
 
+	// copy this because it uses active fraction structures under the hood that must be released
+	tokenTable := indexSealer.TokenTable().Clone()
+	blocksOffsets := slices.Clone(src.BlocksOffsets())
+
 	// Build preloaded data structure for fast query access
 	lidsTable := indexSealer.LIDsTable()
 	preloaded := sealed.PreloadedData{
 		Info:       info,
-		TokenTable: indexSealer.TokenTable(),
+		TokenTable: tokenTable,
 		BlocksData: sealed.BlocksData{
 			IDsTable:      indexSealer.IDsTable(),
 			LIDsTable:     &lidsTable,
-			BlocksOffsets: src.BlocksOffsets(),
+			BlocksOffsets: blocksOffsets,
 		},
 	}
 

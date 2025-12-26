@@ -2,10 +2,13 @@ package active
 
 import (
 	"bytes"
+	"cmp"
 	"slices"
 
+	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
+	"go.uber.org/zap"
 )
 
 // mergeIndexes merges several in-memory indexes (memIndex)
@@ -28,7 +31,7 @@ func mergeIndexes(indexes []*memIndex) *memIndex {
 
 	// Preallocate memory for final structures
 	dst.ids = dst.res.GetIDs(int(dst.docsCount))[:0]
-	dst.positions = dst.res.GetDocPos(int(dst.docsCount))[:0]
+	dst.positions = dst.res.GetDocPosSlice(int(dst.docsCount))[:0]
 	dst.blocksOffsets = dst.res.GetUint64s(blocksCount)[:0]
 
 	// 1. Merge block offsets and recalculate document positions
@@ -74,13 +77,28 @@ func mergeIDs(
 	mergedDocStream := MergeSortedStreams(
 		docStreams,
 		func(a, b DocRef) int {
-			return seq.Compare(b.id, a.id)
+			r := seq.Compare(b.id, a.id)
+			if r == 0 {
+				r = cmp.Compare(a.i, b.i)
+			}
+			return r
 		},
 	)
 
+	var (
+		doubles int
+		prevRef DocRef
+	)
+
 	// Iterate over the merged stream
-	docRef, has := mergedDocStream.Next()
-	for has {
+	for docRef, has := mergedDocStream.Next(); has; docRef, has = mergedDocStream.Next() {
+		if docRef.id == prevRef.id && docRef.i != prevRef.i {
+			doubles++
+			lidsMap[docRef.i] = append(lidsMap[docRef.i], 0) // add zero LID for consistent mapping
+			continue
+		}
+		prevRef = docRef
+
 		// Add document to the resulting index
 		dst.ids = append(dst.ids, docRef.id)
 		dst.positions = append(dst.positions, docRef.pos)
@@ -90,8 +108,11 @@ func mergeIDs(
 
 		// Record oldLID → newLID mapping
 		lidsMap[docRef.i] = append(lidsMap[docRef.i], lid)
+	}
 
-		docRef, has = mergedDocStream.Next()
+	if doubles > 0 {
+		dst.docsCount -= uint32(doubles)
+		logger.Warn("doubles in index", zap.Int("count", doubles))
 	}
 
 	return lidsMap
@@ -138,7 +159,7 @@ func mergeTokens(
 
 	// borders[i] indicates:
 	const (
-		borderSame  = 0b00 // tokensRef[i] is the same token as in tokensRef[i-1] (but other index)
+		borderNone  = 0b00 // tokensRef[i] is the same token as in tokensRef[i-1] (but other index)
 		borderToken = 0b01 // tokensRef[i] is new token
 		borderField = 0b10 // tokensRef[i] is new token and new field
 	)
@@ -148,7 +169,7 @@ func mergeTokens(
 
 	// First pass: count unique tokens and fields
 	for tokenRef, has := mergedTokenStream.Next(); has; tokenRef, has = mergedTokenStream.Next() {
-		var border uint8 = borderSame
+		var border uint8 = borderNone
 
 		// New token
 		if prevToken.payload == nil || cmpToken(prevToken, tokenRef) != 0 {
@@ -280,6 +301,7 @@ func (s *LIDsCollector) GetSorted() (dst []uint32) {
 		for _, v := range s.tmp {
 			s.buf[v] = 1
 		}
+		s.buf[0] = 0 // avoiding a zero LID caused by duplicates
 		start := len(s.lids)
 		for lid, ok := range s.buf {
 			if ok == 1 {
@@ -295,6 +317,11 @@ func (s *LIDsCollector) GetSorted() (dst []uint32) {
 	if n > 1 {
 		slices.Sort(s.tmp)
 	}
+	i := 0
+	for i < len(s.tmp) && s.tmp[i] == 0 { // skipping zero LIDs caused by duplicates
+		i++
+	}
+	s.tmp = s.tmp[i:]
 	start := len(s.lids)
 	s.lids = append(s.lids, s.tmp...)
 	s.tmp = s.tmp[:0]
@@ -317,7 +344,7 @@ func mergeBlocksOffsets(
 		dst.blocksOffsets = append(dst.blocksOffsets, index.blocksOffsets...)
 
 		// Recalculate document positions
-		positions[i] = res.GetDocPos(len(index.positions))[:0]
+		positions[i] = res.GetDocPosSlice(len(index.positions))[:0]
 		for _, p := range index.positions {
 			oldIdx, docOffset := p.Unpack()
 			positions[i] = append(

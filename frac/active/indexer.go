@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/binary"
+	"hash/fnv"
 	"slices"
 	"unsafe"
 
@@ -72,7 +73,7 @@ func NewMemIndex(block storage.DocBlock) (*memIndex, error) {
 	idx := newMemIndex()
 	idx.docsCount = uint32(len(meta))
 	idx.ids = idx.res.GetIDs(len(meta))
-	idx.positions = idx.res.GetDocPos(len(meta))
+	idx.positions = idx.res.GetDocPosSlice(len(meta))
 	idx.blocksOffsets = idx.res.GetUint64s(1) // Only one block per bulk
 	idx.blocksOffsets[0] = block.GetExt2()
 
@@ -117,7 +118,7 @@ func extractTokens(
 
 	// Calculate document positions in the original block
 	// Each document is stored as: [size: uint32][data: size bytes]
-	positions := res.GetDocPos(len(meta))
+	positions := res.GetDocPosSlice(len(meta))
 	prev := seq.PackDocPos(0, docOffset)
 
 	for i := range meta {
@@ -140,13 +141,18 @@ func extractTokens(
 		return seq.Compare(meta[b].ID, meta[a].ID)
 	})
 
+	hash := fnv.New64a()
+	var idBinary [16]byte
+
 	// Fill index structures with sorted documents
-	for lid, origIdx := range order {
+	for i, origIdx := range order {
 		docMeta := meta[origIdx]
-		idx.ids[lid] = docMeta.ID
-		idx.positions[lid] = positions[origIdx]
+		idx.ids[i] = docMeta.ID
+		idx.positions[i] = positions[origIdx]
 		idx.docsSize += uint64(docMeta.Size)
+		hash.Write(docMeta.ID.AppendBinary(idBinary[:0]))
 	}
+	idx.hash = hash.Sum64()
 
 	// Extract and process tokens from all documents
 	var err error
@@ -156,8 +162,10 @@ func extractTokens(
 	lids := res.GetUint32s(int(totalTokens))[:0] // Local document ID for each token occurrence
 	tids := res.GetUint32s(int(totalTokens))[:0] // Token ID for each occurrence
 
+	buf.tokenMap[tokenStr{field: seq.TokenAll}] = 0 // reserve ALL token (just for proper sealing)
+
 	// Process documents in ID-sorted order
-	for lid, origIdx := range order {
+	for i, origIdx := range order {
 		docMeta := meta[origIdx]
 
 		// Decode tokens for this document
@@ -165,9 +173,8 @@ func extractTokens(
 			return nil, nil, nil, err
 		}
 
-		buf.tokenMap[tokenStr{field: seq.TokenAll}] = 0 // reserve ALL token (just for proper sealing)
-
 		// Process each token in the document
+		lid := uint32(i + 1)
 		for _, t := range buf.tokens {
 			if bytes.Equal(t.Key, seq.AllTokenName) {
 				continue
@@ -179,7 +186,7 @@ func extractTokens(
 				buf.tokenMap[token] = tid
 			}
 			tids = append(tids, tid)
-			lids = append(lids, uint32(lid)+1) // store lid+1 (1-based indexing for internal use)
+			lids = append(lids, lid) // store lid+1 (1-based indexing for internal use)
 		}
 	}
 

@@ -1,5 +1,7 @@
 package token
 
+import "strings"
+
 // TableEntry is part of token.Table and points to a fragment of token.Block
 type TableEntry struct {
 	StartIndex uint32 // offset from the beginning of the block to the first token pointed to by the TableEntry
@@ -29,4 +31,11 @@ func (t *TableEntry) checkTIDInBlock(tid uint32) bool {
 	}
 
 	return true
+}
+
+func (t *TableEntry) Clone() *TableEntry {
+	res := *t
+	res.MaxVal = strings.Clone(t.MaxVal)
+	res.MinVal = strings.Clone(t.MinVal)
+	return &res
 }

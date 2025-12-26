@@ -25,9 +25,11 @@ var (
 
 // SealingSource provides data from a single memIndex in the format required by the sealing stage.
 type SealingSource struct {
-	info    *frac.Info
-	index   *memIndex
-	lastErr error
+	info          *frac.Info
+	index         *memIndex
+	blocksOffsets []uint64
+	positions     []seq.DocPos
+	lastErr       error
 }
 
 // NewSealingSource prepares a sealing source from Active2 state.
@@ -41,9 +43,12 @@ func NewSealingSource(a *Active, params frac.SealParams) (sealing.Source, error)
 		logger.Panic("invalid state: sealing requires a single memIndex")
 	}
 
+	index := iss.indexes[0]
 	ss := &SealingSource{
-		info:  iss.info,
-		index: iss.indexes[0],
+		info:          iss.info,
+		index:         index,
+		positions:     index.positions,
+		blocksOffsets: index.blocksOffsets,
 	}
 
 	// Sort documents unless explicitly disabled
@@ -59,9 +64,8 @@ func NewSealingSource(a *Active, params frac.SealParams) (sealing.Source, error)
 			return nil, err
 		}
 
-		// Skip system document position
-		ss.index.positions = positions[1:]
-		ss.index.blocksOffsets = blocksOffsets
+		ss.positions = positions[1:] // skip system document position
+		ss.blocksOffsets = blocksOffsets
 		ss.info.DocsOnDisk = uint64(onDiskSize)
 	}
 
@@ -98,7 +102,7 @@ func (src *SealingSource) IDsBlocks(blockSize int) iter.Seq2[[]seq.ID, []seq.Doc
 			}
 
 			ids = append(ids, id)
-			pos = append(pos, src.index.positions[i])
+			pos = append(pos, src.positions[i])
 		}
 
 		yield(ids, pos)
@@ -163,7 +167,7 @@ func (src *SealingSource) TokenLIDs() iter.Seq[[]uint32] {
 
 // BlocksOffsets returns document block offsets.
 func (src *SealingSource) BlocksOffsets() []uint64 {
-	return src.index.blocksOffsets
+	return src.blocksOffsets
 }
 
 // LastError returns the last recorded source error.

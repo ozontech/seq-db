@@ -21,7 +21,6 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/active"
-	active1 "github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/frac/active_old"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed"
@@ -62,7 +61,9 @@ func (s *FractionTestSuite) TearDownSuiteCommon() {
 }
 
 func (s *FractionTestSuite) SetupTestCommon() {
-	s.config = &frac.Config{}
+	s.config = &frac.Config{
+		// SkipSortDocs: true,
+	}
 	s.tokenizers = map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(20, false, true),
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 100),
@@ -1271,7 +1272,7 @@ func (s *FractionTestSuite) AssertHist(
 
 func (s *FractionTestSuite) newActive(bulks ...[]string) *active.Active {
 	baseName := filepath.Join(s.tmpDir, "test_fraction")
-	a := active1.New(
+	a := active.New(
 		baseName,
 		s.config,
 		4,
@@ -1638,34 +1639,34 @@ func TestRemoteFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(RemoteFractionTestSuite))
 }
 
-func TestActive2FractionTestSuite(t *testing.T) {
-	suite.Run(t, new(Active2FractionTestSuite))
+func TestActiveOldFractionTestSuite(t *testing.T) {
+	suite.Run(t, new(ActiveOldFractionTestSuite))
 }
 
-func TestSealed2FractionTestSuite(t *testing.T) {
-	suite.Run(t, new(Sealed2FractionTestSuite))
+func TestSealedOldFractionTestSuite(t *testing.T) {
+	suite.Run(t, new(SealedOldFractionTestSuite))
 }
 
-type Active2FractionTestSuite struct {
+type ActiveOldFractionTestSuite struct {
 	FractionTestSuite
 }
 
-func (s *Active2FractionTestSuite) SetupSuite() {
+func (s *ActiveOldFractionTestSuite) SetupSuite() {
 	s.SetupSuiteCommon()
 }
 
-func (s *Active2FractionTestSuite) SetupTest() {
+func (s *ActiveOldFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 
 	s.insertDocuments = func(bulks ...[]string) {
 		if s.fraction != nil {
 			s.Require().Fail("can insert docs only once")
 		}
-		s.fraction = s.newActive2(bulks...)
+		s.fraction = s.newActiveOld(bulks...)
 	}
 }
 
-func (s *Active2FractionTestSuite) newActive2(bulks ...[]string) *active_old.Active {
+func (s *ActiveOldFractionTestSuite) newActiveOld(bulks ...[]string) *active_old.Active {
 
 	baseName := filepath.Join(s.tmpDir, "test_fraction")
 	a := active_old.New(
@@ -1682,8 +1683,8 @@ func (s *Active2FractionTestSuite) newActive2(bulks ...[]string) *active_old.Act
 	return a
 }
 
-func (s *Active2FractionTestSuite) TearDownTest() {
-	if f, ok := s.fraction.(*active1.Active); ok {
+func (s *ActiveOldFractionTestSuite) TearDownTest() {
+	if f, ok := s.fraction.(*active_old.Active); ok {
 		f.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Active type")
@@ -1692,30 +1693,30 @@ func (s *Active2FractionTestSuite) TearDownTest() {
 	s.TearDownTestCommon()
 }
 
-func (s *Active2FractionTestSuite) TearDownSuite() {
+func (s *ActiveOldFractionTestSuite) TearDownSuite() {
 	s.TearDownSuiteCommon()
 }
 
-type Sealed2FractionTestSuite struct {
-	Active2FractionTestSuite
+type SealedOldFractionTestSuite struct {
+	ActiveOldFractionTestSuite
 }
 
-func (s *Sealed2FractionTestSuite) SetupSuite() {
+func (s *SealedOldFractionTestSuite) SetupSuite() {
 	s.SetupSuiteCommon()
 }
 
-func (s *Sealed2FractionTestSuite) SetupTest() {
+func (s *SealedOldFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 
 	s.insertDocuments = func(docs ...[]string) {
 		if s.fraction != nil {
 			s.Require().Fail("can insert docs only once")
 		}
-		s.fraction = s.newSealed2(docs...)
+		s.fraction = s.newSealedOld(docs...)
 	}
 }
 
-func (s *Sealed2FractionTestSuite) TearDownTest() {
+func (s *SealedOldFractionTestSuite) TearDownTest() {
 	if f, ok := s.fraction.(*sealed.Sealed); ok {
 		f.Release()
 	} else {
@@ -1724,12 +1725,12 @@ func (s *Sealed2FractionTestSuite) TearDownTest() {
 	s.TearDownTestCommon()
 }
 
-func (s *Sealed2FractionTestSuite) TearDownSuite() {
+func (s *SealedOldFractionTestSuite) TearDownSuite() {
 	s.TearDownSuiteCommon()
 }
 
-func (s *Sealed2FractionTestSuite) newSealed2(bulks ...[]string) *sealed.Sealed {
-	a := s.newActive2(bulks...)
+func (s *SealedOldFractionTestSuite) newSealedOld(bulks ...[]string) *sealed.Sealed {
+	a := s.newActiveOld(bulks...)
 
 	activeSealingSource, err := active_old.NewSealingSource(a, s.sealParams)
 	s.Require().NoError(err, "Sealing source creation failed")

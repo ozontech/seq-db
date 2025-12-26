@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
+	"slices"
 	"time"
 
 	"github.com/ozontech/seq-db/util"
@@ -20,7 +22,12 @@ type RID uint64 // random part of ID
 type LID uint32 // local id for a fraction
 
 func (m MID) Time() time.Time {
-	return time.UnixMilli(int64(m))
+	if uint64(m) <= math.MaxInt64 {
+		return time.UnixMilli(int64(m))
+	} else {
+		// since MaxInt64 is 292278994 year in milliseconds, so we assume this MID is "infinite future"
+		return time.UnixMilli(math.MaxInt64)
+	}
 }
 
 func (d ID) String() string {
@@ -51,6 +58,13 @@ func (d ID) Bytes() []byte {
 	final = append(final, hexBuf[:n]...)
 
 	return final
+}
+
+func (d ID) AppendBinary(buf []byte) []byte {
+	buf = slices.Grow(buf, 16)
+	buf = binary.LittleEndian.AppendUint64(buf, uint64(d.MID))
+	buf = binary.LittleEndian.AppendUint64(buf, uint64(d.RID))
+	return buf
 }
 
 func LessOrEqual(a, b ID) bool {

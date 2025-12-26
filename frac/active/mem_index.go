@@ -30,6 +30,7 @@ type memIndex struct {
 	blocksOffsets []uint64              // offsets of document blocks in storage, sorted in ascending order
 	positions     []seq.DocPos          // position of each document inside a block; index corresponds to LID-1
 
+	hash              uint64
 	docsSize          uint64 // total size of documents in bytes
 	docsCount         uint32 // number of documents in the index
 	allTokenLIDsCount int    // total number of tokenLIDs (for fast calc allocation size in merging)
