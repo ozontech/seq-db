@@ -7,7 +7,7 @@ services:
         limits:
           cpus: "4"
           memory: "8GB"
-    image: ghcr.io/ozontech/seq-db:v0.61.0
+          image: 'gitlab-registry.ozon.ru/sre/images/seq-db:che@sha256:82d0dd34cb5d6db9e0450bc8d2cd1d9e29414ec2ba81dc8c4ae643dea6eb1bd0'
     ports:
       - '9002:9002'
     volumes:
