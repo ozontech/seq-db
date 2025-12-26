@@ -1132,8 +1132,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			}
 
 			var options []searchOption
-			options = append(options, withFrom(tc.fromTime.Format(time.RFC3339Nano)))
-			options = append(options, withTo(tc.toTime.Format(time.RFC3339Nano)))
+			options = append(options, withFrom(tc.fromTime.Format(time.RFC3339Nano)), withTo(tc.toTime.Format(time.RFC3339Nano)))
 			if tc.limit > 0 {
 				options = append(options, withLimit(tc.limit))
 			}
