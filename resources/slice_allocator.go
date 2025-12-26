@@ -29,8 +29,6 @@ func NewSlicesPool[T any](pool *SizedPool[T], releases *CallStack) SlicesPool[T]
 }
 
 func (a SlicesPool[T]) GetSlice(size int) []T {
-	return make([]T, size)
-
 	data := a.pool.Get(size)
 	a.releases.Defer(func() { a.pool.Put(data) })
 	return data[:size]
