@@ -995,65 +995,208 @@ func (s *FractionTestSuite) TestSearchMultipleBulks() {
 
 // This test checks search on a large frac. Doc count is set to 25000 which results in ~200 kbyte docs file (3 doc blocks)
 func (s *FractionTestSuite) TestSearchLargeFrac() {
-	services := []string{"gateway", "proxy", "scheduler"}
-	messages := []string{
-		"request started", "request completed", "processing timed out",
-		"processing data", "processing failed", "processing retry",
-	}
-
-	baseTime := time.Date(2000, 1, 1, 13, 0, 0, 0, time.UTC)
-
-	var docs []string
-	var messageRequestIndexes []int
-	var serviceGatewayIndexes []int
-	var level5Indexes []int
-
-	for i := 0; i < 25000; i++ {
-		service := services[rand.IntN(len(services))]
-		message := messages[rand.IntN(len(messages))]
-		level := rand.IntN(6)
-		timestamp := baseTime.Add(time.Duration(i) * time.Millisecond)
-
-		doc := fmt.Sprintf(`{"timestamp":%q,"service":%q,"message":%q,"level":"%d"}`,
-			timestamp.Format(time.RFC3339Nano), service, message, level)
-		docs = append(docs, doc)
-
-		if service == "gateway" {
-			serviceGatewayIndexes = append(serviceGatewayIndexes, i)
-		}
-		if level == 5 {
-			level5Indexes = append(level5Indexes, i)
-		}
-		if strings.Contains(message, "request") {
-			messageRequestIndexes = append(messageRequestIndexes, i)
-		}
-	}
-
-	slices.Reverse(messageRequestIndexes)
-	slices.Reverse(serviceGatewayIndexes)
-	slices.Reverse(level5Indexes)
-
-	bulkSize := 1000
-	var bulks [][]string
-	for i := 0; i < len(docs); i += bulkSize {
-		end := i + bulkSize
-		if end > len(docs) {
-			end = len(docs)
-		}
-		bulks = append(bulks, docs[i:end])
-	}
-	// docs in each bulk will be shuffled in insertDocuments, now we only shuffle bulks
-	rand.Shuffle(len(bulks), func(i, j int) {
-		bulks[i], bulks[j] = bulks[j], bulks[i]
-	})
+	testDocs, bulks, fromTime, toTime := generatesMessages(25000, 1000)
+	midTime := fromTime.Add(time.Duration(len(testDocs)/2) * time.Millisecond)
 
 	s.insertDocuments(bulks...)
 
-	s.AssertSearch(s.query("message:request", withLimit(100)), docs, messageRequestIndexes[:100])
-	s.AssertSearch(s.query("service:gateway"), docs, serviceGatewayIndexes)
-	s.AssertSearch(s.query("service:gateway", withLimit(100)), docs, serviceGatewayIndexes[:100])
-	s.AssertSearch(s.query("level:5"), docs, level5Indexes)
-	s.AssertSearch(s.query("level:5", withLimit(100)), docs, level5Indexes[:100])
+	docJsons := make([]string, len(testDocs))
+	for i, td := range testDocs {
+		docJsons[i] = td.json
+	}
+
+	type docFilter func(doc *testDoc) bool
+
+	searchTestCases := []struct {
+		name     string
+		query    string
+		filter   docFilter
+		fromTime *time.Time
+		toTime   *time.Time
+		limit    int
+	}{
+		{
+			name:     "message:request",
+			query:    "message:request",
+			filter:   func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
+			fromTime: &fromTime,
+			toTime:   &toTime,
+		},
+		{
+			name:     "message:request (time range)",
+			query:    "message:request",
+			filter:   func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
+			fromTime: &fromTime,
+			toTime:   &midTime,
+		},
+		{
+			name:     "message:request (time range + limit)",
+			query:    "message:request",
+			filter:   func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
+			fromTime: &fromTime,
+			toTime:   &midTime,
+			limit:    100,
+		},
+		{
+			name:     "service:gateway",
+			query:    "service:gateway",
+			filter:   func(doc *testDoc) bool { return doc.service == "gateway" },
+			fromTime: &fromTime,
+			toTime:   &toTime,
+		},
+		{
+			name:     "service:gateway (time range)",
+			query:    "service:gateway",
+			filter:   func(doc *testDoc) bool { return doc.service == "gateway" },
+			fromTime: &fromTime,
+			toTime:   &midTime,
+		},
+		{
+			name:     "service:gateway (time range + limit)",
+			query:    "service:gateway",
+			filter:   func(doc *testDoc) bool { return doc.service == "gateway" },
+			fromTime: &fromTime,
+			toTime:   &midTime,
+			limit:    100,
+		},
+		{
+			name:     "level:5",
+			query:    "level:5",
+			filter:   func(doc *testDoc) bool { return doc.level == 5 },
+			fromTime: &fromTime,
+			toTime:   &toTime,
+		},
+		{
+			name:     "level:228",
+			query:    "level:228",
+			filter:   func(doc *testDoc) bool { return false }, // no such data, just validate than frac returns empty IDs
+			fromTime: &fromTime,
+			toTime:   &toTime,
+		},
+		{
+			name:     "level:5 (time range)",
+			query:    "level:5",
+			filter:   func(doc *testDoc) bool { return doc.level == 5 },
+			fromTime: &fromTime,
+			toTime:   &midTime,
+		},
+		{
+			name:     "trace_id:trace-777",
+			query:    "trace_id:trace-777",
+			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-777" },
+			fromTime: &fromTime,
+			toTime:   &toTime,
+		},
+		{
+			name:     "trace_id:trace-777 (time range)",
+			query:    "trace_id:trace-777",
+			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-777" },
+			fromTime: &fromTime,
+			toTime:   &midTime,
+		},
+		{
+			name:     "trace_id:trace-4999",
+			query:    "trace_id:trace-4999",
+			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-4999" },
+			fromTime: &fromTime,
+			toTime:   &toTime,
+		},
+		{
+			name:     "trace_id:trace-4999 (time range)",
+			query:    "trace_id:trace-4999",
+			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-4999" },
+			fromTime: &fromTime,
+			toTime:   &midTime,
+		},
+	}
+
+	for _, tc := range searchTestCases {
+		s.Run(tc.name, func() {
+			var expectedIndexes []int
+			for i := len(testDocs) - 1; i >= 0; i-- {
+				doc := &testDocs[i]
+
+				if tc.fromTime != nil && doc.timestamp.Before(*tc.fromTime) {
+					continue
+				}
+				if tc.toTime != nil && doc.timestamp.After(*tc.toTime) {
+					continue
+				}
+
+				if tc.filter(doc) {
+					expectedIndexes = append(expectedIndexes, i)
+					if tc.limit > 0 && len(expectedIndexes) >= tc.limit {
+						break
+					}
+				}
+			}
+
+			var options []searchOption
+			if tc.fromTime != nil {
+				options = append(options, withFrom(tc.fromTime.Format(time.RFC3339Nano)))
+			}
+			if tc.toTime != nil {
+				options = append(options, withTo(tc.toTime.Format(time.RFC3339Nano)))
+			}
+			if tc.limit > 0 {
+				options = append(options, withLimit(tc.limit))
+			}
+
+			s.AssertSearch(s.query(tc.query, options...), docJsons, expectedIndexes)
+		})
+	}
+
+	s.Run("NOT message:retry | group by service avg(level)", func() {
+		levelsByService := make(map[string][]int)
+		for _, doc := range testDocs {
+			// our query for agg will be `NOT message:retry`
+			if strings.Contains(doc.message, "retry") {
+				continue
+			}
+
+			levelsByService[doc.service] = append(levelsByService[doc.service], doc.level)
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for service, levels := range levelsByService {
+			sum := 0
+			for _, level := range levels {
+				sum += level
+			}
+			avg := float64(sum) / float64(len(levels))
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      service,
+				Value:     avg,
+				NotExists: 0,
+			})
+		}
+
+		searchParams := s.query(
+			"NOT message:retry",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				Field:   aggField("level"),
+				GroupBy: aggField("service"),
+				Func:    seq.AggFuncAvg,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
+	})
+
+	s.Run("service:gateway AND level:3 | hist 1s", func() {
+		histBuckets := make(map[string]uint64)
+		for _, doc := range testDocs {
+			if doc.service == "gateway" && doc.level == 3 {
+				bucketTime := doc.timestamp.Truncate(time.Second)
+				bucketKey := bucketTime.Format(time.RFC3339Nano)
+				histBuckets[bucketKey]++
+			}
+		}
+
+		s.AssertHist(
+			s.query("service:gateway AND level:3", withTo(toTime.Format(time.RFC3339Nano)), withHist(1000)),
+			histBuckets)
+	})
 }
 
 func (s *FractionTestSuite) TestIntersectingNanoseconds() {
