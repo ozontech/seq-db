@@ -2,11 +2,11 @@ package resources
 
 import "unsafe"
 
-func NewUint32s(releases *CallStack) *SliceOnBytes[uint32] {
+func NewUint32s(releases *CallStack) SliceOnBytes[uint32] {
 	return NewSliceOnBytes[uint32](releases)
 }
 
-func NewUint64s(releases *CallStack) *SliceOnBytes[uint64] {
+func NewUint64s(releases *CallStack) SliceOnBytes[uint64] {
 	return NewSliceOnBytes[uint64](releases)
 }
 
@@ -15,9 +15,9 @@ type SliceOnBytes[T any] struct {
 	releases *CallStack
 }
 
-func NewSliceOnBytes[T any](releases *CallStack) *SliceOnBytes[T] {
-	return &SliceOnBytes[T]{
-		pool:     BytesPool,
+func NewSliceOnBytes[T any](releases *CallStack) SliceOnBytes[T] {
+	return SliceOnBytes[T]{
+		pool:     &BytesPool,
 		releases: releases,
 	}
 }

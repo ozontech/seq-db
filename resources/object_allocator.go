@@ -14,12 +14,13 @@ func NewMapsPool[K comparable, V any](pool *TypedPool[map[K]V], releases *CallSt
 
 func (a MapsPool[K, V]) Alloc(size int) map[K]V {
 	obj, ok := a.pool.Get()
-	if ok {
-		clear(obj)
-	} else {
+	if !ok {
 		obj = make(map[K]V, size)
 	}
-	a.releases.Defer(func() { a.pool.Put(obj) })
+	a.releases.Defer(func() {
+		clear(obj)
+		a.pool.Put(obj)
+	})
 	return obj
 }
 

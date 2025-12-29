@@ -21,17 +21,17 @@ var (
 type Resources struct {
 	releases *resources.CallStack
 
-	uint32s         *resources.SliceOnBytes[uint32]
-	uint64s         *resources.SliceOnBytes[uint64]
-	bytes           *resources.SlicesPool[byte]
-	bytesSlices     *resources.SlicesPool[[]byte]
-	uint32Slices    *resources.SlicesPool[[]uint32]
-	tokenKeys       *resources.SlicesPool[tokenStr]
-	indexerMetaData *resources.SlicesPool[indexer.MetaData]
+	uint32s         resources.SliceOnBytes[uint32]
+	uint64s         resources.SliceOnBytes[uint64]
+	bytes           resources.SlicesPool[byte]
+	bytesSlices     resources.SlicesPool[[]byte]
+	uint32Slices    resources.SlicesPool[[]uint32]
+	tokenKeys       resources.SlicesPool[tokenStr]
+	indexerMetaData resources.SlicesPool[indexer.MetaData]
 	buf             resources.ObjectsPool[indexerBuffer]
-	ids             *resources.SliceOnBytes[seq.ID]
-	docPos          *resources.SliceOnBytes[seq.DocPos]
-	docPosSlices    *resources.SlicesPool[[]seq.DocPos]
+	ids             resources.SliceOnBytes[seq.ID]
+	docPos          resources.SliceOnBytes[seq.DocPos]
+	docPosSlices    resources.SlicesPool[[]seq.DocPos]
 }
 
 func NewResources() (*Resources, func()) {
@@ -48,9 +48,9 @@ func NewResources() (*Resources, func()) {
 			bytesSlices:     resources.NewBytesSlices(&s),
 			ids:             resources.NewSliceOnBytes[seq.ID](&s),
 			docPos:          resources.NewSliceOnBytes[seq.DocPos](&s),
-			docPosSlices:    resources.NewSlicesPool(docPosSlicesPool, &s),
-			indexerMetaData: resources.NewSlicesPool(indexerMetaDataPool, &s),
-			tokenKeys:       resources.NewSlicesPool(tokenKeyPool, &s),
+			docPosSlices:    resources.NewSlicesPool(&docPosSlicesPool, &s),
+			indexerMetaData: resources.NewSlicesPool(&indexerMetaDataPool, &s),
+			tokenKeys:       resources.NewSlicesPool(&tokenKeyPool, &s),
 			buf:             resources.NewObjectsPool(&bufPool, &s),
 		}
 	}
@@ -61,6 +61,7 @@ func NewResources() (*Resources, func()) {
 }
 
 func (r *Resources) GetBytesSlices(s int) [][]byte {
+	return make([][]byte, s)
 	return r.bytesSlices.GetSlice(s)
 }
 
@@ -89,6 +90,7 @@ func (r *Resources) GetUint64s(s int) []uint64 {
 }
 
 func (r *Resources) GetUint32Slices(s int) [][]uint32 {
+	return make([][]uint32, s)
 	return r.uint32Slices.GetSlice(s)
 }
 
