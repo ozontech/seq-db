@@ -210,7 +210,6 @@ func (p *memIndexPool) Release() {
 		idx.Release()
 	}
 
-	p.info = nil
 	p.readable = nil
 	p.ready = nil
 	p.merging = nil
