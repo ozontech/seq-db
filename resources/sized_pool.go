@@ -27,8 +27,8 @@ type SizedPool[T any] struct {
 	pools []TypedPool[[]T]
 }
 
-func NewSizedPool[T any](buckets int) SizedPool[T] {
-	return SizedPool[T]{
+func NewSizedPool[T any](buckets int) *SizedPool[T] {
+	return &SizedPool[T]{
 		pools: make([]TypedPool[[]T], buckets),
 	}
 }
@@ -38,7 +38,7 @@ func index(size uint) (idx, leftBorder int) {
 	return idx, 1 << (idx + 8)
 }
 
-func (p SizedPool[T]) Get(size int) []T {
+func (p *SizedPool[T]) Get(size int) []T {
 	idx, poolCapacity := index(uint(size))
 
 	if idx < len(p.pools) {
@@ -57,7 +57,7 @@ func (p SizedPool[T]) Get(size int) []T {
 	return make([]T, size, poolCapacity)
 }
 
-func (p SizedPool[T]) Put(item []T) {
+func (p *SizedPool[T]) Put(item []T) {
 	capacity := cap(item)
 	idx, leftBorder := index(uint(capacity))
 
