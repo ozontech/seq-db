@@ -7,7 +7,7 @@ import (
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
-const poolBuckets = 16
+const poolBuckets = 24
 
 var (
 	tokenKeyPool        = resources.NewSizedPool[tokenStr](poolBuckets)

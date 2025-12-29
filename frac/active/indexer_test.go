@@ -15,7 +15,6 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/resources"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/tests/common"
@@ -179,8 +178,6 @@ func BenchmarkFullWrite(b *testing.B) {
 		assert.Greater(b, int(sealed.Info.DocsTotal), 0)
 		active.Release()
 	}
-
-	resources.BytesPool.Print()
 }
 
 func readFileAllAtOnce(filename string) ([][]byte, error) {

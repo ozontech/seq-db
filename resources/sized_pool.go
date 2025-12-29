@@ -1,36 +1,25 @@
 package resources
 
 import (
-	"fmt"
 	"math/bits"
 	"sync"
-	"sync/atomic"
 )
 
-const poolLimit = 8
-
 type TypedPool[T any] struct {
-	pool    sync.Pool
-	counter atomic.Int64
+	pool sync.Pool
 }
 
 func (p *TypedPool[T]) Get() (T, bool) {
 	item := p.pool.Get()
 	var val T
 	if item == nil {
-		p.counter.Store(0)
 		return val, false
 	}
-	p.counter.Add(-1)
 	val, ok := item.(T)
 	return val, ok
 }
 
 func (p *TypedPool[T]) Put(item T) {
-	if p.counter.Load() > poolLimit {
-		return
-	}
-	p.counter.Add(1)
 	p.pool.Put(item)
 }
 
@@ -50,6 +39,8 @@ func index(size uint) (idx, leftBorder int) {
 }
 
 func (p SizedPool[T]) Get(size int) []T {
+	return make([]T, size)
+
 	idx, poolCapacity := index(uint(size))
 
 	if idx < len(p.pools) {
@@ -62,6 +53,8 @@ func (p SizedPool[T]) Get(size int) []T {
 }
 
 func (p SizedPool[T]) Put(item []T) {
+	return
+
 	capacity := cap(item)
 	idx, leftBorder := index(uint(capacity))
 
@@ -72,11 +65,5 @@ func (p SizedPool[T]) Put(item []T) {
 	if idx < len(p.pools) {
 		item = item[:0]
 		p.pools[idx].Put(item)
-	}
-}
-
-func (p SizedPool[T]) Print() {
-	for i := range p.pools {
-		fmt.Println("size:", i, p.pools[i].counter.Load())
 	}
 }
