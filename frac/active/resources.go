@@ -1,6 +1,7 @@
 package active
 
 import (
+	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/resources"
 	"github.com/ozontech/seq-db/seq"
@@ -66,7 +67,10 @@ func (r *Resources) GetBytesSlices(s int) [][]byte {
 }
 
 func (r *Resources) GetBytes(s int) []byte {
-	return r.bytes.GetSlice(s)
+	b := bytespool.AcquireLen(s)
+	r.releases.Defer(func() { bytespool.Release(b) })
+	return b.B
+	// return r.bytes.GetSlice(s)
 }
 
 func (r *Resources) GetUint32s(s int) []uint32 {

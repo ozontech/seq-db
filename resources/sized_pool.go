@@ -39,8 +39,6 @@ func index(size uint) (idx, leftBorder int) {
 }
 
 func (p SizedPool[T]) Get(size int) []T {
-	return make([]T, size)
-
 	idx, poolCapacity := index(uint(size))
 
 	if idx < len(p.pools) {
@@ -53,8 +51,6 @@ func (p SizedPool[T]) Get(size int) []T {
 }
 
 func (p SizedPool[T]) Put(item []T) {
-	return
-
 	capacity := cap(item)
 	idx, leftBorder := index(uint(capacity))
 
