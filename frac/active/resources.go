@@ -61,7 +61,6 @@ func NewResources() (*Resources, func()) {
 }
 
 func (r *Resources) GetBytesSlices(s int) [][]byte {
-	return make([][]byte, s)
 	return r.bytesSlices.GetSlice(s)
 }
 
@@ -90,7 +89,6 @@ func (r *Resources) GetUint64s(s int) []uint64 {
 }
 
 func (r *Resources) GetUint32Slices(s int) [][]uint32 {
-	return make([][]uint32, s)
 	return r.uint32Slices.GetSlice(s)
 }
 
