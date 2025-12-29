@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 )
 
-const poolLimit = 16
+const poolLimit = 8
 
 type TypedPool[T any] struct {
 	pool    sync.Pool

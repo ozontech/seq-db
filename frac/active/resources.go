@@ -7,11 +7,12 @@ import (
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
+const poolBuckets = 16
+
 var (
-	s                   = 24
-	tokenKeyPool        = resources.NewSizedPool[tokenStr](s)
-	indexerMetaDataPool = resources.NewSizedPool[indexer.MetaData](s)
-	docPosSlicesPool    = resources.NewSizedPool[[]seq.DocPos](s)
+	tokenKeyPool        = resources.NewSizedPool[tokenStr](poolBuckets)
+	indexerMetaDataPool = resources.NewSizedPool[indexer.MetaData](poolBuckets)
+	docPosSlicesPool    = resources.NewSizedPool[[]seq.DocPos](poolBuckets)
 	bufPool             = resources.TypedPool[*indexerBuffer]{}
 	resPool             = resources.TypedPool[*Resources]{}
 )
