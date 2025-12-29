@@ -8,9 +8,10 @@ import (
 )
 
 var (
-	tokenKeyPool        = resources.NewSizedPool[tokenStr](24)
-	indexerMetaDataPool = resources.NewSizedPool[indexer.MetaData](24)
-	docPosSlicesPool    = resources.NewSizedPool[[]seq.DocPos](24)
+	s                   = 8
+	tokenKeyPool        = resources.NewSizedPool[tokenStr](s)
+	indexerMetaDataPool = resources.NewSizedPool[indexer.MetaData](s)
+	docPosSlicesPool    = resources.NewSizedPool[[]seq.DocPos](s)
 	bufPool             = resources.TypedPool[*indexerBuffer]{}
 	resPool             = resources.TypedPool[*Resources]{}
 )
