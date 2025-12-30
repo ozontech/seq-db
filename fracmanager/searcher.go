@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
@@ -35,7 +38,7 @@ func NewSearcher(maxWorkersNum int, cfg SearcherCfg) *Searcher {
 	}
 }
 
-func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params processor.SearchParams) (*seq.QPR, error) {
+func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params processor.SearchParams, tr *querytracer.Tracer) (*seq.QPR, error) {
 	remainingFracs, err := s.prepareFracs(fracs, params)
 	if err != nil {
 		return nil, err
@@ -55,11 +58,17 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 		fracsChunkSize = len(remainingFracs)
 	}
 
+	var totalSearchTimeNanos int64
+	var totalWaitTimeNanos int64
+
 	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
-		subQPRs, err := s.searchDocsAsync(ctx, remainingFracs.Shift(fracsChunkSize), params)
+		subQPRs, searchTimeNanos, waitTimeNanos, err := s.searchDocsAsync(ctx, remainingFracs.Shift(fracsChunkSize), params)
 		if err != nil {
 			return nil, err
 		}
+
+		totalSearchTimeNanos += searchTimeNanos
+		totalWaitTimeNanos += waitTimeNanos
 
 		seq.MergeQPRs(total, subQPRs, origLimit, seq.MillisToMID(params.HistInterval), params.Order)
 
@@ -67,6 +76,19 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 		params.Limit = origLimit - calcEnsuredIDsCount(total.IDs, remainingFracs, params.Order)
 
 		subSearchesCnt++
+	}
+
+	if tr != nil && tr.Enabled() {
+		searchSpan := &querytracer.Span{
+			Message:  "searching fractions (total time across all cores)",
+			Duration: time.Duration(totalSearchTimeNanos),
+		}
+		tr.AddChildWithSpan(searchSpan)
+		waitSpan := &querytracer.Span{
+			Message:  "waiting goroutines (total time across all cores)",
+			Duration: time.Duration(totalWaitTimeNanos),
+		}
+		tr.AddChildWithSpan(waitSpan)
 	}
 
 	searchSubSearches.Observe(float64(subSearchesCnt))
@@ -110,7 +132,7 @@ func calcEnsuredIDsCount(ids seq.IDSources, remainingFracs List, order seq.DocsO
 	return sort.Search(len(ids), func(i int) bool { return ids[i].ID.MID <= nextFracInfo.To })
 }
 
-func (s *Searcher) searchDocsAsync(ctx context.Context, fracs []frac.Fraction, params processor.SearchParams) ([]*seq.QPR, error) {
+func (s *Searcher) searchDocsAsync(ctx context.Context, fracs []frac.Fraction, params processor.SearchParams) ([]*seq.QPR, int64, int64, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -119,6 +141,11 @@ func (s *Searcher) searchDocsAsync(ctx context.Context, fracs []frac.Fraction, p
 	once := sync.Once{}
 	wg := sync.WaitGroup{}
 	qprs := make([]*seq.QPR, len(fracs))
+
+	var totalSearchTimeNanos atomic.Int64
+	var totalWaitTimeNanos atomic.Int64
+
+	wgDoneTimes := make([]time.Time, len(fracs))
 
 loop:
 	for i, frac := range fracs {
@@ -129,6 +156,7 @@ loop:
 		case s.sem <- struct{}{}: // acquire semaphore
 			wg.Add(1)
 			go func() {
+				searchStart := time.Now()
 				var fracErr error
 				if qprs[i], fracErr = s.fracSearch(ctx, params, frac); fracErr != nil {
 					once.Do(func() {
@@ -136,19 +164,31 @@ loop:
 						cancel()
 					})
 				}
+				searchDuration := time.Since(searchStart)
+				totalSearchTimeNanos.Add(searchDuration.Nanoseconds())
 				<-s.sem // release semaphore
+
+				wgDoneTimes[i] = time.Now()
 				wg.Done()
 			}()
 		}
 	}
 
 	wg.Wait()
+	waitEndTime := time.Now()
 
-	if err != nil {
-		return nil, err
+	for _, doneTime := range wgDoneTimes {
+		waitDuration := waitEndTime.Sub(doneTime)
+		if waitDuration > 0 {
+			totalWaitTimeNanos.Add(waitDuration.Nanoseconds())
+		}
 	}
 
-	return qprs, nil
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	return qprs, totalSearchTimeNanos.Load(), totalWaitTimeNanos.Load(), nil
 }
 
 func (s *Searcher) fracSearch(ctx context.Context, params processor.SearchParams, f frac.Fraction) (_ *seq.QPR, err error) {
