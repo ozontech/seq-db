@@ -80,12 +80,12 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 
 	if tr != nil && tr.Enabled() {
 		searchSpan := &querytracer.Span{
-			Message:  "searching fractions (total time across all cores)",
+			Message:  "search iteratively (cpu time)",
 			Duration: time.Duration(totalSearchTimeNanos),
 		}
 		tr.AddChildWithSpan(searchSpan)
 		waitSpan := &querytracer.Span{
-			Message:  "waiting goroutines (total time across all cores)",
+			Message:  "waiting goroutines (all cores)",
 			Duration: time.Duration(totalWaitTimeNanos),
 		}
 		tr.AddChildWithSpan(waitSpan)

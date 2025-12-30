@@ -168,7 +168,7 @@ func (g *GrpcV1) doSearch(
 		ctx,
 		g.fracManager.Fractions(),
 		searchParams,
-		searchTr,
+		tr,
 	)
 	searchTr.Done()
 	if err != nil {
