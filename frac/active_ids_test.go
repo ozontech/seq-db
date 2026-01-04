@@ -5,9 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
-
-	"github.com/ozontech/seq-db/logger"
 )
 
 func TestSeqListAppend(t *testing.T) {
@@ -36,13 +33,13 @@ func BenchmarkMutexListAppend(b *testing.B) {
 	gr := 2
 	mu := sync.Mutex{}
 	b.SetBytes(int64(gr * 8000000))
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		list := make([]uint64, 0)
 		wg := sync.WaitGroup{}
 		wg.Add(gr)
-		for i := 0; i < gr; i++ {
+		for range gr {
 			go func() {
-				for x := 0; x < 800000; x++ {
+				for x := range 800000 {
 					mu.Lock()
 					list = append(list, uint64(x))
 					mu.Unlock()
@@ -51,7 +48,7 @@ func BenchmarkMutexListAppend(b *testing.B) {
 			}()
 		}
 		wg.Wait()
-		logger.Info("list", zap.Int("total", len(list)))
+		b.Logf("list_total=%d", len(list))
 	}
 
 }
@@ -59,19 +56,19 @@ func BenchmarkMutexListAppend(b *testing.B) {
 func BenchmarkSeqListAppend(b *testing.B) {
 	gr := 2
 	b.SetBytes(int64(gr * 8000000))
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		list := NewIDs()
 		wg := sync.WaitGroup{}
 		wg.Add(gr)
-		for i := 0; i < gr; i++ {
+		for range gr {
 			go func() {
-				for x := 0; x < 800000; x++ {
+				for x := range 800000 {
 					list.Append(uint64(x))
 				}
 				wg.Done()
 			}()
 		}
 		wg.Wait()
-		logger.Info("list", zap.Uint32("total", list.Len()))
+		b.Logf("list_total=%d", list.Len())
 	}
 }

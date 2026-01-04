@@ -495,8 +495,8 @@ func BenchmarkProcessDocuments(b *testing.B) {
 		"level":"error",
 		"timestamp":%q,
 		"message":"невозможно сохранить данные в шарде",
-		"error":"circuit breaker execute: can't receive bulk acceptance: 
-			host=***REMOVED***, err=rpc error: code = Unavailable desc = connection error: 
+		"error":"circuit breaker execute: can't receive bulk acceptance:
+			host=***REMOVED***, err=rpc error: code = Unavailable desc = connection error:
 			desc = \"transport: Error while dialing: dial tcp 10.233.140.20:9002: connect: connection refused\"",
 		"shard":0
 	}`, time.Now().Format(consts.ESTimeFormat)))
@@ -506,7 +506,7 @@ func BenchmarkProcessDocuments(b *testing.B) {
 
 	b.SetBytes(int64(len(doc) * docsToProcess))
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		n := 0
 		total, err := ingestor.ProcessDocuments(ctx, now, func() ([]byte, error) {
 			n++

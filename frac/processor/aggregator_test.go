@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"reflect"
@@ -89,16 +90,24 @@ func Generate(n int) ([]uint32, uint32) {
 }
 
 func BenchmarkAggDeep(b *testing.B) {
-	v, _ := Generate(b.N)
-	src := node.NewSourcedNodeWrapper(node.NewStatic(v, false), 0)
-	iter := NewSourcedNodeIterator(src, nil, make([]uint32, 1), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
-	n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
-	vals, _ := Generate(b.N)
-	b.ResetTimer()
-	for _, v := range vals {
-		if err := n.Next(v); err != nil {
-			b.Fatal(err)
-		}
+	dataLen := []int{1000, 10_000, 1_000_000}
+
+	for _, dl := range dataLen {
+		b.Run(fmt.Sprintf("data_len=%d", dl), func(b *testing.B) {
+			v, _ := Generate(dl)
+			src := node.NewSourcedNodeWrapper(node.NewStatic(v, false), 0)
+			iter := NewSourcedNodeIterator(src, nil, make([]uint32, 1), 0, false)
+			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
+			vals, _ := Generate(dl)
+
+			for b.Loop() {
+				for _, v := range vals {
+					if err := n.Next(v); err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+		})
 	}
 }
 

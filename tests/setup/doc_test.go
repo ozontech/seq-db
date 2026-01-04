@@ -2,7 +2,7 @@ package setup
 
 import (
 	"encoding/json"
-	"sync"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -42,22 +42,10 @@ func TestRandomDocJSON(t *testing.T) {
 	}
 }
 
-func RunParallel(n int, f func()) {
-	wait := sync.WaitGroup{}
-	for j := 0; j < n; j++ {
-		wait.Add(1)
-		go func() {
-			defer wait.Done()
-			f()
-		}()
-	}
-	wait.Wait()
-}
-
 func BenchmarkRandomJSON(b *testing.B) {
-	RunParallel(4, func() {
+	b.RunParallel(func(pb *testing.PB) {
 		sum := 0
-		for i := 0; i < b.N; i++ {
+		for pb.Next() {
 			res := RandomJSON(50)
 			sum += len(res)
 			_ = res
@@ -67,9 +55,9 @@ func BenchmarkRandomJSON(b *testing.B) {
 }
 
 func BenchmarkRandomDoc(b *testing.B) {
-	RunParallel(4, func() {
+	b.RunParallel(func(pb *testing.PB) {
 		sum := 0
-		for i := 0; i < b.N; i++ {
+		for pb.Next() {
 			res := RandomDoc(1)
 			sum += len(res.Message)
 			_ = res
@@ -79,18 +67,57 @@ func BenchmarkRandomDoc(b *testing.B) {
 }
 
 func BenchmarkGenerateDocs(b *testing.B) {
-	res := GenerateDocs(b.N, func(_ int, doc *ExampleDoc) {
-		*doc = *RandomDoc(1)
-	})
-	_ = res
+	sizes := []int{1000, 10_000, 1_000_000}
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			var res []ExampleDoc
+
+			for b.Loop() {
+				res = GenerateDocs(s, func(_ int, doc *ExampleDoc) {
+					*doc = *RandomDoc(1)
+				})
+			}
+
+			if len(res) == 0 {
+				b.FailNow()
+			}
+		})
+	}
 }
 
 func BenchmarkGenerateDocsJSON(b *testing.B) {
-	res := GenerateDocsJSON(b.N, false)
-	_ = res
+	sizes := []int{1000, 10_000, 1_000_000}
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			var res [][]byte
+
+			for b.Loop() {
+				res = GenerateDocsJSON(s, false)
+			}
+
+			if len(res) == 0 {
+				b.FailNow()
+			}
+		})
+	}
 }
 
 func BenchmarkGenerateDocsJSONFields(b *testing.B) {
-	res := GenerateDocsJSON(b.N, true)
-	_ = res
+	sizes := []int{1000, 10_000, 1_000_000}
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			var res [][]byte
+
+			for b.Loop() {
+				res = GenerateDocsJSON(s, true)
+			}
+
+			if len(res) == 0 {
+				b.FailNow()
+			}
+		})
+	}
 }

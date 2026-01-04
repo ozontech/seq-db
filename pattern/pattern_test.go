@@ -574,7 +574,6 @@ func BenchmarkFindSequence_Random(b *testing.B) {
 			haystack, needles := generateTestData(
 				size.haystackSize, size.needleSize, size.needleCount, 256,
 			)
-			b.ResetTimer()
 			for b.Loop() {
 				findSequence(haystack, needles)
 				b.SetBytes(int64(len(haystack)))
