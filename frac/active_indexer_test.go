@@ -94,7 +94,7 @@ func BenchmarkIndexer(b *testing.B) {
 
 	processor := getTestProcessor()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		bulks := make([][]byte, 0, len(readers))
 		for _, readNext := range readers {

@@ -90,15 +90,15 @@ func Generate(n int) ([]uint32, uint32) {
 }
 
 func BenchmarkAggDeep(b *testing.B) {
-	dataLen := []int{1000, 10_000, 1_000_000}
+	sizes := []int{1_000, 10_000, 1_000_000}
 
-	for _, dl := range dataLen {
-		b.Run(fmt.Sprintf("data_len=%d", dl), func(b *testing.B) {
-			v, _ := Generate(dl)
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			v, _ := Generate(s)
 			src := node.NewSourcedNodeWrapper(node.NewStatic(v, false), 0)
-			iter := NewSourcedNodeIterator(src, nil, make([]uint32, 1), 0, false)
+			iter := NewSourcedNodeIterator(src, nil, make([]uint32, 1), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
 			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
-			vals, _ := Generate(dl)
+			vals, _ := Generate(s)
 
 			for b.Loop() {
 				for _, v := range vals {
@@ -112,27 +112,35 @@ func BenchmarkAggDeep(b *testing.B) {
 }
 
 func BenchmarkAggWide(b *testing.B) {
-	v, _ := Generate(b.N)
+	sizes := []int{1_000, 10_000, 1_000_000}
 
-	factor := int(math.Sqrt(float64(b.N)))
-	wide := make([][]uint32, b.N/factor)
-	for i := range wide {
-		for range factor {
-			wide[i] = append(wide[i], v[rand.Intn(b.N)])
-		}
-		slices.Sort(wide[i])
-	}
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			v, _ := Generate(s)
 
-	source := node.BuildORTreeAgg(node.MakeStaticNodes(wide), false)
+			factor := int(math.Sqrt(float64(s)))
+			wide := make([][]uint32, s/factor)
+			for i := range wide {
+				for range factor {
+					wide[i] = append(wide[i], v[rand.Intn(s)])
+				}
+				slices.Sort(wide[i])
+			}
 
-	iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(wide)), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
-	n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
-	vals, _ := Generate(b.N)
-	b.ResetTimer()
-	for _, v := range vals {
-		if err := n.Next(v); err != nil {
-			b.Fatal(err)
-		}
+			source := node.BuildORTreeAgg(node.MakeStaticNodes(wide), false)
+
+			iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(wide)), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
+			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
+			vals, _ := Generate(s)
+
+			for b.Loop() {
+				for _, v := range vals {
+					if err := n.Next(v); err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+		})
 	}
 }
 
