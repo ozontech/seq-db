@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 
-name: Continuous Benchmarks
+name: Benchmarks
 
 on:
   push:
@@ -10,10 +10,25 @@ on:
 
 permissions:
   contents: write
-  deployments: write
 
 jobs:
-  ci-benchmarks:
+  ci-continuous-benchmarks:
+    if: ${{ github.ref_name == 'main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy latest (unstable) version of seq-db
+        run: |
+          curl --insecure -X POST "https://${{ secrets.CONTINUOUS_BENCHMARKS_ENDPOINT }}/seqagent/v1/b/up" \
+            -H "Content-Type: application/json" \
+            -H "X-Seqbench-Secret: ${{ secrets.SEQBENCH_SECRET }}" \
+            -d @- <<EOF
+          {
+            "refname": "${{ github.ref_name }}",
+            "commit_sha": "${{ github.sha }}"
+          }
+          EOF
+
+  ci-micro-benchmarks:
     runs-on: self-hosted
     steps:
       - name: Checkout repository
