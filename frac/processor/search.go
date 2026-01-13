@@ -245,6 +245,7 @@ func iterateEvalTree(
 	return total, ids, histogram, nil
 }
 
+// getLIDsBorders return min and max LID borders (including) for search
 func getLIDsBorders(params SearchParams, idsIndex idsIndex) (uint32, uint32) {
 	if idsIndex.Len() == 0 {
 		return 0, 0
