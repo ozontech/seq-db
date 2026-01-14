@@ -11,10 +11,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// mergeIndexes merges several in-memory indexes (memIndex)
-// into a single resulting index.
+// mergeIndexes merges several in-memory indexes into one.
 func mergeIndexes(indexes []*memIndex) *memIndex {
-	// Count the total number of blocks, documents, and tokens to preallocate memory.
+	// preallocate memory based on total size
 	blocksCount := 0
 	dst := newMemIndex()
 
@@ -25,40 +24,37 @@ func mergeIndexes(indexes []*memIndex) *memIndex {
 		blocksCount += len(idx.blocksOffsets)
 	}
 
-	// Shared temporary resources for merging
-	res, release := NewResources()
+	tmp, release := NewResources()
 	defer release()
 
-	// Preallocate memory for final structures
+	// preallocate final structures
 	dst.ids = dst.res.GetIDs(int(dst.docsCount))[:0]
 	dst.positions = dst.res.GetDocPosSlice(int(dst.docsCount))[:0]
 	dst.blocksOffsets = dst.res.GetUint64s(blocksCount)[:0]
 
-	// 1. Merge block offsets and recalculate document positions
-	posMap := mergeBlocksOffsets(dst, res, indexes)
+	// 1. merge block offsets and recalc document positions
+	posMap := mergeBlocksOffsets(dst, tmp, indexes)
 
-	// 2. Merge documents (IDs), get old LID → new LID mapping
-	lidsMap := mergeIDs(dst, res, indexes, posMap)
+	// 2. merge documents, get old→new LID mapping
+	lidsMap := mergeIDs(dst, tmp, indexes, posMap)
 
-	// 3. Merge tokens using the new document LIDs
-	mergeTokens(dst, res, indexes, lidsMap)
+	// 3. merge tokens using new LIDs
+	mergeTokens(dst, tmp, indexes, lidsMap)
 
 	return dst
 }
 
-// mergeIDs merges documents from all indexes into a single ordered stream.
-// Returns a mapping of oldLID → newLID for each input index.
+// mergeIDs merges documents from all indexes into ordered stream.
+// returns mapping oldLID → newLID for each index.
 func mergeIDs(
 	dst *memIndex,
-	res *Resources,
+	tmp *Resources,
 	indexes []*memIndex,
 	posMap [][]seq.DocPos,
 ) [][]uint32 {
 
-	// Store old LID → new LID mapping for each index
-	lidsMap := res.GetUint32Slices(len(indexes))
-
-	// Iterators over documents of each index
+	// store old→new LID mapping per index
+	lidsMap := tmp.GetUint32Slices(len(indexes))
 	docStreams := make([]OrderedStream[DocRef], len(indexes))
 
 	for i, idx := range indexes {
@@ -68,12 +64,11 @@ func mergeIDs(
 			posMap: posMap[i], // recalculated document positions
 		}
 
-		// LIDs start from 1, so add a "dummy" element immediately
-		lidsMap[i] = res.GetUint32s(int(idx.docsCount) + 1)[:1]
+		// LIDs start from 1, so add dummy element
+		lidsMap[i] = tmp.GetUint32s(int(idx.docsCount) + 1)[:1]
 	}
 
-	// Merge all document streams into one,
-	// sorting by ID (in reverse order)
+	// merge all streams by ID (reverse order)
 	mergedDocStream := MergeSortedStreams(
 		docStreams,
 		func(a, b DocRef) int {
@@ -90,24 +85,23 @@ func mergeIDs(
 		prevRef DocRef
 	)
 
-	// Iterate over the merged stream
+	// process merged stream
 	for docRef, has := mergedDocStream.Next(); has; docRef, has = mergedDocStream.Next() {
 		if docRef.id == prevRef.id && docRef.i != prevRef.i {
 			doubles++
-			lidsMap[docRef.i] = append(lidsMap[docRef.i], 0) // add zero LID for consistent mapping
+			// map old LID → 0 (will be filtered later)
+			lidsMap[docRef.i] = append(lidsMap[docRef.i], 0)
 			continue
 		}
 		prevRef = docRef
 
-		// Add document to the resulting index
+		// add to result
 		dst.ids = append(dst.ids, docRef.id)
 		dst.positions = append(dst.positions, docRef.pos)
 
-		// New LID is the position in dst.ids (1-based)
-		lid := uint32(len(dst.ids))
-
-		// Record oldLID → newLID mapping
-		lidsMap[docRef.i] = append(lidsMap[docRef.i], lid)
+		// new LID is position in dst.ids (1-based)
+		newLID := uint32(len(dst.ids))
+		lidsMap[docRef.i] = append(lidsMap[docRef.i], newLID)
 	}
 
 	if doubles > 0 {
@@ -118,24 +112,25 @@ func mergeIDs(
 	return lidsMap
 }
 
-// mergeTokens merges tokens from all indexes,
-// reusing the new document LIDs.
+// mergeTokens merges tokens from all indexes using new LIDs.
 func mergeTokens(
 	dst *memIndex,
-	res *Resources,
+	tmp *Resources,
 	indexes []*memIndex,
 	lidsMap [][]uint32,
 ) {
+	totalDocs := 0 // sum of documents from all indexes (before deduplication)
 	totalTokens := 0
 	tokenStreams := make([]OrderedStream[TokenRef], len(indexes))
 
-	// create iterators over tokens
+	// create token iterators
 	for i, idx := range indexes {
+		totalDocs += int(idx.docsCount)
 		totalTokens += len(idx.tokens)
 		tokenStreams[i] = NewTokenStream(idx, lidsMap[i])
 	}
 
-	cmpToken := func(a, b TokenRef) int { // token comparison: first by field, then by value
+	cmpToken := func(a, b TokenRef) int {
 		r := bytes.Compare(a.Field(), b.Field())
 		if r == 0 {
 			return bytes.Compare(a.Value(), b.Value())
@@ -146,7 +141,7 @@ func mergeTokens(
 	// merged and sorted token stream
 	mergedTokenStream := MergeSortedStreams(tokenStreams, cmpToken)
 
-	// statistics for unique values
+	// unique values statistics
 	uniqTokensSize := 0
 	uniqTokensCount := 0
 	uniqFieldsSize := 0
@@ -159,25 +154,25 @@ func mergeTokens(
 
 	// borders[i] indicates:
 	const (
-		borderNone  = 0b00 // tokensRef[i] is the same token as in tokensRef[i-1] (but other index)
-		borderToken = 0b01 // tokensRef[i] is new token
-		borderField = 0b10 // tokensRef[i] is new token and new field
+		borderNone  = 0b00 // tokensRef[i] same token as previous (but different index)
+		borderToken = 0b01 // tokensRef[i] is a new token value
+		borderField = 0b10 // tokensRef[i] is a new field
 	)
 
-	borders := res.GetBytes(totalTokens)[:0]
+	borders := tmp.GetBytes(totalTokens)[:0]
 	tokensRef := make([]TokenRef, 0, totalTokens)
 
-	// First pass: count unique tokens and fields
+	// first pass: count unique tokens and fields
 	for tokenRef, has := mergedTokenStream.Next(); has; tokenRef, has = mergedTokenStream.Next() {
 		var border uint8 = borderNone
 
-		// New token
+		// new token
 		if prevToken.payload == nil || cmpToken(prevToken, tokenRef) != 0 {
 			uniqTokensCount++
 			uniqTokensSize += len(tokenRef.Value())
 			border |= borderToken
 
-			// New field
+			// new field
 			field := tokenRef.Field()
 			if !bytes.Equal(prevField, field) {
 				uniqFieldsCount++
@@ -192,7 +187,7 @@ func mergeTokens(
 		prevToken = tokenRef
 	}
 
-	// Initialize resulting index structures
+	// initialize result structures
 	dst.fieldsTokens = make(map[string]tokenRange, uniqFieldsCount)
 	dst.fields = dst.res.GetBytesSlices(uniqFieldsCount)[:0]
 	dst.tokens = dst.res.GetBytesSlices(uniqTokensCount)[:0]
@@ -201,15 +196,15 @@ func mergeTokens(
 	allTokens := dst.res.GetBytes(uniqTokensSize)[:0]
 	allFields := dst.res.GetBytes(uniqFieldsSize)[:0]
 
-	// Collector for document LIDs for each token
+	// collector for token's document LIDs
 	lidsCollector := NewLIDsCollector(
-		res.GetUint32s(int(dst.docsCount)),            // temporary buffer
+		totalDocs,
 		dst.res.GetUint32s(dst.allTokenLIDsCount)[:0], // all token LIDs
 		dst.res.GetUint32s(int(dst.docsCount)),        // LIDs for _all_
-		res.GetBytes((int(dst.docsCount) + 1)),        // buffer for sorting
+		tmp.GetBytes((int(dst.docsCount) + 1)),        // sorting buffer
 	)
 
-	// Second pass: fill structures
+	// second pass: fill structures
 	for i, tokenRef := range tokensRef {
 		if borders[i]&borderToken == borderToken { // new token value
 
@@ -240,17 +235,17 @@ func mergeTokens(
 			dst.tokens = append(dst.tokens, allTokens[start:])
 		}
 
-		// Add document LIDs for the token
+		// add document LIDs for this token
 		newLIDsMap := tokenRef.lidsMap()
 		for _, oldLID := range tokenRef.LIDs() {
 			lidsCollector.Add(newLIDsMap[oldLID])
 		}
 	}
 
-	// Final token
+	// final token
 	dst.tokenLIDs = append(dst.tokenLIDs, lidsCollector.GetSorted())
 
-	// Close the last field
+	// close last field
 	tid := uint32(len(dst.tokens)) - 1
 	fieldStr := util.ByteToStringUnsafe(dst.fields[len(dst.fields)-1])
 	tr := dst.fieldsTokens[fieldStr]
@@ -258,93 +253,90 @@ func mergeTokens(
 	dst.fieldsTokens[fieldStr] = tr
 }
 
-// LIDsCollector collects and efficiently sorts document LIDs for a token.
+// LIDsCollector collects and sorts document LIDs for a token.
 type LIDsCollector struct {
-	tmp  []uint32 // temporary accumulation
-	lids []uint32 // overall array
-	all  []uint32 // full set of LIDs (1..N)
-	buf  []uint8  // bitmap
+	totalDocs int      // total docs count before deduplication
+	lids      []uint32 // overall array
+	all       []uint32 // full LID set (1..N)
+	buf       []uint8  // bitmap
+	offset    int
 }
 
-// Initialize collector
-func NewLIDsCollector(tmp, lids, all []uint32, buf []uint8) *LIDsCollector {
+// NewLIDsCollector initializes collector.
+func NewLIDsCollector(totalDocs int, lids, all []uint32, buf []uint8) *LIDsCollector {
 	clear(buf)
 	for i := range all {
 		all[i] = uint32(i) + 1
 	}
 	return &LIDsCollector{
-		tmp:  tmp[:0],
-		lids: lids[:0],
-		all:  all,
-		buf:  buf,
+		totalDocs: totalDocs,
+		lids:      lids[:0],
+		all:       all,
+		buf:       buf,
 	}
 }
 
 // Add a single LID
 func (s *LIDsCollector) Add(lid uint32) {
-	s.tmp = append(s.tmp, lid)
+	s.lids = append(s.lids, lid)
 }
 
-// Returns sorted LID list,
-// choosing the optimal algorithm depending on density.
+// GetSorted returns sorted LID list using optimal algorithm.
 func (s *LIDsCollector) GetSorted() (dst []uint32) {
-	n := len(s.tmp)
+	n := len(s.lids) - s.offset
 
-	// If all documents are covered — return all
-	if n == len(s.all) {
-		s.tmp = s.tmp[:0]
+	// all documents covered → return all
+	if n == s.totalDocs {
+		s.lids = s.lids[:s.offset]
 		return s.all
 	}
 
-	// If density is high — use bitmap
+	dst = s.lids[s.offset:]
+	s.offset = len(s.lids)
+
+	// dense case: use bitmap
 	if 100*n/len(s.all) > 50 {
-		for _, v := range s.tmp {
+		for _, v := range dst {
 			s.buf[v] = 1
 		}
-		s.buf[0] = 0 // avoiding a zero LID caused by duplicates
-		start := len(s.lids)
+		s.buf[0] = 0 // skip zero LID from duplicates
+		dst = dst[:0]
 		for lid, ok := range s.buf {
 			if ok == 1 {
 				s.buf[lid] = 0
-				s.lids = append(s.lids, uint32(lid))
+				dst = append(dst, uint32(lid))
 			}
 		}
-		s.tmp = s.tmp[:0]
-		return s.lids[start:]
+		return dst
 	}
 
-	// Otherwise, normal sorting
+	// sparse case: sort normally
 	if n > 1 {
-		slices.Sort(s.tmp)
+		slices.Sort(dst)
 	}
-	i := 0
-	for i < len(s.tmp) && s.tmp[i] == 0 { // skipping zero LIDs caused by duplicates
-		i++
+	// skip zero LIDs from duplicates
+	for len(dst) > 0 && dst[0] == 0 {
+		dst = dst[1:]
 	}
-	s.tmp = s.tmp[i:]
-	start := len(s.lids)
-	s.lids = append(s.lids, s.tmp...)
-	s.tmp = s.tmp[:0]
-	return s.lids[start:]
+	return dst
 }
 
-// mergeBlocksOffsets merges block offsets
-// and recalculates document positions considering the offset.
+// mergeBlocksOffsets merges block offsets and recalculates document positions.
 func mergeBlocksOffsets(
 	dst *memIndex,
-	res *Resources,
+	tmp *Resources,
 	indexes []*memIndex,
 ) [][]seq.DocPos {
 
 	var offset uint32
-	positions := res.GetDocPosSlices(len(indexes))
+	positions := tmp.GetDocPosSlices(len(indexes))
 
 	for i, index := range indexes {
-		// Copy block offsets
+		// copy block offsets
 		dst.blocksOffsets = append(dst.blocksOffsets, index.blocksOffsets...)
 
-		// Recalculate document positions
-		positions[i] = res.GetDocPosSlice(len(index.positions))[:0]
+		// recalculate positions
+		positions[i] = tmp.GetDocPosSlice(len(index.positions))[:0]
 		for _, p := range index.positions {
 			oldIdx, docOffset := p.Unpack()
 			positions[i] = append(

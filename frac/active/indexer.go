@@ -31,7 +31,7 @@ func NewIndexer(workerPool WorkerLimiter) *Indexer {
 }
 
 // indexerBuffer is a temporary reusable buffer used during index construction to avoid allocations.
-// It holds intermediate data structures that are needed during processing but not in the final index.
+// it holds intermediate data structures that are needed during processing but not in the final index.
 type indexerBuffer struct {
 	sizes     []uint32
 	fields    []string
@@ -50,50 +50,50 @@ func (idx *Indexer) Index(block storage.DocBlock, apply func(index *memIndex, er
 }
 
 // NewMemIndex creates an in-memory index from a document block
-func NewMemIndex(block storage.DocBlock) (*memIndex, error) {
+func NewMemIndex(data storage.DocBlock) (*memIndex, error) {
 	sw := stopwatch.New()
 
-	res, release := NewResources()
+	tmp, release := NewResources()
 	defer release()
 
-	// Decompress metadata
-	payload, err := decompressMeta(res, block, sw)
+	// decompress metadata
+	payload, err := decompressMeta(tmp, data, sw)
 	if err != nil {
 		return nil, err
 	}
 
-	buf := res.GetBuffer()
+	buf := tmp.GetBuffer()
 
-	// Decode metadata
-	meta, err := decodeMetadata(res, buf, payload, sw)
+	// decode metadata
+	meta, err := decodeMetadata(tmp, buf, payload, sw)
 	if err != nil {
 		return nil, err
 	}
-	// Initialize index
+	// initialize index
 	idx := newMemIndex()
 	idx.docsCount = uint32(len(meta))
 	idx.ids = idx.res.GetIDs(len(meta))
 	idx.positions = idx.res.GetDocPosSlice(len(meta))
-	idx.blocksOffsets = idx.res.GetUint64s(1) // Only one block per bulk
-	idx.blocksOffsets[0] = block.GetExt2()
+	idx.blocksOffsets = idx.res.GetUint64s(1) // only one block per bulk
+	idx.blocksOffsets[0] = data.GetExt2()
 
-	// Extract tokens from metadata
-	tids, lids, tokens, err := extractTokens(idx, res, buf, meta)
+	// extract tokens from metadata
+	tids, lids, tokens, err := extractTokens(idx, tmp, buf, meta)
 	if err != nil {
 		return nil, err
 	}
 
-	// Group documents by token
-	tokenLIDs := groupLIDsByTID(idx, res, tids, lids, len(tokens))
+	// group documents by token
+	tokenLIDs := groupLIDsByTID(idx, tmp, tids, lids, len(tokens))
 
-	// Organize tokens and fields
-	organizeTokens(idx, res, buf, tokens, tokenLIDs)
+	// organize tokens and fields
+	organizeTokens(idx, tmp, buf, tokens, tokenLIDs)
 
 	return idx, nil
 }
 
 // tokenStr represents a unique token as a (field, value) pair.
-// Used as a map key during token deduplication.
+// used as a map key during token deduplication.
 type tokenStr struct {
 	value string
 	field string
@@ -109,16 +109,16 @@ func toToken(t tokenizer.MetaToken) tokenStr {
 // extractTokens extracts tokens from document metadata
 func extractTokens(
 	idx *memIndex,
-	res *Resources,
+	tmp *Resources,
 	buf *indexerBuffer,
 	meta []indexer.MetaData,
 ) ([]uint32, []uint32, []tokenStr, error) {
 	var docOffset uint64
 	var totalTokens uint32
 
-	// Calculate document positions in the original block
-	// Each document is stored as: [size: uint32][data: size bytes]
-	positions := res.GetDocPosSlice(len(meta))
+	// calculate document positions in the original block
+	// each document is stored as: [size: uint32][data: size bytes]
+	positions := tmp.GetDocPosSlice(len(meta))
 	prev := seq.PackDocPos(0, docOffset)
 
 	for i := range meta {
@@ -131,9 +131,9 @@ func extractTokens(
 		totalTokens += docMeta.TokensCount()
 	}
 
-	// Create ordering by document ID (descending)
-	// We need to map global document IDs to local IDs (LIDs)
-	order := res.GetUint32s(len(meta))
+	// create ordering by document ID (descending)
+	// we need to map global document IDs to local IDs (LIDs)
+	order := tmp.GetUint32s(len(meta))
 	for i := range order {
 		order[i] = uint32(i)
 	}
@@ -144,7 +144,7 @@ func extractTokens(
 	hash := fnv.New64a()
 	var idBinary [16]byte
 
-	// Fill index structures with sorted documents
+	// fill index structures with sorted documents
 	for i, origIdx := range order {
 		docMeta := meta[origIdx]
 		idx.ids[i] = docMeta.ID
@@ -154,26 +154,26 @@ func extractTokens(
 	}
 	idx.hash = hash.Sum64()
 
-	// Extract and process tokens from all documents
+	// extract and process tokens from all documents
 	var err error
 	var token tokenStr
 
-	// Allocate slices for token-document relationships
-	lids := res.GetUint32s(int(totalTokens))[:0] // Local document ID for each token occurrence
-	tids := res.GetUint32s(int(totalTokens))[:0] // Token ID for each occurrence
+	// allocate slices for token-document relationships
+	lids := tmp.GetUint32s(int(totalTokens))[:0] // local document ID for each token occurrence
+	tids := tmp.GetUint32s(int(totalTokens))[:0] // token ID for each occurrence
 
 	buf.tokenMap[tokenStr{field: seq.TokenAll}] = 0 // reserve ALL token (just for proper sealing)
 
-	// Process documents in ID-sorted order
+	// process documents in ID-sorted order
 	for i, origIdx := range order {
 		docMeta := meta[origIdx]
 
-		// Decode tokens for this document
+		// decode tokens for this document
 		if buf.tokens, err = docMeta.DecodeTokens(buf.tokens[:0]); err != nil {
 			return nil, nil, nil, err
 		}
 
-		// Process each token in the document
+		// process each token in the document
 		lid := uint32(i + 1)
 		for _, t := range buf.tokens {
 			if bytes.Equal(t.Key, seq.AllTokenName) {
@@ -190,8 +190,8 @@ func extractTokens(
 		}
 	}
 
-	// Create reverse mapping: tokenID -> tokenKey
-	tokens := res.GetTokens(len(buf.tokenMap))
+	// create reverse mapping: tokenID -> tokenKey
+	tokens := tmp.GetTokens(len(buf.tokenMap))
 	for key, tokenID := range buf.tokenMap {
 		tokens[tokenID] = key
 	}
@@ -200,19 +200,19 @@ func extractTokens(
 }
 
 // groupLIDsByTID groups document IDs by token
-// Input: flat arrays of (tid, lid) pairs
-// Output: 2D array where tokenLIDs[tid] = []lid
-func groupLIDsByTID(idx *memIndex, res *Resources, tids, lids []uint32, tokenCount int) [][]uint32 {
-	// Phase 1: Count documents per token
-	counts := res.GetUint32s(tokenCount)
+// input: flat arrays of (tid, lid) pairs
+// output: 2D array where tokenLIDs[tid] = []lid
+func groupLIDsByTID(idx *memIndex, tmp *Resources, tids, lids []uint32, tokenCount int) [][]uint32 {
+	// phase 1: count documents per token
+	counts := tmp.GetUint32s(tokenCount)
 	clear(counts)
 	for _, tid := range tids {
 		counts[tid]++
 	}
 
-	// Phase 2: Allocate slices for each token group
-	// We use a single large buffer and slice it for efficiency
-	tokenLIDs := res.GetUint32Slices(tokenCount)
+	// phase 2: allocate slices for each token group
+	// we use a single large buffer and slice it for efficiency
+	tokenLIDs := tmp.GetUint32Slices(tokenCount)
 	allTokenLIDs := idx.res.GetUint32s(len(lids))
 	idx.allTokenLIDsCount = len(lids)
 
@@ -222,11 +222,12 @@ func groupLIDsByTID(idx *memIndex, res *Resources, tids, lids []uint32, tokenCou
 		allTokenLIDs = allTokenLIDs[count:]
 	}
 
-	// Phase 3: Populate groups with LIDs
+	// phase 3: populate groups with LIDs
 	lids = lids[:len(tids)]
 	for i, tid := range tids {
 		if len(tokenLIDs[tid]) > 0 {
-			if lids[i] == lastLID(tokenLIDs[tid]) { // deduplication
+			if lids[i] == lastLID(tokenLIDs[tid]) {
+				// tokens deduplication (the same token can occurs a few times for one doc)
 				idx.allTokenLIDsCount--
 				continue
 			}
@@ -242,17 +243,17 @@ func lastLID(s []uint32) uint32 {
 }
 
 // organizeTokens organizes tokens and fields in the index with proper sorting
-func organizeTokens(idx *memIndex, res *Resources, buf *indexerBuffer, tokens []tokenStr, tokenLIDs [][]uint32) {
+func organizeTokens(idx *memIndex, tmp *Resources, buf *indexerBuffer, tokens []tokenStr, tokenLIDs [][]uint32) {
 	tokenSize := 0
-	order := res.GetUint32s(len(tokens))
+	order := tmp.GetUint32s(len(tokens))
 	order = order[:len(tokens)]
 	for i, t := range tokens {
 		order[i] = uint32(i)
 		tokenSize += len(t.value)
 	}
 
-	// Create ordering for sorting tokens
-	// We'll sort by (field, value) to group tokens by field
+	// create ordering for sorting tokens
+	// we'll sort by (field, value) to group tokens by field
 	slices.SortFunc(order, func(a, b uint32) int {
 		tokenA, tokenB := tokens[a], tokens[b]
 		return cmp.Or(
@@ -264,17 +265,17 @@ func organizeTokens(idx *memIndex, res *Resources, buf *indexerBuffer, tokens []
 	fieldSize := 0
 	prevField := ""
 
-	// Prepare buffers for sorted data
+	// prepare buffers for sorted data
 	tokenBuffer := idx.res.GetBytes(tokenSize)[:0]
 	idx.tokenLIDs = idx.res.GetUint32Slices(len(order))
 	idx.tokens = idx.res.GetBytesSlices(len(order))
 
-	// Process tokens in sorted order
+	// process tokens in sorted order
 	for tid, origIdx := range order {
 		token := tokens[origIdx]
 
-		// Detect field boundaries
-		// When field name changes, record the field and its first token position
+		// detect field boundaries
+		// when field name changes, record the field and its first token position
 		if token.field != prevField || prevField == "" {
 			fieldSize += len(token.field)
 			buf.fields = append(buf.fields, token.field)
@@ -282,32 +283,32 @@ func organizeTokens(idx *memIndex, res *Resources, buf *indexerBuffer, tokens []
 		}
 		prevField = token.field
 
-		// Copy token value to buffer and keep reference
+		// copy token value to buffer and keep reference
 		start := len(tokenBuffer)
 		tokenBuffer = append(tokenBuffer, token.value...)
 
-		// Store in sorted arrays
-		// Note: We use original tokenID as index to preserve tokenID->data mapping
+		// store in sorted arrays
+		// note: we use original tokenID as index to preserve tokenID->data mapping
 		idx.tokens[tid] = tokenBuffer[start:]
 		idx.tokenLIDs[tid] = tokenLIDs[origIdx]
 	}
-	// Add sentinel value for easier range calculation
+	// add sentinel value for easier range calculation
 	buf.fieldTIDs = append(buf.fieldTIDs, uint32(len(tokens)))
 
-	// Organize fields
+	// organize fields
 	fieldBuffer := idx.res.GetBytes(fieldSize)[:0]
 	idx.fields = idx.res.GetBytesSlices(len(buf.fields))
 
 	idx.fieldsTokens = make(map[string]tokenRange, len(buf.fields))
 
 	for i, field := range buf.fields {
-		// Copy field name to buffer
+		// copy field name to buffer
 		start := len(fieldBuffer)
 		fieldBuffer = append(fieldBuffer, field...)
 		idx.fields[i] = fieldBuffer[start:]
 
-		// Calculate token range for this field
-		// Each field has continuous range of token IDs in sorted order
+		// calculate token range for this field
+		// each field has continuous range of token IDs in sorted order
 		startTID := buf.fieldTIDs[i]
 		endTID := buf.fieldTIDs[i+1]
 		idx.fieldsTokens[util.ByteToStringUnsafe(fieldBuffer[start:])] = tokenRange{
@@ -322,7 +323,7 @@ func decompressMeta(res *Resources, block storage.DocBlock, sw *stopwatch.Stopwa
 	m := sw.Start("decompress_meta")
 	defer m.Stop()
 
-	// Allocate exact size needed for compressed data
+	// allocate exact size needed for compressed data
 	buffer := res.GetBytes(int(block.RawLen()))
 	payload, err := block.DecompressTo(buffer)
 	if err != nil {
@@ -332,12 +333,12 @@ func decompressMeta(res *Resources, block storage.DocBlock, sw *stopwatch.Stopwa
 }
 
 // decodeMetadata decodes document metadata from binary format
-// Format: [size: uint32][data: size bytes][size: uint32][data: size bytes]...
-func decodeMetadata(res *Resources, buf *indexerBuffer, payload []byte, sw *stopwatch.Stopwatch) ([]indexer.MetaData, error) {
+// format: [size: uint32][data: size bytes][size: uint32][data: size bytes]...
+func decodeMetadata(tmp *Resources, buf *indexerBuffer, payload []byte, sw *stopwatch.Stopwatch) ([]indexer.MetaData, error) {
 	m := sw.Start("decode_meta")
 	defer m.Stop()
 
-	// First pass: scan to determine sizes of each metadata entry
+	// first pass: scan to determine sizes of each metadata entry
 	var offset uint32
 	for offset < uint32(len(payload)) {
 		size := binary.LittleEndian.Uint32(payload[offset:])
@@ -345,15 +346,15 @@ func decodeMetadata(res *Resources, buf *indexerBuffer, payload []byte, sw *stop
 		buf.sizes = append(buf.sizes, size)
 	}
 
-	// Second pass: decode each metadata entry
-	meta := res.GetMetadata(len(buf.sizes))
+	// second pass: decode each metadata entry
+	meta := tmp.GetMetadata(len(buf.sizes))
 	for i, size := range buf.sizes {
-		// Skip size field to get to actual data
+		// skip size field to get to actual data
 		data := payload[uint32Size : size+uint32(uint32Size)]
 		if err := meta[i].UnmarshalBinaryLazy(data); err != nil {
 			return nil, err
 		}
-		// Move to next entry
+		// move to next entry
 		payload = payload[size+uint32(uint32Size):]
 	}
 

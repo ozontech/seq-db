@@ -12,6 +12,5 @@ func (s *CallStack) CallAll() {
 	for i := len(s.stack) - 1; i >= 0; i-- {
 		s.stack[i]()
 	}
-	clear(s.stack)
 	s.stack = s.stack[:0]
 }
