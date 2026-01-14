@@ -11,7 +11,7 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
@@ -59,7 +59,7 @@ func readBlock(reader storage.IndexReader, blockIndex uint32) ([]byte, error) {
 	return data, nil
 }
 
-func loadInfo(path string) *common.Info {
+func loadInfo(path string) *frac.Info {
 	indexReader, f := getReader(path)
 	defer f.Close()
 
@@ -87,7 +87,7 @@ func loadInfo(path string) *common.Info {
 	return b.Info
 }
 
-func buildDist(dist *seq.MIDsDistribution, path string, _ *common.Info) {
+func buildDist(dist *seq.MIDsDistribution, path string, _ *frac.Info) {
 	blocksReader, f := getReader(path)
 	defer f.Close()
 

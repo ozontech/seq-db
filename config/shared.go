@@ -8,7 +8,7 @@ var (
 	ReaderWorkers int
 
 	CaseSensitive = false
-	SkipFsync     = false
+	SkipFsync     = true
 
 	MaxFetchSizeBytes = 4 * units.MiB
 

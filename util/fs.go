@@ -6,6 +6,7 @@ package util
 import (
 	"errors"
 	"os"
+	"path/filepath"
 
 	"go.uber.org/zap"
 
@@ -52,4 +53,22 @@ func RemoveFile(file string) {
 	} else if !os.IsNotExist(err) {
 		logger.Error("file removing error", zap.Error(err))
 	}
+}
+
+func MustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
+	file, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o664)
+	if err != nil {
+		logger.Fatal("can't create docs file", zap.String("file", name), zap.Error(err))
+	}
+
+	if !skipFsync {
+		parentDirPath := filepath.Dir(name)
+		MustSyncPath(parentDirPath)
+	}
+
+	stat, err := file.Stat()
+	if err != nil {
+		logger.Fatal("can't stat docs file", zap.String("file", name), zap.Error(err))
+	}
+	return file, stat
 }

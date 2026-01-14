@@ -1,0 +1,342 @@
+package active_old
+
+import (
+	"context"
+	"io"
+	"math"
+	"os"
+	"sync"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/zap"
+
+	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/metric/stopwatch"
+	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/util"
+)
+
+var (
+	_ frac.Fraction = (*Active)(nil)
+)
+
+type Active struct {
+	Config *frac.Config
+
+	BaseFileName string
+
+	infoMu sync.RWMutex
+	info   *frac.Info
+
+	MIDs *UInt64s
+	RIDs *UInt64s
+
+	DocBlocks *UInt64s
+
+	TokenList *tokenList
+
+	DocsPositions *DocsPositions
+
+	docsFile   *os.File
+	docsReader storage.DocsReader
+	sortReader storage.DocsReader
+	docsCache  *cache.Cache[[]byte]
+	sortCache  *cache.Cache[[]byte]
+
+	metaFile   *os.File
+	metaReader storage.DocBlocksReader
+
+	writer  *Writer
+	indexer *Indexer
+}
+
+const (
+	systemMID = math.MaxUint64
+	systemRID = math.MaxUint64
+)
+
+var systemSeqID = seq.ID{
+	MID: systemMID,
+	RID: systemRID,
+}
+
+func New(
+	baseFileName string,
+	activeIndexer *Indexer,
+	readLimiter *storage.ReadLimiter,
+	docsCache *cache.Cache[[]byte],
+	sortCache *cache.Cache[[]byte],
+	cfg *frac.Config,
+) *Active {
+	docsFile, docsStats := util.MustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
+	metaFile, metaStats := util.MustOpenFile(baseFileName+consts.MetaFileSuffix, config.SkipFsync)
+
+	f := &Active{
+		TokenList:     NewTokenList(config.IndexWorkers),
+		DocsPositions: NewSyncDocsPositions(),
+		MIDs:          NewIDs(),
+		RIDs:          NewIDs(),
+		DocBlocks:     NewIDs(),
+
+		docsFile:   docsFile,
+		docsCache:  docsCache,
+		sortCache:  sortCache,
+		docsReader: storage.NewDocsReader(readLimiter, docsFile, docsCache),
+		sortReader: storage.NewDocsReader(readLimiter, docsFile, sortCache),
+
+		metaFile:   metaFile,
+		metaReader: storage.NewDocBlocksReader(readLimiter, metaFile),
+
+		indexer: activeIndexer,
+		writer:  NewWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync),
+
+		BaseFileName: baseFileName,
+		info:         frac.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
+		Config:       cfg,
+	}
+
+	// use of 0 as keys in maps is prohibited – it's system key, so add first element
+	f.MIDs.Append(systemMID)
+	f.RIDs.Append(systemRID)
+
+	logger.Info("active fraction created", zap.String("fraction", baseFileName))
+
+	return f
+}
+
+func (f *Active) Replay(ctx context.Context) error {
+	logger.Info("start replaying...", zap.String("name", f.info.Name()))
+
+	t := time.Now()
+
+	offset := uint64(0)
+	step := f.info.MetaOnDisk / 10
+	next := step
+
+	sw := stopwatch.New()
+	wg := sync.WaitGroup{}
+
+out:
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			meta, metaSize, err := f.metaReader.ReadDocBlock(int64(offset))
+			if err == io.EOF {
+				if metaSize != 0 {
+					logger.Warn("last meta block is partially written, skipping it")
+				}
+				break out
+			}
+			if err != nil && err != io.EOF {
+				return err
+			}
+
+			if offset > next {
+				next += step
+				progress := float64(offset) / float64(f.info.MetaOnDisk) * 100
+				logger.Info("replaying batch, meta",
+					zap.String("name", f.info.Name()),
+					zap.Uint64("from", offset),
+					zap.Uint64("to", offset+metaSize),
+					zap.Uint64("target", f.info.MetaOnDisk),
+					util.ZapFloat64WithPrec("progress_percentage", progress, 2),
+				)
+			}
+			offset += metaSize
+
+			wg.Add(1)
+			f.indexer.Index(f, meta, &wg, sw)
+		}
+	}
+
+	wg.Wait()
+
+	tookSeconds := util.DurationToUnit(time.Since(t), "s")
+	throughputRaw := util.SizeToUnit(f.info.DocsRaw, "mb") / tookSeconds
+	throughputMeta := util.SizeToUnit(f.info.MetaOnDisk, "mb") / tookSeconds
+	logger.Info("active fraction replayed",
+		zap.String("name", f.info.Name()),
+		zap.Uint32("docs_total", f.info.DocsTotal),
+		util.ZapUint64AsSizeStr("docs_size", f.info.DocsOnDisk),
+		util.ZapFloat64WithPrec("took_s", tookSeconds, 1),
+		util.ZapFloat64WithPrec("throughput_raw_mb_sec", throughputRaw, 1),
+		util.ZapFloat64WithPrec("throughput_meta_mb_sec", throughputMeta, 1),
+	)
+	return nil
+}
+
+var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Namespace: "seq_db_store",
+	Subsystem: "bulk",
+	Name:      "stages_seconds",
+	Buckets:   metric.SecondsBuckets,
+}, []string{"stage"})
+
+// Append causes data to be written on disk and sends metas to index workers
+func (f *Active) Append(docs, metas []byte, wg *sync.WaitGroup) (err error) {
+	sw := stopwatch.New()
+	m := sw.Start("append")
+	if err = f.writer.Write(docs, metas, sw); err != nil {
+		m.Stop()
+		return err
+	}
+	f.updateDiskStats(uint64(len(docs)), uint64(len(metas)))
+	f.indexer.Index(f, metas, wg, sw)
+	m.Stop()
+	sw.Export(bulkStagesSeconds)
+	return nil
+}
+
+func (f *Active) GetAllDocuments() []uint32 {
+	return f.TokenList.GetAllTokenLIDs().GetLIDs(f.MIDs, f.RIDs)
+}
+
+func (f *Active) updateDiskStats(docsLen, metaLen uint64) {
+	f.infoMu.Lock()
+	f.info.DocsOnDisk += docsLen
+	f.info.MetaOnDisk += metaLen
+	f.infoMu.Unlock()
+}
+
+func (f *Active) AppendIDs(ids []seq.ID) []uint32 {
+	// take both locks, append in both arrays at once
+	// i.e. so one thread wouldn't append between other thread appends
+
+	lidsList := make([]uint32, 0, len(ids))
+	f.MIDs.mu.Lock()
+	f.RIDs.mu.Lock()
+	defer f.RIDs.mu.Unlock()
+	defer f.MIDs.mu.Unlock()
+
+	for _, id := range ids {
+		lidsList = append(lidsList, f.MIDs.append(uint64(id.MID)))
+		f.RIDs.append(uint64(id.RID))
+	}
+
+	return lidsList
+}
+
+func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount uint64) {
+	f.infoMu.Lock()
+	defer f.infoMu.Unlock()
+
+	if f.info.From > minMID {
+		f.info.From = minMID
+	}
+	if f.info.To < maxMID {
+		f.info.To = maxMID
+	}
+	f.info.DocsTotal += docCount
+	f.info.DocsRaw += sizeCount
+}
+
+func (f *Active) String() string {
+	return frac.FracToString(f, "active")
+}
+
+func (f *Active) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		return nil, nil
+	}
+
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.Fetch(ids)
+}
+
+func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()
+		return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, nil
+	}
+
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.Search(params)
+}
+
+func (f *Active) createDataProvider(ctx context.Context) *dataProvider {
+	return &dataProvider{
+		ctx:    ctx,
+		config: f.Config,
+		info:   f.Info(),
+
+		mids:      f.MIDs,
+		rids:      f.RIDs,
+		tokenList: f.TokenList,
+
+		blocksOffsets: f.DocBlocks.GetVals(),
+		docsPositions: f.DocsPositions,
+		docsReader:    &f.docsReader,
+	}
+}
+
+func (f *Active) Info() *frac.Info {
+	f.infoMu.RLock()
+	defer f.infoMu.RUnlock()
+
+	cp := *f.info // copy
+	return &cp
+}
+
+func (f *Active) Contains(id seq.MID) bool {
+	return f.Info().IsIntersecting(id, id)
+}
+
+func (f *Active) IsIntersecting(from, to seq.MID) bool {
+	return f.Info().IsIntersecting(from, to)
+}
+
+func (f *Active) Release() {
+	f.releaseMem()
+
+	if !f.Config.KeepMetaFile {
+		util.RemoveFile(f.metaFile.Name())
+	}
+
+	if !f.Config.SkipSortDocs {
+		// we use sorted docs in sealed fraction so we can remove original docs of active fraction
+		util.RemoveFile(f.docsFile.Name())
+	}
+}
+
+func (f *Active) Suicide() {
+	f.releaseMem()
+
+	util.RemoveFile(f.metaFile.Name())
+	util.RemoveFile(f.docsFile.Name())
+	util.RemoveFile(f.BaseFileName + consts.SdocsFileSuffix)
+}
+
+func (f *Active) releaseMem() {
+	f.writer.Stop()
+	f.TokenList.Stop()
+
+	f.docsCache.Release()
+	f.sortCache.Release()
+
+	if err := f.metaFile.Close(); err != nil {
+		logger.Error("can't close meta file", zap.String("frac", f.BaseFileName), zap.Error(err))
+	}
+	if err := f.docsFile.Close(); err != nil {
+		logger.Error("can't close docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
+	}
+
+	f.RIDs = nil
+	f.MIDs = nil
+	f.TokenList = nil
+	f.DocsPositions = nil
+}

@@ -45,7 +45,7 @@ func (r *DocsReader) ReadDocsFunc(blockOffset uint64, docOffsets []uint64, cb fu
 	block, err := r.cache.GetWithError(uint32(blockOffset), func() ([]byte, int, error) {
 		block, _, err := r.reader.ReadDocBlockPayload(int64(blockOffset))
 		if err != nil {
-			return nil, 0, fmt.Errorf("can't fetch doc at pos %d: %w", blockOffset, err)
+			return nil, 0, fmt.Errorf("can't fetch doc block at pos %d: %w", blockOffset, err)
 		}
 		return block, cap(block), nil
 	})

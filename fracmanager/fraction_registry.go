@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
+	"github.com/ozontech/seq-db/frac/sealed"
 )
 
 // fractionRegistry manages fraction queues at different lifecycle stages.
@@ -35,7 +37,7 @@ type fractionRegistry struct {
 // NewFractionRegistry creates and initializes a new fraction registry instance.
 // Populates the registry with existing active, local and remote fractions.
 // Rebuilds the complete fractions list in chronological order.
-func NewFractionRegistry(active *frac.Active, locals []*frac.Sealed, remotes []*frac.Remote) (*fractionRegistry, error) {
+func NewFractionRegistry(active *active.Active, locals []*sealed.Sealed, remotes []*sealed.Remote) (*fractionRegistry, error) {
 	if active == nil {
 		return nil, errors.New("active fraction must be specified")
 	}
@@ -254,7 +256,7 @@ func (r *fractionRegistry) EvictRemote(retention time.Duration) []*remoteProxy {
 
 // PromoteToLocal moves fractions from sealing to local queue when sealing completes.
 // Maintains strict ordering - younger fractions wait for older ones to seal first.
-func (r *fractionRegistry) PromoteToLocal(active *activeProxy, sealed *frac.Sealed) {
+func (r *fractionRegistry) PromoteToLocal(active *activeProxy, sealed *sealed.Sealed) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -282,7 +284,7 @@ func (r *fractionRegistry) PromoteToLocal(active *activeProxy, sealed *frac.Seal
 // PromoteToRemote moves fractions from offloading to remote queue when offloading completes.
 // Special case: Handles fractions that don't require offloading (remote == nil).
 // Maintains strict ordering - younger fractions wait for older ones to offload.
-func (r *fractionRegistry) PromoteToRemote(sealed *sealedProxy, remote *frac.Remote) {
+func (r *fractionRegistry) PromoteToRemote(sealed *sealedProxy, remote *sealed.Remote) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

@@ -12,7 +12,8 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/active"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -25,7 +26,7 @@ func setupLoaderTest(t testing.TB, cfg *Config) (*fractionProvider, *Loader, fun
 	return fp, loader, tearDown
 }
 
-func appendDocsToActive(t testing.TB, active *frac.Active, docCount int) {
+func appendDocsToActive(t testing.TB, active *active.Active, docCount int) {
 	dp := indexer.NewTestDocProvider()
 	for i := 1; i <= docCount; i++ {
 		doc := []byte("{\"timestamp\": 0, \"message\": \"msg\"}")
@@ -48,7 +49,7 @@ func TestReplayWithEmptyActive(t *testing.T) {
 	defer tearDown()
 
 	// fill data
-	actives := make([]*frac.Active, 0, fracCount)
+	actives := make([]*active.Active, 0, fracCount)
 	for i := 0; i < fracCount; i++ {
 		active := fp.CreateActive()
 		appendDocsToActive(t, active, 500+rand.Intn(100))
@@ -78,8 +79,8 @@ func TestReplayWithMultipleEmpty(t *testing.T) {
 	defer tearDown()
 
 	// fill data
-	nonEmpty := make([]*common.Info, 0)
-	actives := make([]*frac.Active, 0, fracCount)
+	nonEmpty := make([]*frac.Info, 0)
+	actives := make([]*active.Active, 0, fracCount)
 	for i := 0; i < fracCount; i++ {
 		active := fp.CreateActive()
 		if i%3 == 0 {
@@ -111,28 +112,30 @@ func TestReplayMultiple(t *testing.T) {
 	defer tearDown()
 
 	// fill data
-	actives := make([]*frac.Active, 0, fracCount)
+	actives := make([]*active.Active, 0, fracCount) // empty active fractions for replay
 	for i := 0; i < fracCount; i++ {
-		active := fp.CreateActive()
-		appendDocsToActive(t, active, 500+rand.Intn(100))
-		actives = append(actives, active)
+		a := fp.CreateActive()
+		appendDocsToActive(t, a, 500+rand.Intn(100))
+		actives = append(actives, fp.NewActive(a.BaseFileName))
 	}
-	active := fp.CreateActive()
-	appendDocsToActive(t, active, 5)
-	actives = append(actives, active)
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 5)
+	actives = append(actives, fp.NewActive(a.BaseFileName))
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	a, s, err := loader.replayAndSeal(t.Context(), actives)
 	assert.NoError(t, err)
 
 	// checks
-	assert.Equal(t, len(actives), len(sealed)+1, "should replay same number of fractions")
+	assert.Equal(t, len(actives)-1, len(s), "should replay same number of fractions")
 	for i := 0; i < fracCount; i++ {
-		assert.Equal(t, actives[i].Info().Name(), sealed[i].Info().Name(), "fraction %d should have the same name", i)
-		assert.Equal(t, actives[i].Info().DocsTotal, sealed[i].Info().DocsTotal, "fraction %d should have the same doc count", i)
+		assert.Equal(t, actives[i].Info().Name(), s[i].Info().Name(), "fraction %d should have the same name", i)
+		assert.Equal(t, actives[i].Info().DocsTotal, s[i].Info().DocsTotal, "fraction %d should have the same doc count", i)
 	}
-	assert.Equal(t, actives[fracCount].Info().Name(), active.Info().Name(), "new active fraction should have the same name")
-	assert.Equal(t, uint32(5), active.Info().DocsTotal, "new active fraction should not be empty")
+	assert.Equal(t, actives[fracCount].Info().Name(), a.Info().Name(), "new active fraction should have the same name")
+	assert.Equal(t, uint32(5), a.Info().DocsTotal,
+		"new active fraction should have exact 5 docs but %d given", a.Info().DocsTotal,
+	)
 }
 
 func TestReplaySingleEmpty(t *testing.T) {
@@ -141,7 +144,7 @@ func TestReplaySingleEmpty(t *testing.T) {
 	defer tearDown()
 
 	// fill data: one empty fraction
-	actives := []*frac.Active{fp.CreateActive()}
+	actives := []*active.Active{fp.CreateActive()}
 
 	// replay and seal
 	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
@@ -161,7 +164,7 @@ func TestReplayContextCancel(t *testing.T) {
 	defer tearDown()
 
 	// fill data
-	actives := make([]*frac.Active, 0, fracCount)
+	actives := make([]*active.Active, 0, fracCount)
 	for i := 0; i < fracCount; i++ {
 		active := fp.CreateActive()
 		appendDocsToActive(t, active, 500+rand.Intn(100))
@@ -186,7 +189,7 @@ func TestReplaySingleNonEmpty(t *testing.T) {
 	defer tearDown()
 
 	// fill data
-	actives := []*frac.Active{fp.CreateActive()}
+	actives := []*active.Active{fp.CreateActive()}
 	appendDocsToActive(t, actives[0], 500+rand.Intn(100))
 
 	// replay and seal
@@ -206,7 +209,7 @@ func TestDiscover(t *testing.T) {
 	defer tearDown()
 
 	// make some sealed fracs
-	expectedSealed := map[string]*frac.Sealed{}
+	expectedSealed := map[string]*sealed.Sealed{}
 	for range fracCount {
 		a := fp.CreateActive()
 		appendDocsToActive(t, a, 10+rand.Intn(10))
@@ -216,7 +219,7 @@ func TestDiscover(t *testing.T) {
 	}
 
 	// make half sealed fracs remote
-	expectedRemote := map[string]*frac.Remote{}
+	expectedRemote := map[string]*sealed.Remote{}
 	for n, s := range expectedSealed {
 		if rand.Intn(2) != 0 {
 			continue

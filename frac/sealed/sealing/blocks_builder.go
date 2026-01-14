@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"iter"
+	"strings"
 
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
@@ -104,7 +105,10 @@ func (bb *blocksBuilder) BuildTokenBlocks(
 				}
 				// Entry covers TIDs from currentTID to min(fieldMaxTID, block.ext.maxTID)
 				entry := createTokenTableEntry(currentTID, fieldMaxTID, idx, block)
-				table = append(table, token.FieldTable{Field: fieldName, Entries: []*token.TableEntry{entry}})
+				table = append(table, token.FieldTable{
+					Field:   strings.Clone(fieldName),
+					Entries: []*token.TableEntry{entry},
+				})
 				currentTID += entry.ValCount
 			}
 

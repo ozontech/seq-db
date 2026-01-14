@@ -9,8 +9,11 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/active"
+	active1 "github.com/ozontech/seq-db/frac/active"
+	"github.com/ozontech/seq-db/frac/active_old"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/storage"
@@ -25,14 +28,14 @@ type fractionProvider struct {
 	s3cli         *s3.Client           // Client for S3 storage operations
 	config        *Config              // Fraction manager configuration
 	cacheProvider *CacheMaintainer     // Cache provider for data access optimization
-	activeIndexer *frac.ActiveIndexer  // Indexer for active fractions
+	activeIndexer *active_old.Indexer  // Indexer for active fractions
 	readLimiter   *storage.ReadLimiter // Read rate limiter
 	ulidEntropy   io.Reader            // Entropy source for ULID generation
 }
 
 func newFractionProvider(
 	cfg *Config, s3cli *s3.Client, cp *CacheMaintainer,
-	readLimiter *storage.ReadLimiter, indexer *frac.ActiveIndexer,
+	readLimiter *storage.ReadLimiter, indexer *active_old.Indexer,
 ) *fractionProvider {
 	return &fractionProvider{
 		s3cli:         s3cli,
@@ -44,8 +47,19 @@ func newFractionProvider(
 	}
 }
 
-func (fp *fractionProvider) NewActive(name string) *frac.Active {
-	return frac.NewActive(
+func (fp *fractionProvider) NewActive(name string) *active.Active {
+	return active.New(
+		name,
+		&fp.config.Fraction,
+		config.NumCPU,
+		fp.readLimiter,
+		fp.cacheProvider.CreateDocBlockCache(),
+		fp.cacheProvider.CreateSortDocsCache(),
+	)
+}
+
+func (fp *fractionProvider) NewActiveOld(name string) *active_old.Active {
+	return active_old.New(
 		name,
 		fp.activeIndexer,
 		fp.readLimiter,
@@ -55,8 +69,8 @@ func (fp *fractionProvider) NewActive(name string) *frac.Active {
 	)
 }
 
-func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *frac.Sealed {
-	return frac.NewSealed(
+func (fp *fractionProvider) NewSealed(name string, cachedInfo *frac.Info) *sealed.Sealed {
+	return sealed.New(
 		name,
 		fp.readLimiter,
 		fp.cacheProvider.CreateIndexCache(),
@@ -66,8 +80,8 @@ func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *fra
 	)
 }
 
-func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *sealed.PreloadedData) *frac.Sealed {
-	return frac.NewSealedPreloaded(
+func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *sealed.PreloadedData) *sealed.Sealed {
+	return sealed.NewPreloaded(
 		name,
 		preloadedData, // Data already loaded into memory
 		fp.readLimiter,
@@ -77,8 +91,8 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *seale
 	)
 }
 
-func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedInfo *common.Info) *frac.Remote {
-	return frac.NewRemote(
+func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedInfo *frac.Info) *sealed.Remote {
+	return sealed.NewRemote(
 		ctx,
 		name,
 		fp.readLimiter,
@@ -99,7 +113,15 @@ func (fp *fractionProvider) nextFractionID() string {
 
 // CreateActive creates a new active fraction with auto-generated filename
 // Filename pattern: base_pattern + ULID
-func (fp *fractionProvider) CreateActive() *frac.Active {
+func (fp *fractionProvider) CreateActive() *active.Active {
+	filePath := fileBasePattern + fp.nextFractionID()
+	baseFilePath := filepath.Join(fp.config.DataDir, filePath)
+	return fp.NewActive(baseFilePath)
+}
+
+// CreateActive creates a new active fraction with auto-generated filename
+// Filename pattern: base_pattern + ULID
+func (fp *fractionProvider) CreateActive2() *active1.Active {
 	filePath := fileBasePattern + fp.nextFractionID()
 	baseFilePath := filepath.Join(fp.config.DataDir, filePath)
 	return fp.NewActive(baseFilePath)
@@ -107,8 +129,8 @@ func (fp *fractionProvider) CreateActive() *frac.Active {
 
 // Seal converts an active fraction to a sealed one
 // Process includes sorting, indexing, and data optimization for reading
-func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
-	src, err := frac.NewActiveSealingSource(active, fp.config.SealParams)
+func (fp *fractionProvider) Seal1(a *active.Active) (*sealed.Sealed, error) {
+	src, err := active.NewSealingSource(a, fp.config.SealParams)
 	if err != nil {
 		return nil, err
 	}
@@ -117,12 +139,27 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 		return nil, err
 	}
 
-	return fp.NewSealedPreloaded(active.BaseFileName, preloaded), nil
+	return fp.NewSealedPreloaded(a.BaseFileName, preloaded), nil
+}
+
+// Seal converts an active fraction to a sealed one
+// Process includes sorting, indexing, and data optimization for reading
+func (fp *fractionProvider) Seal(a *active.Active) (*sealed.Sealed, error) {
+	src, err := active.NewSealingSource(a, fp.config.SealParams)
+	if err != nil {
+		return nil, err
+	}
+	_, err = sealing.Seal(src, fp.config.SealParams)
+	if err != nil {
+		return nil, err
+	}
+
+	return fp.NewSealed(a.BaseFileName, nil), nil
 }
 
 // Offload uploads fraction to S3 storage and returns a remote fraction
 // IMPORTANT: context controls timeouts and operation cancellation
-func (fp *fractionProvider) Offload(ctx context.Context, f *frac.Sealed) (*frac.Remote, error) {
+func (fp *fractionProvider) Offload(ctx context.Context, f *sealed.Sealed) (*sealed.Remote, error) {
 	mustBeOffloaded, err := f.Offload(ctx, s3.NewUploader(fp.s3cli))
 	if err != nil {
 		return nil, err

@@ -210,6 +210,8 @@ func (p *Processor) ProcessBulk(
 		dstDocs = binary.LittleEndian.AppendUint32(dstDocs, uint32(len(doc)))
 		dstDocs = append(dstDocs, doc...)
 		for _, m := range meta {
+			// todo: it is possible to have a few equal tokens here
+			// todo: probably we need deduplicate it here
 			dstMeta = marshalAppendMeta(dstMeta, m)
 		}
 	}

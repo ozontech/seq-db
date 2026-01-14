@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
-	testscommon "github.com/ozontech/seq-db/tests/common"
+	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/tests/common"
 )
 
 const dummyFracFixture = `{"a":{"name":"a","ver":"1.1","docs_total":1,"docs_on_disk":363,"docs_raw":450,"meta_on_disk":0,"index_on_disk":1284,"const_regular_block_size":16384,"const_ids_per_block":4096,"const_lid_block_cap":65536,"from":1666193255114,"to":1666193255114,"creation_time":1666193044479},"b":{"name":"b","ver":"1.2","docs_total":1,"docs_on_disk":363,"docs_raw":450,"meta_on_disk":0,"index_on_disk":1276,"const_regular_block_size":16384,"const_ids_per_block":4096,"const_lid_block_cap":65536,"from":1666193602304,"to":1666193602304,"creation_time":1666193598979}}`
@@ -21,13 +21,13 @@ func loadFracCacheContent(dataDir string) ([]byte, error) {
 	return content, err
 }
 
-func loadFracCache(dataDir string) (map[string]*common.Info, error) {
+func loadFracCache(dataDir string) (map[string]*frac.Info, error) {
 	content, err := loadFracCacheContent(dataDir)
 	if err != nil {
 		return nil, err
 	}
 
-	fracCache := make(map[string]*common.Info)
+	fracCache := make(map[string]*frac.Info)
 	err = json.Unmarshal(content, &fracCache)
 	if err != nil {
 		return nil, err
@@ -43,10 +43,10 @@ func writeToFracCache(dataDir, fname, data string) error {
 }
 
 func TestEmpty(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
+	dataDir := common.GetTestTmpDir(t)
 
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
+	common.RecreateDir(dataDir)
+	defer common.RemoveDir(dataDir)
 
 	f := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 	err := f.SyncWithDisk()
@@ -67,10 +67,10 @@ func TestEmpty(t *testing.T) {
 }
 
 func TestLoadFromDisk(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
+	dataDir := common.GetTestTmpDir(t)
 
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
+	common.RecreateDir(dataDir)
+	defer common.RemoveDir(dataDir)
 
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
@@ -97,9 +97,9 @@ func TestLoadFromDisk(t *testing.T) {
 }
 
 func TestRemoveFraction(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
+	dataDir := common.GetTestTmpDir(t)
+	common.RecreateDir(dataDir)
+	defer common.RemoveDir(dataDir)
 
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
@@ -117,7 +117,7 @@ func TestRemoveFraction(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, contents, []byte("{}"))
 
-	newInfo := &common.Info{
+	newInfo := &frac.Info{
 		Path:                  "/data/c",
 		Ver:                   "1.3",
 		DocsTotal:             0,
@@ -138,7 +138,7 @@ func TestRemoveFraction(t *testing.T) {
 
 	m, err := loadFracCache(dataDir)
 	assert.NoError(t, err)
-	expected := map[string]*common.Info{"c": newInfo}
+	expected := map[string]*frac.Info{"c": newInfo}
 
 	assert.Equal(t, expected, m)
 	f.Remove("c")
@@ -151,10 +151,10 @@ func TestRemoveFraction(t *testing.T) {
 }
 
 func TestWriteToDisk(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
+	dataDir := common.GetTestTmpDir(t)
 
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
+	common.RecreateDir(dataDir)
+	defer common.RemoveDir(dataDir)
 
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
@@ -162,7 +162,7 @@ func TestWriteToDisk(t *testing.T) {
 	f := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 	f.LoadFromDisk(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 
-	newInfo := &common.Info{
+	newInfo := &frac.Info{
 		Path:                  "/data/c",
 		Ver:                   "1.3",
 		DocsTotal:             0,
@@ -221,15 +221,15 @@ func TestWriteToDisk(t *testing.T) {
 }
 
 func TestUnusedFractionsCleanup(t *testing.T) {
-	dataDir := testscommon.GetTestTmpDir(t)
+	dataDir := common.GetTestTmpDir(t)
 
-	testscommon.RecreateDir(dataDir)
-	defer testscommon.RemoveDir(dataDir)
+	common.RecreateDir(dataDir)
+	defer common.RemoveDir(dataDir)
 
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
 
-	expected := map[string]*common.Info{}
+	expected := map[string]*frac.Info{}
 
 	cacheFile := filepath.Join(dataDir, consts.FracCacheFileSuffix)
 	diskFracCache := NewFracInfoCacheFromDisk(cacheFile)
