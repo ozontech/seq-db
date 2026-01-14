@@ -62,6 +62,11 @@ var (
 		Name:      "disk_usage_bytes",
 		Help:      "Disk space used by async search files in bytes by file type",
 	}, []string{"file_type"})
+	asyncSearchDiskUsageLimit = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "async_search",
+		Name:      "disk_usage_limit",
+	})
 	asyncSearchStoredRequests = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
@@ -133,6 +138,8 @@ func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracs fracma
 		as.processWg.Add(1)
 		go as.processRequest(id, fracs)
 	}
+
+	asyncSearchDiskUsageLimit.Set(float64(config.MaxSize))
 
 	go as.startMaintenance()
 
