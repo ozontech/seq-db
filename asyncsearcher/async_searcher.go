@@ -56,6 +56,12 @@ var (
 		Name:      "in_progress",
 		Help:      "Number of active async searches in progress",
 	})
+	asyncSearchConcurrencyLimit = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "async_search",
+		Name:      "concurrency_limit",
+		Help:      "Maximum number of simultaneously running async searches",
+	})
 	asyncSearchDiskUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
@@ -65,7 +71,7 @@ var (
 	asyncSearchDiskUsageLimit = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "async_search",
-		Name:      "disk_usage_limit",
+		Name:      "disk_usage_limit_bytes",
 	})
 	asyncSearchStoredRequests = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
@@ -139,7 +145,9 @@ func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracs fracma
 		go as.processRequest(id, fracs)
 	}
 
+	// set limit metrics that allow us to calculate alerts' thresholds
 	asyncSearchDiskUsageLimit.Set(float64(config.MaxSize))
+	asyncSearchConcurrencyLimit.Set(float64(config.Workers))
 
 	go as.startMaintenance()
 
