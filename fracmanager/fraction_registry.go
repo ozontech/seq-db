@@ -248,9 +248,9 @@ func (r *fractionRegistry) EvictRemote(retention time.Duration) []*remoteProxy {
 	return evicted
 }
 
-// PromoteToLocal moves fractions from sealing to local queue when sealing completes.
+// PromoteToSealed moves fractions from sealing to local queue when sealing completes.
 // Maintains strict ordering - younger fractions wait for older ones to seal first.
-func (r *fractionRegistry) PromoteToLocal(active *activeProxy, sealed *frac.Sealed) {
+func (r *fractionRegistry) PromoteToSealed(active *activeProxy, sealed *frac.Sealed) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

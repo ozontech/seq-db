@@ -79,7 +79,7 @@ func (lc *lifecycleManager) seal(active *activeProxy) error {
 	)
 
 	lc.infoCache.Add(sealed.Info())
-	lc.registry.PromoteToLocal(active, sealed)
+	lc.registry.PromoteToSealed(active, sealed)
 	active.proxy.Redirect(sealed)
 	active.instance.Release()
 	return nil
