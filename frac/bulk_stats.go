@@ -4,9 +4,10 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/util"
-	"go.uber.org/zap"
 )
 
 // BulkStatsCollector collects and periodically logs bulk operation statistics
