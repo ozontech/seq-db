@@ -16,11 +16,8 @@ ARG VERSION
 ARG BUILD_TIME
 
 ARG CGO_ENABLED=1
-ARG GOOS=linux
-ARG GOARCH=amd64
 
-RUN CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} \
-    go build -trimpath \
+RUN CGO_ENABLED=${CGO_ENABLED} go build -trimpath \
     -tags 'netgo osusergo' \
     -ldflags "-w -s  \
     -X github.com/ozontech/seq-db/buildinfo.Version=${VERSION}  \
