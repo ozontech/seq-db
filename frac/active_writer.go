@@ -9,17 +9,29 @@ import (
 
 type ActiveWriter struct {
 	docs *FileWriter
-	meta *FileWriter
+	meta MetaWriter
 }
 
-func NewActiveWriter(docsFile, metaFile *os.File, docsOffset, metaOffset int64, skipFsync bool) *ActiveWriter {
+type MetaWriter interface {
+	Write(data []byte, sw *stopwatch.Stopwatch) (int64, error)
+	Stop()
+}
+
+func NewActiveWriter(docsFile, walFile *os.File, docsOffset, walOffset int64, skipFsync bool) *ActiveWriter {
+	return &ActiveWriter{
+		docs: NewFileWriter(docsFile, docsOffset, skipFsync),
+		meta: storage.NewWalWriter(walFile, walOffset, skipFsync),
+	}
+}
+
+func NewActiveWriterLegacy(docsFile, metaFile *os.File, docsOffset, metaOffset int64, skipFsync bool) *ActiveWriter {
 	return &ActiveWriter{
 		docs: NewFileWriter(docsFile, docsOffset, skipFsync),
 		meta: NewFileWriter(metaFile, metaOffset, skipFsync),
 	}
 }
 
-func (a *ActiveWriter) Write(docs, meta []byte, sw *stopwatch.Stopwatch) error {
+func (a *ActiveWriter) Write(docs storage.DocBlock, meta storage.MetaBlock, sw *stopwatch.Stopwatch) error {
 	m := sw.Start("write_docs")
 	offset, err := a.docs.Write(docs, sw)
 	m.Stop()
@@ -28,8 +40,7 @@ func (a *ActiveWriter) Write(docs, meta []byte, sw *stopwatch.Stopwatch) error {
 		return err
 	}
 
-	storage.DocBlock(meta).SetExt1(uint64(len(docs)))
-	storage.DocBlock(meta).SetExt2(uint64(offset))
+	meta.SetDocsOffset(uint64(offset))
 
 	m = sw.Start("write_meta")
 	_, err = a.meta.Write(meta, sw)

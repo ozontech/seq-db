@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ozontech/seq-db/metric/stopwatch"
+	"github.com/ozontech/seq-db/storage"
 )
 
 type writeSyncer interface {
@@ -21,6 +22,9 @@ type writeSyncer interface {
 // is performed, after which all requests receive a response about the successful (or unsuccessful) fsync.
 //
 // This results in one fsync system call for several writers performing a write at approximately the same time.
+//
+// FileWriter always stores data in DocBlock format. If MetaBlock is passed to Write, then it's converted to
+// DocBlock.
 type FileWriter struct {
 	ws       writeSyncer
 	offset   atomic.Int64
@@ -68,6 +72,12 @@ func (fs *FileWriter) syncLoop() {
 
 func (fs *FileWriter) Write(data []byte, sw *stopwatch.Stopwatch) (int64, error) {
 	m := sw.Start("write_duration")
+
+	if storage.IsMetaBlock(data) {
+		// MetaBlock must be converted to DocBock if is written to a legacy WAL meta file (with *.meta suffix)
+		// This may happen if a new version of store has been deployed while a legacy active fraction with *.meta file exists.
+		data = storage.PackMetaBlockToDocBlock(data, nil)
+	}
 
 	dataLen := int64(len(data))
 	offset := fs.offset.Add(dataLen) - dataLen

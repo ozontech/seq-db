@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/metric/stopwatch"
+	"github.com/ozontech/seq-db/storage"
 )
 
 type testWriterSyncer struct {
@@ -261,4 +263,41 @@ func TestSparseWrite(t *testing.T) {
 
 	e = os.Remove(rf.Name())
 	assert.NoError(t, e)
+}
+
+func TestFileWriterConvertsMetaBlockToDocBlock(t *testing.T) {
+	f, err := os.Create(t.TempDir() + "/test_metablock.txt")
+	require.NoError(t, err)
+	defer f.Close()
+
+	fw := NewFileWriter(f, 0, false)
+
+	originalPayload := []byte("test payload for MetaBlock to DocBlock conversion")
+	metaBlock := storage.CompressMetaBlock(originalPayload, nil, 3)
+	metaBlock.SetDocsOffset(12345)
+	metaBlock.SetVersion(1)
+
+	sw := stopwatch.New()
+	offset, err := fw.Write(metaBlock, sw)
+	require.NoError(t, err)
+
+	fw.Stop()
+
+	docBlockSize := storage.DocBlockHeaderLen + metaBlock.Len()
+
+	readBuf := make([]byte, docBlockSize)
+	bytesRead, err := f.ReadAt(readBuf, offset)
+	require.NoError(t, err)
+	require.Equal(t, int(docBlockSize), bytesRead)
+	readBuf = readBuf[:bytesRead]
+
+	docBlock := storage.DocBlock(readBuf)
+
+	assert.Equal(t, storage.CodecZSTD, docBlock.Codec())
+	assert.Equal(t, uint64(len(originalPayload)), docBlock.RawLen())
+	assert.Equal(t, uint64(12345), docBlock.GetExt2())
+
+	decompressed, err := docBlock.DecompressTo(nil)
+	require.NoError(t, err)
+	assert.Equal(t, originalPayload, decompressed)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/pkg/storeapi"
+	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/tracing"
 )
 
@@ -63,6 +64,11 @@ func (g *GrpcV1) doBulk(ctx context.Context, req *storeapi.BulkRequest) error {
 	}
 
 	start := time.Now()
+
+	if !storage.IsMetaBlock(req.Metas) {
+		// We use MetaBlock now for metas everywhere, DocBlock might be sent by legacy proxy service.
+		req.Metas = storage.PackDocBlockToMetaBlock(req.Metas)
+	}
 
 	err := g.fracManager.Append(ctx, req.Docs, req.Metas)
 

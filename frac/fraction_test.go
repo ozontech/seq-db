@@ -1347,7 +1347,7 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	// but if compression/marshalling has changed, expected values can be updated accordingly
 	s.Require().Equal(uint32(5), info.DocsTotal, "doc total doesn't match")
 	// it varies depending on params and docs shuffled
-	s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(300),
+	s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(350),
 		"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
 	s.Require().Equal(uint64(583), info.DocsRaw, "doc raw doesn't match")
 	s.Require().Equal(seq.MID(946731625000000000), info.From, "from doesn't match")
@@ -1355,7 +1355,7 @@ func (s *FractionTestSuite) TestFractionInfo() {
 
 	switch s.fraction.(type) {
 	case *Active:
-		s.Require().True(info.MetaOnDisk >= uint64(250) && info.MetaOnDisk <= uint64(350),
+		s.Require().True(info.MetaOnDisk >= uint64(250) && info.MetaOnDisk <= uint64(400),
 			"meta on disk doesn't match. actual value: %d", info.MetaOnDisk)
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
 	case *Sealed:
