@@ -25,6 +25,7 @@ type activeDataProvider struct {
 
 	blocksOffsets []uint64
 	docsPositions *DocsPositions
+	idsToLids     *ActiveLIDs
 	docsReader    *storage.DocsReader
 
 	idsIndex *activeIDsIndex
@@ -78,7 +79,10 @@ func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	indexes := []activeFetchIndex{{
 		blocksOffsets: dp.blocksOffsets,
 		docsPositions: dp.docsPositions,
+		idsToLids:     dp.idsToLids,
 		docsReader:    dp.docsReader,
+		docsFilter:    dp.docsFilter,
+		fracName:      dp.info.Name(),
 	}}
 
 	for _, fi := range indexes {
@@ -141,18 +145,11 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 }
 
 func (dp *activeDataProvider) FindLIDs(ids []seq.ID) []seq.LID {
-	// TODO: this doesn't work, need to get lids not docpos and then inverse it with inverses
-
-	index := activeFetchIndex{
-		blocksOffsets: dp.blocksOffsets,
-		docsPositions: dp.docsPositions,
-		docsReader:    dp.docsReader,
-	}
-
-	docsPos := index.GetDocPos(ids)
-	res := make([]seq.LID, 0, len(docsPos))
-	for _, docPos := range docsPos {
-		res = append(res, seq.LID(docPos))
+	res := make([]seq.LID, 0, len(ids))
+	for _, id := range ids {
+		if lid, ok := dp.idsToLids.Get(id); ok {
+			res = append(res, lid)
+		}
 	}
 	return res
 }
@@ -201,7 +198,9 @@ func (si *activeSearchIndex) GetTombstones() ([]uint32, error) {
 	// TODO: return []uint32 from docsFilter (???)
 	res := make([]uint32, 0, len(filteredLids))
 	for _, lid := range filteredLids {
-		res = append(res, uint32(lid))
+		if inversed, ok := si.activeIDsIndex.inverser.Inverse(uint32(lid)); ok {
+			res = append(res, uint32(inversed))
+		}
 	}
 
 	return res, nil
@@ -250,7 +249,10 @@ func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint
 type activeFetchIndex struct {
 	blocksOffsets []uint64
 	docsPositions *DocsPositions
+	idsToLids     *ActiveLIDs
 	docsReader    *storage.DocsReader
+	docsFilter    DocsFilter
+	fracName      string
 }
 
 func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
@@ -258,10 +260,37 @@ func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 }
 
 func (di *activeFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
+	// TODO: don't read tombstones twice for search
+	// TODO: optimize all these maps creation and slices traversal
+
 	docsPos := make([]seq.DocPos, len(ids))
 	for i, id := range ids {
 		docsPos[i] = di.docsPositions.GetSync(id)
 	}
+
+	tombstoneLIDs, _ := di.docsFilter.GetFilteredLIDsByFrac(di.fracName) // TODO: handle the error
+	if len(tombstoneLIDs) == 0 {
+		return docsPos
+	}
+
+	allLids := make([]seq.LID, len(ids))
+	for i, id := range ids {
+		if lid, ok := di.idsToLids.Get(id); ok {
+			allLids[i] = lid
+		}
+	}
+
+	filtersLIDsMap := make(map[seq.LID]struct{}, len(tombstoneLIDs))
+	for _, lid := range tombstoneLIDs {
+		filtersLIDsMap[lid] = struct{}{}
+	}
+
+	for i, lid := range allLids {
+		if _, ok := filtersLIDsMap[lid]; ok {
+			docsPos[i] = seq.DocPosNotFound
+		}
+	}
+
 	return docsPos
 }
 

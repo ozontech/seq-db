@@ -46,6 +46,7 @@ type Active struct {
 	TokenList *TokenList
 
 	DocsPositions *DocsPositions
+	IDsToLIDs     *ActiveLIDs // TODO: (???)
 
 	docsFile   *os.File
 	docsReader storage.DocsReader
@@ -87,6 +88,7 @@ func NewActive(
 	f := &Active{
 		TokenList:     NewActiveTokenList(config.IndexWorkers),
 		DocsPositions: NewSyncDocsPositions(),
+		IDsToLIDs:     NewActiveLIDs(),
 		MIDs:          NewIDs(),
 		RIDs:          NewIDs(),
 		DocBlocks:     NewIDs(),
@@ -316,6 +318,7 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 
 		blocksOffsets: f.DocBlocks.GetVals(),
 		docsPositions: f.DocsPositions,
+		idsToLids:     f.IDsToLIDs,
 		docsReader:    &f.docsReader,
 
 		docsFilter: f.docsFilter,

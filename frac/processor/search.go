@@ -209,7 +209,7 @@ func iterateEvalTree(
 		}
 
 		timerEval.Start()
-		lid, has := evalTree.Next() // TODO: here ???
+		lid, has := evalTree.Next()
 		timerEval.Stop()
 
 		if !has {

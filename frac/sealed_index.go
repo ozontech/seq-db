@@ -281,7 +281,7 @@ func (fi *sealedFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 
 func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
 	// TODO: don't read tombstones twice for search
-	// TODO: optimize all these maps creation and slices traversal (???)
+	// TODO: optimize all these maps creation and slices traversal
 
 	allLids := fi.findLIDs(ids)
 	tombstoneLIDs, _ := fi.docsFilter.GetFilteredLIDsByFrac(fi.fracName) // TODO: handle the error
