@@ -62,12 +62,9 @@ func (g *GrpcV1) doBulk(ctx context.Context, req *storeapi.BulkRequest) error {
 		return fmt.Errorf("too many bulk requests: %d > %d", inflightRequests, g.config.Bulk.RequestsLimit)
 	}
 
-	g.bulkData.appendQueue.Inc()
 	start := time.Now()
 
 	err := g.fracManager.Append(ctx, req.Docs, req.Metas)
-
-	g.bulkData.appendQueue.Dec()
 
 	if err != nil {
 		return err
@@ -78,9 +75,6 @@ func (g *GrpcV1) doBulk(ctx context.Context, req *storeapi.BulkRequest) error {
 	metric.BulkDocsTotal.Observe(float64(req.Count))
 	metric.BulkDocBytesTotal.Observe(float64(len(req.Docs)))
 	metric.BulkMetaBytesTotal.Observe(float64(len(req.Metas)))
-
-	g.bulkData.took.Add(uint64(overallDuration.Nanoseconds()))
-	g.bulkData.batches.Inc()
 
 	if g.config.Bulk.LogThreshold != 0 && overallDuration >= g.config.Bulk.LogThreshold {
 		logger.Warn("slow bulk",
