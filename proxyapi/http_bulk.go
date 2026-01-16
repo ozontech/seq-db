@@ -31,25 +31,26 @@ var (
 		Subsystem: "bulk",
 		Name:      "duration_seconds",
 		Buckets:   metric.SecondsBuckets,
+		Help:      "Bulk processing time (full cycle including saving on stores)",
 	})
 	bulkAPIError = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "api_errors_total",
-		Help:      "",
+		Help:      "Number of API errors in bulk requests",
 	})
 	bulkReadDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "read_duration_seconds",
-		Help:      "",
+		Help:      "Time taken to read bulk request body",
 		Buckets:   metric.SecondsBuckets,
 	})
 	largeDocumentsSkipped = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
-		Name:      "large_documents_skipped_total",
-		Help:      "",
+		Name:      "large_docs_skipped_total",
+		Help:      "Number of documents skipped due to exceeding maximum size limit",
 	})
 )
 
