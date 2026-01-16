@@ -107,11 +107,6 @@ func (fm *FracManager) Flags() *StateManager {
 	return fm.lc.flags
 }
 
-// Active returns the currently active fraction
-func (fm *FracManager) Active() frac.Fraction {
-	return fm.lc.registry.Active().proxy
-}
-
 // Append writes documents and metadata to the active fraction
 // Implements retry logic in case of fraction sealing during write
 func (fm *FracManager) Append(ctx context.Context, docs, metas storage.DocBlock) error {
