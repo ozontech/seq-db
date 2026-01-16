@@ -42,9 +42,8 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	fracPath := filepath.Join(tmpDir, "test_fraction")
 	defer test_common.RemoveDir(fracPath)
 
-	activeIndexer := NewActiveIndexer(numIndexWorkers, 1000)
-	activeIndexer.Start()
-	defer activeIndexer.Stop()
+	activeIndexer, stop := NewActiveIndexer(numIndexWorkers, 1000)
+	defer stop()
 
 	active := NewActive(
 		fracPath,

@@ -13,7 +13,6 @@ import (
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/storage"
 )
 
 type Fraction interface {
@@ -22,8 +21,6 @@ type Fraction interface {
 	Contains(mid seq.MID) bool
 	Fetch(context.Context, []seq.ID) ([][]byte, error)
 	Search(context.Context, processor.SearchParams) (*seq.QPR, error)
-	Offload(ctx context.Context, u storage.Uploader) (bool, error)
-	Suicide()
 }
 
 var (

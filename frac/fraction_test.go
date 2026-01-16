@@ -41,6 +41,7 @@ type FractionTestSuite struct {
 	mapping       seq.Mapping
 	tokenizers    map[seq.TokenizerType]tokenizer.Tokenizer
 	activeIndexer *ActiveIndexer
+	stopIndexer   func()
 	sealParams    common.SealParams
 
 	fraction Fraction
@@ -49,12 +50,11 @@ type FractionTestSuite struct {
 }
 
 func (s *FractionTestSuite) SetupSuiteCommon() {
-	s.activeIndexer = NewActiveIndexer(4, 10)
-	s.activeIndexer.Start()
+	s.activeIndexer, s.stopIndexer = NewActiveIndexer(4, 10)
 }
 
 func (s *FractionTestSuite) TearDownSuiteCommon() {
-	s.activeIndexer.Stop()
+	s.stopIndexer()
 }
 
 func (s *FractionTestSuite) SetupTestCommon() {
@@ -96,6 +96,9 @@ func (s *FractionTestSuite) SetupTestCommon() {
 }
 
 func (s *FractionTestSuite) TearDownTestCommon() {
+	if s.fraction != nil {
+		s.fraction = nil
+	}
 	err := os.RemoveAll(s.tmpDir)
 	s.NoError(err, "Failed to remove tmp dir")
 }
@@ -1519,15 +1522,10 @@ func (s *ActiveFractionTestSuite) SetupTest() {
 }
 
 func (s *ActiveFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		active, ok := s.fraction.(*Active)
-		if ok {
-			active.Release()
-		} else {
-			s.Require().Fail("fraction is not of Active type")
-		}
-		s.fraction.Suicide()
-		s.fraction = nil
+	if active, ok := s.fraction.(*Active); ok {
+		active.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Active type")
 	}
 
 	s.TearDownTestCommon()
@@ -1578,17 +1576,11 @@ func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
 }
 
 func (s *ActiveReplayedFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		active, ok := s.fraction.(*Active)
-		if ok {
-			active.Release()
-		} else {
-			s.Require().Fail("fraction is not of Active type")
-		}
-		s.fraction.Suicide()
-		s.fraction = nil
+	if active, ok := s.fraction.(*Active); ok {
+		active.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Active type")
 	}
-
 	s.TearDownTestCommon()
 }
 
@@ -1619,9 +1611,10 @@ func (s *SealedFractionTestSuite) SetupTest() {
 }
 
 func (s *SealedFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		s.fraction.Suicide()
-		s.fraction = nil
+	if sealed, ok := s.fraction.(*Sealed); ok {
+		sealed.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
 	}
 	s.TearDownTestCommon()
 }
@@ -1654,9 +1647,10 @@ func (s *SealedLoadedFractionTestSuite) SetupTest() {
 }
 
 func (s *SealedLoadedFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		s.fraction.Suicide()
-		s.fraction = nil
+	if sealed, ok := s.fraction.(*Sealed); ok {
+		sealed.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
 	}
 	s.TearDownTestCommon()
 }
@@ -1667,7 +1661,7 @@ func (s *SealedLoadedFractionTestSuite) TearDownSuite() {
 
 func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Sealed {
 	sealed := s.newSealed(bulks...)
-	sealed.close("closed")
+	sealed.Release()
 
 	indexCache := &IndexCache{
 		MIDs:       cache.NewCache[[]byte](nil, nil),
@@ -1760,9 +1754,10 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 }
 
 func (s *RemoteFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		s.fraction.Suicide()
-		s.fraction = nil
+	if remote, ok := s.fraction.(*Remote); ok {
+		remote.Suicide()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Remote type")
 	}
 	s.TearDownTestCommon()
 }

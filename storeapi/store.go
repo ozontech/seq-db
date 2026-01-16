@@ -26,7 +26,8 @@ type Store struct {
 	grpcAddr   string
 	grpcServer *grpcServer
 
-	FracManager *fracmanager.FracManager
+	FracManager     *fracmanager.FracManager
+	fracManagerStop func()
 
 	isStopped atomic.Bool
 }
@@ -51,19 +52,19 @@ func NewStore(ctx context.Context, c StoreConfig, s3cli *s3.Client, mappingProvi
 		return nil, err
 	}
 
-	fracManager, err := fracmanager.New(ctx, &c.FracManager, s3cli)
+	fracManager, stop, err := fracmanager.New(ctx, &c.FracManager, s3cli)
 	if err != nil {
 		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
-	fracManager.Start()
 
 	return &Store{
 		Config: c,
 		// We will set grpcAddr later in Start()
-		grpcAddr:    "",
-		grpcServer:  newGRPCServer(c.API, fracManager, mappingProvider),
-		FracManager: fracManager,
-		isStopped:   atomic.Bool{},
+		grpcAddr:        "",
+		grpcServer:      newGRPCServer(c.API, fracManager, mappingProvider),
+		FracManager:     fracManager,
+		fracManagerStop: stop,
+		isStopped:       atomic.Bool{},
 	}, nil
 }
 
@@ -86,8 +87,7 @@ func (s *Store) Stop() {
 	defer cancel()
 
 	s.grpcServer.Stop(ctx)
-
-	s.FracManager.Stop()
+	s.fracManagerStop()
 
 	logger.Info("store stopped")
 }
