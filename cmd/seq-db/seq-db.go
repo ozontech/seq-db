@@ -257,6 +257,7 @@ func startStore(
 			MaintenanceDelay:  0,
 			CacheGCDelay:      0,
 			CacheCleanupDelay: 0,
+			MinSealFracSize:   uint64(cfg.Storage.FracSize) * consts.DefaultMinSealPercent / 100,
 			SealParams: common.SealParams{
 				IDsZstdLevel:           cfg.Compression.SealedZstdCompressionLevel,
 				LIDsZstdLevel:          cfg.Compression.SealedZstdCompressionLevel,

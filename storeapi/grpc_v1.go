@@ -19,7 +19,6 @@ import (
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/util"
 )
 
 type MappingProvider interface {
@@ -73,12 +72,6 @@ func (c *APIConfig) setDefaults() error {
 	return nil
 }
 
-type bulkData struct {
-	appendQueue atomic.Uint64
-	took        atomic.Uint64
-	batches     atomic.Uint64
-}
-
 type searchData struct {
 	searcher *fracmanager.Searcher
 	inflight atomic.Int64
@@ -97,7 +90,6 @@ type GrpcV1 struct {
 	fracManager     *fracmanager.FracManager
 	mappingProvider MappingProvider
 
-	bulkData      bulkData
 	searchData    searchData
 	fetchData     fetchData
 	asyncSearcher *asyncsearcher.AsyncSearcher
@@ -125,48 +117,7 @@ func NewGrpcV1(cfg APIConfig, fracManager *fracmanager.FracManager, mappingProvi
 		),
 	}
 
-	go g.bulkStats()
-
 	return g
-}
-
-func (g *GrpcV1) bulkStats() {
-	for {
-		stats := g.fracManager.Active().Info()
-		if stats.Name() == "" {
-			time.Sleep(time.Second * 5)
-			continue
-		}
-		docs := stats.DocsTotal
-		size := stats.DocsRaw
-		fracName := stats.Name()
-		time.Sleep(time.Second * 5)
-		if g.bulkData.batches.Load() > 0 {
-			stats = g.fracManager.Active().Info()
-			if fracName != stats.Name() {
-				continue
-			}
-			docs = stats.DocsTotal - docs
-			size = stats.DocsRaw - size
-			tookMs := util.DurationToUnit(time.Duration(g.bulkData.took.Load()), "ms")
-			tookPerBatch := tookMs / float64(g.bulkData.batches.Load())
-			tookPerDoc := tookMs / float64(docs)
-			tookPerSize := tookMs / util.SizeToUnit(size, "mb")
-			logger.Info("bulk api stats for 5s",
-				zap.Uint64("batches", g.bulkData.batches.Load()),
-				zap.Uint32("docs", docs),
-				util.ZapUint64AsSizeStr("size", size),
-				util.ZapFloat64WithPrec("took_per_batch_ms", tookPerBatch, 1),
-				util.ZapFloat64WithPrec("took_per_doc_ms", tookPerDoc, 4),
-				util.ZapFloat64WithPrec("took_per_size_ms", tookPerSize, 1),
-				zap.Uint64("append_queue", g.bulkData.appendQueue.Load()),
-			)
-			g.bulkData.batches.Store(0)
-			g.bulkData.took.Store(0)
-		} else {
-			logger.Info("bulk api stats for 5s: no batches have been written")
-		}
-	}
 }
 
 func tracerSpanToExplainEntry(span *querytracer.Span) *storeapi.ExplainEntry {

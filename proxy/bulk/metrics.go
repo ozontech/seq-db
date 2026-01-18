@@ -9,8 +9,8 @@ var (
 	inflightBulks = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
-		Name:      "in_flight_queries_total",
-		Help:      "",
+		Name:      "in_flight",
+		Help:      "Number of bulks that are being processed by ingestor currently",
 	})
 
 	rateLimitedTotal = promauto.NewCounter(prometheus.CounterOpts{
@@ -23,7 +23,7 @@ var (
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "docs_written",
-		Help:      "",
+		Help:      "Number of successfully stored docs",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
 	})
 )
