@@ -10,7 +10,7 @@ import (
 type IndexCache struct {
 	Registry   *cache.Cache[[]byte]
 	MIDs       *cache.Cache[[]byte]
-	RIDs       *cache.Cache[[]uint64]
+	RIDs       *cache.Cache[seqids.BlockRIDs]
 	Params     *cache.Cache[seqids.BlockParams]
 	Tokens     *cache.Cache[*token.Block]
 	TokenTable *cache.Cache[token.Table]

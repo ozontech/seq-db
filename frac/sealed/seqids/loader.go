@@ -30,7 +30,7 @@ type Loader struct {
 	reader      *storage.IndexReader
 	table       *Table
 	cacheMIDs   *cache.Cache[[]byte]
-	cacheRIDs   *cache.Cache[[]uint64]
+	cacheRIDs   *cache.Cache[BlockRIDs]
 	cacheParams *cache.Cache[BlockParams]
 	fracVersion config.BinaryDataVersion
 }
@@ -57,13 +57,15 @@ func (l *Loader) GetMIDsBlock(index uint32, buf []uint64) (BlockMIDs, error) {
 }
 
 func (l *Loader) GetRIDsBlock(index uint32, buf []uint64) (BlockRIDs, error) {
-	data, err := l.cacheRIDs.GetWithError(index, func() ([]uint64, int, error) {
+	block, err := l.cacheRIDs.GetWithError(index, func() (BlockRIDs, int, error) {
 		data, _, err := l.reader.ReadIndexBlock(l.ridBlockIndex(index), nil)
 		if err != nil {
-			return nil, 0, err
+			return BlockRIDs{}, 0, err
 		}
 
-		length := len(data) / int(unsafe.Sizeof(uint64(0)))
+		ui64 := int(unsafe.Sizeof(uint64(0)))
+
+		length := len(data) / ui64
 		cached := make([]uint64, length)
 
 		block := BlockRIDs{
@@ -72,28 +74,20 @@ func (l *Loader) GetRIDsBlock(index uint32, buf []uint64) (BlockRIDs, error) {
 		}
 
 		err = block.Unpack(data)
-		// fmt.Printf("len(block.Values): %v\n", len(block.Values))
-		return block.Values, cap(block.Values), err
+		return block, cap(block.Values) * ui64, err
 	})
 
 	if err != nil {
 		return BlockRIDs{}, err
 	}
 
-	if len(data) == 0 {
+	if len(block.Values) == 0 {
 		err = errors.New("empty block")
 	}
 
-	// fmt.Printf("[before] len(buf): %v\n", len(buf))
-	// fmt.Printf("[before] cap(buf): %v\n", cap(buf))
-
-	buf = buf[:0] // Why?
-	for i := range len(data) {
-		buf = append(buf, data[i])
+	for i := range len(block.Values) {
+		buf = append(buf, block.Values[i])
 	}
-
-	// fmt.Printf("[after] len(buf): %v\n", len(buf))
-	// fmt.Printf("[after] cap(buf): %v\n", cap(buf))
 
 	return BlockRIDs{
 		fracVersion: l.fracVersion,
