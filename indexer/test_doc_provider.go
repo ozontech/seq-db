@@ -2,13 +2,8 @@ package indexer
 
 import (
 	"encoding/binary"
-	"math/rand"
 	"strings"
-	"time"
 
-	insaneJSON "github.com/ozontech/insane-json"
-
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/tokenizer"
@@ -45,14 +40,8 @@ func (dp *TestDocProvider) appendMeta(docLen int, id seq.ID, tokens []tokenizer.
 	dp.Metas = append(dp.Metas, dp.buf...)
 }
 
-func (dp *TestDocProvider) Append(doc []byte, docRoot *insaneJSON.Root, id seq.ID, tokensStr ...string) {
+func (dp *TestDocProvider) Append(doc []byte, id seq.ID, tokensStr ...string) {
 	tokens := stringsToTokens(tokensStr...)
-	if id.MID == 0 {
-		// this case runs only in the integration tests
-		t, _ := extractDocTimeForTest(docRoot)
-		id = seq.NewID(t, uint64(rand.Int63()))
-	}
-
 	dp.appendMeta(len(doc), id, tokens)
 	dp.appendDoc(doc)
 }
@@ -84,34 +73,6 @@ func encodeMeta(buf []byte, tokens []tokenizer.MetaToken, id seq.ID, size int) [
 		Tokens: metaTokens,
 	}
 	return md.MarshalBinaryTo(buf)
-}
-
-// extractDocTimeForTest extracts timestamp from doc
-// It searches by one of supported field name and parses by supported formats
-// If no field was found or not parsable it returns time.Now()
-func extractDocTimeForTest(docRoot *insaneJSON.Root) (time.Time, []string) {
-	var t time.Time
-	var f []string
-top:
-	for _, field := range consts.TimeFields {
-		timeNode := docRoot.Dig(field...)
-		if timeNode == nil {
-			continue
-		}
-		timeVal := timeNode.AsString()
-		for _, format := range consts.TimeFormats {
-			if value, err := time.Parse(format, timeVal); err == nil {
-				t = value
-				f = field
-				break top
-			}
-		}
-	}
-
-	if t.IsZero() {
-		t = time.Now()
-	}
-	return t, f
 }
 
 func stringsToTokens(tokens ...string) []tokenizer.MetaToken {

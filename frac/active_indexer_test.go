@@ -76,9 +76,8 @@ func getTestProcessor() *indexer.Processor {
 
 func BenchmarkIndexer(b *testing.B) {
 	logger.SetLevel(zapcore.FatalLevel)
-	idx := NewActiveIndexer(8, 8)
-	idx.Start()
-	defer idx.Stop()
+	idx, stop := NewActiveIndexer(8, 8)
+	defer stop()
 
 	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
 	readers := splitLogsToBulks(allLogs, 1000)
