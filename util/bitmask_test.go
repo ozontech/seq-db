@@ -3,14 +3,12 @@ package util
 import (
 	"math/rand"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBitmask(t *testing.T) {
 	const maxSize = 1000
-	rand.Seed(time.Now().UnixMicro())
 	for k := 0; k < maxSize; k++ {
 		l := rand.Intn(maxSize) + 1
 		m := make([]bool, l)
@@ -83,7 +81,6 @@ func TestSimpleBitmask(t *testing.T) {
 
 func BenchmarkBitmask(b *testing.B) {
 	const size = 10000
-	rand.Seed(time.Now().UnixMicro())
 
 	b.StopTimer()
 	b.ResetTimer()

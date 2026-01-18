@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"math/rand"
 	"net"
 	_ "net/http/pprof"
 	"os"
@@ -53,7 +52,6 @@ func main() {
 	kingpin.Version(buildinfo.Version)
 	kingpin.Parse()
 
-	rand.Seed(time.Now().UnixNano())
 	runtime.SetMutexProfileFraction(5)
 	encoding.RegisterCodec(grpcutil.VTProtoCodec{})
 

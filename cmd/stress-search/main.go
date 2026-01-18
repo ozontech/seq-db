@@ -40,8 +40,6 @@ const (
 func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	rand.Seed(time.Now().UnixNano())
-
 	endpoint := flag.String("endpoint", "127.0.0.1", "ip address : port")
 	workers := flag.Int("workers", 1, "")
 	mode := flag.String("mode", "search", "search/fetch/bulk")

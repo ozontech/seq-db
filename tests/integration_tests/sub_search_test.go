@@ -86,8 +86,6 @@ func (s *IntegrationTestSuite) TestSubSearch() {
 		s.T().Skip("no need to run in", s.Config.Name, "env")
 	}
 
-	rand.Seed(time.Now().UnixNano())
-
 	env := setup.NewTestingEnv(s.Config)
 	defer env.StopAll()
 
