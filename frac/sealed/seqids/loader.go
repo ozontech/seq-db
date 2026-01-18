@@ -2,6 +2,7 @@ package seqids
 
 import (
 	"errors"
+	"unsafe"
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
@@ -29,7 +30,7 @@ type Loader struct {
 	reader      *storage.IndexReader
 	table       *Table
 	cacheMIDs   *cache.Cache[[]byte]
-	cacheRIDs   *cache.Cache[[]byte]
+	cacheRIDs   *cache.Cache[[]uint64]
 	cacheParams *cache.Cache[BlockParams]
 	fracVersion config.BinaryDataVersion
 }
@@ -56,27 +57,48 @@ func (l *Loader) GetMIDsBlock(index uint32, buf []uint64) (BlockMIDs, error) {
 }
 
 func (l *Loader) GetRIDsBlock(index uint32, buf []uint64) (BlockRIDs, error) {
-	// load binary from index
-	data, err := l.cacheRIDs.GetWithError(index, func() ([]byte, int, error) {
+	data, err := l.cacheRIDs.GetWithError(index, func() ([]uint64, int, error) {
 		data, _, err := l.reader.ReadIndexBlock(l.ridBlockIndex(index), nil)
-		return data, cap(data), err
+		if err != nil {
+			return nil, 0, err
+		}
+
+		length := len(data) / int(unsafe.Sizeof(uint64(0)))
+		cached := make([]uint64, length)
+
+		block := BlockRIDs{
+			fracVersion: l.fracVersion,
+			Values:      cached,
+		}
+
+		err = block.Unpack(data)
+		// fmt.Printf("len(block.Values): %v\n", len(block.Values))
+		return block.Values, cap(block.Values), err
 	})
-	// check errors
-	if err == nil && len(data) == 0 {
-		err = errors.New("empty block")
-	}
+
 	if err != nil {
 		return BlockRIDs{}, err
 	}
-	// unpack
-	block := BlockRIDs{
+
+	if len(data) == 0 {
+		err = errors.New("empty block")
+	}
+
+	// fmt.Printf("[before] len(buf): %v\n", len(buf))
+	// fmt.Printf("[before] cap(buf): %v\n", cap(buf))
+
+	buf = buf[:0] // Why?
+	for i := range len(data) {
+		buf = append(buf, data[i])
+	}
+
+	// fmt.Printf("[after] len(buf): %v\n", len(buf))
+	// fmt.Printf("[after] cap(buf): %v\n", cap(buf))
+
+	return BlockRIDs{
 		fracVersion: l.fracVersion,
 		Values:      buf,
-	}
-	if err := block.Unpack(data); err != nil {
-		return BlockRIDs{}, err
-	}
-	return block, nil
+	}, nil
 }
 
 func (l *Loader) GetParamsBlock(index uint32) (BlockParams, error) {

@@ -334,7 +334,7 @@ func seal(active *Active) (*Sealed, error) {
 	}
 	indexCache := &IndexCache{
 		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[[]byte](nil, nil),
+		RIDs:       cache.NewCache[[]uint64](nil, nil),
 		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
 		LIDs:       cache.NewCache[*lids.Block](nil, nil),
 		Tokens:     cache.NewCache[*token.Block](nil, nil),
