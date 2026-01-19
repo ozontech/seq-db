@@ -9,7 +9,9 @@ on:
     branches: [ main ]
 
 permissions:
+  issues: write
   contents: write
+  pull-requests: write
 
 jobs:
   ci-continuous-benchmarks:
