@@ -55,9 +55,10 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	)
 
 	mapping := seq.Mapping{
-		"service": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
-		"message": seq.NewSingleType(seq.TokenizerTypeText, "", 100),
-		"level":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"service":  seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"message":  seq.NewSingleType(seq.TokenizerTypeText, "", 100),
+		"level":    seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"trace_id": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
 	}
 	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(1024, false, true, 8192),
@@ -160,7 +161,7 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 
 				var query string
 				var filter queryFilter
-				random := rand.IntN(3)
+				random := rand.IntN(7)
 				switch random {
 				case 0:
 					query = "message:request"
@@ -176,6 +177,26 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 					query = "level:2"
 					filter = func(doc *testDoc) bool {
 						return doc.level == 2
+					}
+				case 3:
+					query = "trace_id:trace-1999"
+					filter = func(doc *testDoc) bool {
+						return doc.traceId == "trace-1999"
+					}
+				case 4:
+					query = "trace_id:trace-500"
+					filter = func(doc *testDoc) bool {
+						return doc.traceId == "trace-500"
+					}
+				case 5:
+					query = "trace_id:trace-4444"
+					filter = func(doc *testDoc) bool {
+						return doc.traceId == "trace-4444"
+					}
+				case 6:
+					query = "service:gateway AND level:3"
+					filter = func(doc *testDoc) bool {
+						return doc.service == "gateway" && doc.level == 3
 					}
 				}
 
@@ -212,7 +233,7 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 				var expectedDocs []string
 				for i := len(docs) - 1; i >= 0 && len(expectedDocs) < searchParams.Limit; i-- {
 					if (docs[i].timestamp.Before(queryTime) || docs[i].timestamp.Equal(queryTime)) && filter(&docs[i]) {
-						expectedDocs = append(expectedDocs, docs[i].doc)
+						expectedDocs = append(expectedDocs, docs[i].json)
 					}
 				}
 
@@ -230,15 +251,16 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 }
 
 type testDoc = struct {
-	doc       string
+	json      string
 	message   string
 	service   string
 	level     int
+	traceId   string
 	timestamp time.Time
 }
 
 func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.Time, time.Time) {
-	services := []string{"gateway", "proxy", "scheduler"}
+	services := []string{"gateway", "proxy", "scheduler", "database", "bus"}
 	messages := []string{
 		"request started", "request completed", "processing timed out",
 		"processing data", "processing failed", "processing retry",
@@ -254,19 +276,21 @@ func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.T
 		message := messages[rand.IntN(len(messages))]
 		level := rand.IntN(6)
 		timestamp := fromTime.Add(time.Duration(i) * time.Millisecond)
+		traceId := fmt.Sprintf("trace-%d", i%5000)
 		if i == numMessages-1 {
 			toTime = timestamp
 		}
 
-		doc := fmt.Sprintf(`{"timestamp":%q,"service":%q,"message":%q,"level":"%d"}`,
-			timestamp.Format(time.RFC3339Nano), service, message, level)
+		json := fmt.Sprintf(`{"timestamp":%q,"service":%q,"message":%q,"trace_id": %q,"level":"%d"}`,
+			timestamp.Format(time.RFC3339Nano), service, message, traceId, level)
 
 		docs = append(docs, testDoc{
-			doc:       doc,
+			json:      json,
 			timestamp: timestamp,
 			message:   message,
 			service:   service,
 			level:     level,
+			traceId:   traceId,
 		})
 	}
 
@@ -279,7 +303,7 @@ func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.T
 
 		bulk := make([]string, end-i)
 		for j := i; j < end; j++ {
-			bulk[j-i] = docs[j].doc
+			bulk[j-i] = docs[j].json
 		}
 
 		bulks = append(bulks, bulk)
