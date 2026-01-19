@@ -160,7 +160,7 @@ var (
 		Subsystem: "export",
 		Name:      "size_bytes",
 		Help:      "Size of exported data by protocol in bytes",
-		Buckets:   prometheus.ExponentialBuckets(1, 3, 20),
+		Buckets:   prometheus.ExponentialBuckets(10, 3, 20),
 	}, []string{"protocol"})
 	CurrentExportersCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_ingestor",

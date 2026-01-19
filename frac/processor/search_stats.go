@@ -46,7 +46,7 @@ var (
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
 		Name:      "hits",
-		Buckets:   prometheus.ExponentialBuckets(1, 4, 18),
+		Buckets:   prometheus.ExponentialBuckets(1, 5, 20),
 		Help:      "Number of document hits per search",
 	})
 )
