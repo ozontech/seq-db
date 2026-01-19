@@ -86,21 +86,21 @@ var (
 		Subsystem: "fetch",
 		Name:      "docs",
 		Help:      "Number of documents returned per fetch request",
-		Buckets:   prometheus.ExponentialBuckets(1, 4, 32),
+		Buckets:   prometheus.ExponentialBuckets(1, 4, 18),
 	})
 	FetchDocsNotFound = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "fetch",
 		Name:      "docs_not_found",
 		Help:      "Number of documents not found per fetch request",
-		Buckets:   prometheus.ExponentialBuckets(1, 4, 32),
+		Buckets:   prometheus.ExponentialBuckets(1, 4, 18),
 	})
 	FetchBytesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "fetch",
 		Name:      "bytes",
 		Help:      "Total size of data in bytes returned per fetch request",
-		Buckets:   prometheus.ExponentialBuckets(256, 4, 32),
+		Buckets:   prometheus.ExponentialBuckets(256, 4, 20),
 	})
 
 	StoreReady = promauto.NewGauge(prometheus.GaugeOpts{
