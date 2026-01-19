@@ -13,6 +13,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/tracing"
@@ -121,5 +123,37 @@ func PassMetadataUnaryClientInterceptor() grpc.UnaryClientInterceptor {
 			ctx = metadata.NewOutgoingContext(ctx, md)
 		}
 		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+// StoreProtocolHeaderUnaryServerInterceptor sets the store protocol version header for all unary responses.
+func StoreProtocolHeaderUnaryServerInterceptor(protocolVersion config.StoreProtocolVersion) grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context, req interface{}, info *grpc.UnaryServerInfo,
+		h grpc.UnaryHandler,
+	) (interface{}, error) {
+		md := metadata.New(map[string]string{
+			consts.StoreProtocolVersionHeader: protocolVersion.String(),
+		})
+		if err := grpc.SetHeader(ctx, md); err != nil {
+			logger.Error("failed to set store protocol version header", zap.Error(err))
+		}
+		return h(ctx, req)
+	}
+}
+
+// StoreProtocolHeaderStreamServerInterceptor sets the store protocol version header for all streaming responses.
+func StoreProtocolHeaderStreamServerInterceptor(protocolVersion config.StoreProtocolVersion) grpc.StreamServerInterceptor {
+	return func(
+		srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo,
+		h grpc.StreamHandler,
+	) error {
+		md := metadata.New(map[string]string{
+			consts.StoreProtocolVersionHeader: protocolVersion.String(),
+		})
+		if err := ss.SendHeader(md); err != nil {
+			logger.Error("failed to send protocol version header in stream", zap.Error(err))
+		}
+		return h(srv, ss)
 	}
 }

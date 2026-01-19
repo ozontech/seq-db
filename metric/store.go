@@ -38,14 +38,14 @@ var (
 		Namespace: "seq_db_store",
 		Subsystem: "bulk",
 		Name:      "meta_bytes",
-		Help:      "Byte size of metadata in bulk requests in bytes",
+		Help:      "Size of metadata in bulk requests in bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 16),
 	})
 
 	SearchInFlightQueriesTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
-		Name:      "in_flight_queries",
+		Name:      "in_flight",
 		Help:      "Current number of search requests being processed",
 	})
 	RejectedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -71,7 +71,7 @@ var (
 	FetchInFlightQueriesTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "fetch",
-		Name:      "in_flight_queries",
+		Name:      "in_flight",
 		Help:      "Current number of fetch requests being processed",
 	})
 	FetchDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{

@@ -9,7 +9,7 @@ var (
 	inflightBulks = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
-		Name:      "in_flight_queries",
+		Name:      "in_flight",
 		Help:      "Number of bulks that are being processed by ingestor currently",
 	})
 

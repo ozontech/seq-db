@@ -17,7 +17,7 @@ func getTime(s string) time.Time {
 }
 
 func getMID(s string) MID {
-	return MID(getTime(s).UnixMilli())
+	return MillisToMID(uint64(getTime(s).UnixMilli()))
 }
 
 func TestMIDsDistribution(t *testing.T) {

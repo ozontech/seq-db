@@ -42,6 +42,13 @@ const (
 	maxRetention = 30 * 24 * time.Hour // 30 days
 )
 
+type infoVersion uint8
+
+const (
+	infoVersion1 infoVersion = iota + 1 // MIDs stored in milliseconds
+	infoVersion2                        // MIDs stored in nanoseconds
+)
+
 var (
 	asyncSearchActiveSearches = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
@@ -145,6 +152,8 @@ type fracSearchState struct {
 }
 
 type asyncSearchInfo struct {
+	Version infoVersion
+
 	// Finished is true if there are no fracs waiting to be processed.
 	//
 	// An async search request is considered complete only when all fracs are processed,
@@ -177,6 +186,7 @@ func newAsyncSearchInfo(r AsyncSearchRequest, list fracmanager.List) asyncSearch
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return asyncSearchInfo{
+		Version:    infoVersion2,
 		Finished:   false,
 		Error:      "",
 		CanceledAt: time.Time{},
@@ -579,6 +589,15 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 		info := newAsyncSearchInfo(AsyncSearchRequest{}, nil)
 		if err := json.Unmarshal(b, &info); err != nil {
 			return fmt.Errorf("malformed async search info %q: %s", name, err)
+		}
+
+		if info.Version == 0 {
+			info.Version = infoVersion1
+		}
+		if info.Version == infoVersion1 {
+			info.Request.Params.From = seq.MillisToMID(uint64(info.Request.Params.From))
+			info.Request.Params.To = seq.MillisToMID(uint64(info.Request.Params.To))
+			info.Version = infoVersion2
 		}
 
 		info.merged.Store(areQPRsMerged[requestID])

@@ -28,10 +28,10 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
 		Help:      "Number of nodes in search query tree per search",
 	})
-	searchSourcesTotal = promauto.NewHistogram(prometheus.HistogramOpts{
+	lidsLoadedTotal = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: metricsNamespace,
 		Subsystem: metricsSubsystem,
-		Name:      "sources",
+		Name:      "lids_loaded",
 		Buckets:   prometheus.ExponentialBuckets(1, 4, 20),
 		Help:      "Number of LIDs accessed per search",
 	})
@@ -52,12 +52,12 @@ var (
 )
 
 type searchStats struct {
-	LeavesTotal   int
-	NodesTotal    int
-	SourcesTotal  int
-	HitsTotal     int
-	AggNodesTotal int
-	TreeDuration  time.Duration
+	LeavesTotal     int
+	NodesTotal      int
+	LIDsLoadedTotal int
+	HitsTotal       int
+	AggNodesTotal   int
+	TreeDuration    time.Duration
 }
 
 func (s *searchStats) String() string {
@@ -66,13 +66,13 @@ func (s *searchStats) String() string {
 }
 
 func (s *searchStats) AddLIDsCount(v int) {
-	s.SourcesTotal += v
+	s.LIDsLoadedTotal += v
 }
 
 func (s *searchStats) UpdateMetrics() {
 	searchLeavesTotal.Observe(float64(s.LeavesTotal))
 	searchNodesTotal.Observe(float64(s.NodesTotal))
-	searchSourcesTotal.Observe(float64(s.SourcesTotal))
+	lidsLoadedTotal.Observe(float64(s.LIDsLoadedTotal))
 	searchAggNodesTotal.Observe(float64(s.AggNodesTotal))
 	searchHitsTotal.Observe(float64(s.HitsTotal))
 }

@@ -41,6 +41,7 @@ type FractionTestSuite struct {
 	mapping       seq.Mapping
 	tokenizers    map[seq.TokenizerType]tokenizer.Tokenizer
 	activeIndexer *ActiveIndexer
+	stopIndexer   func()
 	sealParams    common.SealParams
 
 	fraction Fraction
@@ -49,12 +50,11 @@ type FractionTestSuite struct {
 }
 
 func (s *FractionTestSuite) SetupSuiteCommon() {
-	s.activeIndexer = NewActiveIndexer(4, 10)
-	s.activeIndexer.Start()
+	s.activeIndexer, s.stopIndexer = NewActiveIndexer(4, 10)
 }
 
 func (s *FractionTestSuite) TearDownSuiteCommon() {
-	s.activeIndexer.Stop()
+	s.stopIndexer()
 }
 
 func (s *FractionTestSuite) SetupTestCommon() {
@@ -96,6 +96,9 @@ func (s *FractionTestSuite) SetupTestCommon() {
 }
 
 func (s *FractionTestSuite) TearDownTestCommon() {
+	if s.fraction != nil {
+		s.fraction = nil
+	}
 	err := os.RemoveAll(s.tmpDir)
 	s.NoError(err, "Failed to remove tmp dir")
 }
@@ -455,6 +458,36 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 
 	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 0, 10, []int{5, 4, 3})
 	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 3, 5, []int{5, 4, 3})
+}
+
+// TestSearchFromToNanoseconds tests if SearchParams "from" and "to" params can be specified up to nanoseconds since they are of seq.MID type.
+// However, seq-db API doesn't support searching with queries with "from" and "to" specified in nanos. Only millis are supported.
+func (s *FractionTestSuite) TestSearchFromToNanoseconds() {
+	docs := []string{
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000000000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:00.000000001Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:00.000000002Z","message":"bad","level":"3","trace_id":"0","service":"2"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:00.000000003Z","message":"good","level":"4","trace_id":"1","service":"0"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:00.000000004Z","message":"bad","level":"5","trace_id":"1","service":"1"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:00.000000005Z","message":"good","level":"6","trace_id":"1","service":"2"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:00.000000006Z","message":"bad","level":"7","trace_id":"2","service":"0"}`,
+		/*7*/ `{"timestamp":"2000-01-01T13:00:00.000000007Z","message":"good","level":"8","trace_id":"2","service":"1"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	assertSearch := func(query string, fromOffset, toOffset int, expectedIndexes []int) {
+		s.AssertSearch(s.query(
+			query,
+			withFrom(fmt.Sprintf("2000-01-01T13:00:00.000000%03dZ", fromOffset)),
+			withTo(fmt.Sprintf("2000-01-01T13:00:00.000000%03dZ", toOffset))),
+			docs, expectedIndexes)
+	}
+
+	assertSearch(`message:good`, 0, 7, []int{7, 5, 3, 1})
+	assertSearch(`message:bad`, 0, 7, []int{6, 4, 2, 0})
+	assertSearch(`message:good`, 0, 6, []int{5, 3, 1})
+	assertSearch(`message:bad`, 1, 7, []int{6, 4, 2})
 }
 
 func (s *FractionTestSuite) TestSearchWithLimit() {
@@ -1026,6 +1059,112 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 	s.AssertSearch(s.query("level:5", withLimit(100)), docs, level5Indexes[:100])
 }
 
+func (s *FractionTestSuite) TestIntersectingNanoseconds() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000000000Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000001Z","message":"good","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000002Z","message":"ok","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000003Z","message":"err","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000004Z","message":"success","level":"3"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001000000Z","message":"err","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001000001Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001000002Z","message":"good","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002000000Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002000000Z","message":"err","level":"1"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	s.Require().Equal(uint64(946731600000000000), uint64(s.fraction.Info().From))
+	s.Require().Equal(uint64(946731600002000000), uint64(s.fraction.Info().To))
+
+	s.Require().True(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T12:59:59.000000000Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000000000Z"))),
+		"must intersect at info.From")
+	// 1 ns before the fraction range. Should not overlap, since MID distribution is not built for fractions with short lifetime,
+	// and it only covers the last 24h from now
+	s.Require().False(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T12:59:59.000000000Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T12:59:59.999999999Z"))),
+		"must not overlap (outside of range)")
+	// overlaps at the only point at info.To
+	s.Require().True(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.002000000Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.999999999Z"))),
+		"must intersect at info.To")
+	s.Require().False(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.002000001Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.999999999Z"))),
+		"must not intersect (1 ns outside of range)")
+	s.Require().True(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T12:59:59.999999999Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000000001Z"))),
+		"must intersect due to overlapping")
+	s.Require().True(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.001000000Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.999999999Z"))),
+		"must intersect due to overlapping")
+
+	// double check for seq.MID built from raw nanoseconds
+	s.Require().True(s.fraction.IsIntersecting(seq.MID(946731500000000000), seq.MID(946731600000000000)))
+	s.Require().True(s.fraction.IsIntersecting(seq.MID(946731600002000000), seq.MID(946731699999999999)))
+}
+
+func (s *FractionTestSuite) TestContainsWithMIDDistribution() {
+	now := time.Now().Truncate(time.Minute)
+	docs := []string{
+		fmt.Sprintf(`{"timestamp":%q,"message":"apple juice"}`, now.Add(-60*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"orange juice"}`, now.Add(-61*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"cider"}`, now.Add(-65*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"wine"}`, now.Add(-123*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"cola"}`, now.Add(-365*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"cola"}`, now.Add(-30*time.Hour).Format(time.RFC3339Nano)),
+	}
+
+	s.insertDocuments(docs)
+
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-60 * time.Minute))))
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-61 * time.Minute))))
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-123 * time.Minute))))
+	// also true, MID distribution bucket is 1 minute
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-60 * time.Minute).Add(-30 * time.Second))))
+	// contains=true: outside MID distribution but within from-to range
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-27 * time.Hour))))
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-30 * time.Hour))))
+	// contains=false: outside MID distribution AND outside from-to range
+	s.Require().False(s.fraction.Contains(seq.TimeToMID(now.Add(-30 * time.Hour).Add(-1 * time.Minute))))
+}
+
+func (s *FractionTestSuite) TestContainsNanoseconds() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000000000Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000001Z","message":"good","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000004Z","message":"success","level":"3"}`,
+		`{"timestamp":"2000-01-01T13:10:00.000000000Z","message":"err","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:20:00.000000001Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:30:00.000000002Z","message":"good","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:40:00.000000001Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:50:00.000000002Z","message":"err","level":"1"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000000000Z"))), "frac must contain first doc")
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000000001Z"))), "frac must contain second doc")
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:10:00.000000000Z"))), "frac must contain third doc")
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:50:00.000000002Z"))), "frac must contain last doc")
+
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:30:00.000000002Z"))), "frac must contain sixth doc")
+	// round doc nano to milli, still Contains returns true
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:30:00.000000000Z"))), "frac must contain sixth doc (rounded to milli)")
+
+	// still Contains returns true even though the timestamp is 5 minute far from nearest doc
+	// MID distribution only covers the last 24h, so Contains return true here
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:15:00.000000000Z"))))
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:25:00.000000000Z"))))
+}
+
 func (s *FractionTestSuite) TestMIDDistribution() {
 	now := time.Now().Truncate(time.Minute)
 	docs := []string{
@@ -1073,8 +1212,8 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(300),
 		"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
 	s.Require().Equal(uint64(583), info.DocsRaw, "doc raw doesn't match")
-	s.Require().Equal(seq.MID(946731625000), info.From, "from doesn't match")
-	s.Require().Equal(seq.MID(946731654000), info.To, "to doesn't match")
+	s.Require().Equal(seq.MID(946731625000000000), info.From, "from doesn't match")
+	s.Require().Equal(seq.MID(946731654000000000), info.To, "to doesn't match")
 
 	switch s.fraction.(type) {
 	case *Active:
@@ -1084,7 +1223,7 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	case *Sealed:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
 		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1600),
-			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
+			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	case *Remote:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
 		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1500),
@@ -1117,7 +1256,7 @@ func (s *FractionTestSuite) query(queryString string, options ...searchOption) *
 
 func withFrom(from string) searchOption {
 	return func(p *processor.SearchParams) error {
-		t, err := time.Parse(time.RFC3339, from)
+		t, err := time.Parse(time.RFC3339Nano, from)
 		if err != nil {
 			return err
 		}
@@ -1128,7 +1267,7 @@ func withFrom(from string) searchOption {
 
 func withTo(to string) searchOption {
 	return func(p *processor.SearchParams) error {
-		t, err := time.Parse(time.RFC3339, to)
+		t, err := time.Parse(time.RFC3339Nano, to)
 		if err != nil {
 			return err
 		}
@@ -1173,6 +1312,14 @@ func withAggQuery(aggQuery processor.AggQuery) searchOption {
 		sp.AggQ = append(sp.AggQ, aggQuery)
 		return nil
 	}
+}
+
+func mustParseTime(timeStr string) time.Time {
+	t, err := time.Parse(time.RFC3339Nano, timeStr)
+	if err != nil {
+		panic(fmt.Sprintf("could not parse timestamp %s", timeStr))
+	}
+	return t
 }
 
 func (s *FractionTestSuite) AssertSearch(queryObject interface{}, originalDocs []string, expectedIndexes []int) {
@@ -1375,15 +1522,10 @@ func (s *ActiveFractionTestSuite) SetupTest() {
 }
 
 func (s *ActiveFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		active, ok := s.fraction.(*Active)
-		if ok {
-			active.Release()
-		} else {
-			s.Require().Fail("fraction is not of Active type")
-		}
-		s.fraction.Suicide()
-		s.fraction = nil
+	if active, ok := s.fraction.(*Active); ok {
+		active.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Active type")
 	}
 
 	s.TearDownTestCommon()
@@ -1434,17 +1576,11 @@ func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
 }
 
 func (s *ActiveReplayedFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		active, ok := s.fraction.(*Active)
-		if ok {
-			active.Release()
-		} else {
-			s.Require().Fail("fraction is not of Active type")
-		}
-		s.fraction.Suicide()
-		s.fraction = nil
+	if active, ok := s.fraction.(*Active); ok {
+		active.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Active type")
 	}
-
 	s.TearDownTestCommon()
 }
 
@@ -1475,9 +1611,10 @@ func (s *SealedFractionTestSuite) SetupTest() {
 }
 
 func (s *SealedFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		s.fraction.Suicide()
-		s.fraction = nil
+	if sealed, ok := s.fraction.(*Sealed); ok {
+		sealed.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
 	}
 	s.TearDownTestCommon()
 }
@@ -1510,9 +1647,10 @@ func (s *SealedLoadedFractionTestSuite) SetupTest() {
 }
 
 func (s *SealedLoadedFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		s.fraction.Suicide()
-		s.fraction = nil
+	if sealed, ok := s.fraction.(*Sealed); ok {
+		sealed.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
 	}
 	s.TearDownTestCommon()
 }
@@ -1523,7 +1661,7 @@ func (s *SealedLoadedFractionTestSuite) TearDownSuite() {
 
 func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Sealed {
 	sealed := s.newSealed(bulks...)
-	sealed.close("closed")
+	sealed.Release()
 
 	indexCache := &IndexCache{
 		MIDs:       cache.NewCache[[]byte](nil, nil),
@@ -1616,9 +1754,10 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 }
 
 func (s *RemoteFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		s.fraction.Suicide()
-		s.fraction = nil
+	if remote, ok := s.fraction.(*Remote); ok {
+		remote.Suicide()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Remote type")
 	}
 	s.TearDownTestCommon()
 }

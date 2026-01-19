@@ -49,7 +49,7 @@ func (l *Loader) GetMIDsBlock(index uint32, buf []uint64) (BlockMIDs, error) {
 	}
 	// unpack
 	block := BlockMIDs{Values: buf}
-	if err := block.Unpack(data); err != nil {
+	if err := block.Unpack(data, l.fracVersion); err != nil {
 		return BlockMIDs{}, err
 	}
 	return block, nil
