@@ -51,7 +51,7 @@ jobs:
       # Add GitHub job summary for pull requests.
       - name: Summarize benchmarks results
         if: ${{ success() && github.event_name == 'pull_request' }}
-        uses: dkharms/chronos@v0.0.9
+        uses: dkharms/chronos@v0.0.10
         with:
           language-tool: gotool
           github-token: ${{ github.token }}
@@ -62,7 +62,7 @@ jobs:
       # was merged to main and previous job was successful.
       - name: Save benchmarks results
         if: ${{ success() && github.ref_name == 'main' }}
-        uses: dkharms/chronos@v0.0.9
+        uses: dkharms/chronos@v0.0.10
         with:
           language-tool: gotool
           github-token: ${{ github.token }}
@@ -73,7 +73,7 @@ jobs:
       # was merged to main and previous job was successful.
       - name: Publish benchmarks results
         if: ${{ success() && github.ref_name == 'main' }}
-        uses: dkharms/chronos@v0.0.9
+        uses: dkharms/chronos@v0.0.10
         with:
           language-tool: gotool
           github-token: ${{ github.token }}
