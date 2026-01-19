@@ -1678,6 +1678,7 @@ ActiveReplayedFractionTestSuite run tests for active fraction which was replayed
 */
 type ActiveReplayedFractionTestSuite struct {
 	FractionTestSuite
+	originalFrac *Active
 }
 
 func (s *ActiveReplayedFractionTestSuite) SetupSuite() {
@@ -1700,7 +1701,7 @@ func (s *ActiveReplayedFractionTestSuite) SetupTest() {
 
 func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
 	fracFileName := frac.BaseFileName
-	frac.Release()
+	s.originalFrac = frac
 	replayedFrac := NewActive(
 		fracFileName,
 		s.activeIndexer,
@@ -1714,6 +1715,7 @@ func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
 }
 
 func (s *ActiveReplayedFractionTestSuite) TearDownTest() {
+	s.originalFrac.Release()
 	if active, ok := s.fraction.(*Active); ok {
 		active.Release()
 	} else {
