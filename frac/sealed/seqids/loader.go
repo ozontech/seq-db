@@ -82,7 +82,7 @@ func (l *Loader) GetRIDsBlock(index uint32, buf []uint64) (BlockRIDs, error) {
 	}
 
 	if len(block.Values) == 0 {
-		err = errors.New("empty block")
+		return BlockRIDs{}, errors.New("empty block")
 	}
 
 	for i := range len(block.Values) {
