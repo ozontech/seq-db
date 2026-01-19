@@ -23,8 +23,8 @@ jobs:
             -H "X-Seqbench-Secret: ${{ secrets.SEQBENCH_SECRET }}" \
             -d @- <<EOF
           {
-            "refname": "${{ github.ref_name }}",
-            "commit_sha": "${{ github.sha }}"
+            "reference": "${{ github.sha }}",
+            "scenario": "mixed"
           }
           EOF
 
