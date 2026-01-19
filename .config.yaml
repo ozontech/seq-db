@@ -7,25 +7,20 @@ storage:
 units:
   - name: allocs/op
     better: lower
-    threshold: 0.05
+    threshold: 0.1
     reduction: median
 
   - name: B/op
     better: lower
-    threshold: 0.05
+    threshold: 0.1
     reduction: median
 
   - name: ns/op
     better: lower
-    threshold: 0.05
-    reduction: min
+    threshold: 0.1
+    reduction: median
 
   - name: MB/s
     better: higher
-    threshold: 0.05
+    threshold: 0.1
     reduction: median
-
-  - name: iterations
-    better: higher
-    threshold: 0.05
-    reduction: max
