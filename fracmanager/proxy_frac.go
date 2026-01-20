@@ -176,3 +176,7 @@ func (emptyFraction) Search(_ context.Context, params processor.SearchParams) (*
 	metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()
 	return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, nil
 }
+
+func (emptyFraction) FindLIDs(_ context.Context, _ []seq.ID) ([]seq.LID, error) {
+	return nil, nil
+}

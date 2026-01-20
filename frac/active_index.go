@@ -144,14 +144,14 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	return res, nil
 }
 
-func (dp *activeDataProvider) FindLIDs(ids []seq.ID) []seq.LID {
+func (dp *activeDataProvider) FindLIDs(ids []seq.ID) ([]seq.LID, error) {
 	res := make([]seq.LID, 0, len(ids))
 	for _, id := range ids {
 		if lid, ok := dp.idsToLids.Get(id); ok {
 			res = append(res, lid)
 		}
 	}
-	return res
+	return res, nil
 }
 
 type activeIDsIndex struct {

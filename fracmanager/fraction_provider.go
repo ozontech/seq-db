@@ -130,11 +130,11 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 		return nil, err
 	}
 
-	sealed := fp.NewSealedPreloaded(active.BaseFileName, preloaded)
+	sealedFrac := fp.NewSealedPreloaded(active.BaseFileName, preloaded)
 
-	go fp.docsFilter.RefreshFrac(sealed) // TODO: sync or async ???
+	go fp.docsFilter.RefreshFrac(sealedFrac) // TODO: sync or async ???
 
-	return sealed, nil
+	return sealedFrac, nil
 }
 
 // Offload uploads fraction to S3 storage and returns a remote fraction
