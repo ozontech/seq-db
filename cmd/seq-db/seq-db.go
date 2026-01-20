@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"math/rand"
 	"net"
 	_ "net/http/pprof"
 	"os"
@@ -53,7 +52,6 @@ func main() {
 	kingpin.Version(buildinfo.Version)
 	kingpin.Parse()
 
-	rand.Seed(time.Now().UnixNano())
 	runtime.SetMutexProfileFraction(5)
 	encoding.RegisterCodec(grpcutil.VTProtoCodec{})
 
@@ -259,6 +257,7 @@ func startStore(
 			MaintenanceDelay:  0,
 			CacheGCDelay:      0,
 			CacheCleanupDelay: 0,
+			MinSealFracSize:   uint64(cfg.Storage.FracSize) * consts.DefaultMinSealPercent / 100,
 			SealParams: common.SealParams{
 				IDsZstdLevel:           cfg.Compression.SealedZstdCompressionLevel,
 				LIDsZstdLevel:          cfg.Compression.SealedZstdCompressionLevel,
