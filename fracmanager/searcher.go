@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ozontech/seq-db/consts"
@@ -78,7 +77,7 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 		subSearchesCnt++
 	}
 
-	if tr != nil && tr.Enabled() {
+	if tr.Enabled() {
 		searchSpan := &querytracer.Span{
 			Message:  "search iteratively (cpu time)",
 			Duration: time.Duration(totalSearchTimeNanos),
@@ -142,10 +141,8 @@ func (s *Searcher) searchDocsAsync(ctx context.Context, fracs []frac.Fraction, p
 	wg := sync.WaitGroup{}
 	qprs := make([]*seq.QPR, len(fracs))
 
-	var totalSearchTimeNanos atomic.Int64
-	var totalWaitTimeNanos atomic.Int64
-
-	wgDoneTimes := make([]time.Time, len(fracs))
+	wgDoneNanos := make([]int64, len(fracs))
+	searchElapsedNanos := make([]int64, len(fracs))
 
 loop:
 	for i, frac := range fracs {
@@ -164,31 +161,34 @@ loop:
 						cancel()
 					})
 				}
-				searchDuration := time.Since(searchStart)
-				totalSearchTimeNanos.Add(searchDuration.Nanoseconds())
+				searchElapsedNanos[i] = time.Since(searchStart).Nanoseconds()
+
 				<-s.sem // release semaphore
 
-				wgDoneTimes[i] = time.Now()
+				wgDoneNanos[i] = time.Now().UnixNano()
 				wg.Done()
 			}()
 		}
 	}
 
 	wg.Wait()
-	waitEndTime := time.Now()
+	waitEndTime := time.Now().UnixNano()
 
-	for _, doneTime := range wgDoneTimes {
-		waitDuration := waitEndTime.Sub(doneTime)
-		if waitDuration > 0 {
-			totalWaitTimeNanos.Add(waitDuration.Nanoseconds())
+	totalSearchTimeNanos := int64(0)
+	totalWaitTimeNanos := int64(0)
+
+	for i := range fracs {
+		if wgDoneNanos[i] != 0 {
+			totalWaitTimeNanos += waitEndTime - wgDoneNanos[i]
 		}
+		totalSearchTimeNanos += searchElapsedNanos[i]
 	}
 
 	if err != nil {
 		return nil, 0, 0, err
 	}
 
-	return qprs, totalSearchTimeNanos.Load(), totalWaitTimeNanos.Load(), nil
+	return qprs, totalSearchTimeNanos, totalWaitTimeNanos, nil
 }
 
 func (s *Searcher) fracSearch(ctx context.Context, params processor.SearchParams, f frac.Fraction) (_ *seq.QPR, err error) {
