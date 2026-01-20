@@ -76,13 +76,16 @@ func (p *Provider) RID(lid seq.LID) (seq.RID, error) {
 
 func (p *Provider) fillRIDs(blockIndex uint32, dst *unpackCache) error {
 	if dst.blockIndex != int(blockIndex) {
-		block, err := p.loader.GetRIDsBlock(blockIndex, dst.values[:0])
+		block, err := p.loader.GetRIDsBlock(blockIndex)
 		if err != nil {
 			return err
 		}
 		dst.blockIndex = int(blockIndex)
 		dst.startLID = p.loader.table.BlockStartLID(blockIndex)
-		dst.values = block.Values
+		// we have to copy `block.Values` because we store them in `cache.Cache[BlockRIDs]`,
+		// but `dst *unpackCache` might put its `values` in sync.Pool on `release()`, and they
+		// will be reused and corrupted
+		dst.values = append(dst.values[:0], block.Values...)
 	}
 	return nil
 }

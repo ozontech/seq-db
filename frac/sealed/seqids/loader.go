@@ -56,67 +56,51 @@ func (l *Loader) GetMIDsBlock(index uint32, buf []uint64) (BlockMIDs, error) {
 	return block, nil
 }
 
-func (l *Loader) GetRIDsBlock(index uint32, buf []uint64) (BlockRIDs, error) {
-	block, err := l.cacheRIDs.GetWithError(index, func() (BlockRIDs, int, error) {
+func (l *Loader) GetRIDsBlock(index uint32) (BlockRIDs, error) {
+	return l.cacheRIDs.GetWithError(index, func() (BlockRIDs, int, error) {
 		data, _, err := l.reader.ReadIndexBlock(l.ridBlockIndex(index), nil)
 		if err != nil {
 			return BlockRIDs{}, 0, err
 		}
 
-		ui64 := int(unsafe.Sizeof(uint64(0)))
-
-		length := len(data) / ui64
-		cached := make([]uint64, length)
-
 		block := BlockRIDs{
 			fracVersion: l.fracVersion,
-			Values:      cached,
+			Values:      make([]uint64, 0, consts.IDsPerBlock),
 		}
 
 		err = block.Unpack(data)
+		if err != nil {
+			return BlockRIDs{}, 0, err
+		}
+
+		if len(block.Values) == 0 {
+			return BlockRIDs{}, 0, errors.New("empty block")
+		}
+
+		ui64 := int(unsafe.Sizeof(uint64(0)))
 		return block, cap(block.Values) * ui64, err
 	})
-
-	if err != nil {
-		return BlockRIDs{}, err
-	}
-
-	if len(block.Values) == 0 {
-		return BlockRIDs{}, errors.New("empty block")
-	}
-
-	for i := range len(block.Values) {
-		buf = append(buf, block.Values[i])
-	}
-
-	return BlockRIDs{
-		fracVersion: l.fracVersion,
-		Values:      buf,
-	}, nil
 }
 
 func (l *Loader) GetParamsBlock(index uint32) (BlockParams, error) {
-	// load binary from index
-	block, err := l.cacheParams.GetWithError(index, func() (BlockParams, int, error) {
+	return l.cacheParams.GetWithError(index, func() (BlockParams, int, error) {
 		data, _, err := l.reader.ReadIndexBlock(l.paramsBlockIndex(index), nil)
 		if err != nil {
 			return BlockParams{}, 0, err
 		}
-		// unpack
+
 		block := BlockParams{Values: make([]uint64, 0, consts.IDsPerBlock)}
 		if err := block.Unpack(data); err != nil {
 			return BlockParams{}, 0, err
 		}
+
 		if len(block.Values) == 0 {
 			return BlockParams{}, 0, errors.New("empty block")
 		}
-		return block, cap(block.Values) * 8, nil
+
+		ui64 := int(unsafe.Sizeof(uint64(0)))
+		return block, cap(block.Values) * ui64, nil
 	})
-	// check errors
-	if err != nil {
-		return BlockParams{}, err
-	}
-	return block, nil
 }
 
 // blocks are stored as triplets on disk, (MID + RID + Pos), check docs/format-index-file.go
