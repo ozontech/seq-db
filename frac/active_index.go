@@ -2,6 +2,7 @@ package frac
 
 import (
 	"context"
+	"slices"
 
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -202,6 +203,9 @@ func (si *activeSearchIndex) GetTombstones() ([]uint32, error) {
 			res = append(res, uint32(inversed))
 		}
 	}
+
+	// we need to sort inversed values since they may be out of order after replay of active fraction
+	slices.Sort(res)
 
 	return res, nil
 }

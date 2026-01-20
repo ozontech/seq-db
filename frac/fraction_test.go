@@ -34,6 +34,12 @@ import (
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
+type testDocsFilter struct{}
+
+func (testDocsFilter) GetFilteredLIDsByFrac(_ string) ([]seq.LID, error) {
+	return []seq.LID{}, nil
+}
+
 type FractionTestSuite struct {
 	suite.Suite
 	tmpDir        string
@@ -1842,7 +1848,7 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
-		nil,
+		testDocsFilter{},
 	)
 
 	var wg sync.WaitGroup
@@ -1905,7 +1911,7 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 		indexCache,
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
-		nil,
+		testDocsFilter{},
 	)
 	active.Release()
 	return sealed
@@ -1983,7 +1989,7 @@ func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		&Config{},
-		nil,
+		testDocsFilter{},
 	)
 	err := replayedFrac.Replay(context.Background())
 	s.Require().NoError(err, "replay failed")
@@ -2096,7 +2102,7 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 		cache.NewCache[[]byte](nil, nil),
 		nil,
 		s.config,
-		nil,
+		testDocsFilter{},
 	)
 	s.fraction = sealed
 	return sealed
@@ -2167,7 +2173,7 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			sealed.info,
 			s.config,
 			s3cli,
-			nil,
+			testDocsFilter{},
 		)
 		s.fraction = remoteFrac
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/docsfilter"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/mappingprovider"
@@ -67,11 +68,16 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 	dataDir := common.GetTestTmpDir(t)
 	common.RecreateDir(dataDir)
 
+	mappingProvider, err := mappingprovider.New("", mappingprovider.WithMapping(seq.TestMapping))
+	assert.NoError(t, err)
+
+	df := docsfilter.New(t.Context(), docsfilter.Config{}, nil, mappingProvider)
+
 	fm, stop, err := fracmanager.New(t.Context(), &fracmanager.Config{
 		FracSize:  500,
 		TotalSize: 5000,
 		DataDir:   dataDir,
-	}, nil, nil)
+	}, nil, df)
 	assert.NoError(t, err)
 
 	config := APIConfig{
@@ -91,9 +97,6 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 			LogThreshold: 0,
 		},
 	}
-
-	mappingProvider, err := mappingprovider.New("", mappingprovider.WithMapping(seq.TestMapping))
-	assert.NoError(t, err)
 
 	g := NewGrpcV1(config, fm, mappingProvider)
 

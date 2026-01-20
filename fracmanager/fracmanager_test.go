@@ -11,6 +11,13 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
+type testDocsFilter struct{}
+
+func (testDocsFilter) GetFilteredLIDsByFrac(_ string) ([]seq.LID, error) {
+	return nil, nil
+}
+func (testDocsFilter) RefreshFrac(_ frac.Fraction) {}
+
 func setupDataDir(t testing.TB, cfg *Config) *Config {
 	if cfg == nil {
 		cfg = &Config{
@@ -25,7 +32,7 @@ func setupDataDir(t testing.TB, cfg *Config) *Config {
 
 func setupFracManager(t testing.TB, cfg *Config) (*Config, *FracManager, func()) {
 	cfg = setupDataDir(t, cfg)
-	fm, stop, err := New(t.Context(), cfg, nil, nil)
+	fm, stop, err := New(t.Context(), cfg, nil, testDocsFilter{})
 	assert.NoError(t, err)
 	return cfg, fm, stop
 }

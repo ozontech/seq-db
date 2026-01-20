@@ -3,9 +3,10 @@ package docsfilter
 import (
 	"testing"
 
-	"github.com/ozontech/seq-db/seq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ozontech/seq-db/seq"
 )
 
 func TestMarshalUnmarshalLIDsFilter(t *testing.T) {

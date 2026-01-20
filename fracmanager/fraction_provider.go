@@ -131,9 +131,7 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 	}
 
 	sealedFrac := fp.NewSealedPreloaded(active.BaseFileName, preloaded)
-
-	go fp.docsFilter.RefreshFrac(sealedFrac) // TODO: sync or async ???
-
+	fp.docsFilter.RefreshFrac(sealedFrac)
 	return sealedFrac, nil
 }
 
