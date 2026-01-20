@@ -22,6 +22,7 @@ const fileBasePattern = "seq-db-"
 
 type DocsFilter interface {
 	GetFilteredLIDsByFrac(fracName string) ([]seq.LID, error)
+	RefreshFrac(frac frac.Fraction)
 }
 
 // fractionProvider is a factory for creating different types of fractions
@@ -129,7 +130,11 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 		return nil, err
 	}
 
-	return fp.NewSealedPreloaded(active.BaseFileName, preloaded), nil
+	sealed := fp.NewSealedPreloaded(active.BaseFileName, preloaded)
+
+	go fp.docsFilter.RefreshFrac(sealed) // TODO: sync or async ???
+
+	return sealed, nil
 }
 
 // Offload uploads fraction to S3 storage and returns a remote fraction

@@ -150,6 +150,31 @@ func (df *DocsFilter) GetFilteredLIDsByFrac(fracName string) ([]seq.LID, error) 
 	return lids, nil
 }
 
+// RefreshFrac replaces frac's tombstone files with newly found results. Used after active frac is sealed.
+func (df *DocsFilter) RefreshFrac(frac frac.Fraction) {
+	df.fracsMu.RLock()
+	fracsFiles, has := df.fracs[frac.Info().Name()]
+	df.fracsMu.RUnlock()
+
+	if !has {
+		return
+	}
+
+	for _, f := range fracsFiles {
+		filter := df.filters[filterNameFromTombstonesPath(f)]
+
+		queueFilePath := path.Join(filter.dirPath, makeFileName(frac.Info().Name(), fracInQueueExt))
+		util.MustWriteFileAtomic(queueFilePath, []byte{}, tmpExt)
+
+		filter.processWg.Add(1)
+		go df.processFrac(frac, filter, true)
+	}
+}
+
+func filterNameFromTombstonesPath(p string) string {
+	return path.Base(path.Dir(p))
+}
+
 func (df *DocsFilter) addDoneFrac(fracName, fracPath string) {
 	df.fracsMu.Lock()
 	defer df.fracsMu.Unlock()
@@ -256,7 +281,7 @@ func (df *DocsFilter) processFilter(filter *Filter, fracs fracmanager.List) {
 	processFracInQueue := func(name string) error {
 		f := fracsByName[fracNameFromFilePath(name)]
 		filter.processWg.Add(1)
-		go df.processFrac(f, filter) // nolint:errcheck // in progress
+		go df.processFrac(f, filter, false) // nolint:errcheck // in progress
 
 		return nil
 	}
@@ -268,7 +293,7 @@ func (df *DocsFilter) processFilter(filter *Filter, fracs fracmanager.List) {
 	}()
 }
 
-func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter) error {
+func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter, refresh bool) error {
 	defer filter.processWg.Done()
 
 	df.rateLimit <- struct{}{}
@@ -302,7 +327,9 @@ func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter) error {
 		return err
 	}
 
-	df.addDoneFrac(f.Info().Name(), doneFilePath)
+	if !refresh {
+		df.addDoneFrac(f.Info().Name(), doneFilePath)
+	}
 
 	return nil
 }
