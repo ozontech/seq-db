@@ -19,7 +19,6 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
@@ -35,9 +34,6 @@ type Sealed struct {
 	BaseFileName string
 
 	info *common.Info
-
-	useMu    sync.RWMutex
-	suicided bool
 
 	docsFile   *os.File
 	docsCache  *cache.Cache[[]byte]
@@ -189,20 +185,14 @@ func (f *Sealed) load() {
 // Offload saves `.docs` (or `.sdocs`) and `.index` files into remote storage.
 // It does not free any of the occupied memory (nor on disk nor in memory).
 func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
-	f.useMu.Lock()
-	defer f.useMu.Unlock()
+	f.loadMu.Lock()
+	f.openDocs()
+	f.openIndex()
+	f.loadMu.Unlock()
 
 	g, gctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		f.openDocs()
-		return u.Upload(gctx, f.docsFile)
-	})
-
-	g.Go(func() error {
-		f.openIndex()
-		return u.Upload(gctx, f.indexFile)
-	})
+	g.Go(func() error { return u.Upload(gctx, f.docsFile) })
+	g.Go(func() error { return u.Upload(gctx, f.indexFile) })
 
 	if err := g.Wait(); err != nil {
 		return true, err
@@ -220,15 +210,25 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) 
 	return true, nil
 }
 
-func (f *Sealed) Suicide() {
-	f.useMu.Lock()
-	f.suicided = true
-	f.useMu.Unlock()
+func (f *Sealed) Release() {
+	if f.docsFile != nil {
+		if err := f.docsFile.Close(); err != nil {
+			logger.Error("can't close docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
+		}
+	}
 
-	f.close("suicide")
+	if f.indexFile != nil {
+		if err := f.indexFile.Close(); err != nil {
+			logger.Error("can't close index file", zap.String("frac", f.BaseFileName), zap.Error(err))
+		}
+	}
 
 	f.docsCache.Release()
 	f.indexCache.Release()
+}
+
+func (f *Sealed) Suicide() {
+	f.Release()
 
 	// make some atomic magic, to be more stable on removing fractions
 	oldPath := f.BaseFileName + consts.DocsFileSuffix
@@ -294,82 +294,26 @@ func (f *Sealed) Suicide() {
 	}
 }
 
-func (f *Sealed) close(hint string) {
-	f.loadMu.Lock()
-	defer f.loadMu.Unlock()
-
-	if !f.isLoaded {
-		return
-	}
-
-	if f.docsFile != nil { // docs file may not be opened since it's loaded lazily
-		if err := f.docsFile.Close(); err != nil {
-			logger.Error("can't close docs file",
-				zap.String("frac", f.BaseFileName),
-				zap.String("type", "sealed"),
-				zap.String("hint", hint),
-				zap.Error(err))
-		}
-	}
-
-	if err := f.indexFile.Close(); err != nil {
-		logger.Error("can't close index file",
-			zap.String("frac", f.BaseFileName),
-			zap.String("type", "sealed"),
-			zap.String("hint", hint),
-			zap.Error(err))
-	}
-}
-
 func (f *Sealed) String() string {
 	return fracToString(f, "sealed")
 }
 
 func (f *Sealed) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
-	dp, release := f.DataProvider(ctx)
-	defer release()
-	if dp == nil {
-		return EmptyFraction.Fetch(ctx, ids)
-	}
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
 	return dp.Fetch(ids)
 }
 
 func (f *Sealed) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
-	dp, release := f.DataProvider(ctx)
-	defer release()
-	if dp == nil {
-		return EmptyFraction.Search(ctx, params)
-	}
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
 	return dp.Search(params)
 }
 
-func (f *Sealed) DataProvider(ctx context.Context) (*sealedDataProvider, func()) {
-	f.useMu.RLock()
-
-	if f.suicided {
-		metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
-		f.useMu.RUnlock()
-		return nil, func() {}
-	}
-
-	defer func() {
-		if panicData := recover(); panicData != nil {
-			f.useMu.RUnlock()
-			panic(panicData)
-		}
-	}()
-
-	f.load()
-
-	dp := f.createDataProvider(ctx)
-
-	return dp, func() {
-		dp.release()
-		f.useMu.RUnlock()
-	}
-}
-
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
+	f.load()
 	return &sealedDataProvider{
 		ctx:               ctx,
 		fractionTypeLabel: "sealed",

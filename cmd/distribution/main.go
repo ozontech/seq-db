@@ -183,8 +183,8 @@ func main() {
 				zap.String("name", info.Name()),
 				zap.String("ver", info.Ver),
 				zap.Uint32("docs_total", info.DocsTotal),
-				zap.String("from", util.MsTsToESFormat(uint64(info.From))),
-				zap.String("to", util.MsTsToESFormat(uint64(info.To))),
+				zap.String("from", util.NsTsToESFormat(uint64(info.From))),
+				zap.String("to", util.NsTsToESFormat(uint64(info.To))),
 				zap.String("creation_time", util.MsTsToESFormat(info.CreationTime)),
 			)
 		}

@@ -98,8 +98,8 @@ func prepareGetHistogramTestData(t *testing.T, cData getHistogramTestCaseData) g
 		sr := &search.SearchRequest{
 			Explain:  req.Query.Explain,
 			Q:        []byte(req.Query.Query),
-			From:     seq.MID(req.Query.From.AsTime().UnixMilli()),
-			To:       seq.MID(req.Query.To.AsTime().UnixMilli()),
+			From:     seq.MID(req.Query.From.AsTime().UnixNano()),
+			To:       seq.MID(req.Query.To.AsTime().UnixNano()),
 			Interval: seq.DurationToMID(intervalDur),
 		}
 		siSearchMock = &siSearchMockData{

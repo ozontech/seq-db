@@ -3,6 +3,7 @@ package frac
 import (
 	"encoding/binary"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -17,9 +18,8 @@ import (
 type ActiveIndexer struct {
 	ch          chan *indexTask
 	chMerge     chan *mergeTask
+	bulkStats   *BulkStatsCollector
 	workerCount int
-
-	stopFn func()
 }
 
 type indexTask struct {
@@ -34,12 +34,15 @@ type mergeTask struct {
 	tokenLIDs *TokenLIDs
 }
 
-func NewActiveIndexer(workerCount, chLen int) *ActiveIndexer {
-	return &ActiveIndexer{
+func NewActiveIndexer(workerCount, chLen int) (*ActiveIndexer, func()) {
+	idx := ActiveIndexer{
 		ch:          make(chan *indexTask, chLen),
 		chMerge:     make(chan *mergeTask, chLen),
 		workerCount: workerCount,
+		bulkStats:   NewBulkStatsCollector(5*time.Second, chLen),
 	}
+	stopIdx := idx.start()
+	return &idx, stopIdx
 }
 
 func (ai *ActiveIndexer) Index(frac *Active, metas []byte, wg *sync.WaitGroup, sw *stopwatch.Stopwatch) {
@@ -53,7 +56,7 @@ func (ai *ActiveIndexer) Index(frac *Active, metas []byte, wg *sync.WaitGroup, s
 	m.Stop()
 }
 
-func (ai *ActiveIndexer) Start() {
+func (ai *ActiveIndexer) start() func() {
 	wg := sync.WaitGroup{}
 	wg.Add(ai.workerCount)
 
@@ -72,25 +75,17 @@ func (ai *ActiveIndexer) Start() {
 		}()
 	}
 
-	ai.stopFn = func() {
+	return func() {
 		close(ai.ch)
 		close(ai.chMerge)
-
 		wg.Wait()
-
-		ai.stopFn = nil
+		ai.bulkStats.Stop()
 	}
 }
 
 func (ai *ActiveIndexer) mergeWorker() {
 	for task := range ai.chMerge {
 		task.tokenLIDs.GetLIDs(task.frac.MIDs, task.frac.RIDs) // GetLIDs cause sort and merge LIDs from queue
-	}
-}
-
-func (ai *ActiveIndexer) Stop() {
-	if ai.stopFn != nil {
-		ai.stopFn()
 	}
 }
 
@@ -106,6 +101,11 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 
 	for task := range ai.ch {
 		var err error
+		bs := BulkStats{
+			bulks: 1, // always one
+			docs:  0,
+			size:  0,
+		}
 
 		sw := stopwatch.New()
 		total := sw.Start("total_indexing")
@@ -123,6 +123,7 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 
 		parsingMetric := sw.Start("metas_parsing")
 		meta := metaDataPool.Get().(*indexer.MetaData)
+
 		for len(metasPayload) > 0 {
 			n := binary.LittleEndian.Uint32(metasPayload)
 			metasPayload = metasPayload[4:]
@@ -133,7 +134,12 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 				logger.Panic("BUG: can't unmarshal meta", zap.Error(err))
 			}
 			collector.AppendMeta(*meta)
+
+			bs.docs++
+			bs.size += int(meta.Size)
 		}
+
+		ai.bulkStats.Add(bs)
 		metaDataPool.Put(meta)
 		bytespool.Release(metaBuf)
 		parsingMetric.Stop()

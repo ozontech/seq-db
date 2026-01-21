@@ -32,8 +32,8 @@ func (g *GrpcV1) StartAsyncSearch(
 		AST:          nil, // Parse AST later.
 		AggQ:         aggs,
 		HistInterval: uint64(r.HistogramInterval),
-		From:         seq.MID(r.From),
-		To:           seq.MID(r.To),
+		From:         seq.MillisToMID(uint64(r.From)),
+		To:           seq.MillisToMID(uint64(r.To)),
 		Limit:        limit,
 		WithTotal:    r.WithDocs, // return total if docs needed
 		Order:        seq.DocsOrderDesc,
@@ -46,7 +46,7 @@ func (g *GrpcV1) StartAsyncSearch(
 		Retention: r.Retention.AsDuration(),
 		WithDocs:  r.WithDocs,
 	}
-	fracs := g.fracManager.Fractions().FilterInRange(seq.MID(r.From), seq.MID(r.To))
+	fracs := g.fracManager.Fractions().FilterInRange(seq.MillisToMID(uint64(r.From)), seq.MillisToMID(uint64(r.To)))
 	if err := g.asyncSearcher.StartSearch(req, fracs); err != nil {
 		return nil, err
 	}
@@ -148,6 +148,9 @@ func convertAggQueriesToProto(query []processor.AggQuery) []*storeapi.AggQuery {
 		}
 		if q.GroupBy != nil {
 			pq.GroupBy = q.GroupBy.Field
+		}
+		if q.Interval != 0 {
+			pq.Interval = q.Interval
 		}
 		res = append(res, pq)
 	}

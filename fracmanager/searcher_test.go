@@ -17,7 +17,6 @@ import (
 )
 
 type testFakeFrac struct {
-	frac.Empty
 	info          *common.Info
 	qpr           *seq.QPR
 	searchesCount int
@@ -336,7 +335,7 @@ func newFakeQPRwithTotal(ids []int, total uint64) *seq.QPR {
 func newFakeQPR(ids ...int) *seq.QPR {
 	idsWithSource := make(seq.IDSources, len(ids))
 	for i, mid := range ids {
-		idsWithSource[i] = seq.IDSource{ID: seq.SimpleID(mid)}
+		idsWithSource[i] = seq.IDSource{ID: seq.SimpleID(int64(mid))}
 	}
 	return &seq.QPR{IDs: idsWithSource}
 }
@@ -344,7 +343,7 @@ func newFakeQPR(ids ...int) *seq.QPR {
 func newFakeQPRWithHist(ids []int, histogram map[seq.MID]uint64) *seq.QPR {
 	idsWithSource := make(seq.IDSources, len(ids))
 	for i, mid := range ids {
-		idsWithSource[i] = seq.IDSource{ID: seq.SimpleID(mid)}
+		idsWithSource[i] = seq.IDSource{ID: seq.SimpleID(int64(mid))}
 	}
 	return &seq.QPR{
 		IDs:       idsWithSource,
