@@ -35,10 +35,6 @@ type Active struct {
 
 	BaseFileName string
 
-	useMu    sync.RWMutex
-	suicided bool
-	released bool
-
 	infoMu sync.RWMutex
 	info   *common.Info
 
@@ -204,6 +200,7 @@ var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Subsystem: "bulk",
 	Name:      "stages_seconds",
 	Buckets:   metric.SecondsBuckets,
+	Help:      "Bulk processing time by stage",
 }, []string{"stage"})
 
 // Append causes data to be written on disk and sends metas to index workers
@@ -269,40 +266,26 @@ func (f *Active) String() string {
 }
 
 func (f *Active) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
-	dp, release := f.DataProvider(ctx)
-	defer release()
-	if dp == nil {
-		return EmptyFraction.Fetch(ctx, ids)
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		return nil, nil
 	}
+
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
 	return dp.Fetch(ids)
 }
 
 func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
-	dp, release := f.DataProvider(ctx)
-	defer release()
-	if dp == nil {
-		return EmptyFraction.Search(ctx, params)
-	}
-	return dp.Search(params)
-}
-
-func (f *Active) DataProvider(ctx context.Context) (*activeDataProvider, func()) {
-	f.useMu.RLock()
-
-	if f.suicided || f.released || f.Info().DocsTotal == 0 { // it is empty active fraction state
-		if f.suicided {
-			metric.CountersTotal.WithLabelValues("fraction_suicided").Inc()
-		}
-		f.useMu.RUnlock()
-		return nil, func() {}
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()
+		return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, nil
 	}
 
-	// it is ordinary active fraction state
 	dp := f.createDataProvider(ctx)
-	return dp, func() {
-		dp.release()
-		f.useMu.RUnlock()
-	}
+	defer dp.release()
+
+	return dp.Search(params)
 }
 
 func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
@@ -338,49 +321,24 @@ func (f *Active) IsIntersecting(from, to seq.MID) bool {
 }
 
 func (f *Active) Release() {
-	f.useMu.Lock()
-	f.released = true
-	f.useMu.Unlock()
-
 	f.releaseMem()
 
 	if !f.Config.KeepMetaFile {
-		f.removeMetaFile()
+		util.RemoveFile(f.metaFile.Name())
 	}
 
 	if !f.Config.SkipSortDocs {
 		// we use sorted docs in sealed fraction so we can remove original docs of active fraction
-		f.removeDocsFiles()
+		util.RemoveFile(f.docsFile.Name())
 	}
-}
-
-// Offload for [Active] fraction is no-op.
-//
-// Since search within [Active] fraction is too costly (we have to replay the whole index in memory),
-// we decided to support offloading only for [Sealed] fractions.
-func (f *Active) Offload(context.Context, storage.Uploader) (bool, error) {
-	return false, nil
 }
 
 func (f *Active) Suicide() {
-	f.useMu.Lock()
-	released := f.released
-	f.suicided = true
-	f.released = true
-	f.useMu.Unlock()
+	f.releaseMem()
 
-	if released { // fraction can be suicided after release
-		if f.Config.KeepMetaFile {
-			f.removeMetaFile() // meta was not removed while release
-		}
-		if f.Config.SkipSortDocs {
-			f.removeDocsFiles() // docs was not removed while release
-		}
-	} else { // was not release
-		f.releaseMem()
-		f.removeMetaFile()
-		f.removeDocsFiles()
-	}
+	util.RemoveFile(f.metaFile.Name())
+	util.RemoveFile(f.docsFile.Name())
+	util.RemoveFile(f.BaseFileName + consts.SdocsFileSuffix)
 }
 
 func (f *Active) releaseMem() {
@@ -393,24 +351,12 @@ func (f *Active) releaseMem() {
 	if err := f.metaFile.Close(); err != nil {
 		logger.Error("can't close meta file", zap.String("frac", f.BaseFileName), zap.Error(err))
 	}
+	if err := f.docsFile.Close(); err != nil {
+		logger.Error("can't close docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
+	}
 
 	f.RIDs = nil
 	f.MIDs = nil
 	f.TokenList = nil
 	f.DocsPositions = nil
-}
-
-func (f *Active) removeDocsFiles() {
-	if err := f.docsFile.Close(); err != nil {
-		logger.Error("can't close docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
-	}
-	if err := os.Remove(f.docsFile.Name()); err != nil {
-		logger.Error("can't delete docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
-	}
-}
-
-func (f *Active) removeMetaFile() {
-	if err := os.Remove(f.metaFile.Name()); err != nil {
-		logger.Error("can't delete metas file", zap.String("frac", f.BaseFileName), zap.Error(err))
-	}
 }

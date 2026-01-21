@@ -15,17 +15,13 @@ type ID struct {
 	RID RID
 }
 
-type MID uint64 // milliseconds part of ID
+type MID uint64 // nanoseconds part of ID
 type RID uint64 // random part of ID
 type LID uint32 // local id for a fraction
 
 func (m MID) Time() time.Time {
-	if uint64(m) <= math.MaxInt64 {
-		return time.UnixMilli(int64(m))
-	} else {
-		// since MaxInt64 is 292278994 year in milliseconds, so we assume this MID is "infinite future"
-		return time.UnixMilli(math.MaxInt64)
-	}
+	nanosPerSecond := uint64(time.Second)
+	return time.Unix(int64(uint64(m)/nanosPerSecond), int64(uint64(m)%nanosPerSecond))
 }
 
 func (d ID) String() string {
@@ -48,7 +44,7 @@ func (d ID) Bytes() []byte {
 	n := hex.Encode(hexBuf, numBuf)
 
 	final := append(make([]byte, 0), hexBuf[:n]...)
-	final = append(final, '-')
+	final = append(final, '_')
 
 	binary.LittleEndian.PutUint64(numBuf, uint64(d.RID))
 	n = hex.Encode(hexBuf, numBuf)
@@ -89,33 +85,64 @@ func FromString(x string) (ID, error) {
 		return id, err
 	}
 
-	id.MID = MID(binary.LittleEndian.Uint64(mid))
+	switch delimiter := x[16]; delimiter {
+	case '_':
+		id.MID = MID(binary.LittleEndian.Uint64(mid))
+	case '-':
+		// legacy format, MID in millis. Scale to nanoseconds
+		id.MID = MillisToMID(binary.LittleEndian.Uint64(mid))
+	default:
+		return id, fmt.Errorf("unknown delimiter %c", delimiter)
+	}
 	id.RID = RID(binary.LittleEndian.Uint64(rid))
 
 	return id, nil
 }
 
-func SimpleID(i int) ID {
+func SimpleID(i int64) ID {
 	return ID{
 		MID: MID(i),
 		RID: 0,
 	}
 }
 
+func MillisToMID(millis uint64) MID {
+	if millis <= math.MaxUint64/uint64(time.Millisecond) {
+		return MID(millis * uint64(time.Millisecond))
+	} else {
+		// math.MaxUint64/1000000 is 2554 year in unix time millisecond, so it's just an "infinite" future for us.
+		// We can't scale it to nanoseconds, so we just leave it as it is
+		return MID(millis)
+	}
+}
+
 func TimeToMID(t time.Time) MID {
-	return MID(t.UnixNano() / int64(time.Millisecond))
+	return MID(t.UnixNano())
 }
 
 func DurationToMID(d time.Duration) MID {
-	return MID(d / time.Millisecond)
+	return MID(d)
 }
 
 func MIDToTime(t MID) time.Time {
 	return t.Time()
 }
 
+func MIDToMillis(t MID) uint64 {
+	return uint64(t) / uint64(time.Millisecond)
+}
+
+func MIDToCeilingMillis(t MID) uint64 {
+	millis := uint64(t) / uint64(time.Millisecond)
+	nanosPartOfMilli := uint64(t) % uint64(time.Millisecond)
+	if nanosPartOfMilli != 0 {
+		millis += 1
+	}
+	return millis
+}
+
 func MIDToDuration(t MID) time.Duration {
-	return time.Duration(t) * time.Millisecond
+	return time.Duration(t)
 }
 
 func NewID(t time.Time, randomness uint64) ID {
@@ -124,6 +151,7 @@ func NewID(t time.Time, randomness uint64) ID {
 	return ID{MID: mid, RID: RID(randomness)}
 }
 
+// String prints MID to ESFormat. Nanosecond part will not be printed.
 func (m MID) String() string {
-	return util.MsTsToESFormat(uint64(m))
+	return util.NsTsToESFormat(uint64(m))
 }

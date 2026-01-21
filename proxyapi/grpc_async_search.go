@@ -51,7 +51,7 @@ func (g *grpcV1) StartAsyncSearch(
 		From:              r.GetQuery().GetFrom().AsTime(),
 		To:                r.GetQuery().GetTo().AsTime(),
 		Aggregations:      aggs,
-		HistogramInterval: seq.MID(histInterval.Milliseconds()),
+		HistogramInterval: seq.MID(histInterval.Nanoseconds()),
 		WithDocs:          r.WithDocs,
 		Size:              r.Size,
 	})
@@ -181,12 +181,17 @@ func (g *grpcV1) DeleteAsyncSearch(
 
 func makeProtoRequestAggregations(sourceAggs []search.AggQuery) []*seqproxyapi.AggQuery {
 	aggs := make([]*seqproxyapi.AggQuery, 0, len(sourceAggs))
-	for _, agg := range sourceAggs {
+	for _, a := range sourceAggs {
 		agg := &seqproxyapi.AggQuery{
-			Field:     agg.Field,
-			GroupBy:   agg.GroupBy,
-			Func:      seqproxyapi.AggFunc(agg.Func),
-			Quantiles: agg.Quantiles,
+			Field:     a.Field,
+			GroupBy:   a.GroupBy,
+			Func:      seqproxyapi.AggFunc(a.Func),
+			Quantiles: a.Quantiles,
+		}
+
+		if a.Interval != 0 {
+			interval := seq.MIDToDuration(a.Interval).String()
+			agg.Interval = &interval
 		}
 
 		// Support legacy format in which field means groupBy.

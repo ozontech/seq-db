@@ -197,7 +197,7 @@ func makeSearchRespData(size int) *testSearchResp {
 	docs := make([][]byte, 0)
 	respDocs := make([]*seqproxyapi.Document, 0)
 	for i := 0; i < size; i++ {
-		id := seq.SimpleID(i)
+		id := seq.SimpleID(int64(i))
 		ids = append(ids, seq.IDSource{ID: id, Source: 0})
 		data := []byte("doc" + strconv.Itoa(i))
 		docs = append(docs, data)
@@ -233,7 +233,7 @@ func makeGetHistRespData(interval string, totalSize, fromTs, toTs int64) (*testG
 	docCnt := totalSize / int64(bucketsCnt)
 	remainCnt := totalSize - docCnt*(int64(bucketsCnt)-1)
 	bucketKey := fromTs
-	qprHist[seq.MID(bucketKey)] = uint64(remainCnt)
+	qprHist[seq.MillisToMID(uint64(bucketKey))] = uint64(remainCnt)
 	ts := time.UnixMilli(bucketKey)
 	bucket := &seqproxyapi.Histogram_Bucket{
 		DocCount: uint64(remainCnt),
@@ -243,7 +243,7 @@ func makeGetHistRespData(interval string, totalSize, fromTs, toTs int64) (*testG
 	for i := 1; i < bucketsCnt; i++ {
 		bucketKey := fromTs + int64(i)*intervalMS
 		ts := time.UnixMilli(bucketKey)
-		qprHist[seq.MID(bucketKey)] = uint64(docCnt)
+		qprHist[seq.MillisToMID(uint64(bucketKey))] = uint64(docCnt)
 		bucket := &seqproxyapi.Histogram_Bucket{
 			DocCount: uint64(docCnt),
 			Ts:       timestamppb.New(ts),
@@ -313,7 +313,7 @@ func makeExportRespData(size int) *testExportResp {
 	docs := make([][]byte, size)
 	resp := make([]*seqproxyapi.ExportResponse, size)
 	for i := range size {
-		id := seq.SimpleID(i)
+		id := seq.SimpleID(int64(i))
 		ids[i] = seq.IDSource{ID: id, Source: 0}
 
 		data := []byte("doc" + strconv.Itoa(i))

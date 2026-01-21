@@ -14,10 +14,20 @@ import (
 
 var be = binary.BigEndian
 
-const qprBinVersion = uint8(1)
+type qprBinVersion uint8
+
+const (
+	qprBinVersion1 qprBinVersion = iota + 1 // MIDs stored in milliseconds
+	qprBinVersion2                          // MIDs stored in nanoseconds
+)
+
+var availableVersions = map[qprBinVersion]struct{}{
+	qprBinVersion1: {},
+	qprBinVersion2: {},
+}
 
 func marshalQPR(q *seq.QPR, dst []byte) []byte {
-	dst = append(dst, qprBinVersion)
+	dst = append(dst, uint8(qprBinVersion2))
 
 	blocksLenPos := len(dst)
 	dst = append(dst, make([]byte, 8)...)
@@ -38,10 +48,10 @@ func unmarshalQPR(dst *seq.QPR, src []byte, idsLimit int) (_ []byte, err error) 
 		return nil, fmt.Errorf("invalid QPR format; want %d bytes, got %d", 19, len(src))
 	}
 
-	version := src[0]
+	version := qprBinVersion(src[0])
 	src = src[1:]
-	if version != qprBinVersion {
-		return nil, fmt.Errorf("invalid QPR version %d; want %d", version, qprBinVersion)
+	if _, ok := availableVersions[version]; !ok {
+		return nil, fmt.Errorf("invalid QPR version %d", version)
 	}
 
 	idsBlocksLen := int(be.Uint64(src))
@@ -54,7 +64,7 @@ func unmarshalQPR(dst *seq.QPR, src []byte, idsLimit int) (_ []byte, err error) 
 		if len(dst.IDs) >= idsLimit {
 			break
 		}
-		idsBlocks, err = unmarshalIDsBlock(dst, idsBlocks)
+		idsBlocks, err = unmarshalIDsBlock(dst, idsBlocks, version)
 		if err != nil {
 			return nil, fmt.Errorf("can't unmarshal ids block at pos %d: %s", i, err)
 		}
@@ -64,12 +74,12 @@ func unmarshalQPR(dst *seq.QPR, src []byte, idsLimit int) (_ []byte, err error) 
 	}
 	src = src[idsBlocksLen:]
 
-	dst.Histogram, src, err = unmarshalHistogram(src)
+	dst.Histogram, src, err = unmarshalHistogram(src, version)
 	if err != nil {
 		return nil, fmt.Errorf("can't unmarshal histogram: %s", err)
 	}
 
-	dst.Aggs, src, err = unmarshalAggs(dst.Aggs, src)
+	dst.Aggs, src, err = unmarshalAggs(dst.Aggs, src, version)
 	if err != nil {
 		return nil, fmt.Errorf("can't unmarshal aggs: %s", err)
 	}
@@ -169,7 +179,7 @@ func marshalIDsBlock(dst []byte, ids []seq.IDSource) ([]byte, idsCodec) {
 	return dst, idsCodecDeltaZstd
 }
 
-func unmarshalIDsBlock(dst *seq.QPR, src []byte) (_ []byte, err error) {
+func unmarshalIDsBlock(dst *seq.QPR, src []byte, version qprBinVersion) (_ []byte, err error) {
 	if len(src) == 0 {
 		return src, fmt.Errorf("empty IDs block")
 	}
@@ -192,13 +202,13 @@ func unmarshalIDsBlock(dst *seq.QPR, src []byte) (_ []byte, err error) {
 		if err != nil {
 			return src, fmt.Errorf("can't decompress ids block: %s", err)
 		}
-		dst.IDs, err = unmarshalIDsDelta(dst.IDs, b.B)
+		dst.IDs, err = unmarshalIDsDelta(dst.IDs, b.B, version)
 		if err != nil {
 			return src, err
 		}
 		return src, nil
 	case idsCodecDelta:
-		dst.IDs, err = unmarshalIDsDelta(dst.IDs, block)
+		dst.IDs, err = unmarshalIDsDelta(dst.IDs, block, version)
 		if err != nil {
 			return src, err
 		}
@@ -208,7 +218,7 @@ func unmarshalIDsBlock(dst *seq.QPR, src []byte) (_ []byte, err error) {
 	}
 }
 
-func unmarshalIDsDelta(dst seq.IDSources, block []byte) (seq.IDSources, error) {
+func unmarshalIDsDelta(dst seq.IDSources, block []byte, version qprBinVersion) (seq.IDSources, error) {
 	prevMID := int64(0)
 	for len(block) > 0 {
 		v, n := binary.Varint(block)
@@ -227,9 +237,16 @@ func unmarshalIDsDelta(dst seq.IDSources, block []byte) (seq.IDSources, error) {
 		hint := string(block[:hintSize])
 		block = block[hintSize:]
 
+		var midValue seq.MID
+		if version == qprBinVersion1 {
+			midValue = seq.MillisToMID(uint64(mid))
+		} else {
+			midValue = seq.MID(mid)
+		}
+
 		dst = append(dst, seq.IDSource{
 			ID: seq.ID{
-				MID: seq.MID(mid),
+				MID: midValue,
 				RID: rid,
 			},
 			Source: source,
@@ -254,7 +271,7 @@ func marshalHistogram(dst []byte, histogram map[seq.MID]uint64) []byte {
 	return dst
 }
 
-func unmarshalHistogram(src []byte) (map[seq.MID]uint64, []byte, error) {
+func unmarshalHistogram(src []byte, version qprBinVersion) (map[seq.MID]uint64, []byte, error) {
 	length, n := binary.Uvarint(src)
 	src = src[n:]
 	if n <= 0 {
@@ -278,7 +295,14 @@ func unmarshalHistogram(src []byte) (map[seq.MID]uint64, []byte, error) {
 			return dst, src, fmt.Errorf("malformed histogram MID: %d", n)
 		}
 
-		dst[seq.MID(mid)] = cnt
+		var midValue seq.MID
+		if version == qprBinVersion1 {
+			midValue = seq.MillisToMID(uint64(mid))
+		} else {
+			midValue = seq.MID(mid)
+		}
+
+		dst[midValue] = cnt
 	}
 	return dst, src, nil
 }
@@ -349,7 +373,7 @@ func marshalAggs(dst []byte, aggs []seq.AggregatableSamples) []byte {
 	return dst
 }
 
-func unmarshalAggs(dst []seq.AggregatableSamples, src []byte) (_ []seq.AggregatableSamples, _ []byte, err error) {
+func unmarshalAggs(dst []seq.AggregatableSamples, src []byte, version qprBinVersion) (_ []seq.AggregatableSamples, _ []byte, err error) {
 	var header aggsBlockHeader
 	src, err = header.Unmarshal(src)
 	if err != nil {
@@ -376,7 +400,7 @@ func unmarshalAggs(dst []seq.AggregatableSamples, src []byte) (_ []seq.Aggregata
 
 	for i := 0; len(block) > 0; i++ {
 		agg := seq.AggregatableSamples{}
-		block, err = unmarshalAggregatableSamples(&agg, block)
+		block, err = unmarshalAggregatableSamples(&agg, block, version)
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid QPRHistogram at pos %d: %v", i, err)
 		}
@@ -400,7 +424,7 @@ func marshalAggregatableSamples(s seq.AggregatableSamples, dst []byte) []byte {
 	return dst
 }
 
-func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte) ([]byte, error) {
+func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte, version qprBinVersion) ([]byte, error) {
 	if len(src) < 16 {
 		return nil, fmt.Errorf("src too short to unmarshal QPRHistogram, want at least 16 bytes, got %d", len(src))
 	}
@@ -435,8 +459,15 @@ func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte) ([]byt
 		}
 		src = tail
 
+		var midValue seq.MID
+		if version == qprBinVersion1 {
+			midValue = seq.MillisToMID(uint64(mid))
+		} else {
+			midValue = seq.MID(mid)
+		}
+
 		ab := seq.AggBin{
-			MID:   seq.MID(mid),
+			MID:   midValue,
 			Token: token,
 		}
 		q.SamplesByBin[ab] = sample

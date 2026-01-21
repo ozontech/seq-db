@@ -66,7 +66,6 @@ func (fc *fracInfoCache) LoadFromDisk(fileName string) {
 		)
 		return
 	}
-
 	logger.Info("frac-cache loaded from disk",
 		zap.String("filename", fileName),
 		zap.Int("cache_entries", len(fc.cache)),
