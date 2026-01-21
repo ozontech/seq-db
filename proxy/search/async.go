@@ -10,11 +10,15 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/ozontech/seq-db/asyncsearcher"
+	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/stores"
@@ -51,7 +55,7 @@ func (si *Ingestor) StartAsyncSearch(ctx context.Context, r AsyncRequest) (Async
 		From:              r.From.UnixMilli(),
 		To:                r.To.UnixMilli(),
 		Aggs:              convertToAggsQuery(r.Aggregations),
-		HistogramInterval: int64(r.HistogramInterval),
+		HistogramInterval: int64(seq.MIDToMillis(r.HistogramInterval)),
 		Retention:         durationpb.New(r.Retention),
 		WithDocs:          r.WithDocs,
 		Size:              r.Size,
@@ -156,10 +160,31 @@ func (si *Ingestor) FetchAsyncSearchResult(
 			defer wg.Done()
 
 			for _, replica := range shard {
-				storeResp, err := si.clients[replica].FetchAsyncSearchResult(storesCtx, &req)
+				var md metadata.MD
+				storeResp, err := si.clients[replica].FetchAsyncSearchResult(storesCtx, &req, grpc.Header(&md))
 				if err != nil {
 					if status.Code(err) == codes.NotFound {
 						continue
+					}
+				}
+
+				protocolVersion := config.StoreProtocolVersion1
+				if protocolVersionValues := md.Get(consts.StoreProtocolVersionHeader); len(protocolVersionValues) > 0 {
+					protocolVersion = config.ParseStoreProtocolVersion(protocolVersionValues[0])
+				}
+
+				if protocolVersion == config.StoreProtocolVersion1 {
+					response := storeResp.Response
+					for _, id := range response.IdSources {
+						id.Id.Mid = uint64(seq.MillisToMID(id.Id.Mid))
+					}
+
+					if len(response.Histogram) > 0 {
+						newHist := make(map[uint64]uint64, len(response.Histogram))
+						for mid, v := range response.Histogram {
+							newHist[uint64(seq.MillisToMID(mid))] = v
+						}
+						response.Histogram = newHist
 					}
 				}
 
@@ -188,7 +213,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		fracsInQueue += int(sr.FracsQueue)
 		fracsDone += int(sr.FracsDone)
 
-		histInterval = seq.MID(sr.HistogramInterval)
+		histInterval = seq.MillisToMID(uint64(sr.HistogramInterval))
 
 		ss := sr.Status.MustAsyncSearchStatus()
 		pr.Status = mergeAsyncSearchStatus(pr.Status, ss)
@@ -392,7 +417,7 @@ func (si *Ingestor) GetAsyncSearchesList(
 					From:              s.From.AsTime(),
 					To:                s.To.AsTime(),
 					Aggregations:      buildRequestAggs(s.Aggs),
-					HistogramInterval: seq.MID(s.HistogramInterval),
+					HistogramInterval: seq.MillisToMID(uint64(s.HistogramInterval)),
 					WithDocs:          s.WithDocs,
 					Size:              s.Size,
 				}
@@ -454,6 +479,7 @@ func buildRequestAggs(in []*storeapi.AggQuery) []AggQuery {
 			GroupBy:   agg.GroupBy,
 			Func:      agg.Func.MustAggFunc(),
 			Quantiles: agg.Quantiles,
+			Interval:  seq.MillisToMID(uint64(agg.Interval)),
 		})
 	}
 	return reqAggs

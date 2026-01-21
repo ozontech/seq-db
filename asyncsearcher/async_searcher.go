@@ -17,8 +17,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/bytespool"
@@ -42,28 +40,11 @@ const (
 	maxRetention = 30 * 24 * time.Hour // 30 days
 )
 
-var (
-	asyncSearchActiveSearches = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "async_search",
-		Name:      "in_progress",
-		Help:      "Amount of active async searches in progress",
-	})
-	asyncSearchDiskUsage = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "async_search",
-		Name:      "disk_usage_bytes_total",
-	}, []string{"file_type"})
-	asyncSearchStoredRequests = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "async_search",
-		Name:      "stored_requests",
-	})
-	asyncSearchReadOnly = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "async_search",
-		Name:      "read_only",
-	})
+type infoVersion uint8
+
+const (
+	infoVersion1 infoVersion = iota + 1 // MIDs stored in milliseconds
+	infoVersion2                        // MIDs stored in nanoseconds
 )
 
 type MappingProvider interface {
@@ -124,6 +105,10 @@ func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracs fracma
 		go as.processRequest(id, fracs)
 	}
 
+	// set limit metrics that allow us to calculate alerts' thresholds
+	asyncSearchDiskUsageLimit.Set(float64(config.MaxSize))
+	asyncSearchConcurrencyLimit.Set(float64(config.Workers))
+
 	go as.startMaintenance()
 
 	return as
@@ -142,6 +127,8 @@ type fracSearchState struct {
 }
 
 type asyncSearchInfo struct {
+	Version infoVersion
+
 	// Finished is true if there are no fracs waiting to be processed.
 	//
 	// An async search request is considered complete only when all fracs are processed,
@@ -174,6 +161,7 @@ func newAsyncSearchInfo(r AsyncSearchRequest, list fracmanager.List) asyncSearch
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return asyncSearchInfo{
+		Version:    infoVersion2,
 		Finished:   false,
 		Error:      "",
 		CanceledAt: time.Time{},
@@ -576,6 +564,15 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 		info := newAsyncSearchInfo(AsyncSearchRequest{}, nil)
 		if err := json.Unmarshal(b, &info); err != nil {
 			return fmt.Errorf("malformed async search info %q: %s", name, err)
+		}
+
+		if info.Version == 0 {
+			info.Version = infoVersion1
+		}
+		if info.Version == infoVersion1 {
+			info.Request.Params.From = seq.MillisToMID(uint64(info.Request.Params.From))
+			info.Request.Params.To = seq.MillisToMID(uint64(info.Request.Params.To))
+			info.Version = infoVersion2
 		}
 
 		info.merged.Store(areQPRsMerged[requestID])

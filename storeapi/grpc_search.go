@@ -79,17 +79,17 @@ func (g *GrpcV1) doSearch(
 
 	start := time.Now()
 
-	from := seq.MID(req.From)
+	from := seq.MillisToMID(uint64(req.From))
 
 	// in store mode hot we return error in case request wants data, that we've already rotated
 	if g.config.StoreMode == StoreModeHot {
-		if g.fracManager.Flags().IsCapacityExceeded() && g.earlierThanOldestFrac(uint64(from)) {
+		if g.fracManager.Flags().IsCapacityExceeded() && g.earlierThanOldestFrac(uint64(req.From)) {
 			metric.RejectedRequests.WithLabelValues("search", "old_data").Inc()
 			return &storeapi.SearchResponse{Code: storeapi.SearchErrorCode_INGESTOR_QUERY_WANTS_OLD_DATA}, nil
 		}
 	}
 
-	to := seq.MID(req.To)
+	to := seq.MillisToMID(uint64(req.To))
 	limit := int(req.Size + req.Offset)
 
 	if req.Explain {
@@ -108,8 +108,8 @@ func (g *GrpcV1) doSearch(
 		return nil, err
 	}
 
-	fromTime := seq.MIDToTime(seq.MID(req.From))
-	toTime := seq.MIDToTime(seq.MID(req.To))
+	fromTime := seq.MIDToTime(from)
+	toTime := seq.MIDToTime(to)
 
 	toTimeFilter := g.config.Filter.To
 	fromTimeFilter := g.config.Filter.From
@@ -205,8 +205,8 @@ func (g *GrpcV1) doSearch(
 			zap.Int64("took_ms", took.Milliseconds()),
 			zap.Object("req", (*searchRequestMarshaler)(req)),
 			zap.Uint64("found", qpr.Total),
-			zap.String("from", seq.MID(req.From).String()),
-			zap.String("to", seq.MID(req.To).String()),
+			zap.String("from", seq.MillisToMID(uint64(req.From)).String()),
+			zap.String("to", seq.MillisToMID(uint64(req.To)).String()),
 			zap.Int64("offset", req.Offset),
 			zap.Int64("size", req.Size),
 			zap.Bool("with_total", req.WithTotal),

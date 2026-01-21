@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/pkg/profile"
 	"github.com/stretchr/testify/assert"
 
@@ -39,9 +38,6 @@ func TestMain(m *testing.M) {
 func fillActiveFraction(active *frac.Active) error {
 	const muliplier = 10
 
-	docRoot := insaneJSON.Spawn()
-	defer insaneJSON.Release(docRoot)
-
 	file, err := os.Open(filepath.Join(testscommon.TestDataDir, "k8s.logs"))
 	if err != nil {
 		return err
@@ -62,12 +58,8 @@ func fillActiveFraction(active *frac.Active) error {
 		for scanner.Scan() {
 			k++
 			doc := scanner.Bytes()
-			if err := docRoot.DecodeBytes(doc); err != nil {
-				return err
-			}
-
 			id := seq.NewID(time.Now(), uint64(rand.Int63()))
-			dp.Append(doc, docRoot, id,
+			dp.Append(doc, id,
 				"_all_:",
 				"service:service"+strconv.Itoa(rand.Intn(200)),
 				"k8s_pod1:"+strconv.Itoa(k%100000),

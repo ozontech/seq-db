@@ -69,6 +69,9 @@ const (
 	// tracing
 	JaegerDebugKey = "jaeger-debug-id"
 	DebugHeader    = "x-o3-sample-trace"
+
+	// StoreProtocolVersionHeader reports store protocol version
+	StoreProtocolVersionHeader = "x-seq-protocol-id"
 )
 
 var (

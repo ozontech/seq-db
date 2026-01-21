@@ -117,6 +117,12 @@ func MsTsToESFormat(ts uint64) string {
 	return time.UnixMilli(int64(ts)).Format(consts.ESTimeFormat)
 }
 
+// NsTsToESFormat converts timestamp in nanoseconds to ES time format string. Nanosecond part will not be printed.
+func NsTsToESFormat(ts uint64) string {
+	nanosPerSec := uint64(time.Second)
+	return time.Unix(int64(ts/nanosPerSec), int64(ts%nanosPerSec)).Format(consts.ESTimeFormat)
+}
+
 func BinSearchInRange(from, to int, fn func(i int) bool) int {
 	n := to - from + 1
 	i := sort.Search(n, func(i int) bool { return fn(from + i) })

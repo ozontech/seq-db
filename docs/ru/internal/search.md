@@ -26,7 +26,7 @@ Some basic overview of nodes:
 >
 > **ID** (document ID) - full id of a document, that you can use on proxy to find this specific doc. Consists of two parts: mid and rid.
 >
-> **MID** (milliseconds ID) - timestamp of a document. This is a timestamp, that log was written into stdout on the machine, not when it came into seq-db, meaning that it can be quite old relative to the time on the seq-db machine.
+> **MID** (nanoseconds ID) - timestamp of a document. This is a timestamp, that log was written into stdout on the machine, not when it came into seq-db, meaning that it can be quite old relative to the time on the seq-db machine.
 >
 > **RID** (random ID) - random part of an id
 
