@@ -77,7 +77,7 @@ func (l *Loader) GetRIDsBlock(index uint32) (BlockRIDs, error) {
 			return BlockRIDs{}, 0, errors.New("empty block")
 		}
 
-		ui64 := int(unsafe.Sizeof(uint64(0)))
+		const ui64 = int(unsafe.Sizeof(uint64(0)))
 		return block, cap(block.Values) * ui64, err
 	})
 }
@@ -98,7 +98,7 @@ func (l *Loader) GetParamsBlock(index uint32) (BlockParams, error) {
 			return BlockParams{}, 0, errors.New("empty block")
 		}
 
-		ui64 := int(unsafe.Sizeof(uint64(0)))
+		const ui64 = int(unsafe.Sizeof(uint64(0)))
 		return block, cap(block.Values) * ui64, nil
 	})
 }
