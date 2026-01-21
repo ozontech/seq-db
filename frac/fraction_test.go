@@ -41,6 +41,7 @@ type FractionTestSuite struct {
 	mapping       seq.Mapping
 	tokenizers    map[seq.TokenizerType]tokenizer.Tokenizer
 	activeIndexer *ActiveIndexer
+	stopIndexer   func()
 	sealParams    common.SealParams
 
 	fraction Fraction
@@ -49,12 +50,11 @@ type FractionTestSuite struct {
 }
 
 func (s *FractionTestSuite) SetupSuiteCommon() {
-	s.activeIndexer = NewActiveIndexer(4, 10)
-	s.activeIndexer.Start()
+	s.activeIndexer, s.stopIndexer = NewActiveIndexer(4, 10)
 }
 
 func (s *FractionTestSuite) TearDownSuiteCommon() {
-	s.activeIndexer.Stop()
+	s.stopIndexer()
 }
 
 func (s *FractionTestSuite) SetupTestCommon() {
@@ -96,6 +96,9 @@ func (s *FractionTestSuite) SetupTestCommon() {
 }
 
 func (s *FractionTestSuite) TearDownTestCommon() {
+	if s.fraction != nil {
+		s.fraction = nil
+	}
 	err := os.RemoveAll(s.tmpDir)
 	s.NoError(err, "Failed to remove tmp dir")
 }
@@ -455,6 +458,36 @@ func (s *FractionTestSuite) TestSearchFromTo() {
 
 	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 0, 10, []int{5, 4, 3})
 	assertSearch(`NOT trace_id:0 AND NOT trace_id:2`, 3, 5, []int{5, 4, 3})
+}
+
+// TestSearchFromToNanoseconds tests if SearchParams "from" and "to" params can be specified up to nanoseconds since they are of seq.MID type.
+// However, seq-db API doesn't support searching with queries with "from" and "to" specified in nanos. Only millis are supported.
+func (s *FractionTestSuite) TestSearchFromToNanoseconds() {
+	docs := []string{
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000000000Z","message":"bad","level":"1","trace_id":"0","service":"0"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:00.000000001Z","message":"good","level":"2","trace_id":"0","service":"1"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:00.000000002Z","message":"bad","level":"3","trace_id":"0","service":"2"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:00.000000003Z","message":"good","level":"4","trace_id":"1","service":"0"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:00.000000004Z","message":"bad","level":"5","trace_id":"1","service":"1"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:00.000000005Z","message":"good","level":"6","trace_id":"1","service":"2"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:00.000000006Z","message":"bad","level":"7","trace_id":"2","service":"0"}`,
+		/*7*/ `{"timestamp":"2000-01-01T13:00:00.000000007Z","message":"good","level":"8","trace_id":"2","service":"1"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	assertSearch := func(query string, fromOffset, toOffset int, expectedIndexes []int) {
+		s.AssertSearch(s.query(
+			query,
+			withFrom(fmt.Sprintf("2000-01-01T13:00:00.000000%03dZ", fromOffset)),
+			withTo(fmt.Sprintf("2000-01-01T13:00:00.000000%03dZ", toOffset))),
+			docs, expectedIndexes)
+	}
+
+	assertSearch(`message:good`, 0, 7, []int{7, 5, 3, 1})
+	assertSearch(`message:bad`, 0, 7, []int{6, 4, 2, 0})
+	assertSearch(`message:good`, 0, 6, []int{5, 3, 1})
+	assertSearch(`message:bad`, 1, 7, []int{6, 4, 2})
 }
 
 func (s *FractionTestSuite) TestSearchWithLimit() {
@@ -965,65 +998,309 @@ func (s *FractionTestSuite) TestSearchMultipleBulks() {
 
 // This test checks search on a large frac. Doc count is set to 25000 which results in ~200 kbyte docs file (3 doc blocks)
 func (s *FractionTestSuite) TestSearchLargeFrac() {
-	services := []string{"gateway", "proxy", "scheduler"}
-	messages := []string{
-		"request started", "request completed", "processing timed out",
-		"processing data", "processing failed", "processing retry",
-	}
-
-	baseTime := time.Date(2000, 1, 1, 13, 0, 0, 0, time.UTC)
-
-	var docs []string
-	var messageRequestIndexes []int
-	var serviceGatewayIndexes []int
-	var level5Indexes []int
-
-	for i := 0; i < 25000; i++ {
-		service := services[rand.IntN(len(services))]
-		message := messages[rand.IntN(len(messages))]
-		level := rand.IntN(6)
-		timestamp := baseTime.Add(time.Duration(i) * time.Millisecond)
-
-		doc := fmt.Sprintf(`{"timestamp":%q,"service":%q,"message":%q,"level":"%d"}`,
-			timestamp.Format(time.RFC3339Nano), service, message, level)
-		docs = append(docs, doc)
-
-		if service == "gateway" {
-			serviceGatewayIndexes = append(serviceGatewayIndexes, i)
-		}
-		if level == 5 {
-			level5Indexes = append(level5Indexes, i)
-		}
-		if strings.Contains(message, "request") {
-			messageRequestIndexes = append(messageRequestIndexes, i)
-		}
-	}
-
-	slices.Reverse(messageRequestIndexes)
-	slices.Reverse(serviceGatewayIndexes)
-	slices.Reverse(level5Indexes)
-
-	bulkSize := 1000
-	var bulks [][]string
-	for i := 0; i < len(docs); i += bulkSize {
-		end := i + bulkSize
-		if end > len(docs) {
-			end = len(docs)
-		}
-		bulks = append(bulks, docs[i:end])
-	}
-	// docs in each bulk will be shuffled in insertDocuments, now we only shuffle bulks
-	rand.Shuffle(len(bulks), func(i, j int) {
-		bulks[i], bulks[j] = bulks[j], bulks[i]
-	})
+	testDocs, bulks, fromTime, toTime := generatesMessages(25000, 1000)
+	midTime := fromTime.Add(time.Duration(len(testDocs)/2) * time.Millisecond)
 
 	s.insertDocuments(bulks...)
 
-	s.AssertSearch(s.query("message:request", withLimit(100)), docs, messageRequestIndexes[:100])
-	s.AssertSearch(s.query("service:gateway"), docs, serviceGatewayIndexes)
-	s.AssertSearch(s.query("service:gateway", withLimit(100)), docs, serviceGatewayIndexes[:100])
-	s.AssertSearch(s.query("level:5"), docs, level5Indexes)
-	s.AssertSearch(s.query("level:5", withLimit(100)), docs, level5Indexes[:100])
+	docJsons := make([]string, len(testDocs))
+	for i, td := range testDocs {
+		docJsons[i] = td.json
+	}
+
+	type docFilter func(doc *testDoc) bool
+
+	searchTestCases := []struct {
+		name     string
+		query    string
+		filter   docFilter
+		fromTime time.Time
+		toTime   time.Time
+		limit    int
+	}{
+		{
+			name:     "message:request",
+			query:    "message:request",
+			filter:   func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:     "message:request (time range)",
+			query:    "message:request",
+			filter:   func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+		{
+			name:     "message:request (time range + limit)",
+			query:    "message:request",
+			filter:   func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
+			fromTime: fromTime,
+			toTime:   midTime,
+			limit:    100,
+		},
+		{
+			name:     "service:bus",
+			query:    "service:bus",
+			filter:   func(doc *testDoc) bool { return doc.service == "bus" },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:     "service:proxy (time range)",
+			query:    "service:proxy",
+			filter:   func(doc *testDoc) bool { return doc.service == "proxy" },
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+		{
+			name:     "service:scheduler (time range + limit)",
+			query:    "service:scheduler",
+			filter:   func(doc *testDoc) bool { return doc.service == "scheduler" },
+			fromTime: fromTime,
+			toTime:   midTime,
+			limit:    100,
+		},
+		{
+			name:     "level:5",
+			query:    "level:5",
+			filter:   func(doc *testDoc) bool { return doc.level == 5 },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:     "level:228",
+			query:    "level:228",
+			filter:   func(doc *testDoc) bool { return false }, // no such data, just validate than frac returns empty IDs
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:     "level:5 (time range)",
+			query:    "level:5",
+			filter:   func(doc *testDoc) bool { return doc.level == 5 },
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+		{
+			name:     "trace_id:trace-777",
+			query:    "trace_id:trace-777",
+			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-777" },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:     "trace_id:trace-100 (time range)",
+			query:    "trace_id:trace-100",
+			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-100" },
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+		{
+			name:     "trace_id:trace-4999",
+			query:    "trace_id:trace-4999",
+			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-4999" },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:     "trace_id:trace-2025 (time range)",
+			query:    "trace_id:trace-2025",
+			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-2025" },
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+	}
+
+	for _, tc := range searchTestCases {
+		s.Run(tc.name, func() {
+			var expectedIndexes []int
+			for i := len(testDocs) - 1; i >= 0; i-- {
+				doc := &testDocs[i]
+
+				if doc.timestamp.Before(tc.fromTime) {
+					continue
+				}
+				if doc.timestamp.After(tc.toTime) {
+					continue
+				}
+
+				if tc.filter(doc) {
+					expectedIndexes = append(expectedIndexes, i)
+					if tc.limit > 0 && len(expectedIndexes) >= tc.limit {
+						break
+					}
+				}
+			}
+
+			var options []searchOption
+			options = append(options, withFrom(tc.fromTime.Format(time.RFC3339Nano)), withTo(tc.toTime.Format(time.RFC3339Nano)))
+			if tc.limit > 0 {
+				options = append(options, withLimit(tc.limit))
+			}
+
+			s.AssertSearch(s.query(tc.query, options...), docJsons, expectedIndexes)
+		})
+	}
+
+	s.Run("NOT message:retry | group by service avg(level)", func() {
+		levelsByService := make(map[string][]int)
+		for _, doc := range testDocs {
+			// our query for agg will be `NOT message:retry`
+			if strings.Contains(doc.message, "retry") {
+				continue
+			}
+
+			levelsByService[doc.service] = append(levelsByService[doc.service], doc.level)
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for service, levels := range levelsByService {
+			sum := 0
+			for _, level := range levels {
+				sum += level
+			}
+			avg := float64(sum) / float64(len(levels))
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      service,
+				Value:     avg,
+				NotExists: 0,
+			})
+		}
+
+		searchParams := s.query(
+			"NOT message:retry",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				Field:   aggField("level"),
+				GroupBy: aggField("service"),
+				Func:    seq.AggFuncAvg,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
+	})
+
+	s.Run("service:database AND level:3 | hist 1s", func() {
+		histBuckets := make(map[string]uint64)
+		for _, doc := range testDocs {
+			if doc.service == "database" && doc.level == 3 {
+				bucketTime := doc.timestamp.Truncate(time.Second)
+				bucketKey := bucketTime.Format(time.RFC3339Nano)
+				histBuckets[bucketKey]++
+			}
+		}
+
+		s.AssertHist(
+			s.query("service:database AND level:3", withTo(toTime.Format(time.RFC3339Nano)), withHist(1000)),
+			histBuckets)
+	})
+}
+
+func (s *FractionTestSuite) TestIntersectingNanoseconds() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000000000Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000001Z","message":"good","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000002Z","message":"ok","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000003Z","message":"err","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000004Z","message":"success","level":"3"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001000000Z","message":"err","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001000001Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001000002Z","message":"good","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002000000Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002000000Z","message":"err","level":"1"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	s.Require().Equal(uint64(946731600000000000), uint64(s.fraction.Info().From))
+	s.Require().Equal(uint64(946731600002000000), uint64(s.fraction.Info().To))
+
+	s.Require().True(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T12:59:59.000000000Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000000000Z"))),
+		"must intersect at info.From")
+	// 1 ns before the fraction range. Should not overlap, since MID distribution is not built for fractions with short lifetime,
+	// and it only covers the last 24h from now
+	s.Require().False(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T12:59:59.000000000Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T12:59:59.999999999Z"))),
+		"must not overlap (outside of range)")
+	// overlaps at the only point at info.To
+	s.Require().True(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.002000000Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.999999999Z"))),
+		"must intersect at info.To")
+	s.Require().False(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.002000001Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.999999999Z"))),
+		"must not intersect (1 ns outside of range)")
+	s.Require().True(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T12:59:59.999999999Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000000001Z"))),
+		"must intersect due to overlapping")
+	s.Require().True(s.fraction.IsIntersecting(
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.001000000Z")),
+		seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.999999999Z"))),
+		"must intersect due to overlapping")
+
+	// double check for seq.MID built from raw nanoseconds
+	s.Require().True(s.fraction.IsIntersecting(seq.MID(946731500000000000), seq.MID(946731600000000000)))
+	s.Require().True(s.fraction.IsIntersecting(seq.MID(946731600002000000), seq.MID(946731699999999999)))
+}
+
+func (s *FractionTestSuite) TestContainsWithMIDDistribution() {
+	now := time.Now().Truncate(time.Minute)
+	docs := []string{
+		fmt.Sprintf(`{"timestamp":%q,"message":"apple juice"}`, now.Add(-60*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"orange juice"}`, now.Add(-61*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"cider"}`, now.Add(-65*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"wine"}`, now.Add(-123*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"cola"}`, now.Add(-365*time.Minute).Format(time.RFC3339Nano)),
+		fmt.Sprintf(`{"timestamp":%q,"message":"cola"}`, now.Add(-30*time.Hour).Format(time.RFC3339Nano)),
+	}
+
+	s.insertDocuments(docs)
+
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-60 * time.Minute))))
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-61 * time.Minute))))
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-123 * time.Minute))))
+	// also true, MID distribution bucket is 1 minute
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-60 * time.Minute).Add(-30 * time.Second))))
+	// contains=true: outside MID distribution but within from-to range
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-27 * time.Hour))))
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(now.Add(-30 * time.Hour))))
+	// contains=false: outside MID distribution AND outside from-to range
+	s.Require().False(s.fraction.Contains(seq.TimeToMID(now.Add(-30 * time.Hour).Add(-1 * time.Minute))))
+}
+
+func (s *FractionTestSuite) TestContainsNanoseconds() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000000000Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000001Z","message":"good","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000000004Z","message":"success","level":"3"}`,
+		`{"timestamp":"2000-01-01T13:10:00.000000000Z","message":"err","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:20:00.000000001Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:30:00.000000002Z","message":"good","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:40:00.000000001Z","message":"bad","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:50:00.000000002Z","message":"err","level":"1"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000000000Z"))), "frac must contain first doc")
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000000001Z"))), "frac must contain second doc")
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:10:00.000000000Z"))), "frac must contain third doc")
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:50:00.000000002Z"))), "frac must contain last doc")
+
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:30:00.000000002Z"))), "frac must contain sixth doc")
+	// round doc nano to milli, still Contains returns true
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:30:00.000000000Z"))), "frac must contain sixth doc (rounded to milli)")
+
+	// still Contains returns true even though the timestamp is 5 minute far from nearest doc
+	// MID distribution only covers the last 24h, so Contains return true here
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:15:00.000000000Z"))))
+	s.Require().True(s.fraction.Contains(seq.TimeToMID(mustParseTime("2000-01-01T13:25:00.000000000Z"))))
 }
 
 func (s *FractionTestSuite) TestMIDDistribution() {
@@ -1073,8 +1350,8 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	s.Require().True(info.DocsOnDisk > uint64(200) && info.DocsOnDisk < uint64(300),
 		"doc on disk doesn't match. actual value: %d", info.DocsOnDisk)
 	s.Require().Equal(uint64(583), info.DocsRaw, "doc raw doesn't match")
-	s.Require().Equal(seq.MID(946731625000), info.From, "from doesn't match")
-	s.Require().Equal(seq.MID(946731654000), info.To, "to doesn't match")
+	s.Require().Equal(seq.MID(946731625000000000), info.From, "from doesn't match")
+	s.Require().Equal(seq.MID(946731654000000000), info.To, "to doesn't match")
 
 	switch s.fraction.(type) {
 	case *Active:
@@ -1084,7 +1361,7 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	case *Sealed:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
 		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1600),
-			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
+			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	case *Remote:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
 		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1500),
@@ -1117,7 +1394,7 @@ func (s *FractionTestSuite) query(queryString string, options ...searchOption) *
 
 func withFrom(from string) searchOption {
 	return func(p *processor.SearchParams) error {
-		t, err := time.Parse(time.RFC3339, from)
+		t, err := time.Parse(time.RFC3339Nano, from)
 		if err != nil {
 			return err
 		}
@@ -1128,7 +1405,7 @@ func withFrom(from string) searchOption {
 
 func withTo(to string) searchOption {
 	return func(p *processor.SearchParams) error {
-		t, err := time.Parse(time.RFC3339, to)
+		t, err := time.Parse(time.RFC3339Nano, to)
 		if err != nil {
 			return err
 		}
@@ -1173,6 +1450,14 @@ func withAggQuery(aggQuery processor.AggQuery) searchOption {
 		sp.AggQ = append(sp.AggQ, aggQuery)
 		return nil
 	}
+}
+
+func mustParseTime(timeStr string) time.Time {
+	t, err := time.Parse(time.RFC3339Nano, timeStr)
+	if err != nil {
+		panic(fmt.Sprintf("could not parse timestamp %s", timeStr))
+	}
+	return t
 }
 
 func (s *FractionTestSuite) AssertSearch(queryObject interface{}, originalDocs []string, expectedIndexes []int) {
@@ -1375,15 +1660,10 @@ func (s *ActiveFractionTestSuite) SetupTest() {
 }
 
 func (s *ActiveFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		active, ok := s.fraction.(*Active)
-		if ok {
-			active.Release()
-		} else {
-			s.Require().Fail("fraction is not of Active type")
-		}
-		s.fraction.Suicide()
-		s.fraction = nil
+	if active, ok := s.fraction.(*Active); ok {
+		active.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Active type")
 	}
 
 	s.TearDownTestCommon()
@@ -1398,6 +1678,7 @@ ActiveReplayedFractionTestSuite run tests for active fraction which was replayed
 */
 type ActiveReplayedFractionTestSuite struct {
 	FractionTestSuite
+	originalFrac *Active
 }
 
 func (s *ActiveReplayedFractionTestSuite) SetupSuite() {
@@ -1420,7 +1701,7 @@ func (s *ActiveReplayedFractionTestSuite) SetupTest() {
 
 func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
 	fracFileName := frac.BaseFileName
-	frac.Release()
+	s.originalFrac = frac
 	replayedFrac := NewActive(
 		fracFileName,
 		s.activeIndexer,
@@ -1434,17 +1715,12 @@ func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
 }
 
 func (s *ActiveReplayedFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		active, ok := s.fraction.(*Active)
-		if ok {
-			active.Release()
-		} else {
-			s.Require().Fail("fraction is not of Active type")
-		}
-		s.fraction.Suicide()
-		s.fraction = nil
+	s.originalFrac.Release()
+	if active, ok := s.fraction.(*Active); ok {
+		active.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Active type")
 	}
-
 	s.TearDownTestCommon()
 }
 
@@ -1475,9 +1751,10 @@ func (s *SealedFractionTestSuite) SetupTest() {
 }
 
 func (s *SealedFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		s.fraction.Suicide()
-		s.fraction = nil
+	if sealed, ok := s.fraction.(*Sealed); ok {
+		sealed.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
 	}
 	s.TearDownTestCommon()
 }
@@ -1510,9 +1787,10 @@ func (s *SealedLoadedFractionTestSuite) SetupTest() {
 }
 
 func (s *SealedLoadedFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		s.fraction.Suicide()
-		s.fraction = nil
+	if sealed, ok := s.fraction.(*Sealed); ok {
+		sealed.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
 	}
 	s.TearDownTestCommon()
 }
@@ -1523,7 +1801,7 @@ func (s *SealedLoadedFractionTestSuite) TearDownSuite() {
 
 func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Sealed {
 	sealed := s.newSealed(bulks...)
-	sealed.close("closed")
+	sealed.Release()
 
 	indexCache := &IndexCache{
 		MIDs:       cache.NewCache[[]byte](nil, nil),
@@ -1616,9 +1894,10 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 }
 
 func (s *RemoteFractionTestSuite) TearDownTest() {
-	if s.fraction != nil {
-		s.fraction.Suicide()
-		s.fraction = nil
+	if remote, ok := s.fraction.(*Remote); ok {
+		remote.Suicide()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Remote type")
 	}
 	s.TearDownTestCommon()
 }

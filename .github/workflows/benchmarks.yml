@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 
-name: Continuous Benchmarks
+name: Benchmarks
 
 on:
   push:
@@ -9,15 +9,32 @@ on:
     branches: [ main ]
 
 permissions:
+  issues: write
   contents: write
-  deployments: write
+  pull-requests: write
 
 jobs:
-  ci-benchmarks:
+  ci-continuous-benchmarks:
+    if: ${{ github.ref_name == 'main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy latest (unstable) version of seq-db
+        run: |
+          curl --insecure -X POST "https://${{ secrets.CONTINUOUS_BENCHMARKS_ENDPOINT }}/seqagent/v1/b/up" \
+            -H "Content-Type: application/json" \
+            -H "X-Seqbench-Secret: ${{ secrets.SEQBENCH_SECRET }}" \
+            -d @- <<EOF
+          {
+            "reference": "${{ github.sha }}",
+            "scenario": "mixed"
+          }
+          EOF
+
+  ci-micro-benchmarks:
     runs-on: self-hosted
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Setup Golang
         uses: actions/setup-go@v6
@@ -34,8 +51,9 @@ jobs:
       # Add GitHub job summary for pull requests.
       - name: Summarize benchmarks results
         if: ${{ success() && github.event_name == 'pull_request' }}
-        uses: dkharms/chronos@v0.0.8
+        uses: dkharms/chronos@v0.0.10
         with:
+          language-tool: gotool
           github-token: ${{ github.token }}
           benchmarks-file-path: ${{ runner.temp }}/gotool.txt
           action-to-perform: summarize
@@ -44,8 +62,9 @@ jobs:
       # was merged to main and previous job was successful.
       - name: Save benchmarks results
         if: ${{ success() && github.ref_name == 'main' }}
-        uses: dkharms/chronos@v0.0.8
+        uses: dkharms/chronos@v0.0.10
         with:
+          language-tool: gotool
           github-token: ${{ github.token }}
           benchmarks-file-path: ${{ runner.temp }}/gotool.txt
           action-to-perform: save
@@ -54,7 +73,8 @@ jobs:
       # was merged to main and previous job was successful.
       - name: Publish benchmarks results
         if: ${{ success() && github.ref_name == 'main' }}
-        uses: dkharms/chronos@v0.0.8
+        uses: dkharms/chronos@v0.0.10
         with:
+          language-tool: gotool
           github-token: ${{ github.token }}
           action-to-perform: publish

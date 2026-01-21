@@ -1,7 +1,8 @@
+ARG GO_VERSION
 ARG APP_IMAGE=ubuntu:latest
 
 # Build
-FROM golang:1.24 AS build
+FROM golang:${GO_VERSION:-1.24} AS build
 
 WORKDIR /seq-db
 
@@ -13,13 +14,10 @@ COPY . .
 
 ARG VERSION
 ARG BUILD_TIME
-ARG TARGETARCH
 
-ENV CGO_ENABLED=1
-ENV GOOS=linux
-ENV GOARCH=${TARGETARCH:-amd64}
+ARG CGO_ENABLED=1
 
-RUN go build -trimpath \
+RUN CGO_ENABLED=${CGO_ENABLED} go build -trimpath \
     -tags 'netgo osusergo' \
     -ldflags "-w -s  \
     -X github.com/ozontech/seq-db/buildinfo.Version=${VERSION}  \
