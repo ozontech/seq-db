@@ -8,10 +8,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -161,7 +163,13 @@ func (si *Ingestor) FetchAsyncSearchResult(
 
 			for _, replica := range shard {
 				var md metadata.MD
-				storeResp, err := si.clients[replica].FetchAsyncSearchResult(storesCtx, &req, grpc.Header(&md))
+				storeResp, err := si.clients[replica].FetchAsyncSearchResult(
+					storesCtx, &req,
+					grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
+					grpc.MaxCallSendMsgSize(256*int(units.MiB)),
+					grpc.UseCompressor(gzip.Name),
+					grpc.Header(&md),
+				)
 				if err != nil {
 					if status.Code(err) == codes.NotFound {
 						continue
@@ -173,7 +181,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 					protocolVersion = config.ParseStoreProtocolVersion(protocolVersionValues[0])
 				}
 
-				if protocolVersion == config.StoreProtocolVersion1 {
+				if protocolVersion == config.StoreProtocolVersion1 && storeResp != nil && storeResp.Response != nil {
 					response := storeResp.Response
 					for _, id := range response.IdSources {
 						id.Id.Mid = uint64(seq.MillisToMID(id.Id.Mid))
