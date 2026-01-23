@@ -20,6 +20,15 @@ type fracsStats struct {
 	totalSizeOnDisk uint64 // Total storage size, including documents, index and metadata
 }
 
+func (s *fracsStats) Set(info *common.Info) {
+	s.count = 1
+	s.docsCount = uint64(info.DocsTotal)
+	s.docsSizeRaw = info.DocsRaw
+	s.docsSizeOnDisk = info.DocsOnDisk
+	s.indexSizeOnDisk = info.IndexOnDisk + info.MetaOnDisk
+	s.totalSizeOnDisk = info.FullSize()
+}
+
 // Add incorporates fraction information into the statistics
 // Updates all aggregate metrics with the values from the provided fraction info
 func (s *fracsStats) Add(info *common.Info) {
@@ -64,6 +73,7 @@ func (s *fracsStats) SetMetrics(metric *prometheus.GaugeVec, stage string) {
 // registryStats contains statistical data for all fraction queues
 // Used for monitoring and memory management decisions
 type registryStats struct {
+	active     fracsStats // Statistics for active fraction
 	sealing    fracsStats // Statistics for fractions in the sealing process
 	sealed     fracsStats // Statistics for fractions on sealed disk
 	offloading fracsStats // Statistics for fractions in the offloading process
@@ -71,6 +81,7 @@ type registryStats struct {
 }
 
 func (s *registryStats) Log() {
+	s.sealing.Log("active")
 	s.sealing.Log("sealing")
 	s.sealed.Log("sealed")
 	s.offloading.Log("offloading")
@@ -78,6 +89,7 @@ func (s *registryStats) Log() {
 }
 
 func (s *registryStats) SetMetrics() {
+	s.sealing.SetMetrics(dataSizeTotal, "active")
 	s.sealing.SetMetrics(dataSizeTotal, "sealing")
 	s.sealed.SetMetrics(dataSizeTotal, "sealed")
 	s.offloading.SetMetrics(dataSizeTotal, "offloading")

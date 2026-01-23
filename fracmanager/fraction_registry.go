@@ -89,6 +89,8 @@ func (r *fractionRegistry) AllFractions() []frac.Fraction {
 func (r *fractionRegistry) Stats() registryStats {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
+	r.stats.active.Set(r.active.instance.Info())
 	return r.stats
 }
 
