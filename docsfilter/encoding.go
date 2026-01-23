@@ -9,6 +9,7 @@ import (
 
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
+	"github.com/ozontech/seq-db/zstd"
 )
 
 type DocsFilterBin struct {
@@ -25,15 +26,20 @@ var availableVersions = map[docsFilterBinVersion]struct{}{
 	docsFilterBinVersion1: {},
 }
 
+type lidsCodec byte
+
+const (
+	lidsCodecDelta     = 1
+	lidsCodecDeltaZstd = 2
+)
+
 type lidsBlockHeader struct {
+	Codec  lidsCodec
 	Length uint32 // Number of LIDs in block
 	MinLID uint32
 	MaxLID uint32
 	Size   uint32 // Size of ids block in bytes.
 	Offset uint64 // block's offset in file
-
-	// TODO: compression (???)
-	// Codec idsCodec
 }
 
 func (h *lidsBlockHeader) marshal(dst []byte) {
@@ -41,7 +47,8 @@ func (h *lidsBlockHeader) marshal(dst []byte) {
 		panic("BUG: marshal lidsBlockHeader: len(dst) is less than header size")
 	}
 
-	// dst = append(dst, byte(h.Codec))
+	dst[0] = byte(h.Codec)
+	dst = dst[1:]
 	binary.BigEndian.PutUint32(dst, h.Length)
 	dst = dst[sizeOfUint32:]
 	binary.BigEndian.PutUint32(dst, h.MinLID)
@@ -59,8 +66,8 @@ func (h *lidsBlockHeader) unmarshal(src []byte) ([]byte, error) {
 		return src, errors.New("too few bytes")
 	}
 
-	// h.Codec = idsCodec(src[0])
-	// src = src[1:]
+	h.Codec = lidsCodec(src[0])
+	src = src[1:]
 	h.Length = binary.BigEndian.Uint32(src)
 	src = src[sizeOfUint32:]
 	h.MinLID = binary.BigEndian.Uint32(src)
@@ -87,15 +94,13 @@ const (
 )
 
 const (
-	lidsBlockHeaderSizeBytes = (4 * sizeOfUint32) + sizeOfUint64
+	lidsBlockHeaderSizeBytes = 1 + (4 * sizeOfUint32) + sizeOfUint64
 	maxLIDsBlockLen          = 1024
 )
 
 var lidsBlockBufPool util.BufferPool
 
 func marshalLIDsBlocks(dst []byte, in []seq.LID) []byte {
-	// TODO: zstd (???)
-
 	b := lidsBlockBufPool.Get()
 	defer lidsBlockBufPool.Put(b)
 
@@ -111,12 +116,14 @@ func marshalLIDsBlocks(dst []byte, in []seq.LID) []byte {
 		end := min(maxLIDsBlockLen, len(in[start:]))
 		chunk := in[start : start+end]
 
-		b.B = marshalLIDsBlock(b.B[:0], chunk)
+		var codec lidsCodec
+		b.B, codec = marshalLIDsBlock(b.B[:0], chunk)
 		if len(b.B) > math.MaxUint32 {
 			panic(fmt.Errorf("unexpected block length %d; want up to %d", len(b.B), math.MaxUint32))
 		}
 
 		header := lidsBlockHeader{
+			Codec:  codec,
 			Length: uint32(len(chunk)),
 			MinLID: uint32(chunk[0]),
 			MaxLID: uint32(chunk[len(chunk)-1]),
@@ -133,16 +140,28 @@ func marshalLIDsBlocks(dst []byte, in []seq.LID) []byte {
 	return dst
 }
 
-func marshalLIDsBlock(dst []byte, in []seq.LID) []byte {
+func marshalLIDsBlock(dst []byte, in []seq.LID) ([]byte, lidsCodec) {
+	b := lidsBlockBufPool.Get()
+	defer lidsBlockBufPool.Put(b)
+
 	prev := seq.LID(0)
 	for i := range len(in) {
 		lid := in[i]
 		deltaLID := lid - prev
 		prev = lid
-		dst = binary.AppendVarint(dst, int64(deltaLID))
+		b.B = binary.AppendVarint(b.B, int64(deltaLID))
 	}
 
-	return dst
+	orig := dst
+	dst = zstd.CompressLevel(b.B, dst, getCompressLevel(len(b.B)))
+
+	compressRatio := float64(len(dst)-len(orig)) / float64(len(b.B))
+	if compressRatio < 1.05 {
+		orig = append(orig, b.B...)
+		return orig, lidsCodecDelta
+	}
+
+	return dst, lidsCodecDeltaZstd
 }
 
 const minLIDsFIlterBytesLen = 10 // 1 byte lidsBinVersion + 8 byte number of LIDs + N (min 1) bytes varint + delta encoded LIDs
@@ -201,19 +220,37 @@ func unmarshalLIDsBlock(dst []seq.LID, src []byte, header lidsBlockHeader) ([]se
 		return dst, src, fmt.Errorf("empty LIDs block")
 	}
 
-	if int(header.Size) > len(src) {
+	if header.Size == 0 || int(header.Size) > len(src) {
 		return nil, src, fmt.Errorf("invalid LIDs block length %d; want %d", len(src), header.Size)
 	}
 
 	block := src[:header.Size]
 	src = src[header.Size:]
 
-	dst, err := unmarshalLIDsDelta(dst, block, header)
-	if err != nil {
-		return dst, src, err
-	}
+	var err error
 
-	return dst, src, nil
+	switch header.Codec {
+	case lidsCodecDeltaZstd:
+		b := lidsBlockBufPool.Get()
+		defer lidsBlockBufPool.Put(b)
+		b.B, err = zstd.Decompress(block, b.B)
+		if err != nil {
+			return dst, src, fmt.Errorf("can't decompress ids block: %s", err)
+		}
+		dst, err = unmarshalLIDsDelta(dst, b.B, header)
+		if err != nil {
+			return dst, src, err
+		}
+		return dst, src, nil
+	case lidsCodecDelta:
+		dst, err = unmarshalLIDsDelta(dst, block, header)
+		if err != nil {
+			return dst, src, err
+		}
+		return dst, src, nil
+	default:
+		return dst, src, fmt.Errorf("unknown ids codec: %d", header.Codec)
+	}
 }
 
 func unmarshalLIDsDelta(dst []seq.LID, block []byte, header lidsBlockHeader) ([]seq.LID, error) {
@@ -231,4 +268,14 @@ func unmarshalLIDsDelta(dst []seq.LID, block []byte, header lidsBlockHeader) ([]
 	}
 
 	return dst, nil
+}
+
+func getCompressLevel(size int) int {
+	level := 3
+	if size <= 512 {
+		level = 1
+	} else if size <= 4*1024 {
+		level = 2
+	}
+	return level
 }

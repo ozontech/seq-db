@@ -366,16 +366,6 @@ func compressDocsFilter(df *DocsFilterBin, cb func(compressed []byte) error) err
 	return nil
 }
 
-func getCompressLevel(size int) int {
-	level := 3
-	if size <= 512 {
-		level = 1
-	} else if size <= 4*1024 {
-		level = 2
-	}
-	return level
-}
-
 // createDataDir creates dir data lazily to avoid creating extra folders.
 func (df *DocsFilter) createDataDir() {
 	df.createDirOnce.Do(func() {
