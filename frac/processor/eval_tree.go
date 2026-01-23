@@ -84,6 +84,7 @@ func evalTombstones(root node.Node, tombstones []uint32, reverse bool, stats *se
 		return root
 	}
 	stats.NodesTotal++
+	// TODO: replace node.Static with node that can lazily load lids blocks
 	return node.NewNAnd(node.NewStatic(tombstones, reverse), root, reverse)
 }
 

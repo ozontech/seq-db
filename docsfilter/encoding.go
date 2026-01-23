@@ -2,9 +2,13 @@ package docsfilter
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"math"
+	"unsafe"
 
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
 )
 
 type DocsFilterBin struct {
@@ -21,21 +25,115 @@ var availableVersions = map[docsFilterBinVersion]struct{}{
 	docsFilterBinVersion1: {},
 }
 
+type lidsBlockHeader struct {
+	Length uint32 // Number of LIDs in block
+	MinLID uint32
+	MaxLID uint32
+	Size   uint32 // Size of ids block in bytes.
+	Offset uint64 // block's offset in file
+
+	// TODO: compression (???)
+	// Codec idsCodec
+}
+
+func (h *lidsBlockHeader) marshal(dst []byte) {
+	if len(dst) < int(lidsBlockHeaderSizeBytes) {
+		panic("BUG: marshal lidsBlockHeader: len(dst) is less than header size")
+	}
+
+	// dst = append(dst, byte(h.Codec))
+	binary.BigEndian.PutUint32(dst, h.Length)
+	dst = dst[sizeOfUint32:]
+	binary.BigEndian.PutUint32(dst, h.MinLID)
+	dst = dst[sizeOfUint32:]
+	binary.BigEndian.PutUint32(dst, h.MaxLID)
+	dst = dst[sizeOfUint32:]
+	binary.BigEndian.PutUint32(dst, h.Size)
+	dst = dst[sizeOfUint32:]
+	binary.BigEndian.PutUint64(dst, h.Offset)
+	dst = dst[sizeOfUint64:]
+}
+
+func (h *lidsBlockHeader) unmarshal(src []byte) ([]byte, error) {
+	if len(src) < int(lidsBlockHeaderSizeBytes) {
+		return src, errors.New("too few bytes")
+	}
+
+	// h.Codec = idsCodec(src[0])
+	// src = src[1:]
+	h.Length = binary.BigEndian.Uint32(src)
+	src = src[sizeOfUint32:]
+	h.MinLID = binary.BigEndian.Uint32(src)
+	src = src[sizeOfUint32:]
+	h.MaxLID = binary.BigEndian.Uint32(src)
+	src = src[sizeOfUint32:]
+	h.Size = binary.BigEndian.Uint32(src)
+	src = src[sizeOfUint32:]
+	h.Offset = binary.BigEndian.Uint64(src)
+	src = src[sizeOfUint64:]
+
+	return src, nil
+}
+
 func marshalDocsFilter(dst []byte, in *DocsFilterBin) []byte {
 	dst = append(dst, uint8(docsFilterBinVersion1))
-	dst = marshalLIDsBlock(dst, in.LIDs)
+	dst = marshalLIDsBlocks(dst, in.LIDs)
+	return dst
+}
+
+const (
+	sizeOfUint32 = unsafe.Sizeof(uint32(0))
+	sizeOfUint64 = unsafe.Sizeof(uint64(0))
+)
+
+const (
+	lidsBlockHeaderSizeBytes = (4 * sizeOfUint32) + sizeOfUint64
+	maxLIDsBlockLen          = 1024
+)
+
+var lidsBlockBufPool util.BufferPool
+
+func marshalLIDsBlocks(dst []byte, in []seq.LID) []byte {
+	// TODO: zstd (???)
+
+	b := lidsBlockBufPool.Get()
+	defer lidsBlockBufPool.Put(b)
+
+	numberOfBlocks := (len(in) + maxLIDsBlockLen - 1) / maxLIDsBlockLen
+	dst = binary.BigEndian.AppendUint32(dst, uint32(numberOfBlocks))
+
+	// reserve space for headers
+	curHeaderOffset := len(dst)
+	dst = append(dst, make([]byte, numberOfBlocks*int(lidsBlockHeaderSizeBytes))...)
+
+	var start int
+	for range numberOfBlocks {
+		end := min(maxLIDsBlockLen, len(in[start:]))
+		chunk := in[start : start+end]
+
+		b.B = marshalLIDsBlock(b.B[:0], chunk)
+		if len(b.B) > math.MaxUint32 {
+			panic(fmt.Errorf("unexpected block length %d; want up to %d", len(b.B), math.MaxUint32))
+		}
+
+		header := lidsBlockHeader{
+			Length: uint32(len(chunk)),
+			MinLID: uint32(chunk[0]),
+			MaxLID: uint32(chunk[len(chunk)-1]),
+			Size:   uint32(len(b.B)),
+			Offset: uint64(len(dst)),
+		}
+		header.marshal(dst[curHeaderOffset:])
+		curHeaderOffset += int(lidsBlockHeaderSizeBytes)
+
+		dst = append(dst, b.B...)
+		start += end
+	}
 
 	return dst
 }
 
 func marshalLIDsBlock(dst []byte, in []seq.LID) []byte {
-	// TODO: zstd (???)
-	// TODO: buffer pool (???)
-
-	// TODO: organize lids in blocks
-
-	dst = binary.BigEndian.AppendUint64(dst, uint64(len(in)))
-
 	prev := seq.LID(0)
 	for i := range len(in) {
 		lid := in[i]
@@ -60,7 +158,7 @@ func unmarshalDocsFilter(dst *DocsFilterBin, src []byte) (_ []byte, err error) {
 		return nil, fmt.Errorf("invalid LIDs binary version: %d", version)
 	}
 
-	dst.LIDs, src, err = unmarshalLIDsBlock(dst.LIDs, src)
+	dst.LIDs, src, err = unmarshalLIDsBlocks(dst.LIDs, src)
 	if err != nil {
 		return src, err
 	}
@@ -68,25 +166,69 @@ func unmarshalDocsFilter(dst *DocsFilterBin, src []byte) (_ []byte, err error) {
 	return src, nil
 }
 
-func unmarshalLIDsBlock(dst []seq.LID, src []byte) ([]seq.LID, []byte, error) {
-	numberOfLIDs := int(binary.BigEndian.Uint64(src))
-	src = src[8:]
-	if numberOfLIDs > len(src) {
-		return nil, src, fmt.Errorf("invalid LIDs block length %d; want %d", len(src), numberOfLIDs)
+func unmarshalLIDsBlocks(dst []seq.LID, src []byte) ([]seq.LID, []byte, error) {
+	numberOfBlocks := binary.BigEndian.Uint32(src)
+	src = src[sizeOfUint32:]
+
+	var err error
+
+	headers := make([]lidsBlockHeader, 0, numberOfBlocks)
+	for range numberOfBlocks {
+		header := lidsBlockHeader{}
+		src, err = header.unmarshal(src)
+		if err != nil {
+			return dst, src, fmt.Errorf("can't unmarshal lids header: %s", err)
+		}
+		headers = append(headers, header)
 	}
 
+	for i := range numberOfBlocks {
+		dst, src, err = unmarshalLIDsBlock(dst, src, headers[i])
+		if err != nil {
+			return dst, src, err
+		}
+	}
+
+	if len(src) > 0 {
+		return dst, src, fmt.Errorf("unexpected tail when unmarshaling LIDs blocks")
+	}
+
+	return dst, src, nil
+}
+
+func unmarshalLIDsBlock(dst []seq.LID, src []byte, header lidsBlockHeader) ([]seq.LID, []byte, error) {
+	if len(src) == 0 {
+		return dst, src, fmt.Errorf("empty LIDs block")
+	}
+
+	if int(header.Size) > len(src) {
+		return nil, src, fmt.Errorf("invalid LIDs block length %d; want %d", len(src), header.Size)
+	}
+
+	block := src[:header.Size]
+	src = src[header.Size:]
+
+	dst, err := unmarshalLIDsDelta(dst, block, header)
+	if err != nil {
+		return dst, src, err
+	}
+
+	return dst, src, nil
+}
+
+func unmarshalLIDsDelta(dst []seq.LID, block []byte, header lidsBlockHeader) ([]seq.LID, error) {
 	prevLID := uint32(0)
-	for range numberOfLIDs {
-		v, n := binary.Varint(src)
-		src = src[n:]
+	for range header.Length {
+		v, n := binary.Varint(block)
+		block = block[n:]
 		lid := prevLID + uint32(v)
 		prevLID = lid
 		dst = append(dst, seq.LID(lid))
 	}
 
-	if len(src) > 0 {
-		return dst, src, fmt.Errorf("unexpected tail when unmarshaling LIDs delta")
+	if len(block) > 0 {
+		return dst, fmt.Errorf("unexpected tail when unmarshaling LIDs block")
 	}
 
-	return dst, src, nil
+	return dst, nil
 }
