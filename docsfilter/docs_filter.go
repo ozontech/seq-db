@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -147,6 +148,11 @@ func (df *DocsFilter) GetFilteredLIDsByFrac(fracName string) ([]seq.LID, error) 
 		lids = append(lids, dst.LIDs...)
 	}
 
+	// LIDs need to be sorted in case of multiple files
+	if len(fracFiles) > 1 {
+		slices.Sort(lids)
+	}
+
 	return lids, nil
 }
 
@@ -167,7 +173,11 @@ func (df *DocsFilter) RefreshFrac(fraction frac.Fraction) {
 		util.MustWriteFileAtomic(queueFilePath, []byte{}, tmpExt)
 
 		filter.processWg.Add(1)
-		go df.processFrac(fraction, filter, true) // nolint:errcheck // TODO: in progress
+		go func() {
+			if err := df.processFrac(fraction, filter, false); err != nil {
+				panic(fmt.Errorf("docs filter refresh frac err: %s", err))
+			}
+		}()
 	}
 }
 
@@ -281,7 +291,11 @@ func (df *DocsFilter) processFilter(filter *Filter, fracs fracmanager.List) {
 	processFracInQueue := func(name string) error {
 		f := fracsByName[fracNameFromFilePath(name)]
 		filter.processWg.Add(1)
-		go df.processFrac(f, filter, false) // nolint:errcheck // TODO: in progress
+		go func() {
+			if err := df.processFrac(f, filter, false); err != nil {
+				panic(fmt.Errorf("docs filter process frac err: %s", err))
+			}
+		}()
 
 		return nil
 	}
@@ -309,19 +323,25 @@ func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter, refresh bool)
 		return err
 	}
 
+	queueFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracInQueueExt))
+	doneFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracDoneExt))
+
 	if len(qpr.IDs) == 0 {
+		util.RemoveFile(queueFilePath)
 		return nil
 	}
-
-	doneFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracDoneExt))
 
 	storeDocsFilter := func(rawDocsFilter []byte) error {
 		util.MustWriteFileAtomic(doneFilePath, rawDocsFilter, tmpExt)
-		tmpFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracInQueueExt))
-		util.RemoveFile(tmpFilePath)
+		util.RemoveFile(queueFilePath)
 		return nil
 	}
-	// TODO: don't read lids twice: f.Search() and f.FindLIDs()
+
+	// TODO: here we doing part of the work twice:
+	// first time we find LIDs inside f.Search() and then find IDs by these LIDs.
+	// Then we again find LIDs by earlier found IDs in f.FindLIDs().
+	// We did it like this because otherwise we had to do serious f.Search() rewrite.
+	// For now we're ok with some performance penalty.
 	lids, err := f.FindLIDs(df.ctx, qpr.IDs.IDs())
 	if err != nil {
 		return err

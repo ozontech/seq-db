@@ -279,15 +279,18 @@ func (fi *sealedFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return fi.blocksOffsets[num]
 }
 
-func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
+func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
 	// TODO: don't read tombstones twice for search
 	// TODO: optimize all these maps creation and slices traversal
 
 	allLids := fi.findLIDs(ids)
-	tombstoneLIDs, _ := fi.docsFilter.GetFilteredLIDsByFrac(fi.fracName) // TODO: handle the error
+	tombstoneLIDs, err := fi.docsFilter.GetFilteredLIDsByFrac(fi.fracName)
+	if err != nil {
+		return nil, err
+	}
 
 	if len(tombstoneLIDs) == 0 {
-		return fi.getDocPosByLIDs(allLids)
+		return fi.getDocPosByLIDs(allLids), nil
 	}
 
 	filtersLIDsMap := make(map[seq.LID]struct{}, len(tombstoneLIDs))
@@ -301,7 +304,7 @@ func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
 		}
 	}
 
-	return fi.getDocPosByLIDs(allLids)
+	return fi.getDocPosByLIDs(allLids), nil
 }
 
 func (fi *sealedFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
@@ -360,6 +363,8 @@ type sealedSearchIndex struct {
 }
 
 func (si *sealedSearchIndex) GetTombstones() ([]uint32, error) {
+	// TODO: return node.Node{} that lazily reads lids from tombstone file
+
 	filteredLids, err := si.docsFilter.GetFilteredLIDsByFrac(si.fracName)
 	if err != nil {
 		return nil, err

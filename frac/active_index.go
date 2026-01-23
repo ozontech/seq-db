@@ -263,7 +263,7 @@ func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return di.blocksOffsets[num]
 }
 
-func (di *activeFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
+func (di *activeFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
 	// TODO: don't read tombstones twice for search
 	// TODO: optimize all these maps creation and slices traversal
 
@@ -272,9 +272,13 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
 		docsPos[i] = di.docsPositions.GetSync(id)
 	}
 
-	tombstoneLIDs, _ := di.docsFilter.GetFilteredLIDsByFrac(di.fracName) // TODO: handle the error
+	tombstoneLIDs, err := di.docsFilter.GetFilteredLIDsByFrac(di.fracName)
+	if err != nil {
+		return nil, err
+	}
+
 	if len(tombstoneLIDs) == 0 {
-		return docsPos
+		return docsPos, nil
 	}
 
 	allLids := make([]seq.LID, len(ids))
@@ -295,7 +299,7 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
 		}
 	}
 
-	return docsPos
+	return docsPos, nil
 }
 
 func (di *activeFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
