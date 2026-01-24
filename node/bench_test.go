@@ -23,66 +23,6 @@ func Generate(n int) ([]uint32, uint32) {
 	return v, last
 }
 
-// bench for base point
-// you can't go faster
-func BenchmarkCopy(b *testing.B) {
-	sizes := []int{1000, 10_000, 1_000_000}
-
-	for _, s := range sizes {
-		res := make([]uint32, s)
-		n := newNodeStaticSize(s)
-
-		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			for b.Loop() {
-				copy(res, n.data)
-			}
-		})
-
-		if len(res) == 0 {
-			b.FailNow()
-		}
-	}
-}
-
-// base point
-func BenchmarkIterate(b *testing.B) {
-	sizes := []int{1000, 10_000, 1_000_000}
-
-	for _, s := range sizes {
-		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			res := make([]uint32, s)
-			n := newNodeStaticSize(s)
-
-			for b.Loop() {
-				for i, v := range n.data {
-					res[i] = v
-				}
-			}
-
-			if len(res) == 0 {
-				b.FailNow()
-			}
-		})
-	}
-}
-
-func BenchmarkStatic(b *testing.B) {
-	sizes := []int{1000, 10_000, 1_000_000}
-
-	for _, s := range sizes {
-		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			res := make([]uint32, 0, s)
-			n := newNodeStaticSize(s)
-
-			for b.Loop() {
-				res = readAllInto(n, res)
-			}
-
-			assert.Equal(b, cap(res), s)
-		})
-	}
-}
-
 func BenchmarkNot(b *testing.B) {
 	sizes := []int{1000, 10_000, 1_000_000}
 
@@ -98,7 +38,6 @@ func BenchmarkNot(b *testing.B) {
 
 			assert.Equal(b, cap(res), int(last)+1)
 		})
-
 	}
 }
 

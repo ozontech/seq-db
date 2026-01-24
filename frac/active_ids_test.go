@@ -48,9 +48,7 @@ func BenchmarkMutexListAppend(b *testing.B) {
 			}()
 		}
 		wg.Wait()
-		b.Logf("list_total=%d", len(list))
 	}
-
 }
 
 func BenchmarkSeqListAppend(b *testing.B) {
@@ -69,6 +67,5 @@ func BenchmarkSeqListAppend(b *testing.B) {
 			}()
 		}
 		wg.Wait()
-		b.Logf("list_total=%d", list.Len())
 	}
 }

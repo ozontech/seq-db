@@ -79,7 +79,7 @@ func TestSimpleBitmask(t *testing.T) {
 	assert.True(t, bm.HasBitsIn(maxSize/3*2+8, maxSize-1))
 }
 
-func BenchmarkBitmask_HasBitsIn(b *testing.B) {
+func BenchmarkBitmask(b *testing.B) {
 	const size = 10000
 
 	bm := NewBitmask(size)

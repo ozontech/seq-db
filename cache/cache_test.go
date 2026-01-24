@@ -134,11 +134,15 @@ func BenchmarkBucketClean(b *testing.B) {
 
 	for b.Loop() {
 		b.StopTimer()
+
 		for i := range 1000 {
 			c.Get(uint32(i), func() (int, int) { return i, 4 })
 		}
+
 		cleaner.markStale(cleaner.getSize())
+
 		b.StartTimer()
+
 		size := c.Cleanup()
 		if size == 0 {
 			b.FailNow()
