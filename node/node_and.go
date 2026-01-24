@@ -40,10 +40,10 @@ func (n *nodeAnd) readRight() {
 
 func (n *nodeAnd) Next() (uint32, bool) {
 	for n.hasLeft && n.hasRight && n.leftID != n.rightID {
-		for n.hasLeft && n.hasRight && n.leftID < n.rightID {
+		for n.hasLeft && n.hasRight && n.less(n.leftID, n.rightID) {
 			n.readLeft()
 		}
-		for n.hasLeft && n.hasRight && n.rightID < n.leftID {
+		for n.hasLeft && n.hasRight && n.less(n.rightID, n.leftID) {
 			n.readRight()
 		}
 	}
