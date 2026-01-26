@@ -12,7 +12,7 @@ const (
 	DummyMID = 0
 
 	IDsPerBlock      = int(4 * units.KiB)
-	LIDBlockCap      = int(64 * units.KiB)
+	LIDBlockCap      = int(4 * units.KiB)
 	RegularBlockSize = int(16 * units.KiB)
 
 	DefaultMaintenanceDelay  = time.Second

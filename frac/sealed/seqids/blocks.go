@@ -3,8 +3,12 @@ package seqids
 import (
 	"encoding/binary"
 	"errors"
+	"unsafe"
+
+	"github.com/ronanh/intcomp"
 
 	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -13,15 +17,46 @@ type BlockMIDs struct {
 }
 
 func (b BlockMIDs) Pack(dst []byte) []byte {
-	var prev uint64
-	for _, mid := range b.Values {
-		dst = binary.AppendVarint(dst, int64(mid-prev))
-		prev = mid
+	if len(b.Values) == consts.IDsPerBlock {
+		dst = binary.LittleEndian.AppendUint32(dst, 1)
+
+		_, compressed := intcomp.CompressDeltaBinPackUint64(b.Values, nil)
+		dst = binary.LittleEndian.AppendUint32(dst, uint32(len(compressed)))
+		for _, val := range compressed {
+			dst = binary.LittleEndian.AppendUint64(dst, val)
+		}
+	} else {
+		dst = binary.LittleEndian.AppendUint32(dst, 0)
+
+		var prev uint64
+		for _, mid := range b.Values {
+			dst = binary.AppendVarint(dst, int64(mid-prev))
+			prev = mid
+		}
 	}
 	return dst
 }
 
-func (b *BlockMIDs) Unpack(data []byte, fracVersion config.BinaryDataVersion) error {
+func (b *BlockMIDs) Unpack(data []byte, fracVersion config.BinaryDataVersion, cache *unpackCache) error {
+	if fracVersion >= config.BinaryDataV3 {
+		fastPath := binary.LittleEndian.Uint32(data)
+		data = data[4:]
+
+		if fastPath == 1 {
+			valuesCount := binary.LittleEndian.Uint32(data)
+			data = data[4:]
+
+			// TODO this is unsafe, we rely that we running on little-endian host
+			cache.compressed = cache.compressed[:valuesCount]
+			byteLen := int(valuesCount) * 8
+			src := unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(data[:byteLen]))), valuesCount)
+			copy(cache.compressed, src)
+
+			_, b.Values = intcomp.UncompressDeltaBinPackUint64(cache.compressed, b.Values)
+			return nil
+		}
+	}
+
 	values, err := unpackRawMIDsVarint(data, b.Values, fracVersion)
 	if err != nil {
 		return err

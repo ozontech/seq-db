@@ -2,9 +2,9 @@ package lids
 
 import (
 	"encoding/binary"
-	"math"
 	"unsafe"
 
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/packer"
 )
 
@@ -24,19 +24,38 @@ func (b *Block) getLIDs(i int) []uint32 {
 }
 
 func (b *Block) Pack(dst []byte) []byte {
-	lastLID := int64(0)
-	last := b.getCount() - 1
-	for i := 0; i <= last; i++ {
-		for _, lid := range b.getLIDs(i) {
-			dst = binary.AppendVarint(dst, int64(lid)-lastLID)
-			lastLID = int64(lid)
-		}
+	// TODO store next flags into a single byte
+	// write b.IsLastLID as a dedicated uint32 in the header of block
+	switch b.IsLastLID {
+	case true:
+		dst = binary.LittleEndian.AppendUint32(dst, 1)
+	case false:
+		dst = binary.LittleEndian.AppendUint32(dst, 0)
+	}
 
-		if i < last || b.IsLastLID {
-			// when we add this value to prev we must get -1 (or math.MaxUint32 for uint32)
-			// it is the end-marker; see `Block.Unpack()`
-			dst = binary.AppendVarint(dst, -1-lastLID)
+	fullBlock := len(b.LIDs) == consts.LIDBlockCap
+	switch fullBlock {
+	case true:
+		dst = binary.LittleEndian.AppendUint32(dst, 1)
+	case false:
+		dst = binary.LittleEndian.AppendUint32(dst, 0)
+	}
+
+	if len(b.LIDs) == consts.LIDBlockCap {
+		offsetPacker := packer.NewBitpacker(dst, 128)
+		offsetPacker.Append(b.Offsets)
+		dst = offsetPacker.Close()
+		lidPacker := packer.NewBitpacker(dst, 128)
+		dst = lidPacker.Append4kBlock(b.LIDs)
+	} else {
+		lidPacker := packer.NewBitpacker(dst, 128)
+		sep := []uint32{0}
+		last := b.getCount() - 1
+		for i := 0; i <= last; i++ {
+			lidPacker.Append(b.getLIDs(i))
+			lidPacker.Append(sep)
 		}
+		dst = lidPacker.Close()
 	}
 	return dst
 }
@@ -49,41 +68,63 @@ func (b *Block) GetSizeBytes() int {
 	return blockSize + uint32Size*cap(b.LIDs) + uint32Size*cap(b.Offsets)
 }
 
+// TODO add support of the previous versions
 func (b *Block) Unpack(data []byte, buf *UnpackBuffer) error {
-	var lid, offset uint32
-
-	b.IsLastLID = true
-
-	buf.lids = buf.lids[:0]
-	buf.offsets = buf.offsets[:0]
-	buf.offsets = append(buf.offsets, 0) // first offset is always zero
-
 	unpacker := packer.NewBytesUnpacker(data)
-	for unpacker.Len() > 0 {
-		delta, err := unpacker.GetVarint()
-		if err != nil {
-			return err
-		}
-		lid += uint32(delta)
+	buf.Reset()
 
-		if lid == math.MaxUint32 { // end of LIDs of current TID, see `Block.Pack()` method
-			offset = uint32(len(buf.lids))
-			buf.offsets = append(buf.offsets, offset)
-			lid -= uint32(delta)
-			continue
-		}
-
-		buf.lids = append(buf.lids, lid)
-	}
-
-	if int(offset) < len(buf.lids) {
+	// read IsLastLID from a dedicated uint32
+	isLastLIDValue := unpacker.GetUint32()
+	switch isLastLIDValue {
+	case 1:
+		b.IsLastLID = true
+	case 0:
 		b.IsLastLID = false
-		buf.offsets = append(buf.offsets, uint32(len(buf.lids)))
 	}
 
-	// copy from buffer
-	b.LIDs = append([]uint32{}, buf.lids...)
-	b.Offsets = append([]uint32{}, buf.offsets...)
+	fullBlock := unpacker.GetUint32()
+	switch fullBlock {
+	case 1:
+		// block has exactly consts.LIDBlockCap LIDs
+		decompressedChunk := buf.decompressed
+		compressedChunk := buf.compressed
+		offsetUnpacker := packer.NewBitpackUnpacker(unpacker, decompressedChunk, compressedChunk)
+		for {
+			offsetChunk, ok := offsetUnpacker.NextChunk()
+			if !ok {
+				break
+			}
+			b.Offsets = append(b.Offsets, offsetChunk...)
+		}
 
+		lidUnpacker := packer.NewBitpackUnpacker(unpacker, decompressedChunk, compressedChunk)
+		b.LIDs = lidUnpacker.AllocateAndRead4kChunk()
+	case 0:
+		decompressedChunk := buf.decompressed
+		compressedChunk := buf.compressed
+		buf.offsets = append(buf.offsets, 0)
+
+		bitpackUnpacker := packer.NewBitpackUnpacker(unpacker, decompressedChunk, compressedChunk)
+		pos := 0
+		for {
+			chunk, ok := bitpackUnpacker.NextChunk()
+			if !ok {
+				break
+			}
+
+			for _, lid := range chunk {
+				if pos > 0 && lid == 0 {
+					b.LIDs = append(b.LIDs, buf.lids...)
+					buf.lids = buf.lids[:0]
+					buf.offsets = append(buf.offsets, uint32(pos))
+				} else {
+					buf.lids = append(buf.lids, lid)
+					pos++
+				}
+			}
+		}
+
+		b.Offsets = append([]uint32{}, buf.offsets...)
+	}
 	return nil
 }

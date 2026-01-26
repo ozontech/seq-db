@@ -6,8 +6,29 @@ import (
 )
 
 type UnpackBuffer struct {
-	lids    []uint32
-	offsets []uint32
+	lids         []uint32
+	offsets      []uint32
+	decompressed []uint32
+	compressed   []uint32
+}
+
+func (b *UnpackBuffer) Reset() {
+	if b.lids == nil {
+		b.lids = make([]uint32, 0, 128)
+	} else {
+		b.lids = b.lids[:0]
+	}
+	if b.offsets == nil {
+		b.offsets = make([]uint32, 0, 8)
+	} else {
+		b.offsets = b.offsets[:0]
+	}
+	if b.decompressed == nil {
+		b.decompressed = make([]uint32, 0, 1024)
+	}
+	if b.compressed == nil {
+		b.compressed = make([]uint32, 0, 256)
+	}
 }
 
 // Loader is responsible for reading from disk, unpacking and caching LID.

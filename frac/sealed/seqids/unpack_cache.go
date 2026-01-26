@@ -10,6 +10,7 @@ type unpackCache struct {
 	blockIndex int
 	startLID   uint32
 	values     []uint64
+	compressed []uint64 // buffer for decompressing MID blocks
 }
 
 var cachePool = sync.Pool{}
@@ -26,6 +27,7 @@ func NewCache() *unpackCache {
 		blockIndex: -1,
 		startLID:   0,
 		values:     make([]uint64, 0, defaultValsCapacity),
+		compressed: make([]uint64, 0, defaultValsCapacity),
 	}
 }
 
@@ -33,6 +35,7 @@ func (c *unpackCache) reset() *unpackCache {
 	c.blockIndex = -1
 	c.startLID = 0
 	c.values = c.values[:0]
+	c.compressed = c.compressed[:0]
 	return c
 }
 

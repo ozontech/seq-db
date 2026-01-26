@@ -34,7 +34,7 @@ type Loader struct {
 	fracVersion config.BinaryDataVersion
 }
 
-func (l *Loader) GetMIDsBlock(index uint32, buf []uint64) (BlockMIDs, error) {
+func (l *Loader) GetMIDsBlock(index uint32, cache *unpackCache) (BlockMIDs, error) {
 	// load binary from index
 	data, err := l.cacheMIDs.GetWithError(index, func() ([]byte, int, error) {
 		data, _, err := l.reader.ReadIndexBlock(l.midBlockIndex(index), nil)
@@ -48,8 +48,8 @@ func (l *Loader) GetMIDsBlock(index uint32, buf []uint64) (BlockMIDs, error) {
 		return BlockMIDs{}, err
 	}
 	// unpack
-	block := BlockMIDs{Values: buf}
-	if err := block.Unpack(data, l.fracVersion); err != nil {
+	block := BlockMIDs{Values: cache.values[:0]}
+	if err := block.Unpack(data, l.fracVersion, cache); err != nil {
 		return BlockMIDs{}, err
 	}
 	return block, nil

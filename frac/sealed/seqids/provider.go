@@ -55,7 +55,7 @@ func (p *Provider) MID(lid seq.LID) (seq.MID, error) {
 
 func (p *Provider) fillMIDs(blockIndex uint32, dst *unpackCache) error {
 	if dst.blockIndex != int(blockIndex) {
-		block, err := p.loader.GetMIDsBlock(blockIndex, dst.values[:0])
+		block, err := p.loader.GetMIDsBlock(blockIndex, dst)
 		if err != nil {
 			return err
 		}
