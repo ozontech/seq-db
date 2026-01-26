@@ -7,7 +7,7 @@ type nodeNot struct {
 }
 
 func (n *nodeNot) String() string {
-	return fmt.Sprintf("(NOT %s)", n.neg.String())
+	return fmt.Sprintf("(NOT %s)", n.neg.node.String())
 }
 
 func NewNot(child Node, minVal, maxVal uint32, reverse bool) *nodeNot {

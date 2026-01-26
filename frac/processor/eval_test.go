@@ -50,10 +50,10 @@ func (p *staticProvider) newStatic(literal *parser.Literal) (node.Node, error) {
 }
 
 func readAllInto(n node.Node, ids []uint32) []uint32 {
-	id, has := n.Next()
-	for has {
-		ids = append(ids, id)
-		id, has = n.Next()
+	batch := n.Next()
+	for batch != nil {
+		ids = append(ids, batch...)
+		batch = n.Next()
 	}
 	return ids
 }

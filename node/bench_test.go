@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func newNodeStaticSize(size int) *staticAsc {
+func newNodeStaticSize(size int) *staticNode {
 	data, _ := Generate(size)
-	return &staticAsc{staticCursor: staticCursor{data: data}}
+	return &staticNode{data: data}
 }
 
 func Generate(n int) ([]uint32, uint32) {

@@ -74,6 +74,34 @@ func (p *Provider) RID(lid seq.LID) (seq.RID, error) {
 	return seq.RID(p.ridCache.GetValByLID(uint32(lid))), nil
 }
 
+func (p *Provider) MIDs(lids []uint32, dst []seq.MID) ([]seq.MID, error) {
+	dst = dst[:0]
+	for _, lid := range lids {
+		blockIndex := p.table.GetIDBlockIndexByLID(lid)
+		if p.midCache.blockIndex == int(blockIndex) {
+			dst = append(dst, seq.MID(p.midCache.GetValByLID(lid)))
+		} else {
+			if err := p.fillMIDs(blockIndex, p.midCache); err != nil {
+				return dst, err
+			}
+			dst = append(dst, seq.MID(p.midCache.GetValByLID(lid)))
+		}
+	}
+	return dst, nil
+}
+
+func (p *Provider) RIDs(lids []uint32, dst []seq.RID) ([]seq.RID, error) {
+	dst = dst[:0]
+	for _, lid := range lids {
+		blockIndex := p.table.GetIDBlockIndexByLID(lid)
+		if err := p.fillRIDs(blockIndex, p.ridCache); err != nil {
+			return dst, err
+		}
+		dst = append(dst, seq.RID(p.ridCache.GetValByLID(lid)))
+	}
+	return dst, nil
+}
+
 func (p *Provider) fillRIDs(blockIndex uint32, dst *unpackCache) error {
 	if dst.blockIndex != int(blockIndex) {
 		block, err := p.loader.GetRIDsBlock(blockIndex, dst.values[:0])

@@ -5,8 +5,8 @@ import "fmt"
 type nodeOr struct {
 	less LessFn
 
-	left  Node
-	right Node
+	left  singleIter
+	right singleIter
 
 	leftID   uint32
 	hasLeft  bool
@@ -15,51 +15,40 @@ type nodeOr struct {
 }
 
 func (n *nodeOr) String() string {
-	return fmt.Sprintf("(%s OR %s)", n.left.String(), n.right.String())
+	return fmt.Sprintf("(%s OR %s)", n.left.node.String(), n.right.node.String())
 }
 
 func NewOr(left, right Node, reverse bool) *nodeOr {
 	n := &nodeOr{
-		less: GetLessFn(reverse),
-
-		left:  left,
-		right: right,
+		less:  GetLessFn(reverse),
+		left:  singleIter{node: left},
+		right: singleIter{node: right},
 	}
-	n.readLeft()
-	n.readRight()
+	n.leftID, n.hasLeft = n.left.next()
+	n.rightID, n.hasRight = n.right.next()
 	return n
 }
 
-func (n *nodeOr) readLeft() {
-	n.leftID, n.hasLeft = n.left.Next()
-}
-
-func (n *nodeOr) readRight() {
-	n.rightID, n.hasRight = n.right.Next()
-}
-
-func (n *nodeOr) Next() (uint32, bool) {
+func (n *nodeOr) Next(limit uint32) []uint32 {
+	// TODO support batching here
 	if !n.hasLeft && !n.hasRight {
-		return 0, false
+		return nil
 	}
 
+	var cur uint32
 	if n.hasLeft && (!n.hasRight || n.less(n.leftID, n.rightID)) {
-		cur := n.leftID
-		n.readLeft()
-		return cur, true
+		cur = n.leftID
+		n.leftID, n.hasLeft = n.left.next()
+	} else if n.hasRight && (!n.hasLeft || n.less(n.rightID, n.leftID)) {
+		cur = n.rightID
+		n.rightID, n.hasRight = n.right.next()
+	} else {
+		cur = n.leftID
+		n.leftID, n.hasLeft = n.left.next()
+		n.rightID, n.hasRight = n.right.next()
 	}
 
-	if n.hasRight && (!n.hasLeft || n.less(n.rightID, n.leftID)) {
-		cur := n.rightID
-		n.readRight()
-		return cur, true
-	}
-
-	cur := n.leftID
-	n.readLeft()
-	n.readRight()
-
-	return cur, true
+	return []uint32{cur}
 }
 
 type nodeOrAgg struct {

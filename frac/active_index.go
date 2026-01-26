@@ -152,6 +152,24 @@ func (p *activeIDsIndex) GetRID(lid seq.LID) seq.RID {
 	return seq.RID(p.rids[restoredLID])
 }
 
+func (p *activeIDsIndex) GetMIDs(lids []uint32, dst []seq.MID) []seq.MID {
+	dst = dst[:0]
+	for _, lid := range lids {
+		restoredLID := p.inverser.Revert(lid)
+		dst = append(dst, seq.MID(p.mids[restoredLID]))
+	}
+	return dst
+}
+
+func (p *activeIDsIndex) GetRIDs(lids []uint32, dst []seq.RID) []seq.RID {
+	dst = dst[:0]
+	for _, lid := range lids {
+		restoredLID := p.inverser.Revert(lid)
+		dst = append(dst, seq.RID(p.rids[restoredLID]))
+	}
+	return dst
+}
+
 func (p *activeIDsIndex) Len() int {
 	return p.inverser.Len()
 }

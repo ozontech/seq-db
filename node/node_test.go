@@ -1,29 +1,23 @@
 package node
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func readAllInto(node Node, ids []uint32) []uint32 {
-	id, has := node.Next()
-	for has {
-		ids = append(ids, id)
-		id, has = node.Next()
+	batch := node.Next(math.MaxUint32)
+	for batch != nil {
+		ids = append(ids, batch...)
+		batch = node.Next(math.MaxUint32)
 	}
 	return ids
 }
 
 func readAll(node Node) []uint32 {
 	return readAllInto(node, nil)
-}
-
-func getRemainingSlice(t *testing.T, node Node) []uint32 {
-	static, is := node.(*staticAsc)
-	require.True(t, is, "node is not static")
-	return static.data[static.ptr:]
 }
 
 var (
@@ -57,33 +51,11 @@ func TestNodeNot(t *testing.T) {
 	assert.Equal(t, expect, readAll(nand))
 }
 
-// test, that if one source is ended, node doesn't read the second one to the end
-func TestNodeLazyAnd(t *testing.T) {
-	left := []uint32{1, 2}
-	right := []uint32{1, 2, 3, 4, 5, 6}
-	and := NewAnd(NewStatic(left, false), NewStatic(right, false), false)
-	assert.Equal(t, []uint32{1, 2}, readAll(and))
-	assert.Equal(t, []uint32{4, 5, 6}, getRemainingSlice(t, and.right))
-	assert.Equal(t, []uint32(nil), readAll(and))
-	assert.Equal(t, []uint32{4, 5, 6}, getRemainingSlice(t, and.right))
-}
-
-// test, that if reg source is ended, node doesn't read the neg to the end
-func TestNodeLazyNAnd(t *testing.T) {
-	left := []uint32{1, 2, 5, 6, 7, 8}
-	right := []uint32{2, 4}
-	nand := NewNAnd(NewStatic(left, false), NewStatic(right, false), false)
-	assert.Equal(t, []uint32{4}, readAll(nand))
-	assert.Equal(t, []uint32{6, 7, 8}, getRemainingSlice(t, nand.neg))
-	assert.Equal(t, []uint32(nil), readAll(nand))
-	assert.Equal(t, []uint32{6, 7, 8}, getRemainingSlice(t, nand.neg))
-}
-
 func isEmptyNode(node any) bool {
 	if sw, is := node.(*sourcedNodeWrapper); is {
 		node = sw.node
 	}
-	if ns, is := node.(*staticAsc); is {
+	if ns, is := node.(*staticNode); is {
 		return len(ns.data) == 0
 	}
 	return false

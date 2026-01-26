@@ -55,10 +55,10 @@ func (it *IteratorAsc) loadNextLIDsBlock() {
 	it.blockIndex--
 }
 
-func (it *IteratorAsc) Next() (uint32, bool) {
+func (it *IteratorAsc) Next(limit uint32) []uint32 {
 	for len(it.lids) == 0 {
 		if !it.tryNextBlock {
-			return 0, false
+			return nil
 		}
 
 		it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
@@ -66,8 +66,7 @@ func (it *IteratorAsc) Next() (uint32, bool) {
 		it.counter.AddLIDsCount(len(it.lids)) // inc loaded LIDs count
 	}
 
-	i := len(it.lids) - 1
-	lid := it.lids[i]
-	it.lids = it.lids[:i]
-	return lid, true
+	batch := it.lids
+	it.lids = nil
+	return batch
 }

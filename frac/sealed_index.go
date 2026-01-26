@@ -144,6 +144,22 @@ func (ii *sealedIDsIndex) GetRID(lid seq.LID) seq.RID {
 	return rid
 }
 
+func (ii *sealedIDsIndex) GetMIDs(lids []uint32, dst []seq.MID) []seq.MID {
+	dst, err := ii.provider.MIDs(lids, dst)
+	if err != nil {
+		logger.Panic("get mids error", zap.String("frac", ii.fracName), zap.Error(err))
+	}
+	return dst
+}
+
+func (ii *sealedIDsIndex) GetRIDs(lids []uint32, dst []seq.RID) []seq.RID {
+	dst, err := ii.provider.RIDs(lids, dst)
+	if err != nil {
+		logger.Panic("get rids error", zap.String("frac", ii.fracName), zap.Error(err))
+	}
+	return dst
+}
+
 func (ii *sealedIDsIndex) docPos(lid seq.LID) seq.DocPos {
 	pos, err := ii.provider.DocPos(lid)
 	if err != nil {
