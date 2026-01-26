@@ -3,7 +3,6 @@ package setup
 import (
 	"encoding/json"
 	"time"
-	// much faster with multiple goroutines
 )
 
 // InlineJSON is a string representing valid json
