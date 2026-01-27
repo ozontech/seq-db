@@ -81,7 +81,7 @@ type registryStats struct {
 }
 
 func (s *registryStats) Log() {
-	s.sealing.Log("active")
+	s.active.Log("active")
 	s.sealing.Log("sealing")
 	s.sealed.Log("sealed")
 	s.offloading.Log("offloading")
@@ -89,7 +89,7 @@ func (s *registryStats) Log() {
 }
 
 func (s *registryStats) SetMetrics() {
-	s.sealing.SetMetrics(dataSizeTotal, "active")
+	s.active.SetMetrics(dataSizeTotal, "active")
 	s.sealing.SetMetrics(dataSizeTotal, "sealing")
 	s.sealed.SetMetrics(dataSizeTotal, "sealed")
 	s.offloading.SetMetrics(dataSizeTotal, "offloading")
