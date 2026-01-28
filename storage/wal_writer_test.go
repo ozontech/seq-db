@@ -231,7 +231,8 @@ func TestConcurrentFileWriting(t *testing.T) {
 		return 0
 	})
 
-	reader := NewWalReader(NewReadLimiter(1, nil), f, "")
+	reader, err := NewWalReader(NewReadLimiter(1, nil), f, "")
+	assert.NoError(t, err)
 	idx := 0
 	for entry := range reader.Iter() {
 		assert.Equal(t, all[idx].offset, entry.Offset, "block %d offset mismatch", idx)
@@ -314,7 +315,8 @@ func TestWalWriterWriteAndRead(t *testing.T) {
 
 	fw.Stop()
 
-	reader := NewWalReader(NewReadLimiter(1, nil), f, "")
+	reader, err := NewWalReader(NewReadLimiter(1, nil), f, "")
+	assert.NoError(t, err)
 	count := 0
 	for entry := range reader.Iter() {
 		assert.Equal(t, offsets[count], entry.Offset, "block %d offset mismatch", count)
@@ -333,13 +335,68 @@ func TestWalReaderIteratorEmptyFile(t *testing.T) {
 	fw := NewWalWriter(f, 0, false)
 	fw.Stop()
 
-	reader := NewWalReader(NewReadLimiter(1, nil), f, "")
+	reader, err := NewWalReader(NewReadLimiter(1, nil), f, "")
+	assert.NoError(t, err)
 
 	count := 0
 	for range reader.Iter() {
 		count++
 	}
 	assert.Equal(t, 0, count)
+}
+
+func TestWalReaderInvalidMagic(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "wal-invalid-magic-*.bin")
+	assert.NoError(t, err)
+	defer f.Close()
+
+	// write invalid magic (not 0xFFFFFFFF)
+	header := make([]byte, WALHeaderSize)
+	header[0] = 0x00
+	header[1] = 0x00
+	header[2] = 0x00
+	header[3] = 0x00
+	header[4] = WALVersion1
+	_, err = f.WriteAt(header, 0)
+	assert.NoError(t, err)
+
+	_, err = NewWalReader(NewReadLimiter(1, nil), f, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid WAL magic")
+}
+
+func TestWalReaderUnknownVersion(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "wal-unknown-version-*.bin")
+	assert.NoError(t, err)
+	defer f.Close()
+
+	// write correct magic but unknown version
+	header := make([]byte, WALHeaderSize)
+	header[0] = 0xFF
+	header[1] = 0xFF
+	header[2] = 0xFF
+	header[3] = 0xFF
+	header[4] = 99 // unknown version
+	_, err = f.WriteAt(header, 0)
+	assert.NoError(t, err)
+
+	_, err = NewWalReader(NewReadLimiter(1, nil), f, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown WAL version")
+}
+
+func TestWalReaderFileTooShort(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "wal-too-short-*.bin")
+	assert.NoError(t, err)
+	defer f.Close()
+
+	// write only 3 bytes (less than WALHeaderSize which is 5)
+	_, err = f.WriteAt([]byte{0xFF, 0xFF, 0xFF}, 0)
+	assert.NoError(t, err)
+
+	_, err = NewWalReader(NewReadLimiter(1, nil), f, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "WAL file too short")
 }
 
 func TestWalReaderIterator(t *testing.T) {
@@ -368,7 +425,8 @@ func TestWalReaderIterator(t *testing.T) {
 	}
 	fw.Stop()
 
-	reader := NewWalReader(NewReadLimiter(1, nil), f, "")
+	reader, err := NewWalReader(NewReadLimiter(1, nil), f, "")
+	assert.NoError(t, err)
 
 	var readPayloads [][]byte
 	var readOffsets []int64
@@ -418,7 +476,8 @@ func TestWalReaderSkipsCorruptedBlocks(t *testing.T) {
 	assert.NoError(t, err)
 	t.Logf("corrupted header checksum at offset %d", corruptOffset)
 
-	reader := NewWalReader(NewReadLimiter(1, nil), f, "")
+	reader, err := NewWalReader(NewReadLimiter(1, nil), f, "")
+	assert.NoError(t, err)
 
 	var readPayloads [][]byte
 	for entry := range reader.Iter() {
@@ -461,7 +520,8 @@ func TestWalReaderSkipsCorruptedPayload(t *testing.T) {
 	_, err = f.WriteAt([]byte{0xFF, 0xFF}, payloadOffset)
 	assert.NoError(t, err)
 
-	reader := NewWalReader(NewReadLimiter(1, nil), f, "")
+	reader, err := NewWalReader(NewReadLimiter(1, nil), f, "")
+	assert.NoError(t, err)
 
 	var readPayloads [][]byte
 	for entry := range reader.Iter() {
@@ -527,7 +587,8 @@ func TestWalReaderSingleByteCorruption(t *testing.T) {
 		_, err = f.WriteAt([]byte{corruptedByte}, corruptOffset)
 		assert.NoError(t, err)
 
-		reader := NewWalReader(NewReadLimiter(1, nil), f, "")
+		reader, err := NewWalReader(NewReadLimiter(1, nil), f, "")
+		assert.NoError(t, err)
 
 		readBlocks := 0
 
@@ -602,7 +663,8 @@ func TestWalReaderTruncation(t *testing.T) {
 		assert.NoError(t, err)
 
 		// validate we can read all blocks from 0 to truncateIndex (exclusive)
-		reader := NewWalReader(NewReadLimiter(1, nil), f, "")
+		reader, err := NewWalReader(NewReadLimiter(1, nil), f, "")
+		assert.NoError(t, err)
 
 		readBlocks := 0
 
@@ -689,7 +751,8 @@ func TestWalReaderSectorLoss(t *testing.T) {
 			assert.NoError(t, err)
 		}
 
-		reader := NewWalReader(NewReadLimiter(1, nil), f, "")
+		reader, err := NewWalReader(NewReadLimiter(1, nil), f, "")
+		assert.NoError(t, err)
 		readBlocks := 0
 
 		for entry := range reader.Iter() {

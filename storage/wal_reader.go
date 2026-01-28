@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 
@@ -24,13 +26,30 @@ type WalReader struct {
 	baseFileName string
 }
 
-func NewWalReader(limiter *ReadLimiter, reader io.ReaderAt, baseFileName string) *WalReader {
+func NewWalReader(limiter *ReadLimiter, reader io.ReaderAt, baseFileName string) (*WalReader, error) {
+	header := make([]byte, WALHeaderSize)
+	n, err := limiter.ReadAt(reader, header, 0)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("failed to read WAL header: %w", err)
+	}
+	if n < WALHeaderSize {
+		return nil, fmt.Errorf("WAL file too short: expected at least %d bytes, got %d", WALHeaderSize, n)
+	}
+	magic := binary.LittleEndian.Uint32(header[0:4])
+	if magic != WALMagic {
+		return nil, fmt.Errorf("invalid WAL magic: expected 0x%X, got 0x%X", WALMagic, magic)
+	}
+	version := header[4]
+	if version != WALVersion1 {
+		return nil, fmt.Errorf("unknown WAL version: %d (supported: %d)", version, WALVersion1)
+	}
+
 	return &WalReader{
 		limiter:      limiter,
 		reader:       reader,
 		headerOffset: WALHeaderSize,
 		baseFileName: baseFileName,
-	}
+	}, nil
 }
 
 // Iter iterates through WAL file. Corrupted entries are skipped and never propagated to a client.

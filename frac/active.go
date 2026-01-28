@@ -98,12 +98,16 @@ func NewActive(
 		writer = NewActiveWriterLegacy(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
 		logger.Info("using legacy meta file format", zap.String("fraction", baseFileName))
 	} else {
+		logger.Info("using new WAL format", zap.String("fraction", baseFileName))
 		walFileName := baseFileName + consts.WalFileSuffix
 		metaFile, metaStats = mustOpenFile(walFileName, config.SkipFsync)
 		metaSize = uint64(metaStats.Size())
-		walReader = storage.NewWalReader(readLimiter, metaFile, baseFileName)
 		writer = NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
-		logger.Info("using new WAL format", zap.String("fraction", baseFileName))
+		var err error
+		walReader, err = storage.NewWalReader(readLimiter, metaFile, baseFileName)
+		if err != nil {
+			logger.Fatal("failed to initialize WAL reader", zap.String("fraction", baseFileName), zap.Error(err))
+		}
 	}
 
 	f := &Active{
