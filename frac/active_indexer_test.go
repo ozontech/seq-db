@@ -99,7 +99,7 @@ func BenchmarkIndexer(b *testing.B) {
 		bulks := make([][]byte, 0, len(readers))
 		for _, readNext := range readers {
 			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-			bulks = append(bulks, storage.CompressDocBlock(meta, nil, 3))
+			bulks = append(bulks, storage.CompressMetaBlock(meta, nil, 3))
 		}
 		b.StartTimer()
 
