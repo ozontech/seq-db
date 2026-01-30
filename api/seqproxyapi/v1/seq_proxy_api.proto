@@ -304,6 +304,7 @@ message FetchAsyncSearchResultResponse {
   double progress = 7;
   // The size of data stored on disk, in bytes.
   uint64 disk_usage = 8;
+  Error error = 9;
 }
 
 message CancelAsyncSearchRequest{
@@ -330,6 +331,7 @@ message GetAsyncSearchesListRequest {
 
 message GetAsyncSearchesListResponse {
   repeated AsyncSearchesListItem searches = 1;
+  Error error = 2;
 }
 
 message AsyncSearchesListItem {
