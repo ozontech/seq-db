@@ -1617,7 +1617,7 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 
 	indexCache := &IndexCache{
 		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[[]byte](nil, nil),
+		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
 		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
 		LIDs:       cache.NewCache[*lids.Block](nil, nil),
 		Tokens:     cache.NewCache[*token.Block](nil, nil),
@@ -1805,7 +1805,7 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 
 	indexCache := &IndexCache{
 		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[[]byte](nil, nil),
+		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
 		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
 		LIDs:       cache.NewCache[*lids.Block](nil, nil),
 		Tokens:     cache.NewCache[*token.Block](nil, nil),
@@ -1872,7 +1872,7 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 
 		indexCache := &IndexCache{
 			MIDs:       cache.NewCache[[]byte](nil, nil),
-			RIDs:       cache.NewCache[[]byte](nil, nil),
+			RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
 			Params:     cache.NewCache[seqids.BlockParams](nil, nil),
 			LIDs:       cache.NewCache[*lids.Block](nil, nil),
 			Tokens:     cache.NewCache[*token.Block](nil, nil),

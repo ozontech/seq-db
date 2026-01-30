@@ -63,12 +63,12 @@ func (lc *lifecycleManager) SyncInfoCache() {
 // seal converts an active fraction to sealed state.
 // It freezes writes, waits for pending operations, then seals the fraction.
 func (lc *lifecycleManager) seal(active *activeProxy) error {
+	sealsTotal.Inc()
 	now := time.Now()
 	sealed, err := lc.provider.Seal(active.instance)
 	if err != nil {
 		return err
 	}
-	sealsTotal.Inc()
 	sealingTime := time.Since(now)
 	sealsDoneSeconds.Observe(sealingTime.Seconds())
 
