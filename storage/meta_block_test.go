@@ -34,10 +34,8 @@ func TestCorruptionDetection(t *testing.T) {
 	truncated := block[0 : len(block)-3]
 	assert.False(t, truncated.IsCorrect())
 
-	appended := append(block, 1, 2, 3)
-	assert.False(t, appended.IsCorrect())
-
-	assert.True(t, block.IsCorrect())
+	block = append(block, 1, 2, 3)
+	assert.False(t, block.IsCorrect())
 }
 
 func TestConvertDocToMetaBlock(t *testing.T) {

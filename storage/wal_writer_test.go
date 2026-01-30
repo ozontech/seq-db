@@ -430,11 +430,9 @@ func TestWalReaderIterator(t *testing.T) {
 
 	var readPayloads [][]byte
 	var readOffsets []int64
-	idx := 0
 	for entry := range reader.Iter() {
 		readPayloads = append(readPayloads, entry.Data.Payload())
 		readOffsets = append(readOffsets, entry.Offset)
-		idx++
 	}
 
 	assert.Equal(t, len(payloads), len(readPayloads))
