@@ -35,3 +35,7 @@ func (n *nodeRange) Next() (uint32, bool) {
 	n.cur += n.step
 	return cur, true
 }
+
+func (n *nodeRange) NextGeq(minLID uint32) (uint32, bool) {
+	return n.Next()
+}

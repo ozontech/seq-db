@@ -49,7 +49,15 @@ func (n *staticDesc) Next() (uint32, bool) {
 	return cur, true
 }
 
-// MakeStaticNodes  is currently used only for tests
+func (n *staticAsc) NextGeq(minLID uint32) (uint32, bool) {
+	return n.Next()
+}
+
+func (n *staticDesc) NextGeq(minLID uint32) (uint32, bool) {
+	return n.Next()
+}
+
+// MakeStaticNodes is currently used only for tests
 func MakeStaticNodes(data [][]uint32) []Node {
 	nodes := make([]Node, len(data))
 	for i, values := range data {

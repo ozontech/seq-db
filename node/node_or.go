@@ -38,6 +38,14 @@ func (n *nodeOr) readRight() {
 	n.rightID, n.hasRight = n.right.Next()
 }
 
+func (n *nodeOr) readLeftGeq(minLID uint32) {
+	n.leftID, n.hasLeft = n.left.NextGeq(minLID)
+}
+
+func (n *nodeOr) readRightGeq(minLID uint32) {
+	n.rightID, n.hasRight = n.right.NextGeq(minLID)
+}
+
 func (n *nodeOr) Next() (uint32, bool) {
 	if !n.hasLeft && !n.hasRight {
 		return 0, false
@@ -58,6 +66,30 @@ func (n *nodeOr) Next() (uint32, bool) {
 	cur := n.leftID
 	n.readLeft()
 	n.readRight()
+
+	return cur, true
+}
+
+func (n *nodeOr) NextGeq(minLID uint32) (uint32, bool) {
+	if !n.hasLeft && !n.hasRight {
+		return 0, false
+	}
+
+	if n.hasLeft && (!n.hasRight || n.less(n.leftID, n.rightID)) {
+		cur := n.leftID
+		n.readLeftGeq(minLID)
+		return cur, true
+	}
+
+	if n.hasRight && (!n.hasLeft || n.less(n.rightID, n.leftID)) {
+		cur := n.rightID
+		n.readRightGeq(minLID)
+		return cur, true
+	}
+
+	cur := n.leftID
+	n.readLeftGeq(minLID)
+	n.readRightGeq(minLID)
 
 	return cur, true
 }
@@ -100,6 +132,14 @@ func (n *nodeOrAgg) readRight() {
 	n.rightID, n.rightSource, n.hasRight = n.right.NextSourced()
 }
 
+func (n *nodeOrAgg) readLeftGeq(minLID uint32) {
+	n.leftID, n.leftSource, n.hasLeft = n.left.NextSourcedGeq(minLID)
+}
+
+func (n *nodeOrAgg) readRightGeq(minLID uint32) {
+	n.rightID, n.rightSource, n.hasRight = n.right.NextSourcedGeq(minLID)
+}
+
 func (n *nodeOrAgg) NextSourced() (uint32, uint32, bool) {
 	if !n.hasLeft && !n.hasRight {
 		return 0, 0, false
@@ -119,4 +159,34 @@ func (n *nodeOrAgg) NextSourced() (uint32, uint32, bool) {
 	n.readRight()
 
 	return cur, curSource, true
+}
+
+func (n *nodeOrAgg) NextSourcedGeq(minLID uint32) (uint32, uint32, bool) {
+	if !n.hasLeft && !n.hasRight {
+		return 0, 0, false
+	}
+
+	var cur uint32
+	var curSource uint32
+
+	for cur < minLID && (n.hasRight || n.hasLeft) {
+		if n.hasLeft && (!n.hasRight || n.less(n.leftID, n.rightID)) {
+			cur = n.leftID
+			curSource = n.leftSource
+			n.readLeftGeq(minLID)
+
+			return cur, curSource, true
+		}
+
+		// we don't need deduplication
+		cur = n.rightID
+		curSource = n.rightSource
+		n.readRightGeq(minLID)
+	}
+
+	if cur >= minLID {
+		return cur, curSource, true
+	} else {
+		return 0, 0, false
+	}
 }

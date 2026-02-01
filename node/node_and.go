@@ -1,6 +1,8 @@
 package node
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type nodeAnd struct {
 	less LessFn
@@ -38,13 +40,39 @@ func (n *nodeAnd) readRight() {
 	n.rightID, n.hasRight = n.right.Next()
 }
 
+func (n *nodeAnd) readLeftGeq(minLID uint32) {
+	n.leftID, n.hasLeft = n.left.NextGeq(minLID)
+}
+
+func (n *nodeAnd) readRightGeq(minLID uint32) {
+	n.rightID, n.hasRight = n.right.NextGeq(minLID)
+}
+
 func (n *nodeAnd) Next() (uint32, bool) {
 	for n.hasLeft && n.hasRight && n.leftID != n.rightID {
 		for n.hasLeft && n.hasRight && n.less(n.leftID, n.rightID) {
-			n.readLeft()
+			n.readLeftGeq(n.rightID)
 		}
 		for n.hasLeft && n.hasRight && n.less(n.rightID, n.leftID) {
-			n.readRight()
+			n.readRightGeq(n.leftID)
+		}
+	}
+	if !n.hasLeft || !n.hasRight {
+		return 0, false
+	}
+	cur := n.leftID
+	n.readLeft()
+	n.readRight()
+	return cur, true
+}
+
+func (n *nodeAnd) NextGeq(minLID uint32) (uint32, bool) {
+	for n.hasLeft && n.hasRight && n.leftID != n.rightID {
+		for n.hasLeft && n.hasRight && n.less(n.leftID, n.rightID) {
+			n.readLeftGeq(max(minLID, n.rightID))
+		}
+		for n.hasLeft && n.hasRight && n.less(n.rightID, n.leftID) {
+			n.readRightGeq(max(minLID, n.leftID))
 		}
 	}
 	if !n.hasLeft || !n.hasRight {

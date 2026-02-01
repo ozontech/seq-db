@@ -56,6 +56,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 	mapping := seq.Mapping{
 		"service":  seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"pod":      seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
 		"message":  seq.NewSingleType(seq.TokenizerTypeText, "", 100),
 		"level":    seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
 		"trace_id": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
@@ -254,6 +255,7 @@ type testDoc = struct {
 	json      string
 	message   string
 	service   string
+	pod       string
 	level     int
 	traceId   string
 	timestamp time.Time
@@ -277,18 +279,20 @@ func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.T
 		level := rand.IntN(6)
 		timestamp := fromTime.Add(time.Duration(i) * time.Millisecond)
 		traceId := fmt.Sprintf("trace-%d", i%5000)
+		pod := fmt.Sprintf("pod-%d", i%250)
 		if i == numMessages-1 {
 			toTime = timestamp
 		}
 
-		json := fmt.Sprintf(`{"timestamp":%q,"service":%q,"message":%q,"trace_id": %q,"level":"%d"}`,
-			timestamp.Format(time.RFC3339Nano), service, message, traceId, level)
+		json := fmt.Sprintf(`{"timestamp":%q,"service":%q,"pod":%q,"message":%q,"trace_id": %q,"level":"%d"}`,
+			timestamp.Format(time.RFC3339Nano), service, pod, message, traceId, level)
 
 		docs = append(docs, testDoc{
 			json:      json,
 			timestamp: timestamp,
 			message:   message,
 			service:   service,
+			pod:       pod,
 			level:     level,
 			traceId:   traceId,
 		})

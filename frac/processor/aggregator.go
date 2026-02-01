@@ -381,7 +381,7 @@ func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, 
 
 func (s *SourcedNodeIterator) ConsumeTokenSource(lid uint32) (uint32, bool, error) {
 	for s.has && s.less(s.lastID, lid) {
-		s.lastID, s.lastSource, s.has = s.sourcedNode.NextSourced()
+		s.lastID, s.lastSource, s.has = s.sourcedNode.NextSourcedGeq(lid)
 	}
 
 	exists := s.has && s.lastID == lid

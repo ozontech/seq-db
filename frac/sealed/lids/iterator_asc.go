@@ -71,3 +71,8 @@ func (it *IteratorAsc) Next() (uint32, bool) {
 	it.lids = it.lids[:i]
 	return lid, true
 }
+
+func (it *IteratorAsc) NextGeq(minLid uint32) (uint32, bool) {
+	// TODO support NextGeq for ascending iterator
+	return it.Next()
+}

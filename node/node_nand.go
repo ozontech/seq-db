@@ -52,3 +52,7 @@ func (n *nodeNAnd) Next() (uint32, bool) {
 	}
 	return 0, false
 }
+
+func (n *nodeNAnd) NextGeq(minLID uint32) (uint32, bool) {
+	return n.Next()
+}
