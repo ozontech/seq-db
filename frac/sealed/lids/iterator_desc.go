@@ -8,6 +8,7 @@ import (
 
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/node"
+	"github.com/ozontech/seq-db/util"
 )
 
 type IteratorDesc Cursor
@@ -71,4 +72,35 @@ func (it *IteratorDesc) Next() node.CmpLID {
 	lid := it.lids[0]
 	it.lids = it.lids[1:]
 	return node.NewCmpLIDOrderDesc(lid)
+}
+
+// NextGeq finds next greater or equal
+func (it *IteratorDesc) NextGeq(nextID node.CmpLID) node.CmpLID {
+	for {
+		for len(it.lids) == 0 {
+			if !it.tryNextBlock {
+				return node.NewCmpLIDOrderDesc(math.MaxUint32)
+			}
+
+			it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
+			it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
+			it.counter.AddLIDsCount(len(it.lids)) // inc loaded LIDs count
+		}
+
+		// fast path: last LID < nextID => skip the entire block
+		if nextID.Unpack() > it.lids[len(it.lids)-1] {
+			it.lids = it.lids[:0]
+			continue
+		}
+
+		idx, found := util.GallopSearchGeq(it.lids, nextID.Unpack())
+		if found {
+			it.lids = it.lids[idx:]
+			lid := it.lids[0]
+			it.lids = it.lids[1:]
+			return node.NewCmpLIDOrderDesc(lid)
+		}
+
+		it.lids = it.lids[:0]
+	}
 }

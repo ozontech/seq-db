@@ -49,6 +49,10 @@ func (c CmpLID) Less(other CmpLID) bool {
 	return c.lid < other.lid
 }
 
+func (c CmpLID) LessOrEq(other CmpLID) bool {
+	return c.lid <= other.lid
+}
+
 func (c CmpLID) Inc() CmpLID {
 	c.lid++
 	return c
@@ -56,6 +60,22 @@ func (c CmpLID) Inc() CmpLID {
 
 func (c CmpLID) Eq(other CmpLID) bool {
 	return c.lid == other.lid
+}
+
+func Max(left CmpLID, right CmpLID) CmpLID {
+	if left.lid > right.lid {
+		return left
+	} else {
+		return right
+	}
+}
+
+func Min(left CmpLID, right CmpLID) CmpLID {
+	if left.lid < right.lid {
+		return left
+	} else {
+		return right
+	}
 }
 
 func (c CmpLID) Unpack() uint32 {

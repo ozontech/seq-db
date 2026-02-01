@@ -24,3 +24,7 @@ func (n *nodeRange) Next() CmpLID {
 	n.curID = n.curID.Inc()
 	return result
 }
+
+func (n *nodeRange) NextGeq(nextID CmpLID) CmpLID {
+	return n.Next()
+}

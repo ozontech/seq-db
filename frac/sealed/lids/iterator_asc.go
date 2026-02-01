@@ -7,6 +7,7 @@ import (
 
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/node"
+	"github.com/ozontech/seq-db/util"
 )
 
 type IteratorAsc Cursor
@@ -71,4 +72,34 @@ func (it *IteratorAsc) Next() node.CmpLID {
 	lid := it.lids[i]
 	it.lids = it.lids[:i]
 	return node.NewCmpLIDOrderAsc(lid)
+}
+
+// NextGeq returns the next (in reverse iteration order) LID that is <= maxLID.
+func (it *IteratorAsc) NextGeq(nextID node.CmpLID) node.CmpLID {
+	for {
+		for len(it.lids) == 0 {
+			if !it.tryNextBlock {
+				return node.NewCmpLIDOrderAsc(0)
+			}
+
+			it.loadNextLIDsBlock()
+			it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
+			it.counter.AddLIDsCount(len(it.lids))
+		}
+
+		// fast path: smallest remaining > nextID => skip entire block
+		if it.lids[0] > nextID.Unpack() {
+			it.lids = it.lids[:0]
+			continue
+		}
+
+		idx, found := util.GallopSearchLeq(it.lids, nextID.Unpack())
+		if found {
+			lid := it.lids[idx]
+			it.lids = it.lids[:idx]
+			return node.NewCmpLIDOrderAsc(lid)
+		}
+
+		it.lids = it.lids[:0]
+	}
 }

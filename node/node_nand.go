@@ -43,3 +43,7 @@ func (n *nodeNAnd) Next() CmpLID {
 	}
 	return NullCmpLID()
 }
+
+func (n *nodeNAnd) NextGeq(nextID CmpLID) CmpLID {
+	return n.Next()
+}
