@@ -181,6 +181,8 @@ func (df *DocsFilter) RefreshFrac(fraction frac.Fraction) {
 	}
 }
 
+// TODO: method to remove frac's tombstone files after frac is deleted
+
 func filterNameFromTombstonesPath(p string) string {
 	return path.Base(path.Dir(p))
 }
