@@ -2,6 +2,7 @@ package frac
 
 import (
 	"context"
+	"math"
 	"slices"
 
 	"github.com/ozontech/seq-db/frac/common"
@@ -190,16 +191,23 @@ type activeSearchIndex struct {
 	fracName   string
 }
 
-func (si *activeSearchIndex) GetTombstones() ([]uint32, error) {
-	filteredLids, err := si.docsFilter.GetFilteredLIDsByFrac(si.fracName)
+func (si *activeSearchIndex) GetTombstones(minLID, maxLID uint32, reverse bool) (node.Node, error) {
+	// active fraction doesn't meet min and max lid
+	minLID, maxLID = uint32(0), uint32(math.MaxUint32)
+
+	iterator, err := si.docsFilter.GetTombstonesIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO: return []uint32 from docsFilter (???)
-	res := make([]uint32, 0, len(filteredLids))
-	for _, lid := range filteredLids {
-		if inversed, ok := si.activeIDsIndex.inverser.Inverse(uint32(lid)); ok {
+	res := make([]uint32, 0)
+	for {
+		// traverse iterator to inverse and sort lids
+		lid, has := iterator.Next()
+		if !has {
+			break
+		}
+		if inversed, ok := si.activeIDsIndex.inverser.Inverse(lid); ok {
 			res = append(res, uint32(inversed))
 		}
 	}
@@ -207,7 +215,7 @@ func (si *activeSearchIndex) GetTombstones() ([]uint32, error) {
 	// we need to sort inversed values since they may be out of order after replay of active fraction
 	slices.Sort(res)
 
-	return res, nil
+	return node.NewStatic(res, reverse), nil
 }
 
 type activeTokenIndex struct {
@@ -264,37 +272,39 @@ func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 }
 
 func (di *activeFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
-	// TODO: don't read tombstones twice for search
-	// TODO: optimize all these maps creation and slices traversal
+	allLids := make([]uint32, len(ids))
+	for i, id := range ids {
+		if lid, ok := di.idsToLids.Get(id); ok {
+			allLids[i] = uint32(lid)
+		}
+	}
+
+	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
+	tombstonesIterator, err := di.docsFilter.GetTombstonesIteratorByFrac(di.fracName, minLID, maxLID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	filteredLIDs := make(map[uint32]struct{})
+	for {
+		lid, has := tombstonesIterator.Next()
+		if !has {
+			break
+		}
+		filteredLIDs[lid] = struct{}{}
+	}
 
 	docsPos := make([]seq.DocPos, len(ids))
 	for i, id := range ids {
 		docsPos[i] = di.docsPositions.GetSync(id)
 	}
 
-	tombstoneLIDs, err := di.docsFilter.GetFilteredLIDsByFrac(di.fracName)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(tombstoneLIDs) == 0 {
+	if len(filteredLIDs) == 0 {
 		return docsPos, nil
 	}
 
-	allLids := make([]seq.LID, len(ids))
-	for i, id := range ids {
-		if lid, ok := di.idsToLids.Get(id); ok {
-			allLids[i] = lid
-		}
-	}
-
-	filtersLIDsMap := make(map[seq.LID]struct{}, len(tombstoneLIDs))
-	for _, lid := range tombstoneLIDs {
-		filtersLIDsMap[lid] = struct{}{}
-	}
-
 	for i, lid := range allLids {
-		if _, ok := filtersLIDsMap[lid]; ok {
+		if _, ok := filteredLIDs[lid]; ok {
 			docsPos[i] = seq.DocPosNotFound
 		}
 	}

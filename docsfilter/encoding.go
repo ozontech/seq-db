@@ -12,8 +12,12 @@ import (
 	"github.com/ozontech/seq-db/zstd"
 )
 
-type DocsFilterBin struct {
+type DocsFilterBinIn struct {
 	LIDs []seq.LID
+}
+
+type DocsFilterBinOut struct {
+	LIDs []uint32
 }
 
 type docsFilterBinVersion uint8
@@ -82,7 +86,7 @@ func (h *lidsBlockHeader) unmarshal(src []byte) ([]byte, error) {
 	return src, nil
 }
 
-func marshalDocsFilter(dst []byte, in *DocsFilterBin) []byte {
+func marshalDocsFilter(dst []byte, in *DocsFilterBinIn) []byte {
 	dst = append(dst, uint8(docsFilterBinVersion1))
 	dst = marshalLIDsBlocks(dst, in.LIDs)
 	return dst
@@ -166,7 +170,7 @@ func marshalLIDsBlock(dst []byte, in []seq.LID) ([]byte, lidsCodec) {
 
 const minLIDsFIlterBytesLen = 10 // 1 byte lidsBinVersion + 8 byte number of LIDs + N (min 1) bytes varint + delta encoded LIDs
 
-func unmarshalDocsFilter(dst *DocsFilterBin, src []byte) (_ []byte, err error) {
+func unmarshalDocsFilter(dst *DocsFilterBinOut, src []byte) (_ []byte, err error) {
 	if len(src) < minLIDsFIlterBytesLen {
 		return nil, fmt.Errorf("invalid LIDs filter format; want %d bytes, got %d", minLIDsFIlterBytesLen, len(src))
 	}
@@ -185,7 +189,7 @@ func unmarshalDocsFilter(dst *DocsFilterBin, src []byte) (_ []byte, err error) {
 	return src, nil
 }
 
-func unmarshalLIDsBlocks(dst []seq.LID, src []byte) ([]seq.LID, []byte, error) {
+func unmarshalLIDsBlocks(dst []uint32, src []byte) ([]uint32, []byte, error) {
 	numberOfBlocks := binary.BigEndian.Uint32(src)
 	src = src[sizeOfUint32:]
 
@@ -215,7 +219,7 @@ func unmarshalLIDsBlocks(dst []seq.LID, src []byte) ([]seq.LID, []byte, error) {
 	return dst, src, nil
 }
 
-func unmarshalLIDsBlock(dst []seq.LID, src []byte, header lidsBlockHeader) ([]seq.LID, []byte, error) {
+func unmarshalLIDsBlock(dst []uint32, src []byte, header lidsBlockHeader) ([]uint32, []byte, error) {
 	if len(src) == 0 {
 		return dst, src, fmt.Errorf("empty LIDs block")
 	}
@@ -253,14 +257,14 @@ func unmarshalLIDsBlock(dst []seq.LID, src []byte, header lidsBlockHeader) ([]se
 	}
 }
 
-func unmarshalLIDsDelta(dst []seq.LID, block []byte, header lidsBlockHeader) ([]seq.LID, error) {
+func unmarshalLIDsDelta(dst []uint32, block []byte, header lidsBlockHeader) ([]uint32, error) {
 	prevLID := uint32(0)
 	for range header.Length {
 		v, n := binary.Varint(block)
 		block = block[n:]
 		lid := prevLID + uint32(v)
 		prevLID = lid
-		dst = append(dst, seq.LID(lid))
+		dst = append(dst, lid)
 	}
 
 	if len(block) > 0 {

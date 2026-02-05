@@ -23,7 +23,7 @@ import (
 )
 
 type DocsFilter interface {
-	GetFilteredLIDsByFrac(fracName string) ([]seq.LID, error)
+	GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error)
 }
 
 type sealedDataProvider struct {
@@ -280,26 +280,39 @@ func (fi *sealedFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 }
 
 func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
-	// TODO: don't read tombstones twice for search
-	// TODO: optimize all these maps creation and slices traversal
-
 	allLids := fi.findLIDs(ids)
-	tombstoneLIDs, err := fi.docsFilter.GetFilteredLIDsByFrac(fi.fracName)
+
+	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
+	if len(allLids) > 0 {
+		// allLids can be not sorted
+		minVal, maxVal := allLids[0], allLids[0]
+		for i := 1; i < len(allLids); i++ {
+			minVal = min(minVal, allLids[i])
+			maxVal = max(maxVal, allLids[i])
+		}
+		minLID, maxLID = uint32(minVal), uint32(maxVal)
+	}
+
+	tombstonesIterator, err := fi.docsFilter.GetTombstonesIteratorByFrac(fi.fracName, minLID, maxLID, false)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(tombstoneLIDs) == 0 {
+	filteredLIDs := make(map[uint32]struct{})
+	for {
+		lid, has := tombstonesIterator.Next()
+		if !has {
+			break
+		}
+		filteredLIDs[lid] = struct{}{}
+	}
+
+	if len(filteredLIDs) == 0 {
 		return fi.getDocPosByLIDs(allLids), nil
 	}
 
-	filtersLIDsMap := make(map[seq.LID]struct{}, len(tombstoneLIDs))
-	for _, lid := range tombstoneLIDs {
-		filtersLIDsMap[lid] = struct{}{}
-	}
-
 	for i, lid := range allLids {
-		if _, ok := filtersLIDsMap[lid]; ok {
+		if _, ok := filteredLIDs[uint32(lid)]; ok {
 			allLids[i] = 0
 		}
 	}
@@ -362,19 +375,6 @@ type sealedSearchIndex struct {
 	docsFilter DocsFilter
 }
 
-func (si *sealedSearchIndex) GetTombstones() ([]uint32, error) {
-	// TODO: return node.Node{} that lazily reads lids from tombstone file
-
-	filteredLids, err := si.docsFilter.GetFilteredLIDsByFrac(si.fracName)
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO: return []uint32 from docsFilter (???)
-	res := make([]uint32, 0, len(filteredLids))
-	for _, lid := range filteredLids {
-		res = append(res, uint32(lid))
-	}
-
-	return res, nil
+func (si *sealedSearchIndex) GetTombstones(minLID, maxLID uint32, reverse bool) (node.Node, error) {
+	return si.docsFilter.GetTombstonesIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 }

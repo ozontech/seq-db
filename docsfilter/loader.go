@@ -9,7 +9,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/seq"
 )
 
 type loader struct {
@@ -77,7 +76,7 @@ func (l *loader) loadHeaders() error {
 	return nil
 }
 
-func (l *loader) loadBlock(index int) ([]seq.LID, error) {
+func (l *loader) loadBlock(index int) ([]uint32, error) {
 	if l.headers == nil {
 		err := l.loadHeaders()
 		if err != nil {
@@ -100,7 +99,7 @@ func (l *loader) loadBlock(index int) ([]seq.LID, error) {
 		return nil, fmt.Errorf("can't read lids block, read=%d, requested=%d", n, len(blockBuf))
 	}
 
-	lids := make([]seq.LID, 0, header.Length)
+	lids := make([]uint32, 0, header.Length)
 	lids, blockBuf, err = unmarshalLIDsBlock(lids, blockBuf, header)
 	if err != nil {
 		return nil, err

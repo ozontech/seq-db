@@ -13,7 +13,7 @@ import (
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
-	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 )
@@ -21,7 +21,7 @@ import (
 const fileBasePattern = "seq-db-"
 
 type DocsFilter interface {
-	GetFilteredLIDsByFrac(fracName string) ([]seq.LID, error)
+	GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error)
 	RefreshFrac(frac frac.Fraction)
 }
 

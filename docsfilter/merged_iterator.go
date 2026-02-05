@@ -1,10 +1,8 @@
 package docsfilter
 
-type TombstonesIterator interface {
-	Next() (uint32, bool)
-}
+import "github.com/ozontech/seq-db/node"
 
-func NewNMergedIterators(iterators []TombstonesIterator) TombstonesIterator {
+func NewNMergedIterators(iterators []node.Node, reverse bool) node.Node {
 	if len(iterators) == 0 {
 		return &EmptyIterator{}
 	}
@@ -13,27 +11,39 @@ func NewNMergedIterators(iterators []TombstonesIterator) TombstonesIterator {
 		return iterators[0]
 	}
 
-	merged := NewMergedIterator(iterators[0], iterators[1])
+	merged := NewMergedIterator(iterators[0], iterators[1], reverse)
 	for _, s := range iterators[2:] {
-		merged = NewMergedIterator(merged, s)
+		merged = NewMergedIterator(merged, s, reverse)
 	}
 	return merged
 }
 
 type MergedIterator struct {
-	a, b       TombstonesIterator
+	a, b       node.Node
 	curA, curB uint32
 	init       bool
+	lessFn     func(a, b uint32) bool
 }
 
 func NewMergedIterator(
-	a, b TombstonesIterator,
-) TombstonesIterator {
-	return &MergedIterator{
-		a:    a,
-		b:    b,
-		init: false,
+	a, b node.Node,
+	reverse bool,
+) node.Node {
+	lessFn := func(a, b uint32) bool { return a < b }
+	if reverse {
+		lessFn = func(a, b uint32) bool { return a > b }
 	}
+
+	return &MergedIterator{
+		a:      a,
+		b:      b,
+		init:   false,
+		lessFn: lessFn,
+	}
+}
+
+func (it *MergedIterator) String() string {
+	return "MERGED_TOMBSTONES_ITERATOR"
 }
 
 func (it *MergedIterator) Next() (uint32, bool) {
@@ -59,7 +69,7 @@ func (it *MergedIterator) Next() (uint32, bool) {
 			return it.readB(), true
 		}
 	}
-	if it.curB < it.curA {
+	if it.lessFn(it.curB, it.curA) {
 		return it.readB(), true
 	}
 	return it.readA(), true
@@ -88,6 +98,10 @@ func (it *MergedIterator) readB() uint32 {
 }
 
 type EmptyIterator struct{}
+
+func (it *EmptyIterator) String() string {
+	return "EMPTY_TOMBSTONES_ITERATOR"
+}
 
 func (it *EmptyIterator) Next() (uint32, bool) {
 	return 0, false

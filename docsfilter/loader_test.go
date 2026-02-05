@@ -17,7 +17,7 @@ func TestLoader(t *testing.T) {
 		multipleBlocksLIDs = append(multipleBlocksLIDs, seq.LID(i))
 	}
 
-	rawDocsFilter := marshalDocsFilter(nil, &DocsFilterBin{LIDs: multipleBlocksLIDs})
+	rawDocsFilter := marshalDocsFilter(nil, &DocsFilterBinIn{LIDs: multipleBlocksLIDs})
 	filePath := filepath.Join(t.TempDir(), "some.filter")
 	err := os.WriteFile(filePath, rawDocsFilter, 0o644)
 	require.NoError(t, err)
@@ -29,14 +29,14 @@ func TestLoader(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, loader.headers, 4)
 
-	resLIDs := make([]seq.LID, 0, len(multipleBlocksLIDs))
+	resLIDs := make([]uint32, 0, len(multipleBlocksLIDs))
 	const numberOfBlocks = 4
 	for i := range numberOfBlocks {
 		block, err := loader.loadBlock(i)
 		require.NoError(t, err)
 		resLIDs = append(resLIDs, block...)
 	}
-	require.Equal(t, multipleBlocksLIDs, resLIDs)
+	require.Equal(t, lidsToUint32s(multipleBlocksLIDs), resLIDs)
 
 	require.NoError(t, loader.release())
 }

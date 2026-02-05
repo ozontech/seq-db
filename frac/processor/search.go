@@ -38,7 +38,7 @@ type tokenIndex interface {
 type searchIndex interface {
 	tokenIndex
 	idsIndex
-	GetTombstones() ([]uint32, error)
+	GetTombstones(minLID, maxLID uint32, reverse bool) (node.Node, error)
 }
 
 func IndexSearch(
@@ -95,7 +95,7 @@ func IndexSearch(
 	}
 
 	m = sw.Start("get_tombstones")
-	tombstones, err := index.GetTombstones()
+	tombstones, err := index.GetTombstones(minLID, maxLID, params.Order.IsReverse())
 	m.Stop()
 	if err != nil {
 		return nil, err

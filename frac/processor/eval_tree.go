@@ -79,13 +79,9 @@ func evalLeaf(
 	return node.BuildORTree(lidsTids, order.IsReverse()), nil
 }
 
-func evalTombstones(root node.Node, tombstones []uint32, reverse bool, stats *searchStats) node.Node {
-	if len(tombstones) == 0 {
-		return root
-	}
+func evalTombstones(root, tombstonesIterator node.Node, reverse bool, stats *searchStats) node.Node {
 	stats.NodesTotal++
-	// TODO: replace node.Static with node that can lazily load lids blocks
-	return node.NewNAnd(node.NewStatic(tombstones, reverse), root, reverse)
+	return node.NewNAnd(tombstonesIterator, root, reverse)
 }
 
 type Aggregator interface {

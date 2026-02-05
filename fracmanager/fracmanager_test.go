@@ -8,13 +8,17 @@ import (
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/indexer"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/seq"
 )
 
 type testDocsFilter struct{}
 
-func (testDocsFilter) GetFilteredLIDsByFrac(_ string) ([]seq.LID, error) {
+func (testDocsFilter) GetFilteredLIDsByFrac(_ string) ([]uint32, error) {
 	return nil, nil
+}
+func (testDocsFilter) GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
+	return node.NewStatic([]uint32{}, reverse), nil
 }
 func (testDocsFilter) RefreshFrac(_ frac.Fraction) {}
 

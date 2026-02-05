@@ -10,25 +10,33 @@ import (
 )
 
 func TestMarshalUnmarshalLIDsFilter(t *testing.T) {
-	test := func(df DocsFilterBin) {
+	test := func(df DocsFilterBinIn) {
 		t.Helper()
 
 		rawDocsFilter := marshalDocsFilter(nil, &df)
-		var out DocsFilterBin
+		var out DocsFilterBinOut
 		tail, err := unmarshalDocsFilter(&out, rawDocsFilter)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(tail))
-		assert.Equal(t, df, out)
+		assert.Equal(t, lidsToUint32s(df.LIDs), out.LIDs)
 	}
 
-	test(DocsFilterBin{LIDs: []seq.LID{0, 1, 2, 3}})
-	test(DocsFilterBin{LIDs: []seq.LID{10, 15, 22, 18, 105, 1010}})
-	test(DocsFilterBin{LIDs: []seq.LID{11}})
+	test(DocsFilterBinIn{LIDs: []seq.LID{0, 1, 2, 3}})
+	test(DocsFilterBinIn{LIDs: []seq.LID{10, 15, 22, 18, 105, 1010}})
+	test(DocsFilterBinIn{LIDs: []seq.LID{11}})
 
 	multipleBlocksSize := maxLIDsBlockLen*3 + 15
 	multipleBlocksLIDs := make([]seq.LID, 0, multipleBlocksSize)
 	for i := range multipleBlocksSize {
 		multipleBlocksLIDs = append(multipleBlocksLIDs, seq.LID(i))
 	}
-	test(DocsFilterBin{LIDs: multipleBlocksLIDs})
+	test(DocsFilterBinIn{LIDs: multipleBlocksLIDs})
+}
+
+func lidsToUint32s(in []seq.LID) []uint32 {
+	out := make([]uint32, 0, len(in))
+	for _, i := range in {
+		out = append(out, uint32(i))
+	}
+	return out
 }

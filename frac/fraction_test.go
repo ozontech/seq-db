@@ -27,6 +27,7 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/indexer"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
@@ -36,8 +37,12 @@ import (
 
 type testDocsFilter struct{}
 
-func (testDocsFilter) GetFilteredLIDsByFrac(_ string) ([]seq.LID, error) {
-	return []seq.LID{}, nil
+func (testDocsFilter) GetFilteredLIDsByFrac(_ string) ([]uint32, error) {
+	return []uint32{}, nil
+}
+
+func (testDocsFilter) GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
+	return node.NewStatic([]uint32{}, false), nil
 }
 
 type FractionTestSuite struct {

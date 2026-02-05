@@ -7,21 +7,19 @@ import (
 	"os"
 	"path"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
-	"github.com/ozontech/seq-db/zstd"
 )
 
 const (
@@ -110,50 +108,30 @@ func (df *DocsFilter) Start(fracs fracmanager.List) {
 	}
 }
 
-func (df *DocsFilter) GetFilteredLIDsByFrac(fracName string) ([]seq.LID, error) {
+func (df *DocsFilter) GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
 	df.fracsMu.RLock()
 	defer df.fracsMu.RUnlock()
 
 	fracFiles, has := df.fracs[fracName]
 	if !has {
-		return nil, nil
+		return &EmptyIterator{}, nil
 	}
 
-	var lids []seq.LID
-
+	iterators := make([]node.Node, 0, len(fracFiles))
 	for _, f := range fracFiles {
-		compressedLIDs, err := os.ReadFile(f)
+		loader, err := newLoader(f)
 		if err != nil {
-			logger.Error("can't read filtered lids from file", zap.String("path", f), zap.Error(err))
+			logger.Error("can't open filtered lids file", zap.String("path", f), zap.Error(err))
 			return nil, err
 		}
-
-		rawLIDs, err := zstd.Decompress(compressedLIDs, nil)
-		if err != nil {
-			logger.Error("can't decompress filtered lids from file", zap.String("path", f), zap.Error(err))
-			return nil, err
+		if reverse {
+			iterators = append(iterators, (*IteratorAsc)(NewIterator(loader, minLID, maxLID)))
+		} else {
+			iterators = append(iterators, (*IteratorDesc)(NewIterator(loader, minLID, maxLID)))
 		}
-
-		dst := DocsFilterBin{}
-		tail, err := unmarshalDocsFilter(&dst, rawLIDs)
-		if err != nil {
-			logger.Error("can't unmarshal filtered lids file", zap.String("path", f), zap.Error(err))
-			return nil, err
-		}
-		if len(tail) > 0 {
-			logger.Error("unexpected tail when unmarshaling filtered lids file", zap.String("path", f), zap.Error(err))
-			return nil, err
-		}
-
-		lids = append(lids, dst.LIDs...)
 	}
 
-	// LIDs need to be sorted in case of multiple files
-	if len(fracFiles) > 1 {
-		slices.Sort(lids)
-	}
-
-	return lids, nil
+	return NewNMergedIterators(iterators, reverse), nil
 }
 
 // RefreshFrac replaces frac's tombstone files with newly found results. Used after active frac is sealed.
@@ -349,8 +327,8 @@ func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter, refresh bool)
 		return err
 	}
 
-	docsFilterBin := DocsFilterBin{LIDs: lids}
-	if err := compressDocsFilter(&docsFilterBin, storeDocsFilter); err != nil {
+	docsFilterBin := DocsFilterBinIn{LIDs: lids}
+	if err := writeDocsFilter(&docsFilterBin, storeDocsFilter); err != nil {
 		return err
 	}
 
@@ -371,18 +349,12 @@ func fracNameFromFilePath(filterFilePath string) string {
 
 var marshalBufferPool util.BufferPool
 
-func compressDocsFilter(df *DocsFilterBin, cb func(compressed []byte) error) error {
+func writeDocsFilter(df *DocsFilterBinIn, cb func(compressed []byte) error) error {
 	rawDocsFilter := marshalBufferPool.Get()
 	defer marshalBufferPool.Put(rawDocsFilter)
 
 	rawDocsFilter.B = marshalDocsFilter(rawDocsFilter.B, df)
-
-	compressed := bytespool.Acquire(len(rawDocsFilter.B))
-	defer bytespool.Release(compressed)
-
-	level := getCompressLevel(len(rawDocsFilter.B))
-	compressed.B = zstd.CompressLevel(rawDocsFilter.B, compressed.B, level)
-	if err := cb(compressed.B); err != nil {
+	if err := cb(rawDocsFilter.B); err != nil {
 		return err
 	}
 	return nil
