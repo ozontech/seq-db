@@ -12,7 +12,7 @@ var (
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "parse_duration_seconds",
-		Help:      "",
+		Help:      "Bulk processing (parsing, extracting meta, tokenization) time",
 		Buckets:   metric.SecondsBuckets,
 	})
 
@@ -27,14 +27,14 @@ var (
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "time_errors_total",
-		Help:      "errors for time rules violation in events",
+		Help:      "Number of errors for time rules violation in events",
 	}, []string{"cause"})
 
 	bulkSizeAfterCompression = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
-		Name:      "bulk_size_after_compression",
-		Help:      "Bulk request sizes after compression",
+		Name:      "size_after_compression_bytes",
+		Help:      "Bulk request sizes after compression in bytes",
 		Buckets:   prometheus.ExponentialBuckets(1024, 2, 16),
 	})
 )

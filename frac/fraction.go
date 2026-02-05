@@ -13,7 +13,6 @@ import (
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/storage"
 )
 
 type Fraction interface {
@@ -22,8 +21,6 @@ type Fraction interface {
 	Contains(mid seq.MID) bool
 	Fetch(context.Context, []seq.ID) ([][]byte, error)
 	Search(context.Context, processor.SearchParams) (*seq.QPR, error)
-	Offload(ctx context.Context, u storage.Uploader) (bool, error)
-	Suicide()
 }
 
 var (
@@ -32,24 +29,28 @@ var (
 		Subsystem: "fetcher",
 		Name:      "fraction_stages_seconds",
 		Buckets:   metric.SecondsBuckets,
+		Help:      "Fetch processing time by stage",
 	}, []string{"stage", "fraction_type"})
 	fractionAggSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
-		Name:      "tracer_fraction_agg_search_sec",
+		Name:      "fraction_agg_search_seconds",
 		Buckets:   metric.SecondsBuckets,
+		Help:      "Search with aggregation processing time by stage",
 	}, []string{"stage", "fraction_type"})
 	fractionHistSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
-		Name:      "tracer_fraction_hist_search_sec",
+		Name:      "fraction_hist_search_seconds",
 		Buckets:   metric.SecondsBuckets,
+		Help:      "Search with histogram processing time by stage",
 	}, []string{"stage", "fraction_type"})
-	fractionRegSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	fractionRegularSearchSec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "search",
-		Name:      "tracer_fraction_reg_search_sec",
+		Name:      "fraction_regular_search_seconds",
 		Buckets:   metric.SecondsBuckets,
+		Help:      "Regular search processing time by stage",
 	}, []string{"stage", "fraction_type"})
 )
 
@@ -62,7 +63,7 @@ func fractionSearchMetric(
 	if params.HasHist() {
 		return fractionHistSearchSec
 	}
-	return fractionRegSearchSec
+	return fractionRegularSearchSec
 }
 
 func fracToString(f Fraction, fracType string) string {
