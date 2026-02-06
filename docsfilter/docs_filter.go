@@ -159,7 +159,21 @@ func (df *DocsFilter) RefreshFrac(fraction frac.Fraction) {
 	}
 }
 
-// TODO: method to remove frac's tombstone files after frac is deleted
+// RemoveFrac removes fraction's tombstones. Used after frac is deleted
+func (df *DocsFilter) RemoveFrac(fracName string) {
+	df.fracsMu.RLock()
+	fracsFiles, has := df.fracs[fracName]
+	df.fracsMu.RUnlock()
+
+	if !has {
+		return
+	}
+
+	for _, fileName := range fracsFiles {
+		util.RemoveFile(fileName)
+	}
+	delete(df.fracs, fracName)
+}
 
 func filterNameFromTombstonesPath(p string) string {
 	return path.Base(path.Dir(p))

@@ -40,10 +40,10 @@ type testDocsFilter struct{}
 func (testDocsFilter) GetFilteredLIDsByFrac(_ string) ([]uint32, error) {
 	return []uint32{}, nil
 }
-
 func (testDocsFilter) GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
 	return node.NewStatic([]uint32{}, false), nil
 }
+func (testDocsFilter) RemoveFrac(_ string) {}
 
 type FractionTestSuite struct {
 	suite.Suite

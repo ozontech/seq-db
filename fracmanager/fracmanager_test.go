@@ -21,6 +21,7 @@ func (testDocsFilter) GetTombstonesIteratorByFrac(fracName string, minLID, maxLI
 	return node.NewStatic([]uint32{}, reverse), nil
 }
 func (testDocsFilter) RefreshFrac(_ frac.Fraction) {}
+func (testDocsFilter) RemoveFrac(_ string)         {}
 
 func setupDataDir(t testing.TB, cfg *Config) *Config {
 	if cfg == nil {

@@ -24,6 +24,7 @@ import (
 
 type DocsFilter interface {
 	GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error)
+	RemoveFrac(fracName string)
 }
 
 type sealedDataProvider struct {

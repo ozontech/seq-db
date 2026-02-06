@@ -207,6 +207,8 @@ func (f *Remote) Suicide() {
 			zap.Error(err),
 		)
 	}
+
+	go f.docsFilter.RemoveFrac(f.info.Name())
 }
 
 func (f *Remote) String() string {

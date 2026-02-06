@@ -23,6 +23,7 @@ const fileBasePattern = "seq-db-"
 type DocsFilter interface {
 	GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error)
 	RefreshFrac(frac frac.Fraction)
+	RemoveFrac(fracName string)
 }
 
 // fractionProvider is a factory for creating different types of fractions

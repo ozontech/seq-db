@@ -300,6 +300,8 @@ func (f *Sealed) Suicide() {
 			zap.Error(err),
 		)
 	}
+
+	go f.docsFilter.RemoveFrac(f.info.Name())
 }
 
 func (f *Sealed) String() string {
