@@ -86,6 +86,10 @@ WIP
 
 **Code that does not comply with these standards will require revision before acceptance.**
 
+## General Coding Guidelines
+
+**All metrics** must follow the [OpenMetrics](https://openmetrics.io/) standard convention.
+
 ## Mandatory Branch Naming Convention
 
 Branch names must use `kebab-case` and strictly follow this format:

@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
@@ -35,7 +37,7 @@ func NewSearcher(maxWorkersNum int, cfg SearcherCfg) *Searcher {
 	}
 }
 
-func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params processor.SearchParams) (*seq.QPR, error) {
+func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params processor.SearchParams, tr *querytracer.Tracer) (*seq.QPR, error) {
 	remainingFracs, err := s.prepareFracs(fracs, params)
 	if err != nil {
 		return nil, err
@@ -55,11 +57,17 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 		fracsChunkSize = len(remainingFracs)
 	}
 
+	var totalSearchTimeNanos int64
+	var totalWaitTimeNanos int64
+
 	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
-		subQPRs, err := s.searchDocsAsync(ctx, remainingFracs.Shift(fracsChunkSize), params)
+		subQPRs, searchTimeNanos, waitTimeNanos, err := s.searchDocsAsync(ctx, remainingFracs.Shift(fracsChunkSize), params)
 		if err != nil {
 			return nil, err
 		}
+
+		totalSearchTimeNanos += searchTimeNanos
+		totalWaitTimeNanos += waitTimeNanos
 
 		seq.MergeQPRs(total, subQPRs, origLimit, seq.MillisToMID(params.HistInterval), params.Order)
 
@@ -67,6 +75,19 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 		params.Limit = origLimit - calcEnsuredIDsCount(total.IDs, remainingFracs, params.Order)
 
 		subSearchesCnt++
+	}
+
+	if tr.Enabled() {
+		searchSpan := &querytracer.Span{
+			Message:  "search iteratively (cpu time)",
+			Duration: time.Duration(totalSearchTimeNanos),
+		}
+		tr.AddChildWithSpan(searchSpan)
+		waitSpan := &querytracer.Span{
+			Message:  "waiting goroutines (all cores)",
+			Duration: time.Duration(totalWaitTimeNanos),
+		}
+		tr.AddChildWithSpan(waitSpan)
 	}
 
 	searchSubSearches.Observe(float64(subSearchesCnt))
@@ -110,7 +131,7 @@ func calcEnsuredIDsCount(ids seq.IDSources, remainingFracs List, order seq.DocsO
 	return sort.Search(len(ids), func(i int) bool { return ids[i].ID.MID <= nextFracInfo.To })
 }
 
-func (s *Searcher) searchDocsAsync(ctx context.Context, fracs []frac.Fraction, params processor.SearchParams) ([]*seq.QPR, error) {
+func (s *Searcher) searchDocsAsync(ctx context.Context, fracs []frac.Fraction, params processor.SearchParams) ([]*seq.QPR, int64, int64, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -119,6 +140,9 @@ func (s *Searcher) searchDocsAsync(ctx context.Context, fracs []frac.Fraction, p
 	once := sync.Once{}
 	wg := sync.WaitGroup{}
 	qprs := make([]*seq.QPR, len(fracs))
+
+	wgDoneNanos := make([]int64, len(fracs))
+	searchElapsedNanos := make([]int64, len(fracs))
 
 loop:
 	for i, frac := range fracs {
@@ -129,6 +153,7 @@ loop:
 		case s.sem <- struct{}{}: // acquire semaphore
 			wg.Add(1)
 			go func() {
+				searchStart := time.Now()
 				var fracErr error
 				if qprs[i], fracErr = s.fracSearch(ctx, params, frac); fracErr != nil {
 					once.Do(func() {
@@ -136,19 +161,34 @@ loop:
 						cancel()
 					})
 				}
+				searchElapsedNanos[i] = time.Since(searchStart).Nanoseconds()
+
 				<-s.sem // release semaphore
+
+				wgDoneNanos[i] = time.Now().UnixNano()
 				wg.Done()
 			}()
 		}
 	}
 
 	wg.Wait()
+	waitEndTime := time.Now().UnixNano()
 
-	if err != nil {
-		return nil, err
+	totalSearchTimeNanos := int64(0)
+	totalWaitTimeNanos := int64(0)
+
+	for i := range fracs {
+		if wgDoneNanos[i] != 0 {
+			totalWaitTimeNanos += waitEndTime - wgDoneNanos[i]
+		}
+		totalSearchTimeNanos += searchElapsedNanos[i]
 	}
 
-	return qprs, nil
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	return qprs, totalSearchTimeNanos, totalWaitTimeNanos, nil
 }
 
 func (s *Searcher) fracSearch(ctx context.Context, params processor.SearchParams, f frac.Fraction) (_ *seq.QPR, err error) {

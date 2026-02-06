@@ -9,7 +9,9 @@ on:
     branches: [ main ]
 
 permissions:
+  issues: write
   contents: write
+  pull-requests: write
 
 jobs:
   ci-continuous-benchmarks:
@@ -23,8 +25,8 @@ jobs:
             -H "X-Seqbench-Secret: ${{ secrets.SEQBENCH_SECRET }}" \
             -d @- <<EOF
           {
-            "refname": "${{ github.ref_name }}",
-            "commit_sha": "${{ github.sha }}"
+            "reference": "${{ github.sha }}",
+            "scenario": "mixed"
           }
           EOF
 
@@ -32,12 +34,12 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
-      - name: Setup Golang
+      - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version-file: go.mod
           cache: true
 
       - name: Run Golang benchmarks
@@ -49,8 +51,9 @@ jobs:
       # Add GitHub job summary for pull requests.
       - name: Summarize benchmarks results
         if: ${{ success() && github.event_name == 'pull_request' }}
-        uses: dkharms/chronos@v0.0.8
+        uses: dkharms/chronos@v0.0.10
         with:
+          language-tool: gotool
           github-token: ${{ github.token }}
           benchmarks-file-path: ${{ runner.temp }}/gotool.txt
           action-to-perform: summarize
@@ -59,8 +62,9 @@ jobs:
       # was merged to main and previous job was successful.
       - name: Save benchmarks results
         if: ${{ success() && github.ref_name == 'main' }}
-        uses: dkharms/chronos@v0.0.8
+        uses: dkharms/chronos@v0.0.10
         with:
+          language-tool: gotool
           github-token: ${{ github.token }}
           benchmarks-file-path: ${{ runner.temp }}/gotool.txt
           action-to-perform: save
@@ -69,7 +73,8 @@ jobs:
       # was merged to main and previous job was successful.
       - name: Publish benchmarks results
         if: ${{ success() && github.ref_name == 'main' }}
-        uses: dkharms/chronos@v0.0.8
+        uses: dkharms/chronos@v0.0.10
         with:
+          language-tool: gotool
           github-token: ${{ github.token }}
           action-to-perform: publish

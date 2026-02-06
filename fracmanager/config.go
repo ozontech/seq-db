@@ -26,6 +26,7 @@ type Config struct {
 	SealParams        common.SealParams
 	SortCacheSize     uint64 // size for docs cache for active fraction
 	Fraction          frac.Config
+	MinSealFracSize   uint64
 
 	OffloadingEnabled   bool
 	OffloadingRetention time.Duration

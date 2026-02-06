@@ -10,8 +10,8 @@ import (
 var (
 	Version = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db",
-		Name:      "version",
-		Help:      "",
+		Name:      "version_starts_total",
+		Help:      "Number of seq-db instances started with a particular version",
 	},
 		[]string{"version"})
 
@@ -19,18 +19,20 @@ var (
 		Namespace: "seq_db",
 		Subsystem: "merge",
 		Name:      "repetitions_docs_total",
-		Help:      "",
+		Help:      "Number of doc repetitions observed while merging QPRs",
 	})
 
 	CountersTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db",
 		Subsystem: "common",
 		Name:      "counters_total",
-		Help:      "",
+		Help:      "Counter for various events",
 	}, []string{"name"})
 
 	// SecondsBuckets covers range from 1ms to 177s.
 	SecondsBuckets = prometheus.ExponentialBuckets(0.001, 3, 12)
+	// SecondsBucketsDoublePrecision covers range from 1ms to 4hrs.
+	SecondsBucketsDoublePrecision = prometheus.ExponentialBuckets(0.001, 3, 16)
 	// SecondsBucketsDelay covers range from 1min to 2048min.
 	SecondsBucketsDelay = prometheus.ExponentialBuckets(60, 2, 12)
 	// SecondsRanges covers range from 1min to 47day.
