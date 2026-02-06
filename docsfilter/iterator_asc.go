@@ -1,8 +1,6 @@
 package docsfilter
 
 import (
-	"sort"
-
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/logger"
@@ -32,7 +30,7 @@ func (it *IteratorAsc) Next() (uint32, bool) {
 		}
 
 		it.loadNextLIDsBlock()
-		it.lids = it.narrowLIDsRange(it.lids)
+		it.lids = (*Iterator)(it).narrowLIDsRange(it.lids)
 	}
 
 	i := len(it.lids) - 1
@@ -42,7 +40,7 @@ func (it *IteratorAsc) Next() (uint32, bool) {
 }
 
 func (it *IteratorAsc) loadNextLIDsBlock() {
-	hasLIDsInRange := it.hasLIDsInRange()
+	hasLIDsInRange := (*Iterator)(it).hasLIDsInRange()
 	if !hasLIDsInRange {
 		it.needTryNextBlock()
 		return
@@ -57,40 +55,7 @@ func (it *IteratorAsc) loadNextLIDsBlock() {
 	it.needTryNextBlock()
 }
 
-func (it *IteratorAsc) hasLIDsInRange() bool {
-	if it.loader.headers[it.blockIndex].MinLID > it.maxLID {
-		return false
-	}
-	if it.loader.headers[it.blockIndex].MaxLID < it.minLID {
-		return false
-	}
-
-	return true
-}
-
 func (it *IteratorAsc) needTryNextBlock() {
 	it.tryNextBlock = it.blockIndex > 0
 	it.blockIndex--
-}
-
-// narrowLIDsRange cuts LIDs between from and to. Returns new lids
-func (it *IteratorAsc) narrowLIDsRange(lids []uint32) []uint32 {
-	if len(lids) == 0 {
-		return lids
-	}
-
-	first := lids[0]
-	last := lids[len(lids)-1]
-
-	if it.minLID > first {
-		left := sort.Search(len(lids), func(i int) bool { return lids[i] >= it.minLID })
-		lids = lids[left:]
-	}
-
-	if it.maxLID <= last {
-		right := sort.Search(len(lids), func(i int) bool { return lids[i] > it.maxLID })
-		lids = lids[:right]
-	}
-
-	return lids
 }
