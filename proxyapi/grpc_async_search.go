@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/ozontech/seq-db/asyncsearcher"
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/seq"
@@ -67,14 +68,14 @@ func (g *grpcV1) FetchAsyncSearchResult(
 	ctx context.Context,
 	r *seqproxyapi.FetchAsyncSearchResultRequest,
 ) (*seqproxyapi.FetchAsyncSearchResultResponse, error) {
-	resp, stream, err := g.searchIngestor.FetchAsyncSearchResult(ctx, search.FetchAsyncSearchResultRequest{
+	resp, stream, fetchErr := g.searchIngestor.FetchAsyncSearchResult(ctx, search.FetchAsyncSearchResultRequest{
 		ID:     r.SearchId,
 		Size:   int(r.Size),
 		Offset: int(r.Offset),
 		Order:  r.Order.MustDocsOrder(),
 	})
-	if err != nil {
-		return nil, err
+	if fetchErr != nil && !errors.Is(fetchErr, consts.ErrPartialResponse) {
+		return nil, fetchErr
 	}
 
 	var canceledAt *timestamppb.Timestamp
@@ -113,7 +114,7 @@ func (g *grpcV1) FetchAsyncSearchResult(
 		}
 	}
 
-	return &seqproxyapi.FetchAsyncSearchResultResponse{
+	res := &seqproxyapi.FetchAsyncSearchResultResponse{
 		Status:  seqproxyapi.MustProtoAsyncSearchStatus(resp.Status),
 		Request: searchReq,
 		Response: &seqproxyapi.ComplexSearchResponse{
@@ -129,7 +130,19 @@ func (g *grpcV1) FetchAsyncSearchResult(
 		CanceledAt: canceledAt,
 		Progress:   resp.Progress,
 		DiskUsage:  resp.DiskUsage,
-	}, nil
+		Error: &seqproxyapi.Error{
+			Code: seqproxyapi.ErrorCode_ERROR_CODE_NO,
+		},
+	}
+
+	if fetchErr != nil && errors.Is(fetchErr, consts.ErrPartialResponse) {
+		res.Error = &seqproxyapi.Error{
+			Code:    seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE,
+			Message: fetchErr.Error(),
+		}
+	}
+
+	return res, nil
 }
 
 func (g *grpcV1) GetAsyncSearchesList(
@@ -149,14 +162,26 @@ func (g *grpcV1) GetAsyncSearchesList(
 		IDs:    r.Ids,
 	}
 
-	searches, err := g.searchIngestor.GetAsyncSearchesList(ctx, req)
-	if err != nil {
-		return nil, err
+	searches, listErr := g.searchIngestor.GetAsyncSearchesList(ctx, req)
+	if listErr != nil && !errors.Is(listErr, consts.ErrPartialResponse) {
+		return nil, listErr
 	}
 
-	return &seqproxyapi.GetAsyncSearchesListResponse{
+	res := &seqproxyapi.GetAsyncSearchesListResponse{
 		Searches: makeProtoAsyncSearchesList(searches),
-	}, nil
+		Error: &seqproxyapi.Error{
+			Code: seqproxyapi.ErrorCode_ERROR_CODE_NO,
+		},
+	}
+
+	if listErr != nil && errors.Is(listErr, consts.ErrPartialResponse) {
+		res.Error = &seqproxyapi.Error{
+			Code:    seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE,
+			Message: listErr.Error(),
+		}
+	}
+
+	return res, nil
 }
 
 func (g *grpcV1) CancelAsyncSearch(
