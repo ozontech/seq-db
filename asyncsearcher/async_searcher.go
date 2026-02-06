@@ -353,7 +353,11 @@ func (as *AsyncSearcher) doSearch(id string, fracs fracmanager.List) {
 			break
 		}
 
-		f := fracsByName[fracInfo.Name]
+		f, ok := fracsByName[fracInfo.Name]
+		if !ok { // oldest fracs may already be removed
+			logger.Info("async search: skip missing fraction", zap.String("id", id), zap.String("frac", fracInfo.Name))
+			continue
+		}
 		if err := as.processFrac(f, info); err != nil {
 			as.updateSearchInfo(id, func(info *asyncSearchInfo) {
 				info.Error = err.Error()
