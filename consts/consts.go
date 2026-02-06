@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	// NOP
 	// DummyMID is used in aggregations when we do not need to build time series.
 	DummyMID = 0
 
