@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -27,6 +28,8 @@ const (
 	fracDoneExt    = ".filter"
 	tmpExt         = ".tmp"
 )
+
+const defaultMaintenanceInterval = 30 * time.Second
 
 type MappingProvider interface {
 	GetMapping() seq.Mapping
@@ -50,6 +53,8 @@ type DocsFilter struct {
 
 	rateLimit     chan struct{}
 	createDirOnce *sync.Once
+
+	maintenanceInterval time.Duration
 }
 
 func New(
@@ -71,14 +76,15 @@ func New(
 	}
 
 	return &DocsFilter{
-		ctx:           ctx,
-		config:        cfg,
-		filters:       filtersMap,
-		fracs:         make(map[string][]string),
-		fracsMu:       &sync.RWMutex{},
-		mp:            mp,
-		rateLimit:     make(chan struct{}, workers),
-		createDirOnce: &sync.Once{},
+		ctx:                 ctx,
+		config:              cfg,
+		filters:             filtersMap,
+		fracs:               make(map[string][]string),
+		fracsMu:             &sync.RWMutex{},
+		mp:                  mp,
+		rateLimit:           make(chan struct{}, workers),
+		createDirOnce:       &sync.Once{},
+		maintenanceInterval: defaultMaintenanceInterval,
 	}
 }
 
@@ -94,6 +100,8 @@ func (df *DocsFilter) Start(fracs fracmanager.List) {
 	if err != nil {
 		logger.Fatal("failed to build docs filters queue", zap.Error(err))
 	}
+
+	go df.maintenance()
 
 	mapping := df.mp.GetMapping()
 
@@ -282,6 +290,8 @@ func (df *DocsFilter) processFilter(filter *Filter, fracs fracmanager.List) {
 		panic(fmt.Errorf("BUG: reading directory must be successful: %s", err))
 	}
 
+	inProgressFilters.Add(1)
+
 	processFracInQueue := func(name string) error {
 		f := fracsByName[fracNameFromFilePath(name)]
 		filter.processWg.Add(1)
@@ -298,6 +308,7 @@ func (df *DocsFilter) processFilter(filter *Filter, fracs fracmanager.List) {
 	go func() {
 		filter.processWg.Wait()
 		filter.markAsDone()
+		inProgressFilters.Add(-1)
 	}()
 }
 
@@ -351,6 +362,43 @@ func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter, refresh bool)
 	}
 
 	return nil
+}
+
+func (df *DocsFilter) maintenance() {
+	for {
+		logger.Info("docs filter maintenance iteration")
+		df.checkDiskUsage()
+		time.Sleep(df.maintenanceInterval)
+	}
+}
+
+func (df *DocsFilter) checkDiskUsage() {
+	du := int64(0)
+
+	for _, f := range df.filters {
+		des, err := os.ReadDir(f.dirPath)
+		if err != nil {
+			logger.Error("docs filter: can't read filter's dir",
+				zap.String("filter", f.String()), zap.Error(err))
+			return
+		}
+
+		for _, fde := range des {
+			if fde.IsDir() {
+				continue
+			}
+			info, err := fde.Info()
+			if err != nil {
+				logger.Error("docs filter: can't read tombstones file info",
+					zap.String("filter", f.String()), zap.Error(err))
+				return
+			}
+			du += info.Size()
+		}
+	}
+
+	diskUsage.Set(float64(du))
+	storedFilters.Set(float64(len(df.filters)))
 }
 
 func makeFileName(name, ext string) string {
