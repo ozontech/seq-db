@@ -518,6 +518,12 @@ func WithOffset(offset int) SearchOption {
 	}
 }
 
+func WithOffsetId(offsetId string) SearchOption {
+	return func(sr *search.SearchRequest) {
+		sr.OffsetId = offsetId
+	}
+}
+
 // WithAggQuery adds aggregation query to search request. Aggregations parameters are
 // passed as consequent strings of aggregation fields and filters:
 // aggField1, aggFilter1, aggField2, aggFilter2, ..., aggFieldN, aggFilterN.
