@@ -1247,6 +1247,70 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			s.query("service:database AND level:3", withTo(toTime.Format(time.RFC3339Nano)), withHist(1000)),
 			histBuckets)
 	})
+
+	s.Run("scroll with offset id", func() {
+		query := "message:request AND level:4"
+		scrollFrom := fromTime
+		scrollTo := midTime
+		pageSize := 98
+
+		var expectedIndexesAsc []int
+		for i := range testDocs {
+			doc := &testDocs[i]
+			if !doc.timestamp.Before(scrollFrom) &&
+				!doc.timestamp.After(scrollTo) &&
+				strings.Contains(doc.message, "request") &&
+				doc.level == 4 {
+				expectedIndexesAsc = append(expectedIndexesAsc, i)
+			}
+		}
+
+		var expectedIndexes []int
+		for _, order := range []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc} {
+			if order == seq.DocsOrderAsc {
+				expectedIndexes = expectedIndexesAsc
+			} else {
+				expectedIndexes = append([]int{}, expectedIndexesAsc...)
+				slices.Reverse(expectedIndexes)
+			}
+
+			searchParams := s.query(query,
+				withFrom(scrollFrom.Format(time.RFC3339Nano)),
+				withTo(scrollTo.Format(time.RFC3339Nano)),
+				withLimit(pageSize))
+			searchParams.Order = order
+
+			expectedOffset := 0
+			totalIDsScrolled := 0
+
+			for {
+				qpr, err := s.fraction.Search(context.Background(), *searchParams)
+
+				s.Require().NoError(err, "search failed")
+
+				if len(qpr.IDs) == 0 {
+					break
+				}
+
+				qprIDs := qpr.IDs.IDs()
+				totalIDsScrolled += len(qprIDs)
+
+				docs, err := s.fraction.Fetch(context.Background(), qprIDs)
+				s.Require().NoError(err, "fetch failed for order=%v", order)
+
+				for j, doc := range docs {
+					idx := expectedOffset + j
+					s.Require().Equalf(docJsons[expectedIndexes[idx]], string(doc),
+						"doc at scroll position %d (order=%v) doesn't match", idx, order)
+				}
+				expectedOffset += len(docs)
+
+				searchParams.OffsetId = qprIDs[len(qprIDs)-1]
+			}
+
+			s.Require().Equal(totalIDsScrolled, len(expectedIndexesAsc), "total number of docs scrolled mismatch")
+		}
+	})
 }
 
 func (s *FractionTestSuite) TestIntersectingNanoseconds() {
