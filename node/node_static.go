@@ -1,36 +1,60 @@
 package node
 
-type staticNode struct {
-	data     []uint32
-	returned bool
+type staticCursor struct {
+	ptr  int
+	data []uint32
 }
 
-func (n *staticNode) String() string {
+type staticAsc struct {
+	staticCursor
+}
+
+type staticDesc struct {
+	staticCursor
+}
+
+func (n *staticCursor) String() string {
 	return "STATIC"
 }
 
 func NewStatic(data []uint32, reverse bool) Node {
-	_ = reverse
-	return &staticNode{
-		data:     data,
-		returned: false,
+	if reverse {
+		return &staticDesc{staticCursor: staticCursor{
+			ptr:  len(data) - 1,
+			data: data,
+		}}
 	}
+
+	return &staticAsc{staticCursor: staticCursor{
+		ptr:  0,
+		data: data,
+	}}
 }
 
-func (n *staticNode) Next(limit uint32) []uint32 {
-	if n.returned {
+func (n *staticAsc) Next(limit uint32) []uint32 {
+	if n.ptr >= len(n.data) {
 		return nil
 	}
-	n.returned = true
-	return n.data
+	cur := n.data[n.ptr]
+	n.ptr++
+	return []uint32{cur}
 }
 
-func (n *staticAsc) NextGeq(minLID uint32) []uint32 {
-	return n.Next()
+func (n *staticDesc) Next(limit uint32) []uint32 {
+	if n.ptr < 0 {
+		return nil
+	}
+	cur := n.data[n.ptr]
+	n.ptr--
+	return []uint32{cur}
 }
 
-func (n *staticDesc) NextGeq(minLID uint32) []uint32 {
-	return n.Next()
+func (n *staticAsc) NextGeq(minLID uint32, limit uint32) []uint32 {
+	return n.Next(limit)
+}
+
+func (n *staticDesc) NextGeq(minLID uint32, limit uint32) []uint32 {
+	return n.Next(limit)
 }
 
 // MakeStaticNodes is currently used only for tests
