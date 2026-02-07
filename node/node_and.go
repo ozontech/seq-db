@@ -40,6 +40,58 @@ func NewAnd(left, right Node, reverse bool) *nodeAnd {
 	return node
 }
 
+// TODO limit is ignored
+func (n *nodeAnd) Next(limit uint32) []uint32 {
+	for {
+		if len(n.leftBatch) == 0 {
+			if len(n.rightBatch) > 0 {
+				n.leftBatch = n.left.NextGeq(n.rightBatch[0], limit)
+			} else {
+				n.leftBatch = n.left.Next(limit)
+			}
+		}
+		if len(n.rightBatch) == 0 {
+			if len(n.leftBatch) > 0 {
+				n.rightBatch = n.right.NextGeq(n.leftBatch[0], limit)
+			} else {
+				n.rightBatch = n.right.Next(limit)
+			}
+		}
+
+		if len(n.leftBatch) == 0 || len(n.rightBatch) == 0 {
+			return nil
+		}
+
+		result := n.intersectFn()
+
+		if len(result) > 0 {
+			return result
+		}
+	}
+}
+
+// TODO limit is ignored
+func (n *nodeAnd) NextGeq(minLID uint32, limit uint32) []uint32 {
+	for {
+		if len(n.leftBatch) == 0 {
+			n.leftBatch = n.left.NextGeq(minLID, limit)
+		}
+		if len(n.rightBatch) == 0 {
+			n.rightBatch = n.right.NextGeq(minLID, limit)
+		}
+
+		if len(n.leftBatch) == 0 || len(n.rightBatch) == 0 {
+			return nil
+		}
+
+		result := n.intersectFn()
+
+		if len(result) > 0 {
+			return result
+		}
+	}
+}
+
 // gallopSearchAsc finds the smallest index k in arr[low:] where arr[k] >= target.
 // TODO replace with shotgun intersection
 func gallopSearchAsc(arr []uint32, low int, target uint32) int {
@@ -174,48 +226,4 @@ func (n *nodeAnd) intersectDesc() []uint32 {
 	n.rightBatch = right[:j+1]
 
 	return n.outBatch
-}
-
-// TODO limit is ignored
-func (n *nodeAnd) Next(limit uint32) []uint32 {
-	for {
-		if len(n.leftBatch) == 0 {
-			n.leftBatch = n.left.Next(math.MaxUint32)
-		}
-		if len(n.rightBatch) == 0 {
-			n.rightBatch = n.right.Next(math.MaxUint32)
-		}
-
-		if len(n.leftBatch) == 0 || len(n.rightBatch) == 0 {
-			return nil
-		}
-
-		result := n.intersectFn()
-
-		if len(result) > 0 {
-			return result
-		}
-	}
-}
-
-// TODO limit is ignored
-func (n *nodeAnd) NextGeq(minLID uint32, limit uint32) []uint32 {
-	for {
-		if len(n.leftBatch) == 0 {
-			n.leftBatch = n.left.NextGeq(minLID, limit)
-		}
-		if len(n.rightBatch) == 0 {
-			n.rightBatch = n.right.NextGeq(minLID, limit)
-		}
-
-		if len(n.leftBatch) == 0 || len(n.rightBatch) == 0 {
-			return nil
-		}
-
-		result := n.intersectFn()
-
-		if len(result) > 0 {
-			return result
-		}
-	}
 }

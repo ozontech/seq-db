@@ -194,7 +194,7 @@ func iterateEvalTree(
 		}
 
 		timerEval.Start()
-		lidBatch := evalTree.Next(math.MaxUint32)
+		lidBatch := evalTree.Next(4096)
 		timerEval.Stop()
 
 		if lidBatch == nil {
