@@ -3,45 +3,20 @@ package node
 type sourcedNodeWrapper struct {
 	node   Node
 	source uint32
-	batch  []uint32
-	idx    int
 }
 
-// TODO batching is not supported for agg
 func (*sourcedNodeWrapper) String() string {
 	return "SOURCED"
 }
 
 func (w *sourcedNodeWrapper) NextSourced() (uint32, uint32, bool) {
-	// If current batch is exhausted, get next batch
-	for w.idx >= len(w.batch) {
-		// TODO support batching
-		w.batch = w.node.Next(1)
-		w.idx = 0
-		if w.batch == nil {
-			return 0, w.source, false
-		}
-	}
-
-	id := w.batch[w.idx]
-	w.idx++
-	return id, w.source, true
+	id, has := w.node.Next()
+	return id, w.source, has
 }
 
 func (w *sourcedNodeWrapper) NextSourcedGeq(minLID uint32) (uint32, uint32, bool) {
-	// If current batch is exhausted, get next batch
-	for w.idx >= len(w.batch) {
-		// TODO support batching
-		w.batch = w.node.NextGeq(minLID, 1)
-		w.idx = 0
-		if w.batch == nil {
-			return 0, w.source, false
-		}
-	}
-
-	id := w.batch[w.idx]
-	w.idx++
-	return id, w.source, true
+	id, has := w.node.NextGeq(minLID)
+	return id, w.source, has
 }
 
 func NewSourcedNodeWrapper(d Node, source int) Sourced {

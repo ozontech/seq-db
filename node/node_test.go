@@ -1,17 +1,16 @@
 package node
 
 import (
-	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func readAllInto(node Node, ids []uint32) []uint32 {
-	batch := node.Next(math.MaxUint32)
-	for batch != nil {
-		ids = append(ids, batch...)
-		batch = node.Next(math.MaxUint32)
+	id, has := node.Next()
+	for has {
+		ids = append(ids, id)
+		id, has = node.Next()
 	}
 	return ids
 }
@@ -55,7 +54,7 @@ func isEmptyNode(node any) bool {
 	if sw, is := node.(*sourcedNodeWrapper); is {
 		node = sw.node
 	}
-	if ns, is := node.(*staticNode); is {
+	if ns, is := node.(*staticAsc); is {
 		return len(ns.data) == 0
 	}
 	return false

@@ -180,9 +180,6 @@ func iterateEvalTree(
 	timerRID := sw.Timer("get_rid")
 	timerAgg := sw.Timer("agg_node_count")
 
-	mids := make([]seq.MID, 0)
-	rids := make([]seq.RID, 0)
-
 	for i := 0; ; i++ {
 		if i&1023 == 0 && util.IsCancelled(ctx) {
 			return total, ids, histogram, ctx.Err()
@@ -194,93 +191,57 @@ func iterateEvalTree(
 		}
 
 		timerEval.Start()
-		lidBatch := evalTree.Next(4096)
+		lid, has := evalTree.Next()
 		timerEval.Stop()
 
-		if lidBatch == nil {
+		if !has {
 			break
 		}
 
-		if !needScanAllRange {
-			// fast path for regular search:
-			// truncate batch if needed, get mids and rids batched, and add to ids
-			needMoreCount := params.Limit - len(ids)
-			if len(lidBatch) > needMoreCount {
-				lidBatch = lidBatch[0:needMoreCount]
-			}
-
-			mids = mids[:0]
+		if needMore || hasHist {
 			timerMID.Start()
-			mids = idsIndex.GetMIDs(lidBatch, mids)
+			mid := idsIndex.GetMID(seq.LID(lid))
 			timerMID.Stop()
 
-			rids = rids[:0]
-			timerRID.Start()
-			rids = idsIndex.GetRIDs(lidBatch, rids)
-			timerRID.Stop()
+			if hasHist {
+				if mid < params.From || mid > params.To {
+					logger.Error("MID value outside the query range",
+						zap.Time("from", params.From.Time()),
+						zap.Time("to", params.To.Time()),
+						zap.Time("mid", mid.Time()))
+					continue
+				}
+				bucketIndex := uint64(mid)/uint64(histInterval) - histBase
+				histogram[bucketIndex]++
+			}
 
-			for j := 0; j < len(lidBatch); j++ {
-				id := seq.ID{MID: mids[j], RID: rids[j]}
+			if needMore {
+				timerRID.Start()
+				rid := idsIndex.GetRID(seq.LID(lid))
+				timerRID.Stop()
+
+				id := seq.ID{MID: mid, RID: rid}
 
 				if total == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
 					ids = append(ids, seq.IDSource{ID: id})
 				}
 				lastID = id
-				total++
-			}
-			continue
-		}
-
-		for _, lid := range lidBatch {
-			needMore = len(ids) < params.Limit
-			if !needMore && !needScanAllRange {
-				break
-			}
-
-			if needMore || hasHist {
-				timerMID.Start()
-				mid := idsIndex.GetMID(seq.LID(lid))
-				timerMID.Stop()
-
-				if hasHist {
-					if mid < params.From || mid > params.To {
-						logger.Error("MID value outside the query range",
-							zap.Time("from", params.From.Time()),
-							zap.Time("to", params.To.Time()),
-							zap.Time("mid", mid.Time()))
-						continue
-					}
-					bucketIndex := uint64(mid)/uint64(histInterval) - histBase
-					histogram[bucketIndex]++
-				}
-
-				if needMore {
-					timerRID.Start()
-					rid := idsIndex.GetRID(seq.LID(lid))
-					timerRID.Stop()
-
-					id := seq.ID{MID: mid, RID: rid}
-
-					if total == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
-						ids = append(ids, seq.IDSource{ID: id})
-					}
-					lastID = id
-				}
-			}
-
-			total++ // increment found counter, use aggNode, calculate histogram and collect ids only if id in borders
-
-			if len(aggs) > 0 {
-				timerAgg.Start()
-				for j := range aggs {
-					if err := aggs[j].Next(lid); err != nil {
-						timerAgg.Stop()
-						return total, ids, histogram, err
-					}
-				}
-				timerAgg.Stop()
 			}
 		}
+
+		total++ // increment found counter, use aggNode, calculate histogram and collect ids only if id in borders
+
+		if len(aggs) > 0 {
+			timerAgg.Start()
+			for i := range aggs {
+				if err := aggs[i].Next(lid); err != nil {
+					timerAgg.Stop()
+					return total, ids, histogram, err
+				}
+			}
+			timerAgg.Stop()
+		}
+
 	}
 
 	return total, ids, histogram, nil

@@ -24,40 +24,45 @@ func NewStatic(data []uint32, reverse bool) Node {
 			data: data,
 		}}
 	}
-
 	return &staticAsc{staticCursor: staticCursor{
 		ptr:  0,
 		data: data,
 	}}
 }
 
-func (n *staticAsc) Next(limit uint32) []uint32 {
+func (n *staticAsc) Next() (uint32, bool) {
 	if n.ptr >= len(n.data) {
-		return nil
+		return 0, false
 	}
 	cur := n.data[n.ptr]
 	n.ptr++
-	return []uint32{cur}
+	return cur, true
 }
 
-func (n *staticDesc) Next(limit uint32) []uint32 {
+func (n *staticDesc) Next() (uint32, bool) {
 	if n.ptr < 0 {
-		return nil
+		return 0, false
 	}
 	cur := n.data[n.ptr]
 	n.ptr--
-	return []uint32{cur}
+	return cur, true
 }
 
-func (n *staticAsc) NextGeq(minLID uint32, limit uint32) []uint32 {
-	return n.Next(limit)
+func (n *staticAsc) NextGeq(minLID uint32) (uint32, bool) {
+	// advance ptr to first >= minLID
+	for n.ptr < len(n.data) && n.data[n.ptr] < minLID {
+		n.ptr++
+	}
+	return n.Next()
 }
 
-func (n *staticDesc) NextGeq(minLID uint32, limit uint32) []uint32 {
-	return n.Next(limit)
+func (n *staticDesc) NextGeq(minLID uint32) (uint32, bool) {
+	for n.ptr >= 0 && n.data[n.ptr] < minLID {
+		n.ptr--
+	}
+	return n.Next()
 }
 
-// MakeStaticNodes is currently used only for tests
 func MakeStaticNodes(data [][]uint32) []Node {
 	nodes := make([]Node, len(data))
 	for i, values := range data {

@@ -3,11 +3,9 @@ package node
 import "fmt"
 
 type nodeOr struct {
-	less LessFn
-
-	left  singleIter
-	right singleIter
-
+	less     LessFn
+	left     Node
+	right    Node
 	leftID   uint32
 	hasLeft  bool
 	rightID  uint32
@@ -15,98 +13,94 @@ type nodeOr struct {
 }
 
 func (n *nodeOr) String() string {
-	return fmt.Sprintf("(%s OR %s)", n.left.node.String(), n.right.node.String())
+	return fmt.Sprintf("(%s OR %s)", n.left.String(), n.right.String())
 }
 
 func NewOr(left, right Node, reverse bool) *nodeOr {
 	n := &nodeOr{
 		less:  GetLessFn(reverse),
-		left:  singleIter{node: left},
-		right: singleIter{node: right},
+		left:  left,
+		right: right,
 	}
-	n.leftID, n.hasLeft = n.left.next()
-	n.rightID, n.hasRight = n.right.next()
+	n.leftID, n.hasLeft = n.left.Next()
+	n.rightID, n.hasRight = n.right.Next()
 	return n
 }
 
-func (n *nodeOr) readLeft() {
-	n.leftID, n.hasLeft = n.left.next()
-}
-
-func (n *nodeOr) readRight() {
-	n.rightID, n.hasRight = n.right.next()
-}
-
-func (n *nodeOr) readLeftGeq(minLID uint32) {
-	n.leftID, n.hasLeft = n.left.next()
-	//n.leftID, n.hasLeft = n.left.NextGeq(minLID)
-}
-
-func (n *nodeOr) readRightGeq(minLID uint32) {
-	n.rightID, n.hasRight = n.right.next()
-	//n.rightID, n.hasRight = n.right.NextGeq(minLID)
-}
-
-// TODO limit is ignored
-func (n *nodeOr) Next(limit uint32) []uint32 {
+func (n *nodeOr) Next() (uint32, bool) {
 	if !n.hasLeft && !n.hasRight {
-		return nil
+		return 0, false
 	}
 
-	var cur uint32
 	if n.hasLeft && (!n.hasRight || n.less(n.leftID, n.rightID)) {
-		cur = n.leftID
-		n.leftID, n.hasLeft = n.left.next()
-	} else if n.hasRight && (!n.hasLeft || n.less(n.rightID, n.leftID)) {
-		cur = n.rightID
-		n.rightID, n.hasRight = n.right.next()
-	} else {
-		cur = n.leftID
-		n.leftID, n.hasLeft = n.left.next()
-		n.rightID, n.hasRight = n.right.next()
+		cur := n.leftID
+		n.readLeft()
+		return cur, true
 	}
 
-	return []uint32{cur}
+	if n.hasRight && (!n.hasLeft || n.less(n.rightID, n.leftID)) {
+		cur := n.rightID
+		n.readRight()
+		return cur, true
+	}
+
+	cur := n.leftID
+	n.readLeft()
+	n.readRight()
+
+	return cur, true
 }
 
-// TODO limit is ignored
-func (n *nodeOr) NextGeq(minLID uint32, limit uint32) []uint32 {
+func (n *nodeOr) NextGeq(minLID uint32) (uint32, bool) {
 	if !n.hasLeft && !n.hasRight {
-		return nil
+		return 0, false
 	}
 
 	if n.hasLeft && (!n.hasRight || n.less(n.leftID, n.rightID)) {
 		cur := n.leftID
 		n.readLeftGeq(minLID)
-		return []uint32{cur}
+		return cur, true
 	}
 
 	if n.hasRight && (!n.hasLeft || n.less(n.rightID, n.leftID)) {
 		cur := n.rightID
 		n.readRightGeq(minLID)
-		return []uint32{cur}
+		return cur, true
 	}
 
 	cur := n.leftID
 	n.readLeftGeq(minLID)
 	n.readRightGeq(minLID)
 
-	return []uint32{cur}
+	return cur, true
+}
+
+func (n *nodeOr) readLeft() {
+	n.leftID, n.hasLeft = n.left.Next()
+}
+
+func (n *nodeOr) readRight() {
+	n.rightID, n.hasRight = n.right.Next()
+}
+
+func (n *nodeOr) readLeftGeq(minLID uint32) {
+	n.leftID, n.hasLeft = n.left.NextGeq(minLID)
+}
+
+func (n *nodeOr) readRightGeq(minLID uint32) {
+	n.rightID, n.hasRight = n.right.NextGeq(minLID)
 }
 
 type nodeOrAgg struct {
-	left  Sourced
-	right Sourced
-
-	leftID     uint32
-	leftSource uint32
-	hasLeft    bool
-
+	less        LessFn
+	left        Sourced
+	right       Sourced
+	leftID      uint32
+	leftSource  uint32
+	hasLeft     bool
 	rightID     uint32
 	rightSource uint32
 	hasRight    bool
-
-	less LessFn
 }
 
 func (n *nodeOrAgg) String() string {
@@ -114,14 +108,14 @@ func (n *nodeOrAgg) String() string {
 }
 
 func NewNodeOrAgg(left, right Sourced, reverse bool) Sourced {
-	n := &nodeOrAgg{
+	no := &nodeOrAgg{
+		less:  GetLessFn(reverse),
 		left:  left,
 		right: right,
-		less:  GetLessFn(reverse),
 	}
-	n.readLeft()
-	n.readRight()
-	return n
+	no.leftID, no.leftSource, no.hasLeft = no.left.NextSourced()
+	no.rightID, no.rightSource, no.hasRight = no.right.NextSourced()
+	return no
 }
 
 func (n *nodeOrAgg) readLeft() {

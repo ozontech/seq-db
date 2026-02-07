@@ -1,8 +1,7 @@
 package node
 
 type nodeRange struct {
-	less LessFn
-
+	less   LessFn
 	maxVal uint32
 	cur    int
 	step   int
@@ -26,16 +25,15 @@ func NewRange(minVal, maxVal uint32, reverse bool) *nodeRange {
 	}
 }
 
-func (n *nodeRange) Next(limit uint32) []uint32 {
-	// TODO support batching
+func (n *nodeRange) Next() (uint32, bool) {
 	if n.less(n.maxVal, uint32(n.cur)) {
-		return nil
+		return 0, false
 	}
 	cur := uint32(n.cur)
 	n.cur += n.step
-	return []uint32{cur}
+	return cur, true
 }
 
-func (n *nodeRange) NextGeq(minLID uint32, limit uint32) []uint32 {
-	return n.Next(limit)
+func (n *nodeRange) NextGeq(minLID uint32) (uint32, bool) {
+	return n.Next()
 }

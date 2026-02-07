@@ -3,48 +3,53 @@ package node
 import "fmt"
 
 type nodeNAnd struct {
-	less LessFn
-
-	neg    singleIter
+	less   LessFn
+	neg    Node
 	negID  uint32
 	hasNeg bool
-
-	reg    singleIter
+	reg    Node
 	regID  uint32
 	hasReg bool
 }
 
 func (n *nodeNAnd) String() string {
-	return fmt.Sprintf("(%s NAND %s)", n.neg.node.String(), n.reg.node.String())
+	return fmt.Sprintf("(%s NAND %s)", n.neg.String(), n.reg.String())
 }
 
 func NewNAnd(negative, regular Node, reverse bool) *nodeNAnd {
 	node := &nodeNAnd{
 		less: GetLessFn(reverse),
-		neg:  singleIter{node: negative},
-		reg:  singleIter{node: regular},
+		neg:  negative,
+		reg:  regular,
 	}
-	node.negID, node.hasNeg = node.neg.next()
-	node.regID, node.hasReg = node.reg.next()
+	node.negID, node.hasNeg = node.neg.Next()
+	node.regID, node.hasReg = node.reg.Next()
 	return node
 }
 
-func (n *nodeNAnd) Next(limit uint32) []uint32 {
-	// TODO support batching?
+func (n *nodeNAnd) readNeg() {
+	n.negID, n.hasNeg = n.neg.Next()
+}
+
+func (n *nodeNAnd) readReg() {
+	n.regID, n.hasReg = n.reg.Next()
+}
+
+func (n *nodeNAnd) Next() (uint32, bool) {
 	for n.hasReg {
 		for n.hasNeg && n.less(n.negID, n.regID) {
-			n.negID, n.hasNeg = n.neg.next()
+			n.readNeg()
 		}
 		if !n.hasNeg || n.negID != n.regID {
 			cur := n.regID
-			n.regID, n.hasReg = n.reg.next()
-			return []uint32{cur}
+			n.readReg()
+			return cur, true
 		}
-		n.regID, n.hasReg = n.reg.next()
+		n.readReg()
 	}
-	return nil
+	return 0, false
 }
 
-func (n *nodeNAnd) NextGeq(minLID uint32, limit uint32) []uint32 {
-	return n.Next(limit)
+func (n *nodeNAnd) NextGeq(minLID uint32) (uint32, bool) {
+	return n.Next()
 }

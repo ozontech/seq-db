@@ -55,23 +55,47 @@ func (it *IteratorAsc) loadNextLIDsBlock() {
 	it.blockIndex--
 }
 
-func (it *IteratorAsc) Next(limit uint32) []uint32 {
+func (it *IteratorAsc) SupportsBatch() bool {
+	return true
+}
+
+func (it *IteratorAsc) Next() (uint32, bool) {
+	for len(it.lids) == 0 {
+		if !it.tryNextBlock {
+			return 0, false
+		}
+		it.loadNextLIDsBlock()
+		it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
+		it.counter.AddLIDsCount(len(it.lids))
+	}
+	i := len(it.lids) - 1
+	lid := it.lids[i]
+	it.lids = it.lids[:i]
+	return lid, true
+}
+
+func (it *IteratorAsc) NextGeq(minLid uint32) (uint32, bool) {
+	return it.Next()
+}
+
+func (it *IteratorAsc) NextBatch(minLID uint32, limit uint32) []uint32 {
 	for len(it.lids) == 0 {
 		if !it.tryNextBlock {
 			return nil
 		}
-
-		it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
+		it.loadNextLIDsBlock()
 		it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
-		it.counter.AddLIDsCount(len(it.lids)) // inc loaded LIDs count
+		it.counter.AddLIDsCount(len(it.lids))
 	}
 
-	batch := it.lids
-	it.lids = nil
+	var batch []uint32
+	for i := len(it.lids) - 1; i >= 0 && uint32(len(batch)) < limit; i-- {
+		if it.lids[i] >= minLID {
+			batch = append(batch, it.lids[i])
+		}
+	}
+	// remove taken elements from the end
+	take := len(batch)
+	it.lids = it.lids[:len(it.lids)-take]
 	return batch
-}
-
-func (it *IteratorAsc) NextGeq(minLid uint32, limit uint32) []uint32 {
-	// TODO find with start offset with GEQ and end offset with limit
-	return it.Next(limit)
 }

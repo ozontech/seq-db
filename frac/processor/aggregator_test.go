@@ -150,6 +150,13 @@ func (m *MockNode) String() string {
 }
 
 func (m *MockNode) NextSourced() (uint32, uint32, bool) {
+	return m.NextSourcedGeq(0)
+}
+
+func (m *MockNode) NextSourcedGeq(minLID uint32) (uint32, uint32, bool) {
+	for len(m.Pairs) > 0 && m.Pairs[0].LID < minLID {
+		m.Pairs = m.Pairs[1:]
+	}
 	if len(m.Pairs) == 0 {
 		return 0, 0, false
 	}

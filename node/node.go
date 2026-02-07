@@ -6,34 +6,21 @@ import (
 
 type Node interface {
 	fmt.Stringer // for testing
-	Next(limit uint32) []uint32
-	// NextGeq returns next greater or equal (GEQ) lid. Currently, some nodes do not support it
-	// so the caller must check the output and be ready call it again if needed.
-	NextGeq(minLID uint32, limit uint32) []uint32
+	// Next returns the next LID. Second return is false when exhausted.
+	Next() (id uint32, has bool)
+	// NextGeq returns the next LID >= minLID. Second return is false when exhausted.
+	NextGeq(minLID uint32) (id uint32, has bool)
+}
+
+// BatchedNode extends Node with batch iteration. Only nodeAndBatched and LID iterators (IteratorAsc, IteratorDesc) implement it.
+type BatchedNode interface {
+	Node
+	// NextBatch returns up to limit LIDs >= minLID. Returns nil when exhausted.
+	NextBatch(minLID uint32, limit uint32) []uint32
 }
 
 type Sourced interface {
 	fmt.Stringer // for testing
-	// aggregation need source
 	NextSourced() (id uint32, source uint32, has bool)
 	NextSourcedGeq(nextLID uint32) (id uint32, source uint32, has bool)
-}
-
-// TODO remove this
-// singleIter wraps a batch-returning Node to yield single elements.
-type singleIter struct {
-	node  Node
-	batch []uint32
-}
-
-func (s *singleIter) next() (uint32, bool) {
-	for len(s.batch) == 0 {
-		s.batch = s.node.Next(1)
-		if s.batch == nil {
-			return 0, false
-		}
-	}
-	id := s.batch[0]
-	s.batch = s.batch[1:]
-	return id, true
 }

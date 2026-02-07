@@ -55,36 +55,35 @@ func (it *IteratorDesc) loadNextLIDsBlock() {
 	it.blockIndex++
 }
 
-func (it *IteratorDesc) Next(limit uint32) []uint32 {
-	for len(it.lids) == 0 {
-		if !it.tryNextBlock {
-			return nil
-		}
-
-		it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
-		it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
-		it.counter.AddLIDsCount(len(it.lids)) // inc loaded LIDs count
-	}
-
-	batch := it.lids
-	it.lids = nil
-	return batch
+func (it *IteratorDesc) SupportsBatch() bool {
+	return true
 }
 
-func (it *IteratorDesc) NextGeq(minLID uint32, limit uint32) []uint32 {
+func (it *IteratorDesc) Next() (uint32, bool) {
+	for len(it.lids) == 0 {
+		if !it.tryNextBlock {
+			return 0, false
+		}
+		it.loadNextLIDsBlock()
+		it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
+		it.counter.AddLIDsCount(len(it.lids))
+	}
+	lid := it.lids[0]
+	it.lids = it.lids[1:]
+	return lid, true
+}
+
+func (it *IteratorDesc) NextGeq(minLID uint32) (uint32, bool) {
 	for {
 		for len(it.lids) == 0 {
 			if !it.tryNextBlock {
-				return nil
+				return 0, false
 			}
-
-			it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
+			it.loadNextLIDsBlock()
 			it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
-			it.counter.AddLIDsCount(len(it.lids)) // inc loaded LIDs count
+			it.counter.AddLIDsCount(len(it.lids))
 		}
-
 		last := it.lids[len(it.lids)-1]
-		// fast path check: the last LID is less than minLID. if true, then skip the entire block
 		if minLID > last {
 			it.lids = it.lids[:0]
 			continue
@@ -95,17 +94,55 @@ func (it *IteratorDesc) NextGeq(minLID uint32, limit uint32) []uint32 {
 		if l >= 32 && it.lids[31] > minLID {
 			idx := sort.Search(len(it.lids[0:32]), func(i int) bool { return it.lids[i] >= minLID })
 			if idx < 32 {
+				// TODO single it.lids = it.lids
+				it.lids = it.lids[idx:]
+				lid := it.lids[0]
+				it.lids = it.lids[1:]
+				return lid, true
+			}
 
-				var batch []uint32
+			if len(it.lids) == 0 {
+				continue
+			}
+		}
+
+		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] >= minLID })
+		if idx < len(it.lids) {
+			lid := it.lids[idx]
+			it.lids = it.lids[idx+1:]
+			return lid, true
+		}
+		it.lids = it.lids[:0]
+	}
+}
+
+func (it *IteratorDesc) NextBatch(minLID uint32, limit uint32) []uint32 {
+	for {
+		for len(it.lids) == 0 {
+			if !it.tryNextBlock {
+				return nil
+			}
+			it.loadNextLIDsBlock()
+			it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
+			it.counter.AddLIDsCount(len(it.lids))
+		}
+		last := it.lids[len(it.lids)-1]
+		if minLID > last {
+			it.lids = it.lids[:0]
+			continue
+		}
+
+		if len(it.lids) >= 32 && it.lids[31] > minLID {
+			idx := sort.Search(len(it.lids[0:32]), func(i int) bool { return it.lids[i] >= minLID })
+			if idx < 32 {
 				batchStart := idx
 				batchEnd := idx + int(limit)
-				if batchEnd < len(it.lids) {
-					batch = it.lids[batchStart:batchEnd]
-					it.lids = it.lids[batchEnd:]
-				} else {
-					batch = it.lids[batchStart:]
-					it.lids = it.lids[:0]
+				if batchEnd > len(it.lids) {
+					batchEnd = len(it.lids)
 				}
+				batch := make([]uint32, batchEnd-batchStart)
+				copy(batch, it.lids[batchStart:batchEnd])
+				it.lids = it.lids[batchEnd:]
 				return batch
 			}
 
@@ -114,23 +151,18 @@ func (it *IteratorDesc) NextGeq(minLID uint32, limit uint32) []uint32 {
 			}
 		}
 
-		// use binary search to find lower bound
 		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] >= minLID })
 		if idx < len(it.lids) {
-
-			var batch []uint32
 			batchStart := idx
 			batchEnd := idx + int(limit)
-			if batchEnd < len(it.lids) {
-				batch = it.lids[batchStart:batchEnd]
-				it.lids = it.lids[batchEnd:]
-			} else {
-				batch = it.lids[batchStart:]
-				it.lids = it.lids[:0]
+			if batchEnd > len(it.lids) {
+				batchEnd = len(it.lids)
 			}
+			batch := make([]uint32, batchEnd-batchStart)
+			copy(batch, it.lids[batchStart:batchEnd])
+			it.lids = it.lids[batchEnd:]
 			return batch
 		}
-
 		it.lids = it.lids[:0]
 	}
 }
