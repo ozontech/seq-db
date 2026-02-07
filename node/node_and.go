@@ -15,7 +15,7 @@ type nodeAnd struct {
 	// temporary batch for pushing up lids. Should have some pool dedicated only to the current search request
 	outBatch []uint32
 
-	intersectFn func() []uint32
+	intersectFn func(uint32) []uint32
 }
 
 func (n *nodeAnd) String() string {
@@ -40,19 +40,18 @@ func NewAnd(left, right Node, reverse bool) *nodeAnd {
 	return node
 }
 
-// TODO limit is ignored
 func (n *nodeAnd) Next(limit uint32) []uint32 {
 	for {
 		if len(n.leftBatch) == 0 {
 			if len(n.rightBatch) > 0 {
-				n.leftBatch = n.left.NextGeq(n.rightBatch[0], limit)
+				n.leftBatch = n.left.NextGeq(n.rightBatch[0], uint32(min(len(n.rightBatch), int(limit))))
 			} else {
 				n.leftBatch = n.left.Next(limit)
 			}
 		}
 		if len(n.rightBatch) == 0 {
 			if len(n.leftBatch) > 0 {
-				n.rightBatch = n.right.NextGeq(n.leftBatch[0], limit)
+				n.rightBatch = n.right.NextGeq(n.leftBatch[0], uint32(min(len(n.leftBatch), int(limit))))
 			} else {
 				n.rightBatch = n.right.Next(limit)
 			}
@@ -62,7 +61,7 @@ func (n *nodeAnd) Next(limit uint32) []uint32 {
 			return nil
 		}
 
-		result := n.intersectFn()
+		result := n.intersectFn(limit)
 
 		if len(result) > 0 {
 			return result
@@ -70,21 +69,28 @@ func (n *nodeAnd) Next(limit uint32) []uint32 {
 	}
 }
 
-// TODO limit is ignored
 func (n *nodeAnd) NextGeq(minLID uint32, limit uint32) []uint32 {
 	for {
 		if len(n.leftBatch) == 0 {
-			n.leftBatch = n.left.NextGeq(minLID, limit)
+			if len(n.rightBatch) > 0 {
+				n.leftBatch = n.left.NextGeq(max(minLID, n.rightBatch[0]), uint32(min(len(n.rightBatch), int(limit))))
+			} else {
+				n.leftBatch = n.left.NextGeq(minLID, limit)
+			}
 		}
 		if len(n.rightBatch) == 0 {
-			n.rightBatch = n.right.NextGeq(minLID, limit)
+			if len(n.leftBatch) > 0 {
+				n.rightBatch = n.right.NextGeq(max(minLID, n.leftBatch[0]), uint32(min(len(n.leftBatch), int(limit))))
+			} else {
+				n.rightBatch = n.right.NextGeq(minLID, limit)
+			}
 		}
 
 		if len(n.leftBatch) == 0 || len(n.rightBatch) == 0 {
 			return nil
 		}
 
-		result := n.intersectFn()
+		result := n.intersectFn(limit)
 
 		if len(result) > 0 {
 			return result
@@ -133,7 +139,8 @@ func gallopSearchAsc(arr []uint32, low int, target uint32) int {
 // intersectAsc intersects two batches sorted in ascending order, iterating forward.
 // TODO takes 150us for ~10k-20k batches. can we do better?
 // TODO replace with shotgun intersection
-func (n *nodeAnd) intersectAsc() []uint32 {
+// Returns early if the output batch reaches or exceeds the limit.
+func (n *nodeAnd) intersectAsc(limit uint32) []uint32 {
 	left, right := n.leftBatch, n.rightBatch
 	if len(left) == 0 || len(right) == 0 {
 		return nil
@@ -142,7 +149,7 @@ func (n *nodeAnd) intersectAsc() []uint32 {
 	n.outBatch = n.outBatch[:0]
 
 	i, j := 0, 0
-	for i < len(left) && j < len(right) {
+	for i < len(left) && j < len(right) && uint32(len(n.outBatch)) < limit {
 		if left[i] == right[j] {
 			n.outBatch = append(n.outBatch, left[i])
 			i++
@@ -200,7 +207,9 @@ func gallopSearchDesc(arr []uint32, high int, target uint32) int {
 	return -1
 }
 
-func (n *nodeAnd) intersectDesc() []uint32 {
+// intersectDesc intersects two batches sorted in descending order, iterating backward.
+// Returns early if the output batch reaches or exceeds the limit.
+func (n *nodeAnd) intersectDesc(limit uint32) []uint32 {
 	left, right := n.leftBatch, n.rightBatch
 	if len(left) == 0 || len(right) == 0 {
 		return nil
@@ -209,7 +218,7 @@ func (n *nodeAnd) intersectDesc() []uint32 {
 	n.outBatch = n.outBatch[:0]
 
 	i, j := len(left)-1, len(right)-1
-	for i >= 0 && j >= 0 {
+	for i >= 0 && j >= 0 && uint32(len(n.outBatch)) < limit {
 		if left[i] == right[j] {
 			n.outBatch = append(n.outBatch, left[i])
 			i--
