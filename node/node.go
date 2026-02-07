@@ -6,14 +6,17 @@ import (
 
 type Node interface {
 	fmt.Stringer // for testing
-	// Next returns a batch of IDs. Returns nil when exhausted.
-	Next(limit uint32) []uint32
+	Next() []uint32
+	// NextGeq returns next greater or equal (GEQ) lid. Currently, some nodes do not support it
+	// so the caller must check the output and be ready call it again if needed.
+	NextGeq(minLID uint32) []uint32
 }
 
 type Sourced interface {
 	fmt.Stringer // for testing
 	// aggregation need source
 	NextSourced() (id uint32, source uint32, has bool)
+	NextSourcedGeq(nextLID uint32) (id uint32, source uint32, has bool)
 }
 
 // singleIter wraps a batch-returning Node to yield single elements.

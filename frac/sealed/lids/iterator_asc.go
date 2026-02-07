@@ -70,3 +70,8 @@ func (it *IteratorAsc) Next(limit uint32) []uint32 {
 	it.lids = nil
 	return batch
 }
+
+func (it *IteratorAsc) NextGeq(minLid uint32) (uint32, bool) {
+	// TODO support NextGeq for ascending iterator
+	return it.Next()
+}

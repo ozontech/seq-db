@@ -27,6 +27,11 @@ func (w *sourcedNodeWrapper) NextSourced() (uint32, uint32, bool) {
 	return id, w.source, true
 }
 
+func (w *sourcedNodeWrapper) NextSourcedGeq(minLID uint32) (uint32, uint32, bool) {
+	id, has := w.node.NextGeq(minLID)
+	return id, w.source, has
+}
+
 func NewSourcedNodeWrapper(d Node, source int) Sourced {
 	return &sourcedNodeWrapper{node: d, source: uint32(source)}
 }

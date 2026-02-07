@@ -72,6 +72,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		"level":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"client_ip":     seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"service":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"pod":           seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"source":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"trace_id":      seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -1112,6 +1113,74 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			fromTime: fromTime,
 			toTime:   midTime,
 		},
+		// AND operator queries
+		{
+			name:  "message:request AND message:failed",
+			query: "message:request AND message:failed",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.message, "request") && strings.Contains(doc.message, "failed")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND message:processing AND message:retry AND level:5",
+			query: "service:gateway AND message:processing AND message:retry AND level:5",
+			filter: func(doc *testDoc) bool {
+				return doc.service == "gateway" && strings.Contains(doc.message, "processing") &&
+					strings.Contains(doc.message, "retry") && doc.level == 5
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+
+		// OR operator queries
+		{
+			name:  "trace_id OR",
+			query: "trace_id:trace-1000 OR trace_id:trace-1500 OR trace_id:trace-2000 OR trace_id:trace-2500 OR trace_id:trace-3000",
+			filter: func(doc *testDoc) bool {
+				return doc.traceId == "trace-1000" ||
+					doc.traceId == "trace-1500" ||
+					doc.traceId == "trace-2000" ||
+					doc.traceId == "trace-2500" ||
+					doc.traceId == "trace-3000"
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+
+		// mixed AND/OR
+		{
+			name:  "message:request AND (level:1 OR level:3 OR level:5) AND trace_id:trace-2*",
+			query: "message:request AND (level:1 OR level:3 OR level:5) AND trace_id:trace-2*",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.message, "request") && (doc.level == 1 || doc.level == 3 || doc.level == 5) &&
+					strings.Contains(doc.traceId, "trace-2")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name: "complex AND+OR",
+			query: "(service:gateway OR service:proxy OR service:scheduler) AND " +
+				"(message:request OR message:failed) AND level:[1 to 3]",
+			filter: func(doc *testDoc) bool {
+				return (doc.service == "gateway" || doc.service == "proxy" || doc.service == "scheduler") &&
+					(strings.Contains(doc.message, "request") || strings.Contains(doc.message, "failed")) &&
+					(doc.level >= 1 && doc.level <= 3)
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+
+		// other queries
+		{
+			name:     "trace_id:trace-4*",
+			query:    "trace_id:trace-4*",
+			filter:   func(doc *testDoc) bool { return strings.Contains(doc.traceId, "trace-4") },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
 	}
 
 	for _, tc := range searchTestCases {
@@ -1144,6 +1213,42 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			s.AssertSearch(s.query(tc.query, options...), docJsons, expectedIndexes)
 		})
 	}
+
+	s.Run("service:scheduler | group by pod avg(level)", func() {
+		levelsByPod := make(map[string][]int)
+		for _, doc := range testDocs {
+			if doc.service != "scheduler" {
+				continue
+			}
+
+			levelsByPod[doc.pod] = append(levelsByPod[doc.pod], doc.level)
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for pod, levels := range levelsByPod {
+			sum := 0
+			for _, level := range levels {
+				sum += level
+			}
+			avg := float64(sum) / float64(len(levels))
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      pod,
+				Value:     avg,
+				NotExists: 0,
+			})
+		}
+
+		searchParams := s.query(
+			"service:scheduler",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				Field:   aggField("level"),
+				GroupBy: aggField("pod"),
+				Func:    seq.AggFuncAvg,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
+	})
 
 	s.Run("NOT message:retry | group by service avg(level)", func() {
 		levelsByService := make(map[string][]int)
@@ -1619,7 +1724,7 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 
 	indexCache := &IndexCache{
 		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[[]byte](nil, nil),
+		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
 		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
 		LIDs:       cache.NewCache[*lids.Block](nil, nil),
 		Tokens:     cache.NewCache[*token.Block](nil, nil),
@@ -1807,7 +1912,7 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 
 	indexCache := &IndexCache{
 		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[[]byte](nil, nil),
+		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
 		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
 		LIDs:       cache.NewCache[*lids.Block](nil, nil),
 		Tokens:     cache.NewCache[*token.Block](nil, nil),
@@ -1874,7 +1979,7 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 
 		indexCache := &IndexCache{
 			MIDs:       cache.NewCache[[]byte](nil, nil),
-			RIDs:       cache.NewCache[[]byte](nil, nil),
+			RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
 			Params:     cache.NewCache[seqids.BlockParams](nil, nil),
 			LIDs:       cache.NewCache[*lids.Block](nil, nil),
 			Tokens:     cache.NewCache[*token.Block](nil, nil),

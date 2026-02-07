@@ -70,3 +70,52 @@ func (it *IteratorDesc) Next(limit uint32) []uint32 {
 	it.lids = nil
 	return batch
 }
+
+func (it *IteratorDesc) NextGeq(minLID uint32) (uint32, bool) {
+	for {
+		for len(it.lids) == 0 {
+			if !it.tryNextBlock {
+				return 0, false
+			}
+
+			it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
+			it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
+			it.counter.AddLIDsCount(len(it.lids)) // inc loaded LIDs count
+		}
+
+		last := it.lids[len(it.lids)-1]
+		// fast path check: the last LID is less than minLID. if true, then skip the entire block
+		if minLID > last {
+			it.lids = it.lids[:0]
+			continue
+		}
+
+		l := len(it.lids)
+
+		if l >= 32 && it.lids[31] > minLID {
+			idx := sort.Search(len(it.lids[0:32]), func(i int) bool { return it.lids[i] >= minLID })
+			if idx < 32 {
+				// TODO single it.lids = it.lids
+				it.lids = it.lids[idx:]
+				lid := it.lids[0]
+				it.lids = it.lids[1:]
+				return lid, true
+			}
+
+			if len(it.lids) == 0 {
+				continue
+			}
+		}
+
+		// use binary search to find lower bound
+		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] >= minLID })
+		if idx < len(it.lids) {
+			it.lids = it.lids[idx:]
+			lid := it.lids[0]
+			it.lids = it.lids[1:]
+			return lid, true
+		}
+
+		it.lids = it.lids[:0]
+	}
+}
