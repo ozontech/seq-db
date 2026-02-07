@@ -198,47 +198,24 @@ func (n *nodeAnd) Next(limit uint32) []uint32 {
 	}
 }
 
-	func (n *nodeAnd) readLeftGeq(minLID uint32) {
-		n.leftID, n.hasLeft = n.left.NextGeq(minLID)
-	}
-
-	func (n *nodeAnd) readRightGeq(minLID uint32) {
-		n.rightID, n.hasRight = n.right.NextGeq(minLID)
-	}
-
-	func (n *nodeAnd) Next() (uint32, bool) {
-		for n.hasLeft && n.hasRight && n.leftID != n.rightID {
-			for n.hasLeft && n.hasRight && n.less(n.leftID, n.rightID) {
-				n.readLeftGeq(n.rightID)
-			}
-			for n.hasLeft && n.hasRight && n.less(n.rightID, n.leftID) {
-				n.readRightGeq(n.leftID)
-			}
+// TODO limit is ignored
+func (n *nodeAnd) NextGeq(minLID uint32, limit uint32) []uint32 {
+	for {
+		if len(n.leftBatch) == 0 {
+			n.leftBatch = n.left.NextGeq(minLID, limit)
 		}
-		if !n.hasLeft || !n.hasRight {
-			return 0, false
+		if len(n.rightBatch) == 0 {
+			n.rightBatch = n.right.NextGeq(minLID, limit)
 		}
-		cur := n.leftID
-		n.readLeft()
-		n.readRight()
-		return cur, true
-	}
 
-	func (n *nodeAnd) NextGeq(minLID uint32) (uint32, bool) {
-		for n.hasLeft && n.hasRight && n.leftID != n.rightID {
-			for n.hasLeft && n.hasRight && n.less(n.leftID, n.rightID) {
-				n.readLeftGeq(max(minLID, n.rightID))
-			}
-			for n.hasLeft && n.hasRight && n.less(n.rightID, n.leftID) {
-				n.readRightGeq(max(minLID, n.leftID))
-			}
+		if len(n.leftBatch) == 0 || len(n.rightBatch) == 0 {
+			return nil
 		}
-		if !n.hasLeft || !n.hasRight {
-			return 0, false
-		}
-		cur := n.leftID
-		n.readLeft()
-		n.readRight()
-		return cur, true
-	}
 
+		result := n.intersectFn()
+
+		if len(result) > 0 {
+			return result
+		}
+	}
+}

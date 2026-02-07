@@ -30,22 +30,25 @@ func NewOr(left, right Node, reverse bool) *nodeOr {
 }
 
 func (n *nodeOr) readLeft() {
-	n.leftID, n.hasLeft = n.left.Next()
+	n.leftID, n.hasLeft = n.left.next()
 }
 
 func (n *nodeOr) readRight() {
-	n.rightID, n.hasRight = n.right.Next()
+	n.rightID, n.hasRight = n.right.next()
 }
 
 func (n *nodeOr) readLeftGeq(minLID uint32) {
-	n.leftID, n.hasLeft = n.left.NextGeq(minLID)
+	n.leftID, n.hasLeft = n.left.next()
+	//n.leftID, n.hasLeft = n.left.NextGeq(minLID)
 }
 
 func (n *nodeOr) readRightGeq(minLID uint32) {
-	n.rightID, n.hasRight = n.right.NextGeq(minLID)
+	n.rightID, n.hasRight = n.right.next()
+	//n.rightID, n.hasRight = n.right.NextGeq(minLID)
 }
 
-func (n *nodeOr) Next() (uint32, bool) {
+// TODO limit is ignored
+func (n *nodeOr) Next(limit uint32) []uint32 {
 	if !n.hasLeft && !n.hasRight {
 		return nil
 	}
@@ -66,28 +69,29 @@ func (n *nodeOr) Next() (uint32, bool) {
 	return []uint32{cur}
 }
 
-func (n *nodeOr) NextGeq(minLID uint32) (uint32, bool) {
+// TODO limit is ignored
+func (n *nodeOr) NextGeq(minLID uint32, limit uint32) []uint32 {
 	if !n.hasLeft && !n.hasRight {
-		return 0, false
+		return nil
 	}
 
 	if n.hasLeft && (!n.hasRight || n.less(n.leftID, n.rightID)) {
 		cur := n.leftID
 		n.readLeftGeq(minLID)
-		return cur, true
+		return []uint32{cur}
 	}
 
 	if n.hasRight && (!n.hasLeft || n.less(n.rightID, n.leftID)) {
 		cur := n.rightID
 		n.readRightGeq(minLID)
-		return cur, true
+		return []uint32{cur}
 	}
 
 	cur := n.leftID
 	n.readLeftGeq(minLID)
 	n.readRightGeq(minLID)
 
-	return cur, true
+	return []uint32{cur}
 }
 
 type nodeOrAgg struct {

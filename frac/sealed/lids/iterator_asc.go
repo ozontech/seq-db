@@ -71,7 +71,7 @@ func (it *IteratorAsc) Next(limit uint32) []uint32 {
 	return batch
 }
 
-func (it *IteratorAsc) NextGeq(minLid uint32) (uint32, bool) {
-	// TODO support NextGeq for ascending iterator
-	return it.Next()
+func (it *IteratorAsc) NextGeq(minLid uint32, limit uint32) []uint32 {
+	// TODO find with start offset with GEQ and end offset with limit
+	return it.Next(limit)
 }

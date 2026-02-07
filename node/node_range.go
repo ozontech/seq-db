@@ -36,6 +36,6 @@ func (n *nodeRange) Next(limit uint32) []uint32 {
 	return []uint32{cur}
 }
 
-func (n *nodeRange) NextGeq(minLID uint32) (uint32, bool) {
-	return n.Next()
+func (n *nodeRange) NextGeq(minLID uint32, limit uint32) []uint32 {
+	return n.Next(limit)
 }
