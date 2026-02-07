@@ -25,6 +25,10 @@ func NewRange(minVal, maxVal uint32, reverse bool) *nodeRange {
 	}
 }
 
+func (n *nodeRange) Init() {
+
+}
+
 func (n *nodeRange) Next() (uint32, bool) {
 	if n.less(n.maxVal, uint32(n.cur)) {
 		return 0, false

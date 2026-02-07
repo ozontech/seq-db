@@ -4,7 +4,6 @@ import (
 	"fmt"
 )
 
-// nodeAnd implements Node (single LID only).
 type nodeAnd struct {
 	less     LessFn
 	left     Node
@@ -25,9 +24,14 @@ func NewAnd(left, right Node, reverse bool) *nodeAnd {
 		left:  left,
 		right: right,
 	}
-	node.leftID, node.hasLeft = node.left.Next()
-	node.rightID, node.hasRight = node.right.Next()
 	return node
+}
+
+func (n *nodeAnd) Init() {
+	n.left.Init()
+	n.right.Init()
+	n.leftID, n.hasLeft = n.left.Next()
+	n.rightID, n.hasRight = n.right.Next()
 }
 
 func (n *nodeAnd) readLeft() {
@@ -82,7 +86,6 @@ func (n *nodeAnd) NextGeq(minLID uint32) (uint32, bool) {
 	return cur, true
 }
 
-// nodeAndBatched implements BatchedNode: batch intersection with Next/NextGeq implemented by draining the output batch.
 type nodeAndBatched struct {
 	less        LessFn
 	left        BatchedNode
@@ -112,6 +115,10 @@ func NewAndBatched(left, right BatchedNode, reverse bool) BatchedNode {
 		node.intersectFn = node.intersectAsc
 	}
 	return node
+}
+
+func (n *nodeAndBatched) Init() {
+
 }
 
 func (n *nodeAndBatched) Next() (uint32, bool) {
@@ -145,13 +152,13 @@ func (n *nodeAndBatched) NextGeq(minLID uint32) (uint32, bool) {
 
 func (n *nodeAndBatched) NextBatch(minLID uint32, limit uint32) []uint32 {
 	for {
-		for len(n.leftBatch) == 0 {
+		if len(n.leftBatch) == 0 {
 			n.leftBatch = n.left.NextBatch(minLID, limit)
 			if len(n.leftBatch) == 0 {
 				return nil
 			}
 		}
-		for len(n.rightBatch) == 0 {
+		if len(n.rightBatch) == 0 {
 			n.rightBatch = n.right.NextBatch(minLID, limit)
 			if len(n.rightBatch) == 0 {
 				return nil
@@ -161,9 +168,6 @@ func (n *nodeAndBatched) NextBatch(minLID uint32, limit uint32) []uint32 {
 		if len(result) > 0 {
 			return result
 		}
-		// no match in this chunk; force refill on next iteration
-		n.leftBatch = nil
-		n.rightBatch = nil
 	}
 }
 
@@ -281,9 +285,23 @@ func (n *nodeAndBatched) intersectDesc(limit uint32) []uint32 {
 	return n.outBatch
 }
 
-func max(a, b uint32) uint32 {
-	if a > b {
-		return a
+func tryToBatchedNode(n Node, reverse bool) (BatchedNode, bool) {
+	if bn, ok := n.(BatchedNode); ok {
+		return bn, true
 	}
-	return b
+	if and, ok := n.(*nodeAnd); ok {
+		leftBn, ok1 := tryToBatchedNode(and.left, reverse)
+		rightBn, ok2 := tryToBatchedNode(and.right, reverse)
+		if ok1 && ok2 {
+			return NewAndBatched(leftBn, rightBn, reverse), true
+		}
+	}
+	return nil, false
+}
+
+func ConvertToBatchedIfAllAnd(n Node, reverse bool) Node {
+	if bn, ok := tryToBatchedNode(n, reverse); ok {
+		return bn
+	}
+	return n
 }

@@ -30,6 +30,10 @@ func NewStatic(data []uint32, reverse bool) Node {
 	}}
 }
 
+func (n *staticAsc) Init() {
+
+}
+
 func (n *staticAsc) Next() (uint32, bool) {
 	if n.ptr >= len(n.data) {
 		return 0, false
@@ -37,6 +41,10 @@ func (n *staticAsc) Next() (uint32, bool) {
 	cur := n.data[n.ptr]
 	n.ptr++
 	return cur, true
+}
+
+func (n *staticDesc) Init() {
+
 }
 
 func (n *staticDesc) Next() (uint32, bool) {

@@ -12,6 +12,30 @@ import (
 
 type createLeafFunc func(parser.Token) (node.Node, error)
 
+type EvalTreeOptimizationRule interface {
+	Apply(tree node.Node, reverse bool) node.Node
+}
+
+func optimizeEvalTree(tree node.Node, reverse bool, rules []EvalTreeOptimizationRule) node.Node {
+	for _, rule := range rules {
+		tree = rule.Apply(tree, reverse)
+	}
+	return tree
+}
+
+// batchedANDOptimizationRule all AND operators -> batched execution
+type batchedANDOptimizationRule struct{}
+
+func (batchedANDOptimizationRule) Apply(tree node.Node, reverse bool) node.Node {
+	return node.ConvertToBatchedIfAllAnd(tree, reverse)
+}
+
+func evalTreeOptimizationRules() []EvalTreeOptimizationRule {
+	return []EvalTreeOptimizationRule{
+		batchedANDOptimizationRule{},
+	}
+}
+
 // buildEvalTree builds eval tree based on syntax tree (of search query) where each leaf is DataNode
 func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchStats, reverse bool, newLeaf createLeafFunc) (node.Node, error) {
 	children := make([]node.Node, 0, len(root.Children))
@@ -23,30 +47,48 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 		children = append(children, childNode)
 	}
 
+	var result node.Node
 	switch token := root.Value.(type) {
 	case *parser.Literal:
-		return newLeaf(token)
+		var err error
+		result, err = newLeaf(token)
+		if err != nil {
+			return nil, err
+		}
 	case *parser.Range:
-		return newLeaf(token)
+		var err error
+		result, err = newLeaf(token)
+		if err != nil {
+			return nil, err
+		}
 	case *parser.IPRange:
-		return newLeaf(token)
+		var err error
+		result, err = newLeaf(token)
+		if err != nil {
+			return nil, err
+		}
 	case *parser.Logical:
 		switch token.Operator {
 		case parser.LogicalAnd:
 			stats.NodesTotal++
-			return node.NewAnd(children[0], children[1], reverse), nil
+			result = node.NewAnd(children[0], children[1], reverse)
 		case parser.LogicalOr:
 			stats.NodesTotal++
-			return node.NewOr(children[0], children[1], reverse), nil
+			result = node.NewOr(children[0], children[1], reverse)
 		case parser.LogicalNAnd:
 			stats.NodesTotal++
-			return node.NewNAnd(children[0], children[1], reverse), nil
+			result = node.NewNAnd(children[0], children[1], reverse)
 		case parser.LogicalNot:
 			stats.NodesTotal++
-			return node.NewNot(children[0], minVal, maxVal, reverse), nil
+			result = node.NewNot(children[0], minVal, maxVal, reverse)
+		default:
+			return nil, fmt.Errorf("unknown token type")
 		}
+	default:
+		return nil, fmt.Errorf("unknown token type")
 	}
-	return nil, fmt.Errorf("unknown token type")
+
+	return optimizeEvalTree(result, reverse, evalTreeOptimizationRules()), nil
 }
 
 // evalLeaf finds suitable matching fraction tokens and returns Node that generate corresponding tokens LIDs

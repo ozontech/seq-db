@@ -22,9 +22,15 @@ func NewNAnd(negative, regular Node, reverse bool) *nodeNAnd {
 		neg:  negative,
 		reg:  regular,
 	}
-	node.negID, node.hasNeg = node.neg.Next()
-	node.regID, node.hasReg = node.reg.Next()
+
 	return node
+}
+
+func (n *nodeNAnd) Init() {
+	n.neg.Init()
+	n.reg.Init()
+	n.negID, n.hasNeg = n.neg.Next()
+	n.regID, n.hasReg = n.reg.Next()
 }
 
 func (n *nodeNAnd) readNeg() {

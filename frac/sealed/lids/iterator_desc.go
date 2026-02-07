@@ -14,6 +14,10 @@ func (*IteratorDesc) String() string {
 	return "LIDS_DESC"
 }
 
+func (*IteratorDesc) Init() {
+
+}
+
 // narrowLIDsRange cuts LIDs between from and to. Returns new lids and tryNextBlock flag
 func (it *IteratorDesc) narrowLIDsRange(lids []uint32, tryNextBlock bool) ([]uint32, bool) {
 	first := lids[0]
@@ -53,10 +57,6 @@ func (it *IteratorDesc) loadNextLIDsBlock() {
 	it.lids = block.getLIDs(it.table.GetChunkIndex(it.blockIndex, it.tid))
 	it.tryNextBlock = it.table.HasTIDInNextBlock(it.blockIndex, it.tid)
 	it.blockIndex++
-}
-
-func (it *IteratorDesc) SupportsBatch() bool {
-	return true
 }
 
 func (it *IteratorDesc) Next() (uint32, bool) {

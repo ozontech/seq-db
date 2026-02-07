@@ -22,9 +22,14 @@ func NewOr(left, right Node, reverse bool) *nodeOr {
 		left:  left,
 		right: right,
 	}
+	return n
+}
+
+func (n *nodeOr) Init() {
+	n.left.Init()
+	n.right.Init()
 	n.leftID, n.hasLeft = n.left.Next()
 	n.rightID, n.hasRight = n.right.Next()
-	return n
 }
 
 func (n *nodeOr) Next() (uint32, bool) {
