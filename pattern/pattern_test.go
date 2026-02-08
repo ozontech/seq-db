@@ -621,11 +621,7 @@ func TestPatternRe(t *testing.T) {
 		})
 	})
 
-	// FIXME(dkharms): We have a shitty lexer/parser which
-	// produces \uE000 for '*' symbol because we implement scannerless parsing.
 	t.Run("match-all", func(t *testing.T) {
-		t.Skip("FIXME(dkharms)")
-
 		data := []string{"abc", "def", "ghi"}
 
 		tp := newTestTokenProvider(data)

@@ -315,15 +315,9 @@ type reSearch struct {
 
 func newReSearch(base baseSearch, token *parser.Re) *reSearch {
 	if token.Expression.Kind != parser.TermText {
-		panic("BUG: wrong term kind in ip_range")
+		panic("BUG: wrong term kind in re")
 	}
-
-	s := &reSearch{
-		baseSearch: base,
-	}
-
-	s.r = regexp.MustCompile(token.Expression.Data)
-	return s
+	return &reSearch{baseSearch: base, r: token.CompiledExpression}
 }
 
 func (s *reSearch) check(rawVal []byte) bool {
