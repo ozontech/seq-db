@@ -644,6 +644,28 @@ func TestPatternRe(t *testing.T) {
 		})
 	})
 
+	t.Run("match-asterisk", func(t *testing.T) {
+		needles := []string{
+			"token=*",
+			"token=**",
+			"token=***",
+		}
+
+		data := append(
+			[]string{"token=\\*", "token=abc"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("token=[*]+")`,
+				needles,
+			},
+		})
+	})
+
 	t.Run("match-all", func(t *testing.T) {
 		data := []string{"abc", "def", "ghi"}
 
