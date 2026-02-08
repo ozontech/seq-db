@@ -15,8 +15,10 @@ type Re struct {
 
 func (r *Re) DumpSeqQL(b *strings.Builder) {
 	b.WriteString(quoteTokenIfNeeded(r.Field))
-	b.WriteString(`:ip_range(`)
-	b.WriteString(r.Expression.Data)
+	b.WriteString(`:re(`)
+	b.WriteString(`"`)
+	b.WriteString(r.CompiledExpression.String())
+	b.WriteString(`"`)
 	b.WriteString(`)`)
 }
 
@@ -25,7 +27,10 @@ func parseReFilter(lex *lexer, fieldName string) (*Re, error) {
 		return nil, fmt.Errorf("expected '(', got %q", lex.Token)
 	}
 
-	lex.Next()
+	if err := lex.rawStringLiteral(); err != nil {
+		return nil, err
+	}
+
 	if lex.IsKeyword(")") {
 		return nil, errors.New("empty 're' filter")
 	}
@@ -43,21 +48,11 @@ func parseReFilter(lex *lexer, fieldName string) (*Re, error) {
 	// This behaviour has negative impact on language extendability.
 	expr := lex.Token
 
-	// NB(dkharms): Check [lexer.Next] and [unquoteChar].
-	//
-	// If lexer encounters wildcard symbol (e.g. '*') inside quoted string
-	// it replaces it with [wildcardRune].
-	//
-	// If lexer encounters escaped wildcard symbol (e.g. '\*') inside quoted string
-	// it replaces it with '*'.
-	//
-	// While this behaviour is correct for full-text search,
-	// it is not correct for regular expressions.
-	//
-	// So we basically undo all previous transformations.
-	// Please pay attention that order of undo transformations does matter.
-	expr = strings.ReplaceAll(expr, "*", "\\*")
-	expr = strings.ReplaceAll(expr, string(wildcardRune), "*")
+	// Perform case-insensitive search by default if not specified other.
+	// User can override this behaviour by adding prefix `(?-i)` to expression.
+	if !(strings.HasPrefix(expr, "(?i)") || strings.HasPrefix(expr, "(?-i)")) {
+		expr = "(?i)" + expr
+	}
 
 	compiled, err := regexp.Compile(expr)
 	if err != nil {
