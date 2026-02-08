@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"regexp"
 	"strconv"
 
 	"github.com/ozontech/seq-db/parser"
@@ -307,6 +308,28 @@ func (s *rangeIpSearch) check(rawVal []byte) bool {
 	return s.from.Compare(val) <= 0 && val.Compare(s.to) <= 0
 }
 
+type reSearch struct {
+	baseSearch
+	r *regexp.Regexp
+}
+
+func newReSearch(base baseSearch, token *parser.Re) *reSearch {
+	if token.Expression.Kind != parser.TermText {
+		panic("BUG: wrong term kind in ip_range")
+	}
+
+	s := &reSearch{
+		baseSearch: base,
+	}
+
+	s.r = regexp.MustCompile(token.Expression.Data)
+	return s
+}
+
+func (s *reSearch) check(rawVal []byte) bool {
+	return s.r.Match(rawVal)
+}
+
 type searcher interface {
 	firstTID() uint32
 	lastTID() uint32
@@ -339,6 +362,8 @@ func newSearcher(token parser.Token, tp tokenProvider) searcher {
 		return newRangeTextSearch(base, t)
 	case *parser.IPRange:
 		return newRangeIPSearch(base, t)
+	case *parser.Re:
+		return newReSearch(base, t)
 	}
 	panic(fmt.Sprintf("unknown token type: %T", token))
 }
