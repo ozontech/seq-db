@@ -502,6 +502,29 @@ func TestPatternRe(t *testing.T) {
 		})
 	})
 
+	t.Run("match-russian-phone", func(t *testing.T) {
+		needles := []string{
+			"call +78005553535",
+			"call +7 800 555-35-35",
+			"call +7 (800) 555-35-35",
+			"call 8(800)555-35-35",
+		}
+
+		data := append(
+			[]string{"phone: 12345", "not a phone"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("[+7|8]\s?\(?\d{3}\)?\s?\d{3}-?\d{2}-?\d{2}")`,
+				needles,
+			},
+		})
+	})
+
 	t.Run("match-level", func(t *testing.T) {
 		needles := []string{
 			"[ERROR] connection refused",
