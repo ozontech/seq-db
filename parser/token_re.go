@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -29,10 +28,6 @@ func parseReFilter(lex *lexer, fieldName string) (*Re, error) {
 
 	if err := lex.rawStringLiteral(); err != nil {
 		return nil, err
-	}
-
-	if lex.IsKeyword(")") {
-		return nil, errors.New("empty 're' filter")
 	}
 
 	// TODO(dkharms): Split logic between lexer and parser.
