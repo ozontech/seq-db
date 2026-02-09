@@ -310,6 +310,28 @@ func (s *FractionTestSuite) TestSearchRange() {
 	s.AssertSearch("level:(127, 200]", docs, []int{})
 }
 
+func (s *FractionTestSuite) TestSearchRe() {
+	docs := []string{
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z", "k8s_pod": "foo-1", "v": "[ERROR] Oopsie!"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:01.000Z", "k8s_pod": "foo-42", "v": "[INFO] Oopsie!"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:02.000Z", "k8s_pod": "bar-1", "v": "[WARN] Oopsie!"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:03.000Z", "k8s_pod": "bar-42", "v": "[INFO] Oopsie!"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:04.000Z", "k8s_pod": "baz-1", "v": "[DEBUG] Oopsie!"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:05.000Z", "k8s_pod": "baz-42","v": "[FATAL] Oopsie!" }`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:06.000Z", "k8s_pod": "baz-42","v": "[FATAL]" }`,
+	}
+
+	s.insertDocuments(docs)
+
+	s.AssertSearch(`k8s_pod:re("^(foo|bar)-[\d]+$")`, docs, []int{3, 2, 1, 0})
+	s.AssertSearch(`k8s_pod:re("^ba[a-z]-[\d]{1}$")`, docs, []int{4, 2})
+	s.AssertSearch(`v:re("\[(ERROR|FATAL)\]")`, docs, []int{6, 5, 0})
+	s.AssertSearch(`v:re("^\[(ERROR|FATAL)\]$")`, docs, []int{6})
+	// In tests we transform keyword token to lower-case.
+	// So case-sensitive expression will always yield nothing.
+	s.AssertSearch(`v:re("(?-i)^\[(ERROR|FATAL)\]$")`, docs, []int{})
+}
+
 func (s *FractionTestSuite) TestSearchIPRange() {
 	docs := []string{
 		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z","service":"gateway-0","level":"1","client_ip":"192.168.31.0"}`,
@@ -1711,7 +1733,7 @@ func mustParseTime(timeStr string) time.Time {
 	return t
 }
 
-func (s *FractionTestSuite) AssertSearch(queryObject interface{}, originalDocs []string, expectedIndexes []int) {
+func (s *FractionTestSuite) AssertSearch(queryObject any, originalDocs []string, expectedIndexes []int) {
 	switch q := queryObject.(type) {
 	case string:
 		s.AssertSearchWithSearchParams(s.query(q), originalDocs, expectedIndexes)
