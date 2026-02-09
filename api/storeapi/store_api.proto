@@ -76,6 +76,7 @@ message SearchRequest {
   string aggregation_filter = 11 [deprecated = true];
   repeated AggQuery aggs = 12;
   Order order = 13;
+  string offset_id = 14;
 }
 
 message SearchResponse {

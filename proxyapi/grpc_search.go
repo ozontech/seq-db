@@ -23,6 +23,7 @@ func (g *grpcV1) Search(
 		Query:     req.Query,
 		Size:      req.Size,
 		Offset:    req.Offset,
+		OffsetId:  req.OffsetId,
 		WithTotal: req.WithTotal,
 		Order:     req.Order,
 	}

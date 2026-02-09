@@ -396,7 +396,13 @@ func compressQPR(qpr *seq.QPR, cb func(compressed []byte) error) error {
 	return nil
 }
 
-func (as *AsyncSearcher) processFrac(f frac.Fraction, info asyncSearchInfo) error {
+func (as *AsyncSearcher) processFrac(f frac.Fraction, info asyncSearchInfo) (err error) {
+	defer func() {
+		if panicData := util.RecoverToError(recover(), asyncSearchPanics); panicData != nil {
+			err = fmt.Errorf("async search panic during processFrac: %w", panicData)
+		}
+	}()
+
 	qpr, err := f.Search(info.ctx, info.Request.Params)
 	if err != nil {
 		return err
