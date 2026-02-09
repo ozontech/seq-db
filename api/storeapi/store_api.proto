@@ -143,6 +143,7 @@ enum SearchErrorCode {
   TOO_MANY_FIELD_TOKENS = 4;
   TOO_MANY_GROUP_TOKENS = 5;
   TOO_MANY_FRACTION_TOKENS = 6;
+  TOO_MANY_FIELD_VALUES = 7;
 }
 
 message StartAsyncSearchRequest {

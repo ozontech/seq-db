@@ -509,8 +509,6 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 		from := agg.Timeseries
 		to := make(map[seq.AggBin]*seq.SamplesContainer)
 
-		stringPool := agg.ValuesPool
-
 		for _, bin := range from {
 			pbhist := bin.Hist
 
@@ -541,7 +539,7 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 		aggs[i] = seq.AggregatableSamples{
 			SamplesByBin: to,
 			NotExists:    agg.NotExists,
-			ValuesPool:   stringPool,
+			ValuesPool:   agg.ValuesPool,
 		}
 	}
 
@@ -616,6 +614,8 @@ func (si *Ingestor) searchShard(
 			return nil, source, fmt.Errorf("hot store refuses: %w", consts.ErrIngestorQueryWantsOldData)
 		case storeapi.SearchErrorCode_TOO_MANY_FIELD_TOKENS:
 			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFieldTokens)
+		case storeapi.SearchErrorCode_TOO_MANY_FIELD_VALUES:
+			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFieldValues)
 		case storeapi.SearchErrorCode_TOO_MANY_GROUP_TOKENS:
 			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyGroupTokens)
 		case storeapi.SearchErrorCode_TOO_MANY_FRACTION_TOKENS:
