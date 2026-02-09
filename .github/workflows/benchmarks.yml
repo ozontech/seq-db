@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Deploy latest (unstable) version of seq-db
         run: |
-          curl --insecure -X POST "https://${{ secrets.CONTINUOUS_BENCHMARKS_ENDPOINT }}/seqagent/v1/b/up" \
+          curl -fX POST "https://${{ secrets.CONTINUOUS_BENCHMARKS_ENDPOINT }}/seqagent/v1/b/up" \
             -H "Content-Type: application/json" \
             -H "X-Seqbench-Secret: ${{ secrets.SEQBENCH_SECRET }}" \
             -d @- <<EOF
