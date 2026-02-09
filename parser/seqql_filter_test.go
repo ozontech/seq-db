@@ -234,6 +234,10 @@ service:"wms-svc-logistics-megasort" and level:"#"
 	test(`NOT keyword:ip_range(127.0.0.1/8)`, `(not keyword:ip_range(127.0.0.0, 127.255.255.255))`)
 	test(`(keyword:ip_range(10.0.0.1, 10.0.0.255) OR keyword:ip_range(192.168.1.1, 192.168.1.10)) AND service:db`, `((keyword:ip_range(10.0.0.1, 10.0.0.255) or keyword:ip_range(192.168.1.1, 192.168.1.10)) and service:db)`)
 	test(`keyword:ip_range(10.0.0.1, 10.0.0.255) OR (service:api AND level:3)`, `(keyword:ip_range(10.0.0.1, 10.0.0.255) or (service:api and level:3))`)
+
+	test(`keyword:re("abc\"abc") OR keyword:foo`, `(keyword:re("(?i)abc\"abc") or keyword:foo)`)
+	test(`NOT keyword:re("[42]*\*\\\)\(")`, `(not keyword:re("(?i)[42]*\*\\\)\("))`)
+	test(`keyword:re("mov [re]?ax, 0x0")`, `keyword:re("(?i)mov [re]?ax, 0x0")`)
 }
 
 func TestSeqQLCaseSensitive(t *testing.T) {
@@ -388,6 +392,15 @@ func TestParseSeqQLError(t *testing.T) {
 	test(`keyword:ip_range(192.168.1.2,)`, `parsing 'ip_range' filter: unexpected symbol ")"`)
 	test(`keyword:ip_range(,192.168.1.3)`, `parsing 'ip_range' filter: unexpected symbol ","`)
 	test(`keyword:ip_range(192.168.1.2,,192.168.1.3)`, `parsing 'ip_range' filter: unexpected symbol ","`)
+
+	// Test filter `re`.
+	test(`keyword:re()`, "parsing `re` filter: invalid syntax")
+	test(`keyword:re(")`, "parsing `re` filter: invalid syntax")
+	test(`keyword:re(""invalid)`, "parsing `re` filter: expected ')', got \"invalid\"")
+	test(`keyword:re("[invalid")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: missing closing ]: `[invalid`")
+	test(`keyword:re("invalid)")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: unexpected ): `(?i)invalid)`")
+	test(`keyword:re("[z-a]")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: invalid character class range: `z-a`")
+	test(`keyword:re("*invalid")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: missing argument to repetition operator: `*`")
 
 	// Test pipes.
 	test(`message:--||`, `unknown pipe: |`)
