@@ -246,7 +246,7 @@ func (q *AggregatableSamples) Merge(agg AggregatableSamples) {
 		q.SamplesByBin = make(map[AggBin]*SamplesContainer, len(agg.SamplesByBin))
 	}
 
-	oldToNewIndexMap := make(map[uint32]uint32, len(agg.ValuesPool))
+	oldToNewIndex := make([]uint32, len(agg.ValuesPool))
 	valuesPoolMap := make(map[string]uint32, len(q.ValuesPool))
 
 	for i, s := range q.ValuesPool {
@@ -260,7 +260,7 @@ func (q *AggregatableSamples) Merge(agg AggregatableSamples) {
 			q.ValuesPool = append(q.ValuesPool, s)
 			valuesPoolMap[s] = newIdx
 		}
-		oldToNewIndexMap[uint32(oldIdx)] = newIdx
+		oldToNewIndex[oldIdx] = newIdx
 	}
 
 	for bin, hist := range agg.SamplesByBin {
@@ -279,7 +279,7 @@ func (q *AggregatableSamples) Merge(agg AggregatableSamples) {
 				Values:    make(map[uint32]struct{}, len(hist.Values)),
 			}
 			for oldIdx := range hist.Values {
-				newIdx := oldToNewIndexMap[oldIdx]
+				newIdx := oldToNewIndex[oldIdx]
 				remappedHist.Values[newIdx] = struct{}{}
 			}
 			q.SamplesByBin[bin].Merge(remappedHist)
