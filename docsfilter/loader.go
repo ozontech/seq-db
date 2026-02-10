@@ -3,45 +3,63 @@ package docsfilter
 import (
 	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"os"
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/logger"
 )
 
 type loader struct {
-	headers []lidsBlockHeader
-	file    *os.File
-	// TODO: seems like cache needs to be populated somewhere outside of this struct and passed here
-	// cache *cache.Cache[[]lidsBlockHeader]
+	headers      []lidsBlockHeader
+	file         *os.File
+	headersCache *cache.Cache[[]lidsBlockHeader]
+	cashKey      uint32
 }
 
-func newLoader(filePath string) (*loader, error) {
+func newLoader(filePath string, headersCache *cache.Cache[[]lidsBlockHeader]) (*loader, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
 
+	hash := fnv.New32a()
+	hash.Write([]byte(filterNameFromTombstonesPath(filePath) + fracNameFromFilePath(filePath)))
+
 	return &loader{
-		file: f,
+		file:         f,
+		headersCache: headersCache,
+		cashKey:      hash.Sum32(),
 	}, nil
 }
 
-func (l *loader) loadHeaders() error {
+func (l *loader) getHeaders() ([]lidsBlockHeader, error) {
+	return l.headersCache.GetWithError(l.cashKey, func() ([]lidsBlockHeader, int, error) {
+		headers, err := l.loadHeaders()
+		if err != nil {
+			return headers, 0, err
+		}
+		size := len(headers) * int(lidsBlockHeaderSizeBytes)
+		return headers, size, nil
+	})
+}
+
+func (l *loader) loadHeaders() ([]lidsBlockHeader, error) {
 	numBuf := make([]byte, 1+4) // block version 1 byte + number of blocks 4 bytes
 	n, err := l.file.ReadAt(numBuf, 0)
 	if err != nil {
-		return fmt.Errorf("can't read headers from disk: %s", err.Error())
+		return nil, fmt.Errorf("can't read headers from disk: %s", err.Error())
 	}
 	if n == 0 {
-		return fmt.Errorf("can't read headers from disk: n=0")
+		return nil, fmt.Errorf("can't read headers from disk: n=0")
 	}
 
 	version := docsFilterBinVersion(numBuf[0])
 	if _, ok := availableVersions[version]; !ok {
-		return fmt.Errorf("invalid LIDs binary version: %d", version)
+		return nil, fmt.Errorf("invalid LIDs binary version: %d", version)
 	}
 
 	headersPos := n
@@ -50,38 +68,39 @@ func (l *loader) loadHeaders() error {
 
 	n, err = l.file.ReadAt(headersBuf, int64(headersPos))
 	if err != nil && err != io.EOF {
-		return fmt.Errorf("can't read headers, %s", err.Error())
+		return nil, fmt.Errorf("can't read headers, %s", err.Error())
 	}
 	if n != len(headersBuf) {
-		return fmt.Errorf("can't read headers, read=%d, requested=%d", n, len(headersBuf))
+		return nil, fmt.Errorf("can't read headers, read=%d, requested=%d", n, len(headersBuf))
 	}
 	if len(headersBuf)%int(lidsBlockHeaderSizeBytes) != 0 {
-		return fmt.Errorf("wrong headers format")
+		return nil, fmt.Errorf("wrong headers format")
 	}
 
-	l.headers = make([]lidsBlockHeader, 0, numberOfBlocks)
+	headers := make([]lidsBlockHeader, 0, numberOfBlocks)
 	for range numberOfBlocks {
 		header := lidsBlockHeader{}
 		headersBuf, err = header.unmarshal(headersBuf)
 		if err != nil {
-			return fmt.Errorf("can't unmarshal lids header: %s", err)
+			return nil, fmt.Errorf("can't unmarshal lids header: %s", err)
 		}
-		l.headers = append(l.headers, header)
+		headers = append(headers, header)
 	}
 
 	if len(headersBuf) > 0 {
-		return fmt.Errorf("unexpected tail when unmarshaling LIDs headers")
+		return nil, fmt.Errorf("unexpected tail when unmarshaling LIDs headers")
 	}
 
-	return nil
+	return headers, nil
 }
 
 func (l *loader) loadBlock(index int) ([]uint32, error) {
 	if l.headers == nil {
-		err := l.loadHeaders()
+		headers, err := l.getHeaders()
 		if err != nil {
 			return nil, err
 		}
+		l.headers = headers
 	}
 
 	if len(l.headers) < index+1 {
@@ -90,7 +109,7 @@ func (l *loader) loadBlock(index int) ([]uint32, error) {
 
 	header := l.headers[index]
 
-	blockBuf := make([]byte, header.Size) // TODO: buffer pool (???)
+	blockBuf := make([]byte, header.Size)
 	n, err := l.file.ReadAt(blockBuf, int64(header.Offset))
 	if err != nil {
 		return nil, err

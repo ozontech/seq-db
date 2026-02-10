@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -22,12 +23,8 @@ func TestLoader(t *testing.T) {
 	err := os.WriteFile(filePath, rawDocsFilter, 0o644)
 	require.NoError(t, err)
 
-	loader, err := newLoader(filePath)
+	loader, err := newLoader(filePath, cache.NewCache[[]lidsBlockHeader](nil, nil))
 	require.NoError(t, err)
-
-	err = loader.loadHeaders()
-	require.NoError(t, err)
-	require.Len(t, loader.headers, 4)
 
 	resLIDs := make([]uint32, 0, len(multipleBlocksLIDs))
 	const numberOfBlocks = 4

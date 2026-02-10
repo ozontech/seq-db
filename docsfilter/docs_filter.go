@@ -13,6 +13,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -55,6 +56,8 @@ type DocsFilter struct {
 	createDirOnce *sync.Once
 
 	maintenanceInterval time.Duration
+
+	headersCache *cache.Cache[[]lidsBlockHeader]
 }
 
 func New(
@@ -85,6 +88,8 @@ func New(
 		rateLimit:           make(chan struct{}, workers),
 		createDirOnce:       &sync.Once{},
 		maintenanceInterval: defaultMaintenanceInterval,
+		// TODO: create cache properly (cleaner, metrics) (use cacheMaintainer ???)
+		headersCache: cache.NewCache[[]lidsBlockHeader](nil, nil),
 	}
 }
 
@@ -127,7 +132,7 @@ func (df *DocsFilter) GetTombstonesIteratorByFrac(fracName string, minLID, maxLI
 
 	iterators := make([]node.Node, 0, len(fracFiles))
 	for _, f := range fracFiles {
-		loader, err := newLoader(f)
+		loader, err := newLoader(f, df.headersCache)
 		if err != nil {
 			logger.Error("can't open filtered lids file", zap.String("path", f), zap.Error(err))
 			return nil, err

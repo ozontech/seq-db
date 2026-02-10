@@ -14,10 +14,11 @@ func (it *IteratorDesc) String() string {
 
 func (it *IteratorDesc) Next() (uint32, bool) {
 	if it.loader.headers == nil {
-		err := it.loader.loadHeaders()
+		headers, err := it.loader.getHeaders()
 		if err != nil {
 			logger.Panic("can't load tombstones headers", zap.Error(err))
 		}
+		it.loader.headers = headers
 	}
 
 	for len(it.lids) == 0 {
