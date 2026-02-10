@@ -742,18 +742,17 @@ func BenchmarkMergeQPRs_ReusingQPR(b *testing.B) {
 	qprSize := uint64(100)
 
 	qprs := make([]*QPR, totalQPRs)
-	for i := uint64(0); i < totalQPRs; i++ {
+	for i := range totalQPRs {
 		qpr := getRandomQPR(qprSize)
 		qprs[i] = &qpr
 	}
 
-	b.ResetTimer()
 	aggQpr := QPR{
 		Histogram: make(map[MID]uint64),
 		Aggs:      make([]AggregatableSamples, int(totalQPRs)),
 	}
 
-	for range b.N {
+	for b.Loop() {
 		MergeQPRs(&aggQpr, qprs, 1000, 5, DocsOrderDesc)
 
 		aggQpr.IDs = aggQpr.IDs[:0]

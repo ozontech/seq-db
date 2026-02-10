@@ -82,22 +82,17 @@ func TestSimpleBitmask(t *testing.T) {
 func BenchmarkBitmask(b *testing.B) {
 	const size = 10000
 
-	b.StopTimer()
-	b.ResetTimer()
+	bm := NewBitmask(size)
+	for i := range size {
+		v := rand.Int31n(2) == 1
+		bm.Set(i, v)
+	}
 
-	for i := 0; i < b.N; i++ {
-		bm := NewBitmask(size)
-		for i := 0; i < size; i++ {
-			v := rand.Int31n(2) == 1
-			bm.Set(i, v)
-		}
-
-		b.StartTimer()
-		for i := 0; i < size-1; i++ {
+	for b.Loop() {
+		for i := range size - 1 {
 			for j := i + 1; j < size; j++ {
 				bm.HasBitsIn(i, j)
 			}
 		}
-		b.StopTimer()
 	}
 }

@@ -514,47 +514,6 @@ func TestFindSequence(t *testing.T) {
 	testFindSequence(a, 1, []string{"abc"}, strings.Repeat("ab", 1024)+"c")
 }
 
-func BenchmarkFindSequence_Deterministic(b *testing.B) {
-	type testCase struct {
-		haystack []byte
-		needles  [][]byte
-	}
-
-	type namedTestCase struct {
-		name  string
-		cases []testCase
-	}
-
-	testCases := []namedTestCase{
-		{
-			name: "regular-cases",
-			cases: []testCase{
-				{bb("Hello, world!"), [][]byte{bb("orl")}},
-				{bb("some-k8s-service"), [][]byte{bb("k8s")}},
-			},
-		},
-		{
-			name: "corner-cases",
-			cases: []testCase{
-				{bb(strings.Repeat("ab", 32) + "c"), [][]byte{bb("abc")}},
-				{bb(strings.Repeat("ab", 64) + "c"), [][]byte{bb("abc")}},
-				{bb(strings.Repeat("ab", 1024) + "c"), [][]byte{bb("abc")}},
-				{bb(strings.Repeat("ab", 16384) + "c"), [][]byte{bb("abc")}},
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		for i, c := range tc.cases {
-			b.Run(tc.name+"-"+strconv.Itoa(i), func(b *testing.B) {
-				for b.Loop() {
-					findSequence([]byte(c.haystack), c.needles)
-				}
-			})
-		}
-	}
-}
-
 func BenchmarkFindSequence_Random(b *testing.B) {
 	sizes := []struct {
 		name         string
@@ -574,7 +533,6 @@ func BenchmarkFindSequence_Random(b *testing.B) {
 			haystack, needles := generateTestData(
 				size.haystackSize, size.needleSize, size.needleCount, 256,
 			)
-			b.ResetTimer()
 			for b.Loop() {
 				findSequence(haystack, needles)
 				b.SetBytes(int64(len(haystack)))
@@ -603,8 +561,4 @@ func generateRandomBytes(size, charset int) []byte {
 		b[i] = byte(rand.Intn(charset))
 	}
 	return b
-}
-
-func bb(s string) []byte {
-	return []byte(s)
 }
