@@ -196,6 +196,7 @@ Supported aggregation functions:
 - `AGG_FUNC_MAX` — maximum value of the field
 - `AGG_FUNC_QUANTILE` — quantile computation for the field
 - `AGG_FUNC_UNIQUE` — computation of unique field values (not supported in timeseries)
+- `AGG_FUNC_UNIQUE_COUNT` — count of unique field values (can be used with group by)
 - `AGG_FUNC_COUNT` — count of documents per group
 
 #### Aggregation Examples
@@ -432,6 +433,46 @@ grpcurl -plaintext -d '
         {"key": "svc3"}
       ]
     },
+    {
+      "buckets": [
+        {"key": "svc1", "value": 2},
+        {"key": "svc2", "value": 2},
+        {"key": "svc3", "value": 1}
+      ]
+    }
+  ]
+}
+```
+
+##### UNIQUE COUNT
+
+> For `AGG_FUNC_UNIQUE_COUNT` both `group_by` and `field` are required.
+
+**Request:**
+
+```sh
+grpcurl -plaintext -d '
+{
+  "query": {
+    "from": "2000-01-01T00:00:00Z",
+    "to": "2077-01-01T00:00:00Z",
+    "query": "*"
+  },
+  "aggs": [
+    {
+      "func": "AGG_FUNC_UNIQUE_COUNT",
+      "group_by": "service",
+      "field": "pod",
+    }
+  ]
+}' localhost:9004 seqproxyapi.v1.SeqProxyApi/GetAggregation
+```
+
+**Response:**
+
+```json
+{
+  "aggs": [
     {
       "buckets": [
         {"key": "svc1", "value": 2},

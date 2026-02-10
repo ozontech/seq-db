@@ -271,6 +271,7 @@ func startStore(
 				Search: frac.SearchConfig{
 					AggLimits: frac.AggLimits{
 						MaxFieldTokens:     cfg.Limits.Aggregation.FieldTokens,
+						MaxFieldValues:     cfg.Limits.Aggregation.FieldValues,
 						MaxGroupTokens:     cfg.Limits.Aggregation.GroupTokens,
 						MaxTIDsPerFraction: cfg.Limits.Aggregation.FractionTokens,
 					},

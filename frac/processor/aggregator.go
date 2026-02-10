@@ -41,24 +41,31 @@ type TwoSourceAggregator struct {
 	groupByNotExists map[uint32]int64
 	// collectSamples is a flag to indicate if collect samples is required, this is useful if you need to calculate the quantile.
 	collectSamples bool
+	// collectValues is a flag to indicate if collect values is required
+	collectValues bool
 	// countBySource map to count occurrences by histogram source.
 	countBySource map[AggBin[twoSources]]int64
 	// extractMID will be used for building time series.
 	extractMID ExtractMIDFunc
+	// limits enforces upper bound constraints on how many unique values we parse and hold in memory
+	limits AggLimits
 }
 
 func NewGroupAndFieldAggregator(
 	fieldIterator, groupByIterator *SourcedNodeIterator,
-	fn ExtractMIDFunc, collectSamples bool,
+	fn ExtractMIDFunc, collectSamples bool, collectValues bool,
+	limits AggLimits,
 ) *TwoSourceAggregator {
 	return &TwoSourceAggregator{
 		collectSamples:   collectSamples,
+		collectValues:    collectValues,
 		countBySource:    make(map[AggBin[twoSources]]int64),
 		field:            fieldIterator,
 		groupNotExists:   0,
 		groupBy:          groupByIterator,
 		groupByNotExists: make(map[uint32]int64),
 		extractMID:       fn,
+		limits:           limits,
 	}
 }
 
@@ -108,6 +115,9 @@ func (n *TwoSourceAggregator) Next(lid uint32) error {
 func (n *TwoSourceAggregator) Aggregate() (seq.AggregatableSamples, error) {
 	aggMap := make(map[seq.AggBin]*seq.SamplesContainer, n.groupBy.UniqueSources())
 
+	var sourceValuePool []string
+	sourceValuePoolMap := make(map[string]uint32)
+
 	for groupBySource, cnt := range n.groupByNotExists {
 		groupByVal := seq.AggBin{Token: n.groupBy.ValueBySource(groupBySource)}
 		if aggMap[groupByVal] == nil {
@@ -128,22 +138,37 @@ func (n *TwoSourceAggregator) Aggregate() (seq.AggregatableSamples, error) {
 
 		// For example, for a value named "request_duration" it can be "42.13"
 		value := n.field.ValueBySource(bin.Source.FieldSource)
-		num, err := parseNum(value)
-		if err != nil {
-			return seq.AggregatableSamples{}, err
-		}
 
-		// The same token can appear multiple times,
-		// so we need to insert the num cnt times.
-		hist.InsertNTimes(num, cnt)
-		if n.collectSamples {
-			hist.InsertSampleNTimes(num, cnt)
+		if n.collectValues {
+			poolIdx, exists := sourceValuePoolMap[value]
+			if !exists {
+				poolIdx = uint32(len(sourceValuePool))
+				sourceValuePool = append(sourceValuePool, value)
+				sourceValuePoolMap[value] = poolIdx
+				if n.limits.MaxFieldValues > 0 && len(sourceValuePool) > n.limits.MaxFieldValues {
+					return seq.AggregatableSamples{}, consts.ErrTooManyFieldValues
+				}
+			}
+			hist.InsertValueIndex(poolIdx, cnt)
+		} else {
+			num, err := parseNum(value)
+			if err != nil {
+				return seq.AggregatableSamples{}, err
+			}
+
+			// The same token can appear multiple times,
+			// so we need to insert the num cnt times.
+			hist.InsertNTimes(num, cnt)
+			if n.collectSamples {
+				hist.InsertSampleNTimes(num, cnt)
+			}
 		}
 	}
 
 	return seq.AggregatableSamples{
 		NotExists:    n.groupNotExists,
 		SamplesByBin: aggMap,
+		ValuesPool:   sourceValuePool,
 	}, nil
 }
 

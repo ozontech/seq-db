@@ -72,6 +72,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		"level":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"client_ip":     seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"service":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"pod":           seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"source":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"trace_id":      seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -787,6 +788,42 @@ func (s *FractionTestSuite) TestAggSum() {
 	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncSum}, expectedBuckets)
 }
 
+func (s *FractionTestSuite) TestAggSumTimeSeries() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum2","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum2","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum3","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum4","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum4","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum4"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum5","v":1}`,
+	}
+
+	s.insertDocuments(docs)
+
+	searchParams := s.query(
+		"service:sum*",
+		withAggQuery(processor.AggQuery{
+			Field:    aggField("v"),
+			GroupBy:  aggField("service"),
+			Func:     seq.AggFuncSum,
+			Interval: 1000,
+		}))
+	expectedBuckets := []seq.AggregationBucket{
+		// all NotExists go to a dedicated bucket with MID=0 in time series mode
+		{Name: "sum4", MID: seq.MID(0), Value: math.NaN(), NotExists: 1},
+		{Name: "sum4", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000Z")), Value: 2, NotExists: 0},
+		{Name: "sum1", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000Z")), Value: 3, NotExists: 0},
+		{Name: "sum3", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000Z")), Value: 1, NotExists: 0},
+		{Name: "sum5", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000Z")), Value: 1, NotExists: 0},
+		{Name: "sum2", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000Z")), Value: 2, NotExists: 0},
+	}
+	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncSum}, expectedBuckets)
+}
+
 func (s *FractionTestSuite) TestAggMin() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"min1","v":1}`,
@@ -1011,6 +1048,70 @@ func (s *FractionTestSuite) TestAggAvgWithoutGroupBy() {
 	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
 }
 
+func (s *FractionTestSuite) TestAggUniqueCountTimeSeries() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service1","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service1","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service1","level":3}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service2","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service2","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service3","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service4","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service4","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service4","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service4"}`,
+	}
+
+	s.insertDocuments(docs)
+	searchParams := s.query(
+		"service:service*",
+		withAggQuery(processor.AggQuery{
+			Field:    aggField("level"),
+			GroupBy:  aggField("service"),
+			Func:     seq.AggFuncUniqueCount,
+			Interval: 1000,
+		}))
+	expectedBuckets := []seq.AggregationBucket{
+		{Name: "service1", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:01.000Z")), Value: 3, NotExists: 0},
+		{Name: "service2", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:01.000Z")), Value: 2, NotExists: 0},
+		{Name: "service3", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:01.000Z")), Value: 1, NotExists: 0},
+		{Name: "service4", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:01.000Z")), Value: 2, NotExists: 0},
+		{Name: "service4", MID: seq.MID(0), Value: math.NaN(), NotExists: 1},
+	}
+	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncUniqueCount}, expectedBuckets)
+}
+
+func (s *FractionTestSuite) TestAggUniqueCount() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.002Z","service":"service1","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","service":"service1","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:00.007Z","service":"service1","level":3}`,
+		`{"timestamp":"2000-01-01T13:00:00.009Z","service":"service2","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.010Z","service":"service2","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:00.011Z","service":"service3","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.012Z","service":"service4","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.013Z","service":"service4","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.017Z","service":"service4","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:00.017Z","service":"service4"}`,
+	}
+
+	s.insertDocuments(docs)
+	searchParams := s.query(
+		"service:service*",
+		withAggQuery(processor.AggQuery{
+			Field:   aggField("level"),
+			GroupBy: aggField("service"),
+			Func:    seq.AggFuncUniqueCount,
+		}))
+	expectedBuckets := []seq.AggregationBucket{
+		{Name: "service1", Value: 3, NotExists: 0},
+		{Name: "service2", Value: 2, NotExists: 0},
+		{Name: "service3", Value: 1, NotExists: 0},
+		{Name: "service4", Value: 2, NotExists: 1},
+	}
+	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncUniqueCount}, expectedBuckets)
+}
+
 func (s *FractionTestSuite) TestSearchMultipleBulks() {
 	docs := []string{
 		/*0*/ `{"timestamp":"2000-01-01T13:00:01Z","service":"service_a","message":"request started","source":"prod01","level":"1"}`,
@@ -1169,7 +1270,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		s.Run(tc.name, func() {
 			var expectedIndexes []int
 			for i := len(testDocs) - 1; i >= 0; i-- {
-				doc := &testDocs[i]
+				doc := testDocs[i]
 
 				if doc.timestamp.Before(tc.fromTime) {
 					continue
@@ -1195,6 +1296,40 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			s.AssertSearch(s.query(tc.query, options...), docJsons, expectedIndexes)
 		})
 	}
+
+	s.Run("service:kafka | group by pod unique_count(client_ip)", func() {
+		ips := make(map[string]map[string]struct{})
+		for _, doc := range testDocs {
+			if doc.service != "kafka" {
+				continue
+			}
+			if ips[doc.pod] == nil {
+				ips[doc.pod] = make(map[string]struct{})
+			}
+
+			ips[doc.pod][doc.clientIp] = struct{}{}
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for pod, podIps := range ips {
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      pod,
+				Value:     float64(len(podIps)),
+				NotExists: 0,
+			})
+		}
+
+		searchParams := s.query(
+			"service:kafka",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				Field:   aggField("client_ip"),
+				GroupBy: aggField("pod"),
+				Func:    seq.AggFuncUniqueCount,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncUniqueCount}, expectedBuckets)
+	})
 
 	s.Run("NOT message:retry | group by service avg(level)", func() {
 		levelsByService := make(map[string][]int)
@@ -1256,7 +1391,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 
 		var expectedIndexesAsc []int
 		for i := range testDocs {
-			doc := &testDocs[i]
+			doc := testDocs[i]
 			if !doc.timestamp.Before(scrollFrom) &&
 				!doc.timestamp.After(scrollTo) &&
 				strings.Contains(doc.message, "request") &&
@@ -1638,20 +1773,20 @@ func (s *FractionTestSuite) AssertAggregation(
 	for _, expectedBucket := range expectedBuckets {
 		found := false
 		for _, gotBucket := range aggResults[0].Buckets {
-			if gotBucket.Name == expectedBucket.Name {
+			if gotBucket.Name == expectedBucket.Name && gotBucket.MID == expectedBucket.MID {
 				if math.IsNaN(expectedBucket.Value) || math.IsNaN(gotBucket.Value) {
 					s.Require().Truef(math.IsNaN(expectedBucket.Value) && math.IsNaN(gotBucket.Value),
 						"wrong value for bucket %s: expected NaN=%v, got NaN=%v",
 						expectedBucket.Name, math.IsNaN(expectedBucket.Value), math.IsNaN(gotBucket.Value))
 				} else {
-					s.Require().Equal(expectedBucket.Value, gotBucket.Value, "wrong value for bucket %s", expectedBucket.Name)
+					s.Require().Equal(expectedBucket.Value, gotBucket.Value, "wrong value for bucket %s-%s", expectedBucket.Name, expectedBucket.MID)
 				}
-				s.Require().Equal(expectedBucket.NotExists, gotBucket.NotExists, "wrong NotExists for bucket %s", expectedBucket.Name)
+				s.Require().Equal(expectedBucket.NotExists, gotBucket.NotExists, "wrong NotExists for bucket %s-%s", expectedBucket.Name, expectedBucket.MID)
 				found = true
 				break
 			}
 		}
-		s.Require().True(found, "bucket %s not found in results", expectedBucket.Name)
+		s.Require().True(found, "bucket %s-%s not found in results", expectedBucket.Name, expectedBucket.MID)
 	}
 }
 

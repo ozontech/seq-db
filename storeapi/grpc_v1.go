@@ -141,6 +141,9 @@ func parseStoreError(e error) (storeapi.SearchErrorCode, bool) {
 	if errors.Is(e, consts.ErrTooManyFieldTokens) {
 		return storeapi.SearchErrorCode_TOO_MANY_FIELD_TOKENS, true
 	}
+	if errors.Is(e, consts.ErrTooManyFieldValues) {
+		return storeapi.SearchErrorCode_TOO_MANY_FIELD_VALUES, true
+	}
 	if errors.Is(e, consts.ErrTooManyGroupTokens) {
 		return storeapi.SearchErrorCode_TOO_MANY_GROUP_TOKENS, true
 	}
