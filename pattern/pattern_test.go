@@ -562,7 +562,3 @@ func generateRandomBytes(size, charset int) []byte {
 	}
 	return b
 }
-
-func bb(s string) []byte {
-	return []byte(s)
-}
