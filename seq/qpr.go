@@ -249,16 +249,16 @@ func (q *AggregatableSamples) Merge(agg AggregatableSamples) {
 	oldToNewIndex := make([]uint32, len(agg.ValuesPool))
 	valuesPoolMap := make(map[string]uint32, len(q.ValuesPool))
 
-	for i, s := range q.ValuesPool {
-		valuesPoolMap[s] = uint32(i)
+	for i, v := range q.ValuesPool {
+		valuesPoolMap[v] = uint32(i)
 	}
 
-	for oldIdx, s := range agg.ValuesPool {
-		newIdx, exists := valuesPoolMap[s]
+	for oldIdx, v := range agg.ValuesPool {
+		newIdx, exists := valuesPoolMap[v]
 		if !exists {
 			newIdx = uint32(len(q.ValuesPool))
-			q.ValuesPool = append(q.ValuesPool, s)
-			valuesPoolMap[s] = newIdx
+			q.ValuesPool = append(q.ValuesPool, v)
+			valuesPoolMap[v] = newIdx
 		}
 		oldToNewIndex[oldIdx] = newIdx
 	}
