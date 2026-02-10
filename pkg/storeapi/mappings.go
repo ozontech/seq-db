@@ -8,13 +8,14 @@ import (
 )
 
 var funcMappings = []AggFunc{
-	seq.AggFuncCount:    AggFunc_AGG_FUNC_COUNT,
-	seq.AggFuncSum:      AggFunc_AGG_FUNC_SUM,
-	seq.AggFuncMin:      AggFunc_AGG_FUNC_MIN,
-	seq.AggFuncMax:      AggFunc_AGG_FUNC_MAX,
-	seq.AggFuncAvg:      AggFunc_AGG_FUNC_AVG,
-	seq.AggFuncQuantile: AggFunc_AGG_FUNC_QUANTILE,
-	seq.AggFuncUnique:   AggFunc_AGG_FUNC_UNIQUE,
+	seq.AggFuncCount:       AggFunc_AGG_FUNC_COUNT,
+	seq.AggFuncSum:         AggFunc_AGG_FUNC_SUM,
+	seq.AggFuncMin:         AggFunc_AGG_FUNC_MIN,
+	seq.AggFuncMax:         AggFunc_AGG_FUNC_MAX,
+	seq.AggFuncAvg:         AggFunc_AGG_FUNC_AVG,
+	seq.AggFuncQuantile:    AggFunc_AGG_FUNC_QUANTILE,
+	seq.AggFuncUnique:      AggFunc_AGG_FUNC_UNIQUE,
+	seq.AggFuncUniqueCount: AggFunc_AGG_FUNC_UNIQUE_COUNT,
 }
 
 var funcMappingsPb = func() []seq.AggFunc {

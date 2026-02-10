@@ -3,6 +3,7 @@ package seq
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -103,6 +104,7 @@ const (
 	AggFuncAvg
 	AggFuncQuantile
 	AggFuncUnique
+	AggFuncUniqueCount
 )
 
 type AggBin struct {
@@ -113,6 +115,7 @@ type AggBin struct {
 type AggregatableSamples struct {
 	SamplesByBin map[AggBin]*SamplesContainer
 	NotExists    int64
+	ValuesPool   []string
 }
 
 type AggregationBucket struct {
@@ -219,6 +222,8 @@ func (q *AggregatableSamples) getAggBucket(bin AggBin, hist *SamplesContainer, a
 			quantiles = append(quantiles, hist.Quantile(q))
 		}
 		value = quantiles[0]
+	case AggFuncUniqueCount:
+		value = float64(len(hist.Values))
 	default:
 		panic(fmt.Errorf("unimplemented aggregation func"))
 	}
@@ -241,11 +246,46 @@ func (q *AggregatableSamples) Merge(agg AggregatableSamples) {
 		q.SamplesByBin = make(map[AggBin]*SamplesContainer, len(agg.SamplesByBin))
 	}
 
+	oldToNewIndex := make([]uint32, len(agg.ValuesPool))
+	valuesPoolMap := make(map[string]uint32, len(q.ValuesPool))
+
+	for i, v := range q.ValuesPool {
+		valuesPoolMap[v] = uint32(i)
+	}
+
+	for oldIdx, v := range agg.ValuesPool {
+		newIdx, exists := valuesPoolMap[v]
+		if !exists {
+			newIdx = uint32(len(q.ValuesPool))
+			q.ValuesPool = append(q.ValuesPool, v)
+			valuesPoolMap[v] = newIdx
+		}
+		oldToNewIndex[oldIdx] = newIdx
+	}
+
 	for bin, hist := range agg.SamplesByBin {
 		if q.SamplesByBin[bin] == nil {
 			q.SamplesByBin[bin] = NewSamplesContainers()
 		}
-		q.SamplesByBin[bin].Merge(hist)
+
+		if len(hist.Values) > 0 {
+			remappedHist := &SamplesContainer{
+				Min:       hist.Min,
+				Max:       hist.Max,
+				Sum:       hist.Sum,
+				Total:     hist.Total,
+				NotExists: hist.NotExists,
+				Samples:   hist.Samples,
+				Values:    make(map[uint32]struct{}, len(hist.Values)),
+			}
+			for oldIdx := range hist.Values {
+				newIdx := oldToNewIndex[oldIdx]
+				remappedHist.Values[newIdx] = struct{}{}
+			}
+			q.SamplesByBin[bin].Merge(remappedHist)
+		} else {
+			q.SamplesByBin[bin].Merge(hist)
+		}
 	}
 
 	q.NotExists += agg.NotExists
@@ -264,6 +304,8 @@ type SamplesContainer struct {
 	// NotExists is the number of values without a token.
 	NotExists int64
 	Samples   []float64
+	// Values are indexes into AggregatableSamples.ValuesPool values pool
+	Values map[uint32]struct{}
 }
 
 func NewSamplesContainers() *SamplesContainer {
@@ -322,6 +364,12 @@ func (h *SamplesContainer) Merge(hist *SamplesContainer) {
 	for _, v := range hist.Samples {
 		h.InsertSample(v)
 	}
+	if len(hist.Values) > 0 {
+		if h.Values == nil {
+			h.Values = make(map[uint32]struct{}, len(hist.Values))
+		}
+		maps.Copy(h.Values, hist.Values)
+	}
 }
 
 func (h *SamplesContainer) InsertNTimes(num float64, cnt int64) {
@@ -350,6 +398,14 @@ func (h *SamplesContainer) InsertSample(num float64) {
 	} else {
 		h.Samples[h.rng.Uint32()%maxHistogramSamples] = num
 	}
+}
+
+func (h *SamplesContainer) InsertValueIndex(poolIdx uint32, cnt int64) {
+	if h.Values == nil {
+		h.Values = make(map[uint32]struct{})
+	}
+	h.Values[poolIdx] = struct{}{}
+	h.Total += cnt
 }
 
 func MergeQPRs(dst *QPR, qprs []*QPR, limit int, histInterval MID, order DocsOrder) {
