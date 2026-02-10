@@ -72,6 +72,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		"level":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"client_ip":     seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"service":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"pod":           seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"source":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"trace_id":      seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -1295,6 +1296,40 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			s.AssertSearch(s.query(tc.query, options...), docJsons, expectedIndexes)
 		})
 	}
+
+	s.Run("service:kafka | group by pod unique_count(client_ip)", func() {
+		ips := make(map[string]map[string]struct{})
+		for _, doc := range testDocs {
+			if doc.service != "kafka" {
+				continue
+			}
+			if ips[doc.pod] == nil {
+				ips[doc.pod] = make(map[string]struct{})
+			}
+
+			ips[doc.pod][doc.clientIp] = struct{}{}
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for pod, podIps := range ips {
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      pod,
+				Value:     float64(len(podIps)),
+				NotExists: 0,
+			})
+		}
+
+		searchParams := s.query(
+			"service:kafka",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				Field:   aggField("client_ip"),
+				GroupBy: aggField("pod"),
+				Func:    seq.AggFuncUniqueCount,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncUniqueCount}, expectedBuckets)
+	})
 
 	s.Run("NOT message:retry | group by service avg(level)", func() {
 		levelsByService := make(map[string][]int)

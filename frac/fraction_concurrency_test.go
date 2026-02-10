@@ -55,10 +55,12 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	)
 
 	mapping := seq.Mapping{
-		"service":  seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
-		"message":  seq.NewSingleType(seq.TokenizerTypeText, "", 100),
-		"level":    seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
-		"trace_id": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"service":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"client_ip": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"message":   seq.NewSingleType(seq.TokenizerTypeText, "", 100),
+		"level":     seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"trace_id":  seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
 	}
 	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(1024, false, true, 8192),
@@ -254,13 +256,15 @@ type testDoc = struct {
 	json      string
 	message   string
 	service   string
+	pod       string
+	clientIp  string
 	level     int
 	traceId   string
 	timestamp time.Time
 }
 
 func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.Time, time.Time) {
-	services := []string{"gateway", "proxy", "scheduler", "database", "bus"}
+	services := []string{"gateway", "proxy", "scheduler", "database", "bus", "kafka"}
 	messages := []string{
 		"request started", "request completed", "processing timed out",
 		"processing data", "processing failed", "processing retry",
@@ -277,18 +281,22 @@ func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.T
 		level := rand.IntN(6)
 		timestamp := fromTime.Add(time.Duration(i) * time.Millisecond)
 		traceId := fmt.Sprintf("trace-%d", i%5000)
+		pod := fmt.Sprintf("pod-%d", i%50)
+		clientIp := fmt.Sprintf("192.168.%d.%d", rand.IntN(64), rand.IntN(256))
 		if i == numMessages-1 {
 			toTime = timestamp
 		}
 
-		json := fmt.Sprintf(`{"timestamp":%q,"service":%q,"message":%q,"trace_id": %q,"level":"%d"}`,
-			timestamp.Format(time.RFC3339Nano), service, message, traceId, level)
+		json := fmt.Sprintf(`{"timestamp":%q,"service":%q,"pod":%q,"client_ip":%q,"message":%q,"trace_id": %q,"level":"%d"}`,
+			timestamp.Format(time.RFC3339Nano), service, pod, clientIp, message, traceId, level)
 
 		docs = append(docs, testDoc{
 			json:      json,
 			timestamp: timestamp,
 			message:   message,
 			service:   service,
+			pod:       pod,
+			clientIp:  clientIp,
 			level:     level,
 			traceId:   traceId,
 		})
