@@ -357,6 +357,19 @@ func newSearcher(token parser.Token, tp tokenProvider) searcher {
 	case *parser.IPRange:
 		return newRangeIPSearch(base, t)
 	case *parser.Re:
+		// TODO(dkharms): We can benefit from many optimizations when dealing with regular expressions.
+		//
+		// For example, with the most obvious one we can narrow search space
+		// by extracting prefix and suffix from expression if there is any:
+		//
+		//   prefix := regexp.Compile(expr).LiteralPrefix()
+		//   suffix := Reverse(regexp.Compile(Reverse(expr)).LiteralPrefix())
+		//
+		// and then performing similar logic as in [literalSearch.Narrow] to find
+		// boundaries for token ids.
+		//
+		// There are other techniques which are more complicated so it's
+		// worth studying Apache Lucene, TSDB (Prometheus) etc.
 		return newReSearch(base, t)
 	}
 	panic(fmt.Sprintf("unknown token type: %T", token))
