@@ -317,8 +317,8 @@ func (s *FractionTestSuite) TestSearchRe() {
 		/*2*/ `{"timestamp":"2000-01-01T13:00:02.000Z", "k8s_pod": "bar-1", "v": "[WARN] Oopsie!"}`,
 		/*3*/ `{"timestamp":"2000-01-01T13:00:03.000Z", "k8s_pod": "bar-42", "v": "[INFO] Oopsie!"}`,
 		/*4*/ `{"timestamp":"2000-01-01T13:00:04.000Z", "k8s_pod": "baz-1", "v": "[DEBUG] Oopsie!"}`,
-		/*5*/ `{"timestamp":"2000-01-01T13:00:05.000Z", "k8s_pod": "baz-42","v": "[FATAL] Oopsie!" }`,
-		/*6*/ `{"timestamp":"2000-01-01T13:00:06.000Z", "k8s_pod": "baz-42","v": "[FATAL]" }`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:05.000Z", "k8s_pod": "baz-42","v": "[FATAL] Oopsie!"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:06.000Z", "k8s_pod": "baz-42","v": "[FATAL]"}`,
 	}
 
 	s.insertDocuments(docs)
@@ -723,7 +723,6 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 	s.insertDocuments(docs)
 
 	assertAggSearch := func(searchParams *processor.SearchParams, expected []map[string]uint64) {
-
 		qpr, err := s.fraction.Search(context.Background(), *searchParams)
 		s.Require().NoError(err, "search failed")
 
@@ -1747,9 +1746,9 @@ func (s *FractionTestSuite) AssertSearch(queryObject any, originalDocs []string,
 func (s *FractionTestSuite) AssertSearchWithSearchParams(
 	params *processor.SearchParams,
 	originalDocs []string,
-	expectedIndexes []int) {
-
-	var sortOrders = []seq.DocsOrder{params.Order}
+	expectedIndexes []int,
+) {
+	sortOrders := []seq.DocsOrder{params.Order}
 	if params.Order == seq.DocsOrderDesc && params.Limit == math.MaxInt32 {
 		sortOrders = append(sortOrders, seq.DocsOrderAsc)
 	}
@@ -1783,8 +1782,8 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 func (s *FractionTestSuite) AssertAggregation(
 	searchParams *processor.SearchParams,
 	aggregate seq.AggregateArgs,
-	expectedBuckets []seq.AggregationBucket) {
-
+	expectedBuckets []seq.AggregationBucket,
+) {
 	qpr, err := s.fraction.Search(context.Background(), *searchParams)
 	s.Require().NoError(err, "search failed")
 
@@ -1814,8 +1813,8 @@ func (s *FractionTestSuite) AssertAggregation(
 
 func (s *FractionTestSuite) AssertHist(
 	searchParams *processor.SearchParams,
-	expectedHist map[string]uint64) {
-
+	expectedHist map[string]uint64,
+) {
 	qpr, err := s.fraction.Search(context.Background(), *searchParams)
 	s.Require().NoError(err, "search failed")
 	s.Require().Equal(len(expectedHist), len(qpr.Histogram), "histogram count doesn't match")
