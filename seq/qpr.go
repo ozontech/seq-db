@@ -3,6 +3,7 @@ package seq
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -367,9 +368,7 @@ func (h *SamplesContainer) Merge(hist *SamplesContainer) {
 		if h.Values == nil {
 			h.Values = make(map[uint32]struct{}, len(hist.Values))
 		}
-		for idx := range hist.Values {
-			h.Values[idx] = struct{}{}
-		}
+		maps.Copy(h.Values, hist.Values)
 	}
 }
 
