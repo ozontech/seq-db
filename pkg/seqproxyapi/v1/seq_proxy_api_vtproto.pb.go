@@ -261,6 +261,7 @@ func (m *SearchRequest) CloneVT() *SearchRequest {
 	r.Offset = m.Offset
 	r.WithTotal = m.WithTotal
 	r.Order = m.Order
+	r.OffsetId = m.OffsetId
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
 		copy(r.unknownFields, m.unknownFields)
@@ -283,6 +284,7 @@ func (m *ComplexSearchRequest) CloneVT() *ComplexSearchRequest {
 	r.Offset = m.Offset
 	r.WithTotal = m.WithTotal
 	r.Order = m.Order
+	r.OffsetId = m.OffsetId
 	if rhs := m.Aggs; rhs != nil {
 		tmpContainer := make([]*AggQuery, len(rhs))
 		for k, v := range rhs {
@@ -440,6 +442,7 @@ func (m *FetchAsyncSearchResultResponse) CloneVT() *FetchAsyncSearchResultRespon
 	r.CanceledAt = (*timestamppb.Timestamp)((*timestamppb1.Timestamp)(m.CanceledAt).CloneVT())
 	r.Progress = m.Progress
 	r.DiskUsage = m.DiskUsage
+	r.Error = m.Error.CloneVT()
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
 		copy(r.unknownFields, m.unknownFields)
@@ -549,6 +552,7 @@ func (m *GetAsyncSearchesListResponse) CloneVT() *GetAsyncSearchesListResponse {
 		return (*GetAsyncSearchesListResponse)(nil)
 	}
 	r := new(GetAsyncSearchesListResponse)
+	r.Error = m.Error.CloneVT()
 	if rhs := m.Searches; rhs != nil {
 		tmpContainer := make([]*AsyncSearchesListItem, len(rhs))
 		for k, v := range rhs {
@@ -1199,6 +1203,9 @@ func (this *SearchRequest) EqualVT(that *SearchRequest) bool {
 	if this.Order != that.Order {
 		return false
 	}
+	if this.OffsetId != that.OffsetId {
+		return false
+	}
 	return string(this.unknownFields) == string(that.unknownFields)
 }
 
@@ -1248,6 +1255,9 @@ func (this *ComplexSearchRequest) EqualVT(that *ComplexSearchRequest) bool {
 		return false
 	}
 	if this.Order != that.Order {
+		return false
+	}
+	if this.OffsetId != that.OffsetId {
 		return false
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
@@ -1492,6 +1502,9 @@ func (this *FetchAsyncSearchResultResponse) EqualVT(that *FetchAsyncSearchResult
 	if this.DiskUsage != that.DiskUsage {
 		return false
 	}
+	if !this.Error.EqualVT(that.Error) {
+		return false
+	}
 	return string(this.unknownFields) == string(that.unknownFields)
 }
 
@@ -1628,6 +1641,9 @@ func (this *GetAsyncSearchesListResponse) EqualVT(that *GetAsyncSearchesListResp
 				return false
 			}
 		}
+	}
+	if !this.Error.EqualVT(that.Error) {
+		return false
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
 }
@@ -3240,6 +3256,13 @@ func (m *SearchRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.OffsetId) > 0 {
+		i -= len(m.OffsetId)
+		copy(dAtA[i:], m.OffsetId)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.OffsetId)))
+		i--
+		dAtA[i] = 0x32
+	}
 	if m.Order != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Order))
 		i--
@@ -3307,6 +3330,13 @@ func (m *ComplexSearchRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) 
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.OffsetId) > 0 {
+		i -= len(m.OffsetId)
+		copy(dAtA[i:], m.OffsetId)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.OffsetId)))
+		i--
+		dAtA[i] = 0x42
 	}
 	if m.Order != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Order))
@@ -3755,6 +3785,16 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVT(dAtA []byte) (in
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.Error != nil {
+		size, err := m.Error.MarshalToSizedBufferVT(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x4a
+	}
 	if m.DiskUsage != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.DiskUsage))
 		i--
@@ -4056,6 +4096,16 @@ func (m *GetAsyncSearchesListResponse) MarshalToSizedBufferVT(dAtA []byte) (int,
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Error != nil {
+		size, err := m.Error.MarshalToSizedBufferVT(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x12
 	}
 	if len(m.Searches) > 0 {
 		for iNdEx := len(m.Searches) - 1; iNdEx >= 0; iNdEx-- {
@@ -5474,6 +5524,13 @@ func (m *SearchRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.OffsetId) > 0 {
+		i -= len(m.OffsetId)
+		copy(dAtA[i:], m.OffsetId)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.OffsetId)))
+		i--
+		dAtA[i] = 0x32
+	}
 	if m.Order != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Order))
 		i--
@@ -5541,6 +5598,13 @@ func (m *ComplexSearchRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, e
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.OffsetId) > 0 {
+		i -= len(m.OffsetId)
+		copy(dAtA[i:], m.OffsetId)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.OffsetId)))
+		i--
+		dAtA[i] = 0x42
 	}
 	if m.Order != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Order))
@@ -5989,6 +6053,16 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVTStrict(dAtA []byt
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.Error != nil {
+		size, err := m.Error.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x4a
+	}
 	if m.DiskUsage != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.DiskUsage))
 		i--
@@ -6290,6 +6364,16 @@ func (m *GetAsyncSearchesListResponse) MarshalToSizedBufferVTStrict(dAtA []byte)
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Error != nil {
+		size, err := m.Error.MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x12
 	}
 	if len(m.Searches) > 0 {
 		for iNdEx := len(m.Searches) - 1; iNdEx >= 0; iNdEx-- {
@@ -7352,6 +7436,10 @@ func (m *SearchRequest) SizeVT() (n int) {
 	if m.Order != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Order))
 	}
+	l = len(m.OffsetId)
+	if l > 0 {
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -7387,6 +7475,10 @@ func (m *ComplexSearchRequest) SizeVT() (n int) {
 	}
 	if m.Order != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Order))
+	}
+	l = len(m.OffsetId)
+	if l > 0 {
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	n += len(m.unknownFields)
 	return n
@@ -7564,6 +7656,10 @@ func (m *FetchAsyncSearchResultResponse) SizeVT() (n int) {
 	if m.DiskUsage != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.DiskUsage))
 	}
+	if m.Error != nil {
+		l = m.Error.SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -7652,6 +7748,10 @@ func (m *GetAsyncSearchesListResponse) SizeVT() (n int) {
 			l = e.SizeVT()
 			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 		}
+	}
+	if m.Error != nil {
+		l = m.Error.SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	n += len(m.unknownFields)
 	return n
@@ -9481,6 +9581,38 @@ func (m *SearchRequest) UnmarshalVT(dAtA []byte) error {
 					break
 				}
 			}
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field OffsetId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.OffsetId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -9715,6 +9847,38 @@ func (m *ComplexSearchRequest) UnmarshalVT(dAtA []byte) error {
 					break
 				}
 			}
+		case 8:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field OffsetId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.OffsetId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -10876,6 +11040,42 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVT(dAtA []byte) error {
 					break
 				}
 			}
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Error == nil {
+				m.Error = &Error{}
+			}
+			if err := m.Error.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -11367,6 +11567,42 @@ func (m *GetAsyncSearchesListResponse) UnmarshalVT(dAtA []byte) error {
 			}
 			m.Searches = append(m.Searches, &AsyncSearchesListItem{})
 			if err := m.Searches[len(m.Searches)-1].UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Error == nil {
+				m.Error = &Error{}
+			}
+			if err := m.Error.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -14827,6 +15063,42 @@ func (m *SearchRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 					break
 				}
 			}
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field OffsetId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var stringValue string
+			if intStringLen > 0 {
+				stringValue = unsafe.String(&dAtA[iNdEx], intStringLen)
+			}
+			m.OffsetId = stringValue
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -15061,6 +15333,42 @@ func (m *ComplexSearchRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 					break
 				}
 			}
+		case 8:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field OffsetId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var stringValue string
+			if intStringLen > 0 {
+				stringValue = unsafe.String(&dAtA[iNdEx], intStringLen)
+			}
+			m.OffsetId = stringValue
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -16230,6 +16538,42 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 					break
 				}
 			}
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Error == nil {
+				m.Error = &Error{}
+			}
+			if err := m.Error.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -16733,6 +17077,42 @@ func (m *GetAsyncSearchesListResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 			}
 			m.Searches = append(m.Searches, &AsyncSearchesListItem{})
 			if err := m.Searches[len(m.Searches)-1].UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Error == nil {
+				m.Error = &Error{}
+			}
+			if err := m.Error.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex

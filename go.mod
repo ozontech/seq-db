@@ -1,6 +1,6 @@
 module github.com/ozontech/seq-db
 
-go 1.24.0
+go 1.24.6
 
 require (
 	contrib.go.opencensus.io/exporter/jaeger v0.2.1

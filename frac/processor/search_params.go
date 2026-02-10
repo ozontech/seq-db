@@ -19,9 +19,10 @@ type SearchParams struct {
 	AggQ         []AggQuery
 	HistInterval uint64
 
-	From  seq.MID
-	To    seq.MID
-	Limit int
+	From     seq.MID
+	To       seq.MID
+	OffsetId seq.ID
+	Limit    int
 
 	WithTotal bool
 	Order     seq.DocsOrder
