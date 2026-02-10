@@ -147,7 +147,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	readTest(t, sealed, numReaders, numQueries, docs, fromTime, toTime, mapping)
 }
 
-func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs []testDoc, fromTime, toTime time.Time, mapping seq.Mapping) {
+func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs []*testDoc, fromTime, toTime time.Time, mapping seq.Mapping) {
 	readersGroup, ctx := errgroup.WithContext(t.Context())
 
 	type queryFilter func(doc *testDoc) bool
@@ -234,7 +234,7 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 				// find docs by time range and provided query filter to match against fetched docs
 				var expectedDocs []string
 				for i := len(docs) - 1; i >= 0 && len(expectedDocs) < searchParams.Limit; i-- {
-					if (docs[i].timestamp.Before(queryTime) || docs[i].timestamp.Equal(queryTime)) && filter(&docs[i]) {
+					if (docs[i].timestamp.Before(queryTime) || docs[i].timestamp.Equal(queryTime)) && filter(docs[i]) {
 						expectedDocs = append(expectedDocs, docs[i].json)
 					}
 				}
@@ -263,7 +263,7 @@ type testDoc = struct {
 	timestamp time.Time
 }
 
-func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.Time, time.Time) {
+func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.Time, time.Time) {
 	services := []string{"gateway", "proxy", "scheduler", "database", "bus", "kafka"}
 	messages := []string{
 		"request started", "request completed", "processing timed out",
@@ -273,7 +273,7 @@ func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.T
 	fromTime := time.Date(2000, 1, 1, 13, 0, 0, 0, time.UTC)
 	var toTime time.Time
 
-	docs := make([]testDoc, 0, numMessages)
+	docs := make([]*testDoc, 0, numMessages)
 
 	for i := 0; i < numMessages; i++ {
 		service := services[rand.IntN(len(services))]
@@ -290,7 +290,7 @@ func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.T
 		json := fmt.Sprintf(`{"timestamp":%q,"service":%q,"pod":%q,"client_ip":%q,"message":%q,"trace_id": %q,"level":"%d"}`,
 			timestamp.Format(time.RFC3339Nano), service, pod, clientIp, message, traceId, level)
 
-		docs = append(docs, testDoc{
+		docs = append(docs, &testDoc{
 			json:      json,
 			timestamp: timestamp,
 			message:   message,

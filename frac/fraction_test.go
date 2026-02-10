@@ -1270,7 +1270,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		s.Run(tc.name, func() {
 			var expectedIndexes []int
 			for i := len(testDocs) - 1; i >= 0; i-- {
-				doc := &testDocs[i]
+				doc := testDocs[i]
 
 				if doc.timestamp.Before(tc.fromTime) {
 					continue
@@ -1391,7 +1391,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 
 		var expectedIndexesAsc []int
 		for i := range testDocs {
-			doc := &testDocs[i]
+			doc := testDocs[i]
 			if !doc.timestamp.Before(scrollFrom) &&
 				!doc.timestamp.After(scrollTo) &&
 				strings.Contains(doc.message, "request") &&
