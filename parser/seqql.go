@@ -231,7 +231,7 @@ again:
 
 // rawStringLiteral returns string literal enclosed in double quotes as it is.
 //
-// It does not unquote symbols, does not substitue wildcards.
+// It does not unquote symbols, does not substitute wildcards.
 // It is used in `re` filter which works with user provided expression.
 func (l *lexer) rawStringLiteral() error {
 	if rune(l.q[0]) != '"' {
@@ -374,7 +374,6 @@ func parseSeqQLFilter(lex *lexer, mapping seq.Mapping, depth int) (*ASTNode, err
 		res = joinOr(res, cur)
 		cur = next
 	}
-
 }
 
 func joinOr(left, right *ASTNode) *ASTNode {
