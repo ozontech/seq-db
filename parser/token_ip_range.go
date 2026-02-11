@@ -42,7 +42,7 @@ func parseFilterIPRange(lex *lexer, fieldName string) (*IPRange, error) {
 		return nil, errors.New("empty 'ip_range' filter")
 	}
 
-	tok, err := parseCompositeToken(lex, '/')
+	tok, err := parseCompositeToken(lex, '/', ':')
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func parseFilterIPRange(lex *lexer, fieldName string) (*IPRange, error) {
 
 		lex.Next()
 
-		tok, err := parseCompositeToken(lex)
+		tok, err := parseCompositeToken(lex, ':')
 		if err != nil {
 			return nil, err
 		}
