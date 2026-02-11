@@ -86,6 +86,7 @@ func main() {
 	config.SkipFsync = cfg.Resources.SkipFsync
 	config.MaxRequestedDocuments = cfg.Limits.SearchDocs
 	config.MaxRegexTokensCheck = cfg.Experimental.MaxRegexTokensCheck
+	config.FailPartialResponse = cfg.Cluster.FailPartialResponse
 
 	backoff.DefaultConfig.MaxDelay = 10 * time.Second
 
@@ -272,7 +273,6 @@ func startStore(
 				Search: frac.SearchConfig{
 					AggLimits: frac.AggLimits{
 						MaxFieldTokens:     cfg.Limits.Aggregation.FieldTokens,
-						MaxFieldValues:     cfg.Limits.Aggregation.FieldValues,
 						MaxGroupTokens:     cfg.Limits.Aggregation.GroupTokens,
 						MaxTIDsPerFraction: cfg.Limits.Aggregation.FractionTokens,
 					},
@@ -343,6 +343,7 @@ func initS3Client(cfg config.Config) *s3.Client {
 		cfg.Offloading.Bucket,
 		cfg.Offloading.RetryCount,
 	)
+
 	if err != nil {
 		logger.Fatal(
 			"cannot create S3 client",
