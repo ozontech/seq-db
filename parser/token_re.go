@@ -43,11 +43,16 @@ func parseReFilter(lex *lexer, fieldName string) (*Re, error) {
 	// This behaviour has negative impact on language extendability.
 	expr := lex.Token
 
-	// Perform case-insensitive search by default if not specified other.
-	// User can override this behaviour by adding prefix `(?-i)` to expression.
-	if !(strings.HasPrefix(expr, "(?i)") || strings.HasPrefix(expr, "(?-i)")) {
-		expr = "(?i)" + expr
-	}
+	// Here are two important things to keep in mind:
+	//  - We perform case-insensitive search by default;
+	//  - We force anchoring for the expression;
+	//
+	// Case sensitivity can be overridden by the user with `(?-i)` inside the pattern.
+	// Anchoring is necessary for prefix search optimization.
+	//
+	// See Prometheus TSDB `FastRegexMatcher` for a similar approach:
+	// https://github.com/prometheus/prometheus/blob/19fd0b0b1dbfe01a5e49f5d04544a7c5853c12bb/model/labels/regexp.go#L70
+	expr = "^(?i:" + expr + ")$"
 
 	compiled, err := regexp.Compile(expr)
 	if err != nil {
