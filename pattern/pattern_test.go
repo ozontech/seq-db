@@ -482,9 +482,9 @@ func TestPatternRe(t *testing.T) {
 
 	t.Run("match-ip", func(t *testing.T) {
 		needles := []string{
-			"request from 192.168.1.1 failed",
-			"connected to 10.0.0.255",
-			"256.999.1.1 is invalid but we match loosely",
+			"192.168.1.1",
+			"10.0.0.255",
+			"256.999.1.1",
 		}
 
 		data := append(
@@ -504,10 +504,10 @@ func TestPatternRe(t *testing.T) {
 
 	t.Run("match-russian-phone", func(t *testing.T) {
 		needles := []string{
-			"call +78005553535",
-			"call +7 800 555-35-35",
-			"call +7 (800) 555-35-35",
-			"call 8(800)555-35-35",
+			"+78005553535",
+			"+7 800 555-35-35",
+			"+7 (800) 555-35-35",
+			"8(800)555-35-35",
 		}
 
 		data := append(
@@ -519,7 +519,7 @@ func TestPatternRe(t *testing.T) {
 
 		testAll(t, tp, []testCase{
 			{
-				`re("[+7|8]\s?\(?\d{3}\)?\s?\d{3}-?\d{2}-?\d{2}")`,
+				`re("(\+7|8)\s?\(?\d{3}\)?\s?\d{3}-?\d{2}-?\d{2}")`,
 				needles,
 			},
 		})
@@ -540,7 +540,7 @@ func TestPatternRe(t *testing.T) {
 
 		testAll(t, tp, []testCase{
 			{
-				`re("\[(ERROR|WARN)\]")`,
+				`re("\[(ERROR|WARN)\].*")`,
 				needles,
 			},
 		})
@@ -570,8 +570,8 @@ func TestPatternRe(t *testing.T) {
 
 	t.Run("match-email", func(t *testing.T) {
 		needles := []string{
-			"user: alice@example.com",
-			"contact bob.smith@test.co.uk",
+			"alice@example.com",
+			"bob.smith@test.co.uk",
 		}
 
 		data := append(
@@ -610,9 +610,9 @@ func TestPatternRe(t *testing.T) {
 		})
 	})
 
-	t.Run("match-anchored-start", func(t *testing.T) {
+	t.Run("match-anchored", func(t *testing.T) {
 		needles := []string{
-			"ERROR: something broke",
+			"ERROR: disk empty",
 			"ERROR: disk full",
 		}
 
@@ -625,7 +625,7 @@ func TestPatternRe(t *testing.T) {
 
 		testAll(t, tp, []testCase{
 			{
-				`re("^ERROR:")`,
+				`re("^ERROR: disk (empty|full)$")`,
 				needles,
 			},
 		})
@@ -695,7 +695,7 @@ func TestPatternRe(t *testing.T) {
 
 		testAll(t, tp, []testCase{
 			{
-				`re("(?i)error")`,
+				`re("(?i)error.*")`,
 				needles,
 			},
 		})

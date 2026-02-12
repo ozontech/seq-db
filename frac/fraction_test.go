@@ -325,7 +325,7 @@ func (s *FractionTestSuite) TestSearchRe() {
 
 	s.AssertSearch(`k8s_pod:re("^(foo|bar)-[\d]+$")`, docs, []int{3, 2, 1, 0})
 	s.AssertSearch(`k8s_pod:re("^ba[a-z]-[\d]{1}$")`, docs, []int{4, 2})
-	s.AssertSearch(`v:re("\[(ERROR|FATAL)\]")`, docs, []int{6, 5, 0})
+	s.AssertSearch(`v:re("\[(ERROR|FATAL)\].*")`, docs, []int{6, 5, 0})
 	s.AssertSearch(`v:re("^\[(ERROR|FATAL)\]$")`, docs, []int{6})
 	// In tests we transform keyword token to lower-case.
 	// So case-sensitive expression will always yield nothing.
