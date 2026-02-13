@@ -67,6 +67,8 @@ func (c *Config) storeValidations() []validateFn {
 
 		inRange("compression.sealed_zstd_compression_level", -7, 22, c.Compression.SealedZstdCompressionLevel),
 		inRange("compression.doc_block_zstd_compression_level", -7, 22, c.Compression.DocBlockZstdCompressionLevel),
+
+		greaterThan("experimental.max_regex_tokens_check", -1, c.Experimental.MaxRegexTokensCheck),
 	}
 
 	if c.Offloading.Enabled {
