@@ -69,14 +69,14 @@ type grpcV1 struct {
 }
 
 func newGrpcV1(
-	config APIConfig,
+	apiConfig APIConfig,
 	si SearchIngestor,
 	mappingProvider MappingProvider,
 	rl RateLimiter,
 	mirror seqproxyapi.SeqProxyApiClient,
 ) *grpcV1 {
 	return &grpcV1{
-		config:          config,
+		config:          apiConfig,
 		searchIngestor:  si,
 		mappingProvider: mappingProvider,
 		rateLimiter:     rl,
