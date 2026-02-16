@@ -39,3 +39,13 @@ func (p *SearchParams) HasAgg() bool {
 func (p *SearchParams) IsScanAllRequest() bool {
 	return p.WithTotal || p.HasAgg() || p.HasHist()
 }
+
+func (p *SearchParams) Type() string {
+	if p.HasAgg() {
+		return "agg"
+	} else if p.HasHist() {
+		return "hist"
+	}
+
+	return "reg"
+}

@@ -230,6 +230,7 @@ func (g *GrpcV1) doSearch(
 		logger.Warn("slow search",
 			zap.Int64("took_ms", took.Milliseconds()),
 			zap.Object("req", (*searchRequestMarshaler)(req)),
+			zap.String("type", searchParams.Type()),
 			zap.Uint64("found", qpr.Total),
 			zap.String("from", seq.MillisToMID(uint64(req.From)).String()),
 			zap.String("to", seq.MillisToMID(uint64(req.To)).String()),
