@@ -1,7 +1,7 @@
 package node
 
 type nodeRange struct {
-	less LessFn
+	reverse bool
 
 	maxVal uint32
 	cur    int
@@ -19,19 +19,20 @@ func NewRange(minVal, maxVal uint32, reverse bool) *nodeRange {
 		minVal, maxVal = maxVal, minVal
 	}
 	return &nodeRange{
-		less: GetLessFn(reverse),
-
-		cur:    int(minVal),
-		maxVal: maxVal,
-		step:   step,
+		reverse: reverse,
+		cur:     int(minVal),
+		maxVal:  maxVal,
+		step:    step,
 	}
 }
 
-func (n *nodeRange) Next() (uint32, bool) {
-	if n.less(n.maxVal, uint32(n.cur)) {
-		return 0, false
+func (n *nodeRange) Next() CmpLID {
+	curCmp := NewCmpLID(uint32(n.cur), n.reverse)
+	maxCmp := NewCmpLID(n.maxVal, n.reverse)
+	if maxCmp.Less(curCmp) {
+		return NullCmpLID()
 	}
 	cur := uint32(n.cur)
 	n.cur += n.step
-	return cur, true
+	return NewCmpLID(cur, n.reverse)
 }

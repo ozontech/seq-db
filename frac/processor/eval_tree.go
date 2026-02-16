@@ -34,13 +34,13 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 		switch token.Operator {
 		case parser.LogicalAnd:
 			stats.NodesTotal++
-			return node.NewAnd(children[0], children[1], reverse), nil
+			return node.NewAnd(children[0], children[1]), nil
 		case parser.LogicalOr:
 			stats.NodesTotal++
-			return node.NewOr(children[0], children[1], reverse), nil
+			return node.NewOr(children[0], children[1]), nil
 		case parser.LogicalNAnd:
 			stats.NodesTotal++
-			return node.NewNAnd(children[0], children[1], reverse), nil
+			return node.NewNAnd(children[0], children[1]), nil
 		case parser.LogicalNot:
 			stats.NodesTotal++
 			return node.NewNot(children[0], minVal, maxVal, reverse), nil
@@ -74,12 +74,12 @@ func evalLeaf(
 		stats.NodesTotal += len(lidsTids)*2 - 1
 	}
 
-	return node.BuildORTree(lidsTids, order.IsReverse()), nil
+	return node.BuildORTree(lidsTids), nil
 }
 
 type Aggregator interface {
 	// Next iterates to count the next lid.
-	Next(lid uint32) error
+	Next(lid node.CmpLID) error
 	// Aggregate processes and returns the final aggregation result.
 	Aggregate() (seq.AggregatableSamples, error)
 }

@@ -1,11 +1,13 @@
 package lids
 
 import (
+	"math"
 	"sort"
 
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/node"
 )
 
 type IteratorDesc Cursor
@@ -55,10 +57,10 @@ func (it *IteratorDesc) loadNextLIDsBlock() {
 	it.blockIndex++
 }
 
-func (it *IteratorDesc) Next() (uint32, bool) {
+func (it *IteratorDesc) Next() node.CmpLID {
 	for len(it.lids) == 0 {
 		if !it.tryNextBlock {
-			return 0, false
+			return node.NewCmpLIDOrderDesc(math.MaxUint32)
 		}
 
 		it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
@@ -68,5 +70,5 @@ func (it *IteratorDesc) Next() (uint32, bool) {
 
 	lid := it.lids[0]
 	it.lids = it.lids[1:]
-	return lid, true
+	return node.NewCmpLIDOrderDesc(lid)
 }

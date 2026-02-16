@@ -12,6 +12,6 @@ func (n *nodeNot) String() string {
 
 func NewNot(child Node, minVal, maxVal uint32, reverse bool) *nodeNot {
 	nodeRange := NewRange(minVal, maxVal, reverse)
-	nodeNAnd := NewNAnd(child, nodeRange, reverse)
+	nodeNAnd := NewNAnd(child, nodeRange)
 	return &nodeNot{nodeNAnd: *(nodeNAnd)}
 }

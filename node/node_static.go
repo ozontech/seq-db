@@ -1,5 +1,7 @@
 package node
 
+import "math"
+
 type staticCursor struct {
 	ptr  int
 	data []uint32
@@ -31,22 +33,24 @@ func NewStatic(data []uint32, reverse bool) Node {
 	}}
 }
 
-func (n *staticAsc) Next() (uint32, bool) {
+func (n *staticAsc) Next() CmpLID {
+	// staticAsc is used in docs order desc, hence we return CmpLID with desc order
 	if n.ptr >= len(n.data) {
-		return 0, false
+		return NewCmpLIDOrderDesc(math.MaxUint32)
 	}
 	cur := n.data[n.ptr]
 	n.ptr++
-	return cur, true
+	return NewCmpLIDOrderDesc(cur)
 }
 
-func (n *staticDesc) Next() (uint32, bool) {
+func (n *staticDesc) Next() CmpLID {
+	// staticDesc is used in docs order asc, hence we return CmpLID with asc order
 	if n.ptr < 0 {
-		return 0, false
+		return NewCmpLIDOrderAsc(0)
 	}
 	cur := n.data[n.ptr]
 	n.ptr--
-	return cur, true
+	return NewCmpLIDOrderAsc(cur)
 }
 
 // MakeStaticNodes  is currently used only for tests

@@ -8,10 +8,8 @@ import (
 )
 
 func readAllInto(node Node, ids []uint32) []uint32 {
-	id, has := node.Next()
-	for has {
-		ids = append(ids, id)
-		id, has = node.Next()
+	for cur := node.Next(); !cur.IsNull(); cur = node.Next() {
+		ids = append(ids, cur.Unpack())
 	}
 	return ids
 }
@@ -35,19 +33,19 @@ var (
 
 func TestNodeAnd(t *testing.T) {
 	expect := []uint32{5, 6, 13}
-	and := NewAnd(NewStatic(data[0], false), NewStatic(data[1], false), false)
+	and := NewAnd(NewStatic(data[0], false), NewStatic(data[1], false))
 	assert.Equal(t, expect, readAll(and))
 }
 
 func TestNodeOr(t *testing.T) {
 	expect := []uint32{1, 2, 3, 5, 6, 7, 8, 9, 13, 14}
-	or := NewOr(NewStatic(data[0], false), NewStatic(data[1], false), false)
+	or := NewOr(NewStatic(data[0], false), NewStatic(data[1], false))
 	assert.Equal(t, expect, readAll(or))
 }
 
 func TestNodeNAnd(t *testing.T) {
 	expect := []uint32{2, 3, 14}
-	nand := NewNAnd(NewStatic(data[0], false), NewStatic(data[1], false), false)
+	nand := NewNAnd(NewStatic(data[0], false), NewStatic(data[1], false))
 	assert.Equal(t, expect, readAll(nand))
 }
 
@@ -61,7 +59,7 @@ func TestNodeNot(t *testing.T) {
 func TestNodeLazyAnd(t *testing.T) {
 	left := []uint32{1, 2}
 	right := []uint32{1, 2, 3, 4, 5, 6}
-	and := NewAnd(NewStatic(left, false), NewStatic(right, false), false)
+	and := NewAnd(NewStatic(left, false), NewStatic(right, false))
 	assert.Equal(t, []uint32{1, 2}, readAll(and))
 	assert.Equal(t, []uint32{4, 5, 6}, getRemainingSlice(t, and.right))
 	assert.Equal(t, []uint32(nil), readAll(and))
@@ -72,7 +70,7 @@ func TestNodeLazyAnd(t *testing.T) {
 func TestNodeLazyNAnd(t *testing.T) {
 	left := []uint32{1, 2, 5, 6, 7, 8}
 	right := []uint32{2, 4}
-	nand := NewNAnd(NewStatic(left, false), NewStatic(right, false), false)
+	nand := NewNAnd(NewStatic(left, false), NewStatic(right, false))
 	assert.Equal(t, []uint32{4}, readAll(nand))
 	assert.Equal(t, []uint32{6, 7, 8}, getRemainingSlice(t, nand.neg))
 	assert.Equal(t, []uint32(nil), readAll(nand))
@@ -92,44 +90,44 @@ func isEmptyNode(node any) bool {
 func TestNodeTreeBuilding(t *testing.T) {
 	t.Run("size_0", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 0))
-		assert.True(t, isEmptyNode(BuildORTree(dn, false)), "expected empty node")
+		assert.True(t, isEmptyNode(BuildORTree(dn)), "expected empty node")
 		assert.True(t, isEmptyNode(BuildORTreeAgg(dn, false)), "expected empty node")
 	})
 	t.Run("size_1", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 1))
-		assert.Equal(t, "STATIC", BuildORTree(dn, false).String())
+		assert.Equal(t, "STATIC", BuildORTree(dn).String())
 		assert.Equal(t, "SOURCED", BuildORTreeAgg(dn, false).String())
 	})
 	t.Run("size_2", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 2))
-		assert.Equal(t, "(STATIC OR STATIC)", BuildORTree(dn, false).String())
+		assert.Equal(t, "(STATIC OR STATIC)", BuildORTree(dn).String())
 		assert.Equal(t, "(SOURCED OR SOURCED)", BuildORTreeAgg(dn, false).String())
 	})
 	t.Run("size_3", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 3))
-		assert.Equal(t, "(STATIC OR (STATIC OR STATIC))", BuildORTree(dn, false).String())
+		assert.Equal(t, "(STATIC OR (STATIC OR STATIC))", BuildORTree(dn).String())
 		assert.Equal(t, "(SOURCED OR (SOURCED OR SOURCED))", BuildORTreeAgg(dn, false).String())
 	})
 	t.Run("size_4", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 4))
-		assert.Equal(t, "((STATIC OR STATIC) OR (STATIC OR STATIC))", BuildORTree(dn, false).String())
+		assert.Equal(t, "((STATIC OR STATIC) OR (STATIC OR STATIC))", BuildORTree(dn).String())
 		assert.Equal(t, "((SOURCED OR SOURCED) OR (SOURCED OR SOURCED))", BuildORTreeAgg(dn, false).String())
 	})
 	t.Run("size_5", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 5))
-		assert.Equal(t, "((STATIC OR STATIC) OR (STATIC OR (STATIC OR STATIC)))", BuildORTree(dn, false).String())
+		assert.Equal(t, "((STATIC OR STATIC) OR (STATIC OR (STATIC OR STATIC)))", BuildORTree(dn).String())
 		assert.Equal(t, "((SOURCED OR SOURCED) OR (SOURCED OR (SOURCED OR SOURCED)))", BuildORTreeAgg(dn, false).String())
 	})
 	t.Run("size_6", func(t *testing.T) {
-		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 6)), false).String()
+		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 6))).String()
 		assert.Equal(t, "((STATIC OR (STATIC OR STATIC)) OR (STATIC OR (STATIC OR STATIC)))", labels)
 	})
 	t.Run("size_7", func(t *testing.T) {
-		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 7)), false).String()
+		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 7))).String()
 		assert.Equal(t, "((STATIC OR (STATIC OR STATIC)) OR ((STATIC OR STATIC) OR (STATIC OR STATIC)))", labels)
 	})
 	t.Run("size_8", func(t *testing.T) {
-		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 8)), false).String()
+		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 8))).String()
 		assert.Equal(t, "(((STATIC OR STATIC) OR (STATIC OR STATIC)) OR ((STATIC OR STATIC) OR (STATIC OR STATIC)))", labels)
 	})
 }

@@ -5,9 +5,9 @@ var (
 	emptyNodeSourced = NewSourcedNodeWrapper(emptyNode, 0)
 )
 
-func BuildORTree(nodes []Node, reverse bool) Node {
+func BuildORTree(nodes []Node) Node {
 	return TreeFold(
-		func(l, r Node) Node { return NewOr(l, r, reverse) },
+		func(l, r Node) Node { return NewOr(l, r) },
 		emptyNode,
 		nodes,
 	)

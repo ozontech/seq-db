@@ -65,7 +65,7 @@ func BenchmarkOr(b *testing.B) {
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
 			res := make([]uint32, 0, s*2)
-			n := NewOr(newNodeStaticSize(s), newNodeStaticSize(s), false)
+			n := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
 
 			for b.Loop() {
 				res = readAllInto(n, res)
@@ -82,7 +82,7 @@ func BenchmarkAnd(b *testing.B) {
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
 			res := make([]uint32, 0, s)
-			n := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s), false)
+			n := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
 
 			for b.Loop() {
 				res = readAllInto(n, res)
@@ -99,7 +99,7 @@ func BenchmarkNAnd(b *testing.B) {
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
 			res := make([]uint32, 0, s)
-			n := NewNAnd(newNodeStaticSize(s), newNodeStaticSize(s), false)
+			n := NewNAnd(newNodeStaticSize(s), newNodeStaticSize(s))
 
 			for b.Loop() {
 				res = readAllInto(n, res)
@@ -115,13 +115,13 @@ func BenchmarkAndTree(b *testing.B) {
 
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			n1 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s), false)
-			n2 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s), false)
-			n3 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s), false)
-			n4 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s), false)
-			n12 := NewAnd(n1, n2, false)
-			n34 := NewAnd(n3, n4, false)
-			n := NewAnd(n12, n34, false)
+			n1 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
+			n2 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
+			n3 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
+			n4 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
+			n12 := NewAnd(n1, n2)
+			n34 := NewAnd(n3, n4)
+			n := NewAnd(n12, n34)
 			res := make([]uint32, 0, s)
 
 			for b.Loop() {
@@ -138,13 +138,13 @@ func BenchmarkOrTree(b *testing.B) {
 
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			n1 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s), false)
-			n2 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s), false)
-			n3 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s), false)
-			n4 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s), false)
-			n12 := NewOr(n1, n2, false)
-			n34 := NewOr(n3, n4, false)
-			n := NewOr(n12, n34, false)
+			n1 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
+			n2 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
+			n3 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
+			n4 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
+			n12 := NewOr(n1, n2)
+			n34 := NewOr(n3, n4)
+			n := NewOr(n12, n34)
 			res := make([]uint32, 0, s*8)
 
 			for b.Loop() {
@@ -163,11 +163,11 @@ func BenchmarkComplex(b *testing.B) {
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
 			res := make([]uint32, 0, s*2)
-			n1 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s), false)
-			n2 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s), false)
-			n3 := NewNAnd(newNodeStaticSize(s), newNodeStaticSize(s), false)
-			n12 := NewOr(n1, n2, false)
-			n := NewAnd(n12, n3, false)
+			n1 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
+			n2 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
+			n3 := NewNAnd(newNodeStaticSize(s), newNodeStaticSize(s))
+			n12 := NewOr(n1, n2)
+			n := NewAnd(n12, n3)
 
 			for b.Loop() {
 				res = readAllInto(n, res)

@@ -3,52 +3,43 @@ package node
 import "fmt"
 
 type nodeNAnd struct {
-	less LessFn
+	neg Node
+	reg Node
 
-	neg    Node
-	negID  uint32
-	hasNeg bool
-
-	reg    Node
-	regID  uint32
-	hasReg bool
+	negCmp CmpLID
+	regCmp CmpLID
 }
 
 func (n *nodeNAnd) String() string {
 	return fmt.Sprintf("(%s NAND %s)", n.neg.String(), n.reg.String())
 }
 
-func NewNAnd(negative, regular Node, reverse bool) *nodeNAnd {
-	node := &nodeNAnd{
-		less: GetLessFn(reverse),
-
-		neg: negative,
-		reg: regular,
-	}
+func NewNAnd(negative, regular Node) *nodeNAnd {
+	node := &nodeNAnd{neg: negative, reg: regular}
 	node.readNeg()
 	node.readReg()
 	return node
 }
 
 func (n *nodeNAnd) readNeg() {
-	n.negID, n.hasNeg = n.neg.Next()
+	n.negCmp = n.neg.Next()
 }
 
 func (n *nodeNAnd) readReg() {
-	n.regID, n.hasReg = n.reg.Next()
+	n.regCmp = n.reg.Next()
 }
 
-func (n *nodeNAnd) Next() (uint32, bool) {
-	for n.hasReg {
-		for n.hasNeg && n.less(n.negID, n.regID) {
+func (n *nodeNAnd) Next() CmpLID {
+	for !n.regCmp.IsNull() {
+		for !n.negCmp.IsNull() && n.negCmp.Less(n.regCmp) {
 			n.readNeg()
 		}
-		if !n.hasNeg || n.negID != n.regID { // i.e. n.negID > regID
-			cur := n.regID
+		if n.negCmp.IsNull() || !n.negCmp.Eq(n.regCmp) {
+			cur := n.regCmp
 			n.readReg()
-			return cur, true
+			return cur
 		}
 		n.readReg()
 	}
-	return 0, false
+	return NullCmpLID()
 }
