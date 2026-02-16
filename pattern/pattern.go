@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"regexp"
 	"strconv"
 
 	"github.com/ozontech/seq-db/parser"
@@ -307,6 +308,22 @@ func (s *rangeIpSearch) check(rawVal []byte) bool {
 	return s.from.Compare(val) <= 0 && val.Compare(s.to) <= 0
 }
 
+type reSearch struct {
+	baseSearch
+	r *regexp.Regexp
+}
+
+func newReSearch(base baseSearch, token *parser.Re) *reSearch {
+	if token.Expression.Kind != parser.TermText {
+		panic("BUG: wrong term kind in re")
+	}
+	return &reSearch{baseSearch: base, r: token.CompiledExpression}
+}
+
+func (s *reSearch) check(rawVal []byte) bool {
+	return s.r.Match(rawVal)
+}
+
 type searcher interface {
 	firstTID() uint32
 	lastTID() uint32
@@ -339,6 +356,21 @@ func newSearcher(token parser.Token, tp tokenProvider) searcher {
 		return newRangeTextSearch(base, t)
 	case *parser.IPRange:
 		return newRangeIPSearch(base, t)
+	case *parser.Re:
+		// TODO(dkharms): We can benefit from many optimizations when dealing with regular expressions.
+		//
+		// For example, with the most obvious one we can narrow search space
+		// by extracting prefix and suffix from expression if there is any:
+		//
+		//   prefix := regexp.Compile(expr).LiteralPrefix()
+		//   suffix := Reverse(regexp.Compile(Reverse(expr)).LiteralPrefix())
+		//
+		// and then performing similar logic as in [literalSearch.Narrow] to find
+		// boundaries for token ids.
+		//
+		// There are other techniques which are more complicated so it's
+		// worth studying Apache Lucene, TSDB (Prometheus) etc.
+		return newReSearch(base, t)
 	}
 	panic(fmt.Sprintf("unknown token type: %T", token))
 }
