@@ -6,8 +6,8 @@ type nodeNAnd struct {
 	neg Node
 	reg Node
 
-	negCmp CmpLID
-	regCmp CmpLID
+	negID CmpLID
+	regID CmpLID
 }
 
 func (n *nodeNAnd) String() string {
@@ -22,20 +22,20 @@ func NewNAnd(negative, regular Node) *nodeNAnd {
 }
 
 func (n *nodeNAnd) readNeg() {
-	n.negCmp = n.neg.Next()
+	n.negID = n.neg.Next()
 }
 
 func (n *nodeNAnd) readReg() {
-	n.regCmp = n.reg.Next()
+	n.regID = n.reg.Next()
 }
 
 func (n *nodeNAnd) Next() CmpLID {
-	for !n.regCmp.IsNull() {
-		for !n.negCmp.IsNull() && n.negCmp.Less(n.regCmp) {
+	for !n.regID.IsNull() {
+		for !n.negID.IsNull() && n.negID.Less(n.regID) {
 			n.readNeg()
 		}
-		if n.negCmp.IsNull() || !n.negCmp.Eq(n.regCmp) {
-			cur := n.regCmp
+		if n.negID.IsNull() || !n.negID.Eq(n.regID) {
+			cur := n.regID
 			n.readReg()
 			return cur
 		}

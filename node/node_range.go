@@ -27,9 +27,9 @@ func NewRange(minVal, maxVal uint32, reverse bool) *nodeRange {
 }
 
 func (n *nodeRange) Next() CmpLID {
-	curCmp := NewCmpLID(uint32(n.cur), n.reverse)
-	maxCmp := NewCmpLID(n.maxVal, n.reverse)
-	if maxCmp.Less(curCmp) {
+	curID := NewCmpLID(uint32(n.cur), n.reverse)
+	maxID := NewCmpLID(n.maxVal, n.reverse)
+	if maxID.Less(curID) {
 		return NullCmpLID()
 	}
 	cur := uint32(n.cur)

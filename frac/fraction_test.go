@@ -1284,7 +1284,6 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			fromTime: fromTime,
 			toTime:   toTime,
 		},
-
 		// OR operator queries
 		{
 			name:  "trace_id OR",
@@ -1300,7 +1299,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   toTime,
 		},
 
-		// mixed AND/OR
+		// mixed AND/OR/NOT
 		{
 			name:  "message:request AND (level:1 OR level:3 OR level:5) AND trace_id:trace-2*",
 			query: "message:request AND (level:1 OR level:3 OR level:5) AND trace_id:trace-2*",
@@ -1322,6 +1321,30 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			},
 			fromTime: fromTime,
 			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND NOT (message:request OR message:timed OR level:[0 to 3])",
+			query: "service:gateway AND NOT (message:request OR message:timed OR level:[0 to 3])",
+			filter: func(doc *testDoc) bool {
+				return doc.service == "gateway" &&
+					!(strings.Contains(doc.message, "request") ||
+						strings.Contains(doc.message, "timed") ||
+						(doc.level >= 0 && doc.level <= 3))
+			},
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+		{
+			name:  "service:proxy AND NOT level:5 AND NOT pod:pod-2* AND NOT client_ip:ip_range(192.168.19.0,192.168.19.255)",
+			query: "service:proxy AND NOT level:5 AND NOT pod:pod-2* AND NOT client_ip:ip_range(192.168.19.0,192.168.19.255)",
+			filter: func(doc *testDoc) bool {
+				return doc.service == "proxy" &&
+					doc.level != 5 &&
+					!strings.Contains(doc.pod, "pod-2") &&
+					!strings.Contains(doc.clientIp, "192.168.19")
+			},
+			fromTime: fromTime,
+			toTime:   midTime,
 		},
 
 		// other queries
