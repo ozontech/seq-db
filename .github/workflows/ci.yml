@@ -4,9 +4,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -20,16 +20,14 @@ jobs:
       # but MinIO depends on it (it needs `server` argument at least).
       # When [this](https://github.com/actions/runner/pull/1152) will be merged we can get rid of this step.
       - name: Setup MinIO
-        uses: addnab/docker-run-action@v3
+        uses: maus007/docker-run-action-fork@v1
         with:
           registry: quay.io
           image: minio/minio:latest
           options: |
             --detach
             --publish 9000:9000
-          run: |
-            minio \
-            server /data
+          run: minio server data
 
       - name: Checkout code
         uses: actions/checkout@v6
