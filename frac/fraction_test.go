@@ -1201,6 +1201,20 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   toTime,
 		},
 		{
+			name:     "NOT service:bus",
+			query:    "NOT service:bus",
+			filter:   func(doc *testDoc) bool { return doc.service != "bus" },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:     "NOT service:bus (time range)",
+			query:    "NOT service:bus",
+			filter:   func(doc *testDoc) bool { return doc.service != "bus" },
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+		{
 			name:     "service:proxy (time range)",
 			query:    "service:proxy",
 			filter:   func(doc *testDoc) bool { return doc.service == "proxy" },

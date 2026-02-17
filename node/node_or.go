@@ -34,12 +34,12 @@ func (n *nodeOr) Next() CmpLID {
 		return n.leftID
 	}
 
-	if !n.leftID.IsNull() && (n.rightID.IsNull() || n.leftID.Less(n.rightID)) {
+	if n.leftID.Less(n.rightID) {
 		cur := n.leftID
 		n.readLeft()
 		return cur
 	}
-	if !n.rightID.IsNull() && (n.leftID.IsNull() || n.rightID.Less(n.leftID)) {
+	if n.rightID.Less(n.leftID) {
 		cur := n.rightID
 		n.readRight()
 		return cur
@@ -86,7 +86,7 @@ func (n *nodeOrAgg) NextSourced() (CmpLID, uint32) {
 	if n.leftID.IsNull() && n.rightID.IsNull() {
 		return n.leftID, 0
 	}
-	if !n.leftID.IsNull() && (n.rightID.IsNull() || n.leftID.Less(n.rightID)) {
+	if n.leftID.Less(n.rightID) {
 		cur := n.leftID
 		curSource := n.leftSource
 		n.readLeft()

@@ -32,11 +32,11 @@ func (n *nodeAnd) readRight() {
 }
 
 func (n *nodeAnd) Next() CmpLID {
-	for !n.leftID.IsNull() && !n.rightID.IsNull() && n.leftID.Unpack() != n.rightID.Unpack() {
-		for !n.leftID.IsNull() && !n.rightID.IsNull() && n.leftID.Less(n.rightID) {
+	for !n.leftID.IsNull() && !n.rightID.IsNull() && !n.leftID.Eq(n.rightID) {
+		for !n.rightID.IsNull() && n.leftID.Less(n.rightID) {
 			n.readLeft()
 		}
-		for !n.leftID.IsNull() && !n.rightID.IsNull() && n.rightID.Less(n.leftID) {
+		for !n.rightID.IsNull() && n.rightID.Less(n.leftID) {
 			n.readRight()
 		}
 	}

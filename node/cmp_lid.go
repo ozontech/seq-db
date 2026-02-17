@@ -42,8 +42,16 @@ func NewCmpLID(lid uint32, reverse bool) CmpLID {
 	}
 }
 
+// Less compares two values. It also does an implicit null check, since we store math.MaxUint32 for null values.
+// Which means if we call x.Less(y), then we now for sure that x is not null. Therefore, this Less call can work
+// as both "null check + less" combo.
 func (c CmpLID) Less(other CmpLID) bool {
 	return c.lid < other.lid
+}
+
+func (c CmpLID) Inc() CmpLID {
+	c.lid++
+	return c
 }
 
 func (c CmpLID) Eq(other CmpLID) bool {

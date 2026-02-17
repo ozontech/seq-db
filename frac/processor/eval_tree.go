@@ -43,7 +43,16 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 			return node.NewNAnd(children[0], children[1]), nil
 		case parser.LogicalNot:
 			stats.NodesTotal++
-			return node.NewNot(children[0], minVal, maxVal, reverse), nil
+			var minCmpLID node.CmpLID
+			var maxCmpLID node.CmpLID
+			if reverse {
+				minCmpLID = node.NewCmpLIDOrderAsc(maxVal)
+				maxCmpLID = node.NewCmpLIDOrderAsc(minVal)
+			} else {
+				minCmpLID = node.NewCmpLIDOrderDesc(minVal)
+				maxCmpLID = node.NewCmpLIDOrderDesc(maxVal)
+			}
+			return node.NewNot(children[0], minCmpLID, maxCmpLID), nil
 		}
 	}
 	return nil, fmt.Errorf("unknown token type")
