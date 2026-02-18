@@ -30,6 +30,8 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 		return newLeaf(token)
 	case *parser.IPRange:
 		return newLeaf(token)
+	case *parser.Re:
+		return newLeaf(token)
 	case *parser.Logical:
 		switch token.Operator {
 		case parser.LogicalAnd:
