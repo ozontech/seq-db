@@ -14,7 +14,7 @@ type CmpLID struct {
 
 func NullCmpLID() CmpLID {
 	// reverse flag does not matter, as null values are never unpacked
-	return NewCmpLID(math.MaxUint32, false)
+	return NewCmpLIDOrderDesc(math.MaxUint32)
 }
 
 // NewCmpLIDOrderDesc returns LIDs for desc sort order
@@ -34,15 +34,7 @@ func NewCmpLIDOrderAsc(lid uint32) CmpLID {
 	}
 }
 
-func NewCmpLID(lid uint32, reverse bool) CmpLID {
-	if reverse {
-		return NewCmpLIDOrderAsc(lid)
-	} else {
-		return NewCmpLIDOrderDesc(lid)
-	}
-}
-
-// Less compares two values. It also does an implicit null check, since we store math.MaxUint32 for null values.
+// Less compares two values. It also does an implicit null check, since we store math.MaxUint32 in lid field for null values.
 // Which means if we call x.Less(y), then we now for sure that x is not null. Therefore, this Less call can work
 // as both "null check + less" combo.
 func (c CmpLID) Less(other CmpLID) bool {

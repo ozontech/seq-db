@@ -147,6 +147,15 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	readTest(t, sealed, numReaders, numQueries, docs, fromTime, toTime, mapping)
 }
 
+const (
+	scheduler = "scheduler"
+	database  = "database"
+	bus       = "bus"
+	proxy     = "proxy"
+	gateway   = "gateway"
+	kafka     = "kafka"
+)
+
 func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs []*testDoc, fromTime, toTime time.Time, mapping seq.Mapping) {
 	readersGroup, ctx := errgroup.WithContext(t.Context())
 
@@ -173,7 +182,7 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 				case 1:
 					query = "service:gateway"
 					filter = func(doc *testDoc) bool {
-						return doc.service == "gateway"
+						return doc.service == gateway
 					}
 				case 2:
 					query = "level:2"
@@ -198,7 +207,7 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 				case 6:
 					query = "service:gateway AND level:3"
 					filter = func(doc *testDoc) bool {
-						return doc.service == "gateway" && doc.level == 3
+						return doc.service == gateway && doc.level == 3
 					}
 				}
 
@@ -264,7 +273,7 @@ type testDoc = struct {
 }
 
 func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.Time, time.Time) {
-	services := []string{"gateway", "proxy", "scheduler", "database", "bus", "kafka"}
+	services := []string{gateway, proxy, scheduler, database, bus, kafka}
 	messages := []string{
 		"request started", "request completed", "processing timed out",
 		"processing data", "processing failed", "processing retry",

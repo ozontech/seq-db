@@ -139,32 +139,32 @@ func TestNodeTreeBuilding(t *testing.T) {
 	t.Run("size_0", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 0))
 		assert.True(t, isEmptyNode(BuildORTree(dn)), "expected empty node")
-		assert.True(t, isEmptyNode(BuildORTreeAgg(dn, false)), "expected empty node")
+		assert.True(t, isEmptyNode(BuildORTreeAgg(dn)), "expected empty node")
 	})
 	t.Run("size_1", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 1))
 		assert.Equal(t, "STATIC", BuildORTree(dn).String())
-		assert.Equal(t, "SOURCED", BuildORTreeAgg(dn, false).String())
+		assert.Equal(t, "SOURCED", BuildORTreeAgg(dn).String())
 	})
 	t.Run("size_2", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 2))
 		assert.Equal(t, "(STATIC OR STATIC)", BuildORTree(dn).String())
-		assert.Equal(t, "(SOURCED OR SOURCED)", BuildORTreeAgg(dn, false).String())
+		assert.Equal(t, "(SOURCED OR SOURCED)", BuildORTreeAgg(dn).String())
 	})
 	t.Run("size_3", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 3))
 		assert.Equal(t, "(STATIC OR (STATIC OR STATIC))", BuildORTree(dn).String())
-		assert.Equal(t, "(SOURCED OR (SOURCED OR SOURCED))", BuildORTreeAgg(dn, false).String())
+		assert.Equal(t, "(SOURCED OR (SOURCED OR SOURCED))", BuildORTreeAgg(dn).String())
 	})
 	t.Run("size_4", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 4))
 		assert.Equal(t, "((STATIC OR STATIC) OR (STATIC OR STATIC))", BuildORTree(dn).String())
-		assert.Equal(t, "((SOURCED OR SOURCED) OR (SOURCED OR SOURCED))", BuildORTreeAgg(dn, false).String())
+		assert.Equal(t, "((SOURCED OR SOURCED) OR (SOURCED OR SOURCED))", BuildORTreeAgg(dn).String())
 	})
 	t.Run("size_5", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 5))
 		assert.Equal(t, "((STATIC OR STATIC) OR (STATIC OR (STATIC OR STATIC)))", BuildORTree(dn).String())
-		assert.Equal(t, "((SOURCED OR SOURCED) OR (SOURCED OR (SOURCED OR SOURCED)))", BuildORTreeAgg(dn, false).String())
+		assert.Equal(t, "((SOURCED OR SOURCED) OR (SOURCED OR (SOURCED OR SOURCED)))", BuildORTreeAgg(dn).String())
 	})
 	t.Run("size_6", func(t *testing.T) {
 		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 6))).String()
