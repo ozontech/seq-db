@@ -1,6 +1,14 @@
 package node
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
+
+const (
+	DescMask = uint32(0)
+	AscMask  = uint32(0xFFFFFFFF)
+)
 
 // CmpLID is an encoded representation of LID and reverse flag made specifically for fast compare operations.
 //
@@ -21,16 +29,15 @@ func NullCmpLID() CmpLID {
 func NewCmpLIDOrderDesc(lid uint32) CmpLID {
 	return CmpLID{
 		lid:  lid,
-		mask: uint32(0),
+		mask: DescMask,
 	}
 }
 
 // NewCmpLIDOrderAsc returns LIDs for asc sort order
 func NewCmpLIDOrderAsc(lid uint32) CmpLID {
-	mask := uint32(0xFFFFFFFF)
 	return CmpLID{
-		lid:  lid ^ mask,
-		mask: mask,
+		lid:  lid ^ AscMask,
+		mask: AscMask,
 	}
 }
 
@@ -84,4 +91,8 @@ func (c CmpLID) Unpack() uint32 {
 
 func (c CmpLID) IsNull() bool {
 	return c.lid == math.MaxUint32
+}
+
+func (c CmpLID) String() string {
+	return fmt.Sprintf("%d, reverse=%t", c.Unpack(), c.mask == AscMask)
 }
