@@ -61,8 +61,9 @@ func (n *nodeOr) Next() CmpLID {
 }
 
 func (n *nodeOr) NextGeq(nextID CmpLID) CmpLID {
-	// fast path: if we have both branches and nothing to skip, then choose lowest and return
-	if !n.leftID.IsNull() && !n.rightID.IsNull() && nextID.Less(Min(n.leftID, n.rightID)) {
+	// Fast path: if we at least left or right and there is nothing to skip, then choose lowest and return.
+	minID := Min(n.leftID, n.rightID)
+	if nextID.LessOrEq(minID) {
 		if n.leftID.Less(n.rightID) {
 			cur := n.leftID
 			n.readLeft()
@@ -79,7 +80,6 @@ func (n *nodeOr) NextGeq(nextID CmpLID) CmpLID {
 		return cur
 	}
 
-	// skip past nextID
 	if n.leftID.Less(nextID) {
 		n.readLeftGeq(nextID)
 	}
