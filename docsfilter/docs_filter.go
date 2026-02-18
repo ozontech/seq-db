@@ -298,14 +298,16 @@ func (df *DocsFilter) processFilter(filter *Filter, fracs fracmanager.List) {
 	inProgressFilters.Add(1)
 
 	processFracInQueue := func(name string) error {
-		f := fracsByName[fracNameFromFilePath(name)]
+		f, ok := fracsByName[fracNameFromFilePath(name)]
+		if !ok { // skip missing fracs
+			return nil
+		}
 		filter.processWg.Add(1)
 		go func() {
 			if err := df.processFrac(f, filter, false); err != nil {
 				panic(fmt.Errorf("docs filter process frac err: %s", err))
 			}
 		}()
-
 		return nil
 	}
 	_ = util.VisitFilesWithExt(filterDes, fracInQueueExt, processFracInQueue)
