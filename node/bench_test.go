@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func newNodeStaticSizeRand(size int) *staticAsc {
+func newNodeStaticSize(size int) *staticAsc {
 	data, _ := Generate(size)
 	return &staticAsc{staticCursor: staticCursor{data: data}}
 }
@@ -80,7 +80,7 @@ func BenchmarkOr(b *testing.B) {
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
 			res := make([]uint32, 0, s*2)
-			n := NewOr(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
+			n := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
 
 			for b.Loop() {
 				res = readAllInto(n, res)
@@ -97,7 +97,7 @@ func BenchmarkAnd(b *testing.B) {
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
 			res := make([]uint32, 0, s)
-			n := NewAnd(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
+			n := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
 
 			for b.Loop() {
 				res = readAllInto(n, res)
@@ -114,7 +114,7 @@ func BenchmarkNAnd(b *testing.B) {
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
 			res := make([]uint32, 0, s)
-			n := NewNAnd(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
+			n := NewNAnd(newNodeStaticSize(s), newNodeStaticSize(s))
 
 			for b.Loop() {
 				res = readAllInto(n, res)
@@ -130,10 +130,10 @@ func BenchmarkAndTree(b *testing.B) {
 
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			n1 := NewAnd(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
-			n2 := NewAnd(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
-			n3 := NewAnd(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
-			n4 := NewAnd(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
+			n1 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
+			n2 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
+			n3 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
+			n4 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
 			n12 := NewAnd(n1, n2)
 			n34 := NewAnd(n3, n4)
 			n := NewAnd(n12, n34)
@@ -153,10 +153,10 @@ func BenchmarkOrTree(b *testing.B) {
 
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			n1 := NewOr(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
-			n2 := NewOr(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
-			n3 := NewOr(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
-			n4 := NewOr(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
+			n1 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
+			n2 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
+			n3 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
+			n4 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
 			n12 := NewOr(n1, n2)
 			n34 := NewOr(n3, n4)
 			n := NewOr(n12, n34)
@@ -214,9 +214,9 @@ func BenchmarkComplex(b *testing.B) {
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
 			res := make([]uint32, 0, s*2)
-			n1 := NewAnd(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
-			n2 := NewOr(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
-			n3 := NewNAnd(newNodeStaticSizeRand(s), newNodeStaticSizeRand(s))
+			n1 := NewAnd(newNodeStaticSize(s), newNodeStaticSize(s))
+			n2 := NewOr(newNodeStaticSize(s), newNodeStaticSize(s))
+			n3 := NewNAnd(newNodeStaticSize(s), newNodeStaticSize(s))
 			n12 := NewOr(n1, n2)
 			n := NewAnd(n12, n3)
 
