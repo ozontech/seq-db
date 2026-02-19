@@ -135,7 +135,13 @@ func search(t *testing.T, tp *simpleTokenProvider, req string, expect []string) 
 	res := []string{}
 	for i := s.firstTID(); i <= s.lastTID(); i++ {
 		val := tp.GetToken(i)
-		if s.check(val) {
+
+		match, err := s.check(val)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if match {
 			res = append(res, string(val))
 		}
 	}
