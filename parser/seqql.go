@@ -229,6 +229,32 @@ again:
 	}
 }
 
+// rawStringLiteral returns string literal enclosed in double quotes as it is.
+//
+// It does not unquote symbols, does not substitute wildcards.
+// It is used in `re` filter which works with user provided expression.
+func (l *lexer) rawStringLiteral() error {
+	if rune(l.q[0]) != '"' {
+		return strconv.ErrSyntax
+	}
+
+	previous := rune(l.q[0])
+	l.q = l.q[1:]
+
+	for i, r := range l.q {
+		// Double quotes can be escaped and in this case
+		// this is not the end for string literal.
+		if r == '"' && previous != '\\' {
+			l.Token = l.q[:i]
+			l.q = l.q[i+1:]
+			return nil
+		}
+		previous = r
+	}
+
+	return strconv.ErrSyntax
+}
+
 func isTokenRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '.'
 }
@@ -348,7 +374,6 @@ func parseSeqQLFilter(lex *lexer, mapping seq.Mapping, depth int) (*ASTNode, err
 		res = joinOr(res, cur)
 		cur = next
 	}
-
 }
 
 func joinOr(left, right *ASTNode) *ASTNode {
