@@ -55,7 +55,7 @@ type Active struct {
 	sortCache  *cache.Cache[[]byte]
 
 	metaFile   *os.File
-	metaReader storage.DocBlocksReader
+	metaReader *storage.DocBlocksReader
 	walReader  *storage.WalReader
 
 	writer  *ActiveWriter
@@ -82,33 +82,7 @@ func NewActive(
 ) *Active {
 	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
 
-	var metaFile *os.File
-	var metaStats os.FileInfo
-	var writer *ActiveWriter
-	var metaReader storage.DocBlocksReader
-	var walReader *storage.WalReader
-	var metaSize uint64
-
-	legacyMetaFileName := baseFileName + consts.MetaFileSuffix
-	if _, err := os.Stat(legacyMetaFileName); err == nil {
-		// .meta file exists
-		metaFile, metaStats = mustOpenFile(legacyMetaFileName, config.SkipFsync)
-		metaSize = uint64(metaStats.Size())
-		metaReader = storage.NewDocBlocksReader(readLimiter, metaFile)
-		writer = NewActiveWriterLegacy(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
-		logger.Info("using legacy meta file format", zap.String("fraction", baseFileName))
-	} else {
-		logger.Info("using new WAL format", zap.String("fraction", baseFileName))
-		walFileName := baseFileName + consts.WalFileSuffix
-		metaFile, metaStats = mustOpenFile(walFileName, config.SkipFsync)
-		metaSize = uint64(metaStats.Size())
-		writer = NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
-		var err error
-		walReader, err = storage.NewWalReader(readLimiter, metaFile, baseFileName)
-		if err != nil {
-			logger.Fatal("failed to initialize WAL reader", zap.String("fraction", baseFileName), zap.Error(err))
-		}
-	}
+	metaFile, writer, metaReader, walReader, metaSize := mustOpenMetaWriter(baseFileName, readLimiter, docsFile, docsStats)
 
 	f := &Active{
 		TokenList:     NewActiveTokenList(config.IndexWorkers),
@@ -142,6 +116,35 @@ func NewActive(
 	logger.Info("active fraction created", zap.String("fraction", baseFileName))
 
 	return f
+}
+
+func mustOpenMetaWriter(
+	baseFileName string,
+	readLimiter *storage.ReadLimiter,
+	docsFile *os.File,
+	docsStats os.FileInfo) (*os.File, *ActiveWriter, *storage.DocBlocksReader, *storage.WalReader, uint64) {
+	legacyMetaFileName := baseFileName + consts.MetaFileSuffix
+
+	if _, err := os.Stat(legacyMetaFileName); err == nil {
+		// .meta file exists
+		metaFile, metaStats := mustOpenFile(legacyMetaFileName, config.SkipFsync)
+		metaSize := uint64(metaStats.Size())
+		metaReader := storage.NewDocBlocksReader(readLimiter, metaFile)
+		writer := NewActiveWriterLegacy(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
+		logger.Info("using legacy meta file format", zap.String("fraction", baseFileName))
+		return metaFile, writer, &metaReader, nil, metaSize
+	} else {
+		logger.Info("using new WAL format", zap.String("fraction", baseFileName))
+		walFileName := baseFileName + consts.WalFileSuffix
+		metaFile, metaStats := mustOpenFile(walFileName, config.SkipFsync)
+		metaSize := uint64(metaStats.Size())
+		writer := NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
+		walReader, err := storage.NewWalReader(readLimiter, metaFile, baseFileName)
+		if err != nil {
+			logger.Fatal("failed to initialize WAL reader", zap.String("fraction", baseFileName), zap.Error(err))
+		}
+		return metaFile, writer, nil, walReader, metaSize
+	}
 }
 
 func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
