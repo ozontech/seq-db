@@ -182,10 +182,10 @@ func (df *DocsFilter) RemoveFrac(fracName string) {
 		return
 	}
 
+	delete(df.fracs, fracName)
 	for _, fileName := range fracsFiles {
 		util.RemoveFile(fileName)
 	}
-	delete(df.fracs, fracName)
 }
 
 func filterNameFromTombstonesPath(p string) string {

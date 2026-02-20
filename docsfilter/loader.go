@@ -14,6 +14,7 @@ import (
 )
 
 type loader struct {
+	filePath     string
 	headers      []lidsBlockHeader
 	file         *os.File
 	headersCache *cache.Cache[[]lidsBlockHeader]
@@ -21,19 +22,25 @@ type loader struct {
 }
 
 func newLoader(filePath string, headersCache *cache.Cache[[]lidsBlockHeader]) (*loader, error) {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-
 	hash := fnv.New32a()
 	hash.Write([]byte(filterNameFromTombstonesPath(filePath) + fracNameFromFilePath(filePath)))
 
 	return &loader{
-		file:         f,
+		filePath:     filePath,
 		headersCache: headersCache,
 		cashKey:      hash.Sum32(),
 	}, nil
+}
+
+func (l *loader) getFile() (*os.File, error) {
+	if l.file == nil {
+		f, err := os.Open(l.filePath)
+		if err != nil {
+			return nil, err
+		}
+		l.file = f
+	}
+	return l.file, nil
 }
 
 func (l *loader) getHeaders() ([]lidsBlockHeader, error) {
@@ -48,8 +55,13 @@ func (l *loader) getHeaders() ([]lidsBlockHeader, error) {
 }
 
 func (l *loader) loadHeaders() ([]lidsBlockHeader, error) {
+	file, err := l.getFile()
+	if err != nil {
+		return nil, err
+	}
+
 	numBuf := make([]byte, 1+4) // block version 1 byte + number of blocks 4 bytes
-	n, err := l.file.ReadAt(numBuf, 0)
+	n, err := file.ReadAt(numBuf, 0)
 	if err != nil {
 		return nil, fmt.Errorf("can't read headers from disk: %s", err.Error())
 	}
@@ -66,7 +78,7 @@ func (l *loader) loadHeaders() ([]lidsBlockHeader, error) {
 	numberOfBlocks := binary.BigEndian.Uint32(numBuf[1:])
 	headersBuf := make([]byte, numberOfBlocks*uint32(lidsBlockHeaderSizeBytes))
 
-	n, err = l.file.ReadAt(headersBuf, int64(headersPos))
+	n, err = file.ReadAt(headersBuf, int64(headersPos))
 	if err != nil && err != io.EOF {
 		return nil, fmt.Errorf("can't read headers, %s", err.Error())
 	}
@@ -107,10 +119,15 @@ func (l *loader) loadBlock(index int) ([]uint32, error) {
 		return nil, fmt.Errorf("can't load block: headers len=%d, index=%d", len(l.headers), index)
 	}
 
+	file, err := l.getFile()
+	if err != nil {
+		return nil, err
+	}
+
 	header := l.headers[index]
 
 	blockBuf := make([]byte, header.Size)
-	n, err := l.file.ReadAt(blockBuf, int64(header.Offset))
+	n, err := file.ReadAt(blockBuf, int64(header.Offset))
 	if err != nil {
 		return nil, err
 	}
@@ -132,9 +149,12 @@ func (l *loader) loadBlock(index int) ([]uint32, error) {
 }
 
 func (l *loader) release() error {
-	if err := l.file.Close(); err != nil {
-		logger.Error("can't close tombstones file", zap.Error(err))
-		return err
+	if l.file != nil {
+		if err := l.file.Close(); err != nil {
+			logger.Error("can't close tombstones file", zap.Error(err))
+			return err
+		}
+		l.file = nil
 	}
 	return nil
 }
