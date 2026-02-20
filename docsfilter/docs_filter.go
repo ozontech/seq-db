@@ -182,7 +182,10 @@ func (df *DocsFilter) RemoveFrac(fracName string) {
 		return
 	}
 
+	df.fracsMu.Lock()
 	delete(df.fracs, fracName)
+	df.fracsMu.Unlock()
+
 	for _, fileName := range fracsFiles {
 		util.RemoveFile(fileName)
 	}
