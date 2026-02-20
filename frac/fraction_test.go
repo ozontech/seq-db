@@ -739,14 +739,14 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 			"message:*",
 			withAggQuery(processor.AggQuery{GroupBy: aggField("service")})),
 		[]map[string]uint64{
-			{"gateway": 3, "proxy": 2, "scheduler": 1},
+			{gateway: 3, proxy: 2, scheduler: 1},
 		})
 	assertAggSearch(
 		s.query(
 			"message:good",
 			withAggQuery(processor.AggQuery{GroupBy: aggField("service")})),
 		[]map[string]uint64{
-			{"gateway": 2, "proxy": 1},
+			{gateway: 2, proxy: 1},
 		})
 	assertAggSearch(
 		s.query(
@@ -761,7 +761,7 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 			withAggQuery(processor.AggQuery{GroupBy: aggField("service")}),
 			withAggQuery(processor.AggQuery{GroupBy: aggField("level")})),
 		[]map[string]uint64{
-			{"gateway": 3, "proxy": 2, "scheduler": 1},
+			{gateway: 3, proxy: 2, "scheduler": 1},
 			{"1": 4, "2": 1, "3": 1},
 		})
 }
@@ -1224,28 +1224,28 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		{
 			name:     "NOT service:bus",
 			query:    "NOT service:bus",
-			filter:   func(doc *testDoc) bool { return doc.service != "bus" },
+			filter:   func(doc *testDoc) bool { return doc.service != bus },
 			fromTime: fromTime,
 			toTime:   toTime,
 		},
 		{
 			name:     "NOT service:bus (time range)",
 			query:    "NOT service:bus",
-			filter:   func(doc *testDoc) bool { return doc.service != "bus" },
+			filter:   func(doc *testDoc) bool { return doc.service != bus },
 			fromTime: fromTime,
 			toTime:   midTime,
 		},
 		{
 			name:     "service:proxy (time range)",
 			query:    "service:proxy",
-			filter:   func(doc *testDoc) bool { return doc.service == "proxy" },
+			filter:   func(doc *testDoc) bool { return doc.service == proxy },
 			fromTime: fromTime,
 			toTime:   midTime,
 		},
 		{
 			name:     "service:scheduler (time range + limit)",
 			query:    "service:scheduler",
-			filter:   func(doc *testDoc) bool { return doc.service == "scheduler" },
+			filter:   func(doc *testDoc) bool { return doc.service == scheduler },
 			fromTime: fromTime,
 			toTime:   midTime,
 			limit:    100,
@@ -1313,7 +1313,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			name:  "service:gateway AND message:processing AND message:retry AND level:5",
 			query: "service:gateway AND message:processing AND message:retry AND level:5",
 			filter: func(doc *testDoc) bool {
-				return doc.service == "gateway" && strings.Contains(doc.message, "processing") &&
+				return doc.service == gateway && strings.Contains(doc.message, "processing") &&
 					strings.Contains(doc.message, "retry") && doc.level == 5
 			},
 			fromTime: fromTime,
@@ -1350,7 +1350,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			query: "(service:gateway OR service:proxy OR service:scheduler) AND " +
 				"(message:request OR message:failed) AND level:[1 to 3]",
 			filter: func(doc *testDoc) bool {
-				return (doc.service == "gateway" || doc.service == "proxy" || doc.service == "scheduler") &&
+				return (doc.service == gateway || doc.service == proxy || doc.service == "scheduler") &&
 					(strings.Contains(doc.message, "request") || strings.Contains(doc.message, "failed")) &&
 					(doc.level >= 1 && doc.level <= 3)
 			},
@@ -1361,7 +1361,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			name:  "service:gateway AND NOT (message:request OR message:timed OR level:[0 to 3])",
 			query: "service:gateway AND NOT (message:request OR message:timed OR level:[0 to 3])",
 			filter: func(doc *testDoc) bool {
-				return doc.service == "gateway" &&
+				return doc.service == gateway &&
 					!(strings.Contains(doc.message, "request") ||
 						strings.Contains(doc.message, "timed") ||
 						(doc.level >= 0 && doc.level <= 3))
@@ -1373,7 +1373,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			name:  "service:proxy AND NOT level:5 AND NOT pod:pod-2* AND NOT client_ip:ip_range(192.168.19.0,192.168.19.255)",
 			query: "service:proxy AND NOT level:5 AND NOT pod:pod-2* AND NOT client_ip:ip_range(192.168.19.0,192.168.19.255)",
 			filter: func(doc *testDoc) bool {
-				return doc.service == "proxy" &&
+				return doc.service == proxy &&
 					doc.level != 5 &&
 					!strings.Contains(doc.pod, "pod-2") &&
 					!strings.Contains(doc.clientIp, "192.168.19")
@@ -1430,7 +1430,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		for _, ord := range orders {
 			ips := make(map[string]map[string]struct{})
 			for _, doc := range testDocs {
-				if doc.service != "kafka" {
+				if doc.service != kafka {
 					continue
 				}
 				if ips[doc.pod] == nil {

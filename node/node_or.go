@@ -91,8 +91,6 @@ func (n *nodeOr) NextGeq(nextID CmpLID) CmpLID {
 }
 
 type nodeOrAgg struct {
-	reverse bool
-
 	left  Sourced
 	right Sourced
 
@@ -107,8 +105,8 @@ func (n *nodeOrAgg) String() string {
 	return fmt.Sprintf("(%s OR %s)", n.left.String(), n.right.String())
 }
 
-func NewNodeOrAgg(left, right Sourced, reverse bool) Sourced {
-	n := &nodeOrAgg{reverse: reverse, left: left, right: right}
+func NewNodeOrAgg(left, right Sourced) Sourced {
+	n := &nodeOrAgg{left: left, right: right}
 	n.readLeft()
 	n.readRight()
 	return n

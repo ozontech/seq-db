@@ -217,6 +217,6 @@ func iteratorFromLiteral(
 		stats.AggNodesTotal += len(lidsTids)*2 - 1
 	}
 
-	sourcedNode := node.BuildORTreeAgg(lidsTids, order.IsReverse())
-	return NewSourcedNodeIterator(sourcedNode, ti, tids, iteratorLimit, order.IsReverse()), nil
+	sourcedNode := node.BuildORTreeAgg(lidsTids)
+	return NewSourcedNodeIterator(sourcedNode, ti, tids, iteratorLimit), nil
 }

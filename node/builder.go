@@ -13,9 +13,9 @@ func BuildORTree(nodes []Node) Node {
 	)
 }
 
-func BuildORTreeAgg(nodes []Node, reverse bool) Sourced {
+func BuildORTreeAgg(nodes []Node) Sourced {
 	return TreeFold(
-		func(l, r Sourced) Sourced { return NewNodeOrAgg(l, r, reverse) },
+		NewNodeOrAgg,
 		emptyNodeSourced,
 		WrapWithSource(nodes),
 	)

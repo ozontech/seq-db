@@ -383,11 +383,9 @@ type SourcedNodeIterator struct {
 
 	lastID     node.CmpLID
 	lastSource uint32
-
-	reverse bool
 }
 
-func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, limit iteratorLimit, reverse bool) *SourcedNodeIterator {
+func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, limit iteratorLimit) *SourcedNodeIterator {
 	lastID, lastSource := sourced.NextSourced()
 	return &SourcedNodeIterator{
 		sourcedNode:      sourced,
@@ -398,7 +396,6 @@ func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, 
 		countBySource:    make(map[uint32]int),
 		lastID:           lastID,
 		lastSource:       lastSource,
-		reverse:          reverse,
 	}
 }
 
