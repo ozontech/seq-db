@@ -1,4 +1,4 @@
-package frac
+package storage
 
 import (
 	"errors"
@@ -13,10 +13,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/metric/stopwatch"
-	"github.com/ozontech/seq-db/storage"
 )
 
 type testWriterSyncer struct {
@@ -64,7 +62,7 @@ func (ws *testWriterSyncer) Check(val []byte) bool {
 
 func TestFileWriter(t *testing.T) {
 	ws := &testWriterSyncer{out: map[string]struct{}{}, pause: time.Millisecond}
-	fw := storage.NewFileWriter(ws, 0, false)
+	fw := NewFileWriter(ws, 0, false)
 
 	wg := sync.WaitGroup{}
 	for range 100 {
@@ -87,7 +85,7 @@ func TestFileWriter(t *testing.T) {
 
 func TestFileWriterNoSync(t *testing.T) {
 	ws := &testWriterSyncer{out: map[string]struct{}{}, pause: time.Millisecond}
-	fw := storage.NewFileWriter(ws, 0, true)
+	fw := NewFileWriter(ws, 0, true)
 
 	wg := sync.WaitGroup{}
 	for range 100 {
@@ -110,7 +108,7 @@ func TestFileWriterNoSync(t *testing.T) {
 
 func TestFileWriterError(t *testing.T) {
 	ws := &testWriterSyncer{out: map[string]struct{}{}, pause: time.Millisecond, err: true}
-	fw := storage.NewFileWriter(ws, 0, false)
+	fw := NewFileWriter(ws, 0, false)
 
 	wg := sync.WaitGroup{}
 	for range 100 {
@@ -151,7 +149,7 @@ func TestConcurrentFileWriting(t *testing.T) {
 
 	defer f.Close()
 
-	fw := storage.NewFileWriter(&testRandPauseWriterAt{f: f}, 0, true)
+	fw := NewFileWriter(&testRandPauseWriterAt{f: f}, 0, true)
 
 	const (
 		writersCount = 100
@@ -263,41 +261,4 @@ func TestSparseWrite(t *testing.T) {
 
 	e = os.Remove(rf.Name())
 	assert.NoError(t, e)
-}
-
-func TestLegacyMetaWriterConvertsWalBlockToDocBlock(t *testing.T) {
-	f, err := os.Create(t.TempDir() + "/test_wal_block.txt")
-	require.NoError(t, err)
-	defer f.Close()
-
-	meta := NewLegacyMetaWriter(storage.NewFileWriter(f, 0, false))
-
-	originalPayload := []byte("test payload for WalBlock to DocBlock conversion")
-	walBlock := storage.CompressWalBlock(originalPayload, nil, 3)
-	walBlock.SetDocsOffset(12345)
-	walBlock.SetVersion(1)
-
-	sw := stopwatch.New()
-	offset, err := meta.Write(walBlock, sw)
-	require.NoError(t, err)
-
-	meta.Stop()
-
-	docBlockSize := storage.DocBlockHeaderLen + walBlock.Len()
-
-	readBuf := make([]byte, docBlockSize)
-	bytesRead, err := f.ReadAt(readBuf, offset)
-	require.NoError(t, err)
-	require.Equal(t, int(docBlockSize), bytesRead)
-	readBuf = readBuf[:bytesRead]
-
-	docBlock := storage.DocBlock(readBuf)
-
-	assert.Equal(t, storage.CodecZSTD, docBlock.Codec())
-	assert.Equal(t, uint64(len(originalPayload)), docBlock.RawLen())
-	assert.Equal(t, uint64(12345), docBlock.GetExt2())
-
-	decompressed, err := docBlock.DecompressTo(nil)
-	require.NoError(t, err)
-	assert.Equal(t, originalPayload, decompressed)
 }

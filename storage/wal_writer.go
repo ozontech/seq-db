@@ -3,8 +3,6 @@ package storage
 import (
 	"encoding/binary"
 	"io"
-	"sync"
-	"sync/atomic"
 
 	"go.uber.org/zap"
 
@@ -34,28 +32,18 @@ type WriteSyncer interface {
 	Sync() error
 }
 
-// WalWriter writes WalBlocks to a WAL file with header and 64-byte alignment.
+// WalWriter writes WalBlock to a WAL file with header and 64-byte alignment.
+// It works on top of  FileWriter, but it also maintains header at the beginning of the file and align block
+// offsets to WalBlockAlignment.
 // Format: [Header 5B] [... -> align to 64] [WalBlock] [... -> align to 64] [WalBlock] ...
 type WalWriter struct {
-	ws       WriteSyncer
-	offset   atomic.Int64
-	skipSync bool
-
-	mu     sync.Mutex
-	queue  []chan error
-	notify chan struct{}
-
-	wg sync.WaitGroup
+	fw *FileWriter
 }
 
 func NewWalWriter(ws WriteSyncer, offset int64, skipSync bool) *WalWriter {
-	w := &WalWriter{
-		ws:       ws,
-		skipSync: skipSync,
-		notify:   make(chan struct{}, 1),
-	}
+	w := &WalWriter{}
 
-	// write a header at the beginning if it's a new file
+	offset = align(offset)
 	if offset == 0 {
 		if err := writeWALHeader(ws); err != nil {
 			logger.Panic("failed to write WAL header", zap.Error(err))
@@ -65,91 +53,22 @@ func NewWalWriter(ws WriteSyncer, offset int64, skipSync bool) *WalWriter {
 			_ = ws.Sync()
 		}
 
-		w.offset.Store(alignSize(WalHeaderSize))
+		offset = align(WalHeaderSize)
 	}
 
-	w.wg.Add(1)
-	go func() {
-		w.syncLoop()
-		w.wg.Done()
-	}()
-
+	w.fw = NewFileWriter(ws, offset, skipSync)
 	return w
-}
-
-func (w *WalWriter) syncLoop() {
-	for range w.notify {
-		w.mu.Lock()
-		queue := w.queue
-		w.queue = make([]chan error, 0, len(queue))
-		w.mu.Unlock()
-
-		err := w.ws.Sync()
-
-		for _, syncRes := range queue {
-			syncRes <- err
-		}
-	}
 }
 
 // Write writes a WalBlock to the WAL file. The data must already be a WalBlock.
 // Returns the offset where the WalBlock starts.
-func (w *WalWriter) Write(data []byte, sw *stopwatch.Stopwatch) (int64, error) {
-	m := sw.Start("write_duration")
-
-	offset := w.reserveSpace(int64(len(data)))
-
-	if _, err := w.ws.WriteAt(data, offset); err != nil {
-		m.Stop()
-		return 0, err
-	}
-	m.Stop()
-
-	err := w.sync(m, sw)
-
-	return offset, err
-}
-
-// reserveSpace atomically reserves a necessary space and returns the next position where block may be written. The position
-// is aligned to WalBlockAlignment
-func (w *WalWriter) reserveSpace(blockSize int64) int64 {
-	aligned := alignSize(blockSize)
-
-	// w.offset is already aligned.
-	// So when we add aligned block we still have aligned offset.
-	end := w.offset.Add(aligned)
-	start := end - aligned
-
-	return start
-}
-
-func (w *WalWriter) sync(m stopwatch.Metric, sw *stopwatch.Stopwatch) error {
-	if w.skipSync {
-		return nil
-	}
-
-	m = sw.Start("fsync")
-
-	syncRes := make(chan error)
-
-	w.mu.Lock()
-	w.queue = append(w.queue, syncRes)
-	size := len(w.queue)
-	w.mu.Unlock()
-
-	if size == 1 {
-		w.notify <- struct{}{}
-	}
-
-	err := <-syncRes
-
-	m.Stop()
-	return err
+func (w *WalWriter) Write(data WalBlock, sw *stopwatch.Stopwatch) (int64, error) {
+	offset := w.fw.ReserveSpace(align(int64(len(data))))
+	return w.fw.WriteAt(offset, data, sw)
 }
 
 func (w *WalWriter) Stop() {
-	close(w.notify)
-	w.wg.Wait()
+	w.fw.Stop()
 }
 
 func writeWALHeader(w io.WriterAt) error {

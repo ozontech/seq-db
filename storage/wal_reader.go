@@ -57,7 +57,7 @@ func NewWalReader(limiter *ReadLimiter, reader io.ReaderAt, baseFileName string)
 // Corruption ranges are logged with "from" and "to" offsets.
 func (r *WalReader) Iter() iter.Seq[WalRecord] {
 	return func(yield func(WalRecord) bool) {
-		offset := alignSize(r.headerOffset)
+		offset := align(r.headerOffset)
 
 		var corruptionStart int64 = -1
 		logCorruptionEnd := func(offset int64) {
@@ -128,7 +128,7 @@ func (r *WalReader) Iter() iter.Seq[WalRecord] {
 
 			if !mb.IsPayloadCorrect() {
 				startCorruptionTracking(offset)
-				offset = alignSize(offset + blockLen)
+				offset = align(offset + blockLen)
 				continue
 			}
 
@@ -144,12 +144,12 @@ func (r *WalReader) Iter() iter.Seq[WalRecord] {
 				return
 			}
 
-			offset = alignSize(offset + blockLen)
+			offset = align(offset + blockLen)
 		}
 	}
 }
 
-// alignSize aligns provided offset to WalBlockAlignment
-func alignSize(offset int64) int64 {
+// align aligns provided offset to WalBlockAlignment
+func align(offset int64) int64 {
 	return (offset + WalBlockAlignment - 1) &^ (WalBlockAlignment - 1)
 }

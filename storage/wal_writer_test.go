@@ -18,7 +18,7 @@ import (
 	"github.com/ozontech/seq-db/metric/stopwatch"
 )
 
-type testWriterSyncer struct {
+type walTestWriterSyncer struct {
 	mu    sync.RWMutex
 	in    [][]byte
 	out   map[string]struct{}
@@ -27,8 +27,8 @@ type testWriterSyncer struct {
 	bytes []byte
 }
 
-func TestFileWriter(t *testing.T) {
-	ws := &testWriterSyncer{out: map[string]struct{}{}, pause: time.Millisecond}
+func TestWalWriter(t *testing.T) {
+	ws := &walTestWriterSyncer{out: map[string]struct{}{}, pause: time.Millisecond}
 	fw := NewWalWriter(ws, 0, false)
 
 	wg := sync.WaitGroup{}
@@ -50,8 +50,8 @@ func TestFileWriter(t *testing.T) {
 	fw.Stop()
 }
 
-func TestFileWriterNoSync(t *testing.T) {
-	ws := &testWriterSyncer{out: map[string]struct{}{}, pause: time.Millisecond}
+func TestWalWriterNoSync(t *testing.T) {
+	ws := &walTestWriterSyncer{out: map[string]struct{}{}, pause: time.Millisecond}
 	fw := NewWalWriter(ws, 0, true)
 
 	wg := sync.WaitGroup{}
@@ -73,8 +73,8 @@ func TestFileWriterNoSync(t *testing.T) {
 	fw.Stop()
 }
 
-func TestFileWriterError(t *testing.T) {
-	ws := &testWriterSyncer{out: map[string]struct{}{}, pause: time.Millisecond, err: true}
+func TestWalWriterError(t *testing.T) {
+	ws := &walTestWriterSyncer{out: map[string]struct{}{}, pause: time.Millisecond, err: true}
 	fw := NewWalWriter(ws, 0, false)
 
 	wg := sync.WaitGroup{}
@@ -96,7 +96,7 @@ func TestFileWriterError(t *testing.T) {
 	fw.Stop()
 }
 
-func (ws *testWriterSyncer) WriteAt(p []byte, off int64) (n int, err error) {
+func (ws *walTestWriterSyncer) WriteAt(p []byte, off int64) (n int, err error) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 
@@ -114,7 +114,7 @@ func (ws *testWriterSyncer) WriteAt(p []byte, off int64) (n int, err error) {
 	return len(p), nil
 }
 
-func (ws *testWriterSyncer) ReadAt(p []byte, off int64) (n int, err error) {
+func (ws *walTestWriterSyncer) ReadAt(p []byte, off int64) (n int, err error) {
 	ws.mu.RLock()
 	defer ws.mu.RUnlock()
 
@@ -129,7 +129,7 @@ func (ws *testWriterSyncer) ReadAt(p []byte, off int64) (n int, err error) {
 	return n, nil
 }
 
-func (ws *testWriterSyncer) Sync() error {
+func (ws *walTestWriterSyncer) Sync() error {
 	time.Sleep(ws.pause)
 
 	ws.mu.Lock()
@@ -148,38 +148,38 @@ func (ws *testWriterSyncer) Sync() error {
 	return nil
 }
 
-func (ws *testWriterSyncer) Check(val []byte) bool {
+func (ws *walTestWriterSyncer) Check(val []byte) bool {
 	ws.mu.RLock()
 	defer ws.mu.RUnlock()
 	_, ok := ws.out[string(val)]
 	return ok
 }
 
-type testRandPauseWriterAt struct {
+type walTestRandPauseWriterAt struct {
 	f *os.File
 }
 
-func (w *testRandPauseWriterAt) WriteAt(p []byte, off int64) (n int, err error) {
+func (w *walTestRandPauseWriterAt) WriteAt(p []byte, off int64) (n int, err error) {
 	// random pause
 	time.Sleep(time.Microsecond * time.Duration(rand.IntN(20)))
 	return w.f.WriteAt(p, off)
 }
 
-func (w *testRandPauseWriterAt) ReadAt(p []byte, off int64) (n int, err error) {
+func (w *walTestRandPauseWriterAt) ReadAt(p []byte, off int64) (n int, err error) {
 	return w.f.ReadAt(p, off)
 }
 
-func (w *testRandPauseWriterAt) Sync() error {
+func (w *walTestRandPauseWriterAt) Sync() error {
 	return w.f.Sync()
 }
 
-func TestConcurrentFileWriting(t *testing.T) {
+func TestWalWriter_ConcurrentWrites(t *testing.T) {
 	f, e := os.Create(t.TempDir() + "/test.txt")
 	assert.NoError(t, e)
 
 	defer f.Close()
 
-	fw := NewWalWriter(&testRandPauseWriterAt{f: f}, 0, true)
+	fw := NewWalWriter(&walTestRandPauseWriterAt{f: f}, 0, true)
 
 	const (
 		writersCount = 100
@@ -231,13 +231,19 @@ func TestConcurrentFileWriting(t *testing.T) {
 		return 0
 	})
 
+	// validate all blocks are aligned and there is minimum of wasted space
+
 	reader, err := NewWalReader(NewReadLimiter(1, nil), f, "")
 	assert.NoError(t, err)
+	offset := WalBlockAlignment
 	idx := 0
 	for entry := range reader.Iter() {
+		assert.Equal(t, offset, entry.Offset, "block %d offset mismatch", idx)
 		assert.Equal(t, all[idx].offset, entry.Offset, "block %d offset mismatch", idx)
 		assert.Equal(t, all[idx].payload, entry.Data.Payload(), "block %d payload mismatch", idx)
 		idx++
+		// messages are small, so the next slot is exactly the next value aligned to 64
+		offset += WalBlockAlignment
 	}
 	assert.Equal(t, len(all), idx, "should read all blocks")
 
@@ -246,45 +252,6 @@ func TestConcurrentFileWriting(t *testing.T) {
 	fmt.Printf("File size: %d bytes, %d blocks written\n", s.Size(), len(all))
 
 	e = os.Remove(f.Name())
-	assert.NoError(t, e)
-}
-
-func TestSparseWrite(t *testing.T) {
-	wf, e := os.Create(t.TempDir() + "/test.txt")
-	assert.NoError(t, e)
-
-	_, e = wf.WriteAt([]byte("333"), 30)
-	assert.NoError(t, e)
-
-	_, e = wf.WriteAt([]byte("222"), 20)
-	assert.NoError(t, e)
-
-	_, e = wf.WriteAt([]byte("111"), 10)
-	assert.NoError(t, e)
-
-	e = wf.Close()
-	assert.NoError(t, e)
-
-	rf, e := os.Open(wf.Name())
-	buf := make([]byte, 33)
-	assert.NoError(t, e)
-
-	n, e := rf.Read(buf)
-	assert.NoError(t, e)
-	assert.Equal(t, len(buf), n)
-
-	expected := []byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00111\x00\x00\x00\x00\x00\x00\x00222\x00\x00\x00\x00\x00\x00\x00333")
-	assert.Equal(t, expected, buf)
-
-	n, e = rf.Read(buf)
-	assert.Error(t, e)
-	assert.Equal(t, 0, n)
-	assert.ErrorIs(t, e, io.EOF)
-
-	e = rf.Close()
-	assert.NoError(t, e)
-
-	e = os.Remove(rf.Name())
 	assert.NoError(t, e)
 }
 

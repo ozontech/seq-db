@@ -8,26 +8,28 @@ import (
 )
 
 type ActiveWriter struct {
-	docs *FileWriter
+	docs *storage.FileWriter
 	meta MetaWriter
 }
 
 type MetaWriter interface {
-	Write(data []byte, sw *stopwatch.Stopwatch) (int64, error)
+	Write(data storage.WalBlock, sw *stopwatch.Stopwatch) (int64, error)
 	Stop()
 }
 
+// NewActiveWriter creates a writer for *.wal files
 func NewActiveWriter(docsFile, walFile *os.File, docsOffset, walOffset int64, skipFsync bool) *ActiveWriter {
 	return &ActiveWriter{
-		docs: NewFileWriter(docsFile, docsOffset, skipFsync),
+		docs: storage.NewFileWriter(docsFile, docsOffset, skipFsync),
 		meta: storage.NewWalWriter(walFile, walOffset, skipFsync),
 	}
 }
 
+// NewActiveWriterLegacy creates a writer for *.meta files
 func NewActiveWriterLegacy(docsFile, metaFile *os.File, docsOffset, metaOffset int64, skipFsync bool) *ActiveWriter {
 	return &ActiveWriter{
-		docs: NewFileWriter(docsFile, docsOffset, skipFsync),
-		meta: NewFileWriter(metaFile, metaOffset, skipFsync),
+		docs: storage.NewFileWriter(docsFile, docsOffset, skipFsync),
+		meta: NewLegacyMetaWriter(storage.NewFileWriter(metaFile, metaOffset, skipFsync)),
 	}
 }
 
