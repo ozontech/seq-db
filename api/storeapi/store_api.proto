@@ -26,6 +26,8 @@ service StoreApi {
   rpc Fetch(FetchRequest) returns (stream BinaryData) {}
 
   rpc Status(StatusRequest) returns (StatusResponse) {}
+
+  rpc OnePhaseSearch(OnePhaseSearchRequest) returns (stream OnePhaseSearchResponse) {}
 }
 
 message BulkRequest {
@@ -244,12 +246,13 @@ message IdWithHint {
   string hint = 2;
 }
 
-message FetchRequest {
-  message FieldsFilter {
+message FieldsFilter {
     repeated string fields = 1;
     // see seqproxyapi.FetchRequest.FieldsFilter.allow_list for details.
     bool allow_list = 2;
   }
+
+message FetchRequest {
   repeated string ids = 1;
   bool explain = 3;
   repeated IdWithHint ids_with_hints = 4;
@@ -263,4 +266,35 @@ message StatusRequest {}
 
 message StatusResponse {
   google.protobuf.Timestamp oldest_time = 1;
+}
+
+message OnePhaseSearchRequest {
+  string query = 1;
+  int64 from = 2;
+  int64 to = 3;
+  int64 size = 4;
+  int64 offset = 5;
+  bool explain = 6;
+  bool with_total = 7;
+  Order order = 8;
+  string offset_id = 9;
+  FieldsFilter fields_filter = 10;
+}
+
+message OnePhaseSearchResponse {
+  oneof ResponseType {
+    Header header = 1;
+    Document document = 2;
+  }
+}
+
+message Document {
+  BinaryData data = 1;
+}
+
+message Header {
+  uint64 total = 1;
+  repeated string errors = 2;
+  SearchErrorCode code = 3;
+  optional ExplainEntry explain = 4;
 }

@@ -37,6 +37,7 @@ type SearchIngestor interface {
 	CancelAsyncSearch(ctx context.Context, id string) error
 	DeleteAsyncSearch(ctx context.Context, id string) error
 	GetAsyncSearchesList(context.Context, search.GetAsyncSearchesListRequest) ([]*search.AsyncSearchesListItem, error)
+	OnePhaseSearch(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, error)
 }
 
 type MappingProvider interface {

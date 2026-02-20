@@ -111,6 +111,13 @@ service SeqProxyApi {
       body: "*"
     };
   }
+
+  rpc OnePhaseSearch(SearchRequest) returns (SearchResponse) {
+    option (google.api.http) = {
+      post: "/one-phase-search"
+      body: "*"
+    };
+  }
 }
 
 // Custom error code, returned by seq-db proxy.

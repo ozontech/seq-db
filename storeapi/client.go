@@ -129,3 +129,58 @@ func (i inMemoryAPIClient) Fetch(ctx context.Context, in *storeapi.FetchRequest,
 func (i inMemoryAPIClient) Status(ctx context.Context, in *storeapi.StatusRequest, _ ...grpc.CallOption) (*storeapi.StatusResponse, error) {
 	return i.store.GrpcV1().Status(ctx, in)
 }
+
+type storeAPIOnePhaseSearchServer struct {
+	grpc.ServerStream
+	ctx context.Context
+	buf []*storeapi.OnePhaseSearchResponse
+}
+
+func newStoreAPIOnePhaseSearchServer(ctx context.Context) *storeAPIOnePhaseSearchServer {
+	return &storeAPIOnePhaseSearchServer{ctx: ctx}
+}
+
+func (x *storeAPIOnePhaseSearchServer) Send(m *storeapi.OnePhaseSearchResponse) error {
+	x.buf = append(x.buf, m.CloneVT())
+	return nil
+}
+
+func (x *storeAPIOnePhaseSearchServer) Context() context.Context {
+	return x.ctx
+}
+
+type storeAPIOnePhaseSearchClient struct {
+	grpc.ClientStream
+	buf     []*storeapi.OnePhaseSearchResponse
+	readPos int
+}
+
+func newStoreAPIOnePhaseSearchClient(b []*storeapi.OnePhaseSearchResponse) *storeAPIOnePhaseSearchClient {
+	return &storeAPIOnePhaseSearchClient{buf: b}
+}
+
+func (x *storeAPIOnePhaseSearchClient) Header() (metadata.MD, error) {
+	md := make(metadata.MD)
+	md[consts.StoreProtocolVersionHeader] = []string{config.StoreProtocolVersion2.String()}
+	return md, nil
+}
+
+func (x *storeAPIOnePhaseSearchClient) Recv() (*storeapi.OnePhaseSearchResponse, error) {
+	if x.readPos >= len(x.buf) {
+		return nil, io.EOF
+	}
+
+	res := x.buf[x.readPos]
+	x.readPos++
+
+	return res, nil
+}
+
+func (i inMemoryAPIClient) OnePhaseSearch(ctx context.Context, in *storeapi.OnePhaseSearchRequest, opts ...grpc.CallOption) (storeapi.StoreApi_OnePhaseSearchClient, error) {
+	s := newStoreAPIOnePhaseSearchServer(ctx)
+	setProtocolVersionHeader(opts...)
+	if err := i.store.GrpcV1().OnePhaseSearch(in, s); err != nil {
+		return nil, err
+	}
+	return newStoreAPIOnePhaseSearchClient(s.buf), nil
+}

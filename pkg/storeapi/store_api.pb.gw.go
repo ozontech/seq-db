@@ -247,6 +247,26 @@ func local_request_StoreApi_Status_0(ctx context.Context, marshaler runtime.Mars
 	return msg, metadata, err
 }
 
+func request_StoreApi_OnePhaseSearch_0(ctx context.Context, marshaler runtime.Marshaler, client StoreApiClient, req *http.Request, pathParams map[string]string) (StoreApi_OnePhaseSearchClient, runtime.ServerMetadata, error) {
+	var (
+		protoReq OnePhaseSearchRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	stream, err := client.OnePhaseSearch(ctx, &protoReq)
+	if err != nil {
+		return nil, metadata, err
+	}
+	header, err := stream.Header()
+	if err != nil {
+		return nil, metadata, err
+	}
+	metadata.HeaderMD = header
+	return stream, metadata, nil
+}
+
 // RegisterStoreApiHandlerServer registers the http handlers for service StoreApi to "mux".
 // UnaryRPC     :call StoreApiServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
@@ -419,6 +439,13 @@ func RegisterStoreApiHandlerServer(ctx context.Context, mux *runtime.ServeMux, s
 			return
 		}
 		forward_StoreApi_Status_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+
+	mux.Handle(http.MethodPost, pattern_StoreApi_OnePhaseSearch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
+		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+		return
 	})
 
 	return nil
@@ -613,6 +640,23 @@ func RegisterStoreApiHandlerClient(ctx context.Context, mux *runtime.ServeMux, c
 		}
 		forward_StoreApi_Status_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_StoreApi_OnePhaseSearch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/api.StoreApi/OnePhaseSearch", runtime.WithHTTPPathPattern("/api.StoreApi/OnePhaseSearch"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_StoreApi_OnePhaseSearch_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_StoreApi_OnePhaseSearch_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
@@ -626,6 +670,7 @@ var (
 	pattern_StoreApi_GetAsyncSearchesList_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "GetAsyncSearchesList"}, ""))
 	pattern_StoreApi_Fetch_0                  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "Fetch"}, ""))
 	pattern_StoreApi_Status_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "Status"}, ""))
+	pattern_StoreApi_OnePhaseSearch_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "OnePhaseSearch"}, ""))
 )
 
 var (
@@ -638,4 +683,5 @@ var (
 	forward_StoreApi_GetAsyncSearchesList_0   = runtime.ForwardResponseMessage
 	forward_StoreApi_Fetch_0                  = runtime.ForwardResponseStream
 	forward_StoreApi_Status_0                 = runtime.ForwardResponseMessage
+	forward_StoreApi_OnePhaseSearch_0         = runtime.ForwardResponseStream
 )

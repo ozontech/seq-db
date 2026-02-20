@@ -386,7 +386,7 @@ func (si *Ingestor) makeFetchReq(ids []seq.IDSource, explain, noSkipMasks bool, 
 		Ids:          idsStr,
 		Explain:      explain,
 		IdsWithHints: idsWithHints,
-		FieldsFilter: &storeapi.FetchRequest_FieldsFilter{
+		FieldsFilter: &storeapi.FieldsFilter{
 			Fields:    ff.Fields,
 			AllowList: ff.AllowList,
 		},

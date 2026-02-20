@@ -157,6 +157,26 @@ func (mr *MockStoreApiClientMockRecorder) GetAsyncSearchesList(arg0, arg1 interf
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAsyncSearchesList", reflect.TypeOf((*MockStoreApiClient)(nil).GetAsyncSearchesList), varargs...)
 }
 
+// OnePhaseSearch mocks base method.
+func (m *MockStoreApiClient) OnePhaseSearch(arg0 context.Context, arg1 *storeapi.OnePhaseSearchRequest, arg2 ...grpc.CallOption) (storeapi.StoreApi_OnePhaseSearchClient, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "OnePhaseSearch", varargs...)
+	ret0, _ := ret[0].(storeapi.StoreApi_OnePhaseSearchClient)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// OnePhaseSearch indicates an expected call of OnePhaseSearch.
+func (mr *MockStoreApiClientMockRecorder) OnePhaseSearch(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OnePhaseSearch", reflect.TypeOf((*MockStoreApiClient)(nil).OnePhaseSearch), varargs...)
+}
+
 // Search mocks base method.
 func (m *MockStoreApiClient) Search(arg0 context.Context, arg1 *storeapi.SearchRequest, arg2 ...grpc.CallOption) (*storeapi.SearchResponse, error) {
 	m.ctrl.T.Helper()

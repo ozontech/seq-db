@@ -31,7 +31,17 @@ func (g *GrpcV1) Fetch(req *storeapi.FetchRequest, stream storeapi.StoreApi_Fetc
 		span.AddAttributes(trace.BoolAttribute("explain", req.Explain))
 	}
 
-	err := g.doFetch(ctx, req, stream)
+	ids, err := extractIDs(req)
+	if err != nil {
+		span.SetStatus(trace.Status{Code: 1, Message: err.Error()})
+		logger.Error("fetch error", zap.Error(err))
+		return fmt.Errorf("ids extract errors: %s", err.Error())
+	}
+
+	send := func(block []byte) error {
+		return stream.Send(&storeapi.BinaryData{Data: block})
+	}
+	err = g.doFetch(ctx, ids, req.FieldsFilter, req.Explain, send)
 	if err != nil {
 		span.SetStatus(trace.Status{Code: 1, Message: err.Error()})
 		logger.Error("fetch error", zap.Error(err))
@@ -39,7 +49,13 @@ func (g *GrpcV1) Fetch(req *storeapi.FetchRequest, stream storeapi.StoreApi_Fetc
 	return err
 }
 
-func (g *GrpcV1) doFetch(ctx context.Context, req *storeapi.FetchRequest, stream storeapi.StoreApi_FetchServer) error {
+func (g *GrpcV1) doFetch(
+	ctx context.Context,
+	ids seq.IDSources,
+	fieldsFilter *storeapi.FieldsFilter,
+	explain bool,
+	send func(block []byte) error,
+) error {
 	metric.FetchInFlightQueriesTotal.Inc()
 	defer metric.FetchInFlightQueriesTotal.Dec()
 
@@ -47,11 +63,6 @@ func (g *GrpcV1) doFetch(ctx context.Context, req *storeapi.FetchRequest, stream
 	defer cancel()
 
 	start := time.Now()
-
-	ids, err := extractIDs(req)
-	if err != nil {
-		return fmt.Errorf("ids extract errors: %s", err.Error())
-	}
 
 	notFound := 0
 	docsFetched := 0
@@ -65,7 +76,7 @@ func (g *GrpcV1) doFetch(ctx context.Context, req *storeapi.FetchRequest, stream
 		buf  []byte
 	)
 
-	dp := acquireDocFieldsFilter(req.FieldsFilter)
+	dp := acquireDocFieldsFilter(fieldsFilter)
 	defer releaseDocFieldsFilter(dp)
 
 	fracs, release := g.fracManager.AcquireFractions()
@@ -97,7 +108,7 @@ func (g *GrpcV1) doFetch(ctx context.Context, req *storeapi.FetchRequest, stream
 		block.SetExt1(uint64(id.ID.MID))
 		block.SetExt2(uint64(id.ID.RID))
 
-		if err := stream.Send(&storeapi.BinaryData{Data: block}); err != nil {
+		if err := send(block); err != nil {
 			if util.IsCancelled(ctx) {
 				logger.Info("fetch request is canceled",
 					zap.Int("requested", len(ids)),
@@ -128,7 +139,7 @@ func (g *GrpcV1) doFetch(ctx context.Context, req *storeapi.FetchRequest, stream
 		)
 	}
 
-	if req.Explain {
+	if explain {
 		logger.Info("fetch result",
 			zap.Int("requested", len(ids)),
 			zap.Int("fetched", docsFetched),
@@ -143,7 +154,7 @@ func (g *GrpcV1) doFetch(ctx context.Context, req *storeapi.FetchRequest, stream
 }
 
 type docFieldsFilter struct {
-	filter *storeapi.FetchRequest_FieldsFilter
+	filter *storeapi.FieldsFilter
 
 	decoder    *insaneJSON.Root
 	decoderBuf []byte
@@ -155,7 +166,7 @@ var docFieldsFilterPool = sync.Pool{
 	},
 }
 
-func acquireDocFieldsFilter(filter *storeapi.FetchRequest_FieldsFilter) *docFieldsFilter {
+func acquireDocFieldsFilter(filter *storeapi.FieldsFilter) *docFieldsFilter {
 	dp := docFieldsFilterPool.Get().(*docFieldsFilter)
 	if dp.decoder == nil {
 		dp.decoder = insaneJSON.Spawn()

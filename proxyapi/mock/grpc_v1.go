@@ -115,6 +115,22 @@ func (mr *MockSearchIngestorMockRecorder) GetAsyncSearchesList(arg0, arg1 interf
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAsyncSearchesList", reflect.TypeOf((*MockSearchIngestor)(nil).GetAsyncSearchesList), arg0, arg1)
 }
 
+// OnePhaseSearch mocks base method.
+func (m *MockSearchIngestor) OnePhaseSearch(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OnePhaseSearch", ctx, sr, tr)
+	ret0, _ := ret[0].(*seq.QPR)
+	ret1, _ := ret[1].(search.DocsIterator)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// OnePhaseSearch indicates an expected call of OnePhaseSearch.
+func (mr *MockSearchIngestorMockRecorder) OnePhaseSearch(ctx, sr, tr interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OnePhaseSearch", reflect.TypeOf((*MockSearchIngestor)(nil).OnePhaseSearch), ctx, sr, tr)
+}
+
 // Search mocks base method.
 func (m *MockSearchIngestor) Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, time.Duration, error) {
 	m.ctrl.T.Helper()
