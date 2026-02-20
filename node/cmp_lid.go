@@ -1,6 +1,14 @@
 package node
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
+
+const (
+	DescMask = uint32(0)
+	AscMask  = uint32(0xFFFFFFFF)
+)
 
 // CmpLID is an encoded representation of LID and reverse flag made specifically for fast compare operations.
 //
@@ -14,31 +22,42 @@ type CmpLID struct {
 
 func NullCmpLID() CmpLID {
 	// reverse flag does not matter, as null values are never unpacked
-	return NewCmpLIDOrderDesc(math.MaxUint32)
+	return NewCmpLID(math.MaxUint32, false)
 }
 
 // NewCmpLIDOrderDesc returns LIDs for desc sort order
 func NewCmpLIDOrderDesc(lid uint32) CmpLID {
 	return CmpLID{
 		lid:  lid,
-		mask: uint32(0),
+		mask: DescMask,
 	}
 }
 
 // NewCmpLIDOrderAsc returns LIDs for asc sort order
 func NewCmpLIDOrderAsc(lid uint32) CmpLID {
-	mask := uint32(0xFFFFFFFF)
 	return CmpLID{
-		lid:  lid ^ mask,
-		mask: mask,
+		lid:  lid ^ AscMask,
+		mask: AscMask,
 	}
 }
 
-// Less compares two values. It also does an implicit null check, since we store math.MaxUint32 in lid field for null values.
+func NewCmpLID(lid uint32, reverse bool) CmpLID {
+	if reverse {
+		return NewCmpLIDOrderAsc(lid)
+	} else {
+		return NewCmpLIDOrderDesc(lid)
+	}
+}
+
+// Less compares two values. It also does an implicit null check, since we store math.MaxUint32 for null values.
 // Which means if we call x.Less(y), then we now for sure that x is not null. Therefore, this Less call can work
 // as both "null check + less" combo.
 func (c CmpLID) Less(other CmpLID) bool {
 	return c.lid < other.lid
+}
+
+func (c CmpLID) LessOrEq(other CmpLID) bool {
+	return c.lid <= other.lid
 }
 
 func (c CmpLID) Inc() CmpLID {
@@ -56,4 +75,8 @@ func (c CmpLID) Unpack() uint32 {
 
 func (c CmpLID) IsNull() bool {
 	return c.lid == math.MaxUint32
+}
+
+func (c CmpLID) String() string {
+	return fmt.Sprintf("%d, reverse=%t", c.Unpack(), c.mask == AscMask)
 }
