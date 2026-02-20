@@ -23,7 +23,7 @@ type writeSyncer interface {
 //
 // This results in one fsync system call for several writers performing a write at approximately the same time.
 //
-// FileWriter always stores data in DocBlock format. If MetaBlock is passed to Write, then it's converted to
+// FileWriter always stores data in DocBlock format. If WalBlock is passed to Write, then it's converted to
 // DocBlock.
 type FileWriter struct {
 	ws       writeSyncer
@@ -73,10 +73,10 @@ func (fs *FileWriter) syncLoop() {
 func (fs *FileWriter) Write(data []byte, sw *stopwatch.Stopwatch) (int64, error) {
 	m := sw.Start("write_duration")
 
-	if storage.IsMetaBlock(data) {
-		// MetaBlock must be converted to DocBock if is written to a legacy WAL meta file (with *.meta suffix)
+	if storage.IsWalBlock(data) {
+		// WalBlock must be converted to DocBock if is written to a legacy WAL meta file (with *.meta suffix)
 		// This may happen if a new version of store has been deployed while a legacy active fraction with *.meta file exists.
-		data = storage.PackMetaBlockToDocBlock(data, nil)
+		data = storage.PackWalBlockToDocBlock(data, nil)
 	}
 
 	dataLen := int64(len(data))

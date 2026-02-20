@@ -31,7 +31,7 @@ func NewActiveWriterLegacy(docsFile, metaFile *os.File, docsOffset, metaOffset i
 	}
 }
 
-func (a *ActiveWriter) Write(docs storage.DocBlock, meta storage.MetaBlock, sw *stopwatch.Stopwatch) error {
+func (a *ActiveWriter) Write(docs storage.DocBlock, meta storage.WalBlock, sw *stopwatch.Stopwatch) error {
 	m := sw.Start("write_docs")
 	offset, err := a.docs.Write(docs, sw)
 	m.Stop()

@@ -281,8 +281,8 @@ out:
 
 			wg.Add(1)
 
-			metaBlock := storage.PackDocBlockToMetaBlock(meta)
-			f.indexer.Index(f, metaBlock, &wg, sw)
+			walBlock := storage.PackDocBlockToWalBlock(meta)
+			f.indexer.Index(f, walBlock, &wg, sw)
 		}
 	}
 
@@ -311,7 +311,7 @@ var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 }, []string{"stage"})
 
 // Append causes data to be written on disk and sends metas to index workers
-func (f *Active) Append(docs storage.DocBlock, metas storage.MetaBlock, wg *sync.WaitGroup) (err error) {
+func (f *Active) Append(docs storage.DocBlock, metas storage.WalBlock, wg *sync.WaitGroup) (err error) {
 	sw := stopwatch.New()
 	m := sw.Start("append")
 	if err = f.writer.Write(docs, metas, sw); err != nil {

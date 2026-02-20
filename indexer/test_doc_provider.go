@@ -53,7 +53,7 @@ func (dp *TestDocProvider) TryReset() {
 
 }
 
-func (dp *TestDocProvider) Provide() (storage.DocBlock, storage.MetaBlock) {
+func (dp *TestDocProvider) Provide() (storage.DocBlock, storage.WalBlock) {
 	c := GetDocsMetasCompressor(-1, -1)
 	c.CompressDocsAndMetas(dp.Docs, dp.Metas)
 	return c.DocsMetas()

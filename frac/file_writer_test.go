@@ -265,25 +265,25 @@ func TestSparseWrite(t *testing.T) {
 	assert.NoError(t, e)
 }
 
-func TestFileWriterConvertsMetaBlockToDocBlock(t *testing.T) {
-	f, err := os.Create(t.TempDir() + "/test_metablock.txt")
+func TestFileWriterConvertsWalBlockToDocBlock(t *testing.T) {
+	f, err := os.Create(t.TempDir() + "/test_wal_block.txt")
 	require.NoError(t, err)
 	defer f.Close()
 
 	fw := NewFileWriter(f, 0, false)
 
-	originalPayload := []byte("test payload for MetaBlock to DocBlock conversion")
-	metaBlock := storage.CompressMetaBlock(originalPayload, nil, 3)
-	metaBlock.SetDocsOffset(12345)
-	metaBlock.SetVersion(1)
+	originalPayload := []byte("test payload for WalBlock to DocBlock conversion")
+	walBlock := storage.CompressWalBlock(originalPayload, nil, 3)
+	walBlock.SetDocsOffset(12345)
+	walBlock.SetVersion(1)
 
 	sw := stopwatch.New()
-	offset, err := fw.Write(metaBlock, sw)
+	offset, err := fw.Write(walBlock, sw)
 	require.NoError(t, err)
 
 	fw.Stop()
 
-	docBlockSize := storage.DocBlockHeaderLen + metaBlock.Len()
+	docBlockSize := storage.DocBlockHeaderLen + walBlock.Len()
 
 	readBuf := make([]byte, docBlockSize)
 	bytesRead, err := f.ReadAt(readBuf, offset)

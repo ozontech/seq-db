@@ -9,7 +9,7 @@ import (
 
 func TestCorruptionDetection(t *testing.T) {
 	payload := []byte("test payload for test of checking corrupted data")
-	block := CompressMetaBlock(payload, nil, 1)
+	block := CompressWalBlock(payload, nil, 1)
 
 	assert.True(t, block.IsCorrect())
 
@@ -23,7 +23,7 @@ func TestCorruptionDetection(t *testing.T) {
 	// change type (the first byte)
 	block[0] = 7
 	assert.False(t, block.IsCorrect())
-	block[0] = MetaBlockMagic
+	block[0] = WalBlockMagic
 
 	// change version (second byte)
 	block[1] = 233
@@ -38,20 +38,20 @@ func TestCorruptionDetection(t *testing.T) {
 	assert.False(t, block.IsCorrect())
 }
 
-func TestConvertDocToMetaBlock(t *testing.T) {
+func TestConvertDocToWalBlock(t *testing.T) {
 	payload := []byte("test test payload")
 
 	docBlock := CompressDocBlock(payload, nil, 1)
 	docBlock.SetExt2(11111)
 
-	metaBlock := PackDocBlockToMetaBlock(docBlock)
+	walBlock := PackDocBlockToWalBlock(docBlock)
 
-	assert.Equal(t, CodecZSTD, metaBlock.Codec())
-	assert.Equal(t, uint32(len(payload)), metaBlock.RawLen())
-	assert.Equal(t, uint64(11111), metaBlock.DocsOffset())
-	assert.True(t, metaBlock.IsCorrect())
+	assert.Equal(t, CodecZSTD, walBlock.Codec())
+	assert.Equal(t, uint32(len(payload)), walBlock.RawLen())
+	assert.Equal(t, uint64(11111), walBlock.DocsOffset())
+	assert.True(t, walBlock.IsCorrect())
 
-	decompressed, err := metaBlock.DecompressTo(nil)
+	decompressed, err := walBlock.DecompressTo(nil)
 	require.NoError(t, err)
 	assert.Equal(t, payload, decompressed)
 }
@@ -59,10 +59,10 @@ func TestConvertDocToMetaBlock(t *testing.T) {
 func TestConvertMetaToDocBlock(t *testing.T) {
 	payload := []byte("test payload data")
 
-	metaBlock := CompressMetaBlock(payload, nil, 1)
-	metaBlock.SetDocsOffset(22222)
+	walBlock := CompressWalBlock(payload, nil, 1)
+	walBlock.SetDocsOffset(22222)
 
-	docBlock := PackMetaBlockToDocBlock(metaBlock, nil)
+	docBlock := PackWalBlockToDocBlock(walBlock, nil)
 
 	assert.Equal(t, CodecZSTD, docBlock.Codec())
 	assert.Equal(t, uint64(len(payload)), docBlock.RawLen())

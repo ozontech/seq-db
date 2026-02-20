@@ -65,9 +65,9 @@ func (g *GrpcV1) doBulk(ctx context.Context, req *storeapi.BulkRequest) error {
 
 	start := time.Now()
 
-	if !storage.IsMetaBlock(req.Metas) {
-		// We use MetaBlock now for metas everywhere, DocBlock might be sent by legacy proxy service.
-		req.Metas = storage.PackDocBlockToMetaBlock(req.Metas)
+	if !storage.IsWalBlock(req.Metas) {
+		// We use WalBlock now for metas everywhere, DocBlock might be sent by legacy proxy service.
+		req.Metas = storage.PackDocBlockToWalBlock(req.Metas)
 	}
 
 	err := g.fracManager.Append(ctx, req.Docs, req.Metas)

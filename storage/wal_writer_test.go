@@ -194,7 +194,7 @@ func TestConcurrentFileWriting(t *testing.T) {
 	wg := sync.WaitGroup{}
 	samplesQueues := [writersCount][]writeSample{}
 
-	// run writers - write MetaBlocks
+	// run writers - write WalBlocks
 	for i := range writersCount {
 		wg.Add(1)
 		go func() {
@@ -205,8 +205,8 @@ func TestConcurrentFileWriting(t *testing.T) {
 
 			for j := range writesCount {
 				payload := []byte("<" + workerName + "-" + strconv.Itoa(j) + ">")
-				metaBlock := PackMetaBlock(payload, nil)
-				offset, e := fw.Write(metaBlock, sw)
+				walBlock := PackWalBlock(payload, nil)
+				offset, e := fw.Write(walBlock, sw)
 				assert.NoError(t, e)
 
 				samplesQueues[i] = append(samplesQueues[i], writeSample{payload: payload, offset: offset})
@@ -307,8 +307,8 @@ func TestWalWriterWriteAndRead(t *testing.T) {
 	sw := stopwatch.New()
 
 	for i, payload := range payloads {
-		metaBlock := PackMetaBlock(payload, nil)
-		offset, err := fw.Write(metaBlock, sw)
+		walBlock := PackWalBlock(payload, nil)
+		offset, err := fw.Write(walBlock, sw)
 		assert.NoError(t, err)
 		offsets[i] = offset
 	}
@@ -321,7 +321,7 @@ func TestWalWriterWriteAndRead(t *testing.T) {
 	for entry := range reader.Iter() {
 		assert.Equal(t, offsets[count], entry.Offset, "block %d offset mismatch", count)
 		assert.Equal(t, payloads[count], entry.Data.Payload(), "block %d payload mismatch", count)
-		assert.Equal(t, MetaBlockMagic, entry.Data.Magic(), "block %d should have MetaBlock magic", count)
+		assert.Equal(t, WalBlockMagic, entry.Data.Magic(), "block %d should have WalBlock magic", count)
 		count++
 	}
 	assert.Equal(t, len(payloads), count, "should read all blocks")
@@ -351,12 +351,12 @@ func TestWalReaderInvalidMagic(t *testing.T) {
 	defer f.Close()
 
 	// write invalid magic (not 0xFFFFFFFF)
-	header := make([]byte, WALHeaderSize)
+	header := make([]byte, WalHeaderSize)
 	header[0] = 0x00
 	header[1] = 0x00
 	header[2] = 0x00
 	header[3] = 0x00
-	header[4] = WALVersion1
+	header[4] = WalVersion1
 	_, err = f.WriteAt(header, 0)
 	assert.NoError(t, err)
 
@@ -371,7 +371,7 @@ func TestWalReaderUnknownVersion(t *testing.T) {
 	defer f.Close()
 
 	// write correct magic but unknown version
-	header := make([]byte, WALHeaderSize)
+	header := make([]byte, WalHeaderSize)
 	header[0] = 0xFF
 	header[1] = 0xFF
 	header[2] = 0xFF
@@ -390,7 +390,7 @@ func TestWalReaderFileTooShort(t *testing.T) {
 	assert.NoError(t, err)
 	defer f.Close()
 
-	// write only 3 bytes (less than WALHeaderSize which is 5)
+	// write only 3 bytes (less than WalHeaderSize which is 5)
 	_, err = f.WriteAt([]byte{0xFF, 0xFF, 0xFF}, 0)
 	assert.NoError(t, err)
 
@@ -418,8 +418,8 @@ func TestWalReaderIterator(t *testing.T) {
 	var expectedOffsets []int64
 
 	for _, payload := range payloads {
-		metaBlock := PackMetaBlock(payload, nil)
-		offset, err := fw.Write(metaBlock, sw)
+		walBlock := PackWalBlock(payload, nil)
+		offset, err := fw.Write(walBlock, sw)
 		assert.NoError(t, err)
 		expectedOffsets = append(expectedOffsets, offset)
 	}
@@ -461,15 +461,15 @@ func TestWalReaderSkipsCorruptedBlocks(t *testing.T) {
 	var offsets []int64
 
 	for _, payload := range payloads {
-		metaBlock := PackMetaBlock(payload, nil)
-		offset, err := fw.Write(metaBlock, sw)
+		walBlock := PackWalBlock(payload, nil)
+		offset, err := fw.Write(walBlock, sw)
 		assert.NoError(t, err)
 		offsets = append(offsets, offset)
 	}
 	fw.Stop()
 
 	// corrupt block 2 (index 1) by flipping a byte in the header checksum
-	corruptOffset := offsets[1] + offsetMetaBlockHeaderChecksum
+	corruptOffset := offsets[1] + offsetWalBlockHeaderChecksum
 	_, err = f.WriteAt([]byte{0xFF}, corruptOffset)
 	assert.NoError(t, err)
 	t.Logf("corrupted header checksum at offset %d", corruptOffset)
@@ -507,14 +507,14 @@ func TestWalReaderSkipsCorruptedPayload(t *testing.T) {
 	var offsets []int64
 
 	for _, payload := range payloads {
-		metaBlock := PackMetaBlock(payload, nil)
-		offset, err := fw.Write(metaBlock, sw)
+		walBlock := PackWalBlock(payload, nil)
+		offset, err := fw.Write(walBlock, sw)
 		assert.NoError(t, err)
 		offsets = append(offsets, offset)
 	}
 	fw.Stop()
 
-	payloadOffset := offsets[1] + MetaBlockHeaderLen + 5 // corrupt somewhere in payload
+	payloadOffset := offsets[1] + WalBlockHeaderLen + 5 // corrupt somewhere in payload
 	_, err = f.WriteAt([]byte{0xFF, 0xFF}, payloadOffset)
 	assert.NoError(t, err)
 
@@ -550,7 +550,7 @@ func TestWalReaderSingleByteCorruption(t *testing.T) {
 		fw := NewWalWriter(f, 0, false)
 		sw := stopwatch.New()
 
-		blocks := make([]MetaBlock, 0)
+		blocks := make([]WalBlock, 0)
 
 		// write blocks to WAL
 		for i := range numBlocks {
@@ -563,9 +563,9 @@ func TestWalReaderSingleByteCorruption(t *testing.T) {
 			// store the first byte as index of block
 			payload[0] = byte(i)
 
-			metaBlock := PackMetaBlock(payload, nil)
-			blocks = append(blocks, metaBlock)
-			_, err = fw.Write(metaBlock, sw)
+			walBlock := PackWalBlock(payload, nil)
+			blocks = append(blocks, walBlock)
+			_, err = fw.Write(walBlock, sw)
 			assert.NoError(t, err)
 		}
 		fw.Stop()
@@ -576,7 +576,7 @@ func TestWalReaderSingleByteCorruption(t *testing.T) {
 
 		// flip a random byte at random offset
 		// we do not corrupt the first 5 bytes - WAL header, other bytes might be corrupted including block headers
-		corruptOffset := int64(WALHeaderSize) + rand.Int64N(fileSize-WALHeaderSize)
+		corruptOffset := int64(WalHeaderSize) + rand.Int64N(fileSize-WalHeaderSize)
 
 		originalByte := make([]byte, 1)
 		_, err = f.ReadAt(originalByte, corruptOffset)
@@ -629,7 +629,7 @@ func TestWalReaderTruncation(t *testing.T) {
 		fw := NewWalWriter(f, 0, false)
 		sw := stopwatch.New()
 
-		blocks := make([]MetaBlock, 0)
+		blocks := make([]WalBlock, 0)
 		offsets := make([]int64, 0)
 
 		// write blocks to WAL
@@ -643,9 +643,9 @@ func TestWalReaderTruncation(t *testing.T) {
 			// store the first byte as index of block
 			payload[0] = byte(i)
 
-			metaBlock := PackMetaBlock(payload, nil)
-			blocks = append(blocks, metaBlock)
-			offset, err := fw.Write(metaBlock, sw)
+			walBlock := PackWalBlock(payload, nil)
+			blocks = append(blocks, walBlock)
+			offset, err := fw.Write(walBlock, sw)
 			assert.NoError(t, err)
 			offsets = append(offsets, offset)
 		}
@@ -707,7 +707,7 @@ func TestWalReaderSectorLoss(t *testing.T) {
 		fw := NewWalWriter(f, 0, false)
 		sw := stopwatch.New()
 
-		blocks := make([]MetaBlock, 0)
+		blocks := make([]WalBlock, 0)
 
 		// write blocks to WAL
 		for i := range numBlocks {
@@ -720,9 +720,9 @@ func TestWalReaderSectorLoss(t *testing.T) {
 			// store the first byte as index of block
 			payload[0] = byte(i)
 
-			metaBlock := PackMetaBlock(payload, nil)
-			blocks = append(blocks, metaBlock)
-			_, err = fw.Write(metaBlock, sw)
+			walBlock := PackWalBlock(payload, nil)
+			blocks = append(blocks, walBlock)
+			_, err = fw.Write(walBlock, sw)
 			assert.NoError(t, err)
 		}
 		fw.Stop()

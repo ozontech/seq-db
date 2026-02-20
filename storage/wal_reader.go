@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"unsafe"
 
 	"go.uber.org/zap"
 
@@ -13,7 +14,7 @@ import (
 )
 
 type WalRecord struct {
-	Data   MetaBlock
+	Data   WalBlock
 	Offset int64
 	Size   int64
 	Err    error
@@ -22,32 +23,32 @@ type WalRecord struct {
 type WalReader struct {
 	limiter      *ReadLimiter
 	reader       io.ReaderAt
-	headerOffset int64 // offset where actual data starts (WALHeaderSize for new format)
+	headerOffset int64 // offset where actual data starts (WalHeaderSize for new format)
 	baseFileName string
 }
 
 func NewWalReader(limiter *ReadLimiter, reader io.ReaderAt, baseFileName string) (*WalReader, error) {
-	header := make([]byte, WALHeaderSize)
+	header := make([]byte, WalHeaderSize)
 	n, err := limiter.ReadAt(reader, header, 0)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("failed to read WAL header: %w", err)
 	}
-	if n < WALHeaderSize {
-		return nil, fmt.Errorf("WAL file too short: expected at least %d bytes, got %d", WALHeaderSize, n)
+	if n < WalHeaderSize {
+		return nil, fmt.Errorf("WAL file too short: expected at least %d bytes, got %d", WalHeaderSize, n)
 	}
-	magic := binary.LittleEndian.Uint32(header[0:4])
-	if magic != WALMagic {
-		return nil, fmt.Errorf("invalid WAL magic: expected 0x%X, got 0x%X", WALMagic, magic)
+	magic := binary.LittleEndian.Uint32(header[0:unsafe.Sizeof(WalMagic)])
+	if magic != WalMagic {
+		return nil, fmt.Errorf("invalid WAL magic: expected 0x%X, got 0x%X", WalMagic, magic)
 	}
 	version := header[4]
-	if version != WALVersion1 {
-		return nil, fmt.Errorf("unknown WAL version: %d (supported: %d)", version, WALVersion1)
+	if version != WalVersion1 {
+		return nil, fmt.Errorf("unknown WAL version: %d (supported: %d)", version, WalVersion1)
 	}
 
 	return &WalReader{
 		limiter:      limiter,
 		reader:       reader,
-		headerOffset: WALHeaderSize,
+		headerOffset: WalHeaderSize,
 		baseFileName: baseFileName,
 	}, nil
 }
@@ -56,7 +57,7 @@ func NewWalReader(limiter *ReadLimiter, reader io.ReaderAt, baseFileName string)
 // Corruption ranges are logged with "from" and "to" offsets.
 func (r *WalReader) Iter() iter.Seq[WalRecord] {
 	return func(yield func(WalRecord) bool) {
-		offset := nextBlockOffset(r.headerOffset)
+		offset := alignSize(r.headerOffset)
 
 		var corruptionStart int64 = -1
 		logCorruptionEnd := func(offset int64) {
@@ -74,8 +75,8 @@ func (r *WalReader) Iter() iter.Seq[WalRecord] {
 			}
 		}
 
+		headerBuf := make([]byte, WalBlockHeaderLen)
 		for {
-			headerBuf := make([]byte, MetaBlockHeaderLen)
 			n, err := r.limiter.ReadAt(r.reader, headerBuf, offset)
 
 			if err != nil && !errors.Is(err, io.EOF) {
@@ -84,22 +85,22 @@ func (r *WalReader) Iter() iter.Seq[WalRecord] {
 				return
 			}
 
-			if errors.Is(err, io.EOF) || n < MetaBlockHeaderLen {
+			if errors.Is(err, io.EOF) || n < WalBlockHeaderLen {
 				logCorruptionEnd(offset)
 				return
 			}
 
-			if !IsMetaBlock(headerBuf) {
+			if !IsWalBlock(headerBuf) {
 				startCorruptionTracking(offset)
-				offset += BlockAlignment
+				offset += WalBlockAlignment
 				continue
 			}
 
-			mb := MetaBlock(headerBuf)
+			mb := WalBlock(headerBuf)
 
 			if !mb.IsHeaderCorrect() {
 				startCorruptionTracking(offset)
-				offset += BlockAlignment
+				offset += WalBlockAlignment
 				continue
 			}
 
@@ -127,7 +128,7 @@ func (r *WalReader) Iter() iter.Seq[WalRecord] {
 
 			if !mb.IsPayloadCorrect() {
 				startCorruptionTracking(offset)
-				offset = nextBlockOffset(offset + blockLen)
+				offset = alignSize(offset + blockLen)
 				continue
 			}
 
@@ -143,12 +144,12 @@ func (r *WalReader) Iter() iter.Seq[WalRecord] {
 				return
 			}
 
-			offset = nextBlockOffset(offset + blockLen)
+			offset = alignSize(offset + blockLen)
 		}
 	}
 }
 
-// nextBlockOffset aligns provided offset to BlockAlignment
-func nextBlockOffset(offset int64) int64 {
-	return (offset + BlockAlignment - 1) &^ (BlockAlignment - 1)
+// alignSize aligns provided offset to WalBlockAlignment
+func alignSize(offset int64) int64 {
+	return (offset + WalBlockAlignment - 1) &^ (WalBlockAlignment - 1)
 }
