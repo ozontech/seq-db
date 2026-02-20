@@ -517,6 +517,14 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 				Token: bin.Label,
 			}
 
+			var values map[uint32]struct{}
+			if len(pbhist.Values) > 0 {
+				values = make(map[uint32]struct{}, len(pbhist.Values))
+				for _, idx := range pbhist.Values {
+					values[idx] = struct{}{}
+				}
+			}
+
 			to[tbin] = &seq.SamplesContainer{
 				Min:       pbhist.Min,
 				Max:       pbhist.Max,
@@ -524,12 +532,14 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 				Total:     pbhist.Total,
 				Samples:   pbhist.Samples,
 				NotExists: pbhist.NotExists,
+				Values:    values,
 			}
 		}
 
 		aggs[i] = seq.AggregatableSamples{
 			SamplesByBin: to,
 			NotExists:    agg.NotExists,
+			ValuesPool:   agg.ValuesPool,
 		}
 	}
 
@@ -582,6 +592,9 @@ func (si *Ingestor) searchShard(
 			if errMessage == consts.ErrTooManyFieldTokens.Error() {
 				return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFieldTokens)
 			}
+			if errMessage == consts.ErrTooManyFieldValues.Error() {
+				return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFieldValues)
+			}
 			if errMessage == consts.ErrTooManyGroupTokens.Error() {
 				return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyGroupTokens)
 			}
@@ -601,6 +614,8 @@ func (si *Ingestor) searchShard(
 			return nil, source, fmt.Errorf("hot store refuses: %w", consts.ErrIngestorQueryWantsOldData)
 		case storeapi.SearchErrorCode_TOO_MANY_FIELD_TOKENS:
 			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFieldTokens)
+		case storeapi.SearchErrorCode_TOO_MANY_FIELD_VALUES:
+			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFieldValues)
 		case storeapi.SearchErrorCode_TOO_MANY_GROUP_TOKENS:
 			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyGroupTokens)
 		case storeapi.SearchErrorCode_TOO_MANY_FRACTION_TOKENS:

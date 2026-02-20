@@ -46,7 +46,7 @@ func BenchmarkESBulk(b *testing.B) {
 	const totalSize = len(payload) * docsToLoad
 
 	buf := make([]byte, 0, totalSize)
-	for i := 0; i < docsToLoad; i++ {
+	for range docsToLoad {
 		buf = append(buf, []byte(payload)...)
 		buf = append(buf, '\n')
 	}
@@ -64,8 +64,7 @@ func BenchmarkESBulk(b *testing.B) {
 	b.SetBytes(int64(totalSize))
 	b.ReportAllocs()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = reqBodyBuf.Seek(0, io.SeekStart)
 		response.Body.Reset()
 		proc.Count = 0
@@ -73,7 +72,7 @@ func BenchmarkESBulk(b *testing.B) {
 		handler.ServeHTTP(response, &request)
 
 		if proc.Count != docsToLoad {
-			b.Fatalf("expected %d docs, got %d", docsToLoad*b.N, proc.Count)
+			b.Fatalf("expected %d docs, got %d", docsToLoad, proc.Count)
 		}
 	}
 }

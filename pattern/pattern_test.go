@@ -135,7 +135,13 @@ func search(t *testing.T, tp *simpleTokenProvider, req string, expect []string) 
 	res := []string{}
 	for i := s.firstTID(); i <= s.lastTID(); i++ {
 		val := tp.GetToken(i)
-		if s.check(val) {
+
+		match, err := s.check(val)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if match {
 			res = append(res, string(val))
 		}
 	}
@@ -458,6 +464,272 @@ func TestPatternSymbols(t *testing.T) {
 	testAll(t, tp, tests)
 }
 
+func TestPatternRe(t *testing.T) {
+	t.Run("match-uuid", func(t *testing.T) {
+		needles := []string{
+			"7313c25b-2eae-4839-b773-91dff1f24f1f",
+			"e7b555cc-b98f-4cd2-bf09-9e0330c2593f",
+		}
+
+		data := append(
+			[]string{"not-uuid", "not uuid as well"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")`,
+				needles,
+			},
+		})
+	})
+
+	t.Run("match-ip", func(t *testing.T) {
+		needles := []string{
+			"192.168.1.1",
+			"10.0.0.255",
+			"256.999.1.1",
+		}
+
+		data := append(
+			[]string{"no ip here"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")`,
+				needles,
+			},
+		})
+	})
+
+	t.Run("match-russian-phone", func(t *testing.T) {
+		needles := []string{
+			"+78005553535",
+			"+7 800 555-35-35",
+			"+7 (800) 555-35-35",
+			"8(800)555-35-35",
+		}
+
+		data := append(
+			[]string{"phone: 12345", "not a phone"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("(\+7|8)\s?\(?\d{3}\)?\s?\d{3}-?\d{2}-?\d{2}")`,
+				needles,
+			},
+		})
+	})
+
+	t.Run("match-level", func(t *testing.T) {
+		needles := []string{
+			"[ERROR] connection refused",
+			"[WARN] timeout exceeded",
+		}
+
+		data := append(
+			[]string{"[INFO] all good", "[DEBUG] trace value"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("\[(ERROR|WARN)\].*")`,
+				needles,
+			},
+		})
+	})
+
+	t.Run("match-http-status", func(t *testing.T) {
+		needles := []string{
+			"status=500",
+			"status=503",
+			"status=599",
+		}
+
+		data := append(
+			[]string{"status=200", "status=404", "status=301"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("status=5\d{2}")`,
+				needles,
+			},
+		})
+	})
+
+	t.Run("match-email", func(t *testing.T) {
+		needles := []string{
+			"alice@example.com",
+			"bob.smith@test.co.uk",
+		}
+
+		data := append(
+			[]string{"no email", "bare @ sign", "missing@"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("[a-zA-Z0-9.]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")`,
+				needles,
+			},
+		})
+	})
+
+	t.Run("match-kv", func(t *testing.T) {
+		needles := []string{
+			"timeout=30s",
+			"retries=5",
+		}
+
+		data := append(
+			[]string{"no kv here", "just=", "=nope"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("[a-z]+=\w+")`,
+				needles,
+			},
+		})
+	})
+
+	t.Run("match-anchored", func(t *testing.T) {
+		needles := []string{
+			"ERROR: disk empty",
+			"ERROR: disk full",
+		}
+
+		data := append(
+			[]string{"some ERROR in the middle", "info: no error"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("^ERROR: disk (empty|full)$")`,
+				needles,
+			},
+		})
+	})
+
+	t.Run("match-empty", func(t *testing.T) {
+		data := []string{"foo", "bar", "baz"}
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("^zzz$")`,
+				[]string{},
+			},
+		})
+	})
+
+	t.Run("match-asterisk", func(t *testing.T) {
+		needles := []string{
+			"token=*",
+			"token=**",
+			"token=***",
+		}
+
+		data := append(
+			[]string{"token=\\*", "token=abc"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("token=[*]+")`,
+				needles,
+			},
+		})
+	})
+
+	t.Run("match-all", func(t *testing.T) {
+		data := []string{"abc", "def", "ghi"}
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re(".*")`,
+				data,
+			},
+		})
+	})
+
+	t.Run("match-case-insensitive", func(t *testing.T) {
+		needles := []string{
+			"Error occurred",
+			"ERROR occurred",
+			"error occurred",
+		}
+
+		data := append(
+			[]string{"info: all fine"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("(?i)error.*")`,
+				needles,
+			},
+		})
+	})
+
+	t.Run("match-range", func(t *testing.T) {
+		needles := []string{
+			"code: abc",
+			"code: abcd",
+			"code: abcde",
+		}
+
+		data := append(
+			[]string{"code: ab", "code: abcdef"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("code: [a-z]{3,5}$")`,
+				needles,
+			},
+		})
+	})
+}
+
 func TestPatternIPRange(t *testing.T) {
 	data := []string{
 		"192.168.1.1",
@@ -514,47 +786,6 @@ func TestFindSequence(t *testing.T) {
 	testFindSequence(a, 1, []string{"abc"}, strings.Repeat("ab", 1024)+"c")
 }
 
-func BenchmarkFindSequence_Deterministic(b *testing.B) {
-	type testCase struct {
-		haystack []byte
-		needles  [][]byte
-	}
-
-	type namedTestCase struct {
-		name  string
-		cases []testCase
-	}
-
-	testCases := []namedTestCase{
-		{
-			name: "regular-cases",
-			cases: []testCase{
-				{bb("Hello, world!"), [][]byte{bb("orl")}},
-				{bb("some-k8s-service"), [][]byte{bb("k8s")}},
-			},
-		},
-		{
-			name: "corner-cases",
-			cases: []testCase{
-				{bb(strings.Repeat("ab", 32) + "c"), [][]byte{bb("abc")}},
-				{bb(strings.Repeat("ab", 64) + "c"), [][]byte{bb("abc")}},
-				{bb(strings.Repeat("ab", 1024) + "c"), [][]byte{bb("abc")}},
-				{bb(strings.Repeat("ab", 16384) + "c"), [][]byte{bb("abc")}},
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		for i, c := range tc.cases {
-			b.Run(tc.name+"-"+strconv.Itoa(i), func(b *testing.B) {
-				for b.Loop() {
-					findSequence([]byte(c.haystack), c.needles)
-				}
-			})
-		}
-	}
-}
-
 func BenchmarkFindSequence_Random(b *testing.B) {
 	sizes := []struct {
 		name         string
@@ -574,7 +805,6 @@ func BenchmarkFindSequence_Random(b *testing.B) {
 			haystack, needles := generateTestData(
 				size.haystackSize, size.needleSize, size.needleCount, 256,
 			)
-			b.ResetTimer()
 			for b.Loop() {
 				findSequence(haystack, needles)
 				b.SetBytes(int64(len(haystack)))
@@ -603,8 +833,4 @@ func generateRandomBytes(size, charset int) []byte {
 		b[i] = byte(rand.Intn(charset))
 	}
 	return b
-}
-
-func bb(s string) []byte {
-	return []byte(s)
 }

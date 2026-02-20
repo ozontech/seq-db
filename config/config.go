@@ -128,6 +128,10 @@ type Config struct {
 			// that can be processed in single aggregation requests.
 			// Setting this field to 0 disables limit.
 			FieldTokens int `config:"field_tokens" default:"1000000"`
+			// FieldValues specifies maximum amount of unique field values
+			// that partial aggregation results (buckets) can contain in single aggregation requests.
+			// Setting this field to 0 disables limit.
+			FieldValues int `config:"field_values" default:"1000000"`
 			// GroupTokens specifies maximum amount of unique group tokens
 			// that can be processed in single aggregation requests.
 			// Setting this field to 0 disables limit.
@@ -265,6 +269,15 @@ type Config struct {
 		From  time.Time `config:"from"`
 		To    time.Time `config:"to"`
 	} `config:"filtering"`
+
+	// Experimental provides flags
+	// For configuring experimental features.
+	// We might add or remove flags without backwards compatibility guarantees.
+	Experimental struct {
+		// Specify how many tokens can be checked using regular expressions.
+		// If zero then there is no limit.
+		MaxRegexTokensCheck int `config:"max_regex_tokens_check" default:"0"`
+	} `config:"experimental"`
 }
 
 type Bytes units.Base2Bytes

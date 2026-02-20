@@ -113,6 +113,8 @@ func (e *ASTNode) DumpSeqQL(b *strings.Builder) {
 		t.DumpSeqQL(b)
 	case *IPRange:
 		t.DumpSeqQL(b)
+	case *Re:
+		t.DumpSeqQL(b)
 	default:
 		panic(fmt.Errorf("unknown token implementation: %T", e.Value))
 	}

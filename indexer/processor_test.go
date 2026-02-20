@@ -89,7 +89,7 @@ func BenchmarkParseESTime(b *testing.B) {
 	const toParseRFC3339 = "2024-04-19T18:04:25.999Z"
 
 	b.Run("es_stdlib", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_, err := time.Parse(consts.ESTimeFormat, toParse)
 			if err != nil {
 				b.Fatal(err)
@@ -98,7 +98,7 @@ func BenchmarkParseESTime(b *testing.B) {
 	})
 
 	b.Run("handwritten", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_, ok := parseESTime(toParse)
 			if !ok {
 				b.Fatal()
@@ -107,7 +107,7 @@ func BenchmarkParseESTime(b *testing.B) {
 	})
 
 	b.Run("rfc3339", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_, err := time.Parse(time.RFC3339, toParseRFC3339)
 			if err != nil {
 				b.Fatal(err)
