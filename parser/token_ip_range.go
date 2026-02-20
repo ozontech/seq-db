@@ -32,6 +32,8 @@ func (n *IPRange) DumpSeqQL(b *strings.Builder) {
 //
 //	host_addr:ip_range(192.168.0.1, 192.168.0.255)
 //	host_addr:ip_range(192.168.0.0/24)
+//	host_addr:ip_range(2001:db8:130f:0000:0000:09c0:876a:130c, 2001:db8:130f:0000:0000:09c0:876a:130d)
+//	host_addr:ip_range(::/0)
 func parseFilterIPRange(lex *lexer, fieldName string) (*IPRange, error) {
 	if !lex.IsKeyword("(") {
 		return nil, fmt.Errorf("expected '(', got %q", lex.Token)
