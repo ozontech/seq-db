@@ -86,6 +86,7 @@ func main() {
 	config.SkipFsync = cfg.Resources.SkipFsync
 	config.MaxRequestedDocuments = cfg.Limits.SearchDocs
 	config.MaxRegexTokensCheck = cfg.Experimental.MaxRegexTokensCheck
+	config.FailPartialResponse = cfg.Cluster.FailPartialResponse
 
 	backoff.DefaultConfig.MaxDelay = 10 * time.Second
 
@@ -343,6 +344,7 @@ func initS3Client(cfg config.Config) *s3.Client {
 		cfg.Offloading.Bucket,
 		cfg.Offloading.RetryCount,
 	)
+
 	if err != nil {
 		logger.Fatal(
 			"cannot create S3 client",

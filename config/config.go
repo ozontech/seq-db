@@ -88,6 +88,10 @@ type Config struct {
 		// It can be useful if you have development cluster and you want to have same search pattern
 		// as you have on production cluster.
 		MirrorAddress string `config:"mirror_address"`
+
+		// FailPartialResponse specifies whether unavailability of any shard inside cluster
+		// should fail search requests
+		FailPartialResponse bool `config:"fail_partial_response"`
 	} `config:"cluster"`
 
 	SlowLogs struct {
