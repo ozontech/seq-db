@@ -601,6 +601,9 @@ func (si *Ingestor) searchShard(
 			if errMessage == consts.ErrTooManyFractionTokens.Error() {
 				return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFractionTokens)
 			}
+			if errMessage == consts.ErrMemoryLimitExceeded.Error() {
+				return nil, source, fmt.Errorf("store forbids search request: %w", consts.ErrMemoryLimitExceeded)
+			}
 			errs = append(errs, err)
 			continue
 		}
@@ -620,6 +623,8 @@ func (si *Ingestor) searchShard(
 			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyGroupTokens)
 		case storeapi.SearchErrorCode_TOO_MANY_FRACTION_TOKENS:
 			return nil, source, fmt.Errorf("store forbids aggregation request: %w", consts.ErrTooManyFractionTokens)
+		case storeapi.SearchErrorCode_MEMORY_LIMIT_EXCEEDED:
+			return nil, source, fmt.Errorf("store forbids search request: %w", consts.ErrMemoryLimitExceeded)
 		case storeapi.SearchErrorCode_TOO_MANY_FRACTIONS_HIT:
 			return nil, source, fmt.Errorf("store forbids request: %w", consts.ErrTooManyFractionsHit)
 		}

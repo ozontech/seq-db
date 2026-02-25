@@ -205,6 +205,7 @@ func (g *GrpcV1) doSearch(
 	}
 
 	metric.SearchDurationSeconds.Observe(time.Since(start).Seconds())
+	metric.SearchQprMemSize.Observe(float64(qpr.MemUsage()))
 
 	if req.Explain {
 		if req.Interval > 0 {

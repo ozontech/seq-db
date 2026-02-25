@@ -20,6 +20,7 @@ import (
 type SearcherCfg struct {
 	MaxFractionHits       int // the maximum number of fractions used in the search
 	FractionsPerIteration int
+	MaxQprMemory          uint64 // max heap memory a single QPR can use. 0 if no limit set
 }
 
 type Searcher struct {
@@ -59,6 +60,7 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 
 	var totalSearchTimeNanos int64
 	var totalWaitTimeNanos int64
+	var totalMemUsage uint64
 
 	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
 		subQPRs, searchTimeNanos, waitTimeNanos, err := s.searchDocsAsync(ctx, remainingFracs.Shift(fracsChunkSize), params)
@@ -70,6 +72,12 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 		totalWaitTimeNanos += waitTimeNanos
 
 		seq.MergeQPRs(total, subQPRs, origLimit, seq.MillisToMID(params.HistInterval), params.Order)
+
+		totalMemUsage = total.MemUsage()
+
+		if s.cfg.MaxQprMemory > 0 && totalMemUsage > s.cfg.MaxQprMemory {
+			return nil, fmt.Errorf("%w: used %d bytes, limit %d", consts.ErrMemoryLimitExceeded, total.MemUsage(), s.cfg.MaxQprMemory)
+		}
 
 		// reduce the limit on the number of ensured docs in response
 		params.Limit = origLimit - calcEnsuredIDsCount(total.IDs, remainingFracs, params.Order)

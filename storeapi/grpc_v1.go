@@ -29,6 +29,7 @@ type SearchConfig struct {
 	WorkersCount          int
 	MaxFractionHits       int
 	FractionsPerIteration int
+	MaxQprMemory          uint64 // max heap memory a single QPR can use (bytes). 0 if no limit set.
 	RequestsLimit         uint64
 	LogThreshold          time.Duration
 	Async                 asyncsearcher.AsyncSearcherConfig
@@ -106,6 +107,7 @@ func NewGrpcV1(cfg APIConfig, fracManager *fracmanager.FracManager, mappingProvi
 			searcher: fracmanager.NewSearcher(cfg.Search.WorkersCount, fracmanager.SearcherCfg{
 				MaxFractionHits:       cfg.Search.MaxFractionHits,
 				FractionsPerIteration: cfg.Search.FractionsPerIteration,
+				MaxQprMemory:          cfg.Search.MaxQprMemory,
 			}),
 		},
 		fetchData: fetchData{
@@ -149,6 +151,9 @@ func parseStoreError(e error) (storeapi.SearchErrorCode, bool) {
 	}
 	if errors.Is(e, consts.ErrTooManyFractionTokens) {
 		return storeapi.SearchErrorCode_TOO_MANY_FRACTION_TOKENS, true
+	}
+	if errors.Is(e, consts.ErrMemoryLimitExceeded) {
+		return storeapi.SearchErrorCode_MEMORY_LIMIT_EXCEEDED, true
 	}
 	if errors.Is(e, consts.ErrTooManyFractionsHit) {
 		metric.RejectedRequests.WithLabelValues("search", "fracs_exceeding").Inc()
