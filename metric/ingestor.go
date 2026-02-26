@@ -10,31 +10,31 @@ var (
 		Namespace: "seq_db_ingestor",
 		Subsystem: "search",
 		Name:      "total",
-		Help:      "",
+		Help:      "Number of search requests ingestor started to process",
 	})
 	SearchColdTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "search",
 		Name:      "cold_total",
-		Help:      "",
+		Help:      "Number of search requests sent to cold stores",
 	})
 	SearchColdErrors = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "search",
 		Name:      "cold_errors_total",
-		Help:      "",
+		Help:      "Number of errors in cold search requests",
 	})
 	SearchErrors = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "search",
 		Name:      "errors_total",
-		Help:      "",
+		Help:      "Number of search requests completed with error",
 	})
 	IngestorPanics = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "common",
 		Name:      "panics_total",
-		Help:      "",
+		Help:      "Number of panics in ingestor",
 	})
 
 	SearchPartial = promauto.NewCounter(prometheus.CounterOpts{
@@ -50,40 +50,40 @@ var (
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "doc_provide_duration_seconds",
-		Help:      "",
+		Help:      "Bulk processing time (parsing, tokenization, extracting meta, compressing docs and meta) by ingestor",
 		Buckets:   SecondsBuckets,
 	})
 	IngestorBulkSendAttemptDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "send_attempt_duration_seconds",
-		Help:      "",
+		Help:      "Time spent sending a bulk to stores successfully in seconds",
 		Buckets:   SecondsBuckets,
 	})
 	IngestorBulkAttemptErrorDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "attempt_error_duration_seconds",
-		Help:      "",
+		Help:      "Time spent before error occurred in bulk send attempts in seconds",
 		Buckets:   SecondsBuckets,
 	})
 	IngestorBulkSkipCold = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "skip_cold_total",
-		Help:      "",
+		Help:      "Number of bulk requests where sending to cold storage was skipped since it was already stored in cold at the previous attempt",
 	})
 	IngestorBulkSkipShard = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "skip_shard_total",
-		Help:      "",
+		Help:      "Number of replicas skipped when choosing replicas to send a bulk since the replica was chosen for storage already",
 	})
 	BulkErrors = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
 		Name:      "errors_total",
-		Help:      "",
+		Help:      "Number of errors in bulk processing",
 	})
 
 	// Subsystem: "fetch"
@@ -91,14 +91,14 @@ var (
 	DocumentsFetched = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "fetch",
-		Name:      "total_fetched_documents",
+		Name:      "fetched_docs",
 		Help:      "Number of documents returned by the Fetch method",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
 	})
 	DocumentsRequested = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "fetch",
-		Name:      "total_requested_documents",
+		Name:      "requested_docs",
 		Help:      "Number of documents requested using the Fetch method",
 		Buckets:   prometheus.ExponentialBuckets(1, 3, 16),
 	})
@@ -106,20 +106,20 @@ var (
 		Namespace: "seq_db_ingestor",
 		Subsystem: "fetch",
 		Name:      "errors_total",
-		Help:      "",
+		Help:      "Number of errors in fetch requests",
 	})
 	FetchNotFoundError = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "fetch",
 		Name:      "not_found_errors",
-		Help:      "",
+		Help:      "Number of documents not found per fetch request",
 		Buckets:   prometheus.ExponentialBuckets(1, 3, 16),
 	})
 	FetchDuplicateErrors = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "fetch",
 		Name:      "duplicate_errors",
-		Help:      "",
+		Help:      "Number of duplicate document errors per fetch request",
 		Buckets:   prometheus.ExponentialBuckets(1, 3, 16),
 	})
 	RateLimiterSize = promauto.NewGauge(prometheus.GaugeOpts{
@@ -132,13 +132,13 @@ var (
 	CircuitBreakerSuccess = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "circuit_breaker",
-		Name:      "success",
+		Name:      "success_total",
 		Help:      "Count of each time `Execute` does not return an error",
 	}, []string{"name"})
 	CircuitBreakerErr = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "circuit_breaker",
-		Name:      "err",
+		Name:      "errors_total",
 		Help:      "The number of errors that have occurred in the circuit breaker",
 	}, []string{"name", "kind"})
 	CircuitBreakerState = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -151,22 +151,22 @@ var (
 	ExportDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "export",
-		Name:      "duration",
-		Help:      "",
+		Name:      "duration_seconds",
+		Help:      "Time taken to export data by protocol in seconds",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 25),
 	}, []string{"protocol"})
 	ExportSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "export",
-		Name:      "size",
-		Help:      "",
+		Name:      "size_bytes",
+		Help:      "Size of exported data by protocol in bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 50),
 	}, []string{"protocol"})
 	CurrentExportersCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "export",
-		Name:      "current_exporters_count",
-		Help:      "",
+		Name:      "current_exporters_in_progress",
+		Help:      "Current number of active exporters in progress by protocol",
 	}, []string{"protocol"})
 
 	// Subsystem: tokenizer
@@ -175,21 +175,21 @@ var (
 		Namespace: "seq_db_ingestor",
 		Subsystem: "tokenizer",
 		Name:      "tokens_per_message",
-		Help:      "",
+		Help:      "Number of tokens extracted per message by tokenizer type",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
 	}, []string{"tokenizer"})
 	TokenizerParseDurationSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "tokenizer",
 		Name:      "parse_duration_seconds",
-		Help:      "",
+		Help:      "Time taken to parse and tokenize messages in seconds by tokenizer type",
 		Buckets:   SecondsBuckets,
 	}, []string{"tokenizer"})
 	TokenizerIncomingTextLen = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "tokenizer",
-		Name:      "incoming_text_len",
-		Help:      "",
+		Name:      "incoming_text_len_bytes",
+		Help:      "Length of incoming text for tokenization in bytes",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 16),
 	})
 )
