@@ -46,7 +46,7 @@ type Active struct {
 	TokenList *TokenList
 
 	DocsPositions *DocsPositions
-	IDsToLIDs     *ActiveLIDs // TODO: (???)
+	IDsToLIDs     *ActiveLIDs
 
 	docsFile   *os.File
 	docsReader storage.DocsReader

@@ -30,15 +30,20 @@ const (
 	tmpExt         = ".tmp"
 )
 
-const defaultMaintenanceInterval = 30 * time.Second
+const (
+	defaultMaintenanceInterval = 30 * time.Second
+	defaultCacheCleanInterval  = 10 * time.Millisecond
+	defaultCacheGCDelay        = 1 * time.Second
+)
 
 type MappingProvider interface {
 	GetMapping() seq.Mapping
 }
 
 type Config struct {
-	DataDir string
-	Workers int
+	DataDir        string
+	Workers        int
+	CacheSizeLimit uint64
 }
 
 type DocsFilter struct {
@@ -56,8 +61,11 @@ type DocsFilter struct {
 	createDirOnce *sync.Once
 
 	maintenanceInterval time.Duration
+	cacheCleanInterval  time.Duration
+	cacheGCDelay        time.Duration
 
-	headersCache *cache.Cache[[]lidsBlockHeader]
+	headersCache        *cache.Cache[[]lidsBlockHeader]
+	headersCacheCleaner *cache.Cleaner
 }
 
 func New(
@@ -78,6 +86,8 @@ func New(
 		filtersMap[string(f.Hash())] = f
 	}
 
+	cacheCleaner := cache.NewCleaner(cfg.CacheSizeLimit, nil)
+
 	return &DocsFilter{
 		ctx:                 ctx,
 		config:              cfg,
@@ -88,8 +98,10 @@ func New(
 		rateLimit:           make(chan struct{}, workers),
 		createDirOnce:       &sync.Once{},
 		maintenanceInterval: defaultMaintenanceInterval,
-		// TODO: create cache properly (cleaner, metrics) (use cacheMaintainer ???)
-		headersCache: cache.NewCache[[]lidsBlockHeader](nil, nil),
+		cacheCleanInterval:  defaultCacheCleanInterval,
+		cacheGCDelay:        defaultCacheGCDelay,
+		headersCache:        cache.NewCache[[]lidsBlockHeader](cacheCleaner, nil),
+		headersCacheCleaner: cacheCleaner,
 	}
 }
 
@@ -107,6 +119,7 @@ func (df *DocsFilter) Start(fracs fracmanager.List) {
 	}
 
 	go df.maintenance()
+	go df.cacheCleanLoop()
 
 	mapping := df.mp.GetMapping()
 
@@ -379,6 +392,25 @@ func (df *DocsFilter) maintenance() {
 		logger.Info("docs filter maintenance iteration")
 		df.checkDiskUsage()
 		time.Sleep(df.maintenanceInterval)
+	}
+}
+
+func (df *DocsFilter) cacheCleanLoop() {
+	runs := 0
+	gcRunsCount := int(df.cacheGCDelay / df.cacheCleanInterval)
+
+	for {
+		runs++
+		df.headersCacheCleaner.Cleanup(&cache.CleanStat{})
+		df.headersCacheCleaner.Rotate()
+
+		if runs >= gcRunsCount {
+			runs = 0
+			df.headersCacheCleaner.CleanEmptyGenerations()
+			df.headersCacheCleaner.ReleaseBuckets()
+		}
+
+		time.Sleep(df.cacheCleanInterval)
 	}
 }
 

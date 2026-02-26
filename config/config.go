@@ -271,6 +271,7 @@ type Config struct {
 		DataDir     string   `config:"data_dir"`
 		Concurrency int      `config:"concurrency"`
 		Filters     []Filter `config:"filters"`
+		CacheSize   Bytes    `config:"cache_size" default:"100MiB"`
 	} `config:"docs_filter"`
 
 	// Experimental provides flags

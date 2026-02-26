@@ -314,8 +314,9 @@ func startStore(
 			},
 		},
 		Filters: docsfilter.Config{
-			DataDir: cfg.DocsFilter.DataDir,
-			Workers: cfg.DocsFilter.Concurrency,
+			DataDir:        cfg.DocsFilter.DataDir,
+			Workers:        cfg.DocsFilter.Concurrency,
+			CacheSizeLimit: uint64(cfg.DocsFilter.CacheSize),
 		},
 	}
 
