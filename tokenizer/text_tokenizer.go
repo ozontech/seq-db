@@ -1,8 +1,15 @@
 package tokenizer
 
+/*
+#cgo CFLAGS: -O3 -msse3 -g -Wall -Wextra
+#include "text.h"
+*/
+import "C"
+
 import (
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/ozontech/seq-db/metric"
 )
@@ -46,6 +53,18 @@ func (t *TextTokenizer) Tokenize(tokens []MetaToken, name, value []byte, maxFiel
 	metric.SkippedIndexesBytesText.Add(float64(len(value[maxLength:])))
 	value = value[:maxLength]
 	k := 0
+
+	if asciiOnly(value) {
+		spans := tokenize(value)
+
+		for _, s := range spans {
+			start, length := uint32(s.start), uint32(s.len)
+			token := value[start : start+length]
+			tokens = append(tokens, MetaToken{Key: name, Value: token})
+		}
+
+		return tokens
+	}
 
 	hasUpper := false
 	asciiOnly := true
@@ -102,4 +121,29 @@ func (t *TextTokenizer) Tokenize(tokens []MetaToken, name, value []byte, maxFiel
 	tokens = append(tokens, MetaToken{Key: name, Value: token})
 
 	return tokens
+}
+
+func asciiOnly(s []byte) bool {
+	return int32(C.asciionly(
+		(*C.char)(unsafe.Pointer(unsafe.SliceData(s))),
+		C.size_t(len(s)),
+	)) == 1
+}
+
+func tokenize(text []byte) []C.span {
+	if len(text) == 0 {
+		return nil
+	}
+
+	cap := len(text)/2 + 1
+	buf := make([]C.span, cap)
+
+	n := C.tokenize(
+		(*C.char)(unsafe.Pointer(&text[0])),
+		C.size_t(len(text)),
+		&buf[0],
+		C.int(cap),
+	)
+
+	return buf[:n]
 }
