@@ -2,7 +2,6 @@ package active
 
 import (
 	"bytes"
-	"cmp"
 	"encoding/binary"
 	"hash/fnv"
 	"slices"
@@ -256,10 +255,18 @@ func organizeTokens(idx *memIndex, tmp *Resources, buf *indexerBuffer, tokens []
 	// we'll sort by (field, value) to group tokens by field
 	slices.SortFunc(order, func(a, b uint32) int {
 		tokenA, tokenB := tokens[a], tokens[b]
-		return cmp.Or(
-			cmp.Compare(tokenA.field, tokenB.field),
-			cmp.Compare(tokenA.value, tokenB.value),
-		)
+		if tokenA.field < tokenB.field {
+			return -1
+		}
+		if tokenA.field == tokenB.field {
+			if tokenA.value < tokenB.value {
+				return -1
+			}
+			if tokenA.value == tokenB.value {
+				return 0
+			}
+		}
+		return 1
 	})
 
 	fieldSize := 0
