@@ -49,30 +49,30 @@ type Ingestor struct {
 	isStopped atomic.Bool
 }
 
-func clientsFromConfig(config search.Config) (map[string]storeapi.StoreApiClient, error) {
+func clientsFromConfig(sConfig search.Config) (map[string]storeapi.StoreApiClient, error) {
 	clients := map[string]storeapi.StoreApiClient{}
-	if config.HotStores != nil {
-		if err := appendClients(clients, config.HotStores.Shards); err != nil {
+	if sConfig.HotStores != nil {
+		if err := appendClients(clients, sConfig.HotStores.Shards); err != nil {
 			return nil, err
 		}
 	}
-	if config.HotReadStores != nil {
-		if err := appendClients(clients, config.HotReadStores.Shards); err != nil {
+	if sConfig.HotReadStores != nil {
+		if err := appendClients(clients, sConfig.HotReadStores.Shards); err != nil {
 			return nil, err
 		}
 	}
-	if config.WriteStores != nil {
-		if err := appendClients(clients, config.WriteStores.Shards); err != nil {
+	if sConfig.WriteStores != nil {
+		if err := appendClients(clients, sConfig.WriteStores.Shards); err != nil {
 			return nil, err
 		}
 	}
-	if config.ReadStores != nil {
-		if err := appendClients(clients, config.ReadStores.Shards); err != nil {
+	if sConfig.ReadStores != nil {
+		if err := appendClients(clients, sConfig.ReadStores.Shards); err != nil {
 			return nil, err
 		}
 	}
-	if config.RegionStores != nil {
-		if err := appendClients(clients, config.RegionStores.Shards); err != nil {
+	if sConfig.RegionStores != nil {
+		if err := appendClients(clients, sConfig.RegionStores.Shards); err != nil {
 			return nil, err
 		}
 	}
