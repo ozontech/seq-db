@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,11 @@ type Config struct {
 	WriteStores     *stores.Stores
 	ShuffleReplicas bool
 	MirrorAddr      string
+
+	// RegionStores is a separate topology for experimental.regions (not mixed with hot_stores). When set, search uses only this.
+	RegionStores *stores.Stores
+	// RegionNames maps shard index to region name (same order as RegionStores.Shards).
+	RegionNames []string
 }
 
 type Ingestor struct {
@@ -82,16 +88,41 @@ func (si *Ingestor) Search(
 	}
 
 	startTime := time.Now()
-	searchStores := si.config.HotStores
-	if si.config.HotReadStores != nil && len(si.config.HotReadStores.Shards) > 0 {
-		searchStores = si.config.HotReadStores
+
+	var searchStores *stores.Stores
+	if config.UseRegions {
+		// Regions-only path: use RegionStores only; hot_stores logic is untouched.
+		selected := sr.Regions
+		allowed := make(map[string]struct{}, len(selected))
+		for _, n := range selected {
+			allowed[strings.TrimSpace(n)] = struct{}{}
+		}
+		shards := make([][]string, 0)
+		vers := make([]string, 0)
+		for i, name := range si.config.RegionNames {
+			if _, ok := allowed[name]; ok && i < len(si.config.RegionStores.Shards) {
+				shards = append(shards, si.config.RegionStores.Shards[i])
+				vers = append(vers, si.config.RegionStores.Vers[i])
+			}
+		}
+		searchStores = &stores.Stores{Shards: shards, Vers: vers}
+	} else {
+		// Normal path: hot_stores / hot_read_stores (unchanged).
+		searchStores = si.config.HotStores
+		if si.config.HotReadStores != nil && len(si.config.HotReadStores.Shards) > 0 {
+			searchStores = si.config.HotReadStores
+		}
 	}
+
 	qprs, err := si.searchStores(ctx, sr, searchStores, tr)
 	var partialRespErr error
 
 	if err != nil {
 		switch {
 		case errors.Is(err, consts.ErrIngestorQueryWantsOldData):
+			if config.UseRegions {
+				return nil, nil, 0, err
+			}
 			if len(si.config.ReadStores.Shards) == 0 {
 				logger.Error("no cold stores, but hot mode is enabled, bad configuration of stores!")
 				return nil, nil, 0, err
@@ -762,17 +793,29 @@ func (si *Ingestor) Status(ctx context.Context) *IngestorStatus {
 }
 
 func (si *Ingestor) getStoresHosts() []string {
-	numberOfStores := len(si.config.HotStores.Shards) + len(si.config.HotReadStores.Shards) +
-		len(si.config.ReadStores.Shards) + len(si.config.WriteStores.Shards)
+	var numberOfStores int
+	if !config.UseRegions {
+		numberOfStores = len(si.config.HotStores.Shards) +
+			len(si.config.HotReadStores.Shards) +
+			len(si.config.ReadStores.Shards) +
+			len(si.config.WriteStores.Shards)
+	} else {
+		numberOfStores = len(si.config.RegionStores.Shards)
+	}
 
 	hosts := make([]string, 0, numberOfStores)
 	seen := make(map[string]struct{}, numberOfStores)
 
 	shards := make([][]string, 0, numberOfStores)
-	shards = append(shards, si.config.HotStores.Shards...)
-	shards = append(shards, si.config.HotReadStores.Shards...)
-	shards = append(shards, si.config.ReadStores.Shards...)
-	shards = append(shards, si.config.WriteStores.Shards...)
+
+	if !config.UseRegions {
+		shards = append(shards, si.config.HotStores.Shards...)
+		shards = append(shards, si.config.HotReadStores.Shards...)
+		shards = append(shards, si.config.ReadStores.Shards...)
+		shards = append(shards, si.config.WriteStores.Shards...)
+	} else {
+		shards = append(shards, si.config.RegionStores.Shards...)
+	}
 
 	for _, shard := range shards {
 		for _, host := range shard {

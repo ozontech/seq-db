@@ -46,6 +46,7 @@ func (g *grpcV1) Export(req *seqproxyapi.ExportRequest, stream seqproxyapi.SeqPr
 		Size:      req.Size,
 		Offset:    req.Offset,
 		WithTotal: false,
+		Regions:   req.Regions,
 	}
 	sResp, err := g.doSearch(ctx, proxyReq, true, nil)
 	if err != nil {

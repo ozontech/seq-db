@@ -88,4 +88,6 @@ var (
 	ErrTooManyGroupTokens        = errors.New("aggregation has too many group tokens")
 	ErrTooManyFractionTokens     = errors.New("aggregation has too many fraction tokens")
 	ErrTooManyFractionsHit       = errors.New("too many fractions hit")
+	ErrNoRegionsSpecified        = errors.New("no regions specified in request (required when using experimental.regions)")
+	ErrTooManyRegionsRequested   = errors.New("too many regions in request (exceeds max_regions_per_request)")
 )

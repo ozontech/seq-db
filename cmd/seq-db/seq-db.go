@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -87,6 +88,7 @@ func main() {
 	config.MaxRequestedDocuments = cfg.Limits.SearchDocs
 	config.MaxRegexTokensCheck = cfg.Experimental.MaxRegexTokensCheck
 	config.FailPartialResponse = cfg.Cluster.FailPartialResponse
+	config.UseRegions = cfg.Experimental.Regions.UseRegions
 
 	backoff.DefaultConfig.MaxDelay = 10 * time.Second
 
@@ -155,29 +157,7 @@ func startProxy(
 ) *proxyapi.Ingestor {
 	logger.Info("max queries per second", zap.Float64("limit", cfg.Limits.QueryRate))
 
-	hotReplicasNum := cfg.Cluster.Replicas
-	if cfg.Cluster.HotReplicas > 0 {
-		hotReplicasNum = cfg.Cluster.HotReplicas
-	}
-
-	hotStores := stores.NewStoresFromString(strings.Join(cfg.Cluster.HotStores, ","), hotReplicasNum)
-	hotReadStores := stores.NewStoresFromString(strings.Join(cfg.Cluster.HotReadStores, ","), hotReplicasNum)
-	readStores := stores.NewStoresFromString(strings.Join(cfg.Cluster.ReadStores, ","), cfg.Cluster.Replicas)
-	writeStores := stores.NewStoresFromString(strings.Join(cfg.Cluster.WriteStores, ","), cfg.Cluster.Replicas)
-
-	logger.Info("stores data",
-		zap.String("read_stores", readStores.String()),
-		zap.String("write_stores", writeStores.String()),
-		zap.String("hot_stores", hotStores.String()),
-		zap.String("hot_read_stores", hotReadStores.String()),
-	)
-
-	err := validateIngestorTopology(hotStores, hotReadStores, readStores, writeStores)
-	if err != nil {
-		logger.Fatal("validating topology", zap.Error(err))
-	}
-
-	pconfig := proxyapi.IngestorConfig{
+	pConfig := proxyapi.IngestorConfig{
 		API: proxyapi.APIConfig{
 			SearchTimeout:                     consts.DefaultSearchTimeout,
 			ExportTimeout:                     consts.DefaultExportTimeout,
@@ -185,18 +165,13 @@ func startProxy(
 			EsVersion:                         cfg.API.ESVersion,
 			GatewayAddr:                       cfg.Address.GRPC,
 			AsyncSearchMaxDocumentsPerRequest: cfg.AsyncSearch.MaxDocumentsPerRequest,
+			MaxRegionsPerRequest:              cfg.Experimental.Regions.MaxRegionsPerRequest,
 		},
 		Search: search.Config{
-			HotStores:       hotStores,
-			HotReadStores:   hotReadStores,
-			ReadStores:      readStores,
-			WriteStores:     writeStores,
 			ShuffleReplicas: cfg.Cluster.ShuffleReplicas,
 			MirrorAddr:      cfg.Cluster.MirrorAddress,
 		},
 		Bulk: bulk.IngestorConfig{
-			HotStores:   hotStores,
-			WriteStores: writeStores,
 			BulkCircuit: circuitbreaker.Config{
 				Timeout:                  cfg.CircuitBreaker.Bulk.ShardTimeout,
 				MaxConcurrent:            int64(cfg.Limits.InflightBulks),
@@ -219,7 +194,66 @@ func startProxy(
 		},
 	}
 
-	ingestor, err := proxyapi.NewIngestor(pconfig, inMemory)
+	regionsCfg := cfg.Experimental.Regions
+	// without regions
+	if !config.UseRegions {
+		hotReplicasNum := cfg.Cluster.Replicas
+		if cfg.Cluster.HotReplicas > 0 {
+			hotReplicasNum = cfg.Cluster.HotReplicas
+		}
+
+		hotStores := stores.NewStoresFromString(strings.Join(cfg.Cluster.HotStores, ","), hotReplicasNum)
+		hotReadStores := stores.NewStoresFromString(strings.Join(cfg.Cluster.HotReadStores, ","), hotReplicasNum)
+		readStores := stores.NewStoresFromString(strings.Join(cfg.Cluster.ReadStores, ","), cfg.Cluster.Replicas)
+		writeStores := stores.NewStoresFromString(strings.Join(cfg.Cluster.WriteStores, ","), cfg.Cluster.Replicas)
+
+		logger.Info("stores data",
+			zap.String("read_stores", readStores.String()),
+			zap.String("write_stores", writeStores.String()),
+			zap.String("hot_stores", hotStores.String()),
+			zap.String("hot_read_stores", hotReadStores.String()),
+		)
+
+		err := validateIngestorTopology(hotStores, hotReadStores, readStores, writeStores)
+		if err != nil {
+			logger.Fatal("validating topology", zap.Error(err))
+		}
+
+		pConfig.Search.HotStores = hotStores
+		pConfig.Search.HotReadStores = hotReadStores
+		pConfig.Search.ReadStores = readStores
+		pConfig.Search.WriteStores = writeStores
+
+		pConfig.Bulk.HotStores = hotStores
+		pConfig.Bulk.WriteStores = writeStores
+	} else {
+		var regionStores *stores.Stores
+		var regionNames []string
+
+		names := make([]string, 0, len(regionsCfg.Regions))
+		for name := range regionsCfg.Regions {
+			names = append(names, strings.TrimSpace(name))
+		}
+		sort.Strings(names)
+		regionNames = names
+		regionStores = &stores.Stores{
+			Shards: make([][]string, len(names)),
+			Vers:   make([]string, len(names)),
+		}
+		for i, name := range names {
+			regionStores.Shards[i] = []string{regionsCfg.Regions[name]}
+			regionStores.Vers[i] = ""
+		}
+
+		pConfig.Search.RegionStores = regionStores
+		pConfig.Search.RegionNames = regionNames
+
+		logger.Info("experimental.regions enabled",
+			zap.Strings("regions", regionNames),
+		)
+	}
+
+	ingestor, err := proxyapi.NewIngestor(pConfig, inMemory)
 	if err != nil {
 		logger.Panic("failed to init ingestor", zap.Error(err))
 	}

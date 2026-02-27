@@ -17,4 +17,6 @@ var (
 	MaxRegexTokensCheck int
 
 	FailPartialResponse = false
+
+	UseRegions = false
 )

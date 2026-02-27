@@ -281,6 +281,19 @@ type Config struct {
 		// Specify how many tokens can be checked using regular expressions.
 		// If zero then there is no limit.
 		MaxRegexTokensCheck int `config:"max_regex_tokens_check" default:"0"`
+
+		// Regions configures the proxy to query only remote regions (other seq-proxies via store API).
+		// When set, hot_stores, hot_read_stores, write_stores, read_stores must be empty. No bulk; search only.
+		Regions struct {
+			// UseRegions is whether to use regions or not
+			UseRegions bool `config:"use_regions"`
+			// Regions maps region name to store API gRPC address (e.g. "eu" -> "eu-proxy:9004").
+			Regions map[string]string `config:"regions"`
+			// MaxConcurrent limits how many regions are queried in parallel per search (0 = no limit).
+			MaxConcurrent int `config:"max_concurrent" default:"0"`
+			// MaxRegionsPerRequest is the maximum number of regions a client can specify in one search request (e.g. 5).
+			MaxRegionsPerRequest int `config:"max_regions_per_request" default:"5"`
+		} `config:"regions"`
 	} `config:"experimental"`
 }
 

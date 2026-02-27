@@ -20,8 +20,9 @@ func (g *grpcV1) GetAggregation(
 	}
 
 	proxyReq := &seqproxyapi.ComplexSearchRequest{
-		Query: req.Query,
-		Aggs:  req.Aggs,
+		Query:   req.Query,
+		Aggs:    req.Aggs,
+		Regions: req.Regions,
 	}
 
 	sResp, err := g.doSearch(ctx, proxyReq, false, nil)
