@@ -2,17 +2,25 @@ package tokenizer
 
 /*
 #cgo CFLAGS: -O3 -msse3 -g -Wall -Wextra
-#include "text.h"
+#include "tokenize.h"
 */
 import "C"
 
 import (
+	"sync"
 	"unicode"
 	"unicode/utf8"
 	"unsafe"
 
 	"github.com/ozontech/seq-db/metric"
 )
+
+var spanBufPool = sync.Pool{
+	New: func() any {
+		buf := make([]C.span, 64)
+		return &buf
+	},
+}
 
 type TextTokenizer struct {
 	maxTokenSize               int
@@ -54,17 +62,21 @@ func (t *TextTokenizer) Tokenize(tokens []MetaToken, name, value []byte, maxFiel
 	value = value[:maxLength]
 	k := 0
 
-	if asciiOnly(value) {
-		spans := tokenize(value)
+	bufp := spanBufPool.Get().(*[]C.span)
+	spans, ok := tokenize(value, *bufp)
 
+	if ok {
 		for _, s := range spans {
 			start, length := uint32(s.start), uint32(s.len)
 			token := value[start : start+length]
 			tokens = append(tokens, MetaToken{Key: name, Value: token})
 		}
-
+		*bufp = spans[:cap(spans)]
+		spanBufPool.Put(bufp)
 		return tokens
 	}
+
+	panic("unreachable")
 
 	hasUpper := false
 	asciiOnly := true
@@ -130,20 +142,28 @@ func asciiOnly(s []byte) bool {
 	)) == 1
 }
 
-func tokenize(text []byte) []C.span {
+func tokenize(text []byte, buf []C.span) ([]C.span, bool) {
 	if len(text) == 0 {
-		return nil
+		return buf[:0], true
 	}
 
-	cap := len(text)/2 + 1
-	buf := make([]C.span, cap)
+	required := len(text)/2 + 1
+	if cap(buf) < required {
+		buf = make([]C.span, required)
+	} else {
+		buf = buf[:required]
+	}
 
 	n := C.tokenize(
 		(*C.char)(unsafe.Pointer(&text[0])),
 		C.size_t(len(text)),
 		&buf[0],
-		C.int(cap),
+		+C.int(required),
 	)
 
-	return buf[:n]
+	if n < 0 {
+		return nil, false
+	}
+
+	return buf[:n], true
 }

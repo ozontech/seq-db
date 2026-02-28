@@ -6,7 +6,7 @@
 #include "stdlib.h"
 #include "string.h"
 
-#include "text.h"
+#include "tokenize.h"
 
 static inline uint16_t eq_mask(__m128i block, char c) {
   return _mm_movemask_epi8(_mm_cmpeq_epi8(block, _mm_set1_epi8(c)));
@@ -17,14 +17,14 @@ static inline int is_token_char(char c) {
          ('0' <= c && c <= '9') || c == '_' || c == '*';
 }
 
-int32_t asciionly(const char *data, size_t len) {
+int32_t asciionly(const char *text, size_t len) {
   char high = 0x80;
   __m128i mask = _mm_set1_epi8(high);
 
   size_t i;
   int32_t result = 1;
   for (i = 0; i + 16 < len; i += 16) {
-    __m128i input = _mm_lddqu_si128((__m128i_u *)(data + i));
+    __m128i input = _mm_lddqu_si128((__m128i_u *)(text + i));
     __m128i masked = _mm_and_si128(input, mask);
 
     result &= (_mm_movemask_epi8(masked) == 0);
@@ -33,7 +33,7 @@ int32_t asciionly(const char *data, size_t len) {
   }
 
   for (; i < len; i++)
-    result &= ((data[i] & high) == 0);
+    result &= ((text[i] & high) == 0);
 
   return result;
 }
@@ -50,6 +50,9 @@ int16_t boundaries(__m128i block, uint8_t lo, uint8_t hi) {
 }
 
 int32_t tokenize(const char *text, size_t len, span *out, int out_cap) {
+  if (!asciionly(text, len))
+    return -1;
+
   int count = 0;
   int token_start = -1;
 

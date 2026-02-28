@@ -187,3 +187,29 @@ func TestTextTokenizerUTF8(t *testing.T) {
 	test("пРивеt世界", []string{"пРивеt世界"})
 	test("А", []string{"А"})
 }
+
+func BenchmarkTokenize(b *testing.B) {
+	tokenizer := NewTextTokenizer(1000, false, true, 1024)
+	name := []byte("message")
+
+	short := []byte("GET /api/v1/users 200 OK")
+	medium := []byte("2025-02-27T10:15:30Z INFO worker_3 processed request from 192.168.1.42 method=POST path=/api/v1/orders status=201 latency_ms=12 bytes=4096")
+	long := bytes.Repeat([]byte("connection_timeout from host=server42 region=eu_west error_code=ETIMEDOUT retry_count=3 "), 10)
+
+	for _, tc := range []struct {
+		name string
+		data []byte
+	}{
+		{"short_24B", short},
+		{"medium_150B", medium},
+		{"long_900B", long},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.SetBytes(int64(len(tc.data)))
+			var tokens []MetaToken
+			for b.Loop() {
+				tokens = tokenizer.Tokenize(tokens[:0], name, tc.data, 0)
+			}
+		})
+	}
+}
