@@ -11,7 +11,6 @@ import (
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
-	"github.com/ozontech/seq-db/tokenizer"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -35,7 +34,6 @@ type indexerBuffer struct {
 	sizes     []uint32
 	fields    []string
 	fieldTIDs []uint32
-	tokens    []tokenizer.MetaToken
 	tokenMap  map[tokenStr]uint32
 }
 
@@ -94,14 +92,14 @@ func NewMemIndex(data storage.DocBlock) (*memIndex, error) {
 // tokenStr represents a unique token as a (field, value) pair.
 // used as a map key during token deduplication.
 type tokenStr struct {
-	value string
 	field string
+	value string
 }
 
-func toToken(t tokenizer.MetaToken) tokenStr {
+func toToken(k, v []byte) tokenStr {
 	return tokenStr{
-		value: util.ByteToStringUnsafe(t.Value),
-		field: util.ByteToStringUnsafe(t.Key),
+		field: util.ByteToStringUnsafe(k),
+		value: util.ByteToStringUnsafe(v),
 	}
 }
 
@@ -153,10 +151,6 @@ func extractTokens(
 	}
 	idx.hash = hash.Sum64()
 
-	// extract and process tokens from all documents
-	var err error
-	var token tokenStr
-
 	// allocate slices for token-document relationships
 	lids := tmp.GetUint32s(int(totalTokens))[:0] // local document ID for each token occurrence
 	tids := tmp.GetUint32s(int(totalTokens))[:0] // token ID for each occurrence
@@ -167,18 +161,13 @@ func extractTokens(
 	for i, origIdx := range order {
 		docMeta := meta[origIdx]
 
-		// decode tokens for this document
-		if buf.tokens, err = docMeta.DecodeTokens(buf.tokens[:0]); err != nil {
-			return nil, nil, nil, err
-		}
-
-		// process each token in the document
 		lid := uint32(i + 1)
-		for _, t := range buf.tokens {
-			if bytes.Equal(t.Key, seq.AllTokenName) {
+
+		for k, v := range docMeta.DecodeTokens() {
+			if bytes.Equal(k, seq.AllTokenName) {
 				continue
 			}
-			token = toToken(t)
+			token := toToken(k, v)
 			tid, exists := buf.tokenMap[token]
 			if !exists {
 				tid = uint32(len(buf.tokenMap)) // assign new token ID

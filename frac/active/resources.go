@@ -4,7 +4,6 @@ import (
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/resources"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/tokenizer"
 )
 
 const poolBuckets = 24
@@ -107,12 +106,10 @@ func (r *Resources) GetBuffer() *indexerBuffer {
 			sizes:     make([]uint32, 0, 1000),
 			fields:    make([]string, 0, 100),
 			fieldTIDs: make([]uint32, 0, 100),
-			tokens:    make([]tokenizer.MetaToken, 0, 100),
 			tokenMap:  make(map[tokenStr]uint32, 1000),
 		}
 	}, func(b *indexerBuffer) {
 		b.fields = b.fields[:0]
-		b.tokens = b.tokens[:0]
 		b.fieldTIDs = b.fieldTIDs[:0]
 		b.sizes = b.sizes[:0]
 		clear(b.tokenMap)

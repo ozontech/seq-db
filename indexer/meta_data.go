@@ -3,6 +3,7 @@ package indexer
 import (
 	"encoding/binary"
 	"fmt"
+	"iter"
 	"slices"
 
 	"github.com/ozontech/seq-db/seq"
@@ -139,22 +140,29 @@ func (m *MetaData) unmarshalVersion1Lazy(b []byte) error {
 	return nil
 }
 
-func (m *MetaData) DecodeTokens(tokens []tokenizer.MetaToken) ([]tokenizer.MetaToken, error) {
-	b := m.tokensBin
-
-	// Decode tokens.
-	tokens = tokens[:0]
-	tokens = slices.Grow(tokens, int(m.tokensCount))[:m.tokensCount]
-
-	for i := range tokens {
-		var err error
-		if b, err = tokens[i].UnmarshalBinary(b); err != nil {
-			return nil, err
-		}
-	}
-	return tokens, nil
-}
-
 func (m *MetaData) TokensCount() uint32 {
 	return m.tokensCount
+}
+
+func (m *MetaData) DecodeTokens() iter.Seq2[[]byte, []byte] {
+	return func(yield func([]byte, []byte) bool) {
+		offset := 0
+		for range m.tokensCount {
+			l := binary.LittleEndian.Uint32(m.tokensBin[offset:])
+
+			offset += 4
+			k := m.tokensBin[offset : offset+int(l)]
+			offset += int(l)
+
+			l = binary.LittleEndian.Uint32(m.tokensBin[offset:])
+
+			offset += 4
+			v := m.tokensBin[offset : offset+int(l)]
+			offset += int(l)
+
+			if !yield(k, v) {
+				return
+			}
+		}
+	}
 }

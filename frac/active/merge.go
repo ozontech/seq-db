@@ -84,9 +84,8 @@ func mergeIDs(
 		doubles int
 		prevRef DocRef
 	)
-
 	// process merged stream
-	for docRef, has := mergedDocStream.Next(); has; docRef, has = mergedDocStream.Next() {
+	for docRef := range IterateStream(mergedDocStream) {
 		if docRef.id == prevRef.id && docRef.i != prevRef.i {
 			doubles++
 			// map old LID → 0 (will be filtered later)
@@ -119,13 +118,11 @@ func mergeTokens(
 	indexes []*memIndex,
 	lidsMap [][]uint32,
 ) {
-	totalDocs := 0 // sum of documents from all indexes (before deduplication)
 	totalTokens := 0
 	tokenStreams := make([]OrderedStream[TokenRef], len(indexes))
 
 	// create token iterators
 	for i, idx := range indexes {
-		totalDocs += int(idx.docsCount)
 		totalTokens += len(idx.tokens)
 		tokenStreams[i] = NewTokenStream(idx, lidsMap[i])
 	}
@@ -137,9 +134,6 @@ func mergeTokens(
 		}
 		return r
 	}
-
-	// merged and sorted token stream
-	mergedTokenStream := MergeSortedStreams(tokenStreams, cmpToken)
 
 	// unique values statistics
 	uniqTokensSize := 0
@@ -162,8 +156,9 @@ func mergeTokens(
 	borders := tmp.GetBytes(totalTokens)[:0]
 	tokensRef := make([]TokenRef, 0, totalTokens)
 
+	// merged and sorted token stream
 	// first pass: count unique tokens and fields
-	for tokenRef, has := mergedTokenStream.Next(); has; tokenRef, has = mergedTokenStream.Next() {
+	for tokenRef := range IterateStream(MergeSortedStreams(tokenStreams, cmpToken)) {
 		var border uint8 = borderNone
 
 		// new token
@@ -198,7 +193,7 @@ func mergeTokens(
 
 	// collector for token's document LIDs
 	lidsCollector := NewLIDsCollector(
-		totalDocs,
+		int(dst.docsCount),
 		dst.res.GetUint32s(dst.allTokenLIDsCount)[:0], // all token LIDs
 		dst.res.GetUint32s(int(dst.docsCount)),        // LIDs for _all_
 		tmp.GetBytes((int(dst.docsCount) + 1)),        // sorting buffer
@@ -255,7 +250,7 @@ func mergeTokens(
 
 // LIDsCollector collects and sorts document LIDs for a token.
 type LIDsCollector struct {
-	totalDocs int      // total docs count before deduplication
+	totalDocs int      // total docs count AFTER deduplication
 	lids      []uint32 // overall array
 	all       []uint32 // full LID set (1..N)
 	buf       []uint8  // bitmap
@@ -278,6 +273,9 @@ func NewLIDsCollector(totalDocs int, lids, all []uint32, buf []uint8) *LIDsColle
 
 // Add a single LID
 func (s *LIDsCollector) Add(lid uint32) {
+	if lid == 0 {
+		return
+	}
 	s.lids = append(s.lids, lid)
 }
 
@@ -295,30 +293,27 @@ func (s *LIDsCollector) GetSorted() (dst []uint32) {
 	s.offset = len(s.lids)
 
 	// dense case: use bitmap
-	if 100*n/len(s.all) > 50 {
-		for _, v := range dst {
-			s.buf[v] = 1
-		}
-		s.buf[0] = 0 // skip zero LID from duplicates
-		dst = dst[:0]
-		for lid, ok := range s.buf {
-			if ok == 1 {
-				s.buf[lid] = 0
-				dst = append(dst, uint32(lid))
-			}
-		}
-		return dst
+	if n > 8000 {
+		return s.altSort(dst)
 	}
 
 	// sparse case: sort normally
-	if n > 1 {
-		slices.Sort(dst)
-	}
-	// skip zero LIDs from duplicates
-	for len(dst) > 0 && dst[0] == 0 {
-		dst = dst[1:]
-	}
+	slices.Sort(dst)
 	return dst
+}
+
+func (s *LIDsCollector) altSort(vals []uint32) []uint32 {
+	for _, v := range vals {
+		s.buf[v] = 1
+	}
+	vals = vals[:0]
+	for lid, ok := range s.buf {
+		if ok == 1 {
+			s.buf[lid] = 0
+			vals = append(vals, uint32(lid))
+		}
+	}
+	return vals
 }
 
 // mergeBlocksOffsets merges block offsets and recalculates document positions.
