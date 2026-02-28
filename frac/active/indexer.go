@@ -163,9 +163,9 @@ func extractTokens(
 
 		lid := uint32(i + 1)
 
-		for k, v := range docMeta.DecodeTokens() {
+		err := docMeta.DecodeTokens(func(k, v []byte) error {
 			if bytes.Equal(k, seq.AllTokenName) {
-				continue
+				return nil
 			}
 			token := toToken(k, v)
 			tid, exists := buf.tokenMap[token]
@@ -175,6 +175,11 @@ func extractTokens(
 			}
 			tids = append(tids, tid)
 			lids = append(lids, lid) // store lid+1 (1-based indexing for internal use)
+			return nil
+		})
+
+		if err != nil {
+			return nil, nil, nil, err
 		}
 	}
 

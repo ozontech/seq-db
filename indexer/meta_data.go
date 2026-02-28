@@ -3,7 +3,6 @@ package indexer
 import (
 	"encoding/binary"
 	"fmt"
-	"iter"
 	"slices"
 
 	"github.com/ozontech/seq-db/seq"
@@ -144,25 +143,24 @@ func (m *MetaData) TokensCount() uint32 {
 	return m.tokensCount
 }
 
-func (m *MetaData) DecodeTokens() iter.Seq2[[]byte, []byte] {
-	return func(yield func([]byte, []byte) bool) {
-		offset := 0
-		for range m.tokensCount {
-			l := binary.LittleEndian.Uint32(m.tokensBin[offset:])
+func (m *MetaData) DecodeTokens(p func([]byte, []byte) error) error {
+	offset := 0
+	for range m.tokensCount {
+		l := binary.LittleEndian.Uint32(m.tokensBin[offset:])
 
-			offset += 4
-			k := m.tokensBin[offset : offset+int(l)]
-			offset += int(l)
+		offset += 4
+		k := m.tokensBin[offset : offset+int(l)]
+		offset += int(l)
 
-			l = binary.LittleEndian.Uint32(m.tokensBin[offset:])
+		l = binary.LittleEndian.Uint32(m.tokensBin[offset:])
 
-			offset += 4
-			v := m.tokensBin[offset : offset+int(l)]
-			offset += int(l)
+		offset += 4
+		v := m.tokensBin[offset : offset+int(l)]
+		offset += int(l)
 
-			if !yield(k, v) {
-				return
-			}
+		if err := p(k, v); err != nil {
+			return err
 		}
 	}
+	return nil
 }
