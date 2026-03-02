@@ -55,7 +55,7 @@ our [Benchmark Reports](https://ozontech.github.io/seq-db-docs/seq-db/benchmarks
 
 We track seq-db performance across scenarios:
 - Core functions [benchmarks](https://ozontech.github.io/seq-db/);
-- End-to-end user paths [benchmarks](https://continuous.seqbench.ozon.dev/grafana)
+- End-to-end user paths [benchmarks](https://continuous.seqbench.ozon.dev/grafana);
 
 ## Core Contributors 
 seq-db started as an internal project. To recognise everyone who has made
