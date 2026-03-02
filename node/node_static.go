@@ -51,19 +51,19 @@ func (n *staticAsc) Next() LID {
 // NextGeq finds next greater or equals since iteration is in ascending order
 func (n *staticAsc) NextGeq(nextID LID) LID {
 	if n.ptr >= len(n.data) {
-		return NewCmpLIDOrderDesc(math.MaxUint32)
+		return NewLIDOrderDesc(math.MaxUint32)
 	}
 
 	from := n.ptr
 	idx, found := util.GallopSearchGeq(n.data[from:], nextID.Unpack())
 	if !found {
-		return NewCmpLIDOrderDesc(math.MaxUint32)
+		return NewLIDOrderDesc(math.MaxUint32)
 	}
 
 	i := from + idx
 	cur := n.data[i]
 	n.ptr = i + 1
-	return NewCmpLIDOrderDesc(cur)
+	return NewLIDOrderDesc(cur)
 }
 
 func (n *staticDesc) Next() LID {
@@ -77,18 +77,18 @@ func (n *staticDesc) Next() LID {
 }
 
 // NextGeq finds next less or equals since iteration is in descending order
-func (n *staticDesc) NextGeq(nextID LID) CmpLID {
+func (n *staticDesc) NextGeq(nextID LID) LID {
 	if n.ptr < 0 {
-		return NewCmpLIDOrderAsc(0)
+		return NewLIDOrderAsc(0)
 	}
 	idx, found := util.GallopSearchLeq(n.data[:n.ptr+1], nextID.Unpack())
 	if !found {
-		return NewCmpLIDOrderAsc(0)
+		return NewLIDOrderAsc(0)
 	}
 
 	cur := n.data[idx]
 	n.ptr = idx - 1
-	return NewCmpLIDOrderAsc(cur)
+	return NewLIDOrderAsc(cur)
 }
 
 // MakeStaticNodes is currently used only for tests

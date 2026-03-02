@@ -75,11 +75,11 @@ func (it *IteratorAsc) Next() node.LID {
 }
 
 // NextGeq returns the next (in reverse iteration order) LID that is <= maxLID.
-func (it *IteratorAsc) NextGeq(nextID node.CmpLID) node.CmpLID {
+func (it *IteratorAsc) NextGeq(nextID node.LID) node.LID {
 	for {
 		for len(it.lids) == 0 {
 			if !it.tryNextBlock {
-				return node.NewCmpLIDOrderAsc(0)
+				return node.NewLIDOrderAsc(0)
 			}
 
 			it.loadNextLIDsBlock()
@@ -97,7 +97,7 @@ func (it *IteratorAsc) NextGeq(nextID node.CmpLID) node.CmpLID {
 		if found {
 			lid := it.lids[idx]
 			it.lids = it.lids[:idx]
-			return node.NewCmpLIDOrderAsc(lid)
+			return node.NewLIDOrderAsc(lid)
 		}
 
 		it.lids = it.lids[:0]

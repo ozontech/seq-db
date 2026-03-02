@@ -14,7 +14,7 @@ func (w *sourcedNodeWrapper) NextSourced() (LID, uint32) {
 	return cmp, w.source
 }
 
-func (w *sourcedNodeWrapper) NextSourcedGeq(nextID CmpLID) (CmpLID, uint32) {
+func (w *sourcedNodeWrapper) NextSourcedGeq(nextID LID) (LID, uint32) {
 	id := w.node.NextGeq(nextID)
 	return id, w.source
 }

@@ -16,16 +16,16 @@ func TestNodeAnd_NextGeqAscending(t *testing.T) {
 
 	// Currently, nodes instantiate their state on creation, which will be fixed later.
 	// Thus, the first LID returned is the first from left and right
-	id := node.NextGeq(NewCmpLIDOrderDesc(7))
+	id := node.NextGeq(NewLIDOrderDesc(7))
 	assert.Equal(t, uint32(1), id.Unpack())
 
-	id = node.NextGeq(NewCmpLIDOrderDesc(7))
+	id = node.NextGeq(NewLIDOrderDesc(7))
 	assert.Equal(t, uint32(7), id.Unpack())
 
-	id = node.NextGeq(NewCmpLIDOrderDesc(50))
+	id = node.NextGeq(NewLIDOrderDesc(50))
 	assert.Equal(t, uint32(80), id.Unpack())
 
-	id = node.NextGeq(NewCmpLIDOrderDesc(50))
+	id = node.NextGeq(NewLIDOrderDesc(50))
 	assert.True(t, id.IsNull())
 }
 
@@ -53,7 +53,7 @@ func TestNodeAnd_NextGeqCompatibility(t *testing.T) {
 
 		for {
 			lid := node.Next()
-			lidGeq := nodeGeq.NextGeq(NewCmpLID(zero, rev))
+			lidGeq := nodeGeq.NextGeq(NewLID(zero, rev))
 
 			assert.Equal(t, lid, lidGeq)
 

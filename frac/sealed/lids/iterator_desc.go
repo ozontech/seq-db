@@ -75,11 +75,11 @@ func (it *IteratorDesc) Next() node.LID {
 }
 
 // NextGeq finds next greater or equal
-func (it *IteratorDesc) NextGeq(nextID node.CmpLID) node.CmpLID {
+func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
 	for {
 		for len(it.lids) == 0 {
 			if !it.tryNextBlock {
-				return node.NewCmpLIDOrderDesc(math.MaxUint32)
+				return node.NewLIDOrderDesc(math.MaxUint32)
 			}
 
 			it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
@@ -98,7 +98,7 @@ func (it *IteratorDesc) NextGeq(nextID node.CmpLID) node.CmpLID {
 			it.lids = it.lids[idx:]
 			lid := it.lids[0]
 			it.lids = it.lids[1:]
-			return node.NewCmpLIDOrderDesc(lid)
+			return node.NewLIDOrderDesc(lid)
 		}
 
 		it.lids = it.lids[:0]

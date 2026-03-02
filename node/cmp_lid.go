@@ -41,6 +41,14 @@ func NewLIDOrderAsc(lid uint32) LID {
 	}
 }
 
+func NewLID(lid uint32, reverse bool) LID {
+	if reverse {
+		return NewLIDOrderAsc(lid)
+	} else {
+		return NewLIDOrderDesc(lid)
+	}
+}
+
 // Less compares two values. It also does an implicit null check, since we store math.MaxUint32 for null values.
 // Which means if we call x.Less(y), then we now for sure that x is not null. Therefore, this Less call can work
 // as both "null check + less" combo.

@@ -25,6 +25,6 @@ func (n *nodeRange) Next() LID {
 	return result
 }
 
-func (n *nodeRange) NextGeq(nextID CmpLID) CmpLID {
+func (n *nodeRange) NextGeq(nextID LID) LID {
 	return n.Next()
 }
