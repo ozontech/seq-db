@@ -38,8 +38,8 @@ func NewStatic(data []uint32, reverse bool) Node {
 	}}
 }
 
-func (n *staticAsc) Next() CmpLID {
-	// staticAsc is used in docs order desc, hence we return CmpLID with desc order
+func (n *staticAsc) Next() LID {
+	// staticAsc is used in docs order desc, hence we return LID with desc order
 	if n.ptr >= len(n.data) {
 		return NewCmpLIDOrderDesc(math.MaxUint32)
 	}
@@ -49,7 +49,7 @@ func (n *staticAsc) Next() CmpLID {
 }
 
 // NextGeq finds next greater or equals since iteration is in ascending order
-func (n *staticAsc) NextGeq(nextID CmpLID) CmpLID {
+func (n *staticAsc) NextGeq(nextID LID) LID {
 	if n.ptr >= len(n.data) {
 		return NewCmpLIDOrderDesc(math.MaxUint32)
 	}
@@ -66,8 +66,8 @@ func (n *staticAsc) NextGeq(nextID CmpLID) CmpLID {
 	return NewCmpLIDOrderDesc(cur)
 }
 
-func (n *staticDesc) Next() CmpLID {
-	// staticDesc is used in docs order asc, hence we return CmpLID with asc order
+func (n *staticDesc) Next() LID {
+	// staticDesc is used in docs order asc, hence we return LID with asc order
 	if n.ptr < 0 {
 		return NewCmpLIDOrderAsc(0)
 	}
@@ -77,7 +77,7 @@ func (n *staticDesc) Next() CmpLID {
 }
 
 // NextGeq finds next less or equals since iteration is in descending order
-func (n *staticDesc) NextGeq(nextID CmpLID) CmpLID {
+func (n *staticDesc) NextGeq(nextID LID) CmpLID {
 	if n.ptr < 0 {
 		return NewCmpLIDOrderAsc(0)
 	}

@@ -153,7 +153,7 @@ func (m *MockTokenIndex) GetValByTID(tid uint32) []byte {
 }
 
 type IDSourcePair struct {
-	LID    node.CmpLID
+	LID    node.LID
 	Source uint32
 }
 
@@ -166,7 +166,7 @@ func (m *MockNode) String() string {
 	return reflect.TypeOf(m).String()
 }
 
-func (m *MockNode) NextSourced() (node.CmpLID, uint32) {
+func (m *MockNode) NextSourced() (node.LID, uint32) {
 	if len(m.Pairs) == 0 {
 		return node.NullCmpLID(), 0
 	}

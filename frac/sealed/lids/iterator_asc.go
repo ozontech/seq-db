@@ -57,7 +57,7 @@ func (it *IteratorAsc) loadNextLIDsBlock() {
 	it.blockIndex--
 }
 
-func (it *IteratorAsc) Next() node.CmpLID {
+func (it *IteratorAsc) Next() node.LID {
 	for len(it.lids) == 0 {
 		if !it.tryNextBlock {
 			return node.NewCmpLIDOrderAsc(0)

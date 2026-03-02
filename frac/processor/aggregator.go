@@ -70,7 +70,7 @@ func NewGroupAndFieldAggregator(
 }
 
 // Next iterates over groupBy and field iterators (actually trees) to count occurrence.
-func (n *TwoSourceAggregator) Next(lid node.CmpLID) error {
+func (n *TwoSourceAggregator) Next(lid node.LID) error {
 	groupBySource, hasGroupBy, err := n.groupBy.ConsumeTokenSource(lid)
 	if err != nil {
 		return err
@@ -204,7 +204,7 @@ func NewSingleSourceCountAggregator(
 }
 
 // Next iterates over groupBy tree to count occurrence.
-func (n *SingleSourceCountAggregator) Next(lid node.CmpLID) error {
+func (n *SingleSourceCountAggregator) Next(lid node.LID) error {
 	source, has, err := n.group.ConsumeTokenSource(lid)
 	if err != nil {
 		return err
@@ -273,7 +273,7 @@ func NewSingleSourceUniqueAggregator(iterator *SourcedNodeIterator) *SingleSourc
 }
 
 // Next iterates over groupBy tree to count occurrence.
-func (n *SingleSourceUniqueAggregator) Next(lid node.CmpLID) error {
+func (n *SingleSourceUniqueAggregator) Next(lid node.LID) error {
 	source, has, err := n.group.ConsumeTokenSource(lid)
 	if err != nil {
 		return err
@@ -325,7 +325,7 @@ func NewSingleSourceHistogramAggregator(
 	}
 }
 
-func (n *SingleSourceHistogramAggregator) Next(lid node.CmpLID) error {
+func (n *SingleSourceHistogramAggregator) Next(lid node.LID) error {
 	source, has, err := n.field.ConsumeTokenSource(lid)
 	if err != nil {
 		return err
@@ -381,7 +381,7 @@ type SourcedNodeIterator struct {
 	uniqSourcesLimit iteratorLimit
 	countBySource    map[uint32]int
 
-	lastID     node.CmpLID
+	lastID     node.LID
 	lastSource uint32
 }
 
@@ -399,7 +399,7 @@ func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, 
 	}
 }
 
-func (s *SourcedNodeIterator) ConsumeTokenSource(lid node.CmpLID) (uint32, bool, error) {
+func (s *SourcedNodeIterator) ConsumeTokenSource(lid node.LID) (uint32, bool, error) {
 	for !s.lastID.IsNull() && s.lastID.Less(lid) {
 		s.lastID, s.lastSource = s.sourcedNode.NextSourcedGeq(lid)
 	}

@@ -9,7 +9,7 @@ func (*sourcedNodeWrapper) String() string {
 	return "SOURCED"
 }
 
-func (w *sourcedNodeWrapper) NextSourced() (CmpLID, uint32) {
+func (w *sourcedNodeWrapper) NextSourced() (LID, uint32) {
 	cmp := w.node.Next()
 	return cmp, w.source
 }

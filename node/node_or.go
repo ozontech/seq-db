@@ -8,8 +8,8 @@ type nodeOr struct {
 	left  Node
 	right Node
 
-	leftID  CmpLID
-	rightID CmpLID
+	leftID  LID
+	rightID LID
 }
 
 func (n *nodeOr) String() string {
@@ -31,15 +31,15 @@ func (n *nodeOr) readRight() {
 	n.rightID = n.right.Next()
 }
 
-func (n *nodeOr) readLeftGeq(nextID CmpLID) {
+func (n *nodeOr) readLeftGeq(nextID LID) {
 	n.leftID = n.left.NextGeq(nextID)
 }
 
-func (n *nodeOr) readRightGeq(nextID CmpLID) {
+func (n *nodeOr) readRightGeq(nextID LID) {
 	n.rightID = n.right.NextGeq(nextID)
 }
 
-func (n *nodeOr) Next() CmpLID {
+func (n *nodeOr) Next() LID {
 	if n.leftID.IsNull() && n.rightID.IsNull() {
 		return n.leftID
 	}
@@ -60,7 +60,7 @@ func (n *nodeOr) Next() CmpLID {
 	return cur
 }
 
-func (n *nodeOr) NextGeq(nextID CmpLID) CmpLID {
+func (n *nodeOr) NextGeq(nextID LID) LID {
 	// Fast path: if we at least left or right and there is nothing to skip, then choose lowest and return.
 	minID := Min(n.leftID, n.rightID)
 	if nextID.LessOrEq(minID) {
@@ -94,10 +94,10 @@ type nodeOrAgg struct {
 	left  Sourced
 	right Sourced
 
-	leftID     CmpLID
+	leftID     LID
 	leftSource uint32
 
-	rightID     CmpLID
+	rightID     LID
 	rightSource uint32
 }
 
@@ -120,15 +120,15 @@ func (n *nodeOrAgg) readRight() {
 	n.rightID, n.rightSource = n.right.NextSourced()
 }
 
-func (n *nodeOrAgg) readLeftGeq(nextID CmpLID) {
+func (n *nodeOrAgg) readLeftGeq(nextID LID) {
 	n.leftID, n.leftSource = n.left.NextSourcedGeq(nextID)
 }
 
-func (n *nodeOrAgg) readRightGeq(nextID CmpLID) {
+func (n *nodeOrAgg) readRightGeq(nextID LID) {
 	n.rightID, n.rightSource = n.right.NextSourcedGeq(nextID)
 }
 
-func (n *nodeOrAgg) NextSourced() (CmpLID, uint32) {
+func (n *nodeOrAgg) NextSourced() (LID, uint32) {
 	if n.leftID.IsNull() && n.rightID.IsNull() {
 		return n.leftID, 0
 	}
@@ -144,7 +144,7 @@ func (n *nodeOrAgg) NextSourced() (CmpLID, uint32) {
 	return cur, curSource
 }
 
-func (n *nodeOrAgg) NextSourcedGeq(nextID CmpLID) (CmpLID, uint32) {
+func (n *nodeOrAgg) NextSourcedGeq(nextID LID) (LID, uint32) {
 	// Fast path: if we at least left or right and there is nothing to skip, then choose lowest and return.
 	minID := Min(n.leftID, n.rightID)
 	if nextID.LessOrEq(minID) {

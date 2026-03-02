@@ -8,8 +8,8 @@ type nodeAnd struct {
 	left  Node
 	right Node
 
-	leftID  CmpLID
-	rightID CmpLID
+	leftID  LID
+	rightID LID
 }
 
 func (n *nodeAnd) String() string {
@@ -31,15 +31,15 @@ func (n *nodeAnd) readRight() {
 	n.rightID = n.right.Next()
 }
 
-func (n *nodeAnd) readLeftGeq(nextID CmpLID) {
+func (n *nodeAnd) readLeftGeq(nextID LID) {
 	n.leftID = n.left.NextGeq(nextID)
 }
 
-func (n *nodeAnd) readRightGeq(nextID CmpLID) {
+func (n *nodeAnd) readRightGeq(nextID LID) {
 	n.rightID = n.right.NextGeq(nextID)
 }
 
-func (n *nodeAnd) Next() CmpLID {
+func (n *nodeAnd) Next() LID {
 	for !n.leftID.IsNull() && !n.rightID.IsNull() && !n.leftID.Eq(n.rightID) {
 		for !n.rightID.IsNull() && n.leftID.Less(n.rightID) {
 			n.readLeftGeq(n.rightID)
@@ -57,7 +57,7 @@ func (n *nodeAnd) Next() CmpLID {
 	return cur
 }
 
-func (n *nodeAnd) NextGeq(nextID CmpLID) CmpLID {
+func (n *nodeAnd) NextGeq(nextID LID) LID {
 	// TODO first skip not interesting values, then call Next()
 	for !n.leftID.IsNull() && !n.rightID.IsNull() && !n.leftID.Eq(n.rightID) {
 		for !n.rightID.IsNull() && n.leftID.Less(n.rightID) {
