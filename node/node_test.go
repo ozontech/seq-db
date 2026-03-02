@@ -78,37 +78,37 @@ func TestNodeNAndReverse(t *testing.T) {
 
 func TestNodeNotReverse(t *testing.T) {
 	expect := []uint32{15, 12, 11, 10, 9, 8, 7, 4, 1}
-	not := NewNot(NewStatic(data[1], true), NewCmpLIDOrderAsc(15), NewCmpLIDOrderAsc(1))
+	not := NewNot(NewStatic(data[1], true), NewLIDOrderAsc(15), NewLIDOrderAsc(1))
 	assert.Equal(t, expect, readAll(not))
 }
 
 func TestNodeRange(t *testing.T) {
 	expect := []uint32{3, 4, 5, 6, 7, 8, 9, 10}
-	not := NewRange(NewCmpLIDOrderDesc(3), NewCmpLIDOrderDesc(10))
+	not := NewRange(NewLIDOrderDesc(3), NewLIDOrderDesc(10))
 	assert.Equal(t, expect, readAll(not))
 }
 
 func TestNodeRangeReverse(t *testing.T) {
 	expect := []uint32{10, 9, 8, 7, 6, 5, 4, 3}
-	not := NewRange(NewCmpLIDOrderAsc(10), NewCmpLIDOrderAsc(3))
+	not := NewRange(NewLIDOrderAsc(10), NewLIDOrderAsc(3))
 	assert.Equal(t, expect, readAll(not))
 }
 
 func TestNodeNotPartialRange(t *testing.T) {
 	expect := []uint32{4, 7, 8, 9, 10}
-	not := NewNot(NewStatic(data[1], false), NewCmpLIDOrderDesc(3), NewCmpLIDOrderDesc(10))
+	not := NewNot(NewStatic(data[1], false), NewLIDOrderDesc(3), NewLIDOrderDesc(10))
 	assert.Equal(t, expect, readAll(not))
 }
 
 func TestNodeNotPartialRangeReverse(t *testing.T) {
 	expect := []uint32{10, 9, 8, 7, 4}
-	not := NewNot(NewStatic(data[1], true), NewCmpLIDOrderAsc(10), NewCmpLIDOrderAsc(3))
+	not := NewNot(NewStatic(data[1], true), NewLIDOrderAsc(10), NewLIDOrderAsc(3))
 	assert.Equal(t, expect, readAll(not))
 }
 
 func TestNodeNot(t *testing.T) {
 	expect := []uint32{1, 4, 7, 8, 9, 10, 11, 12, 15}
-	nand := NewNot(NewStatic(data[1], false), NewCmpLIDOrderDesc(1), NewCmpLIDOrderDesc(15))
+	nand := NewNot(NewStatic(data[1], false), NewLIDOrderDesc(1), NewLIDOrderDesc(15))
 	assert.Equal(t, expect, readAll(nand))
 }
 

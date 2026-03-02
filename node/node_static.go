@@ -41,11 +41,11 @@ func NewStatic(data []uint32, reverse bool) Node {
 func (n *staticAsc) Next() LID {
 	// staticAsc is used in docs order desc, hence we return LID with desc order
 	if n.ptr >= len(n.data) {
-		return NewCmpLIDOrderDesc(math.MaxUint32)
+		return NewLIDOrderDesc(math.MaxUint32)
 	}
 	cur := n.data[n.ptr]
 	n.ptr++
-	return NewCmpLIDOrderDesc(cur)
+	return NewLIDOrderDesc(cur)
 }
 
 // NextGeq finds next greater or equals since iteration is in ascending order
@@ -69,11 +69,11 @@ func (n *staticAsc) NextGeq(nextID LID) LID {
 func (n *staticDesc) Next() LID {
 	// staticDesc is used in docs order asc, hence we return LID with asc order
 	if n.ptr < 0 {
-		return NewCmpLIDOrderAsc(0)
+		return NewLIDOrderAsc(0)
 	}
 	cur := n.data[n.ptr]
 	n.ptr--
-	return NewCmpLIDOrderAsc(cur)
+	return NewLIDOrderAsc(cur)
 }
 
 // NextGeq finds next less or equals since iteration is in descending order

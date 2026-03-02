@@ -18,7 +18,7 @@ func NewRange(minVal, maxVal LID) *nodeRange {
 
 func (n *nodeRange) Next() LID {
 	if n.maxID.Less(n.curID) {
-		return NullCmpLID()
+		return NullLID()
 	}
 	result := n.curID
 	n.curID = n.curID.Inc()
