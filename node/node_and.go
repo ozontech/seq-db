@@ -58,7 +58,6 @@ func (n *nodeAnd) Next() LID {
 }
 
 func (n *nodeAnd) NextGeq(nextID LID) LID {
-	// TODO first skip not interesting values, then call Next()
 	for !n.leftID.IsNull() && !n.rightID.IsNull() && !n.leftID.Eq(n.rightID) {
 		for !n.rightID.IsNull() && n.leftID.Less(n.rightID) {
 			n.readLeftGeq(Max(n.rightID, nextID))
