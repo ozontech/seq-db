@@ -42,7 +42,7 @@ func (c *DocsMetasCompressor) CompressDocsAndMetas(docs, meta []byte) {
 	// Compress docs block.
 	c.docsBuf = storage.CompressDocBlockZSTD(docs, c.docsBuf, c.docsCompressLevel)
 	// Compress metas block.
-	c.metaBuf = storage.CompressDocBlockLZ4(meta, c.metaBuf)
+	c.metaBuf = storage.CompressDocBlockZSTD(meta, c.metaBuf, 1)
 
 	bulkSizeAfterCompression.Observe(float64(len(c.docsBuf) + len(c.metaBuf)))
 }

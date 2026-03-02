@@ -74,7 +74,7 @@ func createTestIndex(t *testing.T, ids []seq.ID) *memIndex {
 		meta = binary.LittleEndian.AppendUint32(meta, uint32(len(tmp)))
 		meta = append(meta, tmp...)
 	}
-	idx, err := NewMemIndex(storage.CompressDocBlockLZ4(meta, nil))
+	idx, err := NewMemIndex(storage.CompressDocBlockZSTD(meta, nil, 1))
 	assert.NoError(t, err)
 	return idx
 }

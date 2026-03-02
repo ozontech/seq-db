@@ -39,7 +39,7 @@ func BenchmarkIndexer(b *testing.B) {
 	for range n {
 		for _, readNext := range readers {
 			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-			allMeta = append(allMeta, storage.CompressDocBlockLZ4(meta, nil))
+			allMeta = append(allMeta, storage.CompressDocBlockZSTD(meta, nil, 1))
 		}
 	}
 
@@ -83,7 +83,7 @@ func BenchmarkMerge(b *testing.B) {
 	for range n {
 		for _, readNext := range readers {
 			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-			allMeta = append(allMeta, storage.CompressDocBlockLZ4(meta, nil))
+			allMeta = append(allMeta, storage.CompressDocBlockZSTD(meta, nil, 1))
 		}
 	}
 
@@ -146,7 +146,7 @@ func BenchmarkFullWrite(b *testing.B) {
 		for _, readNext := range readers {
 			_, docs, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
 			allDocs = append(allDocs, storage.CompressDocBlockZSTD(docs, nil, 1))
-			allMeta = append(allMeta, storage.CompressDocBlockLZ4(meta, nil))
+			allMeta = append(allMeta, storage.CompressDocBlockZSTD(meta, nil, 1))
 		}
 	}
 
