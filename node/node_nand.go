@@ -41,5 +41,5 @@ func (n *nodeNAnd) Next() LID {
 		}
 		n.readReg()
 	}
-	return NullCmpLID()
+	return NullLID()
 }

@@ -41,7 +41,7 @@ func (n *nodeAnd) Next() LID {
 		}
 	}
 	if n.leftID.IsNull() || n.rightID.IsNull() {
-		return NullCmpLID()
+		return NullLID()
 	}
 	cur := n.leftID
 	n.readLeft()

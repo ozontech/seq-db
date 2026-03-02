@@ -20,32 +20,24 @@ type LID struct {
 	mask uint32
 }
 
-func NullCmpLID() LID {
-	// reverse flag does not matter, as null values are never unpacked
-	return NewCmpLID(math.MaxUint32, false)
+func NullLID() LID {
+	// order does not matter, as null values are never unpacked
+	return NewLIDOrderDesc(math.MaxUint32)
 }
 
-// NewCmpLIDOrderDesc returns LIDs for desc sort order
-func NewCmpLIDOrderDesc(lid uint32) LID {
+// NewLIDOrderDesc returns LIDs for desc sort order
+func NewLIDOrderDesc(lid uint32) LID {
 	return LID{
 		lid:  lid,
 		mask: DescMask,
 	}
 }
 
-// NewCmpLIDOrderAsc returns LIDs for asc sort order
-func NewCmpLIDOrderAsc(lid uint32) LID {
+// NewLIDOrderAsc returns LIDs for asc sort order
+func NewLIDOrderAsc(lid uint32) LID {
 	return LID{
 		lid:  lid ^ AscMask,
 		mask: AscMask,
-	}
-}
-
-func NewCmpLID(lid uint32, reverse bool) LID {
-	if reverse {
-		return NewCmpLIDOrderAsc(lid)
-	} else {
-		return NewCmpLIDOrderDesc(lid)
 	}
 }
 

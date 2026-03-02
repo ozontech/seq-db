@@ -7,57 +7,57 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCmpLID_Unpack_Desc(t *testing.T) {
-	x := NewCmpLIDOrderDesc(5)
+func TestLID_Unpack_Desc(t *testing.T) {
+	x := NewLIDOrderDesc(5)
 	assert.Equal(t, uint32(5), x.Unpack())
 
-	x = NewCmpLIDOrderDesc(math.MaxUint32)
+	x = NewLIDOrderDesc(math.MaxUint32)
 	assert.Equal(t, uint32(math.MaxUint32), x.Unpack())
 
-	x = NewCmpLIDOrderDesc(0)
+	x = NewLIDOrderDesc(0)
 	assert.Equal(t, uint32(0), x.Unpack())
 
-	x = NullCmpLID()
+	x = NullLID()
 
 	assert.True(t, x.IsNull())
 }
 
-func TestCmpLID_Unpack_Asc(t *testing.T) {
-	x := NewCmpLIDOrderAsc(5)
+func TestLID_Unpack_Asc(t *testing.T) {
+	x := NewLIDOrderAsc(5)
 	assert.Equal(t, uint32(5), x.Unpack())
 
-	x = NewCmpLIDOrderAsc(0)
+	x = NewLIDOrderAsc(0)
 	assert.Equal(t, uint32(0), x.Unpack())
 
-	x = NewCmpLIDOrderAsc(math.MaxUint32)
+	x = NewLIDOrderAsc(math.MaxUint32)
 	assert.Equal(t, uint32(math.MaxUint32), x.Unpack())
 
-	x = NullCmpLID()
+	x = NullLID()
 
 	assert.True(t, x.IsNull())
 }
 
-func TestCmpLID_Eq(t *testing.T) {
-	assert.Equal(t, NewCmpLIDOrderDesc(6), NewCmpLIDOrderDesc(6))
-	assert.Equal(t, NewCmpLIDOrderDesc(math.MaxUint32), NewCmpLIDOrderDesc(math.MaxUint32))
+func TestLID_Eq(t *testing.T) {
+	assert.Equal(t, NewLIDOrderDesc(6), NewLIDOrderDesc(6))
+	assert.Equal(t, NewLIDOrderDesc(math.MaxUint32), NewLIDOrderDesc(math.MaxUint32))
 
-	assert.Equal(t, NewCmpLIDOrderAsc(6), NewCmpLIDOrderAsc(6))
-	assert.Equal(t, NewCmpLIDOrderAsc(0), NewCmpLIDOrderAsc(0))
+	assert.Equal(t, NewLIDOrderAsc(6), NewLIDOrderAsc(6))
+	assert.Equal(t, NewLIDOrderAsc(0), NewLIDOrderAsc(0))
 }
 
-func TestCmpLID_Less_Desc(t *testing.T) {
-	assert.False(t, NewCmpLIDOrderDesc(6).Less(NewCmpLIDOrderDesc(6)))
-	assert.True(t, NewCmpLIDOrderDesc(6).Less(NewCmpLIDOrderDesc(7)))
-	assert.True(t, NewCmpLIDOrderDesc(0).Less(NewCmpLIDOrderDesc(5)))
+func TestLID_Less_Desc(t *testing.T) {
+	assert.False(t, NewLIDOrderDesc(6).Less(NewLIDOrderDesc(6)))
+	assert.True(t, NewLIDOrderDesc(6).Less(NewLIDOrderDesc(7)))
+	assert.True(t, NewLIDOrderDesc(0).Less(NewLIDOrderDesc(5)))
 
-	assert.True(t, NewCmpLIDOrderDesc(56000).Less(NullCmpLID()))
+	assert.True(t, NewLIDOrderDesc(56000).Less(NullLID()))
 }
 
-func TestCmpLID_Less_Asc(t *testing.T) {
+func TestLID_Less_Asc(t *testing.T) {
 	// for asc sort order larger values go first (order is reversed), i.e. greater values are "less" than lower values
-	assert.False(t, NewCmpLIDOrderAsc(6).Less(NewCmpLIDOrderAsc(6)))
-	assert.True(t, NewCmpLIDOrderAsc(10).Less(NewCmpLIDOrderAsc(1)))
-	assert.True(t, NewCmpLIDOrderAsc(5).Less(NewCmpLIDOrderAsc(0)))
+	assert.False(t, NewLIDOrderAsc(6).Less(NewLIDOrderAsc(6)))
+	assert.True(t, NewLIDOrderAsc(10).Less(NewLIDOrderAsc(1)))
+	assert.True(t, NewLIDOrderAsc(5).Less(NewLIDOrderAsc(0)))
 
-	assert.True(t, NewCmpLIDOrderAsc(56000).Less(NullCmpLID()))
+	assert.True(t, NewLIDOrderAsc(56000).Less(NullLID()))
 }
