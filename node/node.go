@@ -6,11 +6,11 @@ import (
 
 type Node interface {
 	fmt.Stringer // for testing
-	Next() CmpLID
+	Next() LID
 }
 
 type Sourced interface {
 	fmt.Stringer // for testing
 	// aggregation need source
-	NextSourced() (id CmpLID, source uint32)
+	NextSourced() (id LID, source uint32)
 }

@@ -189,17 +189,17 @@ func iterateEvalTree(
 		}
 
 		timerEval.Start()
-		cmpLid := evalTree.Next()
+		lid := evalTree.Next()
 		timerEval.Stop()
 
-		if cmpLid.IsNull() {
+		if lid.IsNull() {
 			break
 		}
-		lid := cmpLid.Unpack()
+		rawLid := lid.Unpack()
 
 		if needMore || hasHist {
 			timerMID.Start()
-			mid := idsIndex.GetMID(seq.LID(lid))
+			mid := idsIndex.GetMID(seq.LID(rawLid))
 			timerMID.Stop()
 
 			if hasHist {
@@ -216,7 +216,7 @@ func iterateEvalTree(
 
 			if needMore {
 				timerRID.Start()
-				rid := idsIndex.GetRID(seq.LID(lid))
+				rid := idsIndex.GetRID(seq.LID(rawLid))
 				timerRID.Stop()
 
 				id := seq.ID{MID: mid, RID: rid}
@@ -233,7 +233,7 @@ func iterateEvalTree(
 		if len(aggs) > 0 {
 			timerAgg.Start()
 			for i := range aggs {
-				if err := aggs[i].Next(cmpLid); err != nil {
+				if err := aggs[i].Next(lid); err != nil {
 					timerAgg.Stop()
 					return total, ids, histogram, err
 				}

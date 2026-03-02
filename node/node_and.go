@@ -8,8 +8,8 @@ type nodeAnd struct {
 	left  Node
 	right Node
 
-	leftID  CmpLID
-	rightID CmpLID
+	leftID  LID
+	rightID LID
 }
 
 func (n *nodeAnd) String() string {
@@ -31,7 +31,7 @@ func (n *nodeAnd) readRight() {
 	n.rightID = n.right.Next()
 }
 
-func (n *nodeAnd) Next() CmpLID {
+func (n *nodeAnd) Next() LID {
 	for !n.leftID.IsNull() && !n.rightID.IsNull() && !n.leftID.Eq(n.rightID) {
 		for !n.rightID.IsNull() && n.leftID.Less(n.rightID) {
 			n.readLeft()

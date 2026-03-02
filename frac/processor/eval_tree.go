@@ -45,8 +45,8 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 			return node.NewNAnd(children[0], children[1]), nil
 		case parser.LogicalNot:
 			stats.NodesTotal++
-			var minCmpLID node.CmpLID
-			var maxCmpLID node.CmpLID
+			var minCmpLID node.LID
+			var maxCmpLID node.LID
 			if reverse {
 				minCmpLID = node.NewCmpLIDOrderAsc(maxVal)
 				maxCmpLID = node.NewCmpLIDOrderAsc(minVal)
@@ -90,7 +90,7 @@ func evalLeaf(
 
 type Aggregator interface {
 	// Next iterates to count the next lid.
-	Next(lid node.CmpLID) error
+	Next(lid node.LID) error
 	// Aggregate processes and returns the final aggregation result.
 	Aggregate() (seq.AggregatableSamples, error)
 }

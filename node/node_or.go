@@ -6,8 +6,8 @@ type nodeOr struct {
 	left  Node
 	right Node
 
-	leftID  CmpLID
-	rightID CmpLID
+	leftID  LID
+	rightID LID
 }
 
 func (n *nodeOr) String() string {
@@ -29,7 +29,7 @@ func (n *nodeOr) readRight() {
 	n.rightID = n.right.Next()
 }
 
-func (n *nodeOr) Next() CmpLID {
+func (n *nodeOr) Next() LID {
 	if n.leftID.IsNull() && n.rightID.IsNull() {
 		return n.leftID
 	}
@@ -54,10 +54,10 @@ type nodeOrAgg struct {
 	left  Sourced
 	right Sourced
 
-	leftID     CmpLID
+	leftID     LID
 	leftSource uint32
 
-	rightID     CmpLID
+	rightID     LID
 	rightSource uint32
 }
 
@@ -80,7 +80,7 @@ func (n *nodeOrAgg) readRight() {
 	n.rightID, n.rightSource = n.right.NextSourced()
 }
 
-func (n *nodeOrAgg) NextSourced() (CmpLID, uint32) {
+func (n *nodeOrAgg) NextSourced() (LID, uint32) {
 	if n.leftID.IsNull() && n.rightID.IsNull() {
 		return n.leftID, 0
 	}
