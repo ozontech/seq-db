@@ -1,24 +1,12 @@
 package active
 
 import (
-	"iter"
-
 	"github.com/ozontech/seq-db/seq"
 )
 
 // OrderedStream - interface for iterators with ordered elements
 type OrderedStream[T any] interface {
 	Next() (T, bool) // Returns the next element and a flag indicating if an element exists
-}
-
-func IterateStream[T any](it OrderedStream[T]) iter.Seq[T] {
-	return func(yield func(T) bool) {
-		for v, has := it.Next(); has; v, has = it.Next() {
-			if !yield(v) {
-				return
-			}
-		}
-	}
 }
 
 // MergeSortedStreams - performs K-way merging of sorted iterators (merge sort at iterator level)
@@ -149,13 +137,6 @@ func (i *TokenRef) lidsMap() []uint32 {
 	return i.payload.lidsMap
 }
 
-func (i *TokenRef) LIDsStream() *LIDsStream {
-	return &LIDsStream{
-		oldLIDs: i.LIDs(),
-		lidsMap: i.lidsMap(),
-	}
-}
-
 // TokenStream - iterator over tokens in the index
 // Iterates through tokens grouped by fields
 type TokenStream struct {
@@ -198,21 +179,6 @@ func (it *TokenStream) Next() (v TokenRef, has bool) {
 				it.fieldLastTID += it.payload.idx.fieldsTokens[string(it.payload.idx.fields[it.fid])].count
 			}
 		}
-	}
-	return v, has
-}
-
-type LIDsStream struct {
-	offset           int
-	oldLIDs, lidsMap []uint32
-}
-
-func (it *LIDsStream) Next() (v uint32, has bool) {
-	if it.offset < len(it.oldLIDs) {
-		has = true
-		oldLID := it.oldLIDs[it.offset]
-		v = it.lidsMap[oldLID]
-		it.offset++
 	}
 	return v, has
 }

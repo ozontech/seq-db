@@ -39,7 +39,7 @@ func BenchmarkIndexer(b *testing.B) {
 	for range n {
 		for _, readNext := range readers {
 			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
+			allMeta = append(allMeta, storage.CompressDocBlockLZ4(meta, nil))
 		}
 	}
 
@@ -83,7 +83,7 @@ func BenchmarkMerge(b *testing.B) {
 	for range n {
 		for _, readNext := range readers {
 			_, _, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
+			allMeta = append(allMeta, storage.CompressDocBlockLZ4(meta, nil))
 		}
 	}
 
@@ -130,6 +130,7 @@ func defaultSealingParams() frac.SealParams {
 
 func BenchmarkFullWrite(b *testing.B) {
 	logger.SetLevel(zapcore.FatalLevel)
+	config.SkipFsync = true
 
 	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
 	readers := splitLogsToBulks(allLogs, 1000)
@@ -144,8 +145,8 @@ func BenchmarkFullWrite(b *testing.B) {
 	for range n {
 		for _, readNext := range readers {
 			_, docs, meta, _ := processor.ProcessBulk(time.Now(), nil, nil, readNext)
-			allDocs = append(allDocs, storage.CompressDocBlock(docs, nil, 1))
-			allMeta = append(allMeta, storage.CompressDocBlock(meta, nil, 1))
+			allDocs = append(allDocs, storage.CompressDocBlockZSTD(docs, nil, 1))
+			allMeta = append(allMeta, storage.CompressDocBlockLZ4(meta, nil))
 		}
 	}
 

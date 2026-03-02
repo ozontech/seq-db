@@ -101,7 +101,7 @@ func writeDocs(
 		blocksOffsets = append(blocksOffsets, uint64(offset))
 
 		// Compress document block
-		buf = storage.CompressDocBlock(block, buf[:0], params.DocBlocksZstdLevel)
+		buf = storage.CompressDocBlockZSTD(block, buf[:0], params.DocBlocksZstdLevel)
 
 		rawSize += len(block)
 		diskSize += len(buf)

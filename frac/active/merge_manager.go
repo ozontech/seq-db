@@ -149,7 +149,7 @@ func selectMergeBatch(items []indexEntry, minBatchSize int) []indexEntry {
 // largestGenerationGroup returns the biggest generation-aligned batch
 func largestGenerationGroup(items []indexEntry) []indexEntry {
 	maxGen := 0
-	batches := make([][]indexEntry, maxGenerationBuckets)
+	batches := make([][]indexEntry, maxGenerationBuckets+1)
 	for _, item := range items {
 		gen := min(maxGenerationBuckets, item.gen)
 		batches[gen] = append(batches[gen], item)

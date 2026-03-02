@@ -3,8 +3,12 @@ package storage
 import (
 	"encoding/binary"
 
+	"github.com/ozontech/seq-db/bytespool"
+	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/util"
 	"github.com/ozontech/seq-db/zstd"
+	"github.com/pierrec/lz4/v4"
+	"go.uber.org/zap"
 )
 
 const (
@@ -76,13 +80,40 @@ func (b DocBlock) Payload() []byte {
 	return b[DocBlockHeaderLen:]
 }
 
-func CompressDocBlock(src []byte, dst DocBlock, zstdLevel int) DocBlock {
+func CompressDocBlockZSTD(src []byte, dst DocBlock, zstdLevel int) DocBlock {
 	dst = append(dst[:0], make([]byte, DocBlockHeaderLen)...) // fill header with zeros for cleanup
 	dst = zstd.CompressLevel(src, dst, zstdLevel)
 
 	dst.CalcLen()
 	dst.SetRawLen(uint64(len(src)))
 	dst.SetCodec(CodecZSTD)
+
+	return dst
+}
+
+func CompressDocBlockLZ4(src []byte, dst DocBlock) DocBlock {
+	dst = append(dst[:0], make([]byte, DocBlockHeaderLen)...) // fill header with zeros for cleanup
+
+	payload := src
+	dst.SetCodec(CodecNo)
+
+	buf := bytespool.AcquireLen(lz4.CompressBlockBound(len(src)))
+	defer bytespool.Release(buf)
+
+	var c lz4.Compressor
+	n, err := c.CompressBlock(src, buf.B)
+
+	if err != nil {
+		logger.Error("lz4 compress error", zap.Error(err))
+	} else if n < len(src) {
+		dst.SetCodec(CodecLZ4)
+		payload = buf.B[:n]
+	}
+
+	dst = append(dst, payload...)
+
+	dst.CalcLen()
+	dst.SetRawLen(uint64(len(src)))
 
 	return dst
 }

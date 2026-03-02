@@ -85,7 +85,7 @@ func mergeIDs(
 		prevRef DocRef
 	)
 	// process merged stream
-	for docRef := range IterateStream(mergedDocStream) {
+	for docRef, has := mergedDocStream.Next(); has; docRef, has = mergedDocStream.Next() {
 		if docRef.id == prevRef.id && docRef.i != prevRef.i {
 			doubles++
 			// map old LID → 0 (will be filtered later)
@@ -158,7 +158,8 @@ func mergeTokens(
 
 	// merged and sorted token stream
 	// first pass: count unique tokens and fields
-	for tokenRef := range IterateStream(MergeSortedStreams(tokenStreams, cmpToken)) {
+	mergedTokensStream := MergeSortedStreams(tokenStreams, cmpToken)
+	for tokenRef, has := mergedTokensStream.Next(); has; tokenRef, has = mergedTokensStream.Next() {
 		var border uint8 = borderNone
 
 		// new token
@@ -253,21 +254,21 @@ type LIDsCollector struct {
 	totalDocs int      // total docs count AFTER deduplication
 	lids      []uint32 // overall array
 	all       []uint32 // full LID set (1..N)
-	buf       []uint8  // bitmap
+	bitmap    []uint8  // bitmap
 	offset    int
 }
 
 // NewLIDsCollector initializes collector.
-func NewLIDsCollector(totalDocs int, lids, all []uint32, buf []uint8) *LIDsCollector {
-	clear(buf)
+func NewLIDsCollector(totalDocs int, lids, all []uint32, bitmap []uint8) *LIDsCollector {
+	clear(bitmap)
 	for i := range all {
 		all[i] = uint32(i) + 1
 	}
 	return &LIDsCollector{
 		totalDocs: totalDocs,
 		lids:      lids[:0],
+		bitmap:    bitmap,
 		all:       all,
-		buf:       buf,
 	}
 }
 
@@ -292,8 +293,12 @@ func (s *LIDsCollector) GetSorted() (dst []uint32) {
 	dst = s.lids[s.offset:]
 	s.offset = len(s.lids)
 
-	// dense case: use bitmap
-	if n > 8000 {
+	if n == 0 {
+		return dst
+	}
+
+	if 100*n/s.totalDocs > 30 {
+		// dense case: use bitmap
 		return s.altSort(dst)
 	}
 
@@ -304,12 +309,12 @@ func (s *LIDsCollector) GetSorted() (dst []uint32) {
 
 func (s *LIDsCollector) altSort(vals []uint32) []uint32 {
 	for _, v := range vals {
-		s.buf[v] = 1
+		s.bitmap[v] = 1
 	}
 	vals = vals[:0]
-	for lid, ok := range s.buf {
+	for lid, ok := range s.bitmap {
 		if ok == 1 {
-			s.buf[lid] = 0
+			s.bitmap[lid] = 0
 			vals = append(vals, uint32(lid))
 		}
 	}
