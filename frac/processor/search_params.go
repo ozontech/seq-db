@@ -1,6 +1,8 @@
 package processor
 
 import (
+	"go.uber.org/zap/zapcore"
+
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -11,6 +13,23 @@ type AggQuery struct {
 	Func      seq.AggFunc
 	Quantiles []float64
 	Interval  int64
+}
+
+func (q AggQuery) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	if q.Field != nil {
+		enc.AddString("field", q.Field.Field)
+	}
+	if q.GroupBy != nil {
+		enc.AddString("groupBy", q.GroupBy.Field)
+	}
+	enc.AddString("func", q.Func.String())
+	if len(q.Quantiles) != 0 {
+		enc.AddInt("quantiles_count", len(q.Quantiles))
+	}
+	if q.Interval != 0 {
+		enc.AddInt64("interval", q.Interval)
+	}
+	return nil
 }
 
 type SearchParams struct {
