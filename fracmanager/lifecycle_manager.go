@@ -44,7 +44,6 @@ func newLifecycleManager(
 // Maintain performs periodic lifecycle management tasks.
 // It coordinates rotation, offloading, cleanup based on configuration.
 func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.WaitGroup) {
-
 	suspendThreshold := cfg.TotalSize + cfg.TotalSize/100 + cfg.OffloadingQueueSize
 	lc.registry.SuspendIfOverCapacity(cfg.SealingQueueLen, suspendThreshold)
 
@@ -129,7 +128,7 @@ func (lc *lifecycleManager) offloadLocal(ctx context.Context, sizeLimit uint64, 
 	}
 	for _, sealed := range toOffload {
 		wg.Add(1)
-		lc.tasks.Run(sealed.instance.BaseFileName, ctx, func(ctx context.Context) {
+		_, err := lc.tasks.Run(sealed.instance.BaseFileName, ctx, func(ctx context.Context) {
 			defer wg.Done()
 
 			remote := lc.offloadWithRetry(ctx, sealed.instance, retryDelay)
@@ -147,6 +146,9 @@ func (lc *lifecycleManager) offloadLocal(ctx context.Context, sizeLimit uint64, 
 			sealed.instance.Suicide()
 			maintenanceTruncateTotal.Add(1)
 		})
+		if err != nil {
+			panic(err) // we do not expect error here
+		}
 	}
 }
 

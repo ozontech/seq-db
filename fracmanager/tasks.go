@@ -2,6 +2,7 @@ package fracmanager
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
@@ -29,11 +30,15 @@ func NewTaskManager() *TaskManager {
 
 // Run starts a new background task with the given ID and context.
 // The task will be automatically removed when completed.
-func (t *TaskManager) Run(id string, ctx context.Context, action func(ctx context.Context)) *task {
+func (t *TaskManager) Run(id string, ctx context.Context, action func(ctx context.Context)) (*task, error) {
 	task := &task{}
 	task.ctx, task.cancel = context.WithCancel(ctx)
 
 	t.mu.Lock()
+	if _, ok := t.running[id]; ok {
+		t.mu.Unlock()
+		return nil, fmt.Errorf("task with id = %s already exists", id)
+	}
 	t.running[id] = task
 	t.mu.Unlock()
 
@@ -50,7 +55,7 @@ func (t *TaskManager) Run(id string, ctx context.Context, action func(ctx contex
 		action(task.ctx)
 	}()
 
-	return task
+	return task, nil
 }
 
 // Cancel cancels and waits for completion of a task by ID

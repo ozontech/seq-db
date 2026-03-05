@@ -345,7 +345,6 @@ func initS3Client(cfg config.Config) *s3.Client {
 		cfg.Offloading.SecretKey,
 		cfg.Offloading.Region,
 		cfg.Offloading.Bucket,
-		cfg.Offloading.RetryCount,
 	)
 
 	if err != nil {

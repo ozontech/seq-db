@@ -26,7 +26,7 @@ func setupS3Client(t testing.TB) (*s3.Client, func()) {
 	err := s3Backend.CreateBucket(bucketName)
 	require.NoError(t, err, "create bucket failed")
 
-	s3cli, err := s3.NewClient(s3server.URL, "ACCESS_KEY", "SECRET_KEY", "eu-west-3", bucketName, 3)
+	s3cli, err := s3.NewClient(s3server.URL, "ACCESS_KEY", "SECRET_KEY", "eu-west-3", bucketName)
 	require.NoError(t, err, "s3 client setup failed")
 
 	return s3cli, s3server.Close

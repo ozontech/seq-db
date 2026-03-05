@@ -155,22 +155,21 @@ func (r *fractionRegistry) RotateIfFull(maxSize uint64, newActive func() *active
 	return old, wg.Wait, nil
 }
 
-func (r *fractionRegistry) SuspendIfOverCapacity(maxQueue, maxSize uint64) bool {
+func (r *fractionRegistry) SuspendIfOverCapacity(maxQueue, maxSize uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if maxQueue > 0 && r.stats.sealing.count >= int(maxQueue) {
 		r.active.Suspend(true)
-		return true
+		return
 	}
 
 	if maxSize > 0 && r.diskUsage() > maxSize {
 		r.active.Suspend(true)
-		return true
+		return
 	}
 
 	r.active.Suspend(false)
-	return false
 }
 
 func (r *fractionRegistry) diskUsage() uint64 {

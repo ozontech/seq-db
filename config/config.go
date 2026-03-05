@@ -246,8 +246,6 @@ type Config struct {
 		// SecretKey configures S3 Secret Key for S3 client.
 		// You can learn more about secret keys [here](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html).
 		SecretKey string `config:"secret_key"`
-		// RetryCount sets [RetryMaxAttempts] for S3 client which is applied for all API calls.
-		RetryCount int `config:"retry_count" default:"5"`
 		// Specifies the percentage of total local dataset size allocated to the offloading queue.
 		// Note: When the queue overflows, the oldest fraction of data is automatically removed.
 		// This automatic removal is disabled when set to zero.
