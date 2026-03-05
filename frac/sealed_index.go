@@ -22,6 +22,11 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
+type DocsFilter interface {
+	GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error)
+	RemoveFrac(fracName string)
+}
+
 type sealedDataProvider struct {
 	ctx    context.Context
 	info   *common.Info
@@ -42,6 +47,8 @@ type sealedDataProvider struct {
 	// fractionTypeLabel can be either 'sealed' or 'remote'.
 	// This value is used in metrics to distinguish between operations over local and remote fractions.
 	fractionTypeLabel string
+
+	docsFilter DocsFilter
 }
 
 func (dp *sealedDataProvider) getIDsIndex() *sealedIDsIndex {
@@ -54,9 +61,11 @@ func (dp *sealedDataProvider) getIDsIndex() *sealedIDsIndex {
 
 func (dp *sealedDataProvider) getFetchIndex() *sealedFetchIndex {
 	return &sealedFetchIndex{
+		fracName:      dp.info.Name(),
 		idsIndex:      dp.getIDsIndex(),
 		docsReader:    dp.docsReader,
 		blocksOffsets: dp.blocksOffsets,
+		docsFilter:    dp.docsFilter,
 	}
 }
 
@@ -74,6 +83,7 @@ func (dp *sealedDataProvider) getSearchIndex() *sealedSearchIndex {
 	return &sealedSearchIndex{
 		sealedIDsIndex:   dp.getIDsIndex(),
 		sealedTokenIndex: dp.getTokenIndex(),
+		docsFilter:       dp.docsFilter,
 	}
 }
 
@@ -259,17 +269,56 @@ func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 }
 
 type sealedFetchIndex struct {
+	fracName      string
 	idsIndex      *sealedIDsIndex
 	docsReader    *storage.DocsReader
 	blocksOffsets []uint64
+	docsFilter    DocsFilter
 }
 
 func (fi *sealedFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return fi.blocksOffsets[num]
 }
 
-func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
-	return fi.getDocPosByLIDs(fi.findLIDs(ids))
+func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
+	allLids := fi.findLIDs(ids)
+
+	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
+	if len(allLids) > 0 {
+		// allLids can be not sorted
+		minVal, maxVal := allLids[0], allLids[0]
+		for i := 1; i < len(allLids); i++ {
+			minVal = min(minVal, allLids[i])
+			maxVal = max(maxVal, allLids[i])
+		}
+		minLID, maxLID = uint32(minVal), uint32(maxVal)
+	}
+
+	tombstonesIterator, err := fi.docsFilter.GetTombstonesIteratorByFrac(fi.fracName, minLID, maxLID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	filteredLIDs := make(map[uint32]struct{})
+	for {
+		lid := tombstonesIterator.Next()
+		if lid.IsNull() {
+			break
+		}
+		filteredLIDs[lid.Unpack()] = struct{}{}
+	}
+
+	if len(filteredLIDs) == 0 {
+		return fi.getDocPosByLIDs(allLids), nil
+	}
+
+	for i, lid := range allLids {
+		if _, ok := filteredLIDs[uint32(lid)]; ok {
+			allLids[i] = 0
+		}
+	}
+
+	return fi.getDocPosByLIDs(allLids), nil
 }
 
 func (fi *sealedFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
@@ -324,4 +373,9 @@ func (fi *sealedFetchIndex) getDocPosByLIDs(localIDs []seq.LID) []seq.DocPos {
 type sealedSearchIndex struct {
 	*sealedIDsIndex
 	*sealedTokenIndex
+	docsFilter DocsFilter
+}
+
+func (si *sealedSearchIndex) GetTombstones(minLID, maxLID uint32, reverse bool) (node.Node, error) {
+	return si.docsFilter.GetTombstonesIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 }

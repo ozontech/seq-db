@@ -22,6 +22,7 @@ import (
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/docsfilter"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
@@ -275,7 +276,7 @@ func (cfg *TestingEnvConfig) MakeStores(
 			logger.Fatal("can't create mapping", zap.Error(err))
 		}
 
-		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider)
+		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider, []docsfilter.Params{})
 		if err != nil {
 			panic(err)
 		}

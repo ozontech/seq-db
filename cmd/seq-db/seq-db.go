@@ -21,6 +21,7 @@ import (
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/docsfilter"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -316,10 +317,15 @@ func startStore(
 				From:  cfg.Filtering.From,
 			},
 		},
+		Filters: docsfilter.Config{
+			DataDir:        cfg.DocsFilter.DataDir,
+			Workers:        cfg.DocsFilter.Concurrency,
+			CacheSizeLimit: uint64(cfg.DocsFilter.CacheSize),
+		},
 	}
 
 	s3cli := initS3Client(cfg)
-	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp)
+	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp, docFilterParamsFromCfg(cfg.DocsFilter.Filters))
 	if err != nil {
 		logger.Fatal("initializing store", zap.Error(err))
 	}
@@ -360,4 +366,16 @@ func initS3Client(cfg config.Config) *s3.Client {
 
 func enableIndexingForAllFields(mappingPath string) bool {
 	return mappingPath == "auto"
+}
+
+func docFilterParamsFromCfg(in []config.Filter) []docsfilter.Params {
+	out := make([]docsfilter.Params, 0, len(in))
+	for _, f := range in {
+		out = append(out, docsfilter.Params{
+			Query: f.Query,
+			From:  f.From.UnixNano(),
+			To:    f.To.UnixNano(),
+		})
+	}
+	return out
 }

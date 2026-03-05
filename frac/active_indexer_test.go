@@ -90,6 +90,7 @@ func BenchmarkIndexer(b *testing.B) {
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		&Config{},
+		testDocsFilter{},
 	)
 
 	processor := getTestProcessor()

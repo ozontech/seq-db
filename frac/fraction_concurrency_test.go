@@ -52,6 +52,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		&Config{},
+		testDocsFilter{},
 	)
 
 	mapping := seq.Mapping{
@@ -368,6 +369,7 @@ func seal(active *Active) (*Sealed, error) {
 		indexCache,
 		cache.NewCache[[]byte](nil, nil),
 		&Config{},
+		testDocsFilter{},
 	)
 	active.Release()
 	return sealed, nil

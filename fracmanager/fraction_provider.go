@@ -13,11 +13,18 @@ import (
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 )
 
 const fileBasePattern = "seq-db-"
+
+type DocsFilter interface {
+	GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error)
+	RefreshFrac(frac frac.Fraction)
+	RemoveFrac(fracName string)
+}
 
 // fractionProvider is a factory for creating different types of fractions
 // Contains all necessary dependencies for creating and managing fractions
@@ -28,11 +35,13 @@ type fractionProvider struct {
 	activeIndexer *frac.ActiveIndexer  // Indexer for active fractions
 	readLimiter   *storage.ReadLimiter // Read rate limiter
 	ulidEntropy   io.Reader            // Entropy source for ULID generation
+	docsFilter    DocsFilter
 }
 
 func newFractionProvider(
 	cfg *Config, s3cli *s3.Client, cp *CacheMaintainer,
 	readLimiter *storage.ReadLimiter, indexer *frac.ActiveIndexer,
+	docsFilter DocsFilter,
 ) *fractionProvider {
 	return &fractionProvider{
 		s3cli:         s3cli,
@@ -41,6 +50,7 @@ func newFractionProvider(
 		activeIndexer: indexer,
 		readLimiter:   readLimiter,
 		ulidEntropy:   ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
+		docsFilter:    docsFilter,
 	}
 }
 
@@ -52,6 +62,7 @@ func (fp *fractionProvider) NewActive(name string) *frac.Active {
 		fp.cacheProvider.CreateDocBlockCache(),
 		fp.cacheProvider.CreateSortDocsCache(),
 		&fp.config.Fraction,
+		fp.docsFilter,
 	)
 }
 
@@ -63,6 +74,7 @@ func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *fra
 		fp.cacheProvider.CreateDocBlockCache(),
 		cachedInfo, // Preloaded meta information
 		&fp.config.Fraction,
+		fp.docsFilter,
 	)
 }
 
@@ -74,6 +86,7 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *seale
 		fp.cacheProvider.CreateIndexCache(),
 		fp.cacheProvider.CreateDocBlockCache(),
 		&fp.config.Fraction,
+		fp.docsFilter,
 	)
 }
 
@@ -87,6 +100,7 @@ func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedIn
 		cachedInfo,
 		&fp.config.Fraction,
 		fp.s3cli,
+		fp.docsFilter,
 	)
 }
 
@@ -117,7 +131,9 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 		return nil, err
 	}
 
-	return fp.NewSealedPreloaded(active.BaseFileName, preloaded), nil
+	sealedFrac := fp.NewSealedPreloaded(active.BaseFileName, preloaded)
+	fp.docsFilter.RefreshFrac(sealedFrac)
+	return sealedFrac, nil
 }
 
 // Offload uploads fraction to S3 storage and returns a remote fraction

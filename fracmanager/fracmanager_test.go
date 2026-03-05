@@ -8,8 +8,20 @@ import (
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/indexer"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/seq"
 )
+
+type testDocsFilter struct{}
+
+func (testDocsFilter) GetFilteredLIDsByFrac(_ string) ([]uint32, error) {
+	return nil, nil
+}
+func (testDocsFilter) GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
+	return node.NewStatic([]uint32{}, reverse), nil
+}
+func (testDocsFilter) RefreshFrac(_ frac.Fraction) {}
+func (testDocsFilter) RemoveFrac(_ string)         {}
 
 func setupDataDir(t testing.TB, cfg *Config) *Config {
 	if cfg == nil {
@@ -25,7 +37,7 @@ func setupDataDir(t testing.TB, cfg *Config) *Config {
 
 func setupFracManager(t testing.TB, cfg *Config) (*Config, *FracManager, func()) {
 	cfg = setupDataDir(t, cfg)
-	fm, stop, err := New(t.Context(), cfg, nil)
+	fm, stop, err := New(t.Context(), cfg, nil, testDocsFilter{})
 	assert.NoError(t, err)
 	return cfg, fm, stop
 }

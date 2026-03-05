@@ -27,12 +27,23 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/indexer"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/tokenizer"
 )
+
+type testDocsFilter struct{}
+
+func (testDocsFilter) GetFilteredLIDsByFrac(_ string) ([]uint32, error) {
+	return []uint32{}, nil
+}
+func (testDocsFilter) GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
+	return node.NewStatic([]uint32{}, false), nil
+}
+func (testDocsFilter) RemoveFrac(_ string) {}
 
 type FractionTestSuite struct {
 	suite.Suite
@@ -2039,6 +2050,7 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
+		testDocsFilter{},
 	)
 
 	var wg sync.WaitGroup
@@ -2101,6 +2113,7 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 		indexCache,
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
+		testDocsFilter{},
 	)
 	active.Release()
 	return sealed
@@ -2177,7 +2190,9 @@ func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
 		storage.NewReadLimiter(1, nil),
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
-		&Config{})
+		&Config{},
+		testDocsFilter{},
+	)
 	err := replayedFrac.Replay(context.Background())
 	s.Require().NoError(err, "replay failed")
 	return replayedFrac
@@ -2288,7 +2303,9 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 		indexCache,
 		cache.NewCache[[]byte](nil, nil),
 		nil,
-		s.config)
+		s.config,
+		testDocsFilter{},
+	)
 	s.fraction = sealed
 	return sealed
 }
@@ -2356,7 +2373,9 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			cache.NewCache[[]byte](nil, nil),
 			sealed.info,
 			s.config,
-			s3cli)
+			s3cli,
+			testDocsFilter{},
+		)
 		s.fraction = remoteFrac
 	}
 }
