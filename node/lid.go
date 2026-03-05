@@ -42,7 +42,7 @@ func NewLIDOrderAsc(lid uint32) LID {
 }
 
 // Less compares two values. It also does an implicit null check, since we store math.MaxUint32 for null values.
-// Which means if we call x.Less(y), then we now for sure that x is not null. Therefore, this Less call can work
+// Which means if we call x.Less(y), then we know for sure that x is not null. Therefore, this Less call can work
 // as both "null check + less" combo.
 func (c LID) Less(other LID) bool {
 	return c.lid < other.lid

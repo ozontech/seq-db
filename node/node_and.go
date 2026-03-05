@@ -36,7 +36,7 @@ func (n *nodeAnd) Next() LID {
 		for !n.rightID.IsNull() && n.leftID.Less(n.rightID) {
 			n.readLeft()
 		}
-		for !n.rightID.IsNull() && n.rightID.Less(n.leftID) {
+		for !n.leftID.IsNull() && n.rightID.Less(n.leftID) {
 			n.readRight()
 		}
 	}

@@ -761,7 +761,7 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 			withAggQuery(processor.AggQuery{GroupBy: aggField("service")}),
 			withAggQuery(processor.AggQuery{GroupBy: aggField("level")})),
 		[]map[string]uint64{
-			{gateway: 3, proxy: 2, "scheduler": 1},
+			{gateway: 3, proxy: 2, scheduler: 1},
 			{"1": 4, "2": 1, "3": 1},
 		})
 }
