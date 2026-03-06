@@ -46,6 +46,7 @@ type Active struct {
 	TokenList *TokenList
 
 	DocsPositions *DocsPositions
+	IDsToLIDs     *ActiveLIDs
 
 	docsFile   *os.File
 	docsReader storage.DocsReader
@@ -86,6 +87,7 @@ func NewActive(
 	f := &Active{
 		TokenList:     NewActiveTokenList(config.IndexWorkers),
 		DocsPositions: NewSyncDocsPositions(),
+		IDsToLIDs:     NewActiveLIDs(),
 		MIDs:          NewIDs(),
 		RIDs:          NewIDs(),
 		DocBlocks:     NewIDs(),
@@ -385,6 +387,17 @@ func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*se
 	return dp.Search(params)
 }
 
+func (f *Active) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		return nil, nil
+	}
+
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.FindLIDs(ids)
+}
+
 func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 	return &activeDataProvider{
 		ctx:    ctx,
@@ -397,6 +410,7 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 
 		blocksOffsets: f.DocBlocks.GetVals(),
 		docsPositions: f.DocsPositions,
+		idsToLids:     f.IDsToLIDs,
 		docsReader:    &f.docsReader,
 	}
 }

@@ -131,6 +131,16 @@ func (f *Remote) Search(ctx context.Context, params processor.SearchParams) (*se
 	return dp.Search(params)
 }
 
+func (f *Remote) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
+	dp, err := f.createDataProvider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer dp.release()
+
+	return dp.FindLIDs(ids)
+}
+
 func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, error) {
 	if err := f.load(); err != nil {
 		logger.Error(
