@@ -29,58 +29,60 @@ limits:
   doc_size: 1MiB
 `
 
+	baseCfg := createCfgFile(t, base)
+
 	tests := []struct {
 		name      string
-		content   string
+		cfg       string
 		env       map[string]string
 		expectErr bool
 	}{
 		{
 			name:      "Invalid storage.sealing_queue_len 1",
-			content:   base,
+			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_STORAGE_SEALING_QUEUE_LEN": "-1"},
 			expectErr: true,
 		},
 		{
 			name:      "Valid storage.sealing_queue_len 2",
-			content:   base,
+			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_STORAGE_SEALING_QUEUE_LEN": "0"},
 			expectErr: false,
 		},
 		{
 			name:      "Valid storage.sealing_queue_len 3",
-			content:   base,
+			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_STORAGE_SEALING_QUEUE_LEN": "100"},
 			expectErr: false,
 		},
 
 		{
 			name:      "Invalid offloading.queue_size_percent 1",
-			content:   base,
+			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_OFFLOADING_QUEUE_SIZE_PERCENT": "-1"},
 			expectErr: true,
 		},
 		{
 			name:      "Invalid offloading.queue_size_percent 2",
-			content:   base,
+			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_OFFLOADING_QUEUE_SIZE_PERCENT": "100.1"},
 			expectErr: true,
 		},
 		{
 			name:      "Valid offloading.queue_size_percent 3",
-			content:   base,
+			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_OFFLOADING_QUEUE_SIZE_PERCENT": "0"},
 			expectErr: false,
 		},
 		{
 			name:      "Valid offloading.queue_size_percent 4",
-			content:   base,
+			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_OFFLOADING_QUEUE_SIZE_PERCENT": "100"},
 			expectErr: false,
 		},
 		{
 			name:      "Valid offloading.queue_size_percent 5",
-			content:   base,
+			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_OFFLOADING_QUEUE_SIZE_PERCENT": "50"},
 			expectErr: false,
 		},
@@ -92,7 +94,7 @@ limits:
 				t.Setenv(k, v)
 			}
 
-			c, err := Parse(createCfgFile(t, base))
+			c, err := Parse(tt.cfg)
 			assert.NoError(t, err)
 
 			res := c.Validate("store")
