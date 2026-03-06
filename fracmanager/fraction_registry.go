@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/util"
+	"go.uber.org/zap"
 )
 
 // fractionRegistry manages fraction queues at different lifecycle stages.
@@ -159,17 +162,40 @@ func (r *fractionRegistry) SuspendIfOverCapacity(maxQueue, maxSize uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	suspended := r.active.Suspended()
+
 	if maxQueue > 0 && r.stats.sealing.count >= int(maxQueue) {
-		r.active.Suspend(true)
+		if !suspended {
+			logger.Warn("switching to read-only mode",
+				zap.String("reason", "sealing queue size exceeded"),
+				zap.Uint64("limit", maxQueue),
+				zap.Int("queue_size", r.stats.sealing.count))
+			r.active.Suspend(true)
+		}
 		return
 	}
 
-	if maxSize > 0 && r.diskUsage() > maxSize {
-		r.active.Suspend(true)
+	du := r.diskUsage()
+
+	if maxSize > 0 && du > maxSize {
+		if !suspended {
+			logger.Warn("switching to read-only mode",
+				zap.String("reason", "occupied space limit exceeded"),
+				zap.Float64("queue_size_limit_gb", util.Float64ToPrec(util.SizeToUnit(maxSize, "gb"), 2)),
+				zap.Float64("occupied_space_gb", util.Float64ToPrec(util.SizeToUnit(du, "gb"), 2)))
+			r.active.Suspend(true)
+		}
 		return
 	}
 
-	r.active.Suspend(false)
+	if suspended {
+		logger.Warn("switching to write mode",
+			zap.Float64("queue_size_limit_gb", util.Float64ToPrec(util.SizeToUnit(maxSize, "gb"), 2)),
+			zap.Float64("occupied_space_gb", util.Float64ToPrec(util.SizeToUnit(du, "gb"), 2)),
+			zap.Uint64("sealing_queue_size_limit", maxQueue),
+			zap.Int("queue_size", r.stats.sealing.count))
+		r.active.Suspend(false)
+	}
 }
 
 func (r *fractionRegistry) diskUsage() uint64 {
