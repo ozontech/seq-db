@@ -128,6 +128,18 @@ func (fm *FracManager) Append(ctx context.Context, docs, metas storage.DocBlock)
 	}
 }
 
+// Perform fraction maintenance (rotation, truncating, offloading, etc.)
+func (fm *FracManager) Maintain(ctx context.Context, cfg *Config, wg *sync.WaitGroup) {
+	n := time.Now()
+	logger.Debug("maintenance iteration started")
+
+	fm.mu.Lock()
+	defer fm.mu.Unlock()
+
+	fm.lc.Maintain(ctx, cfg, wg)
+	logger.Debug("maintenance iteration finished", zap.Int64("took_ms", time.Since(n).Milliseconds()))
+}
+
 // startCacheWorker starts background cache garbage collection
 func startCacheWorker(ctx context.Context, cfg *Config, cache *CacheMaintainer, wg *sync.WaitGroup) {
 	wg.Add(1)
@@ -161,21 +173,18 @@ func startStatsWorker(ctx context.Context, reg *fractionRegistry, wg *sync.WaitG
 // startMaintWorker starts periodic fraction maintenance operations
 func startMaintWorker(ctx context.Context, cfg *Config, fm *FracManager, wg *sync.WaitGroup) {
 	wg.Add(1)
+	maintWg := sync.WaitGroup{}
+
 	go func() {
 		defer wg.Done()
 
 		logger.Info("maintenance loop is started")
 		// Run maintenance at configured interval
 		util.RunEvery(ctx.Done(), cfg.MaintenanceDelay, func() {
-			n := time.Now()
-			logger.Debug("maintenance iteration started")
-			fm.mu.Lock()
-			// Perform fraction maintenance (rotation, truncating, offloading, etc.)
-			fm.lc.Maintain(ctx, cfg, wg)
-			fm.mu.Unlock()
-			logger.Debug("maintenance iteration finished", zap.Int64("took_ms", time.Since(n).Milliseconds()))
+			fm.Maintain(ctx, cfg, &maintWg)
 		})
-		logger.Info("waiting maintenance complete background tasks")
+		logger.Info("waiting maintenance complete background tasks...")
+		maintWg.Wait()
 		logger.Info("maintenance loop is stopped")
 	}()
 }
