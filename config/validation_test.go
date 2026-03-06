@@ -110,7 +110,7 @@ limits:
 
 func createCfgFile(t *testing.T, data string) string {
 	f := path.Join(t.TempDir(), "config.yaml")
-	err := os.WriteFile(f, []byte(data), 0666)
+	err := os.WriteFile(f, []byte(data), 0o666)
 	assert.NoError(t, err)
 
 	abs, err := filepath.Abs(f)
