@@ -216,6 +216,7 @@ message SearchRequest {
   bool with_total = 4;   // Should total number of documents be returned in response.
   Order order = 5;       // Document order ORDER_DESC/ORDER_ASC.
   string offset_id = 6;  // ID offset for pagination.
+  repeated string regions = 7; // Required when proxy uses experimental.regions: list of region names to query.
 }
 
 message ComplexSearchRequest {
@@ -227,6 +228,7 @@ message ComplexSearchRequest {
   bool with_total = 6;          // Should total number of documents be returned in response.
   Order order = 7;              // Document order ORDER_DESC/ORDER_ASC.
   string offset_id = 8;         // ID offset for pagination.
+  repeated string regions = 9;  // Required when proxy uses experimental.regions: list of region names to query.
 }
 
 message SearchResponse {
@@ -352,6 +354,7 @@ message AsyncSearchesListItem {
 message GetAggregationRequest {
   SearchQuery query = 1;      // Search query.
   repeated AggQuery aggs = 2; // List of aggregation queries.
+  repeated string regions = 3; // Required when proxy uses experimental.regions: list of region names to query.
 }
 
 message GetAggregationResponse {
@@ -364,6 +367,7 @@ message GetAggregationResponse {
 message GetHistogramRequest {
   SearchQuery query = 1; // Search query.
   HistQuery hist = 2;    // Histogram query.
+  repeated string regions = 3; // Required when proxy uses experimental.regions: list of region names to query.
 }
 
 message GetHistogramResponse {
@@ -415,6 +419,7 @@ message ExportRequest {
   SearchQuery query = 1; // Search query.
   int64 size = 2;        // Maximum number of documents to return.
   int64 offset = 3;      // Search offset.
+  repeated string regions = 4; // Required when proxy uses experimental.regions: list of region names to query.
 }
 
 message ExportResponse {

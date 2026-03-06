@@ -28,6 +28,7 @@ type SearchRequest struct {
 	WithTotal   bool
 	ShouldFetch bool
 	Order       seq.DocsOrder
+	Regions     []string
 }
 
 func (sr *SearchRequest) GetAPISearchRequest() *storeapi.SearchRequest {

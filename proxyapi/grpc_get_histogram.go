@@ -20,8 +20,9 @@ func (g *grpcV1) GetHistogram(
 	}
 
 	proxyReq := &seqproxyapi.ComplexSearchRequest{
-		Query: req.Query,
-		Hist:  req.Hist,
+		Query:   req.Query,
+		Hist:    req.Hist,
+		Regions: req.Regions,
 	}
 	sResp, err := g.doSearch(ctx, proxyReq, false, nil)
 	if err != nil {

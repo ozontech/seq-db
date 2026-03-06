@@ -240,7 +240,7 @@ func (g *GrpcV1) doSearch(
 		)
 	}
 
-	return buildSearchResponse(qpr), nil
+	return BuildSearchResponse(qpr), nil
 }
 
 func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, error) {
@@ -258,7 +258,7 @@ func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {
 	return oldestCt == 0 || oldestCt > from
 }
 
-func buildSearchResponse(qpr *seq.QPR) *storeapi.SearchResponse {
+func BuildSearchResponse(qpr *seq.QPR) *storeapi.SearchResponse {
 	idSourcesBuf := make([]storeapi.SearchResponse_IdWithHint, len(qpr.IDs))
 	idSources := make([]*storeapi.SearchResponse_IdWithHint, len(qpr.IDs))
 	for i := range qpr.IDs {

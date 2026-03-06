@@ -226,6 +226,21 @@ func (g *grpcV1) doSearch(
 		}
 	}
 
+	// Regions from request (required when proxy uses experimental.regions).
+	regions := req.Regions
+	if config.UseRegions {
+		if len(regions) == 0 {
+			return nil, status.Error(codes.InvalidArgument, consts.ErrNoRegionsSpecified.Error())
+		}
+		if g.config.MaxRegionsPerRequest > 0 && len(regions) > g.config.MaxRegionsPerRequest {
+			return nil, status.Errorf(codes.InvalidArgument, "%s: got %d, max %d", consts.ErrTooManyRegionsRequested.Error(), len(regions), g.config.MaxRegionsPerRequest)
+		}
+
+		for i, region := range regions {
+			regions[i] = strings.TrimSpace(region)
+		}
+	}
+
 	rlQuery := getSearchQueryFromGRPCReqForRateLimiter(req)
 	if !g.rateLimiter.Account(rlQuery) {
 		return nil, status.Error(codes.ResourceExhausted, consts.ErrRequestWasRateLimited.Error())
@@ -242,6 +257,7 @@ func (g *grpcV1) doSearch(
 		WithTotal:   req.WithTotal,
 		ShouldFetch: shouldFetch,
 		Order:       req.Order.MustDocsOrder(),
+		Regions:     regions,
 	}
 
 	if len(req.Aggs) > 0 {

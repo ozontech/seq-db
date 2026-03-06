@@ -15,6 +15,7 @@ import (
 	"github.com/ozontech/seq-db/network/grpcutil"
 	"github.com/ozontech/seq-db/network/ratelimiter"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
+	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/tracing"
 )
@@ -34,6 +35,8 @@ func newGRPCServer(
 
 	apiV1 := newGrpcV1(apiConfig, si, mp, rl, mirror)
 	seqproxyapi.RegisterSeqProxyApiServer(s, apiV1)
+	// Expose store API so aggregator proxies can query this proxy as a store (proper aggregations e.g. quantiles).
+	storeapi.RegisterStoreApiServer(s, newStoreEmulator(si))
 
 	return &grpcServer{
 		server: s,

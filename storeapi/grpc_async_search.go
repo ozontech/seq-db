@@ -67,7 +67,7 @@ func (g *GrpcV1) FetchAsyncSearchResult(
 		return nil, status.Error(codes.NotFound, "search not found")
 	}
 
-	resp := buildSearchResponse(&fr.QPR)
+	resp := BuildSearchResponse(&fr.QPR)
 
 	errs := make([]string, 0, len(fr.QPR.Errors))
 	for _, e := range fr.QPR.Errors {

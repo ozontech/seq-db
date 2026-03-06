@@ -262,6 +262,11 @@ func (m *SearchRequest) CloneVT() *SearchRequest {
 	r.WithTotal = m.WithTotal
 	r.Order = m.Order
 	r.OffsetId = m.OffsetId
+	if rhs := m.Regions; rhs != nil {
+		tmpContainer := make([]string, len(rhs))
+		copy(tmpContainer, rhs)
+		r.Regions = tmpContainer
+	}
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
 		copy(r.unknownFields, m.unknownFields)
@@ -291,6 +296,11 @@ func (m *ComplexSearchRequest) CloneVT() *ComplexSearchRequest {
 			tmpContainer[k] = v.CloneVT()
 		}
 		r.Aggs = tmpContainer
+	}
+	if rhs := m.Regions; rhs != nil {
+		tmpContainer := make([]string, len(rhs))
+		copy(tmpContainer, rhs)
+		r.Regions = tmpContainer
 	}
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
@@ -612,6 +622,11 @@ func (m *GetAggregationRequest) CloneVT() *GetAggregationRequest {
 		}
 		r.Aggs = tmpContainer
 	}
+	if rhs := m.Regions; rhs != nil {
+		tmpContainer := make([]string, len(rhs))
+		copy(tmpContainer, rhs)
+		r.Regions = tmpContainer
+	}
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
 		copy(r.unknownFields, m.unknownFields)
@@ -656,6 +671,11 @@ func (m *GetHistogramRequest) CloneVT() *GetHistogramRequest {
 	r := new(GetHistogramRequest)
 	r.Query = m.Query.CloneVT()
 	r.Hist = m.Hist.CloneVT()
+	if rhs := m.Regions; rhs != nil {
+		tmpContainer := make([]string, len(rhs))
+		copy(tmpContainer, rhs)
+		r.Regions = tmpContainer
+	}
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
 		copy(r.unknownFields, m.unknownFields)
@@ -856,6 +876,11 @@ func (m *ExportRequest) CloneVT() *ExportRequest {
 	r.Query = m.Query.CloneVT()
 	r.Size = m.Size
 	r.Offset = m.Offset
+	if rhs := m.Regions; rhs != nil {
+		tmpContainer := make([]string, len(rhs))
+		copy(tmpContainer, rhs)
+		r.Regions = tmpContainer
+	}
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
 		copy(r.unknownFields, m.unknownFields)
@@ -1206,6 +1231,15 @@ func (this *SearchRequest) EqualVT(that *SearchRequest) bool {
 	if this.OffsetId != that.OffsetId {
 		return false
 	}
+	if len(this.Regions) != len(that.Regions) {
+		return false
+	}
+	for i, vx := range this.Regions {
+		vy := that.Regions[i]
+		if vx != vy {
+			return false
+		}
+	}
 	return string(this.unknownFields) == string(that.unknownFields)
 }
 
@@ -1259,6 +1293,15 @@ func (this *ComplexSearchRequest) EqualVT(that *ComplexSearchRequest) bool {
 	}
 	if this.OffsetId != that.OffsetId {
 		return false
+	}
+	if len(this.Regions) != len(that.Regions) {
+		return false
+	}
+	for i, vx := range this.Regions {
+		vy := that.Regions[i]
+		if vx != vy {
+			return false
+		}
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
 }
@@ -1724,6 +1767,15 @@ func (this *GetAggregationRequest) EqualVT(that *GetAggregationRequest) bool {
 			}
 		}
 	}
+	if len(this.Regions) != len(that.Regions) {
+		return false
+	}
+	for i, vx := range this.Regions {
+		vy := that.Regions[i]
+		if vx != vy {
+			return false
+		}
+	}
 	return string(this.unknownFields) == string(that.unknownFields)
 }
 
@@ -1787,6 +1839,15 @@ func (this *GetHistogramRequest) EqualVT(that *GetHistogramRequest) bool {
 	}
 	if !this.Hist.EqualVT(that.Hist) {
 		return false
+	}
+	if len(this.Regions) != len(that.Regions) {
+		return false
+	}
+	for i, vx := range this.Regions {
+		vy := that.Regions[i]
+		if vx != vy {
+			return false
+		}
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
 }
@@ -2030,6 +2091,15 @@ func (this *ExportRequest) EqualVT(that *ExportRequest) bool {
 	}
 	if this.Offset != that.Offset {
 		return false
+	}
+	if len(this.Regions) != len(that.Regions) {
+		return false
+	}
+	for i, vx := range this.Regions {
+		vy := that.Regions[i]
+		if vx != vy {
+			return false
+		}
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
 }
@@ -3256,6 +3326,15 @@ func (m *SearchRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.Regions) > 0 {
+		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Regions[iNdEx])
+			copy(dAtA[i:], m.Regions[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Regions[iNdEx])))
+			i--
+			dAtA[i] = 0x3a
+		}
+	}
 	if len(m.OffsetId) > 0 {
 		i -= len(m.OffsetId)
 		copy(dAtA[i:], m.OffsetId)
@@ -3330,6 +3409,15 @@ func (m *ComplexSearchRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) 
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Regions) > 0 {
+		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Regions[iNdEx])
+			copy(dAtA[i:], m.Regions[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Regions[iNdEx])))
+			i--
+			dAtA[i] = 0x4a
+		}
 	}
 	if len(m.OffsetId) > 0 {
 		i -= len(m.OffsetId)
@@ -4255,6 +4343,15 @@ func (m *GetAggregationRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error)
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.Regions) > 0 {
+		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Regions[iNdEx])
+			copy(dAtA[i:], m.Regions[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Regions[iNdEx])))
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
 	if len(m.Aggs) > 0 {
 		for iNdEx := len(m.Aggs) - 1; iNdEx >= 0; iNdEx-- {
 			size, err := m.Aggs[iNdEx].MarshalToSizedBufferVT(dAtA[:i])
@@ -4379,6 +4476,15 @@ func (m *GetHistogramRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Regions) > 0 {
+		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Regions[iNdEx])
+			copy(dAtA[i:], m.Regions[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Regions[iNdEx])))
+			i--
+			dAtA[i] = 0x1a
+		}
 	}
 	if m.Hist != nil {
 		size, err := m.Hist.MarshalToSizedBufferVT(dAtA[:i])
@@ -4870,6 +4976,15 @@ func (m *ExportRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Regions) > 0 {
+		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Regions[iNdEx])
+			copy(dAtA[i:], m.Regions[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Regions[iNdEx])))
+			i--
+			dAtA[i] = 0x22
+		}
 	}
 	if m.Offset != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Offset))
@@ -5524,6 +5639,15 @@ func (m *SearchRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.Regions) > 0 {
+		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Regions[iNdEx])
+			copy(dAtA[i:], m.Regions[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Regions[iNdEx])))
+			i--
+			dAtA[i] = 0x3a
+		}
+	}
 	if len(m.OffsetId) > 0 {
 		i -= len(m.OffsetId)
 		copy(dAtA[i:], m.OffsetId)
@@ -5598,6 +5722,15 @@ func (m *ComplexSearchRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, e
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Regions) > 0 {
+		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Regions[iNdEx])
+			copy(dAtA[i:], m.Regions[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Regions[iNdEx])))
+			i--
+			dAtA[i] = 0x4a
+		}
 	}
 	if len(m.OffsetId) > 0 {
 		i -= len(m.OffsetId)
@@ -6523,6 +6656,15 @@ func (m *GetAggregationRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, 
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.Regions) > 0 {
+		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Regions[iNdEx])
+			copy(dAtA[i:], m.Regions[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Regions[iNdEx])))
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
 	if len(m.Aggs) > 0 {
 		for iNdEx := len(m.Aggs) - 1; iNdEx >= 0; iNdEx-- {
 			size, err := m.Aggs[iNdEx].MarshalToSizedBufferVTStrict(dAtA[:i])
@@ -6647,6 +6789,15 @@ func (m *GetHistogramRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, er
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.Regions) > 0 {
+		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Regions[iNdEx])
+			copy(dAtA[i:], m.Regions[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Regions[iNdEx])))
+			i--
+			dAtA[i] = 0x1a
+		}
 	}
 	if m.Hist != nil {
 		size, err := m.Hist.MarshalToSizedBufferVTStrict(dAtA[:i])
@@ -7139,6 +7290,15 @@ func (m *ExportRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.Regions) > 0 {
+		for iNdEx := len(m.Regions) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Regions[iNdEx])
+			copy(dAtA[i:], m.Regions[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Regions[iNdEx])))
+			i--
+			dAtA[i] = 0x22
+		}
+	}
 	if m.Offset != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Offset))
 		i--
@@ -7440,6 +7600,12 @@ func (m *SearchRequest) SizeVT() (n int) {
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
+	if len(m.Regions) > 0 {
+		for _, s := range m.Regions {
+			l = len(s)
+			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+		}
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -7479,6 +7645,12 @@ func (m *ComplexSearchRequest) SizeVT() (n int) {
 	l = len(m.OffsetId)
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if len(m.Regions) > 0 {
+		for _, s := range m.Regions {
+			l = len(s)
+			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+		}
 	}
 	n += len(m.unknownFields)
 	return n
@@ -7816,6 +7988,12 @@ func (m *GetAggregationRequest) SizeVT() (n int) {
 			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 		}
 	}
+	if len(m.Regions) > 0 {
+		for _, s := range m.Regions {
+			l = len(s)
+			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+		}
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -7859,6 +8037,12 @@ func (m *GetHistogramRequest) SizeVT() (n int) {
 	if m.Hist != nil {
 		l = m.Hist.SizeVT()
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if len(m.Regions) > 0 {
+		for _, s := range m.Regions {
+			l = len(s)
+			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+		}
 	}
 	n += len(m.unknownFields)
 	return n
@@ -8035,6 +8219,12 @@ func (m *ExportRequest) SizeVT() (n int) {
 	}
 	if m.Offset != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Offset))
+	}
+	if len(m.Regions) > 0 {
+		for _, s := range m.Regions {
+			l = len(s)
+			n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+		}
 	}
 	n += len(m.unknownFields)
 	return n
@@ -9613,6 +9803,38 @@ func (m *SearchRequest) UnmarshalVT(dAtA []byte) error {
 			}
 			m.OffsetId = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 7:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Regions", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Regions = append(m.Regions, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -9878,6 +10100,38 @@ func (m *ComplexSearchRequest) UnmarshalVT(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.OffsetId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Regions", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Regions = append(m.Regions, string(dAtA[iNdEx:postIndex]))
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -12036,6 +12290,38 @@ func (m *GetAggregationRequest) UnmarshalVT(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Regions", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Regions = append(m.Regions, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -12318,6 +12604,38 @@ func (m *GetHistogramRequest) UnmarshalVT(dAtA []byte) error {
 			if err := m.Hist.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Regions", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Regions = append(m.Regions, string(dAtA[iNdEx:postIndex]))
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -13394,6 +13712,38 @@ func (m *ExportRequest) UnmarshalVT(dAtA []byte) error {
 					break
 				}
 			}
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Regions", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Regions = append(m.Regions, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -15099,6 +15449,42 @@ func (m *SearchRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 			}
 			m.OffsetId = stringValue
 			iNdEx = postIndex
+		case 7:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Regions", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var stringValue string
+			if intStringLen > 0 {
+				stringValue = unsafe.String(&dAtA[iNdEx], intStringLen)
+			}
+			m.Regions = append(m.Regions, stringValue)
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -15368,6 +15754,42 @@ func (m *ComplexSearchRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 				stringValue = unsafe.String(&dAtA[iNdEx], intStringLen)
 			}
 			m.OffsetId = stringValue
+			iNdEx = postIndex
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Regions", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var stringValue string
+			if intStringLen > 0 {
+				stringValue = unsafe.String(&dAtA[iNdEx], intStringLen)
+			}
+			m.Regions = append(m.Regions, stringValue)
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -17554,6 +17976,42 @@ func (m *GetAggregationRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Regions", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var stringValue string
+			if intStringLen > 0 {
+				stringValue = unsafe.String(&dAtA[iNdEx], intStringLen)
+			}
+			m.Regions = append(m.Regions, stringValue)
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -17836,6 +18294,42 @@ func (m *GetHistogramRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 			if err := m.Hist.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Regions", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var stringValue string
+			if intStringLen > 0 {
+				stringValue = unsafe.String(&dAtA[iNdEx], intStringLen)
+			}
+			m.Regions = append(m.Regions, stringValue)
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -18925,6 +19419,42 @@ func (m *ExportRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 					break
 				}
 			}
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Regions", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var stringValue string
+			if intStringLen > 0 {
+				stringValue = unsafe.String(&dAtA[iNdEx], intStringLen)
+			}
+			m.Regions = append(m.Regions, stringValue)
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

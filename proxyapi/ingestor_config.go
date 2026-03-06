@@ -19,6 +19,7 @@ type APIConfig struct {
 	// GatewayAddr is grpc-gateway client address. Used for debugging purposes.
 	GatewayAddr                       string
 	AsyncSearchMaxDocumentsPerRequest int64
+	MaxRegionsPerRequest              int
 }
 
 type IngestorConfig struct {

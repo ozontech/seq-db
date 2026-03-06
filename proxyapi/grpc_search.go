@@ -26,6 +26,7 @@ func (g *grpcV1) Search(
 		OffsetId:  req.OffsetId,
 		WithTotal: req.WithTotal,
 		Order:     req.Order,
+		Regions:   req.Regions,
 	}
 	sResp, err := g.doSearch(ctx, proxyReq, true, nil)
 	if err != nil {
