@@ -6,10 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/util"
-	"go.uber.org/zap"
 )
 
 // fractionRegistry manages fraction queues at different lifecycle stages.
