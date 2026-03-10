@@ -27,7 +27,7 @@ func NewCache() *unpackCache {
 		blockIndex: -1,
 		startLID:   0,
 		values:     make([]uint64, 0, defaultValsCapacity),
-		compressed: make([]uint64, 0, defaultValsCapacity),
+		compressed: make([]uint64, 0, defaultValsCapacity/2),
 	}
 }
 

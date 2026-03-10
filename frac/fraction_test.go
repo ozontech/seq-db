@@ -1636,8 +1636,8 @@ func (s *FractionTestSuite) TestFractionInfo() {
 			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	case *Remote:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1500),
-			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
+		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1550),
+			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	default:
 		s.Require().Fail("unsupported fraction type")
 	}

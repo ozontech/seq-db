@@ -2,6 +2,8 @@ package lids
 
 import (
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/storage"
 )
 
@@ -24,10 +26,14 @@ func (b *UnpackBuffer) Reset() {
 		b.offsets = b.offsets[:0]
 	}
 	if b.decompressed == nil {
-		b.decompressed = make([]uint32, 0, 1024)
+		b.decompressed = make([]uint32, 0, consts.LIDBlockCap)
+	} else {
+		b.decompressed = b.decompressed[:0]
 	}
 	if b.compressed == nil {
-		b.compressed = make([]uint32, 0, 256)
+		b.compressed = make([]uint32, 0, consts.LIDBlockCap/2)
+	} else {
+		b.compressed = b.compressed[:0]
 	}
 }
 
@@ -39,13 +45,15 @@ type Loader struct {
 	reader    *storage.IndexReader
 	unpackBuf *UnpackBuffer
 	blockBuf  []byte
+	fracVer   config.BinaryDataVersion
 }
 
-func NewLoader(r *storage.IndexReader, c *cache.Cache[*Block]) *Loader {
+func NewLoader(fracVer config.BinaryDataVersion, r *storage.IndexReader, c *cache.Cache[*Block]) *Loader {
 	return &Loader{
 		cache:     c,
 		reader:    r,
 		unpackBuf: &UnpackBuffer{},
+		fracVer:   fracVer,
 	}
 }
 
@@ -68,7 +76,7 @@ func (l *Loader) readLIDsBlock(blockIndex uint32) (*Block, error) {
 	}
 
 	block := &Block{}
-	err = block.Unpack(l.blockBuf, l.unpackBuf)
+	err = block.Unpack(l.blockBuf, l.fracVer, l.unpackBuf)
 	if err != nil {
 		return nil, err
 	}

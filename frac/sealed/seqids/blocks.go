@@ -3,12 +3,9 @@ package seqids
 import (
 	"encoding/binary"
 	"errors"
-	"unsafe"
-
-	"github.com/ronanh/intcomp"
 
 	"github.com/ozontech/seq-db/config"
-	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -16,48 +13,21 @@ type BlockMIDs struct {
 	Values []uint64
 }
 
-func (b BlockMIDs) Pack(dst []byte) []byte {
-	if len(b.Values) == consts.IDsPerBlock {
-		dst = binary.LittleEndian.AppendUint32(dst, 1)
-
-		_, compressed := intcomp.CompressDeltaBinPackUint64(b.Values, nil)
-		dst = binary.LittleEndian.AppendUint32(dst, uint32(len(compressed)))
-		for _, val := range compressed {
-			dst = binary.LittleEndian.AppendUint64(dst, val)
-		}
-	} else {
-		dst = binary.LittleEndian.AppendUint32(dst, 0)
-
-		var prev uint64
-		for _, mid := range b.Values {
-			dst = binary.AppendVarint(dst, int64(mid-prev))
-			prev = mid
-		}
-	}
-	return dst
+func (b BlockMIDs) Pack(dst []byte, buf []uint64) []byte {
+	return packer.CompressDeltaBitpackUint64(dst, b.Values, buf)
 }
 
-func (b *BlockMIDs) Unpack(data []byte, fracVersion config.BinaryDataVersion, cache *unpackCache) error {
-	if fracVersion >= config.BinaryDataV3 {
-		fastPath := binary.LittleEndian.Uint32(data)
-		data = data[4:]
-
-		if fastPath == 1 {
-			valuesCount := binary.LittleEndian.Uint32(data)
-			data = data[4:]
-
-			// TODO this is unsafe, we rely that we running on little-endian host
-			cache.compressed = cache.compressed[:valuesCount]
-			byteLen := int(valuesCount) * 8
-			src := unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(data[:byteLen]))), valuesCount)
-			copy(cache.compressed, src)
-
-			_, b.Values = intcomp.UncompressDeltaBinPackUint64(cache.compressed, b.Values)
-			return nil
+func (b *BlockMIDs) Unpack(data []byte, fracVer config.BinaryDataVersion, cache *unpackCache) error {
+	if fracVer >= config.BinaryDataV3 {
+		_, values, err := packer.DecompressDeltaBitpackUint64(data, cache.compressed, cache.values)
+		if err != nil {
+			return err
 		}
+		b.Values = append(b.Values[:0], values...)
+		return nil
 	}
 
-	values, err := unpackRawMIDsVarint(data, b.Values, fracVersion)
+	values, err := unpackRawMIDsVarint(data, b.Values, fracVer)
 	if err != nil {
 		return err
 	}
@@ -114,7 +84,7 @@ func (b *BlockParams) Unpack(data []byte) error {
 
 // unpackRawMIDsVarint is a dedicated method for unpacking delta encoded MIDs. The reason a dedicated method exists
 // is that we want to unpack values and potentially convert legacy frac version in one pass.
-func unpackRawMIDsVarint(src []byte, dst []uint64, fracVersion config.BinaryDataVersion) ([]uint64, error) {
+func unpackRawMIDsVarint(src []byte, dst []uint64, fracVer config.BinaryDataVersion) ([]uint64, error) {
 	dst = dst[:0]
 	id := uint64(0)
 	for len(src) != 0 {
@@ -129,7 +99,7 @@ func unpackRawMIDsVarint(src []byte, dst []uint64, fracVersion config.BinaryData
 		}
 
 		id += uint64(delta)
-		if fracVersion >= config.BinaryDataV2 {
+		if fracVer >= config.BinaryDataV2 {
 			dst = append(dst, id)
 		} else {
 			// Legacy format - scale millis to nanos

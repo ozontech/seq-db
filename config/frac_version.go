@@ -9,7 +9,7 @@ const (
 	BinaryDataV1
 	// BinaryDataV2 - MIDs stored in nanoseconds
 	BinaryDataV2
-	// BinaryDataV3 - MIDs and LIDs encoded in bitpack, variable LID block size
+	// BinaryDataV3 - delta bitpack encoded MIDs and LIDs
 	BinaryDataV3
 )
 

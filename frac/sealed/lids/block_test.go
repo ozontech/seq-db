@@ -1,73 +1,63 @@
 package lids
 
 import (
-	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ozontech/seq-db/config"
 )
 
-func TestBlock_Pack_Unpack(t *testing.T) {
+func TestBlockPack(t *testing.T) {
 	testCases := []struct {
 		name      string
 		lids      []uint32
 		offsets   []uint32
 		isLastLID bool
-		setup     func() ([]uint32, []uint32)
+		generator func() ([]uint32, []uint32)
 	}{
 		{
-			name:      "SingleToken",
-			lids:      []uint32{100, 150, 200, 250},
+			name:      "small_single_token",
+			lids:      generate(4),
 			offsets:   []uint32{0, 4},
 			isLastLID: true,
 		},
 		{
-			name:      "MultipleTokens",
-			lids:      []uint32{100, 150, 200, 250, 300, 350},
+			name:      "small_a_few_token",
+			lids:      generate(6),
 			offsets:   []uint32{0, 3, 6},
 			isLastLID: true,
 		},
 		{
-			name:      "NotLastLID",
-			lids:      []uint32{100, 150, 200},
+			name:      "small_not_last_lid",
+			lids:      generate(3),
 			offsets:   []uint32{0, 3},
 			isLastLID: false,
 		},
 		{
-			name:      "SingleLID",
+			name:      "small_single_lid",
 			lids:      []uint32{100},
 			offsets:   []uint32{0, 1},
 			isLastLID: true,
 		},
 		{
-			name: "ConsecutiveLIDs",
-			lids: func() []uint32 {
-				lids := make([]uint32, 50)
-				for i := range lids {
-					lids[i] = uint32(1000 + i)
-				}
-				return lids
-			}(),
-			offsets:   []uint32{0, 50},
-			isLastLID: true,
-		},
-		{
-			name:      "LargeLIDs",
+			name:      "small_big_lids",
 			lids:      []uint32{math.MaxUint32 - 100, math.MaxUint32 - 50, math.MaxUint32 - 10},
 			offsets:   []uint32{0, 3},
 			isLastLID: true,
 		},
 		{
-			name:      "MultipleTokens_IsLastLID_False",
-			lids:      []uint32{100, 150, 200, 250, 300, 350, 400, 450},
+			name:      "small_few_tokens",
+			lids:      generate(8),
 			offsets:   []uint32{0, 3, 6, 8},
 			isLastLID: false,
 		},
 		{
-			name: "ManyTokens",
-			setup: func() ([]uint32, []uint32) {
+			name: "medium_many_tokens",
+			generator: func() ([]uint32, []uint32) {
 				lids := make([]uint32, 0)
 				offsets := []uint32{0}
 				startLID := uint32(100)
@@ -83,20 +73,8 @@ func TestBlock_Pack_Unpack(t *testing.T) {
 			isLastLID: true,
 		},
 		{
-			name: "LargeBlock",
-			setup: func() ([]uint32, []uint32) {
-				lids := make([]uint32, 0, 200)
-				startLID := uint32(1000)
-				for i := 0; i < 200; i++ {
-					lids = append(lids, startLID+uint32(i*10))
-				}
-				return lids, []uint32{0, uint32(len(lids))}
-			},
-			isLastLID: true,
-		},
-		{
-			name: "LargeBlock_IsLastLID_False",
-			setup: func() ([]uint32, []uint32) {
+			name: "large_is_last_lid_false",
+			generator: func() ([]uint32, []uint32) {
 				lids := make([]uint32, 0, 200)
 				startLID := uint32(1000)
 				for i := 0; i < 200; i++ {
@@ -107,150 +85,73 @@ func TestBlock_Pack_Unpack(t *testing.T) {
 			isLastLID: false,
 		},
 		{
-			name: "LargeBlockWithMultipleTokens",
-			setup: func() ([]uint32, []uint32) {
+			name: "large_many_tokens",
+			generator: func() ([]uint32, []uint32) {
 				lids := make([]uint32, 0, 150)
 				offsets := []uint32{0}
-				startLID := uint32(1000)
 				groupSize := 30
 				for group := 0; group < 5; group++ {
 					for i := 0; i < groupSize; i++ {
-						lids = append(lids, startLID+uint32(group*groupSize*10+i*10))
+						lids = append(lids, 1+uint32(group*groupSize*10+i*10))
 					}
 					offsets = append(offsets, uint32(len(lids)))
-					startLID += uint32(groupSize * 10)
 				}
 				return lids, offsets
 			},
 			isLastLID: true,
 		},
 		{
-			name: "LargeBlockWithMultipleTokens_IsLastLID_False",
-			setup: func() ([]uint32, []uint32) {
-				lids := make([]uint32, 0, 150)
-				offsets := []uint32{0}
-				startLID := uint32(1000)
-				groupSize := 30
-				for group := 0; group < 5; group++ {
-					for i := 0; i < groupSize; i++ {
-						lids = append(lids, startLID+uint32(group*groupSize*10+i*10))
-					}
-					offsets = append(offsets, uint32(len(lids)))
-					startLID += uint32(groupSize * 10)
-				}
-				return lids, offsets
-			},
-			isLastLID: false,
-		},
-		{
-			name: "Exactly128LIDs",
-			setup: func() ([]uint32, []uint32) {
-				lids := make([]uint32, 128)
-				startLID := uint32(1000)
-				for i := 0; i < 128; i++ {
-					lids[i] = startLID + uint32(i*5)
-				}
-				return lids, []uint32{0, 128}
-			},
+			name:      "medium_128_lids",
+			lids:      generate(128),
+			offsets:   []uint32{0, 128},
 			isLastLID: true,
 		},
 		{
-			name: "Exactly128LIDs_IsLastLID_False",
-			setup: func() ([]uint32, []uint32) {
-				lids := make([]uint32, 128)
-				startLID := uint32(1000)
-				for i := 0; i < 128; i++ {
-					lids[i] = startLID + uint32(i*5)
-				}
-				return lids, []uint32{0, 128}
-			},
-			isLastLID: false,
-		},
-		{
-			name: "127LIDs",
-			setup: func() ([]uint32, []uint32) {
-				lids := make([]uint32, 127)
-				startLID := uint32(1000)
-				for i := 0; i < 127; i++ {
-					lids[i] = startLID + uint32(i*5)
-				}
-				return lids, []uint32{0, 127}
-			},
+			name:      "medium_127_lids",
+			lids:      generate(127),
+			offsets:   []uint32{0, 127},
 			isLastLID: true,
 		},
 		{
-			name: "129LIDs",
-			setup: func() ([]uint32, []uint32) {
-				lids := make([]uint32, 129)
-				startLID := uint32(1000)
-				for i := 0; i < 129; i++ {
-					lids[i] = startLID + uint32(i*5)
-				}
-				return lids, []uint32{0, 129}
-			},
+			name:      "medium_129_lids",
+			lids:      generate(129),
+			offsets:   []uint32{0, 129},
 			isLastLID: true,
 		},
 		{
-			name: "129LIDs_IsLastLID_False",
-			setup: func() ([]uint32, []uint32) {
-				lids := make([]uint32, 129)
-				startLID := uint32(1000)
-				for i := 0; i < 129; i++ {
-					lids[i] = startLID + uint32(i*5)
-				}
-				return lids, []uint32{0, 129}
-			},
-			isLastLID: false,
-		},
-		{
-			name: "64k_65536_LIDs",
-			setup: func() ([]uint32, []uint32) {
-				size := 65536
-				lids := make([]uint32, size)
-				startLID := uint32(1000)
-				for i := 0; i < size; i++ {
-					lids[i] = startLID + uint32(i)
-				}
-				return lids, []uint32{0, uint32(size)}
-			},
-			isLastLID: false,
-		},
-		{
-			name: "64k_65539_LIDs",
-			setup: func() ([]uint32, []uint32) {
-				size := 65539
-				lids := make([]uint32, size)
-				startLID := uint32(1000)
-				for i := 0; i < size; i++ {
-					lids[i] = startLID + uint32(i)
-				}
-				return lids, []uint32{0, uint32(size)}
-			},
-			isLastLID: false,
-		},
-		{
-			name: "64k_65533_LIDs",
-			setup: func() ([]uint32, []uint32) {
-				size := 65533
-				lids := make([]uint32, size)
-				startLID := uint32(1000)
-				for i := 0; i < size; i++ {
-					lids[i] = startLID + uint32(i)
-				}
-				return lids, []uint32{0, uint32(size)}
-			},
-			isLastLID: false,
-		},
-		{
-			name:      "IsLastLID_True",
-			lids:      []uint32{100, 150, 200, 250, 300},
-			offsets:   []uint32{0, 5},
+			name:      "medium_4k_lids",
+			lids:      generate(4096),
+			offsets:   []uint32{0, 4096},
 			isLastLID: true,
 		},
 		{
-			name:      "IsLastLID_False",
-			lids:      []uint32{100, 150, 200, 250, 300},
-			offsets:   []uint32{0, 5},
+			name:      "medium_4k_minus_one_lids",
+			lids:      generate(4095),
+			offsets:   []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 4095},
+			isLastLID: true,
+		},
+		{
+			name:      "medium_4k_plus_one_lids",
+			lids:      generate(4097),
+			offsets:   []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 4097},
+			isLastLID: true,
+		},
+		{
+			name:      "medium_64k_lids",
+			lids:      generate(65536),
+			offsets:   []uint32{0, 65536},
+			isLastLID: false,
+		},
+		{
+			name:      "medium_64k_minus_one_lids",
+			lids:      generate(65535),
+			offsets:   []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 65535},
+			isLastLID: true,
+		},
+		{
+			name:      "medium_64k_plus_one_lids",
+			lids:      generate(65537),
+			offsets:   []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 65537},
 			isLastLID: false,
 		},
 	}
@@ -260,8 +161,8 @@ func TestBlock_Pack_Unpack(t *testing.T) {
 			var lids []uint32
 			var offsets []uint32
 
-			if tc.setup != nil {
-				lids, offsets = tc.setup()
+			if tc.generator != nil {
+				lids, offsets = tc.generator()
 			} else {
 				lids = tc.lids
 				offsets = tc.offsets
@@ -273,140 +174,30 @@ func TestBlock_Pack_Unpack(t *testing.T) {
 				IsLastLID: tc.isLastLID,
 			}
 
-			packed := block.Pack(nil)
-			require.NotEmpty(t, packed, "packed data should not be empty")
+			packed := block.Pack(nil, nil)
+			require.NotEmpty(t, packed)
 
 			unpacked := &Block{}
 			buf := &UnpackBuffer{}
-			err := unpacked.Unpack(packed, buf)
-			require.NoError(t, err, "unpack should succeed")
+			err := unpacked.Unpack(packed, config.CurrentFracVersion, buf)
 
-			assert.Equal(t, block.LIDs, unpacked.LIDs, "LIDs should match")
-			assert.Equal(t, block.Offsets, unpacked.Offsets, "Offsets should match")
-			assert.Equal(t, block.IsLastLID, unpacked.IsLastLID, "IsLastLID should match")
+			require.NoError(t, err)
+			assert.EqualExportedValues(t, block, unpacked)
 		})
 	}
 }
 
-func TestBlock_Pack_4k(t *testing.T) {
-	lids := make([]uint32, 4*1024)
-	startLID := uint32(1000)
-	for i := 0; i < 4*1024; i++ {
-		lids[i] = startLID + uint32(i)
+func generate(n int) []uint32 {
+	v := make([]uint32, n)
+	last := uint32(100)
+	for i := range v {
+		v[i] = last
+		last += uint32(1 + rand.Intn(5))
 	}
-
-	block := &Block{
-		LIDs:      lids,
-		Offsets:   []uint32{0, 10, 50, 100, 1000, 1500, 2000, 2500, 3000, 4 * 1024},
-		IsLastLID: true,
-	}
-
-	packed := block.Pack(nil)
-	fmt.Println("packed len: ", len(packed))
-	require.NotEmpty(t, packed, "packed data should not be empty")
-
-	unpacked := &Block{}
-	buf := &UnpackBuffer{}
-	err := unpacked.Unpack(packed, buf)
-	require.NoError(t, err, "unpack should succeed")
-
-	assert.Equal(t, block.LIDs, unpacked.LIDs, "LIDs should match")
-	assert.Equal(t, block.Offsets, unpacked.Offsets, "Offsets should match")
-	assert.Equal(t, block.IsLastLID, unpacked.IsLastLID, "IsLastLID should match")
+	return v
 }
 
-func TestBlock_Pack_4k_Dense(t *testing.T) {
-	lids := make([]uint32, 4*1024)
-	startLID := uint32(1000)
-	for i := 0; i < 4*1024; i++ {
-		lids[i] = startLID + uint32(i)
-	}
-	offsets := make([]uint32, 2*1024)
-	for i := 0; i < 2*1024; i++ {
-		offsets[i] = uint32(i)
-	}
-	offsets = append(offsets, 4*1024)
-
-	block := &Block{
-		LIDs:      lids,
-		Offsets:   offsets,
-		IsLastLID: true,
-	}
-
-	packed := block.Pack(nil)
-	fmt.Println("packed len: ", len(packed))
-	require.NotEmpty(t, packed, "packed data should not be empty")
-
-	unpacked := &Block{}
-	buf := &UnpackBuffer{}
-	err := unpacked.Unpack(packed, buf)
-	require.NoError(t, err, "unpack should succeed")
-
-	assert.Equal(t, block.LIDs, unpacked.LIDs, "LIDs should match")
-	assert.Equal(t, block.Offsets, unpacked.Offsets, "Offsets should match")
-	assert.Equal(t, block.IsLastLID, unpacked.IsLastLID, "IsLastLID should match")
-}
-
-func TestBlock_Pack_64k(t *testing.T) {
-	lids := make([]uint32, 64*1024)
-	startLID := uint32(1000)
-	for i := 0; i < 64*1024; i++ {
-		lids[i] = startLID + uint32(i)
-	}
-
-	block := &Block{
-		LIDs:      lids,
-		Offsets:   []uint32{0, 10, 50, 100, 1000, 1500, 2000, 2500, 3000, 64 * 1024},
-		IsLastLID: true,
-	}
-
-	packed := block.Pack(nil)
-	fmt.Println("packed len: ", len(packed))
-	require.NotEmpty(t, packed, "packed data should not be empty")
-
-	unpacked := &Block{}
-	buf := &UnpackBuffer{}
-	err := unpacked.Unpack(packed, buf)
-	require.NoError(t, err, "unpack should succeed")
-
-	assert.Equal(t, block.LIDs, unpacked.LIDs, "LIDs should match")
-	assert.Equal(t, block.Offsets, unpacked.Offsets, "Offsets should match")
-	assert.Equal(t, block.IsLastLID, unpacked.IsLastLID, "IsLastLID should match")
-}
-
-func TestBlock_Pack_64k_Dense(t *testing.T) {
-	lids := make([]uint32, 64*1024)
-	startLID := uint32(1000)
-	for i := 0; i < 64*1024; i++ {
-		lids[i] = startLID + uint32(i)
-	}
-	offsets := make([]uint32, 32*1024)
-	for i := 0; i < 32*1024; i++ {
-		offsets[i] = uint32(i)
-	}
-	offsets = append(offsets, 64*1024)
-
-	block := &Block{
-		LIDs:      lids,
-		Offsets:   offsets,
-		IsLastLID: true,
-	}
-
-	packed := block.Pack(nil)
-	fmt.Println("packed len: ", len(packed))
-	require.NotEmpty(t, packed, "packed data should not be empty")
-
-	unpacked := &Block{}
-	buf := &UnpackBuffer{}
-	err := unpacked.Unpack(packed, buf)
-	require.NoError(t, err, "unpack should succeed")
-
-	assert.Equal(t, block.LIDs, unpacked.LIDs, "LIDs should match")
-	assert.Equal(t, block.Offsets, unpacked.Offsets, "Offsets should match")
-	assert.Equal(t, block.IsLastLID, unpacked.IsLastLID, "IsLastLID should match")
-}
-
-func TestBlock_Pack_Unpack_ReuseBuffer(t *testing.T) {
+func TestBlockPack_ReuseBuffer(t *testing.T) {
 	// Test that UnpackBuffer can be reused
 	block1 := &Block{
 		LIDs:      []uint32{100, 150, 200},
@@ -420,61 +211,52 @@ func TestBlock_Pack_Unpack_ReuseBuffer(t *testing.T) {
 		IsLastLID: true,
 	}
 
-	packed1 := block1.Pack(nil)
-	packed2 := block2.Pack(nil)
+	packed1 := block1.Pack(nil, nil)
+	packed2 := block2.Pack(nil, nil)
 
 	buf := &UnpackBuffer{}
 
 	unpacked1 := &Block{}
-	err := unpacked1.Unpack(packed1, buf)
+	err := unpacked1.Unpack(packed1, config.CurrentFracVersion, buf)
 	require.NoError(t, err)
 	assert.Equal(t, block1.LIDs, unpacked1.LIDs)
 
-	// Reuse the same buffer
 	unpacked2 := &Block{}
-	err = unpacked2.Unpack(packed2, buf)
+	err = unpacked2.Unpack(packed2, config.CurrentFracVersion, buf)
 	require.NoError(t, err)
 	assert.Equal(t, block2.LIDs, unpacked2.LIDs)
 }
 
 func BenchmarkBlock_Pack(b *testing.B) {
-	lids := make([]uint32, 200)
-	startLID := uint32(1000)
-	for i := 0; i < 200; i++ {
-		lids[i] = startLID + uint32(i*10)
-	}
+	lids := generate(64 * 1024)
 
 	block := &Block{
 		LIDs:      lids,
-		Offsets:   []uint32{0, uint32(len(lids))},
+		Offsets:   []uint32{0, 64 * 1024},
 		IsLastLID: true,
 	}
+	tmp := make([]uint32, 0, 64*1024/4)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		block.Pack(nil)
+	for b.Loop() {
+		block.Pack(nil, tmp)
 	}
 }
 
 func BenchmarkBlock_Unpack(b *testing.B) {
-	lids := make([]uint32, 4*1024)
-	startLID := uint32(1000)
-	for i := 0; i < 4*1024; i++ {
-		lids[i] = startLID + uint32(i*10)
-	}
+	lids := generate(64 * 1024)
 
 	block := &Block{
 		LIDs:      lids,
-		Offsets:   []uint32{0, 100, 500, 600, 800, 1000, 1100, 1250, 1500, 2000, 2500, 3000, 3500, 4 * 1024},
+		Offsets:   []uint32{0, 64 * 1024},
 		IsLastLID: true,
 	}
+	packed := block.Pack(nil, nil)
 
-	packed := block.Pack(nil)
 	buf := &UnpackBuffer{}
 	unpacked := &Block{}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		unpacked.Unpack(packed, buf)
+	for b.Loop() {
+		unpacked.Unpack(packed, config.CurrentFracVersion, buf)
 	}
 }

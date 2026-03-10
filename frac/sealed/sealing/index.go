@@ -32,6 +32,8 @@ type IndexSealer struct {
 	lastErr error             // Last error encountered during processing
 	buf1    []byte            // Reusable buffer for packing raw data before compression
 	buf2    []byte            // Reusable buffer for compressed data
+	buf32   []uint32          // Reusable buffer for compressed arrays of uint32
+	buf64   []uint64          // Reusable buffer for compressed arrays of uint64
 	params  common.SealParams // Configuration parameters for sealing process
 
 	// PreloadedData structures built during sealing for fast initialization of sealed fraction
@@ -46,6 +48,8 @@ func NewIndexSealer(params common.SealParams) *IndexSealer {
 		params: params,
 		buf1:   make([]byte, 0, consts.RegularBlockSize),
 		buf2:   make([]byte, 0, consts.RegularBlockSize),
+		buf32:  make([]uint32, 0, consts.LIDBlockCap/2),
+		buf64:  make([]uint64, 0, consts.RegularBlockSize/2),
 	}
 }
 
@@ -388,8 +392,8 @@ func (s *IndexSealer) packMIDsBlock(block idsSealBlock) indexBlock {
 	}
 	s.idsTable.MinBlockIDs = append(s.idsTable.MinBlockIDs, minID) // Store for PreloadedData
 
-	// Packing block
-	s.buf1 = block.mids.Pack(s.buf1[:0])
+	// Packing block (use reusable uint64 buffer for mid compression)
+	s.buf1 = block.mids.Pack(s.buf1[:0], s.buf64[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.IDsZstdLevel)
 	// Store min MID and RID in extended metadata
 	b.ext1 = uint64(minID.MID)
@@ -426,7 +430,7 @@ func (s *IndexSealer) packLIDsBlock(block lidsSealBlock) indexBlock {
 	s.lidsTable.IsContinued = append(s.lidsTable.IsContinued, block.ext.isContinued)
 
 	// Packing block
-	s.buf1 = block.payload.Pack(s.buf1[:0])
+	s.buf1 = block.payload.Pack(s.buf1[:0], s.buf32[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.LIDsZstdLevel)
 	b.ext1 = ext1                                                    // Legacy continuation flag
 	b.ext2 = uint64(block.ext.maxTID)<<32 | uint64(block.ext.minTID) // TID range

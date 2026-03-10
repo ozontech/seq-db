@@ -323,7 +323,7 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		docsReader:       &f.docsReader,
 		blocksOffsets:    f.blocksData.BlocksOffsets,
 		lidsTable:        f.blocksData.LIDsTable,
-		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
+		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, &f.indexReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.indexReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.indexReader, f.indexCache.TokenTable),
 

@@ -104,6 +104,7 @@ func analyzeIndex(
 	if err := b.Unpack(readBlock()); err != nil {
 		logger.Fatal("error unpacking block info", zap.Error(err))
 	}
+	ver := b.Info.BinaryDataVer
 
 	docsCount := int(b.Info.DocsTotal)
 
@@ -162,7 +163,7 @@ func analyzeIndex(
 		}
 
 		block := &lids.Block{}
-		if err := block.Unpack(data, &lids.UnpackBuffer{}); err != nil {
+		if err := block.Unpack(data, ver, &lids.UnpackBuffer{}); err != nil {
 			logger.Fatal("error unpacking lids block", zap.Error(err))
 		}
 
