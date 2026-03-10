@@ -23,12 +23,16 @@ func (g *grpcV1) Search(
 		Query:     req.Query,
 		Size:      req.Size,
 		Offset:    req.Offset,
+		OffsetId:  req.OffsetId,
 		WithTotal: req.WithTotal,
 		Order:     req.Order,
 	}
 	sResp, err := g.doSearch(ctx, proxyReq, true, nil)
 	if err != nil {
 		return nil, err
+	}
+	if sResp.err != nil && sResp.err.Code == seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE && shouldFailPartialResponse(ctx) {
+		return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
 	}
 	if sResp.err != nil && !shouldHaveResponse(sResp.err.Code) {
 		return &seqproxyapi.SearchResponse{Error: sResp.err}, nil

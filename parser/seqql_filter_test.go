@@ -389,6 +389,15 @@ func TestParseSeqQLError(t *testing.T) {
 	test(`keyword:ip_range(,192.168.1.3)`, `parsing 'ip_range' filter: unexpected symbol ","`)
 	test(`keyword:ip_range(192.168.1.2,,192.168.1.3)`, `parsing 'ip_range' filter: unexpected symbol ","`)
 
+	// Test filter `re`.
+	test(`keyword:re()`, "parsing `re` filter: invalid syntax")
+	test(`keyword:re(")`, "parsing `re` filter: invalid syntax")
+	test(`keyword:re(""invalid)`, "parsing `re` filter: expected ')', got \"invalid\"")
+	test(`keyword:re("[invalid")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: missing closing ]: `[invalid)$`")
+	test(`keyword:re("invalid)")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: unexpected ): `^(?i:invalid))$`")
+	test(`keyword:re("[z-a]")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: invalid character class range: `z-a`")
+	test(`keyword:re("*invalid")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: missing argument to repetition operator: `*`")
+
 	// Test pipes.
 	test(`message:--||`, `unknown pipe: |`)
 	test(`source_type:access* | fields message | fields except login:admin`, `parsing 'fields' pipe: unexpected symbol ":"`)
@@ -483,7 +492,7 @@ func BenchmarkSeqQLParsing(b *testing.B) {
 	var query SeqQLQuery
 	var err error
 	str := `service: "some service" AND level:1`
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		query, err = ParseSeqQL(str, seq.TestMapping)
 		if err != nil {
 			b.Fatal(err.Error())
@@ -496,7 +505,7 @@ func BenchmarkSeqQLParsingLong(b *testing.B) {
 	var query SeqQLQuery
 	var err error
 	str := `((NOT ((((m:19 OR m:20) OR m:18) AND m:16) OR ((NOT (m:25 OR m:26)) AND m:12))) OR (((NOT m:29) AND m:22) OR (((m:31 OR m:32) AND m:14) OR (m:27 AND m:28))))`
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		query, err = ParseSeqQL(str, seq.TestMapping)
 		if err != nil {
 			b.Fatal(err.Error())

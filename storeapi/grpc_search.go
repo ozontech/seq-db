@@ -35,6 +35,7 @@ func (g *GrpcV1) Search(ctx context.Context, req *storeapi.SearchRequest) (*stor
 		span.AddAttributes(trace.Int64Attribute("to", req.From))
 		span.AddAttributes(trace.Int64Attribute("size", req.Size))
 		span.AddAttributes(trace.Int64Attribute("offset", req.Offset))
+		span.AddAttributes(trace.StringAttribute("offset_id", req.OffsetId))
 		span.AddAttributes(trace.Int64Attribute("interval", req.Interval))
 		span.AddAttributes(trace.BoolAttribute("explain", req.Explain))
 		span.AddAttributes(trace.BoolAttribute("with_total", req.WithTotal))
@@ -90,7 +91,30 @@ func (g *GrpcV1) doSearch(
 	}
 
 	to := seq.MillisToMID(uint64(req.To))
-	limit := int(req.Size + req.Offset)
+	var offsetId seq.ID
+	var limit int
+
+	if req.Offset != 0 {
+		// offset+size pagination
+		limit = int(req.Size + req.Offset)
+	} else if req.OffsetId != "" {
+		// offset_id pagination
+		limit = int(req.Size)
+		var err error
+		offsetId, err = seq.FromString(req.OffsetId)
+		if err != nil {
+			return nil, fmt.Errorf("could not parse id_offset: %s", req.OffsetId)
+		}
+		// fractions take into an account offset id, but we also limit time range here
+		// to filter out unneeded fractions
+		if req.Order == storeapi.Order_ORDER_DESC {
+			to = offsetId.MID
+		} else {
+			from = offsetId.MID
+		}
+	} else {
+		limit = int(req.Size)
+	}
 
 	if req.Explain {
 		logger.Info("search request will be explained", zap.Any("request", req))
@@ -161,6 +185,7 @@ func (g *GrpcV1) doSearch(
 		Limit:        limit,
 		WithTotal:    req.WithTotal,
 		Order:        req.Order.MustDocsOrder(),
+		OffsetId:     offsetId,
 	}
 
 	searchTr := tr.NewChild("search iteratively")
@@ -209,6 +234,7 @@ func (g *GrpcV1) doSearch(
 			zap.String("from", seq.MillisToMID(uint64(req.From)).String()),
 			zap.String("to", seq.MillisToMID(uint64(req.To)).String()),
 			zap.Int64("offset", req.Offset),
+			zap.String("offset_id", req.OffsetId),
 			zap.Int64("size", req.Size),
 			zap.Bool("with_total", req.WithTotal),
 		)
@@ -275,6 +301,13 @@ func buildSearchResponse(qpr *seq.QPR) *storeapi.SearchResponse {
 				NotExists: hist.NotExists,
 			}
 
+			if len(hist.Values) > 0 {
+				pbhist.Values = make([]uint32, 0, len(hist.Values))
+				for idx := range hist.Values {
+					pbhist.Values = append(pbhist.Values, idx)
+				}
+			}
+
 			curAgg.Timeseries = append(curAgg.Timeseries,
 				&storeapi.SearchResponse_Bin{
 					Label: bin.Token,
@@ -290,6 +323,7 @@ func buildSearchResponse(qpr *seq.QPR) *storeapi.SearchResponse {
 		curAgg.NotExists = fromAgg.NotExists
 		curAgg.AggHistogram = to
 		curAgg.Agg = toAgg
+		curAgg.ValuesPool = fromAgg.ValuesPool
 
 		aggs[i] = curAgg
 	}

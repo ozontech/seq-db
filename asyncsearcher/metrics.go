@@ -42,4 +42,10 @@ var (
 		Name:      "read_only",
 		Help:      "Indicates if store is in async search read-only mode (can not start a new async search) due to disk usage limits",
 	})
+	asyncSearchPanics = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "async_search",
+		Name:      "panics_total",
+		Help:      "Number of panics in async search",
+	})
 )

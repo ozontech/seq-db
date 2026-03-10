@@ -8,10 +8,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -76,6 +78,11 @@ func (si *Ingestor) StartAsyncSearch(ctx context.Context, r AsyncRequest) (Async
 			break
 		}
 		if err != nil {
+			err := si.DeleteAsyncSearch(ctx, requestID)
+			if err != nil {
+				logger.Error("unable to clear inconsistent async search creation",
+					zap.String("id", requestID), zap.Error(err))
+			}
 			return AsyncResponse{}, fmt.Errorf("starting search in shard=%d: %s", i, err)
 		}
 	}
@@ -161,7 +168,13 @@ func (si *Ingestor) FetchAsyncSearchResult(
 
 			for _, replica := range shard {
 				var md metadata.MD
-				storeResp, err := si.clients[replica].FetchAsyncSearchResult(storesCtx, &req, grpc.Header(&md))
+				storeResp, err := si.clients[replica].FetchAsyncSearchResult(
+					storesCtx, &req,
+					grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
+					grpc.MaxCallSendMsgSize(256*int(units.MiB)),
+					grpc.UseCompressor(gzip.Name),
+					grpc.Header(&md),
+				)
 				if err != nil {
 					if status.Code(err) == codes.NotFound {
 						continue
@@ -173,7 +186,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 					protocolVersion = config.ParseStoreProtocolVersion(protocolVersionValues[0])
 				}
 
-				if protocolVersion == config.StoreProtocolVersion1 {
+				if protocolVersion == config.StoreProtocolVersion1 && storeResp != nil && storeResp.Response != nil {
 					response := storeResp.Response
 					for _, id := range response.IdSources {
 						id.Id.Mid = uint64(seq.MillisToMID(id.Id.Mid))
@@ -244,14 +257,16 @@ func (si *Ingestor) FetchAsyncSearchResult(
 
 	var aggQueries []seq.AggregateArgs
 	var searchReq *AsyncRequest
-	anyResponse := false
+	var successfulResponses int
+	var errs []error
 
 	for resp := range respChan {
 		if err := resp.err; err != nil {
-			return FetchAsyncSearchResultResponse{}, nil, err
+			errs = append(errs, err)
+			continue
 		}
 
-		anyResponse = true
+		successfulResponses++
 		storeResp := resp.data
 		mergeStoreResp(storeResp, resp.replica)
 
@@ -278,8 +293,12 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		}
 	}
 
-	if !anyResponse {
+	combinedErr := util.DeduplicateErrors(errs)
+	if successfulResponses == 0 && combinedErr == nil {
 		return FetchAsyncSearchResultResponse{}, nil, status.Error(codes.NotFound, "async search result not found")
+	}
+	if successfulResponses == 0 && combinedErr != nil {
+		return FetchAsyncSearchResultResponse{}, nil, status.Error(codes.Internal, combinedErr.Error())
 	}
 
 	if fracsDone != 0 {
@@ -301,6 +320,13 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		if err != nil {
 			return pr, nil, err
 		}
+	}
+
+	if combinedErr != nil {
+		return pr, docsStream, fmt.Errorf("%w: %s", consts.ErrPartialResponse, combinedErr)
+	}
+	if successfulResponses != len(searchStores.Shards) {
+		return pr, docsStream, fmt.Errorf("%w: %s", consts.ErrPartialResponse, "search data is missing on some shard")
 	}
 
 	return pr, docsStream, nil
@@ -364,14 +390,23 @@ func (si *Ingestor) GetAsyncSearchesList(
 
 	responsesByID := make(map[string][]*storeapi.AsyncSearchesListItem)
 
+	var successfulResponses int
+	var errs []error
 	for resp := range respChan {
 		if err := resp.err; err != nil {
-			return nil, err
+			errs = append(errs, err)
+			continue
 		}
 
+		successfulResponses++
 		for _, s := range resp.data.Searches {
 			responsesByID[s.SearchId] = append(responsesByID[s.SearchId], s)
 		}
+	}
+
+	combinedErr := util.DeduplicateErrors(errs)
+	if successfulResponses == 0 {
+		return nil, status.Error(codes.Internal, combinedErr.Error())
 	}
 
 	searches := make([]*AsyncSearchesListItem, 0)
@@ -453,6 +488,10 @@ func (si *Ingestor) GetAsyncSearchesList(
 		searches = searches[:min(r.Size, len(searches))]
 	}
 
+	if combinedErr != nil {
+		return searches, fmt.Errorf("%w: %s", consts.ErrPartialResponse, combinedErr)
+	}
+
 	return searches, nil
 }
 
@@ -463,9 +502,7 @@ func mergeAsyncSearchStatus(a, b asyncsearcher.AsyncSearchStatus) asyncsearcher.
 		asyncsearcher.AsyncSearchStatusCanceled:   3,
 		asyncsearcher.AsyncSearchStatusError:      4,
 	}
-	weightA := statusWeight[a]
-	weightB := statusWeight[b]
-	if weightA >= weightB {
+	if statusWeight[a] >= statusWeight[b] {
 		return a
 	}
 	return b
@@ -514,7 +551,7 @@ func (si *Ingestor) DeleteAsyncSearch(ctx context.Context, id string) error {
 	}
 
 	var lastErr error
-	cancelSearch := func(client storeapi.StoreApiClient) {
+	deleteSearch := func(client storeapi.StoreApiClient) {
 		_, err := client.DeleteAsyncSearch(ctx, &storeapi.DeleteAsyncSearchRequest{SearchId: id})
 		if err != nil {
 			logger.Error("can't delete async search", zap.String("id", id), zap.Error(err))
@@ -522,7 +559,7 @@ func (si *Ingestor) DeleteAsyncSearch(ctx context.Context, id string) error {
 		}
 	}
 
-	si.visitEachReplica(searchStores, cancelSearch)
+	si.visitEachReplica(searchStores, deleteSearch)
 	if lastErr != nil {
 		return fmt.Errorf("unable to delete async search for all shards in cluster; last err: %w", lastErr)
 	}

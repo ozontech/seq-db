@@ -71,6 +71,20 @@ func parseSeqQLFieldFilter(lex *lexer, mapping seq.Mapping) (*ASTNode, error) {
 		return &ASTNode{Value: r}, nil
 	}
 
+	if lex.IsKeyword("re") {
+		if t != seq.TokenizerTypeKeyword {
+			return nil, fmt.Errorf("'re' filter is supported only for keyword fields")
+		}
+
+		lex.Next()
+		r, err := parseReFilter(lex, fieldName)
+		if err != nil {
+			return nil, fmt.Errorf("parsing `re` filter: %s", err)
+		}
+
+		return &ASTNode{Value: r}, nil
+	}
+
 	if lex.IsKeyword("ip_range") {
 		if t != seq.TokenizerTypeKeyword {
 			return nil, fmt.Errorf("'ip_range' filter is supported only for keyword fields")
@@ -170,8 +184,8 @@ var bytesBufferPool = sync.Pool{
 
 // parseCompositeToken parses composite token.
 //
-// Composite token is a continuous sequence of letters, numbers, '_', '*', '-', and wildcards,
-// that continuous until the end of the query or next token is space.
+// Composite token is a continuous sequence of letters, numbers, '_', '*', '-', wildcards,
+// and `addons` (if there is any) that continuous until the end of the query or next token is space.
 //
 // Token may be quoted, but the lexer returns unquoted tokens,
 // so query: "foo: 'foo bar'_'buz'" is correct. See lexer.Next for details.

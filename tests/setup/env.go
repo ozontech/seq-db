@@ -184,7 +184,7 @@ func NewTestingEnv(cfg *TestingEnvConfig) *TestingEnv {
 		cli, err := seqs3.NewClient(
 			"http://localhost:9000/",
 			"minioadmin", "minioadmin",
-			"us-east-1", createBucket(), 0,
+			"us-east-1", createBucket(),
 		)
 		if err != nil {
 			panic(err)
@@ -515,6 +515,12 @@ func WithTotal(f bool) SearchOption {
 func WithOffset(offset int) SearchOption {
 	return func(sr *search.SearchRequest) {
 		sr.Offset = offset
+	}
+}
+
+func WithOffsetId(offsetId string) SearchOption {
+	return func(sr *search.SearchRequest) {
+		sr.OffsetId = offsetId
 	}
 }
 

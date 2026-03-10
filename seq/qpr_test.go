@@ -514,23 +514,245 @@ func aggSamplesFromMap(other map[string]uint64) AggregatableSamples {
 	}
 }
 
+func TestMergeQPRsWithValuesPool(t *testing.T) {
+	testCases := []struct {
+		name string
+		qprs []*QPR
+		exp  *QPR
+	}{
+		{
+			name: "merge_with_values_pool_same_values",
+			qprs: []*QPR{
+				{
+					IDs: []IDSource{
+						{ID: ID{MID: 100, RID: 1}},
+						{ID: ID{MID: 101, RID: 2}},
+					},
+					Aggs: []AggregatableSamples{
+						{
+							ValuesPool: []string{"error", "info", "warn"},
+							SamplesByBin: map[AggBin]*SamplesContainer{
+								{Token: "pod1"}: {
+									Total: 2,
+									Values: map[uint32]struct{}{
+										0: {},
+										1: {},
+									},
+								},
+								{Token: "pod2"}: {
+									Total: 2,
+									Values: map[uint32]struct{}{
+										1: {},
+										2: {},
+									},
+								},
+							},
+							NotExists: 0,
+						},
+					},
+					Total: 2,
+				},
+				{
+					IDs: []IDSource{
+						{ID: ID{MID: 200, RID: 3}},
+						{ID: ID{MID: 201, RID: 4}},
+					},
+					Aggs: []AggregatableSamples{
+						{
+							ValuesPool: []string{"info", "warn", "debug"},
+							SamplesByBin: map[AggBin]*SamplesContainer{
+								{Token: "pod1"}: {
+									Total: 2,
+									Values: map[uint32]struct{}{
+										0: {},
+										2: {},
+									},
+								},
+								{Token: "pod3"}: {
+									Total: 1,
+									Values: map[uint32]struct{}{
+										1: {},
+									},
+								},
+							},
+							NotExists: 0,
+						},
+					},
+					Total: 2,
+				},
+			},
+			exp: &QPR{
+				IDs: IDSources{
+					{ID: ID{MID: 201, RID: 4}},
+					{ID: ID{MID: 200, RID: 3}},
+					{ID: ID{MID: 101, RID: 2}},
+					{ID: ID{MID: 100, RID: 1}},
+				},
+				Aggs: []AggregatableSamples{
+					{
+						// we append values from "right" values pool to "left" values pool, thus order is defined and can be tested
+						ValuesPool: []string{"error", "info", "warn", "debug"},
+						SamplesByBin: map[AggBin]*SamplesContainer{
+							{Token: "pod1"}: {
+								Total: 4,
+								Values: map[uint32]struct{}{
+									0: {},
+									1: {},
+									3: {},
+								},
+							},
+							{Token: "pod2"}: {
+								Total: 2,
+								Values: map[uint32]struct{}{
+									1: {},
+									2: {},
+								},
+							},
+							{Token: "pod3"}: {
+								Total: 1,
+								Values: map[uint32]struct{}{
+									2: {},
+								},
+							},
+						},
+						NotExists: 0,
+					},
+				},
+				Total: 4,
+			},
+		},
+		{
+			name: "merge_with_values_pool_different_values",
+			qprs: []*QPR{
+				{
+					IDs: []IDSource{
+						{ID: ID{MID: 100, RID: 1}},
+					},
+					Aggs: []AggregatableSamples{
+						{
+							ValuesPool: []string{"error", "fatal"},
+							SamplesByBin: map[AggBin]*SamplesContainer{
+								{Token: "pod1"}: {
+									Total: 2,
+									Values: map[uint32]struct{}{
+										0: {},
+										1: {},
+									},
+								},
+							},
+							NotExists: 0,
+						},
+					},
+					Total: 1,
+				},
+				{
+					IDs: []IDSource{
+						{ID: ID{MID: 200, RID: 2}},
+					},
+					Aggs: []AggregatableSamples{
+						{
+							ValuesPool: []string{"info", "debug"},
+							SamplesByBin: map[AggBin]*SamplesContainer{
+								{Token: "pod2"}: {
+									Total: 2,
+									Values: map[uint32]struct{}{
+										0: {},
+										1: {},
+									},
+								},
+							},
+							NotExists: 0,
+						},
+					},
+					Total: 1,
+				},
+			},
+			exp: &QPR{
+				IDs: IDSources{
+					{ID: ID{MID: 200, RID: 2}},
+					{ID: ID{MID: 100, RID: 1}},
+				},
+				Aggs: []AggregatableSamples{
+					{
+						ValuesPool: []string{"error", "fatal", "info", "debug"},
+						SamplesByBin: map[AggBin]*SamplesContainer{
+							{Token: "pod1"}: {
+								Total: 2,
+								Values: map[uint32]struct{}{
+									0: {},
+									1: {},
+								},
+							},
+							{Token: "pod2"}: {
+								Total: 2,
+								Values: map[uint32]struct{}{
+									2: {},
+									3: {},
+								},
+							},
+						},
+						NotExists: 0,
+					},
+				},
+				Total: 2,
+			},
+		},
+	}
+
+	a := assert.New(t)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := &QPR{
+				Histogram: make(map[MID]uint64),
+				Aggs:      make([]AggregatableSamples, len(tc.exp.Aggs)),
+			}
+
+			MergeQPRs(result, tc.qprs, 100, 0, DocsOrderDesc)
+
+			a.Equal(tc.exp.IDs, result.IDs, "IDs do not match")
+			a.Equal(tc.exp.Total, result.Total, "total does not match")
+			a.Equal(len(tc.exp.Aggs), len(result.Aggs), "aggs do not match")
+
+			for i, expAgg := range tc.exp.Aggs {
+				actualAgg := result.Aggs[i]
+
+				a.Equal(expAgg.ValuesPool, actualAgg.ValuesPool, "value pools do not match")
+				a.Equal(expAgg.NotExists, actualAgg.NotExists, "NotExists do not match")
+				a.Equal(len(expAgg.SamplesByBin), len(actualAgg.SamplesByBin), "bins count does not match")
+
+				for bin, expectedHist := range expAgg.SamplesByBin {
+					resultHist, exists := actualAgg.SamplesByBin[bin]
+					a.True(exists, "actual bin does not exist")
+					a.NotNil(resultHist, "actual bin is nil")
+					a.Equal(expectedHist.Total, resultHist.Total, "total does not match for bin")
+					a.Equal(len(expectedHist.Values), len(resultHist.Values), "values do not match")
+					for idx := range expectedHist.Values {
+						_, valueExists := resultHist.Values[idx]
+						a.True(valueExists, "value does not exist")
+					}
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkMergeQPRs_ReusingQPR(b *testing.B) {
 	totalQPRs := uint64(100)
 	qprSize := uint64(100)
 
 	qprs := make([]*QPR, totalQPRs)
-	for i := uint64(0); i < totalQPRs; i++ {
+	for i := range totalQPRs {
 		qpr := getRandomQPR(qprSize)
 		qprs[i] = &qpr
 	}
 
-	b.ResetTimer()
 	aggQpr := QPR{
 		Histogram: make(map[MID]uint64),
 		Aggs:      make([]AggregatableSamples, int(totalQPRs)),
 	}
 
-	for range b.N {
+	for b.Loop() {
 		MergeQPRs(&aggQpr, qprs, 1000, 5, DocsOrderDesc)
 
 		aggQpr.IDs = aggQpr.IDs[:0]

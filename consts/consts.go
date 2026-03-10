@@ -84,6 +84,7 @@ var (
 	ErrInvalidAggQuery           = errors.New("invalid agg query")
 	ErrInvalidArgument           = errors.New("invalid argument")
 	ErrTooManyFieldTokens        = errors.New("aggregation has too many field tokens")
+	ErrTooManyFieldValues        = errors.New("aggregation has too many field values in memory")
 	ErrTooManyGroupTokens        = errors.New("aggregation has too many group tokens")
 	ErrTooManyFractionTokens     = errors.New("aggregation has too many fraction tokens")
 	ErrTooManyFractionsHit       = errors.New("too many fractions hit")

@@ -30,6 +30,8 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 		return newLeaf(token)
 	case *parser.IPRange:
 		return newLeaf(token)
+	case *parser.Re:
+		return newLeaf(token)
 	case *parser.Logical:
 		switch token.Operator {
 		case parser.LogicalAnd:
@@ -87,6 +89,8 @@ type Aggregator interface {
 type AggLimits struct {
 	// MaxFieldTokens max AggQuery.Field uniq values to parse.
 	MaxFieldTokens int
+	// MaxFieldValues max AggQuery.Field uniq values to hold in memory
+	MaxFieldValues int
 	// MaxGroupTokens max AggQuery.GroupBy unique values.
 	MaxGroupTokens int
 	// MaxTIDsPerFraction max number of tokens per fraction.
@@ -122,7 +126,7 @@ func evalAgg(
 
 		return NewSingleSourceUniqueAggregator(groupIterator), nil
 
-	case seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncSum, seq.AggFuncAvg, seq.AggFuncQuantile:
+	case seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncSum, seq.AggFuncAvg, seq.AggFuncQuantile, seq.AggFuncUniqueCount:
 		fieldIterator, err := iteratorFromLiteral(
 			ti, query.Field, sw, stats, minLID, maxLID,
 			limits.MaxTIDsPerFraction, iteratorLimit{limit: limits.MaxFieldTokens, err: consts.ErrTooManyFieldTokens}, order,
@@ -133,6 +137,7 @@ func evalAgg(
 
 		collectSamples := query.Func == seq.AggFuncQuantile &&
 			haveNotMinMaxQuantiles(query.Quantiles)
+		collectValues := query.Func == seq.AggFuncUniqueCount
 
 		if query.GroupBy == nil {
 			return NewSingleSourceHistogramAggregator(
@@ -149,7 +154,7 @@ func evalAgg(
 		}
 
 		return NewGroupAndFieldAggregator(
-			fieldIterator, groupIterator, extractMID, collectSamples,
+			fieldIterator, groupIterator, extractMID, collectSamples, collectValues, limits,
 		), nil
 
 	default:
