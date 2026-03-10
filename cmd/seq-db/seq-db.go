@@ -253,6 +253,7 @@ func startStore(
 			DataDir:           cfg.Storage.DataDir,
 			FracSize:          uint64(cfg.Storage.FracSize),
 			TotalSize:         uint64(cfg.Storage.TotalSize),
+			SealingQueueLen:   uint64(cfg.Storage.SealingQueueLen),
 			CacheSize:         uint64(cfg.Resources.CacheSize),
 			SortCacheSize:     uint64(cfg.Resources.SortDocsCacheSize),
 			ReplayWorkers:     cfg.Resources.ReplayWorkers,
@@ -281,8 +282,10 @@ func startStore(
 				SkipSortDocs: !cfg.DocsSorting.Enabled,
 				KeepMetaFile: false,
 			},
-			OffloadingEnabled:   cfg.Offloading.Enabled,
-			OffloadingRetention: cfg.Offloading.Retention,
+			OffloadingEnabled:    cfg.Offloading.Enabled,
+			OffloadingRetention:  cfg.Offloading.Retention,
+			OffloadingRetryDelay: cfg.Offloading.RetryDelay,
+			OffloadingQueueSize:  uint64(float64(cfg.Storage.TotalSize) * cfg.Offloading.QueueSizePercent / 100),
 		},
 		API: storeapi.APIConfig{
 			StoreMode: configMode,
@@ -343,7 +346,6 @@ func initS3Client(cfg config.Config) *s3.Client {
 		cfg.Offloading.SecretKey,
 		cfg.Offloading.Region,
 		cfg.Offloading.Bucket,
-		cfg.Offloading.RetryCount,
 	)
 
 	if err != nil {

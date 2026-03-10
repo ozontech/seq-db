@@ -19,6 +19,9 @@ type Config struct {
 	TotalSize uint64
 	CacheSize uint64
 
+	suspendThreshold uint64
+	SealingQueueLen  uint64
+
 	ReplayWorkers     int
 	MaintenanceDelay  time.Duration
 	CacheCleanupDelay time.Duration
@@ -28,8 +31,10 @@ type Config struct {
 	Fraction          frac.Config
 	MinSealFracSize   uint64
 
-	OffloadingEnabled   bool
-	OffloadingRetention time.Duration
+	OffloadingEnabled    bool
+	OffloadingQueueSize  uint64
+	OffloadingRetention  time.Duration
+	OffloadingRetryDelay time.Duration
 }
 
 func FillConfigWithDefault(config *Config) *Config {
@@ -81,4 +86,15 @@ func FillConfigWithDefault(config *Config) *Config {
 	}
 
 	return config
+}
+
+func (cfg *Config) SuspendThreshold() uint64 {
+	if cfg.suspendThreshold == 0 {
+		cfg.suspendThreshold = cfg.TotalSize
+		cfg.suspendThreshold += cfg.TotalSize / 100 // small buffer
+		if cfg.OffloadingEnabled {
+			cfg.suspendThreshold += cfg.OffloadingQueueSize // offloading queue size
+		}
+	}
+	return cfg.suspendThreshold
 }
