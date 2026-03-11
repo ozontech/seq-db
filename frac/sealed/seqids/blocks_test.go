@@ -50,7 +50,7 @@ func TestBlockMIDs_Pack(t *testing.T) {
 	}
 }
 
-func generate(base uint64, increment uint64) []uint64 {
+func generate(base, increment uint64) []uint64 {
 	values := make([]uint64, consts.IDsPerBlock)
 	for i := range values {
 		values[i] = base + uint64(i)*increment

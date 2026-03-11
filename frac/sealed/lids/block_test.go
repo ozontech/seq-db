@@ -257,6 +257,7 @@ func BenchmarkBlock_Unpack(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		unpacked.Unpack(packed, config.CurrentFracVersion, buf)
+		err := unpacked.Unpack(packed, config.CurrentFracVersion, buf)
+		assert.NoError(b, err)
 	}
 }

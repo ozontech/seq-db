@@ -26,6 +26,7 @@ require (
 	github.com/pkg/profile v1.7.0
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10
 	github.com/prometheus/client_golang v1.23.2
+	github.com/ronanh/intcomp v1.1.1
 	github.com/stretchr/testify v1.11.1
 	github.com/valyala/fastrand v1.1.0
 	github.com/valyala/gozstd v1.24.0
@@ -74,7 +75,6 @@ require (
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
-	github.com/ronanh/intcomp v1.1.1 // indirect
 	github.com/ryszard/goskiplist v0.0.0-20150312221310-2dfbae5fcf46 // indirect
 	github.com/uber/jaeger-client-go v2.25.0+incompatible // indirect
 	go.shabbyrobe.org/gocovmerge v0.0.0-20230507111327-fa4f82cfbf4d // indirect

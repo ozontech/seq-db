@@ -1,8 +1,6 @@
 package lids
 
 import (
-	"encoding/binary"
-	"errors"
 	"math"
 	"unsafe"
 
@@ -25,17 +23,15 @@ func (b *Block) getLIDs(i int) []uint32 {
 	return b.LIDs[b.Offsets[i]:b.Offsets[i+1]]
 }
 
-func (b *Block) Pack(dst []byte, tmp []uint32) []byte {
-	// TODO store next flags into a single byte
-	// write b.IsLastLID as a dedicated uint32 in the header of block
+func (b *Block) Pack(dst []byte, buf []uint32) []byte {
 	if b.IsLastLID {
-		dst = binary.LittleEndian.AppendUint32(dst, 1)
+		dst = append(dst, 1)
 	} else {
-		dst = binary.LittleEndian.AppendUint32(dst, 0)
+		dst = append(dst, 0)
 	}
 
-	dst = packer.CompressDeltaBitpackUint32(dst, b.Offsets, tmp)
-	dst = packer.CompressDeltaBitpackUint32(dst, b.LIDs, tmp)
+	dst = packer.CompressDeltaBitpackUint32(dst, b.Offsets, buf)
+	dst = packer.CompressDeltaBitpackUint32(dst, b.LIDs, buf)
 
 	return dst
 }
@@ -59,13 +55,12 @@ func (b *Block) Unpack(data []byte, fracVer config.BinaryDataVersion, buf *Unpac
 }
 
 func (b *Block) unpackBitpack(data []byte, buf *UnpackBuffer) error {
-	// read IsLastLID from a dedicated uint32
-	if len(data) < 4 {
-		return errors.New("lids block decode error: truncated IsLastLID header")
+	if data[0] == 1 {
+		b.IsLastLID = true
+	} else {
+		b.IsLastLID = false
 	}
-	isLastLIDValue := binary.LittleEndian.Uint32(data[:4])
-	b.IsLastLID = isLastLIDValue == 1
-	data = data[4:]
+	data = data[1:]
 
 	var err error
 	var values []uint32
