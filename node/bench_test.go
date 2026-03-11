@@ -35,7 +35,6 @@ func BenchmarkNot(b *testing.B) {
 			res := make([]uint32, 0, last+1)
 			n := NewNot(NewStatic(v, false), 1, last, false)
 
-			b.ResetTimer()
 			for b.Loop() {
 				res = readAllInto(n, res)
 			}
@@ -53,7 +52,6 @@ func BenchmarkNotEmpty(b *testing.B) {
 			res := make([]uint32, 0, s*2)
 			n := NewNot(NewStatic(nil, false), 1, uint32(s), false)
 
-			b.ResetTimer()
 			for b.Loop() {
 				res = readAllInto(n, res)
 			}
@@ -92,7 +90,6 @@ func BenchmarkAnd(b *testing.B) {
 			res := make([]uint32, 0, s)
 			n := NewAnd(newNodeStaticSize(r, s), newNodeStaticSize(r, s), false)
 
-			b.ResetTimer()
 			for b.Loop() {
 				res = readAllInto(n, res)
 			}
@@ -111,7 +108,6 @@ func BenchmarkNAnd(b *testing.B) {
 			res := make([]uint32, 0, s)
 			n := NewNAnd(newNodeStaticSize(r, s), newNodeStaticSize(r, s), false)
 
-			b.ResetTimer()
 			for b.Loop() {
 				res = readAllInto(n, res)
 			}
@@ -161,7 +157,6 @@ func BenchmarkOrTree(b *testing.B) {
 			n := NewOr(n12, n34, false)
 			res := make([]uint32, 0, s*8)
 
-			b.ResetTimer()
 			for b.Loop() {
 				res = readAllInto(n, res)
 			}
@@ -185,7 +180,6 @@ func BenchmarkComplex(b *testing.B) {
 			n12 := NewOr(n1, n2, false)
 			n := NewAnd(n12, n3, false)
 
-			b.ResetTimer()
 			for b.Loop() {
 				res = readAllInto(n, res)
 			}

@@ -103,7 +103,6 @@ func BenchmarkAggDeep(b *testing.B) {
 			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 			vals, _ := Generate(r, s)
 
-			b.ResetTimer()
 			for b.Loop() {
 				for _, v := range vals {
 					if err := n.Next(v); err != nil {
@@ -138,7 +137,6 @@ func BenchmarkAggWide(b *testing.B) {
 			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 			vals, _ := Generate(r, s)
 
-			b.ResetTimer()
 			for b.Loop() {
 				for _, v := range vals {
 					if err := n.Next(v); err != nil {
