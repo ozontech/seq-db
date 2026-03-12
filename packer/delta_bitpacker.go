@@ -3,10 +3,16 @@ package packer
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
+	"unsafe"
 
 	"github.com/ronanh/intcomp"
 
 	"github.com/ozontech/seq-db/util"
+)
+
+const (
+	sizeOfUint32 = int(unsafe.Sizeof(uint32(0)))
 )
 
 // CompressDeltaBitpackUint32 works on top of intcomp library. intcomp can only compress slices which are multiple of 128, but
@@ -30,21 +36,20 @@ func CompressDeltaBitpackUint32(dst []byte, values, buf []uint32) []byte {
 	return dst
 }
 
-// DecompressDeltaBitpackUint32
-func DecompressDeltaBitpackUint32(data []byte, decompressed []uint32) ([]byte, []uint32, error) {
-	if len(data) < 4 {
-		return nil, nil, errors.New("lids block decode error: truncated sequence length header")
+func DecompressDeltaBitpackUint32(data []byte, buf []uint32) ([]byte, []uint32, error) {
+	if len(data) < sizeOfUint32 {
+		return nil, nil, errors.New(fmt.Sprintf("not enough data. slice len %d", len(data)))
 	}
 
-	wordCount := binary.LittleEndian.Uint32(data[:4])
-	data = data[4:]
+	uintsCount := binary.LittleEndian.Uint32(data[:4])
+	data = data[sizeOfUint32:]
 
-	byteLen := int(wordCount) * 4
+	byteLen := int(uintsCount) * sizeOfUint32
 	if len(data) < byteLen {
-		return nil, nil, errors.New("lids block decode error: truncated sequence payload")
+		return nil, nil, errors.New(fmt.Sprintf("not enough data: expected %d bytes, got %d", byteLen, len(data)))
 	}
 
-	compressed := util.ReinterpretAsUint32(data[:byteLen])
+	compressed := util.CastAsUint32(data[:byteLen])
 	data = data[byteLen:]
 
 	count := int(compressed[0])
@@ -53,27 +58,27 @@ func DecompressDeltaBitpackUint32(data []byte, decompressed []uint32) ([]byte, [
 	}
 
 	compressed = compressed[1:]
-
-	decompressed = decompressed[:0]
+	buf = buf[:0]
 	switch {
 	case count < intcomp.BitPackingBlockSize32:
 		if len(compressed) < count {
-			return nil, nil, errors.New("lids block decode error: residual payload truncated")
+			return nil, nil, errors.New("not enough data")
 		}
-		decompressed = append(decompressed, compressed[:count]...)
+		buf = append(buf, compressed[:count]...)
 	default:
-		remaining, out := intcomp.UncompressDeltaBinPackUint32(compressed, decompressed)
-		decompressed = out
-		if len(remaining) > 0 {
-			decompressed = append(decompressed, remaining...)
+		var residual []uint32
+		residual, buf = intcomp.UncompressDeltaBinPackUint32(compressed, buf)
+
+		if len(residual) > 0 {
+			buf = append(buf, residual...)
 		}
-		if len(decompressed) < count {
-			return nil, nil, errors.New("lids block decode error: decompressed length mismatch")
+		if len(buf) < count {
+			return nil, nil, errors.New("length mismatch")
 		}
-		decompressed = decompressed[:count]
+		buf = buf[:count]
 	}
 
-	return data, decompressed[:count], nil
+	return data, buf, nil
 }
 
 // CompressDeltaBitpackUint64 works on top of intcomp library. intcomp can only compress uint64 slices which are multiple of 256, but
@@ -97,21 +102,20 @@ func CompressDeltaBitpackUint64(dst []byte, values, buf []uint64) []byte {
 	return dst
 }
 
-// DecompressDeltaBitpackUint64
 func DecompressDeltaBitpackUint64(data []byte, buf []uint64) ([]byte, []uint64, error) {
 	if len(data) < 4 {
-		return nil, nil, errors.New("mids block decode error: truncated sequence length header")
+		return nil, nil, errors.New(fmt.Sprintf("not enough data. slice len %d", len(data)))
 	}
 
-	wordCount := binary.LittleEndian.Uint32(data[:4])
+	uintsCount := binary.LittleEndian.Uint32(data[:4])
 	data = data[4:]
 
-	byteLen := int(wordCount) * 8
+	byteLen := int(uintsCount) * 8
 	if len(data) < byteLen {
-		return nil, nil, errors.New("mids block decode error: truncated sequence payload")
+		return nil, nil, errors.New(fmt.Sprintf("not enough data: expected %d bytes, got %d", byteLen, len(data)))
 	}
 
-	compressed := util.ReinterpretAsUint64(data)
+	compressed := util.CastAsUint64(data)
 
 	count := int(compressed[0])
 	if count == 0 {
@@ -119,25 +123,24 @@ func DecompressDeltaBitpackUint64(data []byte, buf []uint64) ([]byte, []uint64, 
 	}
 
 	compressed = compressed[1:]
-	var decompressed []uint64
+	buf = buf[:0]
 	switch {
 	case count < intcomp.BitPackingBlockSize64:
 		if len(compressed) < count {
-			return nil, nil, errors.New("mids block decode error: residual payload truncated")
+			return nil, nil, errors.New("not enough data")
 		}
-		decompressed = append([]uint64{}, compressed[:count]...)
+		buf = append(buf, compressed[:count]...)
 	default:
-		buf = buf[:0]
-		remaining, out := intcomp.UncompressDeltaBinPackUint64(compressed, buf[:0])
-		decompressed = out
-		if len(remaining) > 0 {
-			decompressed = append(decompressed, remaining...)
+		var residual []uint64
+		residual, buf = intcomp.UncompressDeltaBinPackUint64(compressed, buf[:0])
+		if len(residual) > 0 {
+			buf = append(buf, residual...)
 		}
-		if len(decompressed) < count {
-			return nil, nil, errors.New("mids block decode error: decompressed length mismatch")
+		if len(buf) < count {
+			return nil, nil, errors.New("length mismatch")
 		}
-		decompressed = decompressed[:count]
+		buf = buf[:count]
 	}
 
-	return data, decompressed[:count], nil
+	return data, buf, nil
 }

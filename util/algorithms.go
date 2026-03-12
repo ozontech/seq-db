@@ -69,9 +69,9 @@ func ensureCap(dst []byte, newLen int) []byte {
 	return dst
 }
 
-// ReinterpretAsUint32 allows working on []byte slice as []uint32. Uses unsafe casts for little endian, allocates
+// CastAsUint32 allows working on []byte slice as []uint32. Uses unsafe casts for little endian, allocates
 // a new buf and copies on big endian hosts. The caller must work as read only.
-func ReinterpretAsUint32(buf []byte) []uint32 {
+func CastAsUint32(buf []byte) []uint32 {
 	n := len(buf) / sizeOfUint32
 	if n == 0 {
 		return nil
@@ -89,9 +89,9 @@ func ReinterpretAsUint32(buf []byte) []uint32 {
 	return res
 }
 
-// ReinterpretAsUint64 allows working on []byte slice as []uint64. Uses unsafe casts for little endian, allocates
+// CastAsUint64 allows working on []byte slice as []uint64. Uses unsafe casts for little endian, allocates
 // a new buf and copies on big endian hosts. The caller must work as read only.
-func ReinterpretAsUint64(buf []byte) []uint64 {
+func CastAsUint64(buf []byte) []uint64 {
 	n := len(buf) / sizeOfUint64
 	if n == 0 {
 		return nil
