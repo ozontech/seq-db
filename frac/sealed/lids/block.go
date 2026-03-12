@@ -65,13 +65,13 @@ func (b *Block) unpackBitpack(data []byte, buf *UnpackBuffer) error {
 	var err error
 	var values []uint32
 
-	data, values, err = packer.DecompressDeltaBitpackUint32(data, buf.compressed, buf.decompressed)
+	data, values, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressed)
 	if err != nil {
 		return err
 	}
 	b.Offsets = append([]uint32{}, values...)
 
-	data, values, err = packer.DecompressDeltaBitpackUint32(data, buf.compressed, buf.decompressed)
+	data, values, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressed)
 	if err != nil {
 		return err
 	}

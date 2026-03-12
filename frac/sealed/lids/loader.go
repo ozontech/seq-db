@@ -11,7 +11,6 @@ type UnpackBuffer struct {
 	lids         []uint32
 	offsets      []uint32
 	decompressed []uint32
-	compressed   []uint32
 }
 
 func (b *UnpackBuffer) Reset() {
@@ -29,11 +28,6 @@ func (b *UnpackBuffer) Reset() {
 		b.decompressed = make([]uint32, 0, consts.LIDBlockCap)
 	} else {
 		b.decompressed = b.decompressed[:0]
-	}
-	if b.compressed == nil {
-		b.compressed = make([]uint32, 0, consts.LIDBlockCap/2)
-	} else {
-		b.compressed = b.compressed[:0]
 	}
 }
 

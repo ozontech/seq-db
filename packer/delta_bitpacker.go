@@ -3,9 +3,10 @@ package packer
 import (
 	"encoding/binary"
 	"errors"
-	"unsafe"
 
 	"github.com/ronanh/intcomp"
+
+	"github.com/ozontech/seq-db/util"
 )
 
 // CompressDeltaBitpackUint32 works on top of intcomp library. intcomp can only compress slices which are multiple of 128, but
@@ -19,22 +20,18 @@ func CompressDeltaBitpackUint32(dst []byte, values, buf []uint32) []byte {
 	residual, buf = intcomp.CompressDeltaBinPackUint32(values, buf)
 
 	if len(residual) > 0 {
-		// append residual as is. always less than 128 values
+		// append residual as is. always less than 128 values and most blocks will never enter this branch
 		buf = append(buf, residual...)
 	}
 
-	{
-		// TODO use memcpy
-		dst = binary.LittleEndian.AppendUint32(dst, uint32(len(buf)))
-		for _, v := range buf {
-			dst = binary.LittleEndian.AppendUint32(dst, v)
-		}
-	}
+	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(buf)))
+	dst = util.CopyUints32(buf, dst)
+
 	return dst
 }
 
-// TODO simplify
-func DecompressDeltaBitpackUint32(data []byte, compressed, decompressed []uint32) ([]byte, []uint32, error) {
+// DecompressDeltaBitpackUint32
+func DecompressDeltaBitpackUint32(data []byte, decompressed []uint32) ([]byte, []uint32, error) {
 	if len(data) < 4 {
 		return nil, nil, errors.New("lids block decode error: truncated sequence length header")
 	}
@@ -47,26 +44,8 @@ func DecompressDeltaBitpackUint32(data []byte, compressed, decompressed []uint32
 		return nil, nil, errors.New("lids block decode error: truncated sequence payload")
 	}
 
-	// TODO if little endian => reinterpret cast data []byte as []uint32
-	// otherwise, allocate slice
-	// remove compressed param
-	{
-		u32Count := int(wordCount)
-		if cap(compressed) < u32Count {
-			compressed = make([]uint32, u32Count)
-		} else {
-			compressed = compressed[:u32Count]
-		}
-		// TODO manual copy
-		for i := 0; i < u32Count; i++ {
-			compressed[i] = binary.LittleEndian.Uint32(data[i*4 : i*4+4])
-		}
-		data = data[byteLen:]
-
-		if len(compressed) == 0 {
-			return data, nil, nil
-		}
-	}
+	compressed := util.ReinterpretAsUint32(data[:byteLen])
+	data = data[byteLen:]
 
 	count := int(compressed[0])
 	if count == 0 {
@@ -108,22 +87,18 @@ func CompressDeltaBitpackUint64(dst []byte, values, buf []uint64) []byte {
 	var residual []uint64
 	residual, buf = intcomp.CompressDeltaBinPackUint64(values, buf)
 	if len(residual) > 0 {
-		// append residual as is. always less than 256 values
+		// append residual as is. always less than 256 values and most blocks will never enter this branch
 		buf = append(buf, residual...)
 	}
 
-	{
-		// TODO use memcpy
-		dst = binary.LittleEndian.AppendUint32(dst, uint32(len(buf)))
-		for _, v := range buf {
-			dst = binary.LittleEndian.AppendUint64(dst, v)
-		}
-	}
+	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(buf)))
+	dst = util.CopyUints64(buf, dst)
+
 	return dst
 }
 
-// TODO simplify
-func DecompressDeltaBitpackUint64(data []byte, compressed, values []uint64) ([]byte, []uint64, error) {
+// DecompressDeltaBitpackUint64
+func DecompressDeltaBitpackUint64(data []byte, buf []uint64) ([]byte, []uint64, error) {
 	if len(data) < 4 {
 		return nil, nil, errors.New("mids block decode error: truncated sequence length header")
 	}
@@ -136,24 +111,7 @@ func DecompressDeltaBitpackUint64(data []byte, compressed, values []uint64) ([]b
 		return nil, nil, errors.New("mids block decode error: truncated sequence payload")
 	}
 
-	// TODO if little endian => reinterpret cast data []byte as []uint64
-	// otherwise, allocate slice
-	// remove compressed param
-	{
-		u64Count := int(wordCount)
-		if cap(compressed) < u64Count {
-			compressed = make([]uint64, u64Count)
-		} else {
-			compressed = compressed[:u64Count]
-		}
-		src := unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(data[:byteLen]))), u64Count)
-		copy(compressed, src)
-		data = data[byteLen:]
-
-		if len(compressed) == 0 {
-			return data, nil, nil
-		}
-	}
+	compressed := util.ReinterpretAsUint64(data)
 
 	count := int(compressed[0])
 	if count == 0 {
@@ -169,8 +127,8 @@ func DecompressDeltaBitpackUint64(data []byte, compressed, values []uint64) ([]b
 		}
 		decompressed = append([]uint64{}, compressed[:count]...)
 	default:
-		values = values[:0]
-		remaining, out := intcomp.UncompressDeltaBinPackUint64(compressed, values[:0])
+		buf = buf[:0]
+		remaining, out := intcomp.UncompressDeltaBinPackUint64(compressed, buf[:0])
 		decompressed = out
 		if len(remaining) > 0 {
 			decompressed = append(decompressed, remaining...)

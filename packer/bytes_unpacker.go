@@ -33,15 +33,6 @@ func (u *BytesUnpacker) GetUint32() uint32 {
 	return val
 }
 
-func (u *BytesUnpacker) SkipUints32(skipCount int) {
-	skipBytes := 4 * skipCount
-	u.buf = u.buf[skipBytes:]
-}
-
-func (u *BytesUnpacker) GetBuffer() []byte {
-	return u.buf
-}
-
 func (u *BytesUnpacker) GetBinary() []byte {
 	l := u.GetUint32()
 	val := u.buf[:l]

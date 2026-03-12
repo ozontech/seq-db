@@ -200,29 +200,32 @@ func generate(n int) []uint32 {
 func TestBlockPack_ReuseBuffer(t *testing.T) {
 	// Test that UnpackBuffer can be reused
 	block1 := &Block{
-		LIDs:      []uint32{100, 150, 200},
+		LIDs:      generate(64 * 1024),
 		Offsets:   []uint32{0, 3},
 		IsLastLID: true,
 	}
 
 	block2 := &Block{
-		LIDs:      []uint32{300, 350, 400, 450},
+		LIDs:      generate(64 * 1024),
 		Offsets:   []uint32{0, 4},
 		IsLastLID: true,
 	}
 
-	packed1 := block1.Pack(nil, nil)
-	packed2 := block2.Pack(nil, nil)
+	buf1 := make([]uint32, 0, 64*1024)
+	packed1 := block1.Pack(nil, buf1)
 
-	buf := &UnpackBuffer{}
+	buf1 = buf1[:0]
+	packed2 := block2.Pack(nil, buf1)
+
+	buf2 := &UnpackBuffer{}
 
 	unpacked1 := &Block{}
-	err := unpacked1.Unpack(packed1, config.CurrentFracVersion, buf)
+	err := unpacked1.Unpack(packed1, config.CurrentFracVersion, buf2)
 	require.NoError(t, err)
 	assert.Equal(t, block1.LIDs, unpacked1.LIDs)
 
 	unpacked2 := &Block{}
-	err = unpacked2.Unpack(packed2, config.CurrentFracVersion, buf)
+	err = unpacked2.Unpack(packed2, config.CurrentFracVersion, buf2)
 	require.NoError(t, err)
 	assert.Equal(t, block2.LIDs, unpacked2.LIDs)
 }
