@@ -32,12 +32,12 @@ func (o DocsOrder) IsReverse() bool {
 }
 
 const (
-	SizeOfIDSource            = uint64(unsafe.Sizeof(*new(IDSource)))
-	SizeOfErrorSource         = uint64(unsafe.Sizeof(*new(ErrorSource)))
-	SizeOfAggBin              = uint64(unsafe.Sizeof(*new(AggBin)))
-	SizeOfSamplesContainer    = uint64(unsafe.Sizeof(*new(SamplesContainer)))
-	SizeOfAggregatableSamples = uint64(unsafe.Sizeof(*new(AggregatableSamples)))
-	SizeOfQPR                 = uint64(unsafe.Sizeof(*new(QPR)))
+	SizeOfIDSource            = int(unsafe.Sizeof(*new(IDSource)))
+	SizeOfErrorSource         = int(unsafe.Sizeof(*new(ErrorSource)))
+	SizeOfAggBin              = int(unsafe.Sizeof(*new(AggBin)))
+	SizeOfSamplesContainer    = int(unsafe.Sizeof(*new(SamplesContainer)))
+	SizeOfAggregatableSamples = int(unsafe.Sizeof(*new(AggregatableSamples)))
+	SizeOfQPR                 = int(unsafe.Sizeof(*new(QPR)))
 )
 
 type IDSource struct {
@@ -50,11 +50,11 @@ func (id *IDSource) Equal(check IDSource) bool {
 	return id.ID.Equal(check.ID) && id.Source == check.Source
 }
 
-func (id *IDSource) MemUsage() uint64 {
+func (id *IDSource) MemUsage() int {
 	if id == nil {
 		return 0
 	}
-	return SizeOfIDSource + uint64(len(id.Hint))
+	return SizeOfIDSource + len(id.Hint)
 }
 
 type IDSources []IDSource
@@ -82,11 +82,11 @@ type ErrorSource struct {
 	Source uint64
 }
 
-func (e *ErrorSource) MemUsage() uint64 {
+func (e *ErrorSource) MemUsage() int {
 	if e == nil {
 		return 0
 	}
-	return SizeOfErrorSource + uint64(len(e.ErrStr))
+	return SizeOfErrorSource + len(e.ErrStr)
 }
 
 // QPR query partial result, stores intermediate result of running query e.g. result from only one fraction or particular store
@@ -100,7 +100,7 @@ type QPR struct {
 }
 
 // MemUsage returns estimated total memory used by the QPR and its nested structs.
-func (q *QPR) MemUsage() uint64 {
+func (q *QPR) MemUsage() int {
 	if q == nil {
 		return 0
 	}
@@ -160,11 +160,11 @@ type AggBin struct {
 	Token string
 }
 
-func (b *AggBin) MemUsage() uint64 {
+func (b *AggBin) MemUsage() int {
 	if b == nil {
 		return 0
 	}
-	return SizeOfAggBin + uint64(len(b.Token))
+	return SizeOfAggBin + len(b.Token)
 }
 
 type AggregatableSamples struct {
@@ -346,14 +346,14 @@ func (q *AggregatableSamples) Merge(agg AggregatableSamples) {
 	q.NotExists += agg.NotExists
 }
 
-func (q *AggregatableSamples) MemUsage() uint64 {
+func (q *AggregatableSamples) MemUsage() int {
 	if q == nil {
 		return 0
 	}
 
 	total := SizeOfAggregatableSamples
 	for _, s := range q.ValuesPool {
-		total += util.SizeOfString + uint64(len(s))
+		total += util.SizeOfString + len(s)
 	}
 	for bin, samples := range q.SamplesByBin {
 		total += bin.MemUsage() + util.SizeOfPointer + samples.MemUsage()
@@ -388,12 +388,12 @@ func NewSamplesContainers() *SamplesContainer {
 	return h
 }
 
-func (h *SamplesContainer) MemUsage() uint64 {
+func (h *SamplesContainer) MemUsage() int {
 	if h == nil {
 		return 0
 	}
 	total := SizeOfSamplesContainer
-	total += uint64(len(h.Samples)) * util.SizeOfFloat64
+	total += len(h.Samples) * util.SizeOfFloat64
 	if h.Values != nil {
 		for range h.Values {
 			total += util.SizeOfUint32
