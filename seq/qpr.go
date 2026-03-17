@@ -29,6 +29,17 @@ func (o DocsOrder) IsReverse() bool {
 	return o == DocsOrderAsc
 }
 
+func (f DocsOrder) String() string {
+	switch f {
+	case DocsOrderDesc:
+		return "desc"
+	case DocsOrderAsc:
+		return "asc"
+	default:
+		return "unknown"
+	}
+}
+
 type IDSource struct {
 	ID     ID
 	Source uint64

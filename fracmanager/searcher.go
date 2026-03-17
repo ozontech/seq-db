@@ -124,24 +124,12 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 	if s.cfg.SlowLogThreshold != 0 && took >= s.cfg.SlowLogThreshold {
 		fields := []zap.Field{
 			zap.Int64("took_ms", took.Milliseconds()),
-			zap.String("type", params.Type()),
-			zap.String("request", params.AST.SeqQLString()),
-			zap.Uint64("hist_interval", params.HistInterval),
-			zap.String("from", params.From.String()),
-			zap.String("to", params.To.String()),
-			zap.Uint64("range", seq.MIDToSeconds(params.To)-seq.MIDToSeconds(params.From)),
-			zap.String("offset_id", params.OffsetId.String()),
-			zap.Int("limit", params.Limit),
-			zap.Bool("with_total", params.WithTotal),
+			zap.Object("params", params),
 			zap.Int("total_fracs_found", totalFracsFound),
 			zap.Strings("fracs_found", fracsFound),
 			zap.Int("total_fracs_skipped", totalFracsSkipped),
 			zap.Strings("fracs_skipped", fracsSkipped),
 			zap.Uint64("total", total.Total),
-		}
-
-		for i, agg := range params.AggQ {
-			fields = append(fields, zap.Object(fmt.Sprintf("agg_%d", i), agg))
 		}
 
 		logger.Warn("slow search", fields...)

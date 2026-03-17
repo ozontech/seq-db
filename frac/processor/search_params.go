@@ -1,6 +1,8 @@
 package processor
 
 import (
+	"fmt"
+
 	"go.uber.org/zap/zapcore"
 
 	"github.com/ozontech/seq-db/parser"
@@ -45,6 +47,34 @@ type SearchParams struct {
 
 	WithTotal bool
 	Order     seq.DocsOrder
+}
+
+func (p SearchParams) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	if p.AST != nil {
+		enc.AddString("request", p.AST.SeqQLString())
+	}
+	enc.AddString("type", p.Type())
+	if p.HistInterval != 0 {
+		enc.AddUint64("hist_interval", p.HistInterval)
+	}
+	enc.AddString("from", p.From.String())
+	enc.AddString("to", p.To.String())
+	enc.AddUint64("range_seconds", seq.MIDToSeconds(p.To)-seq.MIDToSeconds(p.From))
+	if uint64(p.OffsetId.MID) != 0 {
+		enc.AddString("offset_id", p.OffsetId.String())
+	}
+	if p.Limit != 0 {
+		enc.AddInt("limit", p.Limit)
+	}
+	enc.AddBool("with_total", p.WithTotal)
+	enc.AddString("order", p.Order.String())
+	for i, agg := range p.AggQ {
+		err := enc.AddObject(fmt.Sprintf("agg_%d", i), agg)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (p *SearchParams) HasHist() bool {
