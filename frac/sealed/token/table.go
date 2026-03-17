@@ -85,12 +85,8 @@ func (t Table) GetEntryByTID(tid uint32) *TableEntry {
 		i := sort.Search(len(data.Entries), func(j int) bool {
 			return data.Entries[j].StartTID > tid
 		})
-		if i > 0 {
-			entry := data.Entries[i-1]
-			if tid <= entry.getLastTID() {
-				return entry
-			}
-		}
+
+		return data.Entries[i-1]
 	}
 
 	logger.Panic("can't find tid", zap.Uint32("tid", tid))
