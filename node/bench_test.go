@@ -71,7 +71,6 @@ func BenchmarkOr(b *testing.B) {
 			res := make([]uint32, 0, s*2)
 			n := NewOr(newNodeStaticSize(r, s), newNodeStaticSize(r, s), false)
 
-			b.ResetTimer()
 			for b.Loop() {
 				res = readAllInto(n, res)
 			}
@@ -132,7 +131,6 @@ func BenchmarkAndTree(b *testing.B) {
 			n := NewAnd(n12, n34, false)
 			res := make([]uint32, 0, s)
 
-			b.ResetTimer()
 			for b.Loop() {
 				res = readAllInto(n, res)
 			}
