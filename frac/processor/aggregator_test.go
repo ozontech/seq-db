@@ -32,7 +32,7 @@ func TestSingleSourceCountAggregator(t *testing.T) {
 	iter := NewSourcedNodeIterator(source, nil, nil, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 	agg := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 	for _, id := range searchDocs {
-		if err := agg.Next(node.NewLIDOrderDesc(id)); err != nil {
+		if err := agg.Next(node.NewDescLID(id)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -64,7 +64,7 @@ func TestSingleSourceCountAggregatorWithInterval(t *testing.T) {
 	})
 
 	for _, id := range searchDocs {
-		if err := agg.Next(node.NewLIDOrderDesc(id)); err != nil {
+		if err := agg.Next(node.NewDescLID(id)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -79,12 +79,14 @@ func TestSingleSourceCountAggregatorWithInterval(t *testing.T) {
 	assert.Equal(t, int64(1), agg.notExists)
 }
 
-func Generate(n int) ([]uint32, uint32) {
+const benchRandSeed int64 = 1
+
+func Generate(r *rand.Rand, n int) ([]uint32, uint32) {
 	v := make([]uint32, n)
 	last := uint32(1)
 	for i := range v {
 		v[i] = last
-		last += uint32(1 + rand.Intn(5))
+		last += uint32(1 + r.Intn(5))
 	}
 	return v, last
 }
@@ -94,15 +96,16 @@ func BenchmarkAggDeep(b *testing.B) {
 
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			v, _ := Generate(s)
+			r := rand.New(rand.NewSource(benchRandSeed))
+			v, _ := Generate(r, s)
 			src := node.NewSourcedNodeWrapper(node.NewStatic(v, false), 0)
 			iter := NewSourcedNodeIterator(src, nil, make([]uint32, 1), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
-			vals, _ := Generate(s)
+			vals, _ := Generate(r, s)
 
 			for b.Loop() {
 				for _, v := range vals {
-					if err := n.Next(node.NewLIDOrderDesc(v)); err != nil {
+					if err := n.Next(node.NewDescLID(v)); err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -116,13 +119,14 @@ func BenchmarkAggWide(b *testing.B) {
 
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			v, _ := Generate(s)
+			r := rand.New(rand.NewSource(benchRandSeed))
+			v, _ := Generate(r, s)
 
 			factor := int(math.Sqrt(float64(s)))
 			wide := make([][]uint32, s/factor)
 			for i := range wide {
 				for range factor {
-					wide[i] = append(wide[i], v[rand.Intn(s)])
+					wide[i] = append(wide[i], v[r.Intn(s)])
 				}
 				slices.Sort(wide[i])
 			}
@@ -131,11 +135,11 @@ func BenchmarkAggWide(b *testing.B) {
 
 			iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(wide)), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
-			vals, _ := Generate(s)
+			vals, _ := Generate(r, s)
 
 			for b.Loop() {
 				for _, v := range vals {
-					if err := n.Next(node.NewLIDOrderDesc(v)); err != nil {
+					if err := n.Next(node.NewDescLID(v)); err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -194,14 +198,14 @@ func TestTwoSourceAggregator(t *testing.T) {
 	dp := &MockTokenIndex{}
 	field := &MockNode{
 		Pairs: []IDSourcePair{
-			{LID: node.NewLIDOrderDesc(1), Source: 0},
-			{LID: node.NewLIDOrderDesc(2), Source: 1},
+			{LID: node.NewDescLID(1), Source: 0},
+			{LID: node.NewDescLID(2), Source: 1},
 		},
 	}
 	groupBy := &MockNode{
 		Pairs: []IDSourcePair{
-			{LID: node.NewLIDOrderDesc(1), Source: 0},
-			{LID: node.NewLIDOrderDesc(2), Source: 1},
+			{LID: node.NewDescLID(1), Source: 0},
+			{LID: node.NewDescLID(2), Source: 1},
 		},
 	}
 
@@ -215,8 +219,8 @@ func TestTwoSourceAggregator(t *testing.T) {
 	)
 
 	// Call Next for two data points.
-	r.NoError(aggregator.Next(node.NewLIDOrderDesc(1)))
-	r.NoError(aggregator.Next(node.NewLIDOrderDesc(2)))
+	r.NoError(aggregator.Next(node.NewDescLID(1)))
+	r.NoError(aggregator.Next(node.NewDescLID(2)))
 
 	// Verify countBySource map.
 	expectedCountBySource := map[twoSources]int64{
@@ -256,14 +260,14 @@ func TestSingleTreeCountAggregator(t *testing.T) {
 	dp := &MockTokenIndex{}
 	field := &MockNode{
 		Pairs: []IDSourcePair{
-			{LID: node.NewLIDOrderDesc(1), Source: 0},
+			{LID: node.NewDescLID(1), Source: 0},
 		},
 	}
 
 	iter := NewSourcedNodeIterator(field, dp, []uint32{0}, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 	aggregator := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 
-	r.NoError(aggregator.Next(node.NewLIDOrderDesc(1)))
+	r.NoError(aggregator.Next(node.NewDescLID(1)))
 
 	result, err := aggregator.Aggregate()
 	if err != nil {
@@ -305,7 +309,7 @@ func TestAggregatorLimitExceeded(t *testing.T) {
 		var limitIteration int
 
 		for i, id := range searchDocs {
-			if err := agg.Next(node.NewLIDOrderDesc(id)); err != nil {
+			if err := agg.Next(node.NewDescLID(id)); err != nil {
 				limitErr = err
 				limitIteration = i
 				break

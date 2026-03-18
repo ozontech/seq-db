@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	DescMask = uint32(0)
-	AscMask  = uint32(0xFFFFFFFF)
+	descMask = uint32(0)
+	ascMask  = uint32(0xFFFFFFFF)
 )
 
 // LID is an encoded representation of LID and reverse flag made specifically for fast compare operations.
@@ -22,22 +22,22 @@ type LID struct {
 
 func NullLID() LID {
 	// order does not matter, as null values are never unpacked
-	return NewLIDOrderDesc(math.MaxUint32)
+	return NewDescLID(math.MaxUint32)
 }
 
-// NewLIDOrderDesc returns LIDs for desc sort order
-func NewLIDOrderDesc(lid uint32) LID {
+// NewDescLID returns LIDs for desc sort order
+func NewDescLID(lid uint32) LID {
 	return LID{
 		lid:  lid,
-		mask: DescMask,
+		mask: descMask,
 	}
 }
 
-// NewLIDOrderAsc returns LIDs for asc sort order
-func NewLIDOrderAsc(lid uint32) LID {
+// NewAscLID returns LIDs for asc sort order
+func NewAscLID(lid uint32) LID {
 	return LID{
-		lid:  lid ^ AscMask,
-		mask: AscMask,
+		lid:  lid ^ ascMask,
+		mask: ascMask,
 	}
 }
 
@@ -50,7 +50,7 @@ func NewLID(lid uint32, reverse bool) LID {
 }
 
 // Less compares two values. It also does an implicit null check, since we store math.MaxUint32 for null values.
-// Which means if we call x.Less(y), then we now for sure that x is not null. Therefore, this Less call can work
+// Which means if we call x.Less(y), then we know for sure that x is not null. Therefore, this Less call can work
 // as both "null check + less" combo.
 func (c LID) Less(other LID) bool {
 	return c.lid < other.lid
@@ -94,5 +94,5 @@ func (c LID) IsNull() bool {
 }
 
 func (c LID) String() string {
-	return fmt.Sprintf("%d, reverse=%t", c.Unpack(), c.mask == AscMask)
+	return fmt.Sprintf("%d, reverse=%t", c.Unpack(), c.mask == ascMask)
 }

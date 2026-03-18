@@ -12,14 +12,6 @@ VERSION ?= $(shell git describe --abbrev=4 --dirty --always --tags)
 TIME := $(shell date '+%Y-%m-%d_%H:%M:%S')
 
 LOCAL_BIN:=$(CURDIR)/bin
-.PHONY: build-binaries
-build-binaries:
-	CGO_ENABLED=0 GOOS=${OS} GOARCH=${ARCH} go build \
-      -trimpath \
-      -ldflags "-X github.com/ozontech/seq-db/buildinfo.Version=${VERSION} \
-                -X github.com/ozontech/seq-db/buildinfo.BuildTime=${TIME}" \
-      -o ./bin/${OS}-${ARCH}/ \
-      ./cmd/...
 
 .PHONY: build-image
 build-image:
@@ -30,12 +22,29 @@ build-image:
 		-t ${IMAGE}:${VERSION} \
 		.
 
+.PHONY: build-debug
+build-debug:
+	CGO_ENABLED=0 \
+	go build -gcflags="all=-N -l" \
+		-o ${LOCAL_BIN}/${OS}-${ARCH}/ \
+		./cmd/...
+
 .PHONY: run
-run: build-binaries
+run: build-debug
 	SEQDB_STORAGE_DATA_DIR=$(shell mktemp -d) \
 	${LOCAL_BIN}/${OS}-${ARCH}/seq-db \
 		--mode=single \
 		--config=config.example.yaml
+
+.PHONY: debug
+debug: build-debug
+	SEQDB_STORAGE_DATA_DIR=$(shell mktemp -d) \
+	${LOCAL_BIN}/${OS}-${ARCH}/seq-db \
+		--mode=single \
+		--config=config.example.yaml & \
+	DLV_PID=$$!; \
+	sleep 1; \
+	dlv attach $$DLV_PID --init=.dlv-init
 
 .PHONY: push-image
 push-image: build-image

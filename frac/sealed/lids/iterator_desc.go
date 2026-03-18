@@ -1,7 +1,6 @@
 package lids
 
 import (
-	"math"
 	"sort"
 
 	"go.uber.org/zap"
@@ -61,7 +60,7 @@ func (it *IteratorDesc) loadNextLIDsBlock() {
 func (it *IteratorDesc) Next() node.LID {
 	for len(it.lids) == 0 {
 		if !it.tryNextBlock {
-			return node.NewLIDOrderDesc(math.MaxUint32)
+			return node.NullLID()
 		}
 
 		it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
@@ -71,7 +70,7 @@ func (it *IteratorDesc) Next() node.LID {
 
 	lid := it.lids[0]
 	it.lids = it.lids[1:]
-	return node.NewLIDOrderDesc(lid)
+	return node.NewDescLID(lid)
 }
 
 // NextGeq finds next greater or equal

@@ -40,12 +40,12 @@ func (n *nodeAnd) readRightGeq(nextID LID) {
 }
 
 func (n *nodeAnd) Next() LID {
-	for !n.leftID.IsNull() && !n.rightID.IsNull() && !n.leftID.Eq(n.rightID) {
+	for !n.leftID.IsNull() && !n.rightID.IsNull() && n.leftID != n.rightID {
 		for !n.rightID.IsNull() && n.leftID.Less(n.rightID) {
 			n.readLeftGeq(n.rightID)
 		}
-		for !n.rightID.IsNull() && n.rightID.Less(n.leftID) {
-			n.readRightGeq(n.leftID)
+		for !n.leftID.IsNull() && n.rightID.Less(n.leftID) {
+			n.readRight()
 		}
 	}
 	if n.leftID.IsNull() || n.rightID.IsNull() {

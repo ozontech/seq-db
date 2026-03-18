@@ -13,4 +13,8 @@ var (
 	MaxFetchSizeBytes = 4 * units.MiB
 
 	MaxRequestedDocuments = 100_000 // maximum number of documents that can be requested in one fetch request
+
+	MaxRegexTokensCheck int
+
+	FailPartialResponse = false
 )

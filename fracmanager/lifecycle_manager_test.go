@@ -150,7 +150,7 @@ func TestOldestMetrics(t *testing.T) {
 	}
 
 	wg := sync.WaitGroup{}
-	lc.offloadLocal(t.Context(), total-halfSize, &wg)
+	lc.offloadLocal(t.Context(), total-halfSize, 0, &wg)
 	wg.Wait()
 
 	// Check state after offloading

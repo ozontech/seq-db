@@ -65,6 +65,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(512, false, true),
 	}
 	s.mapping = seq.Mapping{
+		"id":            seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"k8s_pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"k8s_namespace": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"k8s_container": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -761,7 +762,7 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 			withAggQuery(processor.AggQuery{GroupBy: aggField("service")}),
 			withAggQuery(processor.AggQuery{GroupBy: aggField("level")})),
 		[]map[string]uint64{
-			{gateway: 3, proxy: 2, "scheduler": 1},
+			{gateway: 3, proxy: 2, scheduler: 1},
 			{"1": 4, "2": 1, "3": 1},
 		})
 }
@@ -1286,6 +1287,13 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   midTime,
 		},
 		{
+			name:     "NOT trace_id:trace-4999",
+			query:    "NOT trace_id:trace-4999",
+			filter:   func(doc *testDoc) bool { return doc.traceId != "trace-4999" },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
 			name:     "trace_id:trace-4999",
 			query:    "trace_id:trace-4999",
 			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-4999" },
@@ -1503,6 +1511,33 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 
 			s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
 		}
+	})
+
+	// Test large QPR with 25000 groups (all ids are unique)
+	s.Run("_exists_:service | group by id count()", func() {
+		countById := make(map[string]int)
+		for _, doc := range testDocs {
+			countById[doc.id]++
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for id, cnt := range countById {
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      id,
+				Value:     float64(cnt),
+				NotExists: 0,
+			})
+		}
+
+		searchParams := s.query(
+			"_exists_:service",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				GroupBy: aggField("id"),
+				Func:    seq.AggFuncCount,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncCount}, expectedBuckets)
 	})
 
 	s.Run("NOT message:retry | group by service avg(level)", func() {
@@ -2296,7 +2331,6 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			"SECRET_KEY",
 			"eu-west-3",
 			bucketName,
-			3,
 		)
 		s.Require().NoError(err, "s3 client setup failed")
 

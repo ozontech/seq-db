@@ -152,6 +152,10 @@ func MIDToMillis(t MID) uint64 {
 	return uint64(t) / uint64(time.Millisecond)
 }
 
+func MIDToSeconds(t MID) uint64 {
+	return uint64(t) / uint64(time.Second)
+}
+
 func MIDToCeilingMillis(t MID) uint64 {
 	millis := uint64(t) / uint64(time.Millisecond)
 	nanosPartOfMilli := uint64(t) % uint64(time.Millisecond)

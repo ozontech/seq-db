@@ -135,7 +135,13 @@ func search(t *testing.T, tp *simpleTokenProvider, req string, expect []string) 
 	res := []string{}
 	for i := s.firstTID(); i <= s.lastTID(); i++ {
 		val := tp.GetToken(i)
-		if s.check(val) {
+
+		match, err := s.check(val)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if match {
 			res = append(res, string(val))
 		}
 	}
@@ -745,6 +751,87 @@ func TestPatternIPRange(t *testing.T) {
 		{`ip_range(192.168.1.2/31)`, []string{"192.168.1.2", "192.168.1.3"}},
 		{`ip_range(192.168.1.0/31)`, []string{"192.168.1.1"}},
 		{`ip_range(192.167.1.0/31)`, []string{}},
+	}
+
+	testAll(t, tp, tests)
+}
+
+func TestPatternIPRangeV6(t *testing.T) {
+	data := []string{
+		"2001:db8:130f:0000:0000:09c0:876a:130b",
+		"2001:db8:130f:0000:0000:09c0:876a:130c",
+		"2001:db8:130f:0000:0000:09c0:876a:130d",
+		"2001:db8:130f:0000:0000:09c0:876a:130e",
+		"2001:db8:130f:0000:0000:09c0:876a:130f",
+	}
+
+	tp := newTestTokenProvider(data)
+
+	tests := []testCase{
+		// Full IPv6 range
+		{
+			`ip_range(0:0:0:0:0:0:0:0, ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff)`,
+			data,
+		},
+
+		// Partial explicit range (start–end)
+		{
+			`ip_range(2001:db8:130f:0000:0000:09c0:876a:130c, 2001:db8:130f:0000:0000:09c0:876a:130d)`,
+			[]string{
+				"2001:db8:130f:0000:0000:09c0:876a:130c",
+				"2001:db8:130f:0000:0000:09c0:876a:130d",
+			},
+		},
+
+		// Upper boundary check
+		{
+			`ip_range(2001:db8:130f:0000:0000:09c0:876a:130f, ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff)`,
+			[]string{
+				"2001:db8:130f:0000:0000:09c0:876a:130f",
+			},
+		},
+
+		// No matches in range
+		{
+			`ip_range(2001:db8:130e::, 2001:db8:130e:ffff:ffff:ffff:ffff:ffff)`,
+			[]string{},
+		},
+
+		// CIDR: full IPv6 space
+		{
+			`ip_range(::/0)`,
+			data,
+		},
+
+		// CIDR /127 (IPv6 analogue of IPv4 /31)
+		{
+			`ip_range(2001:db8:130f::9c0:876a:130c/127)`,
+			[]string{
+				"2001:db8:130f:0000:0000:09c0:876a:130c",
+				"2001:db8:130f:0000:0000:09c0:876a:130d",
+			},
+		},
+
+		// Narrow subnet covering the last nibble range
+		{
+			`ip_range(2001:db8:130f::9c0:876a:1300/124)`,
+			data,
+		},
+
+		// CIDR with no matches
+		{
+			`ip_range(2001:db8:130e::/64)`,
+			[]string{},
+		},
+
+		// Compressed IPv6 notation (::) in explicit range
+		{
+			`ip_range(2001:db8:130f::9c0:876a:130c, 2001:db8:130f::9c0:876a:130d)`,
+			[]string{
+				"2001:db8:130f:0000:0000:09c0:876a:130c",
+				"2001:db8:130f:0000:0000:09c0:876a:130d",
+			},
+		},
 	}
 
 	testAll(t, tp, tests)
