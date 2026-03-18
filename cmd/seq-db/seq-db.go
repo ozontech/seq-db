@@ -297,7 +297,7 @@ func startStore(
 				WorkersCount:          cfg.Resources.SearchWorkers,
 				MaxFractionHits:       cfg.Limits.FractionHits,
 				FractionsPerIteration: config.NumCPU,
-				MaxQprMemory:          uint64(cfg.Limits.QprMemoryUsage),
+				MaxQprMemory:          int(cfg.Limits.QprMemoryUsage),
 				RequestsLimit:         uint64(cfg.Limits.SearchRequests),
 				LogThreshold:          cfg.SlowLogs.SearchThreshold,
 				Async: asyncsearcher.AsyncSearcherConfig{

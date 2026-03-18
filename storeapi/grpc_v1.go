@@ -29,7 +29,7 @@ type SearchConfig struct {
 	WorkersCount          int
 	MaxFractionHits       int
 	FractionsPerIteration int
-	MaxQprMemory          uint64 // max heap memory a single QPR can use (bytes). 0 if no limit set.
+	MaxQprMemory          int // max heap memory a single QPR can use (bytes). 0 if no limit set.
 	RequestsLimit         uint64
 	LogThreshold          time.Duration
 	Async                 asyncsearcher.AsyncSearcherConfig
