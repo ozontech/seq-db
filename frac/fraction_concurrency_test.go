@@ -253,6 +253,7 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 }
 
 type testDoc = struct {
+	id        string
 	json      string
 	message   string
 	service   string
@@ -280,6 +281,7 @@ func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.
 		message := messages[rand.IntN(len(messages))]
 		level := rand.IntN(6)
 		timestamp := fromTime.Add(time.Duration(i) * time.Millisecond)
+		id := fmt.Sprintf("id-%d", i)
 		traceId := fmt.Sprintf("trace-%d", i%5000)
 		pod := fmt.Sprintf("pod-%d", i%50)
 		clientIp := fmt.Sprintf("192.168.%d.%d", rand.IntN(64), rand.IntN(256))
@@ -287,12 +289,13 @@ func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.
 			toTime = timestamp
 		}
 
-		json := fmt.Sprintf(`{"timestamp":%q,"service":%q,"pod":%q,"client_ip":%q,"message":%q,"trace_id": %q,"level":"%d"}`,
-			timestamp.Format(time.RFC3339Nano), service, pod, clientIp, message, traceId, level)
+		json := fmt.Sprintf(`{"timestamp":%q,"id": %q, "service":%q,"pod":%q,"client_ip":%q,"message":%q,"trace_id": %q,"level":"%d"}`,
+			timestamp.Format(time.RFC3339Nano), id, service, pod, clientIp, message, traceId, level)
 
 		docs = append(docs, &testDoc{
 			json:      json,
 			timestamp: timestamp,
+			id:        id,
 			message:   message,
 			service:   service,
 			pod:       pod,

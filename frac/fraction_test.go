@@ -65,6 +65,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(512, false, true),
 	}
 	s.mapping = seq.Mapping{
+		"id":            seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"k8s_pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"k8s_namespace": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"k8s_container": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -1350,6 +1351,33 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			}))
 
 		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncUniqueCount}, expectedBuckets)
+	})
+
+	// Test large QPR with 25000 groups (all ids are unique)
+	s.Run("_exists_:service | group by id count()", func() {
+		countById := make(map[string]int)
+		for _, doc := range testDocs {
+			countById[doc.id]++
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for id, cnt := range countById {
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      id,
+				Value:     float64(cnt),
+				NotExists: 0,
+			})
+		}
+
+		searchParams := s.query(
+			"_exists_:service",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				GroupBy: aggField("id"),
+				Func:    seq.AggFuncCount,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncCount}, expectedBuckets)
 	})
 
 	s.Run("NOT message:retry | group by service avg(level)", func() {
