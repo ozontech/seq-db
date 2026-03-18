@@ -1,0 +1,3 @@
+config prompt-color "\033[32m"
+config disassemble-flavor "intel"
+config substitute-path "github.com/ozontech/seq-db" ""
