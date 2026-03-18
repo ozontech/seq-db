@@ -53,6 +53,10 @@ Join our community for discussions, support, and contributions:
 See performance benchmarks and comparisons in
 our [Benchmark Reports](https://ozontech.github.io/seq-db-docs/seq-db/benchmarks/).
 
+We track seq-db performance across scenarios:
+- Core functions [benchmarks](https://ozontech.github.io/seq-db/);
+- End-to-end user paths [benchmarks](https://continuous.seqbench.ozon.dev/grafana);
+
 ## Core Contributors 
 seq-db started as an internal project. To recognise everyone who has made
 a significant contribution, we list all contributors - internal and public - in the order of their first commit to the project. 

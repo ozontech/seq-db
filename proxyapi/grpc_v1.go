@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -11,10 +12,12 @@ import (
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -66,14 +69,14 @@ type grpcV1 struct {
 }
 
 func newGrpcV1(
-	config APIConfig,
+	apiConfig APIConfig,
 	si SearchIngestor,
 	mappingProvider MappingProvider,
 	rl RateLimiter,
 	mirror seqproxyapi.SeqProxyApiClient,
 ) *grpcV1 {
 	return &grpcV1{
-		config:          config,
+		config:          apiConfig,
 		searchIngestor:  si,
 		mappingProvider: mappingProvider,
 		rateLimiter:     rl,
@@ -432,6 +435,18 @@ func parseProxyError(e error) (*seqproxyapi.Error, bool) {
 	}
 
 	return nil, false
+}
+
+func shouldFailPartialResponse(ctx context.Context) bool {
+	md, _ := metadata.FromIncomingContext(ctx)
+	failPartialResponseValues := md.Get("fail-partial-response")
+	if len(failPartialResponseValues) == 0 {
+		// Header isn't set, so use value from config
+		return config.FailPartialResponse
+	}
+	val := failPartialResponseValues[0]
+	failPartialResponse, _ := strconv.ParseBool(val)
+	return failPartialResponse
 }
 
 func shouldHaveResponse(code seqproxyapi.ErrorCode) bool {

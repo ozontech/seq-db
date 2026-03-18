@@ -6,7 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/util"
 )
 
 // fractionRegistry manages fraction queues at different lifecycle stages.
@@ -131,6 +135,8 @@ func (r *fractionRegistry) RotateIfFull(maxSize uint64, newActive func() *active
 	curInfo := old.instance.Info()
 	r.stats.sealing.Add(curInfo)
 
+	r.active.Suspend(old.Suspended())
+
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	// since old.WaitWriteIdle() can take some time, we don't want to do it under the lock
@@ -151,6 +157,53 @@ func (r *fractionRegistry) RotateIfFull(maxSize uint64, newActive func() *active
 	}()
 
 	return old, wg.Wait, nil
+}
+
+func (r *fractionRegistry) SuspendIfOverCapacity(maxQueue, maxSize uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	suspended := r.active.Suspended()
+
+	if maxQueue > 0 && r.stats.sealing.count >= int(maxQueue) {
+		if !suspended {
+			logger.Warn("switching to read-only mode",
+				zap.String("reason", "sealing queue size exceeded"),
+				zap.Uint64("limit", maxQueue),
+				zap.Int("queue_size", r.stats.sealing.count))
+			r.active.Suspend(true)
+		}
+		return
+	}
+
+	du := r.diskUsage()
+
+	if maxSize > 0 && du > maxSize {
+		if !suspended {
+			logger.Warn("switching to read-only mode",
+				zap.String("reason", "occupied space limit exceeded"),
+				zap.Float64("queue_size_limit_gb", util.Float64ToPrec(util.SizeToUnit(maxSize, "gb"), 2)),
+				zap.Float64("occupied_space_gb", util.Float64ToPrec(util.SizeToUnit(du, "gb"), 2)))
+			r.active.Suspend(true)
+		}
+		return
+	}
+
+	if suspended {
+		logger.Warn("switching to write mode",
+			zap.Float64("queue_size_limit_gb", util.Float64ToPrec(util.SizeToUnit(maxSize, "gb"), 2)),
+			zap.Float64("occupied_space_gb", util.Float64ToPrec(util.SizeToUnit(du, "gb"), 2)),
+			zap.Uint64("sealing_queue_size_limit", maxQueue),
+			zap.Int("queue_size", r.stats.sealing.count))
+		r.active.Suspend(false)
+	}
+}
+
+func (r *fractionRegistry) diskUsage() uint64 {
+	return r.active.instance.Info().FullSize() +
+		r.stats.sealed.totalSizeOnDisk +
+		r.stats.sealing.totalSizeOnDisk +
+		r.stats.offloading.totalSizeOnDisk
 }
 
 // addActive sets a new active fraction and updates the complete fractions list.
@@ -229,6 +282,10 @@ func (r *fractionRegistry) EvictLocal(shouldOffload bool, sizeLimit uint64) ([]*
 // Fractions older than retention period are permanently deleted.
 // Returns removed fractions or empty slice if nothing to remove.
 func (r *fractionRegistry) EvictRemote(retention time.Duration) []*remoteProxy {
+	if retention == 0 {
+		return nil
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -246,6 +303,42 @@ func (r *fractionRegistry) EvictRemote(retention time.Duration) []*remoteProxy {
 	evicted := r.remotes[:count]
 	r.remotes = r.remotes[count:]
 	r.trimAll(count) // remove from complete list
+
+	return evicted
+}
+
+// EvictOverflowed removes oldest fractions from offloading queue when it exceeds size limit.
+// Selects fractions that haven't finished offloading yet to minimize data loss.
+// Used when offloading queue grows too large due to slow remote storage performance.
+func (r *fractionRegistry) EvictOverflowed(sizeLimit uint64) []*sealedProxy {
+	if sizeLimit == 0 {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Fast path: skip processing if within size limits
+	if r.stats.offloading.totalSizeOnDisk <= sizeLimit {
+		return nil
+	}
+
+	count := 0
+	evicted := []*sealedProxy{}
+	// filter fractions
+	for _, item := range r.offloading {
+		// keep items that are within limits or already offloaded
+		if r.stats.offloading.totalSizeOnDisk <= sizeLimit || item.remote != nil {
+			r.offloading[count] = item
+			count++
+			continue
+		}
+		evicted = append(evicted, item)
+		r.stats.offloading.Sub(item.instance.Info())
+	}
+
+	r.offloading = r.offloading[:count]
+	r.rebuildAllFractions()
 
 	return evicted
 }
@@ -324,6 +417,11 @@ func (r *fractionRegistry) removeFromOffloading(sealed *sealedProxy) {
 			count++
 		}
 	}
+
+	if count == len(r.offloading) { // not found to remove (can be removed earlier in EvictOverflowed)
+		return
+	}
+
 	r.offloading = r.offloading[:count]
 	r.stats.offloading.Sub(sealed.instance.Info())
 

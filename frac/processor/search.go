@@ -71,24 +71,30 @@ func IndexSearch(
 		return nil, ctx.Err()
 	}
 
-	aggs := make([]Aggregator, len(params.AggQ))
+	var aggSupplier func() ([]Aggregator, error)
+
 	if params.HasAgg() {
-		m = sw.Start("eval_agg")
-		for i, query := range params.AggQ {
-			aggs[i], err = evalAgg(
-				index, query, sw, stats, minLID, maxLID, aggLimits,
-				provideExtractTimeFunc(sw, index, query.Interval), params.Order,
-			)
-			if err != nil {
-				m.Stop()
-				return nil, err
+		aggSupplier = func() ([]Aggregator, error) {
+			mAgg := sw.Start("eval_agg")
+			defer mAgg.Stop()
+
+			aggs := make([]Aggregator, len(params.AggQ))
+			for i, query := range params.AggQ {
+				aggs[i], err = evalAgg(
+					index, query, sw, stats, minLID, maxLID, aggLimits,
+					provideExtractTimeFunc(sw, index, query.Interval), params.Order,
+				)
+				if err != nil {
+					return nil, err
+				}
 			}
+
+			return aggs, nil
 		}
-		m.Stop()
 	}
 
 	m = sw.Start("iterate_eval_tree")
-	total, ids, histogram, err := iterateEvalTree(ctx, params, index, evalTree, aggs, sw)
+	total, ids, histogram, aggs, err := iterateEvalTree(ctx, params, index, evalTree, aggSupplier, sw)
 	m.Stop()
 
 	if err != nil {
@@ -98,7 +104,7 @@ func IndexSearch(
 	stats.HitsTotal += total
 
 	var aggsResult []seq.AggregatableSamples
-	if len(params.AggQ) > 0 {
+	if len(aggs) > 0 {
 		aggsResult = make([]seq.AggregatableSamples, len(aggs))
 		m = sw.Start("agg_node_make_map")
 		for i := range aggs {
@@ -151,9 +157,9 @@ func iterateEvalTree(
 	params SearchParams,
 	idsIndex idsIndex,
 	evalTree node.Node,
-	aggs []Aggregator,
+	aggSupplier func() ([]Aggregator, error),
 	sw *stopwatch.Stopwatch,
-) (int, seq.IDSources, []uint64, error) {
+) (int, seq.IDSources, []uint64, []Aggregator, error) {
 	hasHist := params.HasHist()
 	needScanAllRange := params.IsScanAllRequest()
 
@@ -178,9 +184,11 @@ func iterateEvalTree(
 	timerRID := sw.Timer("get_rid")
 	timerAgg := sw.Timer("agg_node_count")
 
+	var aggs []Aggregator
+
 	for i := 0; ; i++ {
 		if i&1023 == 0 && util.IsCancelled(ctx) {
-			return total, ids, histogram, ctx.Err()
+			return total, ids, histogram, aggs, ctx.Err()
 		}
 
 		needMore := len(ids) < params.Limit
@@ -229,12 +237,20 @@ func iterateEvalTree(
 
 		total++ // increment found counter, use aggNode, calculate histogram and collect ids only if id in borders
 
-		if len(aggs) > 0 {
+		if params.HasAgg() {
+			if aggs == nil {
+				var err error
+				aggs, err = aggSupplier()
+				if err != nil {
+					return total, ids, histogram, nil, err
+				}
+			}
+
 			timerAgg.Start()
 			for i := range aggs {
 				if err := aggs[i].Next(lid); err != nil {
 					timerAgg.Stop()
-					return total, ids, histogram, err
+					return total, ids, histogram, aggs, err
 				}
 			}
 			timerAgg.Stop()
@@ -242,7 +258,7 @@ func iterateEvalTree(
 
 	}
 
-	return total, ids, histogram, nil
+	return total, ids, histogram, aggs, nil
 }
 
 // getLIDsBorders return min and max LID borders (including) for search

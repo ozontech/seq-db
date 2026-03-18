@@ -756,6 +756,87 @@ func TestPatternIPRange(t *testing.T) {
 	testAll(t, tp, tests)
 }
 
+func TestPatternIPRangeV6(t *testing.T) {
+	data := []string{
+		"2001:db8:130f:0000:0000:09c0:876a:130b",
+		"2001:db8:130f:0000:0000:09c0:876a:130c",
+		"2001:db8:130f:0000:0000:09c0:876a:130d",
+		"2001:db8:130f:0000:0000:09c0:876a:130e",
+		"2001:db8:130f:0000:0000:09c0:876a:130f",
+	}
+
+	tp := newTestTokenProvider(data)
+
+	tests := []testCase{
+		// Full IPv6 range
+		{
+			`ip_range(0:0:0:0:0:0:0:0, ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff)`,
+			data,
+		},
+
+		// Partial explicit range (start–end)
+		{
+			`ip_range(2001:db8:130f:0000:0000:09c0:876a:130c, 2001:db8:130f:0000:0000:09c0:876a:130d)`,
+			[]string{
+				"2001:db8:130f:0000:0000:09c0:876a:130c",
+				"2001:db8:130f:0000:0000:09c0:876a:130d",
+			},
+		},
+
+		// Upper boundary check
+		{
+			`ip_range(2001:db8:130f:0000:0000:09c0:876a:130f, ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff)`,
+			[]string{
+				"2001:db8:130f:0000:0000:09c0:876a:130f",
+			},
+		},
+
+		// No matches in range
+		{
+			`ip_range(2001:db8:130e::, 2001:db8:130e:ffff:ffff:ffff:ffff:ffff)`,
+			[]string{},
+		},
+
+		// CIDR: full IPv6 space
+		{
+			`ip_range(::/0)`,
+			data,
+		},
+
+		// CIDR /127 (IPv6 analogue of IPv4 /31)
+		{
+			`ip_range(2001:db8:130f::9c0:876a:130c/127)`,
+			[]string{
+				"2001:db8:130f:0000:0000:09c0:876a:130c",
+				"2001:db8:130f:0000:0000:09c0:876a:130d",
+			},
+		},
+
+		// Narrow subnet covering the last nibble range
+		{
+			`ip_range(2001:db8:130f::9c0:876a:1300/124)`,
+			data,
+		},
+
+		// CIDR with no matches
+		{
+			`ip_range(2001:db8:130e::/64)`,
+			[]string{},
+		},
+
+		// Compressed IPv6 notation (::) in explicit range
+		{
+			`ip_range(2001:db8:130f::9c0:876a:130c, 2001:db8:130f::9c0:876a:130d)`,
+			[]string{
+				"2001:db8:130f:0000:0000:09c0:876a:130c",
+				"2001:db8:130f:0000:0000:09c0:876a:130d",
+			},
+		},
+	}
+
+	testAll(t, tp, tests)
+}
+
 func testFindSequence(a *assert.Assertions, cnt int, needles []string, haystack string) {
 	var needlesB [][]byte
 	for _, needle := range needles {

@@ -28,7 +28,9 @@ func (g *grpcV1) GetAggregation(
 	if err != nil {
 		return nil, err
 	}
-
+	if sResp.err != nil && sResp.err.Code == seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE && shouldFailPartialResponse(ctx) {
+		return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
+	}
 	if sResp.err != nil && !shouldHaveResponse(sResp.err.Code) {
 		return &seqproxyapi.GetAggregationResponse{Error: sResp.err}, nil
 	}

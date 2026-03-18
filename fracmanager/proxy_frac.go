@@ -23,6 +23,7 @@ var (
 	_ frac.Fraction = (*emptyFraction)(nil)
 
 	ErrFractionNotWritable = errors.New("fraction is not writable")
+	ErrFractionSuspended   = errors.New("write operations temporarily suspended - database capacity exceeded")
 )
 
 // fractionProxy provides thread-safe access to a fraction with atomic replacement
@@ -81,6 +82,7 @@ type activeProxy struct {
 	wg sync.WaitGroup // Tracks pending write operations
 
 	finalized bool // Whether fraction is frozen for writes
+	suspended bool // Temporarily suspended for writes
 }
 
 func newActiveProxy(active *frac.Active) *activeProxy {
@@ -96,6 +98,10 @@ func (p *activeProxy) Append(docs, meta []byte) error {
 	if p.finalized {
 		p.mu.RUnlock()
 		return ErrFractionNotWritable
+	}
+	if p.suspended {
+		p.mu.RUnlock()
+		return ErrFractionSuspended
 	}
 	p.wg.Add(1) // Important: wg.Add() inside lock to prevent race with WaitWriteIdle()
 	p.mu.RUnlock()
@@ -113,6 +119,19 @@ func (p *activeProxy) WaitWriteIdle() {
 	logger.Info("write is stopped",
 		zap.String("name", p.instance.BaseFileName),
 		zap.Float64("time_wait_s", waitTime))
+}
+
+func (p *activeProxy) Suspended() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.suspended
+}
+
+func (p *activeProxy) Suspend(value bool) {
+	p.mu.Lock()
+	p.suspended = value
+	p.mu.Unlock()
 }
 
 // Finalize marks the fraction as read-only and prevents new writes from starting after finalize.

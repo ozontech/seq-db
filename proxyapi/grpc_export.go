@@ -51,6 +51,9 @@ func (g *grpcV1) Export(req *seqproxyapi.ExportRequest, stream seqproxyapi.SeqPr
 	if err != nil {
 		return err
 	}
+	if sResp.err != nil && sResp.err.Code == seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE && shouldFailPartialResponse(ctx) {
+		return status.Error(codes.Internal, "partial response: not all shards returned results")
+	}
 	if sResp.err != nil && !shouldHaveResponse(sResp.err.Code) {
 		return errors.New(sResp.err.Message)
 	}

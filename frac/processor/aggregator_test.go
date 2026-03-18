@@ -79,12 +79,14 @@ func TestSingleSourceCountAggregatorWithInterval(t *testing.T) {
 	assert.Equal(t, int64(1), agg.notExists)
 }
 
-func Generate(n int) ([]uint32, uint32) {
+const benchRandSeed int64 = 1
+
+func Generate(r *rand.Rand, n int) ([]uint32, uint32) {
 	v := make([]uint32, n)
 	last := uint32(1)
 	for i := range v {
 		v[i] = last
-		last += uint32(1 + rand.Intn(5))
+		last += uint32(1 + r.Intn(5))
 	}
 	return v, last
 }
@@ -94,11 +96,12 @@ func BenchmarkAggDeep(b *testing.B) {
 
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			v, _ := Generate(s)
+			r := rand.New(rand.NewSource(benchRandSeed))
+			v, _ := Generate(r, s)
 			src := node.NewSourcedNodeWrapper(node.NewStatic(v, false), 0)
 			iter := NewSourcedNodeIterator(src, nil, make([]uint32, 1), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
 			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
-			vals, _ := Generate(s)
+			vals, _ := Generate(r, s)
 
 			for b.Loop() {
 				for _, v := range vals {
@@ -116,13 +119,14 @@ func BenchmarkAggWide(b *testing.B) {
 
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			v, _ := Generate(s)
+			r := rand.New(rand.NewSource(benchRandSeed))
+			v, _ := Generate(r, s)
 
 			factor := int(math.Sqrt(float64(s)))
 			wide := make([][]uint32, s/factor)
 			for i := range wide {
 				for range factor {
-					wide[i] = append(wide[i], v[rand.Intn(s)])
+					wide[i] = append(wide[i], v[r.Intn(s)])
 				}
 				slices.Sort(wide[i])
 			}
@@ -131,7 +135,7 @@ func BenchmarkAggWide(b *testing.B) {
 
 			iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(wide)), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens}, false)
 			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
-			vals, _ := Generate(s)
+			vals, _ := Generate(r, s)
 
 			for b.Loop() {
 				for _, v := range vals {
