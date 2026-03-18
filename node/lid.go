@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	DescMask = uint32(0)
-	AscMask  = uint32(0xFFFFFFFF)
+	descMask = uint32(0)
+	ascMask  = uint32(0xFFFFFFFF)
 )
 
 // LID is an encoded representation of LID and reverse flag made specifically for fast compare operations.
@@ -29,15 +29,15 @@ func NullLID() LID {
 func NewLIDDesc(lid uint32) LID {
 	return LID{
 		lid:  lid,
-		mask: DescMask,
+		mask: descMask,
 	}
 }
 
 // NewLIDAsc returns LIDs for asc sort order
 func NewLIDAsc(lid uint32) LID {
 	return LID{
-		lid:  lid ^ AscMask,
-		mask: AscMask,
+		lid:  lid ^ ascMask,
+		mask: ascMask,
 	}
 }
 
@@ -70,5 +70,5 @@ func (c LID) IsNull() bool {
 }
 
 func (c LID) String() string {
-	return fmt.Sprintf("%d, reverse=%t", c.Unpack(), c.mask == AscMask)
+	return fmt.Sprintf("%d, reverse=%t", c.Unpack(), c.mask == ascMask)
 }
