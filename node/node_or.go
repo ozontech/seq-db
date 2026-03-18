@@ -3,120 +3,95 @@ package node
 import "fmt"
 
 type nodeOr struct {
-	less LessFn
-
 	left  Node
 	right Node
 
-	leftID   uint32
-	hasLeft  bool
-	rightID  uint32
-	hasRight bool
+	leftID  LID
+	rightID LID
 }
 
 func (n *nodeOr) String() string {
 	return fmt.Sprintf("(%s OR %s)", n.left.String(), n.right.String())
 }
 
-func NewOr(left, right Node, reverse bool) *nodeOr {
-	n := &nodeOr{
-		less: GetLessFn(reverse),
-
-		left:  left,
-		right: right,
-	}
+func NewOr(left, right Node) *nodeOr {
+	n := &nodeOr{left: left, right: right}
 	n.readLeft()
 	n.readRight()
 	return n
 }
 
 func (n *nodeOr) readLeft() {
-	n.leftID, n.hasLeft = n.left.Next()
+	n.leftID = n.left.Next()
 }
 
 func (n *nodeOr) readRight() {
-	n.rightID, n.hasRight = n.right.Next()
+	n.rightID = n.right.Next()
 }
 
-func (n *nodeOr) Next() (uint32, bool) {
-	if !n.hasLeft && !n.hasRight {
-		return 0, false
+func (n *nodeOr) Next() LID {
+	if n.leftID.IsNull() && n.rightID.IsNull() {
+		return n.leftID
 	}
 
-	if n.hasLeft && (!n.hasRight || n.less(n.leftID, n.rightID)) {
+	if n.leftID.Less(n.rightID) {
 		cur := n.leftID
 		n.readLeft()
-		return cur, true
+		return cur
 	}
-
-	if n.hasRight && (!n.hasLeft || n.less(n.rightID, n.leftID)) {
+	if n.rightID.Less(n.leftID) {
 		cur := n.rightID
 		n.readRight()
-		return cur, true
+		return cur
 	}
-
 	cur := n.leftID
 	n.readLeft()
 	n.readRight()
-
-	return cur, true
+	return cur
 }
 
 type nodeOrAgg struct {
 	left  Sourced
 	right Sourced
 
-	leftID     uint32
+	leftID     LID
 	leftSource uint32
-	hasLeft    bool
 
-	rightID     uint32
+	rightID     LID
 	rightSource uint32
-	hasRight    bool
-
-	less LessFn
 }
 
 func (n *nodeOrAgg) String() string {
 	return fmt.Sprintf("(%s OR %s)", n.left.String(), n.right.String())
 }
 
-func NewNodeOrAgg(left, right Sourced, reverse bool) Sourced {
-	n := &nodeOrAgg{
-		left:  left,
-		right: right,
-		less:  GetLessFn(reverse),
-	}
+func NewNodeOrAgg(left, right Sourced) Sourced {
+	n := &nodeOrAgg{left: left, right: right}
 	n.readLeft()
 	n.readRight()
 	return n
 }
 
 func (n *nodeOrAgg) readLeft() {
-	n.leftID, n.leftSource, n.hasLeft = n.left.NextSourced()
+	n.leftID, n.leftSource = n.left.NextSourced()
 }
 
 func (n *nodeOrAgg) readRight() {
-	n.rightID, n.rightSource, n.hasRight = n.right.NextSourced()
+	n.rightID, n.rightSource = n.right.NextSourced()
 }
 
-func (n *nodeOrAgg) NextSourced() (uint32, uint32, bool) {
-	if !n.hasLeft && !n.hasRight {
-		return 0, 0, false
+func (n *nodeOrAgg) NextSourced() (LID, uint32) {
+	if n.leftID.IsNull() && n.rightID.IsNull() {
+		return n.leftID, 0
 	}
-
-	if n.hasLeft && (!n.hasRight || n.less(n.leftID, n.rightID)) {
+	if n.leftID.Less(n.rightID) {
 		cur := n.leftID
 		curSource := n.leftSource
 		n.readLeft()
-
-		return cur, curSource, true
+		return cur, curSource
 	}
-
-	// we don't need deduplication
 	cur := n.rightID
 	curSource := n.rightSource
 	n.readRight()
-
-	return cur, curSource, true
+	return cur, curSource
 }

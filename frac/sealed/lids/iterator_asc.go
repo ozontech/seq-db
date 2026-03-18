@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/node"
 )
 
 type IteratorAsc Cursor
@@ -55,10 +56,10 @@ func (it *IteratorAsc) loadNextLIDsBlock() {
 	it.blockIndex--
 }
 
-func (it *IteratorAsc) Next() (uint32, bool) {
+func (it *IteratorAsc) Next() node.LID {
 	for len(it.lids) == 0 {
 		if !it.tryNextBlock {
-			return 0, false
+			return node.NullLID()
 		}
 
 		it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
@@ -69,5 +70,5 @@ func (it *IteratorAsc) Next() (uint32, bool) {
 	i := len(it.lids) - 1
 	lid := it.lids[i]
 	it.lids = it.lids[:i]
-	return lid, true
+	return node.NewAscLID(lid)
 }

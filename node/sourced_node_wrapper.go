@@ -9,9 +9,9 @@ func (*sourcedNodeWrapper) String() string {
 	return "SOURCED"
 }
 
-func (w *sourcedNodeWrapper) NextSourced() (uint32, uint32, bool) {
-	id, has := w.node.Next()
-	return id, w.source, has
+func (w *sourcedNodeWrapper) NextSourced() (LID, uint32) {
+	cmp := w.node.Next()
+	return cmp, w.source
 }
 
 func NewSourcedNodeWrapper(d Node, source int) Sourced {
