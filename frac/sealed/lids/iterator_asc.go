@@ -70,5 +70,5 @@ func (it *IteratorAsc) Next() node.LID {
 	i := len(it.lids) - 1
 	lid := it.lids[i]
 	it.lids = it.lids[:i]
-	return node.NewLIDAsc(lid)
+	return node.NewAscLID(lid)
 }

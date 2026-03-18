@@ -69,5 +69,5 @@ func (it *IteratorDesc) Next() node.LID {
 
 	lid := it.lids[0]
 	it.lids = it.lids[1:]
-	return node.NewLIDDesc(lid)
+	return node.NewDescLID(lid)
 }

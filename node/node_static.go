@@ -36,21 +36,21 @@ func NewStatic(data []uint32, reverse bool) Node {
 func (n *staticAsc) Next() LID {
 	// staticAsc is used in docs order desc, hence we return LID with desc order
 	if n.ptr >= len(n.data) {
-		return NewLIDDesc(math.MaxUint32)
+		return NewDescLID(math.MaxUint32)
 	}
 	cur := n.data[n.ptr]
 	n.ptr++
-	return NewLIDDesc(cur)
+	return NewDescLID(cur)
 }
 
 func (n *staticDesc) Next() LID {
 	// staticDesc is used in docs order asc, hence we return LID with asc order
 	if n.ptr < 0 {
-		return NewLIDAsc(0)
+		return NewAscLID(0)
 	}
 	cur := n.data[n.ptr]
 	n.ptr--
-	return NewLIDAsc(cur)
+	return NewAscLID(cur)
 }
 
 // MakeStaticNodes  is currently used only for tests
