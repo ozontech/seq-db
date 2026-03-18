@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -17,9 +19,14 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
+const (
+	maxFracsSlowSearchLog = 10
+)
+
 type SearcherCfg struct {
 	MaxFractionHits       int // the maximum number of fractions used in the search
 	FractionsPerIteration int
+	SlowLogThreshold      time.Duration
 }
 
 type Searcher struct {
@@ -38,6 +45,7 @@ func NewSearcher(maxWorkersNum int, cfg SearcherCfg) *Searcher {
 }
 
 func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params processor.SearchParams, tr *querytracer.Tracer) (*seq.QPR, error) {
+	start := time.Now()
 	remainingFracs, err := s.prepareFracs(fracs, params)
 	if err != nil {
 		return nil, err
@@ -59,11 +67,31 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 
 	var totalSearchTimeNanos int64
 	var totalWaitTimeNanos int64
+	totalFracsFound := 0
+	totalFracsSkipped := 0
+	var fracsFound []string
+	var fracsSkipped []string
 
 	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
-		subQPRs, searchTimeNanos, waitTimeNanos, err := s.searchDocsAsync(ctx, remainingFracs.Shift(fracsChunkSize), params)
+		chunk := remainingFracs.Shift(fracsChunkSize)
+
+		subQPRs, searchTimeNanos, waitTimeNanos, err := s.searchDocsAsync(ctx, chunk, params)
 		if err != nil {
 			return nil, err
+		}
+
+		for i, qpr := range subQPRs {
+			if !qpr.Empty() {
+				totalFracsFound++
+				if len(fracsFound) < maxFracsSlowSearchLog {
+					fracsFound = append(fracsFound, chunk[i].Info().Name())
+				}
+			} else {
+				totalFracsSkipped++
+				if len(fracsSkipped) < maxFracsSlowSearchLog {
+					fracsSkipped = append(fracsSkipped, chunk[i].Info().Name())
+				}
+			}
 		}
 
 		totalSearchTimeNanos += searchTimeNanos
@@ -91,6 +119,21 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 	}
 
 	searchSubSearches.Observe(float64(subSearchesCnt))
+
+	took := time.Since(start)
+	if s.cfg.SlowLogThreshold != 0 && took >= s.cfg.SlowLogThreshold {
+		fields := []zap.Field{
+			zap.Int64("took_ms", took.Milliseconds()),
+			zap.Object("params", params),
+			zap.Int("total_fracs_found", totalFracsFound),
+			zap.Strings("fracs_found", fracsFound),
+			zap.Int("total_fracs_skipped", totalFracsSkipped),
+			zap.Strings("fracs_skipped", fracsSkipped),
+			zap.Uint64("total", total.Total),
+		}
+
+		logger.Warn("slow search", fields...)
+	}
 	return total, nil
 
 }

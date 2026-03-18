@@ -225,21 +225,6 @@ func (g *GrpcV1) doSearch(
 		}
 	}
 
-	took := time.Since(start)
-	if g.config.Search.LogThreshold != 0 && took >= g.config.Search.LogThreshold {
-		logger.Warn("slow search",
-			zap.Int64("took_ms", took.Milliseconds()),
-			zap.Object("req", (*searchRequestMarshaler)(req)),
-			zap.Uint64("found", qpr.Total),
-			zap.String("from", seq.MillisToMID(uint64(req.From)).String()),
-			zap.String("to", seq.MillisToMID(uint64(req.To)).String()),
-			zap.Int64("offset", req.Offset),
-			zap.String("offset_id", req.OffsetId),
-			zap.Int64("size", req.Size),
-			zap.Bool("with_total", req.WithTotal),
-		)
-	}
-
 	return buildSearchResponse(qpr), nil
 }
 
