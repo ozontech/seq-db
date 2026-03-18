@@ -22,19 +22,19 @@ type LID struct {
 
 func NullLID() LID {
 	// order does not matter, as null values are never unpacked
-	return NewLIDOrderDesc(math.MaxUint32)
+	return NewLIDDesc(math.MaxUint32)
 }
 
-// NewLIDOrderDesc returns LIDs for desc sort order
-func NewLIDOrderDesc(lid uint32) LID {
+// NewLIDDesc returns LIDs for desc sort order
+func NewLIDDesc(lid uint32) LID {
 	return LID{
 		lid:  lid,
 		mask: DescMask,
 	}
 }
 
-// NewLIDOrderAsc returns LIDs for asc sort order
-func NewLIDOrderAsc(lid uint32) LID {
+// NewLIDAsc returns LIDs for asc sort order
+func NewLIDAsc(lid uint32) LID {
 	return LID{
 		lid:  lid ^ AscMask,
 		mask: AscMask,

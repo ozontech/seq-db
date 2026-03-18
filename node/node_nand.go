@@ -34,7 +34,7 @@ func (n *nodeNAnd) Next() LID {
 		for !n.negID.IsNull() && n.negID.Less(n.regID) {
 			n.readNeg()
 		}
-		if n.negID.IsNull() || !n.negID.Eq(n.regID) {
+		if n.negID.IsNull() || n.negID != n.regID {
 			cur := n.regID
 			n.readReg()
 			return cur

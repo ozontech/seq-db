@@ -8,13 +8,13 @@ import (
 )
 
 func TestLID_Unpack_Desc(t *testing.T) {
-	x := NewLIDOrderDesc(5)
+	x := NewLIDDesc(5)
 	assert.Equal(t, uint32(5), x.Unpack())
 
-	x = NewLIDOrderDesc(math.MaxUint32)
+	x = NewLIDDesc(math.MaxUint32)
 	assert.Equal(t, uint32(math.MaxUint32), x.Unpack())
 
-	x = NewLIDOrderDesc(0)
+	x = NewLIDDesc(0)
 	assert.Equal(t, uint32(0), x.Unpack())
 
 	x = NullLID()
@@ -23,13 +23,13 @@ func TestLID_Unpack_Desc(t *testing.T) {
 }
 
 func TestLID_Unpack_Asc(t *testing.T) {
-	x := NewLIDOrderAsc(5)
+	x := NewLIDAsc(5)
 	assert.Equal(t, uint32(5), x.Unpack())
 
-	x = NewLIDOrderAsc(0)
+	x = NewLIDAsc(0)
 	assert.Equal(t, uint32(0), x.Unpack())
 
-	x = NewLIDOrderAsc(math.MaxUint32)
+	x = NewLIDAsc(math.MaxUint32)
 	assert.Equal(t, uint32(math.MaxUint32), x.Unpack())
 
 	x = NullLID()
@@ -38,26 +38,26 @@ func TestLID_Unpack_Asc(t *testing.T) {
 }
 
 func TestLID_Eq(t *testing.T) {
-	assert.Equal(t, NewLIDOrderDesc(6), NewLIDOrderDesc(6))
-	assert.Equal(t, NewLIDOrderDesc(math.MaxUint32), NewLIDOrderDesc(math.MaxUint32))
+	assert.Equal(t, NewLIDDesc(6), NewLIDDesc(6))
+	assert.Equal(t, NewLIDDesc(math.MaxUint32), NewLIDDesc(math.MaxUint32))
 
-	assert.Equal(t, NewLIDOrderAsc(6), NewLIDOrderAsc(6))
-	assert.Equal(t, NewLIDOrderAsc(0), NewLIDOrderAsc(0))
+	assert.Equal(t, NewLIDAsc(6), NewLIDAsc(6))
+	assert.Equal(t, NewLIDAsc(0), NewLIDAsc(0))
 }
 
 func TestLID_Less_Desc(t *testing.T) {
-	assert.False(t, NewLIDOrderDesc(6).Less(NewLIDOrderDesc(6)))
-	assert.True(t, NewLIDOrderDesc(6).Less(NewLIDOrderDesc(7)))
-	assert.True(t, NewLIDOrderDesc(0).Less(NewLIDOrderDesc(5)))
+	assert.False(t, NewLIDDesc(6).Less(NewLIDDesc(6)))
+	assert.True(t, NewLIDDesc(6).Less(NewLIDDesc(7)))
+	assert.True(t, NewLIDDesc(0).Less(NewLIDDesc(5)))
 
-	assert.True(t, NewLIDOrderDesc(56000).Less(NullLID()))
+	assert.True(t, NewLIDDesc(56000).Less(NullLID()))
 }
 
 func TestLID_Less_Asc(t *testing.T) {
 	// for asc sort order larger values go first (order is reversed), i.e. greater values are "less" than lower values
-	assert.False(t, NewLIDOrderAsc(6).Less(NewLIDOrderAsc(6)))
-	assert.True(t, NewLIDOrderAsc(10).Less(NewLIDOrderAsc(1)))
-	assert.True(t, NewLIDOrderAsc(5).Less(NewLIDOrderAsc(0)))
+	assert.False(t, NewLIDAsc(6).Less(NewLIDAsc(6)))
+	assert.True(t, NewLIDAsc(10).Less(NewLIDAsc(1)))
+	assert.True(t, NewLIDAsc(5).Less(NewLIDAsc(0)))
 
-	assert.True(t, NewLIDOrderAsc(56000).Less(NullLID()))
+	assert.True(t, NewLIDAsc(56000).Less(NullLID()))
 }

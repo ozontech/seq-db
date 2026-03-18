@@ -59,7 +59,7 @@ func (it *IteratorAsc) loadNextLIDsBlock() {
 func (it *IteratorAsc) Next() node.LID {
 	for len(it.lids) == 0 {
 		if !it.tryNextBlock {
-			return node.NewLIDOrderAsc(0)
+			return node.NullLID()
 		}
 
 		it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
@@ -70,5 +70,5 @@ func (it *IteratorAsc) Next() node.LID {
 	i := len(it.lids) - 1
 	lid := it.lids[i]
 	it.lids = it.lids[:i]
-	return node.NewLIDOrderAsc(lid)
+	return node.NewLIDAsc(lid)
 }
