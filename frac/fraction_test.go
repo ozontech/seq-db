@@ -2296,7 +2296,6 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			"SECRET_KEY",
 			"eu-west-3",
 			bucketName,
-			3,
 		)
 		s.Require().NoError(err, "s3 client setup failed")
 
