@@ -1287,6 +1287,13 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   midTime,
 		},
 		{
+			name:     "NOT trace_id:trace-4999",
+			query:    "NOT trace_id:trace-4999",
+			filter:   func(doc *testDoc) bool { return doc.traceId != "trace-4999" },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
 			name:     "trace_id:trace-4999",
 			query:    "trace_id:trace-4999",
 			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-4999" },

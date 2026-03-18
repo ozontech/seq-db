@@ -35,12 +35,20 @@ func TestNodeAnd(t *testing.T) {
 	expect := []uint32{5, 6, 13}
 	and := NewAnd(NewStatic(data[0], false), NewStatic(data[1], false))
 	assert.Equal(t, expect, readAll(and))
+
+	// commutativity test
+	and2 := NewAnd(NewStatic(data[1], false), NewStatic(data[0], false))
+	assert.Equal(t, expect, readAll(and2))
 }
 
 func TestNodeOr(t *testing.T) {
 	expect := []uint32{1, 2, 3, 5, 6, 7, 8, 9, 13, 14}
 	or := NewOr(NewStatic(data[0], false), NewStatic(data[1], false))
 	assert.Equal(t, expect, readAll(or))
+
+	// commutativity test
+	or2 := NewOr(NewStatic(data[1], false), NewStatic(data[0], false))
+	assert.Equal(t, expect, readAll(or2))
 }
 
 func TestNodeNAnd(t *testing.T) {
@@ -59,6 +67,10 @@ func TestNodeOrReverse(t *testing.T) {
 	expect := []uint32{14, 13, 9, 8, 7, 6, 5, 3, 2, 1}
 	or := NewOr(NewStatic(data[0], true), NewStatic(data[1], true))
 	assert.Equal(t, expect, readAll(or))
+
+	// commutativity test
+	or2 := NewOr(NewStatic(data[0], true), NewStatic(data[1], true))
+	assert.Equal(t, expect, readAll(or2))
 }
 
 func TestNodeNAndReverse(t *testing.T) {
