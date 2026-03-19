@@ -78,7 +78,7 @@ func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
 	for {
 		for len(it.lids) == 0 {
 			if !it.tryNextBlock {
-				return node.NewLIDOrderDesc(math.MaxUint32)
+				return node.NullLID()
 			}
 
 			it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
@@ -97,7 +97,7 @@ func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
 			it.lids = it.lids[idx:]
 			lid := it.lids[0]
 			it.lids = it.lids[1:]
-			return node.NewLIDOrderDesc(lid)
+			return node.NewDescLID(lid)
 		}
 
 		it.lids = it.lids[:0]

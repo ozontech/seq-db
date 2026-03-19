@@ -79,7 +79,7 @@ func (it *IteratorAsc) NextGeq(nextID node.LID) node.LID {
 	for {
 		for len(it.lids) == 0 {
 			if !it.tryNextBlock {
-				return node.NewLIDOrderAsc(0)
+				return node.NullLID()
 			}
 
 			it.loadNextLIDsBlock()
@@ -97,7 +97,7 @@ func (it *IteratorAsc) NextGeq(nextID node.LID) node.LID {
 		if found {
 			lid := it.lids[idx]
 			it.lids = it.lids[:idx]
-			return node.NewLIDOrderAsc(lid)
+			return node.NewAscLID(lid)
 		}
 
 		it.lids = it.lids[:0]
