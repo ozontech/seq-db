@@ -14,18 +14,13 @@ func TestNodeAnd_NextGeqAscending(t *testing.T) {
 
 	node := NewAnd(left, right)
 
-	// Currently, nodes instantiate their state on creation, which will be fixed later.
-	// Thus, the first LID returned is the first from left and right
-	id := node.NextGeq(NewLIDOrderDesc(7))
-	assert.Equal(t, uint32(1), id.Unpack())
-
-	id = node.NextGeq(NewLIDOrderDesc(7))
+	id := node.NextGeq(NewDescLID(7))
 	assert.Equal(t, uint32(7), id.Unpack())
 
-	id = node.NextGeq(NewLIDOrderDesc(50))
+	id = node.NextGeq(NewDescLID(50))
 	assert.Equal(t, uint32(80), id.Unpack())
 
-	id = node.NextGeq(NewLIDOrderDesc(50))
+	id = node.NextGeq(NewDescLID(50))
 	assert.True(t, id.IsNull())
 }
 

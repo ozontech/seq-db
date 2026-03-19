@@ -7,7 +7,6 @@ import (
 
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/node"
-	"github.com/ozontech/seq-db/util"
 )
 
 type IteratorDesc Cursor
@@ -92,8 +91,8 @@ func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
 			continue
 		}
 
-		idx, found := util.GallopSearchGeq(it.lids, nextID.Unpack())
-		if found {
+		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] >= nextID.Unpack() })
+		if idx < len(it.lids) {
 			it.lids = it.lids[idx:]
 			lid := it.lids[0]
 			it.lids = it.lids[1:]

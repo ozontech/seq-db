@@ -15,19 +15,19 @@ func TestNodeOr_NextGeqAscending(t *testing.T) {
 
 	node := NewOr(left, right)
 
-	id := node.NextGeq(NewLIDOrderDesc(7))
+	id := node.NextGeq(NewDescLID(7))
 	assert.Equal(t, uint32(7), id.Unpack())
 
-	id = node.NextGeq(NewLIDOrderDesc(7))
+	id = node.NextGeq(NewDescLID(7))
 	assert.Equal(t, uint32(9), id.Unpack())
 
-	id = node.NextGeq(NewLIDOrderDesc(24))
+	id = node.NextGeq(NewDescLID(24))
 	assert.Equal(t, uint32(25), id.Unpack())
 
-	id = node.NextGeq(NewLIDOrderDesc(30))
+	id = node.NextGeq(NewDescLID(30))
 	assert.Equal(t, uint32(30), id.Unpack())
 
-	id = node.NextGeq(NewLIDOrderDesc(51))
+	id = node.NextGeq(NewDescLID(51))
 	assert.True(t, id.IsNull())
 }
 
@@ -138,20 +138,20 @@ func TestNodeOrAgg_NextSourcedGeq(t *testing.T) {
 
 	orAgg := NewNodeOrAgg(left, right)
 
-	id, source := orAgg.NextSourcedGeq(NewLIDOrderDesc(3))
+	id, source := orAgg.NextSourcedGeq(NewDescLID(3))
 	assert.Equal(t, uint32(3), id.Unpack())
 	assert.Equal(t, uint32(1), source)
 
 	// 3 returned again, but with different source - no deduplication
-	id, source = orAgg.NextSourcedGeq(NewLIDOrderDesc(3))
+	id, source = orAgg.NextSourcedGeq(NewDescLID(3))
 	assert.Equal(t, uint32(3), id.Unpack())
 	assert.Equal(t, uint32(0), source)
 
-	id, source = orAgg.NextSourcedGeq(NewLIDOrderDesc(6))
+	id, source = orAgg.NextSourcedGeq(NewDescLID(6))
 	assert.Equal(t, uint32(6), id.Unpack())
 	assert.Equal(t, uint32(1), source)
 
-	id, source = orAgg.NextSourcedGeq(NewLIDOrderDesc(17))
+	id, source = orAgg.NextSourcedGeq(NewDescLID(17))
 	assert.Equal(t, uint32(19), id.Unpack())
 	assert.Equal(t, uint32(0), source)
 }
@@ -164,24 +164,24 @@ func TestNodeOrAgg_NextSourcedGeq_Reverse(t *testing.T) {
 
 	orAgg := NewNodeOrAgg(left, right)
 
-	id, source := orAgg.NextSourcedGeq(NewLIDOrderAsc(8))
+	id, source := orAgg.NextSourcedGeq(NewAscLID(8))
 	assert.Equal(t, uint32(8), id.Unpack())
 	assert.Equal(t, uint32(1), source)
 
 	// 8 returned again, but with different source - no deduplication
-	id, source = orAgg.NextSourcedGeq(NewLIDOrderAsc(8))
+	id, source = orAgg.NextSourcedGeq(NewAscLID(8))
 	assert.Equal(t, uint32(8), id.Unpack())
 	assert.Equal(t, uint32(0), source)
 
-	id, source = orAgg.NextSourcedGeq(NewLIDOrderAsc(4))
+	id, source = orAgg.NextSourcedGeq(NewAscLID(4))
 	assert.Equal(t, uint32(4), id.Unpack())
 	assert.Equal(t, uint32(1), source)
 
-	id, source = orAgg.NextSourcedGeq(NewLIDOrderAsc(1))
+	id, source = orAgg.NextSourcedGeq(NewAscLID(1))
 	assert.Equal(t, uint32(1), id.Unpack())
 	assert.Equal(t, uint32(0), source)
 
-	id, _ = orAgg.NextSourcedGeq(NewLIDOrderAsc(1))
+	id, _ = orAgg.NextSourcedGeq(NewAscLID(1))
 	assert.True(t, id.IsNull())
 }
 

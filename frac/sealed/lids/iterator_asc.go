@@ -7,7 +7,6 @@ import (
 
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/node"
-	"github.com/ozontech/seq-db/util"
 )
 
 type IteratorAsc Cursor
@@ -93,8 +92,8 @@ func (it *IteratorAsc) NextGeq(nextID node.LID) node.LID {
 			continue
 		}
 
-		idx, found := util.GallopSearchLeq(it.lids, nextID.Unpack())
-		if found {
+		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] > nextID.Unpack() }) - 1
+		if idx >= 0 {
 			lid := it.lids[idx]
 			it.lids = it.lids[:idx]
 			return node.NewAscLID(lid)

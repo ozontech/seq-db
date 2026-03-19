@@ -26,5 +26,6 @@ func (n *nodeRange) Next() LID {
 }
 
 func (n *nodeRange) NextGeq(nextID LID) LID {
+	n.curID = Max(n.curID, nextID)
 	return n.Next()
 }

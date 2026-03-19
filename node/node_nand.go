@@ -45,5 +45,9 @@ func (n *nodeNAnd) Next() LID {
 }
 
 func (n *nodeNAnd) NextGeq(nextID LID) LID {
-	return n.Next()
+	lid := n.Next()
+	for lid.Less(nextID) {
+		lid = n.Next()
+	}
+	return lid
 }
