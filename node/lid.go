@@ -43,9 +43,9 @@ func NewAscLID(lid uint32) LID {
 
 func NewLID(lid uint32, reverse bool) LID {
 	if reverse {
-		return NewLIDOrderAsc(lid)
+		return NewAscLID(lid)
 	} else {
-		return NewLIDOrderDesc(lid)
+		return NewDescLID(lid)
 	}
 }
 
