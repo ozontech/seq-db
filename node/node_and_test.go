@@ -27,7 +27,7 @@ func TestNodeAnd_NextGeqAscending(t *testing.T) {
 // TestNodeAnd_NextGeqCompatibility tests that just calling NextGeq with 0 passed as argument is equivalent to
 // calling Next
 func TestNodeAnd_NextGeqCompatibility(t *testing.T) {
-	for _, rev := range []bool{true, false} {
+	for _, asc := range []bool{true, false} {
 		left := []uint32{rand.Uint32N(10)}
 		right := []uint32{rand.Uint32N(10)}
 
@@ -36,11 +36,11 @@ func TestNodeAnd_NextGeqCompatibility(t *testing.T) {
 			right = append(right, right[i-1]+rand.Uint32N(10))
 		}
 
-		node := NewAnd(NewStatic(left, rev), NewStatic(right, rev))
-		nodeGeq := NewAnd(NewStatic(left, rev), NewStatic(right, rev))
+		node := NewAnd(NewStatic(left, asc), NewStatic(right, asc))
+		nodeGeq := NewAnd(NewStatic(left, asc), NewStatic(right, asc))
 
 		var zero uint32
-		if rev {
+		if asc {
 			zero = math.MaxUint32
 		} else {
 			zero = 0
@@ -48,7 +48,7 @@ func TestNodeAnd_NextGeqCompatibility(t *testing.T) {
 
 		for {
 			lid := node.Next()
-			lidGeq := nodeGeq.NextGeq(NewLID(zero, rev))
+			lidGeq := nodeGeq.NextGeq(NewLID(zero, asc))
 
 			assert.Equal(t, lid, lidGeq)
 

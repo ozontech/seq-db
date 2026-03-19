@@ -41,8 +41,8 @@ func NewAscLID(lid uint32) LID {
 	}
 }
 
-func NewLID(lid uint32, reverse bool) LID {
-	if reverse {
+func NewLID(lid uint32, asc bool) LID {
+	if asc {
 		return NewAscLID(lid)
 	} else {
 		return NewDescLID(lid)
