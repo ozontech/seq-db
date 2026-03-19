@@ -64,20 +64,7 @@ func (n *nodeOr) NextGeq(nextID LID) LID {
 	// Fast path: if we at least left or right and there is nothing to skip, then choose lowest and return.
 	minID := Min(n.leftID, n.rightID)
 	if nextID.LessOrEq(minID) {
-		if n.leftID.Less(n.rightID) {
-			cur := n.leftID
-			n.readLeft()
-			return cur
-		} else if n.rightID.Less(n.leftID) {
-			cur := n.rightID
-			n.readRight()
-			return cur
-		}
-
-		cur := n.leftID
-		n.readLeft()
-		n.readRight()
-		return cur
+		return n.Next()
 	}
 
 	if n.leftID.Less(nextID) {
