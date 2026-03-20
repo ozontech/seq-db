@@ -69,7 +69,7 @@ func (c LID) Eq(other LID) bool {
 	return c.lid == other.lid
 }
 
-func Max(left LID, right LID) LID {
+func Max(left, right LID) LID {
 	if left.lid > right.lid {
 		return left
 	} else {
@@ -77,7 +77,7 @@ func Max(left LID, right LID) LID {
 	}
 }
 
-func Min(left LID, right LID) LID {
+func Min(left, right LID) LID {
 	if left.lid < right.lid {
 		return left
 	} else {

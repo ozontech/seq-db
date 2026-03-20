@@ -15,7 +15,7 @@ func newNodeStaticSize(r *rand.Rand, size int) *staticAsc {
 	return &staticAsc{staticCursor: staticCursor{data: data}}
 }
 
-func newNodeStaticSizeFixedDelta(size int, start int, delta int) *staticAsc {
+func newNodeStaticSizeFixedDelta(size, start, delta int) *staticAsc {
 	data, _ := GenerateFixedDelta(size, start, delta)
 	return &staticAsc{staticCursor: staticCursor{data: data}}
 }
