@@ -171,8 +171,7 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 		m.Stop()
 
 		m = sw.Start("put_lids_queue")
-		tokensToMerge := addLIDsToTokens(tokenLIDsPlaces, groups)
-		ai.sendTokensToMergeWorkers(active, tokensToMerge)
+		addLIDsToTokens(tokenLIDsPlaces, groups)
 		m.Stop()
 
 		active.UpdateStats(collector.MinMID, collector.MaxMID, collector.DocsCounter, collector.SizeCounter)
@@ -184,28 +183,8 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 	}
 }
 
-func (ai *ActiveIndexer) sendTokensToMergeWorkers(frac *Active, tokens []*TokenLIDs) {
-	for _, tl := range tokens {
-		task := mergeTask{
-			frac:      frac,
-			tokenLIDs: tl,
-		}
-		select {
-		case ai.chMerge <- &task:
-		default: // skip background merge if workers are busy
-		}
-	}
-}
-
-func addLIDsToTokens(tlids []*TokenLIDs, lids [][]uint32) []*TokenLIDs {
-	const minMergeQueue = 1 << 17
-
-	needMerge := make([]*TokenLIDs, 0, len(tlids))
+func addLIDsToTokens(tlids []*TokenLIDs, lids [][]uint32) {
 	for i, tl := range tlids {
-		if l := tl.PutLIDsInQueue(lids[i]); l > minMergeQueue {
-			needMerge = append(needMerge, tl)
-		}
+		tl.PutLIDsInQueue(lids[i])
 	}
-
-	return needMerge
 }
