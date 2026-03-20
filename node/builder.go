@@ -5,17 +5,17 @@ var (
 	emptyNodeSourced = NewSourcedNodeWrapper(emptyNode, 0)
 )
 
-func BuildORTree(nodes []Node, reverse bool) Node {
+func BuildORTree(nodes []Node) Node {
 	return TreeFold(
-		func(l, r Node) Node { return NewOr(l, r, reverse) },
+		func(l, r Node) Node { return NewOr(l, r) },
 		emptyNode,
 		nodes,
 	)
 }
 
-func BuildORTreeAgg(nodes []Node, reverse bool) Sourced {
+func BuildORTreeAgg(nodes []Node) Sourced {
 	return TreeFold(
-		func(l, r Sourced) Sourced { return NewNodeOrAgg(l, r, reverse) },
+		NewNodeOrAgg,
 		emptyNodeSourced,
 		WrapWithSource(nodes),
 	)
