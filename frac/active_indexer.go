@@ -198,7 +198,7 @@ func (ai *ActiveIndexer) sendTokensToMergeWorkers(frac *Active, tokens []*TokenL
 }
 
 func addLIDsToTokens(tlids []*TokenLIDs, lids [][]uint32) []*TokenLIDs {
-	const minMergeQueue = 1 << 16
+	const minMergeQueue = 1 << 17
 
 	needMerge := make([]*TokenLIDs, 0, len(tlids))
 	for i, tl := range tlids {
