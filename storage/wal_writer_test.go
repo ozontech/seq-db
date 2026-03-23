@@ -237,7 +237,7 @@ func TestWalWriter_ConcurrentWrites(t *testing.T) {
 	assert.NoError(t, err)
 	offset := WalBlockAlignment
 	idx := 0
-	for entry := range reader.Iter() {
+	for entry := range reader.Entries() {
 		assert.Equal(t, offset, entry.Offset, "block %d offset mismatch", idx)
 		assert.Equal(t, all[idx].offset, entry.Offset, "block %d offset mismatch", idx)
 		assert.Equal(t, all[idx].payload, entry.Data.Payload(), "block %d payload mismatch", idx)
@@ -285,7 +285,7 @@ func TestWalWriterWriteAndRead(t *testing.T) {
 	reader, err := NewWalReader(NewReadLimiter(1, nil), f, "")
 	assert.NoError(t, err)
 	count := 0
-	for entry := range reader.Iter() {
+	for entry := range reader.Entries() {
 		assert.Equal(t, offsets[count], entry.Offset, "block %d offset mismatch", count)
 		assert.Equal(t, payloads[count], entry.Data.Payload(), "block %d payload mismatch", count)
 		assert.Equal(t, WalBlockMagic, entry.Data.Magic(), "block %d should have WalBlock magic", count)
@@ -306,7 +306,7 @@ func TestWalReaderIteratorEmptyFile(t *testing.T) {
 	assert.NoError(t, err)
 
 	count := 0
-	for range reader.Iter() {
+	for range reader.Entries() {
 		count++
 	}
 	assert.Equal(t, 0, count)
@@ -323,7 +323,7 @@ func TestWalReaderInvalidMagic(t *testing.T) {
 	header[1] = 0x00
 	header[2] = 0x00
 	header[3] = 0x00
-	header[4] = WalVersion1
+	header[4] = WalCurrentVersion
 	_, err = f.WriteAt(header, 0)
 	assert.NoError(t, err)
 
@@ -397,7 +397,7 @@ func TestWalReaderIterator(t *testing.T) {
 
 	var readPayloads [][]byte
 	var readOffsets []int64
-	for entry := range reader.Iter() {
+	for entry := range reader.Entries() {
 		readPayloads = append(readPayloads, entry.Data.Payload())
 		readOffsets = append(readOffsets, entry.Offset)
 	}
@@ -445,7 +445,7 @@ func TestWalReaderSkipsCorruptedBlocks(t *testing.T) {
 	assert.NoError(t, err)
 
 	var readPayloads [][]byte
-	for entry := range reader.Iter() {
+	for entry := range reader.Entries() {
 		readPayloads = append(readPayloads, entry.Data.Payload())
 		t.Logf("read block at offset %d: %q", entry.Offset, entry.Data.Payload())
 	}
@@ -489,7 +489,7 @@ func TestWalReaderSkipsCorruptedPayload(t *testing.T) {
 	assert.NoError(t, err)
 
 	var readPayloads [][]byte
-	for entry := range reader.Iter() {
+	for entry := range reader.Entries() {
 		readPayloads = append(readPayloads, entry.Data.Payload())
 	}
 
@@ -557,7 +557,7 @@ func TestWalReaderSingleByteCorruption(t *testing.T) {
 
 		readBlocks := 0
 
-		for entry := range reader.Iter() {
+		for entry := range reader.Entries() {
 			assert.NoError(t, entry.Err)
 			assert.True(t, entry.Data.IsCorrect())
 
@@ -633,7 +633,7 @@ func TestWalReaderTruncation(t *testing.T) {
 
 		readBlocks := 0
 
-		for entry := range reader.Iter() {
+		for entry := range reader.Entries() {
 			assert.NoError(t, entry.Err)
 			assert.True(t, entry.Data.IsCorrect())
 
@@ -720,7 +720,7 @@ func TestWalReaderSectorLoss(t *testing.T) {
 		assert.NoError(t, err)
 		readBlocks := 0
 
-		for entry := range reader.Iter() {
+		for entry := range reader.Entries() {
 			assert.NoError(t, entry.Err)
 			assert.True(t, entry.Data.IsCorrect())
 

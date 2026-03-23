@@ -41,8 +41,8 @@ func NewWalReader(limiter *ReadLimiter, reader io.ReaderAt, baseFileName string)
 		return nil, fmt.Errorf("invalid WAL magic: expected 0x%X, got 0x%X", WalMagic, magic)
 	}
 	version := header[4]
-	if version != WalVersion1 {
-		return nil, fmt.Errorf("unknown WAL version: %d (supported: %d)", version, WalVersion1)
+	if version != WalCurrentVersion {
+		return nil, fmt.Errorf("unknown WAL version: %d (supported: %d)", version, WalCurrentVersion)
 	}
 
 	return &WalReader{
@@ -53,9 +53,9 @@ func NewWalReader(limiter *ReadLimiter, reader io.ReaderAt, baseFileName string)
 	}, nil
 }
 
-// Iter iterates through WAL file. Corrupted entries are skipped and never propagated to a client.
+// Entries iterates through WAL file. Corrupted entries are skipped and never propagated to a client.
 // Corruption ranges are logged with "from" and "to" offsets.
-func (r *WalReader) Iter() iter.Seq[WalRecord] {
+func (r *WalReader) Entries() iter.Seq[WalRecord] {
 	return func(yield func(WalRecord) bool) {
 		offset := align(r.headerOffset)
 

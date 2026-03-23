@@ -11,26 +11,27 @@ import (
 )
 
 const (
+	// _WalVersionInitial is the first version of WAL file
+	// with CRC32 checksums and 64 byte alignment for blocks.
+	_WalVersionInitial byte = iota
+)
+
+const (
 	// WalMagic is the magic number at the start of WAL files
 	WalMagic uint32 = 0xFFFFFFFF
-	// WalVersion1 is the first version of WAL file with CRC32 checksums and 64 byte alignment for blocks.
-	WalVersion1 uint8 = 1
-	// WALCurrentVersion is the current WAL format version.
-	WALCurrentVersion = WalVersion1
+	// WalCurrentVersion is the current WAL format version.
+	WalCurrentVersion = _WalVersionInitial
 	// WalHeaderSize is the size of the WAL header in bytes (4 bytes magic + 1 byte version). 59 bytes are also reserved
 	// due to alignment
 	WalHeaderSize = 5
+)
+
+const (
 	// WalBlockAlignment is the alignment boundary for blocks in the new WAL format. Must be greater than
 	// WalBlock header (27 bytes) to prevent header torn writes and allow faster navigation during replay
 	// of corrupted WAL file
 	WalBlockAlignment int64 = 64
 )
-
-type WriteSyncer interface {
-	io.ReaderAt
-	io.WriterAt
-	Sync() error
-}
 
 // WalWriter writes WalBlock to a WAL file with header and 64-byte alignment.
 // It works on top of  FileWriter, but it also maintains header at the beginning of the file and align block
@@ -40,12 +41,12 @@ type WalWriter struct {
 	fw *FileWriter
 }
 
-func NewWalWriter(ws WriteSyncer, offset int64, skipSync bool) *WalWriter {
+func NewWalWriter(ws fileWriterSyncer, offset int64, skipSync bool) *WalWriter {
 	w := &WalWriter{}
 
 	offset = align(offset)
 	if offset == 0 {
-		if err := writeWALHeader(ws); err != nil {
+		if err := writeWalHeader(ws); err != nil {
 			logger.Panic("failed to write WAL header", zap.Error(err))
 		}
 
@@ -71,10 +72,10 @@ func (w *WalWriter) Stop() {
 	w.fw.Stop()
 }
 
-func writeWALHeader(w io.WriterAt) error {
+func writeWalHeader(w io.WriterAt) error {
 	header := make([]byte, WalHeaderSize)
 	binary.LittleEndian.PutUint32(header[0:4], WalMagic)
-	header[4] = WALCurrentVersion
+	header[4] = WalCurrentVersion
 	_, err := w.WriteAt(header, 0)
 	return err
 }

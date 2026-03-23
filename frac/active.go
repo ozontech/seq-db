@@ -2,7 +2,6 @@ package frac
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math"
 	"os"
@@ -133,18 +132,18 @@ func mustOpenMetaWriter(
 		writer := NewActiveWriterLegacy(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
 		logger.Info("using legacy meta file format", zap.String("fraction", baseFileName))
 		return metaFile, writer, &metaReader, nil, metaSize
-	} else {
-		logger.Info("using new WAL format", zap.String("fraction", baseFileName))
-		walFileName := baseFileName + consts.WalFileSuffix
-		metaFile, metaStats := mustOpenFile(walFileName, config.SkipFsync)
-		metaSize := uint64(metaStats.Size())
-		writer := NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
-		walReader, err := storage.NewWalReader(readLimiter, metaFile, baseFileName)
-		if err != nil {
-			logger.Fatal("failed to initialize WAL reader", zap.String("fraction", baseFileName), zap.Error(err))
-		}
-		return metaFile, writer, nil, walReader, metaSize
 	}
+
+	logger.Info("using new WAL format", zap.String("fraction", baseFileName))
+	walFileName := baseFileName + consts.WalFileSuffix
+	metaFile, metaStats := mustOpenFile(walFileName, config.SkipFsync)
+	metaSize := uint64(metaStats.Size())
+	writer := NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
+	walReader, err := storage.NewWalReader(readLimiter, metaFile, baseFileName)
+	if err != nil {
+		logger.Fatal("failed to initialize WAL reader", zap.String("fraction", baseFileName), zap.Error(err))
+	}
+	return metaFile, writer, nil, walReader, metaSize
 }
 
 func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
@@ -166,25 +165,13 @@ func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
 }
 
 func (f *Active) Replay(ctx context.Context) error {
-	walFileName := f.BaseFileName + consts.WalFileSuffix
-	if _, err := os.Stat(walFileName); err == nil {
-		return f.replayWalFile(ctx)
-	}
-
-	metaFileName := f.BaseFileName + consts.MetaFileSuffix
-	if _, err := os.Stat(metaFileName); err == nil {
+	if f.metaReader != nil {
 		return f.replayMetaFileLegacy(ctx)
 	}
-
-	logger.Info("neither wal nor legacy meta file was found, skipping replay", zap.String("fraction", f.BaseFileName))
-	return nil
+	return f.replayWalFile(ctx)
 }
 
 func (f *Active) replayWalFile(ctx context.Context) error {
-	if f.walReader == nil {
-		return fmt.Errorf("WAL reader not initialized")
-	}
-
 	logger.Info("start replaying WAL file...", zap.String("name", f.info.Name()))
 
 	t := time.Now()
@@ -195,7 +182,7 @@ func (f *Active) replayWalFile(ctx context.Context) error {
 	sw := stopwatch.New()
 	wg := sync.WaitGroup{}
 
-	for entry := range f.walReader.Iter() {
+	for entry := range f.walReader.Entries() {
 		// Check for context cancellation
 		select {
 		case <-ctx.Done():
