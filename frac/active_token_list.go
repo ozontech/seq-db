@@ -98,20 +98,24 @@ func (tl *TokenList) Stop() {
 }
 
 func (tl *TokenList) tokenLIDsWorker(ch chan tokenTask, tokenToLIDs map[string]*TokenLIDs) {
-	nonExistent := make([]int, 0)
+	var (
+		nonExistent []int
+	)
+
 	for task := range ch {
-		bufSize := 0
 		nonExistent = nonExistent[:0]
+
 		for _, i := range task.remap {
 			if t, ok := tokenToLIDs[util.ByteToStringUnsafe(task.tokens[i])]; ok {
 				task.tlids[i] = t
 				continue
 			}
-			bufSize += len(task.tokens[i])
 			nonExistent = append(nonExistent, i)
 		}
 
-		buf := make([]byte, 0, bufSize)
+		// fmt.Printf("bufSize: %v\n", bufSize)
+		// fmt.Printf("len(nonExistent): %v\n", len(nonExistent))
+
 		newTokenLIDs := make([]TokenLIDs, len(nonExistent))
 		newTokensData := make([]tokenData, len(nonExistent))
 
@@ -119,23 +123,19 @@ func (tl *TokenList) tokenLIDsWorker(ch chan tokenTask, tokenToLIDs map[string]*
 			var token string
 			td := &newTokensData[i]
 			td.tokenLIDs = &newTokenLIDs[i]
-			token, td.field, td.value, buf = copyAndSplit(task.tokens[j], task.fieldsLengths[j], buf)
+			token, td.field, td.value = copyAndSplit(task.tokens[j], task.fieldsLengths[j])
 			tokenToLIDs[token] = td.tokenLIDs
 			task.tlids[j] = td.tokenLIDs
 		}
+
 		task.res <- newTokensData
 	}
 }
 
-func copyAndSplit(token []byte, fLen int, dest []byte) (string, string, []byte, []byte) {
-	p := len(dest)
-	dest = append(dest, token...)
-	tokenCopy := dest[p:]
-
-	return util.ByteToStringUnsafe(tokenCopy),
-		util.ByteToStringUnsafe(tokenCopy[:fLen]),
-		tokenCopy[fLen+1:],
-		dest
+func copyAndSplit(token []byte, fLen int) (string, string, []byte) {
+	return string(token),
+		string(token[:fLen]),
+		token[fLen+1:]
 }
 
 func (tl *TokenList) initSystemTokens() {
