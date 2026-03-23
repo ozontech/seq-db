@@ -236,9 +236,6 @@ func (c *Cache[V]) handlePanic(key uint32, wg *sync.WaitGroup) {
 }
 
 func (c *Cache[V]) Get(key uint32, fn func() (V, int)) V {
-	value, _ := fn()
-	return value
-
 	// attempt to obtain cached value
 	// or create an entry for a new one
 	e, wg, success := c.getOrCreate(key)
@@ -259,9 +256,6 @@ func (c *Cache[V]) Get(key uint32, fn func() (V, int)) V {
 }
 
 func (c *Cache[V]) GetWithError(key uint32, fn func() (V, int, error)) (V, error) {
-	value, _, err := fn()
-	return value, err
-
 	e, wg, success := c.getOrCreate(key)
 	if success {
 		return e.value, nil
