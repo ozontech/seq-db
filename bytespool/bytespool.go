@@ -126,8 +126,6 @@ func (p *Pool) Acquire(capacity int) *Buffer {
 		panic(fmt.Errorf("invalid capacity: %d", capacity))
 	}
 
-	return &Buffer{B: make([]byte, 0, capacity)}
-
 	if capacity > maxCapacity {
 		return &Buffer{B: make([]byte, 0, capacity)}
 	}
@@ -164,8 +162,6 @@ func (p *Pool) getByIndex(idx int) *Buffer {
 
 // Release returns Buffer to the pool.
 func (p *Pool) Release(buf *Buffer) {
-	return
-
 	capacity := cap(buf.B)
 	if capacity > maxCapacity {
 		putOversizeCounter.Inc()
