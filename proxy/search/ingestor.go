@@ -215,7 +215,7 @@ func (si *Ingestor) singleDocsStream(ctx context.Context, explain bool, source u
 	startTime := time.Now()
 	host, has := si.clientBySource[source]
 	if !has {
-		return nil, fmt.Errorf("can't fetch: no host for source %q", source)
+		return nil, fmt.Errorf("can't fetch: no host for source %d", source)
 	}
 	client, has := si.clients[host]
 	if !has {
