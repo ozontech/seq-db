@@ -80,13 +80,13 @@ func (r *WalReader) Entries() iter.Seq[WalRecord] {
 			n, err := r.limiter.ReadAt(r.reader, headerBuf, offset)
 
 			if err != nil && !errors.Is(err, io.EOF) {
-				logCorruptionEnd(offset)
 				yield(WalRecord{Offset: offset, Err: err})
 				return
 			}
 
 			if errors.Is(err, io.EOF) || n < WalBlockHeaderLen {
-				logCorruptionEnd(offset)
+				startCorruptionTracking(offset)
+				logCorruptionEnd(offset + int64(n))
 				return
 			}
 
@@ -110,17 +110,13 @@ func (r *WalReader) Entries() iter.Seq[WalRecord] {
 			n, err = r.limiter.ReadAt(r.reader, blockBuf, offset)
 
 			if err != nil && !errors.Is(err, io.EOF) {
-				// this is the last WAL record
-				// start corruption tracking if not started already and print
-				startCorruptionTracking(offset)
-				logCorruptionEnd(offset)
 				yield(WalRecord{Offset: offset, Err: err})
 				return
 			}
 
 			if errors.Is(err, io.EOF) || int64(n) < blockLen {
 				startCorruptionTracking(offset)
-				logCorruptionEnd(offset)
+				logCorruptionEnd(offset + int64(n))
 				return
 			}
 
