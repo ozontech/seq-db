@@ -86,6 +86,7 @@ func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
 		}
 
 		// fast path: last LID < nextID => skip the entire block
+		// TODO(cheb0): We could also pass LID into narrowLIDsRange to perform block skipping once we add something like MinLID to LID block header
 		if nextID.Unpack() > it.lids[len(it.lids)-1] {
 			it.lids = it.lids[:0]
 			continue
