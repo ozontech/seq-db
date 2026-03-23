@@ -15,12 +15,27 @@ func newNodeStaticSize(r *rand.Rand, size int) *staticAsc {
 	return &staticAsc{staticCursor: staticCursor{data: data}}
 }
 
+func newNodeStaticSizeFixedDelta(size, start, delta int) *staticAsc {
+	data, _ := GenerateFixedDelta(size, start, delta)
+	return &staticAsc{staticCursor: staticCursor{data: data}}
+}
+
 func Generate(r *rand.Rand, n int) ([]uint32, uint32) {
 	v := make([]uint32, n)
 	last := uint32(1)
 	for i := 0; i < len(v); i++ {
 		v[i] = last
 		last += uint32(1 + r.Intn(5))
+	}
+	return v, last
+}
+
+func GenerateFixedDelta(n, start, step int) ([]uint32, uint32) {
+	v := make([]uint32, n)
+	last := uint32(start)
+	for i := 0; i < len(v); i++ {
+		v[i] = last
+		last += uint32(step)
 	}
 	return v, last
 }
@@ -157,6 +172,42 @@ func BenchmarkOrTree(b *testing.B) {
 
 			for b.Loop() {
 				res = readAllInto(n, res)
+			}
+
+			assert.Equal(b, cap(res), s*8)
+
+		})
+	}
+}
+
+// BenchmarkOrTreeNextGeq checks the performance of NextGeq vs Next when no skipping occur and all node
+// yield distinct values (no intersection between nodes)
+func BenchmarkOrTreeNextGeq(b *testing.B) {
+	sizes := []int{1000, 10_000, 1_000_000}
+	// step is equal to total number of nodes, so that every node produces distinct values
+	step := 8
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			n1 := NewOr(
+				newNodeStaticSizeFixedDelta(s, 1, step),
+				newNodeStaticSizeFixedDelta(s, 5, step))
+			n2 := NewOr(
+				newNodeStaticSizeFixedDelta(s, 2, step),
+				newNodeStaticSizeFixedDelta(s, 6, step))
+			n3 := NewOr(
+				newNodeStaticSizeFixedDelta(s, 3, step),
+				newNodeStaticSizeFixedDelta(s, 8, step))
+			n4 := NewOr(
+				newNodeStaticSizeFixedDelta(s, 4, step),
+				newNodeStaticSizeFixedDelta(s, 7, step))
+			n12 := NewOr(n1, n2)
+			n34 := NewOr(n3, n4)
+			n := NewOr(n12, n34)
+			res := make([]uint32, 0, s*8)
+
+			for b.Loop() {
+				res = readAllIntoGeq(n, res)
 			}
 
 			assert.Equal(b, cap(res), s*8)

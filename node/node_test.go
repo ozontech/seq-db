@@ -14,6 +14,15 @@ func readAllInto(node Node, ids []uint32) []uint32 {
 	return ids
 }
 
+func readAllIntoGeq(node Node, ids []uint32) []uint32 {
+	id := node.Next()
+	for !id.IsNull() {
+		ids = append(ids, id.Unpack())
+		id = node.NextGeq(id)
+	}
+	return ids
+}
+
 func readAll(node Node) []uint32 {
 	return readAllInto(node, nil)
 }

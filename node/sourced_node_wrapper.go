@@ -14,6 +14,11 @@ func (w *sourcedNodeWrapper) NextSourced() (LID, uint32) {
 	return cmp, w.source
 }
 
+func (w *sourcedNodeWrapper) NextSourcedGeq(nextID LID) (LID, uint32) {
+	id := w.node.NextGeq(nextID)
+	return id, w.source
+}
+
 func NewSourcedNodeWrapper(d Node, source int) Sourced {
 	return &sourcedNodeWrapper{node: d, source: uint32(source)}
 }

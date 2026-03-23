@@ -1,6 +1,8 @@
 package node
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type nodeOr struct {
 	left  Node
@@ -29,6 +31,14 @@ func (n *nodeOr) readRight() {
 	n.rightID = n.right.Next()
 }
 
+func (n *nodeOr) readLeftGeq(nextID LID) {
+	n.leftID = n.left.NextGeq(nextID)
+}
+
+func (n *nodeOr) readRightGeq(nextID LID) {
+	n.rightID = n.right.NextGeq(nextID)
+}
+
 func (n *nodeOr) Next() LID {
 	if n.leftID.IsNull() && n.rightID.IsNull() {
 		return n.leftID
@@ -48,6 +58,23 @@ func (n *nodeOr) Next() LID {
 	n.readLeft()
 	n.readRight()
 	return cur
+}
+
+func (n *nodeOr) NextGeq(nextID LID) LID {
+	// Fast path: if we at least left or right and there is nothing to skip, then choose lowest and return.
+	minID := Min(n.leftID, n.rightID)
+	if nextID.LessOrEq(minID) {
+		return n.Next()
+	}
+
+	if n.leftID.Less(nextID) {
+		n.readLeftGeq(nextID)
+	}
+	if n.rightID.Less(nextID) {
+		n.readRightGeq(nextID)
+	}
+
+	return n.Next()
 }
 
 type nodeOrAgg struct {
@@ -80,6 +107,14 @@ func (n *nodeOrAgg) readRight() {
 	n.rightID, n.rightSource = n.right.NextSourced()
 }
 
+func (n *nodeOrAgg) readLeftGeq(nextID LID) {
+	n.leftID, n.leftSource = n.left.NextSourcedGeq(nextID)
+}
+
+func (n *nodeOrAgg) readRightGeq(nextID LID) {
+	n.rightID, n.rightSource = n.right.NextSourcedGeq(nextID)
+}
+
 func (n *nodeOrAgg) NextSourced() (LID, uint32) {
 	if n.leftID.IsNull() && n.rightID.IsNull() {
 		return n.leftID, 0
@@ -94,4 +129,32 @@ func (n *nodeOrAgg) NextSourced() (LID, uint32) {
 	curSource := n.rightSource
 	n.readRight()
 	return cur, curSource
+}
+
+func (n *nodeOrAgg) NextSourcedGeq(nextID LID) (LID, uint32) {
+	// Fast path: if we at least left or right and there is nothing to skip, then choose lowest and return.
+	minID := Min(n.leftID, n.rightID)
+	if nextID.LessOrEq(minID) {
+		if n.leftID.Less(n.rightID) {
+			cur := n.leftID
+			curSource := n.leftSource
+			n.readLeft()
+			return cur, curSource
+		} else {
+			// we don't need deduplication
+			cur := n.rightID
+			curSource := n.rightSource
+			n.readRight()
+			return cur, curSource
+		}
+	}
+
+	if n.leftID.Less(nextID) {
+		n.readLeftGeq(nextID)
+	}
+	if n.rightID.Less(nextID) {
+		n.readRightGeq(nextID)
+	}
+
+	return n.NextSourced()
 }

@@ -179,6 +179,18 @@ func (m *MockNode) NextSourced() (node.LID, uint32) {
 	return first.LID, first.Source
 }
 
+func (m *MockNode) NextSourcedGeq(minLID node.LID) (node.LID, uint32) {
+	for len(m.Pairs) > 0 && m.Pairs[0].LID.Less(minLID) {
+		m.Pairs = m.Pairs[1:]
+	}
+	if len(m.Pairs) == 0 {
+		return node.NullLID(), 0
+	}
+	first := m.Pairs[0]
+	m.Pairs = m.Pairs[1:]
+	return first.LID, first.Source
+}
+
 func TestTwoSourceAggregator(t *testing.T) {
 	r := require.New(t)
 

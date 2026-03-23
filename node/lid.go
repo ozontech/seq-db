@@ -41,6 +41,14 @@ func NewAscLID(lid uint32) LID {
 	}
 }
 
+func NewLID(lid uint32, asc bool) LID {
+	if asc {
+		return NewAscLID(lid)
+	} else {
+		return NewDescLID(lid)
+	}
+}
+
 // Less compares two values. It also does an implicit null check, since we store math.MaxUint32 for null values.
 // Which means if we call x.Less(y), then we know for sure that x is not null. Therefore, this Less call can work
 // as both "null check + less" combo.
@@ -59,6 +67,22 @@ func (c LID) Inc() LID {
 
 func (c LID) Eq(other LID) bool {
 	return c.lid == other.lid
+}
+
+func Max(left, right LID) LID {
+	if left.lid > right.lid {
+		return left
+	} else {
+		return right
+	}
+}
+
+func Min(left, right LID) LID {
+	if left.lid < right.lid {
+		return left
+	} else {
+		return right
+	}
 }
 
 func (c LID) Unpack() uint32 {
