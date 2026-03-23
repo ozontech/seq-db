@@ -49,6 +49,7 @@ type TestingEnvConfig struct {
 	HotModeEnabled    bool
 	QueryRateLimit    *float64
 	FracManagerConfig *fracmanager.Config
+	DocsFilters       []docsfilter.Params
 
 	Mapping        seq.Mapping
 	IndexAllFields bool
@@ -122,6 +123,9 @@ func (cfg *TestingEnvConfig) GetStoreConfig(replicaID string, cold bool) storeap
 				RequestsLimit:         0,
 				LogThreshold:          0,
 			},
+		},
+		Filters: docsfilter.Config{
+			DataDir: filepath.Join(cfg.DataDir, replicaID, "filters"),
 		},
 	}
 }
@@ -276,7 +280,7 @@ func (cfg *TestingEnvConfig) MakeStores(
 			logger.Fatal("can't create mapping", zap.Error(err))
 		}
 
-		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider, []docsfilter.Params{})
+		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider, cfg.DocsFilters)
 		if err != nil {
 			panic(err)
 		}

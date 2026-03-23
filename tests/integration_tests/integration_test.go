@@ -27,6 +27,7 @@ import (
 
 	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/docsfilter"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
@@ -1749,5 +1750,66 @@ func (s *IntegrationTestSuite) TestPaginationWithOffsetId() {
 
 		r.Equal(totalDocs, len(fetchedIDs), "total doc IDs count does not match")
 		r.Equal(totalDocs, len(fetchedDocs), "count of unique docs does not match")
+	}
+}
+
+func (s *IntegrationTestSuite) TestDocsFilter() {
+	t := s.T()
+	r := require.New(t)
+
+	cfg := *s.Config
+	env := setup.NewTestingEnv(&cfg)
+
+	docs := []string{
+		`{"service":"visible", "message":"doc1"}`,
+		`{"service":"hidden", "message":"doc2"}`,
+		`{"service":"visible", "message":"doc3"}`,
+		`{"service":"hidden", "message":"doc4"}`,
+	}
+	setup.Bulk(t, env.IngestorBulkAddr(), docs)
+	env.WaitIdle()
+	env.SealAll()
+
+	// bulk docs one more time to have sealed and active fracs
+	setup.Bulk(t, env.IngestorBulkAddr(), docs)
+
+	// save hidden doc ids to test fetch later
+	qpr, _, _, err := env.Search(`service:hidden`, 10, setup.WithTotal(true))
+	r.NoError(err)
+	hiddenDocIDs := qpr.IDs.IDs()
+
+	env.WaitIdle()
+	env.StopAll()
+
+	cfg.DocsFilters = []docsfilter.Params{
+		{
+			Query: "service:hidden",
+			From:  0,
+			To:    time.Now().UnixNano(),
+		},
+	}
+	env = setup.NewTestingEnv(&cfg)
+	defer env.StopAll()
+
+	// we don't have a convenient way to wait for doc filters processing, so just wait enough time for now
+	time.Sleep(2 * time.Second)
+
+	// test search
+
+	qpr, _, _, err = env.Search(`service:hidden`, 10, setup.WithTotal(true))
+	r.NoError(err)
+	r.Equal(uint64(0), qpr.Total)
+
+	qpr, _, _, err = env.Search(`service:*`, 10, setup.WithTotal(true))
+	r.NoError(err)
+	r.Equal(uint64(4), qpr.Total)
+
+	// test fetch
+
+	fetchedDocs, err := env.Fetch(hiddenDocIDs)
+	r.NoError(err)
+	r.Len(fetchedDocs, len(hiddenDocIDs))
+	for _, doc := range fetchedDocs {
+		r.Len(doc, 0) // fetch hiddenID returns nothing
 	}
 }
