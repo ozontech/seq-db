@@ -20,7 +20,8 @@ type fracManifest struct {
 	basePath  string // base path to fraction files (without extension)
 	hasDocs   bool   // presence of main documents file
 	hasIndex  bool   // presence of index file
-	hasMeta   bool   // presence of meta-information
+	hasMeta   bool   // presence of meta-information (legacy WAL format)
+	hasWal    bool   // presence of WAL with meta 	 (new WAL format)
 	hasSdocs  bool   // presence of sorted documents
 	hasRemote bool   // presence of remote fraction
 
@@ -42,6 +43,8 @@ func (m *fracManifest) AddExtension(ext string) error {
 		m.hasDocs = true
 	case consts.MetaFileSuffix:
 		m.hasMeta = true
+	case consts.WalFileSuffix:
+		m.hasWal = true
 	case consts.SdocsFileSuffix:
 		m.hasSdocs = true
 	case consts.IndexFileSuffix:
@@ -88,7 +91,7 @@ func (m *fracManifest) Stage() fracStage {
 	if m.hasIndex && (m.hasSdocs || m.hasDocs) {
 		return fracStageSealed
 	}
-	if m.hasMeta && m.hasDocs {
+	if (m.hasMeta || m.hasWal) && m.hasDocs {
 		return fracStageActive
 	}
 	if m.hasDocsDel || m.hasIndexDel || m.hasSdocsDel {
@@ -115,6 +118,10 @@ func removeMeta(m *fracManifest) {
 	if m.hasMeta {
 		util.RemoveFile(m.basePath + consts.MetaFileSuffix)
 		m.hasMeta = false
+	}
+	if m.hasWal {
+		util.RemoveFile(m.basePath + consts.WalFileSuffix)
+		m.hasWal = false
 	}
 }
 

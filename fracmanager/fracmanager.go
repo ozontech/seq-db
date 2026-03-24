@@ -109,7 +109,7 @@ func (fm *FracManager) Flags() *StateManager {
 
 // Append writes documents and metadata to the active fraction
 // Implements retry logic in case of fraction sealing during write
-func (fm *FracManager) Append(ctx context.Context, docs, metas storage.DocBlock) error {
+func (fm *FracManager) Append(ctx context.Context, docs storage.DocBlock, metas storage.WalBlock) error {
 	for {
 		select {
 		case <-ctx.Done():

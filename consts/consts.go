@@ -50,6 +50,7 @@ const (
 
 	// known extensions
 	MetaFileSuffix = ".meta"
+	WalFileSuffix  = ".wal"
 
 	DocsFileSuffix    = ".docs"
 	DocsDelFileSuffix = ".docs.del"
