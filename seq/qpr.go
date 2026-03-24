@@ -29,6 +29,17 @@ func (o DocsOrder) IsReverse() bool {
 	return o == DocsOrderAsc
 }
 
+func (f DocsOrder) String() string {
+	switch f {
+	case DocsOrderDesc:
+		return "desc"
+	case DocsOrderAsc:
+		return "asc"
+	default:
+		return "unknown"
+	}
+}
+
 type IDSource struct {
 	ID     ID
 	Source uint64
@@ -74,6 +85,10 @@ type QPR struct {
 	Errors    []ErrorSource
 }
 
+func (q *QPR) Empty() bool {
+	return len(q.IDs) == 0 && len(q.Histogram) == 0 && len(q.Aggs) == 0
+}
+
 func (q *QPR) Aggregate(args []AggregateArgs) []AggregationResult {
 	allAggregations := make([]AggregationResult, len(q.Aggs))
 	for i, agg := range q.Aggs {
@@ -106,6 +121,29 @@ const (
 	AggFuncUnique
 	AggFuncUniqueCount
 )
+
+func (f AggFunc) String() string {
+	switch f {
+	case AggFuncCount:
+		return "count"
+	case AggFuncSum:
+		return "sum"
+	case AggFuncMin:
+		return "min"
+	case AggFuncMax:
+		return "max"
+	case AggFuncAvg:
+		return "avg"
+	case AggFuncQuantile:
+		return "quantile"
+	case AggFuncUnique:
+		return "unique"
+	case AggFuncUniqueCount:
+		return "unique_count"
+	default:
+		return "unknown"
+	}
+}
 
 type AggBin struct {
 	MID   MID

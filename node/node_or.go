@@ -1,122 +1,160 @@
 package node
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type nodeOr struct {
-	less LessFn
-
 	left  Node
 	right Node
 
-	leftID   uint32
-	hasLeft  bool
-	rightID  uint32
-	hasRight bool
+	leftID  LID
+	rightID LID
 }
 
 func (n *nodeOr) String() string {
 	return fmt.Sprintf("(%s OR %s)", n.left.String(), n.right.String())
 }
 
-func NewOr(left, right Node, reverse bool) *nodeOr {
-	n := &nodeOr{
-		less: GetLessFn(reverse),
-
-		left:  left,
-		right: right,
-	}
+func NewOr(left, right Node) *nodeOr {
+	n := &nodeOr{left: left, right: right}
 	n.readLeft()
 	n.readRight()
 	return n
 }
 
 func (n *nodeOr) readLeft() {
-	n.leftID, n.hasLeft = n.left.Next()
+	n.leftID = n.left.Next()
 }
 
 func (n *nodeOr) readRight() {
-	n.rightID, n.hasRight = n.right.Next()
+	n.rightID = n.right.Next()
 }
 
-func (n *nodeOr) Next() (uint32, bool) {
-	if !n.hasLeft && !n.hasRight {
-		return 0, false
+func (n *nodeOr) readLeftGeq(nextID LID) {
+	n.leftID = n.left.NextGeq(nextID)
+}
+
+func (n *nodeOr) readRightGeq(nextID LID) {
+	n.rightID = n.right.NextGeq(nextID)
+}
+
+func (n *nodeOr) Next() LID {
+	if n.leftID.IsNull() && n.rightID.IsNull() {
+		return n.leftID
 	}
 
-	if n.hasLeft && (!n.hasRight || n.less(n.leftID, n.rightID)) {
+	if n.leftID.Less(n.rightID) {
 		cur := n.leftID
 		n.readLeft()
-		return cur, true
+		return cur
 	}
-
-	if n.hasRight && (!n.hasLeft || n.less(n.rightID, n.leftID)) {
+	if n.rightID.Less(n.leftID) {
 		cur := n.rightID
 		n.readRight()
-		return cur, true
+		return cur
 	}
-
 	cur := n.leftID
 	n.readLeft()
 	n.readRight()
+	return cur
+}
 
-	return cur, true
+func (n *nodeOr) NextGeq(nextID LID) LID {
+	// Fast path: if we at least left or right and there is nothing to skip, then choose lowest and return.
+	minID := Min(n.leftID, n.rightID)
+	if nextID.LessOrEq(minID) {
+		return n.Next()
+	}
+
+	if n.leftID.Less(nextID) {
+		n.readLeftGeq(nextID)
+	}
+	if n.rightID.Less(nextID) {
+		n.readRightGeq(nextID)
+	}
+
+	return n.Next()
 }
 
 type nodeOrAgg struct {
 	left  Sourced
 	right Sourced
 
-	leftID     uint32
+	leftID     LID
 	leftSource uint32
-	hasLeft    bool
 
-	rightID     uint32
+	rightID     LID
 	rightSource uint32
-	hasRight    bool
-
-	less LessFn
 }
 
 func (n *nodeOrAgg) String() string {
 	return fmt.Sprintf("(%s OR %s)", n.left.String(), n.right.String())
 }
 
-func NewNodeOrAgg(left, right Sourced, reverse bool) Sourced {
-	n := &nodeOrAgg{
-		left:  left,
-		right: right,
-		less:  GetLessFn(reverse),
-	}
+func NewNodeOrAgg(left, right Sourced) Sourced {
+	n := &nodeOrAgg{left: left, right: right}
 	n.readLeft()
 	n.readRight()
 	return n
 }
 
 func (n *nodeOrAgg) readLeft() {
-	n.leftID, n.leftSource, n.hasLeft = n.left.NextSourced()
+	n.leftID, n.leftSource = n.left.NextSourced()
 }
 
 func (n *nodeOrAgg) readRight() {
-	n.rightID, n.rightSource, n.hasRight = n.right.NextSourced()
+	n.rightID, n.rightSource = n.right.NextSourced()
 }
 
-func (n *nodeOrAgg) NextSourced() (uint32, uint32, bool) {
-	if !n.hasLeft && !n.hasRight {
-		return 0, 0, false
-	}
+func (n *nodeOrAgg) readLeftGeq(nextID LID) {
+	n.leftID, n.leftSource = n.left.NextSourcedGeq(nextID)
+}
 
-	if n.hasLeft && (!n.hasRight || n.less(n.leftID, n.rightID)) {
+func (n *nodeOrAgg) readRightGeq(nextID LID) {
+	n.rightID, n.rightSource = n.right.NextSourcedGeq(nextID)
+}
+
+func (n *nodeOrAgg) NextSourced() (LID, uint32) {
+	if n.leftID.IsNull() && n.rightID.IsNull() {
+		return n.leftID, 0
+	}
+	if n.leftID.Less(n.rightID) {
 		cur := n.leftID
 		curSource := n.leftSource
 		n.readLeft()
-
-		return cur, curSource, true
+		return cur, curSource
 	}
-
-	// we don't need deduplication
 	cur := n.rightID
 	curSource := n.rightSource
 	n.readRight()
+	return cur, curSource
+}
 
-	return cur, curSource, true
+func (n *nodeOrAgg) NextSourcedGeq(nextID LID) (LID, uint32) {
+	// Fast path: if we at least left or right and there is nothing to skip, then choose lowest and return.
+	minID := Min(n.leftID, n.rightID)
+	if nextID.LessOrEq(minID) {
+		if n.leftID.Less(n.rightID) {
+			cur := n.leftID
+			curSource := n.leftSource
+			n.readLeft()
+			return cur, curSource
+		} else {
+			// we don't need deduplication
+			cur := n.rightID
+			curSource := n.rightSource
+			n.readRight()
+			return cur, curSource
+		}
+	}
+
+	if n.leftID.Less(nextID) {
+		n.readLeftGeq(nextID)
+	}
+	if n.rightID.Less(nextID) {
+		n.readRightGeq(nextID)
+	}
+
+	return n.NextSourced()
 }

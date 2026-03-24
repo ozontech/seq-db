@@ -1,37 +1,31 @@
 package node
 
 type nodeRange struct {
-	less LessFn
-
-	maxVal uint32
-	cur    int
-	step   int
+	maxID LID
+	curID LID
 }
 
 func (n *nodeRange) String() string {
 	return "(RANGE)"
 }
 
-func NewRange(minVal, maxVal uint32, reverse bool) *nodeRange {
-	step := 1
-	if reverse {
-		step = -1
-		minVal, maxVal = maxVal, minVal
-	}
+func NewRange(minVal, maxVal LID) *nodeRange {
 	return &nodeRange{
-		less: GetLessFn(reverse),
-
-		cur:    int(minVal),
-		maxVal: maxVal,
-		step:   step,
+		curID: minVal,
+		maxID: maxVal,
 	}
 }
 
-func (n *nodeRange) Next() (uint32, bool) {
-	if n.less(n.maxVal, uint32(n.cur)) {
-		return 0, false
+func (n *nodeRange) Next() LID {
+	if n.maxID.Less(n.curID) {
+		return NullLID()
 	}
-	cur := uint32(n.cur)
-	n.cur += n.step
-	return cur, true
+	result := n.curID
+	n.curID = n.curID.Inc()
+	return result
+}
+
+func (n *nodeRange) NextGeq(nextID LID) LID {
+	n.curID = Max(n.curID, nextID)
+	return n.Next()
 }

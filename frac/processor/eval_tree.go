@@ -36,16 +36,25 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 		switch token.Operator {
 		case parser.LogicalAnd:
 			stats.NodesTotal++
-			return node.NewAnd(children[0], children[1], reverse), nil
+			return node.NewAnd(children[0], children[1]), nil
 		case parser.LogicalOr:
 			stats.NodesTotal++
-			return node.NewOr(children[0], children[1], reverse), nil
+			return node.NewOr(children[0], children[1]), nil
 		case parser.LogicalNAnd:
 			stats.NodesTotal++
-			return node.NewNAnd(children[0], children[1], reverse), nil
+			return node.NewNAnd(children[0], children[1]), nil
 		case parser.LogicalNot:
 			stats.NodesTotal++
-			return node.NewNot(children[0], minVal, maxVal, reverse), nil
+			var minLID node.LID
+			var maxLID node.LID
+			if reverse {
+				minLID = node.NewAscLID(maxVal)
+				maxLID = node.NewAscLID(minVal)
+			} else {
+				minLID = node.NewDescLID(minVal)
+				maxLID = node.NewDescLID(maxVal)
+			}
+			return node.NewNot(children[0], minLID, maxLID), nil
 		}
 	}
 	return nil, fmt.Errorf("unknown token type")
@@ -76,12 +85,12 @@ func evalLeaf(
 		stats.NodesTotal += len(lidsTids)*2 - 1
 	}
 
-	return node.BuildORTree(lidsTids, order.IsReverse()), nil
+	return node.BuildORTree(lidsTids), nil
 }
 
 type Aggregator interface {
 	// Next iterates to count the next lid.
-	Next(lid uint32) error
+	Next(lid node.LID) error
 	// Aggregate processes and returns the final aggregation result.
 	Aggregate() (seq.AggregatableSamples, error)
 }
@@ -208,6 +217,6 @@ func iteratorFromLiteral(
 		stats.AggNodesTotal += len(lidsTids)*2 - 1
 	}
 
-	sourcedNode := node.BuildORTreeAgg(lidsTids, order.IsReverse())
-	return NewSourcedNodeIterator(sourcedNode, ti, tids, iteratorLimit, order.IsReverse()), nil
+	sourcedNode := node.BuildORTreeAgg(lidsTids)
+	return NewSourcedNodeIterator(sourcedNode, ti, tids, iteratorLimit), nil
 }

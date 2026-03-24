@@ -895,12 +895,13 @@ func BenchmarkFindSequence_Random(b *testing.B) {
 }
 
 func generateTestData(haystackSize, needleSize, needleCount, charset int) ([]byte, [][]byte) {
-	haystack := generateRandomBytes(haystackSize, charset)
+	r := rand.New(rand.NewSource(42))
+	haystack := generateRandomBytes(haystackSize, charset, r)
 
 	needles := make([][]byte, needleCount)
 	for i := range needleCount {
-		pattern := generateRandomBytes(needleSize, charset)
-		pos := rand.Intn(len(haystack) - needleSize)
+		pattern := generateRandomBytes(needleSize, charset, r)
+		pos := r.Intn(len(haystack) - needleSize)
 		copy(haystack[pos:], pattern)
 		needles[i] = pattern
 	}
@@ -908,10 +909,10 @@ func generateTestData(haystackSize, needleSize, needleCount, charset int) ([]byt
 	return haystack, needles
 }
 
-func generateRandomBytes(size, charset int) []byte {
+func generateRandomBytes(size, charset int, r *rand.Rand) []byte {
 	b := make([]byte, size)
 	for i := range b {
-		b[i] = byte(rand.Intn(charset))
+		b[i] = byte(r.Intn(charset))
 	}
 	return b
 }

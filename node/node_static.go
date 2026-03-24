@@ -1,14 +1,21 @@
 package node
 
+import (
+	"math"
+	"sort"
+)
+
 type staticCursor struct {
 	ptr  int
 	data []uint32
 }
 
+// staticAsc stores lids in data slice in ascending order, and iterates in increasing order
 type staticAsc struct {
 	staticCursor
 }
 
+// staticAsc stores lids in data slice in ascending order, but iterates from the end (in descending order)
 type staticDesc struct {
 	staticCursor
 }
@@ -31,25 +38,60 @@ func NewStatic(data []uint32, reverse bool) Node {
 	}}
 }
 
-func (n *staticAsc) Next() (uint32, bool) {
+func (n *staticAsc) Next() LID {
+	// staticAsc is used in docs order desc, hence we return LID with desc order
 	if n.ptr >= len(n.data) {
-		return 0, false
+		return NewDescLID(math.MaxUint32)
 	}
 	cur := n.data[n.ptr]
 	n.ptr++
-	return cur, true
+	return NewDescLID(cur)
 }
 
-func (n *staticDesc) Next() (uint32, bool) {
+// NextGeq finds next greater or equals since iteration is in ascending order
+func (n *staticAsc) NextGeq(nextID LID) LID {
+	if n.ptr >= len(n.data) {
+		return NullLID()
+	}
+
+	from := n.ptr
+	idx := sort.Search(len(n.data)-from, func(i int) bool { return n.data[from+i] >= nextID.Unpack() })
+	if idx >= len(n.data)-from {
+		return NullLID()
+	}
+
+	i := from + idx
+	cur := n.data[i]
+	n.ptr = i + 1
+	return NewDescLID(cur)
+}
+
+func (n *staticDesc) Next() LID {
+	// staticDesc is used in docs order asc, hence we return LID with asc order
 	if n.ptr < 0 {
-		return 0, false
+		return NewAscLID(0)
 	}
 	cur := n.data[n.ptr]
 	n.ptr--
-	return cur, true
+	return NewAscLID(cur)
 }
 
-// MakeStaticNodes  is currently used only for tests
+// NextGeq finds next less or equals since iteration is in descending order
+func (n *staticDesc) NextGeq(nextID LID) LID {
+	if n.ptr < 0 {
+		return NullLID()
+	}
+	idx := sort.Search(n.ptr+1, func(i int) bool { return n.data[i] > nextID.Unpack() }) - 1
+	if idx < 0 {
+		return NullLID()
+	}
+
+	cur := n.data[idx]
+	n.ptr = idx - 1
+	return NewAscLID(cur)
+}
+
+// MakeStaticNodes is currently used only for tests
 func MakeStaticNodes(data [][]uint32) []Node {
 	nodes := make([]Node, len(data))
 	for i, values := range data {
