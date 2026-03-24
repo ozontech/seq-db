@@ -85,8 +85,11 @@ func (r *WalReader) Entries() iter.Seq[WalRecord] {
 			}
 
 			if errors.Is(err, io.EOF) || n < WalBlockHeaderLen {
-				startCorruptionTracking(offset)
-				logCorruptionEnd(offset + int64(n))
+				// log corruption only if at least 1 was read
+				if n > 0 {
+					startCorruptionTracking(offset)
+					logCorruptionEnd(offset + int64(n))
+				}
 				return
 			}
 
