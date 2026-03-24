@@ -149,7 +149,12 @@ func (cm *CacheMaintainer) CreateIndexCache() *frac.IndexCache {
 		LIDs:       newCache[*lids.Block](cm, lidsName),
 		Tokens:     newCache[*token.Block](cm, tokensName),
 		TokenTable: newCache[token.Table](cm, tokenTableName),
-		Registry:   newCache[[]byte](cm, indexName),
+		// Each index file gets its own registry cache (they all use key=1 internally).
+		InfoRegistry:    newCache[[]byte](cm, indexName),
+		TokenRegistry:   newCache[[]byte](cm, indexName),
+		OffsetsRegistry: newCache[[]byte](cm, indexName),
+		IDRegistry:      newCache[[]byte](cm, indexName),
+		LIDRegistry:     newCache[[]byte](cm, indexName),
 	}
 }
 

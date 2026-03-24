@@ -16,85 +16,145 @@ import (
 // Source interface defines the contract for data sources that can be sealed.
 // Provides access to all necessary data components for index creation.
 type Source interface {
-	Info() *common.Info                                   // Fraction metadata information
-	IDsBlocks(size int) iter.Seq2[[]seq.ID, []seq.DocPos] // Ordered sequence of document IDs and their positions, divided into blocks
-	TokenBlocks(size int) iter.Seq[[][]byte]              // Ordered sequence of tokens divided into blocks
-	Fields() iter.Seq2[string, uint32]                    // Ordered sequence of fields with their max field's TID value
-	TokenLIDs() iter.Seq[[]uint32]                        // Sequence of Token LIDs ordered by TID and LID
-	BlocksOffsets() []uint64                              // Offsets of DocBlock's in the doc file
-	LastError() error                                     // Last error encountered during data retrieval
+	Info() *common.Info                        // Fraction metadata information
+	ID() iter.Seq2[seq.ID, seq.DocPos]         // Ordered sequence of document IDs and their positions
+	TokenAndLIDs() iter.Seq2[[]byte, []uint32] // Ordered sequence of tokens paired with their LID list
+	Field() iter.Seq2[string, uint32]          // Ordered sequence of fields with their max TID value
+	BlockOffsets() []uint64                    // Offsets of DocBlocks in the doc file
+	LastError() error                          // Last error encountered during data retrieval
 }
 
-// Seal is the main entry point for sealing a fraction.
-// It performs the complete sealing process:
-// 1. Creates the index file structure
-// 2. Writes all index blocks with compression
-// 3. Builds PreloadedData structures for fast initialization of sealed fraction
-// 4. Handles file system operations and error recovery
-//
-// Parameters:
-//   - src: Data source providing all fraction data
-//   - params: Sealing parameters including compression levels
-//
-// Returns:
-//   - *sealed.PreloadedData: Preloaded data structures for initialization of sealed fraction
-//   - error: Any error encountered during the sealing process
+// createAndWrite creates a tmp file, calls write, syncs, closes, then renames to finalPath.
+func createAndWrite(tmpPath, finalPath string, write func(*os.File) error) error {
+	f, err := os.Create(tmpPath)
+	if err != nil {
+		return err
+	}
+	if err := write(f); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, finalPath)
+}
+
+// createAndWriteBoth creates two tmp files, calls write with both, syncs and closes them,
+// then renames both to their final paths.
+func createAndWriteBoth(tmpPath1, finalPath1, tmpPath2, finalPath2 string, write func(*os.File, *os.File) error) error {
+	f1, err := os.Create(tmpPath1)
+	if err != nil {
+		return err
+	}
+	f2, err := os.Create(tmpPath2)
+	if err != nil {
+		f1.Close()
+		return err
+	}
+	if err := write(f1, f2); err != nil {
+		f1.Close()
+		f2.Close()
+		return err
+	}
+	if err := f1.Sync(); err != nil {
+		f1.Close()
+		f2.Close()
+		return err
+	}
+	if err := f1.Close(); err != nil {
+		f2.Close()
+		return err
+	}
+	if err := f2.Sync(); err != nil {
+		f2.Close()
+		return err
+	}
+	if err := f2.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath1, finalPath1); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath2, finalPath2)
+}
+
+// Seal writes five index files (.info, .token, .offsets, .id, .lid) for the fraction
+// and returns PreloadedData for fast initialization of the sealed fraction.
 func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	info := src.Info()
 
-	// Validate that we're not sealing an empty fraction
 	if info.To == 0 {
 		return nil, errors.New("sealing of an empty active fraction is not supported")
 	}
 
-	// Create temporary index file (will be renamed on success)
-	indexFile, err := os.Create(info.Path + consts.IndexTmpFileSuffix)
-	if err != nil {
+	sealer := NewIndexSealer(params)
+
+	if err := createAndWrite(
+		info.Path+consts.InfoTmpFileSuffix,
+		info.Path+consts.InfoFileSuffix,
+		func(f *os.File) error { return sealer.WriteInfoFile(f, src) },
+	); err != nil {
 		return nil, err
 	}
 
-	// Create index sealer and write the index structure
-	indexSealer := NewIndexSealer(params)
-	if err := indexSealer.WriteIndex(indexFile, src); err != nil {
+	if err := createAndWrite(
+		info.Path+consts.OffsetsTmpFileSuffix,
+		info.Path+consts.OffsetsFileSuffix,
+		func(f *os.File) error { return sealer.WriteOffsetsFile(f, src) },
+	); err != nil {
 		return nil, err
 	}
 
-	// Ensure data is flushed to disk
-	if err := indexFile.Sync(); err != nil {
+	if err := createAndWrite(
+		info.Path+consts.IDTmpFileSuffix,
+		info.Path+consts.IDFileSuffix,
+		func(f *os.File) error { return sealer.WriteIDFile(f, src) },
+	); err != nil {
 		return nil, err
 	}
 
-	// Get final file size for metadata
-	stat, err := indexFile.Stat()
-	if err != nil {
-		return nil, err
-	}
-	info.IndexOnDisk = uint64(stat.Size())
-
-	// Close file before renaming
-	if err := indexFile.Close(); err != nil {
+	if err := createAndWriteBoth(
+		info.Path+consts.TokenTmpFileSuffix, info.Path+consts.TokenFileSuffix,
+		info.Path+consts.LIDTmpFileSuffix, info.Path+consts.LIDFileSuffix,
+		func(tokenF, lidF *os.File) error { return sealer.WriteTokenAndLIDFiles(tokenF, lidF, src) },
+	); err != nil {
 		return nil, err
 	}
 
-	// Atomically rename temporary file to final name
-	if err := os.Rename(indexFile.Name(), info.Path+consts.IndexFileSuffix); err != nil {
-		return nil, err
-	}
-
-	// Ensure directory metadata is synced to disk
 	util.MustSyncPath(filepath.Dir(info.Path))
 
-	// Build preloaded data structure for fast query access
-	lidsTable := indexSealer.LIDsTable()
-	preloaded := sealed.PreloadedData{
+	// Compute total index size as sum of all 5 files.
+	var totalSize uint64
+	for _, suffix := range []string{
+		consts.InfoFileSuffix,
+		consts.TokenFileSuffix,
+		consts.OffsetsFileSuffix,
+		consts.IDFileSuffix,
+		consts.LIDFileSuffix,
+	} {
+		st, err := os.Stat(info.Path + suffix)
+		if err != nil {
+			return nil, err
+		}
+		totalSize += uint64(st.Size())
+	}
+	info.IndexOnDisk = totalSize
+
+	lidsTable := sealer.LIDsTable()
+	preloaded := &sealed.PreloadedData{
 		Info:       info,
-		TokenTable: indexSealer.TokenTable(),
+		TokenTable: sealer.TokenTable(),
 		BlocksData: sealed.BlocksData{
-			IDsTable:      indexSealer.IDsTable(),
+			IDsTable:      sealer.IDsTable(),
 			LIDsTable:     &lidsTable,
-			BlocksOffsets: src.BlocksOffsets(),
+			BlocksOffsets: src.BlockOffsets(),
 		},
 	}
 
-	return &preloaded, nil
+	return preloaded, nil
 }

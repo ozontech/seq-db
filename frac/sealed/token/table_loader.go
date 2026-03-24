@@ -50,6 +50,7 @@ func (l *TableLoader) Load() Table {
 
 func TableFromBlocks(blocks []TableBlock) Table {
 	table := make(Table)
+
 	for _, block := range blocks {
 		for _, ft := range block.FieldsTables {
 			fd, ok := table[ft.Field]
@@ -62,13 +63,16 @@ func TableFromBlocks(blocks []TableBlock) Table {
 			} else if minVal < fd.MinVal {
 				fd.MinVal = minVal
 			}
+
 			for _, e := range ft.Entries {
 				e.MinVal = ""
 				fd.Entries = append(fd.Entries, e)
 			}
+
 			table[ft.Field] = fd
 		}
 	}
+
 	return table
 }
 
@@ -89,10 +93,8 @@ func (l *TableLoader) readBlock() ([]byte, error) {
 }
 
 func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
-	// todo: scan all headers in sealed_loader and remember startIndex for each sections
-	// todo: than use this startIndex to load sections on demand (do not scan every time)
-	l.i = 1
-	for h := l.readHeader(); h.Len() > 0; h = l.readHeader() { // skip actual token blocks, go for token table
+	l.i = 0
+	for h := l.readHeader(); h.Len() > 0; h = l.readHeader() { // skip token blocks, go for token table
 	}
 
 	blocks := make([]TableBlock, 0)

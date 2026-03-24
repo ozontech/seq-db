@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"io"
 	"iter"
-	"time"
 
 	"github.com/alecthomas/units"
 
@@ -22,25 +21,27 @@ import (
 	"github.com/ozontech/seq-db/zstd"
 )
 
-// IndexSealer is responsible for creating and writing the index structure for sealed fractions.
-// It organizes data into blocks, compresses them, and builds the complete index file with:
-// - Multiple data sections (info, tokens, token table, offsets, IDs, LIDs)
-// - Compression using ZSTD with configurable levels
-// - Registry for quick access to block locations
-// - PreloadedData structures for fast initialization instance of sealed fraction
+// IndexSealer writes sealed fraction index data across multiple files.
+// Each Write*File method writes one section to an independent file using the
+// standard [prefix][blocks][registry] format so each file has its own IndexReader.
+//
+// Call order matters for PreloadedData:
+//
+//	WriteTokenAndLIDFiles → WriteOffsetsFile → WriteIDFile
+//
+// (TokenTable is populated by WriteTokenAndLIDFiles; IDsTable by WriteOffsetsFile+WriteIDFile;
+// LIDsTable by WriteTokenAndLIDFiles.)
 type IndexSealer struct {
-	lastErr error             // Last error encountered during processing
-	buf1    []byte            // Reusable buffer for packing raw data before compression
-	buf2    []byte            // Reusable buffer for compressed data
-	params  common.SealParams // Configuration parameters for sealing process
+	lastErr error
+	buf1    []byte
+	buf2    []byte
+	params  common.SealParams
 
-	// PreloadedData structures built during sealing for fast initialization of sealed fraction
-	idsTable   seqids.Table // Table mapping document IDs to blocks
-	lidsTable  lids.Table   // Table mapping token IDs to LID blocks
-	tokenTable token.Table  // Table mapping fields to token blocks
+	idsTable   seqids.Table
+	lidsTable  lids.Table
+	tokenTable token.Table
 }
 
-// NewIndexSealer creates a new IndexSealer instance with the given parameters.
 func NewIndexSealer(params common.SealParams) *IndexSealer {
 	return &IndexSealer{
 		params: params,
@@ -49,75 +50,58 @@ func NewIndexSealer(params common.SealParams) *IndexSealer {
 	}
 }
 
-// indexBlock represents a single block of data in the index file.
-// Each block can be compressed and contains metadata for efficient retrieval.
+// indexBlock is one compressed (or not) block with its registry metadata.
 type indexBlock struct {
-	codec   storage.Codec // Compression codec used (No compression or ZSTD)
-	payload []byte        // The actual block data (may be compressed)
-	rawLen  uint32        // Original uncompressed data length
-	ext1    uint64        // Extended metadata field 1 (block-specific usage)
-	ext2    uint64        // Extended metadata field 2 (block-specific usage)
+	codec   storage.Codec
+	payload []byte
+	rawLen  uint32
+	ext1    uint64
+	ext2    uint64
 }
 
-// Bin converts the indexBlock to its binary representation for storage.
-// It creates a header with metadata and returns the header + payload.
-// Parameters:
-//   - pos: The file position where this block will be written
-//
-// Returns:
-//   - storage.IndexBlockHeader: The block header with metadata
-//   - []byte: The payload data to write
 func (i indexBlock) Bin(pos int64) (storage.IndexBlockHeader, []byte) {
-	header := storage.NewIndexBlockHeader(pos, i.ext1, i.ext2, uint32(len(i.payload)), i.rawLen, i.codec)
-	return header, i.payload
+	return storage.NewIndexBlockHeader(pos, i.ext1, i.ext2, uint32(len(i.payload)), i.rawLen, i.codec), i.payload
 }
 
-// WriteIndex writes the complete index structure to the provided writer.
-// The index file structure:
-// +----------------+----------------+----------------+
-// | Prefix         | Data Blocks    | Registry       |
-// | (16 bytes)     | (multiple)     | (block headers)|
-// +----------------+----------------+----------------+
-//
-// Prefix contains:
-// - 8 bytes: Position of registry start
-// - 8 bytes: Size of registry
-//
-// Parameters:
-//   - ws: WriteSeeker to write the index data to
-//   - src: Source interface providing the data to be sealed
-//
-// Returns:
-//   - error: Any error encountered during writing
-func (s *IndexSealer) WriteIndex(ws io.WriteSeeker, src Source) error {
-	const prefixSize = 16 // Size of prefix that will hold registry position and size
+const filePrefixSize = 16
 
-	// Skip prefix area initially - we'll write it at the end
-	if _, err := ws.Seek(prefixSize, io.SeekStart); err != nil {
+// write writes blocks to ws using [16-byte prefix][blocks][registry].
+// The prefix is written last (via seek-back) and stores registry position + size.
+func (s *IndexSealer) write(ws io.WriteSeeker, blocks iter.Seq[indexBlock]) error {
+	if _, err := ws.Seek(filePrefixSize, io.SeekStart); err != nil {
 		return err
 	}
 
-	// Create buffers for headers and payload writing
-	hw := bytes.NewBuffer(nil)                            // Headers writer - collects all block headers
-	bw := bytespool.AcquireWriterSize(ws, int(units.MiB)) // Buffered writer for payload
+	hw := bytes.NewBuffer(nil)
+	bw := bytespool.AcquireWriterSize(ws, int(units.MiB))
 	defer bytespool.ReleaseWriter(bw)
 
-	// Write all index blocks and collect headers
-	if err := s.writeBlocks(prefixSize, bw, hw, src); err != nil {
-		return err
+	pos := filePrefixSize
+	for block := range blocks {
+		if s.lastErr != nil {
+			return s.lastErr
+		}
+		header, payload := block.Bin(int64(pos))
+		if _, err := bw.Write(payload); err != nil {
+			return err
+		}
+		if _, err := hw.Write(header); err != nil {
+			return err
+		}
+		pos += len(payload)
+	}
+	if s.lastErr != nil {
+		return s.lastErr
 	}
 	if err := bw.Flush(); err != nil {
 		return err
 	}
 
-	// Calculate registry position and size
-	size := hw.Len()                   // Registry size (all headers)
-	pos, err := ws.Seek(0, io.SeekEnd) // Current end position = registry start
+	size := hw.Len()
+	regPos, err := ws.Seek(0, io.SeekEnd)
 	if err != nil {
 		return err
 	}
-
-	// Write registry (all block headers) at the end of file
 	if _, err := bw.Write(hw.Bytes()); err != nil {
 		return err
 	}
@@ -125,325 +109,289 @@ func (s *IndexSealer) WriteIndex(ws io.WriteSeeker, src Source) error {
 		return err
 	}
 
-	// Write prefix at beginning of file with registry metadata
-	prefix := make([]byte, 0, prefixSize)
-	prefix = binary.LittleEndian.AppendUint64(prefix, uint64(pos))  // Registry position
-	prefix = binary.LittleEndian.AppendUint64(prefix, uint64(size)) // Registry size
+	prefix := binary.LittleEndian.AppendUint64(make([]byte, 0, filePrefixSize), uint64(regPos))
+	prefix = binary.LittleEndian.AppendUint64(prefix, uint64(size))
 	if _, err := ws.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	if _, err = ws.Write(prefix); err != nil {
+	_, err = ws.Write(prefix)
+	return err
+}
+
+// fileStreamWriter writes blocks incrementally to a single file using the
+// [prefix][blocks][registry] format, allowing interleaved writes to multiple files.
+type fileStreamWriter struct {
+	ws  io.WriteSeeker
+	bw  *bytespool.Writer
+	hw  bytes.Buffer
+	pos int
+}
+
+func newFileStreamWriter(ws io.WriteSeeker) (*fileStreamWriter, error) {
+	if _, err := ws.Seek(filePrefixSize, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return &fileStreamWriter{
+		ws:  ws,
+		bw:  bytespool.AcquireWriterSize(ws, int(units.MiB)),
+		pos: filePrefixSize,
+	}, nil
+}
+
+func (fw *fileStreamWriter) writeBlock(block indexBlock) error {
+	header, payload := block.Bin(int64(fw.pos))
+	if _, err := fw.bw.Write(payload); err != nil {
+		return err
+	}
+	fw.hw.Write(header) // bytes.Buffer.Write never fails
+	fw.pos += len(payload)
+	return nil
+}
+
+func (fw *fileStreamWriter) finalize() (err error) {
+	defer fw.release()
+	if err = fw.bw.Flush(); err != nil {
+		return
+	}
+	var regPos int64
+	if regPos, err = fw.ws.Seek(0, io.SeekEnd); err != nil {
+		return
+	}
+	if _, err = fw.bw.Write(fw.hw.Bytes()); err != nil {
+		return
+	}
+	if err = fw.bw.Flush(); err != nil {
+		return
+	}
+	prefix := binary.LittleEndian.AppendUint64(make([]byte, 0, filePrefixSize), uint64(regPos))
+	prefix = binary.LittleEndian.AppendUint64(prefix, uint64(fw.hw.Len()))
+	if _, err = fw.ws.Seek(0, io.SeekStart); err != nil {
+		return
+	}
+	_, err = fw.ws.Write(prefix)
+	return
+}
+
+func (fw *fileStreamWriter) release() {
+	if fw.bw != nil {
+		bytespool.ReleaseWriter(fw.bw)
+		fw.bw = nil
+	}
+}
+
+// WriteInfoFile writes the .info file containing a single BlockInfo block.
+func (s *IndexSealer) WriteInfoFile(ws io.WriteSeeker, src Source) error {
+	return s.write(ws, func(yield func(indexBlock) bool) {
+		yield(s.packInfoBlock(sealed.BlockInfo{Info: src.Info()}))
+	})
+}
+
+// WriteTokenAndLIDFiles writes the .token and .lid files in a single pass over the source data.
+//
+// .token file: [token blocks...] [separator] [token-table block] [separator]
+// .lid file:   [LID blocks...] [separator]
+//
+// LID blocks are written interleaved with token block processing so that both files
+// are produced from one sequential scan of the (token, LID) data.
+func (s *IndexSealer) WriteTokenAndLIDFiles(tokenWS, lidWS io.WriteSeeker, src Source) error {
+	tokenFW, err := newFileStreamWriter(tokenWS)
+	if err != nil {
+		return err
+	}
+	defer tokenFW.release()
+
+	lidFW, err := newFileStreamWriter(lidWS)
+	if err != nil {
+		return err
+	}
+	defer lidFW.release()
+
+	var (
+		bb              blocksBuilder
+		allFieldsTables []token.FieldTable
+		lidAccum        = newLIDBlocksAccumulator(consts.LIDBlockCap)
+	)
+
+	accumulate := func(lids []uint32) error {
+		return lidAccum.Add(lids, func(block lidsSealBlock) error {
+			return lidFW.writeBlock(s.packLIDsBlock(block))
+		})
+	}
+
+	blocks := bb.BuildTokenBlocks(
+		src.TokenAndLIDs(), src.Field(),
+		accumulate, consts.RegularBlockSize,
+	)
+
+	for block, fieldsTables := range blocks {
+		if err := tokenFW.writeBlock(s.packTokenBlock(block)); err != nil {
+			return err
+		}
+		allFieldsTables = append(allFieldsTables, fieldsTables...)
+	}
+
+	if s.lastErr = util.CollapseErrors([]error{src.LastError(), bb.LastError()}); s.lastErr != nil {
+		return s.lastErr
+	}
+
+	// Write the final (possibly partial) LID block and trailing separator.
+	if err := lidFW.writeBlock(s.packLIDsBlock(lidAccum.Flush())); err != nil {
 		return err
 	}
 
-	return nil
+	if err := lidFW.writeBlock(indexBlock{}); err != nil { // trailing separator
+		return err
+	}
+
+	if err := lidFW.finalize(); err != nil {
+		return err
+	}
+
+	// Write token section separator, token table, trailing separator.
+	if err := tokenFW.writeBlock(indexBlock{}); err != nil { // section separator
+		return err
+	}
+	tokenTableBlock := token.TableBlock{FieldsTables: collapseOrderedFieldsTables(allFieldsTables)}
+	if err := tokenFW.writeBlock(s.packTokenTableBlock(tokenTableBlock)); err != nil {
+		return err
+	}
+	if err := tokenFW.writeBlock(indexBlock{}); err != nil { // trailing separator
+		return err
+	}
+	return tokenFW.finalize()
 }
 
-// writeBlocks processes all index blocks from the source and writes them to the output.
-// It simultaneously writes payload data to one writer and headers to another.
-// Parameters:
-//   - pos: Starting position for the first block
-//   - payloadWriter: Writer for block payload data
-//   - headersWriter: Writer for block headers (registry)
-//   - src: Data source
-//
-// Returns:
-//   - error: Any error encountered during processing
-func (s *IndexSealer) writeBlocks(pos int, payloadWriter, headersWriter io.Writer, src Source) error {
-	// Process each index block from the source
-	for block := range s.indexBlocks(src) {
-		header, payload := block.Bin(int64(pos))
-		// Write payload to main data section
-		if _, err := payloadWriter.Write(payload); err != nil {
-			return err
-		}
-		// Write header to registry
-		if _, err := headersWriter.Write(header); err != nil {
-			return err
-		}
-		pos += len(payload) // Advance position for next block
-	}
-	if s.lastErr != nil {
-		return s.lastErr
-	}
-	return nil
-}
-
-// indexBlocks generates a sequence of index blocks from the source data.
-// The blocks are organized in specific sections:
-// 1. Info Section - Basic fraction metadata
-// 2. Tokens Section - Token data blocks
-// 3. Token Table Section - Field-to-token mapping table
-// 4. Offsets Section - Document block offsets
-// 5. IDs Section - Document ID blocks (MIDs, RIDs, Positions)
-// 6. LIDs Section - Token ID to LID mapping blocks
-//
-// Returns:
-//   - iter.Seq[indexBlock]: Sequence of index blocks to write
-func (s *IndexSealer) indexBlocks(src Source) iter.Seq[indexBlock] {
-	return func(yield func(indexBlock) bool) {
-		bb := blocksBuilder{}
-		blocksCounter := uint32(0)   // Global block counter for indexing
-		statsOverall := startStats() // Overall statistics collector
-
-		// Helper to push a block and update statistics
-		push := func(b indexBlock, statsSection *blocksStats) bool {
-			blocksCounter++
-			statsOverall.takeStock(b)
-			statsSection.takeStock(b)
-			return yield(b)
-		}
-
-		// Helper to write section separator (empty block)
-		sectionSeparator := func() bool {
-			blocksCounter++
-			return yield(indexBlock{}) // empty block as separator
-		}
-
-		// SECTION 1: Info Section
-		statsInfo := startStats()
-		info := src.Info()
-		if !push(s.packInfoBlock(sealed.BlockInfo{Info: info}), &statsInfo) {
-			return
-		}
-
-		// SECTION 2: Tokens Section
-		statsTokens := startStats()
-		allFieldsTables := []token.FieldTable{}
-		tokensBlocks := bb.BuildTokenBlocks(src.TokenBlocks(consts.RegularBlockSize), src.Fields())
-		for block, fieldsTables := range tokensBlocks {
-			if !push(s.packTokenBlock(block), &statsTokens) {
-				return
-			}
-			allFieldsTables = append(allFieldsTables, fieldsTables...)
-		}
-		if s.lastErr = util.CollapseErrors([]error{src.LastError(), bb.LastError()}); s.lastErr != nil {
-			return
-		}
-
-		if !sectionSeparator() {
-			return
-		}
-
-		// SECTION 3: Token Table Section
-		statsTokenTable := startStats()
-		tokenTableBlock := token.TableBlock{FieldsTables: collapseOrderedFieldsTables(allFieldsTables)}
-		if !push(s.packTokenTableBlock(tokenTableBlock), &statsTokenTable) {
-			return
-		}
-
-		if !sectionSeparator() {
-			return
-		}
-
-		// SECTION 4: Offsets Section
-		statsOffsets := startStats()
+// WriteOffsetsFile writes the .offsets file containing a single BlockOffsets block.
+func (s *IndexSealer) WriteOffsetsFile(ws io.WriteSeeker, src Source) error {
+	return s.write(ws, func(yield func(indexBlock) bool) {
 		offsets := sealed.BlockOffsets{
-			IDsTotal: info.DocsTotal + 1, // +1 for system ID at position zero
-			Offsets:  src.BlocksOffsets(),
+			IDsTotal: src.Info().DocsTotal + 1,
+			Offsets:  src.BlockOffsets(),
 		}
-		if !push(s.packBlocksOffsetsBlock(offsets), &statsOffsets) {
-			return
+		yield(s.packBlocksOffsetsBlock(offsets))
+	})
+}
+
+func (s *IndexSealer) WriteIDFile(ws io.WriteSeeker, src Source) error {
+	return s.write(ws, func(yield func(indexBlock) bool) {
+		for block := range seqBlockID(src.ID(), consts.IDsPerBlock) {
+			if !yield(s.packMIDsBlock(block)) {
+				return
+			}
+
+			if !yield(s.packRIDsBlock(block)) {
+				return
+			}
+
+			if !yield(s.packPosBlock(block)) {
+				return
+			}
 		}
 
-		// SECTION 5: IDs Section
-		s.idsTable.StartBlockIndex = blocksCounter // Record starting position for IDs blocks
-		statsMIDs, statsRIDs, statsParams := startStats(), startStats(), startStats()
-		for block := range createIDsSealBlocks(src.IDsBlocks(consts.IDsPerBlock)) {
-			if !push(s.packMIDsBlock(block), &statsMIDs) {
-				return
-			}
-			if !push(s.packRIDsBlock(block), &statsRIDs) {
-				return
-			}
-			if !push(s.packPosBlock(block), &statsParams) {
-				return
-			}
-		}
 		if s.lastErr = src.LastError(); s.lastErr != nil {
 			return
 		}
 
-		if !sectionSeparator() {
-			return
-		}
-
-		// SECTION 6: LIDs Section
-		statsLIDs := startStats()
-		s.lidsTable.StartBlockIndex = blocksCounter
-		for block := range bb.BuildLIDsBlocks(src.TokenLIDs(), consts.LIDBlockCap) {
-			if !push(s.packLIDsBlock(block), &statsLIDs) {
-				return
-			}
-		}
-		if s.lastErr = util.CollapseErrors([]error{src.LastError(), bb.LastError()}); s.lastErr != nil {
-			return
-		}
-
-		if !sectionSeparator() {
-			return
-		}
-
-		// Log statistics for all sections
-		endTime := time.Now()
-		statsInfo.log("info", statsTokens.start)
-		statsTokens.log("tokens", statsTokenTable.start)
-		statsTokenTable.log("tokenTable", statsOffsets.start)
-		statsOffsets.log("offsets", statsMIDs.start)
-		statsMIDs.log("mids", statsLIDs.start)
-		statsRIDs.log("rids", statsLIDs.start)
-		statsParams.log("pos", statsLIDs.start)
-		statsLIDs.log("lids", endTime)
-		statsOverall.log("overall", endTime)
-	}
+		yield(indexBlock{}) // trailing separator
+	})
 }
 
-// collapseOrderedFieldsTables merges field tables with identical field names
-// Assumes the input array is already sorted by the Field property
+// collapseOrderedFieldsTables merges FieldTables with the same field name.
+// Assumes input is sorted by Field.
 func collapseOrderedFieldsTables(src []token.FieldTable) []token.FieldTable {
 	if len(src) == 0 {
 		return nil
 	}
+
 	current := src[0]
-	dst := []token.FieldTable{}
+	var dst []token.FieldTable
 	for _, ft := range src[1:] {
 		if current.Field == ft.Field {
 			current.Entries = append(current.Entries, ft.Entries...)
 			continue
 		}
+
 		dst = append(dst, current)
 		current = ft
 	}
-	dst = append(dst, current)
-	return dst
+
+	return append(dst, current)
 }
 
-// newIndexBlock creates an uncompressed index block.
 func newIndexBlock(raw []byte) indexBlock {
-	return indexBlock{
-		codec:   storage.CodecNo,
-		rawLen:  uint32(len(raw)),
-		payload: raw,
-	}
+	return indexBlock{codec: storage.CodecNo, rawLen: uint32(len(raw)), payload: raw}
 }
 
-// newIndexBlockZSTD creates a compressed index block using ZSTD compression.
-// Falls back to uncompressed if compression doesn't provide benefits.
 func (s *IndexSealer) newIndexBlockZSTD(raw []byte, level int) indexBlock {
 	s.buf2 = zstd.CompressLevel(raw, s.buf2[:0], level)
-	// Only use compression if it actually reduces size
 	if len(s.buf2) < len(raw) {
-		return indexBlock{
-			codec:   storage.CodecZSTD,
-			rawLen:  uint32(len(raw)),
-			payload: s.buf2,
-		}
+		return indexBlock{codec: storage.CodecZSTD, rawLen: uint32(len(raw)), payload: s.buf2}
 	}
 	return newIndexBlock(raw)
 }
 
-// packInfoBlock packs fraction information into an index block.
 func (s *IndexSealer) packInfoBlock(block sealed.BlockInfo) indexBlock {
 	s.buf1 = block.Pack(s.buf1[:0])
-	return newIndexBlock(s.buf1) // Info block is typically small, no compression
+	return newIndexBlock(s.buf1)
 }
 
-// packTokenBlock packs token data into a compressed index block.
 func (s *IndexSealer) packTokenBlock(block tokensSealBlock) indexBlock {
-	s.buf1 = block.payload.Pack(s.buf1[:0]) // Pack token data
+	s.buf1 = block.payload.Pack(s.buf1[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.TokenListZstdLevel)
-	// Store TID range in extended metadata
 	b.ext1 = uint64(block.ext.maxTID)<<32 | uint64(block.ext.minTID)
 	return b
 }
 
-// packTokenTableBlock packs the token table into a compressed index block.
-func (s *IndexSealer) packTokenTableBlock(tokenTableBlock token.TableBlock) indexBlock {
-	s.tokenTable = token.TableFromBlocks([]token.TableBlock{tokenTableBlock}) // Store for PreloadedData
-
-	// Packing block
-	s.buf1 = tokenTableBlock.Pack(s.buf1[:0])
+func (s *IndexSealer) packTokenTableBlock(tb token.TableBlock) indexBlock {
+	s.tokenTable = token.TableFromBlocks([]token.TableBlock{tb})
+	s.buf1 = tb.Pack(s.buf1[:0])
 	return s.newIndexBlockZSTD(s.buf1, s.params.TokenTableZstdLevel)
 }
 
-// packBlocksOffsetsBlock packs document block offsets into a compressed index block.
 func (s *IndexSealer) packBlocksOffsetsBlock(block sealed.BlockOffsets) indexBlock {
-	// Update IDs table for PreloadedData
-	s.idsTable.IDsTotal = block.IDsTotal                  // Total number of IDs
-	s.idsTable.IDBlocksTotal = uint32(len(block.Offsets)) // Number of ID blocks
-
-	// Packing block
+	s.idsTable.IDsTotal = block.IDsTotal
+	s.idsTable.IDBlocksTotal = uint32(len(block.Offsets))
 	s.buf1 = block.Pack(s.buf1[:0])
-	b := s.newIndexBlockZSTD(s.buf1, s.params.DocsPositionsZstdLevel)
-	return b
+	return s.newIndexBlockZSTD(s.buf1, s.params.DocsPositionsZstdLevel)
 }
 
-// packMIDsBlock packs MIDs into a compressed index block.
 func (s *IndexSealer) packMIDsBlock(block idsSealBlock) indexBlock {
-	// Get the last ID in the block (smallest due to descending order)
 	last := len(block.mids.Values) - 1
-	minID := seq.ID{
-		MID: seq.MID(block.mids.Values[last]),
-		RID: seq.RID(block.rids.Values[last]),
-	}
-	s.idsTable.MinBlockIDs = append(s.idsTable.MinBlockIDs, minID) // Store for PreloadedData
-
-	// Packing block
+	minID := seq.ID{MID: seq.MID(block.mids.Values[last]), RID: seq.RID(block.rids.Values[last])}
+	s.idsTable.MinBlockIDs = append(s.idsTable.MinBlockIDs, minID)
 	s.buf1 = block.mids.Pack(s.buf1[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.IDsZstdLevel)
-	// Store min MID and RID in extended metadata
 	b.ext1 = uint64(minID.MID)
 	b.ext2 = uint64(minID.RID)
 	return b
 }
 
-// packRIDsBlock packs RIDs into a compressed index block.
 func (s *IndexSealer) packRIDsBlock(block idsSealBlock) indexBlock {
 	s.buf1 = block.rids.Pack(s.buf1[:0])
-	b := s.newIndexBlockZSTD(s.buf1, s.params.IDsZstdLevel)
-	return b
+	return s.newIndexBlockZSTD(s.buf1, s.params.IDsZstdLevel)
 }
 
-// packPosBlock packs document positions into a compressed index block.
 func (s *IndexSealer) packPosBlock(block idsSealBlock) indexBlock {
 	s.buf1 = block.params.Pack(s.buf1[:0])
-	b := s.newIndexBlockZSTD(s.buf1, s.params.IDsZstdLevel)
-	return b
+	return s.newIndexBlockZSTD(s.buf1, s.params.IDsZstdLevel)
 }
 
-// packLIDsBlock packs Local IDs (LIDs) into a compressed index block.
-// Also updates LIDs table for preloaded data access.
 func (s *IndexSealer) packLIDsBlock(block lidsSealBlock) indexBlock {
 	var ext1 uint64
-	if block.ext.isContinued { // todo: Legacy continuation flag
+	if block.ext.isContinued {
 		ext1 = 1
-		block.ext.minTID++ // Adjust for legacy format
+		block.ext.minTID++
 	}
-
-	// Update LIDs table for PreloadedData
 	s.lidsTable.MinTIDs = append(s.lidsTable.MinTIDs, block.ext.minTID)
 	s.lidsTable.MaxTIDs = append(s.lidsTable.MaxTIDs, block.ext.maxTID)
 	s.lidsTable.IsContinued = append(s.lidsTable.IsContinued, block.ext.isContinued)
-
-	// Packing block
 	s.buf1 = block.payload.Pack(s.buf1[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.LIDsZstdLevel)
-	b.ext1 = ext1                                                    // Legacy continuation flag
-	b.ext2 = uint64(block.ext.maxTID)<<32 | uint64(block.ext.minTID) // TID range
+	b.ext1 = ext1
+	b.ext2 = uint64(block.ext.maxTID)<<32 | uint64(block.ext.minTID)
 	return b
 }
 
-// LIDsTable returns the built LIDs table for fast initialization of sealed fraction.
-func (s *IndexSealer) LIDsTable() lids.Table {
-	return s.lidsTable
-}
-
-// TokenTable returns the built token table for fast initialization of sealed fraction.
-func (s *IndexSealer) TokenTable() token.Table {
-	return s.tokenTable
-}
-
-// IDsTable returns the built IDs table for fast initialization of sealed fraction.
-func (s *IndexSealer) IDsTable() seqids.Table {
-	return s.idsTable
-}
+func (s *IndexSealer) LIDsTable() lids.Table   { return s.lidsTable }
+func (s *IndexSealer) TokenTable() token.Table { return s.tokenTable }
+func (s *IndexSealer) IDsTable() seqids.Table  { return s.idsTable }

@@ -359,7 +359,11 @@ func seal(active *Active) (*Sealed, error) {
 		LIDs:       cache.NewCache[*lids.Block](nil, nil),
 		Tokens:     cache.NewCache[*token.Block](nil, nil),
 		TokenTable: cache.NewCache[token.Table](nil, nil),
-		Registry:   cache.NewCache[[]byte](nil, nil),
+		InfoRegistry:    cache.NewCache[[]byte](nil, nil),
+		TokenRegistry:   cache.NewCache[[]byte](nil, nil),
+		OffsetsRegistry: cache.NewCache[[]byte](nil, nil),
+		IDRegistry:      cache.NewCache[[]byte](nil, nil),
+		LIDRegistry:     cache.NewCache[[]byte](nil, nil),
 	}
 	sealed := NewSealedPreloaded(
 		active.BaseFileName,

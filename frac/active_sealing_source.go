@@ -3,14 +3,12 @@ package frac
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"io"
 	"iter"
 	"os"
 	"path/filepath"
 	"slices"
 	"time"
-	"unsafe"
 
 	"github.com/alecthomas/units"
 	"go.uber.org/zap"
@@ -160,45 +158,30 @@ func (src *ActiveSealingSource) Info() *common.Info {
 	return src.info
 }
 
-// TokenBlocks returns an iterator for token blocks for disk writing.
-// Tokens are pre-sorted: first by fields, then lexicographically within each field.
-// Each block contains up to blockSize bytes of data for efficient writing.
-func (src *ActiveSealingSource) TokenBlocks(blockSize int) iter.Seq[[][]byte] {
-	const tokenLengthSize = int(unsafe.Sizeof(uint32(0)))
-	return func(yield func([][]byte) bool) {
-		if len(src.tids) == 0 {
-			return
-		}
-		if blockSize <= 0 {
-			src.lastErr = errors.New("sealing: token block size must be > 0")
-			return
-		}
+// TokenAndLIDs returns an iterator that yields one (token, lids) pair at a time, in TID order.
+// Tokens are pre-sorted: first by field, then lexicographically within each field.
+// The lids slice is reused between yields and must not be retained by the caller.
+func (src *ActiveSealingSource) TokenAndLIDs() iter.Seq2[[]byte, []uint32] {
+	return func(yield func([]byte, []uint32) bool) {
+		var lidBuf []uint32
 
-		actualSize := 0
-		block := make([][]byte, 0, blockSize)
-
-		// Iterate through all sorted TIDs
 		for _, tid := range src.tids {
-			if actualSize >= blockSize {
-				if !yield(block) {
-					return
-				}
-				actualSize = 0
-				block = block[:0]
+			oldLIDs := src.lids[tid].GetLIDs(src.mids, src.rids)
+
+			lidBuf = slices.Grow(lidBuf[:0], len(oldLIDs))
+			for _, lid := range oldLIDs {
+				lidBuf = append(lidBuf, src.oldToNewLIDs[lid])
 			}
-			token := src.tokens[tid]
-			actualSize += tokenLengthSize // Add the size of the token length field
-			actualSize += len(token)      // Add the size of the token itself
-			block = append(block, token)
+
+			if !yield(src.tokens[tid], lidBuf) {
+				return
+			}
 		}
-		yield(block)
 	}
 }
 
-// Fields returns an iterator for sorted fields and their maximum TIDs.
-// Fields are sorted lexicographically, ensuring predictable order
-// when building disk index structures.
-func (src *ActiveSealingSource) Fields() iter.Seq2[string, uint32] {
+// Field returns an iterator for sorted fields and their maximum TIDs.
+func (src *ActiveSealingSource) Field() iter.Seq2[string, uint32] {
 	return func(yield func(string, uint32) bool) {
 		for i, field := range src.fields {
 			if !yield(field, src.fieldsMaxTIDs[i]) {
@@ -208,73 +191,35 @@ func (src *ActiveSealingSource) Fields() iter.Seq2[string, uint32] {
 	}
 }
 
-// IDsBlocks returns an iterator for document ID blocks and corresponding positions.
-// IDs are sorted. Block size is controlled by blockSize parameter for balance between
-// performance and memory usage.
-func (src *ActiveSealingSource) IDsBlocks(blockSize int) iter.Seq2[[]seq.ID, []seq.DocPos] {
-	return func(yield func([]seq.ID, []seq.DocPos) bool) {
+// ID returns an iterator for document IDs and their positions, one pair at a time.
+func (src *ActiveSealingSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
+	return func(yield func(seq.ID, seq.DocPos) bool) {
 		mids := src.mids.vals
 		rids := src.rids.vals
 
-		ids := make([]seq.ID, 0, blockSize)
-		pos := make([]seq.DocPos, 0, blockSize)
-
-		// First reserved ID (system). This position is not used because Local IDs (LIDs) use 1-based indexing.
-		ids = append(ids, seq.ID{MID: seq.MID(mids[0]), RID: seq.RID(rids[0])})
-		pos = append(pos, 0)
-
-		// Iterate through sorted LIDs
-		for i, lid := range src.sortedLIDs {
-			if len(ids) == blockSize {
-				if !yield(ids, pos) {
-					return
-				}
-				ids = ids[:0]
-				pos = pos[:0]
-			}
-			id := seq.ID{MID: seq.MID(mids[lid]), RID: seq.RID(rids[lid])}
-			ids = append(ids, id)
-
-			// Use sorted or original positions
-			if len(src.docPosSorted) == 0 {
-				pos = append(pos, src.docPosMap[id])
-			} else {
-				pos = append(pos, src.docPosSorted[i+1]) // +1 for system document
-			}
+		// First reserved ID (system). Position unused; LIDs use 1-based indexing.
+		if !yield(seq.ID{MID: seq.MID(mids[0]), RID: seq.RID(rids[0])}, 0) {
+			return
 		}
-		yield(ids, pos)
-	}
-}
 
-// BlocksOffsets returns document block offsets.
-func (src *ActiveSealingSource) BlocksOffsets() []uint64 {
-	return src.blocksOffsets
-}
-
-// TokenLIDs returns an iterator for LID lists for each token.
-// LIDs are converted to new numbering after document sorting.
-// Each iterator call returns a list of documents containing a specific token,
-// in sorted order.
-func (src *ActiveSealingSource) TokenLIDs() iter.Seq[[]uint32] {
-	return func(yield func([]uint32) bool) {
-		newLIDs := []uint32{}
-
-		// For each sorted TID
-		for _, tid := range src.tids {
-			// Get original LIDs for this token
-			oldLIDs := src.lids[tid].GetLIDs(src.mids, src.rids)
-			newLIDs = slices.Grow(newLIDs[:0], len(oldLIDs))
-
-			// Convert old LIDs to new through mapping
-			for _, lid := range oldLIDs {
-				newLIDs = append(newLIDs, src.oldToNewLIDs[lid])
+		for i, lid := range src.sortedLIDs {
+			id := seq.ID{MID: seq.MID(mids[lid]), RID: seq.RID(rids[lid])}
+			var pos seq.DocPos
+			if len(src.docPosSorted) == 0 {
+				pos = src.docPosMap[id]
+			} else {
+				pos = src.docPosSorted[i+1] // +1 for system document
 			}
-
-			if !yield(newLIDs) {
+			if !yield(id, pos) {
 				return
 			}
 		}
 	}
+}
+
+// BlockOffsets returns document block offsets.
+func (src *ActiveSealingSource) BlockOffsets() []uint64 {
+	return src.blocksOffsets
 }
 
 // makeInverser creates an array for converting old LIDs to new ones.
@@ -297,21 +242,17 @@ func (src *ActiveSealingSource) Docs() iter.Seq2[seq.ID, []byte] {
 			curDoc []byte
 		)
 
-		// Iterate through ID and position blocks
-		for ids, pos := range src.IDsBlocks(consts.IDsPerBlock) {
-			for i, id := range ids {
-				if id == systemSeqID {
-					curDoc = nil // reserved system document (no payload)
-				} else if id != prev {
-					// If ID changed, read new document
-					if curDoc, src.lastErr = src.doc(pos[i]); src.lastErr != nil {
-						return
-					}
-				}
-				prev = id
-				if !yield(id, curDoc) {
+		for id, pos := range src.ID() {
+			if id == systemSeqID {
+				curDoc = nil // reserved system document (no payload)
+			} else if id != prev {
+				if curDoc, src.lastErr = src.doc(pos); src.lastErr != nil {
 					return
 				}
+			}
+			prev = id
+			if !yield(id, curDoc) {
+				return
 			}
 		}
 	}
