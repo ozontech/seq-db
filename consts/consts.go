@@ -59,9 +59,25 @@ const (
 	SdocsTmpFileSuffix = "._sdocs"
 	SdocsDelFileSuffix = ".sdocs.del"
 
-	IndexFileSuffix    = ".index"
-	IndexTmpFileSuffix = "._index"
-	IndexDelFileSuffix = ".index.del"
+	InfoFileSuffix    = ".info"
+	InfoTmpFileSuffix = "._info"
+	InfoDelFileSuffix = ".info.del"
+
+	TokenFileSuffix    = ".token"
+	TokenTmpFileSuffix = "._token"
+	TokenDelFileSuffix = ".token.del"
+
+	OffsetsFileSuffix    = ".offsets"
+	OffsetsTmpFileSuffix = "._offsets"
+	OffsetsDelFileSuffix = ".offsets.del"
+
+	IDFileSuffix    = ".id"
+	IDTmpFileSuffix = "._id"
+	IDDelFileSuffix = ".id.del"
+
+	LIDFileSuffix    = ".lid"
+	LIDTmpFileSuffix = "._lid"
+	LIDDelFileSuffix = ".lid.del"
 
 	RemoteFractionSuffix = ".remote"
 

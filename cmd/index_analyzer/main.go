@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/alecthomas/units"
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -21,7 +23,7 @@ import (
 
 // Launch as:
 //
-// > go run ./cmd/index_analyzer/... ./data/*.index | tee ~/report.txt
+// > go run ./cmd/index_analyzer/... ./data/*.info | tee ~/report.txt
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("No args")
@@ -73,45 +75,80 @@ func getCacheMaintainer() (*fracmanager.CacheMaintainer, func()) {
 	}
 }
 
-func analyzeIndex(
-	path string,
-	cm *fracmanager.CacheMaintainer,
-	reader *storage.ReadLimiter,
-	mergedTokensUniq map[string]map[string]int,
-	allTokensValuesUniq map[string]int,
-) Stats {
-	var blockIndex uint32
-	cache := cm.CreateIndexCache()
+// basePath strips any known index suffix to return the fraction base path.
+func basePath(path string) string {
+	for _, suffix := range []string{
+		consts.InfoFileSuffix,
+		consts.TokenFileSuffix,
+		consts.OffsetsFileSuffix,
+		consts.IDFileSuffix,
+		consts.LIDFileSuffix,
+	} {
+		if strings.HasSuffix(path, suffix) {
+			return path[:len(path)-len(suffix)]
+		}
+	}
+	return path
+}
 
+func openFile(path string) *os.File {
 	f, err := os.Open(path)
 	if err != nil {
 		panic(err)
 	}
+	return f
+}
 
-	indexReader := storage.NewIndexReader(reader, f.Name(), f, cache.Registry)
+func analyzeIndex(
+	path string,
+	cm *fracmanager.CacheMaintainer,
+	rl *storage.ReadLimiter,
+	mergedTokensUniq map[string]map[string]int,
+	allTokensValuesUniq map[string]int,
+) Stats {
+	base := basePath(path)
+	indexCache := cm.CreateIndexCache()
 
-	readBlock := func() []byte {
-		data, _, err := indexReader.ReadIndexBlock(blockIndex, nil)
+	// Open per-section files.
+	infoFile := openFile(base + consts.InfoFileSuffix)
+	tokenFile := openFile(base + consts.TokenFileSuffix)
+	lidFile := openFile(base + consts.LIDFileSuffix)
+	defer infoFile.Close()
+	defer tokenFile.Close()
+	defer lidFile.Close()
+
+	infoReader := storage.NewIndexReader(rl, infoFile.Name(), infoFile, indexCache.InfoRegistry)
+	tokenReader := storage.NewIndexReader(rl, tokenFile.Name(), tokenFile, indexCache.TokenRegistry)
+	lidReader := storage.NewIndexReader(rl, lidFile.Name(), lidFile, indexCache.LIDRegistry)
+
+	// --- Info ---
+	var blockIndex uint32
+	infoData, _, err := infoReader.ReadIndexBlock(0, nil)
+	if err != nil {
+		logger.Fatal("error reading info block", zap.String("file", infoFile.Name()), zap.Error(err))
+	}
+	var b sealed.BlockInfo
+	if err := b.Unpack(infoData); err != nil {
+		logger.Fatal("error unpacking block info", zap.Error(err))
+	}
+	docsCount := int(b.Info.DocsTotal)
+
+	// --- Tokens (.token file) ---
+	// Token blocks start at index 0, followed by an empty separator, then token table blocks.
+	blockIndex = 0
+	readTokenBlock := func() []byte {
+		data, _, err := tokenReader.ReadIndexBlock(blockIndex, nil)
 		blockIndex++
 		if err != nil {
-			logger.Fatal("error reading block", zap.String("file", f.Name()), zap.Error(err))
+			logger.Fatal("error reading token block", zap.String("file", tokenFile.Name()), zap.Error(err))
 		}
 		return data
 	}
 
-	// load info
-	var b sealed.BlockInfo
-	if err := b.Unpack(readBlock()); err != nil {
-		logger.Fatal("error unpacking block info", zap.Error(err))
-	}
-
-	docsCount := int(b.Info.DocsTotal)
-
-	// load tokens
 	tokens := [][]byte{}
 	for {
-		data := readBlock()
-		if len(data) == 0 { // empty block - is section separator
+		data := readTokenBlock()
+		if len(data) == 0 { // empty block - section separator
 			break
 		}
 		block := token.Block{}
@@ -123,11 +160,10 @@ func analyzeIndex(
 		}
 	}
 
-	// load tokens table
 	tokenTableBlocks := []token.TableBlock{}
 	for {
-		data := readBlock()
-		if len(data) == 0 { // empty block - is section separator
+		data := readTokenBlock()
+		if len(data) == 0 { // empty block - section separator
 			break
 		}
 		block := token.TableBlock{}
@@ -136,28 +172,25 @@ func analyzeIndex(
 	}
 	tokenTable := token.TableFromBlocks(tokenTableBlocks)
 
-	// skip position
-	blockIndex++
-
-	// skip IDS
-	for {
-		data := readBlock()
-		if len(data) == 0 { // empty block - is section separator
-			break
+	// --- LIDs (.lid file) ---
+	blockIndex = 0
+	readLIDBlock := func() []byte {
+		data, _, err := lidReader.ReadIndexBlock(blockIndex, nil)
+		blockIndex++
+		if err != nil {
+			logger.Fatal("error reading lid block", zap.String("file", lidFile.Name()), zap.Error(err))
 		}
-		blockIndex++ // skip RID
-		blockIndex++ // skip Param
+		return data
 	}
 
-	// load LIDs
 	tid := 0
 	lidsTotal := 0
 	lidsUniq := map[[16]byte]int{}
 	lidsLens := make([]int, len(tokens))
 	tokenLIDs := []uint32{}
 	for {
-		data := readBlock()
-		if len(data) == 0 { // empty block - is section separator
+		data := readLIDBlock()
+		if len(data) == 0 { // empty block - section separator
 			break
 		}
 

@@ -1833,8 +1833,8 @@ func (s *FractionTestSuite) TestFractionInfo() {
 			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	case *Remote:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1500),
-			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
+		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1600),
+			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	default:
 		s.Require().Fail("unsupported fraction type")
 	}
@@ -2091,7 +2091,11 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 		LIDs:       cache.NewCache[*lids.Block](nil, nil),
 		Tokens:     cache.NewCache[*token.Block](nil, nil),
 		TokenTable: cache.NewCache[token.Table](nil, nil),
-		Registry:   cache.NewCache[[]byte](nil, nil),
+		InfoRegistry:    cache.NewCache[[]byte](nil, nil),
+		TokenRegistry:   cache.NewCache[[]byte](nil, nil),
+		OffsetsRegistry: cache.NewCache[[]byte](nil, nil),
+		IDRegistry:      cache.NewCache[[]byte](nil, nil),
+		LIDRegistry:     cache.NewCache[[]byte](nil, nil),
 	}
 
 	sealed := NewSealedPreloaded(
@@ -2279,7 +2283,11 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 		LIDs:       cache.NewCache[*lids.Block](nil, nil),
 		Tokens:     cache.NewCache[*token.Block](nil, nil),
 		TokenTable: cache.NewCache[token.Table](nil, nil),
-		Registry:   cache.NewCache[[]byte](nil, nil),
+		InfoRegistry:    cache.NewCache[[]byte](nil, nil),
+		TokenRegistry:   cache.NewCache[[]byte](nil, nil),
+		OffsetsRegistry: cache.NewCache[[]byte](nil, nil),
+		IDRegistry:      cache.NewCache[[]byte](nil, nil),
+		LIDRegistry:     cache.NewCache[[]byte](nil, nil),
 	}
 
 	sealed = NewSealed(
@@ -2345,7 +2353,11 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			LIDs:       cache.NewCache[*lids.Block](nil, nil),
 			Tokens:     cache.NewCache[*token.Block](nil, nil),
 			TokenTable: cache.NewCache[token.Table](nil, nil),
-			Registry:   cache.NewCache[[]byte](nil, nil),
+			InfoRegistry:    cache.NewCache[[]byte](nil, nil),
+			TokenRegistry:   cache.NewCache[[]byte](nil, nil),
+			OffsetsRegistry: cache.NewCache[[]byte](nil, nil),
+			IDRegistry:      cache.NewCache[[]byte](nil, nil),
+			LIDRegistry:     cache.NewCache[[]byte](nil, nil),
 		}
 
 		remoteFrac := NewRemote(

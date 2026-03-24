@@ -19,20 +19,35 @@ import (
 type fracManifest struct {
 	basePath  string // base path to fraction files (without extension)
 	hasDocs   bool   // presence of main documents file
-	hasIndex  bool   // presence of index file
 	hasMeta   bool   // presence of meta-information (legacy WAL format)
 	hasWal    bool   // presence of WAL with meta 	 (new WAL format)
+	hasIndex  bool   // presence of index file
 	hasSdocs  bool   // presence of sorted documents
 	hasRemote bool   // presence of remote fraction
+
+	// Split index file flags
+	hasInfo    bool
+	hasToken   bool
+	hasOffsets bool
+	hasID      bool
+	hasLID     bool
 
 	// Deletion marker file flags
 	hasDocsDel  bool // documents deletion marker
 	hasSdocsDel bool // sorted documents deletion marker
-	hasIndexDel bool // index deletion marker
 
 	// Temporary file flags
-	hasIndexTmp bool // temporary index file
-	hasSdocsTmp bool // temporary sorted documents file
+	hasInfoTmp    bool
+	hasTokenTmp   bool
+	hasOffsetsTmp bool
+	hasIDTmp      bool
+	hasLIDTmp     bool
+	hasSdocsTmp   bool // temporary sorted documents file
+}
+
+// hasAllIndexFiles reports whether all 5 split index files are present.
+func (m *fracManifest) hasAllIndexFiles() bool {
+	return m.hasInfo && m.hasToken && m.hasOffsets && m.hasID && m.hasLID
 }
 
 // AddExtension adds information about a file with the specified extension
@@ -47,20 +62,35 @@ func (m *fracManifest) AddExtension(ext string) error {
 		m.hasWal = true
 	case consts.SdocsFileSuffix:
 		m.hasSdocs = true
-	case consts.IndexFileSuffix:
-		m.hasIndex = true
 	case consts.RemoteFractionSuffix:
 		m.hasRemote = true
+
+	case consts.InfoFileSuffix:
+		m.hasInfo = true
+	case consts.TokenFileSuffix:
+		m.hasToken = true
+	case consts.OffsetsFileSuffix:
+		m.hasOffsets = true
+	case consts.IDFileSuffix:
+		m.hasID = true
+	case consts.LIDFileSuffix:
+		m.hasLID = true
 
 	case consts.DocsDelFileSuffix:
 		m.hasDocsDel = true
 	case consts.SdocsDelFileSuffix:
 		m.hasSdocsDel = true
-	case consts.IndexDelFileSuffix:
-		m.hasIndexDel = true
 
-	case consts.IndexTmpFileSuffix:
-		m.hasIndexTmp = true
+	case consts.InfoTmpFileSuffix:
+		m.hasInfoTmp = true
+	case consts.TokenTmpFileSuffix:
+		m.hasTokenTmp = true
+	case consts.OffsetsTmpFileSuffix:
+		m.hasOffsetsTmp = true
+	case consts.IDTmpFileSuffix:
+		m.hasIDTmp = true
+	case consts.LIDTmpFileSuffix:
+		m.hasLIDTmp = true
 	case consts.SdocsTmpFileSuffix:
 		m.hasSdocsTmp = true
 
@@ -88,13 +118,13 @@ func (m *fracManifest) Stage() fracStage {
 	if m.hasRemote {
 		return fracStageRemote
 	}
-	if m.hasIndex && (m.hasSdocs || m.hasDocs) {
+	if m.hasAllIndexFiles() && (m.hasSdocs || m.hasDocs) {
 		return fracStageSealed
 	}
 	if (m.hasMeta || m.hasWal) && m.hasDocs {
 		return fracStageActive
 	}
-	if m.hasDocsDel || m.hasIndexDel || m.hasSdocsDel {
+	if m.hasDocsDel || m.hasSdocsDel {
 		return fracStageZombie
 	}
 	return fracStageUnknown
@@ -125,18 +155,21 @@ func removeMeta(m *fracManifest) {
 	}
 }
 
-func removeIndex(m *fracManifest) {
-	if m.hasIndex {
-		util.RemoveFile(m.basePath + consts.IndexFileSuffix)
-		m.hasIndex = false
+func removeIndexFiles(m *fracManifest) {
+	for _, suffix := range []string{
+		consts.InfoFileSuffix,
+		consts.TokenFileSuffix,
+		consts.OffsetsFileSuffix,
+		consts.IDFileSuffix,
+		consts.LIDFileSuffix,
+	} {
+		util.RemoveFile(m.basePath + suffix)
 	}
-}
-
-func removeIndexDel(m *fracManifest) {
-	if m.hasIndexDel {
-		util.RemoveFile(m.basePath + consts.IndexDelFileSuffix)
-		m.hasIndexDel = false
-	}
+	m.hasInfo = false
+	m.hasToken = false
+	m.hasOffsets = false
+	m.hasID = false
+	m.hasLID = false
 }
 
 func removeSdocsDel(m *fracManifest) {
@@ -154,10 +187,20 @@ func removeDocsDel(m *fracManifest) {
 }
 
 func removeIndexTmp(m *fracManifest) {
-	if m.hasIndexTmp {
-		util.RemoveFile(m.basePath + consts.IndexTmpFileSuffix)
-		m.hasIndexTmp = false
+	for _, suffix := range []string{
+		consts.InfoTmpFileSuffix,
+		consts.TokenTmpFileSuffix,
+		consts.OffsetsTmpFileSuffix,
+		consts.IDTmpFileSuffix,
+		consts.LIDTmpFileSuffix,
+	} {
+		util.RemoveFile(m.basePath + suffix)
 	}
+	m.hasInfoTmp = false
+	m.hasTokenTmp = false
+	m.hasOffsetsTmp = false
+	m.hasIDTmp = false
+	m.hasLIDTmp = false
 }
 
 func removeSdocsTmp(m *fracManifest) {
@@ -240,8 +283,7 @@ func cleanupRemoteFrac(m *fracManifest) {
 	removeMeta(m)
 	removeDocs(m)
 	removeSdocs(m)
-	removeIndex(m)
-	removeIndexDel(m)
+	removeIndexFiles(m)
 }
 
 // cleanupSealedFrac cleans files for sealed fractions
@@ -265,17 +307,26 @@ func cleanupTemporary(m *fracManifest) {
 // removeAllFiles completely removes all fraction files
 // Used for cleaning up partially deleted or corrupted fractions
 func removeAllFiles(basePath string) {
-	// Remove main files first, then deletion markers to preserve deletion intent
-	util.RemoveFile(basePath + consts.IndexFileSuffix)
-	util.RemoveFile(basePath + consts.DocsFileSuffix)
-	util.RemoveFile(basePath + consts.SdocsFileSuffix)
-	util.RemoveFile(basePath + consts.MetaFileSuffix)
-
-	util.RemoveFile(basePath + consts.IndexDelFileSuffix)
-	util.RemoveFile(basePath + consts.DocsDelFileSuffix)
-	util.RemoveFile(basePath + consts.SdocsDelFileSuffix)
-	util.RemoveFile(basePath + consts.SdocsTmpFileSuffix)
-	util.RemoveFile(basePath + consts.IndexTmpFileSuffix)
+	for _, suffix := range []string{
+		consts.InfoFileSuffix,
+		consts.TokenFileSuffix,
+		consts.OffsetsFileSuffix,
+		consts.IDFileSuffix,
+		consts.LIDFileSuffix,
+		consts.DocsFileSuffix,
+		consts.SdocsFileSuffix,
+		consts.MetaFileSuffix,
+		consts.DocsDelFileSuffix,
+		consts.SdocsDelFileSuffix,
+		consts.SdocsTmpFileSuffix,
+		consts.InfoTmpFileSuffix,
+		consts.TokenTmpFileSuffix,
+		consts.OffsetsTmpFileSuffix,
+		consts.IDTmpFileSuffix,
+		consts.LIDTmpFileSuffix,
+	} {
+		util.RemoveFile(basePath + suffix)
+	}
 }
 
 // parseFilePath extracts components from a fraction file path
