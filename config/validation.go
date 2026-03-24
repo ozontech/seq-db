@@ -64,9 +64,13 @@ func (c *Config) storeValidations() []validateFn {
 		greaterThan("resources.search_workers", 0, c.Resources.SearchWorkers),
 		greaterThan("resources.replay_workers", 0, c.Resources.ReplayWorkers),
 		greaterThan("resources.cache_size", 0, c.Resources.CacheSize),
+		greaterThan("storage.sealing_queue_len", -1, c.Storage.SealingQueueLen),
 
 		inRange("compression.sealed_zstd_compression_level", -7, 22, c.Compression.SealedZstdCompressionLevel),
 		inRange("compression.doc_block_zstd_compression_level", -7, 22, c.Compression.DocBlockZstdCompressionLevel),
+		inRange("offloading.queue_size_percent", 0, 100, c.Offloading.QueueSizePercent),
+
+		greaterThan("experimental.max_regex_tokens_check", -1, c.Experimental.MaxRegexTokensCheck),
 	}
 
 	if c.Offloading.Enabled {

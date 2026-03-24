@@ -129,19 +129,21 @@ func TestStress(t *testing.T) {
 }
 
 func BenchmarkBucketClean(b *testing.B) {
-	b.StopTimer()
-
 	cleaner := NewCleaner(0, nil)
 	c := NewCache[int](cleaner, nil)
 
-	for r := 0; r < b.N; r++ {
-		for i := 0; i < 1000; i++ {
+	for b.Loop() {
+		b.StopTimer()
+
+		for i := range 1000 {
 			c.Get(uint32(i), func() (int, int) { return i, 4 })
 		}
+
 		cleaner.markStale(cleaner.getSize())
+
 		b.StartTimer()
+
 		size := c.Cleanup()
-		b.StopTimer()
 		if size == 0 {
 			b.FailNow()
 		}

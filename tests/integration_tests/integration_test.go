@@ -880,6 +880,37 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 			require.Equal(t, float64(nextBin*i+5), hist[bins[i]].Quantile(0.5))
 		}
 	})
+
+	t.Run("unique_count", func(t *testing.T) {
+		bulkDataset("nginx-unique-count", func(i int) int { return i % nextBin })
+
+		qpr, _, _, err := env.Search(`service:"nginx-unique-count"`, 1024, setup.WithAggQuery(search.AggQuery{
+			Field:    "level",
+			GroupBy:  "service",
+			Func:     seq.AggFuncUniqueCount,
+			Interval: seq.DurationToMID(30 * time.Second),
+		}))
+		require.NoError(t, err)
+
+		hist := qpr.Aggs[0].SamplesByBin
+		require.Len(t, hist, timeBinsCount)
+
+		bins := sortedTimeBins(hist)
+		for i := range timeBinsCount {
+			require.Equal(t, "nginx-unique-count", bins[i].Token)
+			require.Equal(t, int64(nextBin), int64(len(hist[bins[i]].Values)))
+		}
+
+		require.NotEmpty(t, qpr.Aggs[0].ValuesPool)
+		levelStrings := make(map[string]bool)
+		for i := 0; i < nextBin; i++ {
+			levelStrings[strconv.Itoa(i)] = true
+		}
+		for _, val := range qpr.Aggs[0].ValuesPool {
+			delete(levelStrings, val)
+		}
+		require.Empty(t, levelStrings)
+	})
 }
 
 func sortedTimeBins(hist map[seq.AggBin]*seq.SamplesContainer) []seq.AggBin {
@@ -1616,4 +1647,107 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 		r.NoError(err)
 		return len(listResp) == 1
 	}, 10*time.Second, 50*time.Millisecond)
+}
+
+func (s *IntegrationTestSuite) TestPaginationWithOffsetAndSize() {
+	t := s.T()
+	r := require.New(t)
+
+	env := setup.NewTestingEnv(s.Config)
+	defer env.StopAll()
+
+	docsPerBulk := 100
+	bulksNum := getBulkIterationsNum(env)
+	totalDocs := docsPerBulk * bulksNum
+
+	for j := 0; j < bulksNum; j++ {
+		var bulk []string
+		for i := 0; i < docsPerBulk; i++ {
+			bulk = append(bulk, fmt.Sprintf(`{"service":"api-gateway", "doc":"%d"}`, j*docsPerBulk+i))
+		}
+		setup.Bulk(s.T(), env.IngestorBulkAddr(), bulk)
+	}
+	env.WaitIdle()
+
+	fetchedIDs := make(map[string]bool)
+	fetchedDocs := make(map[string]bool)
+	offset := 0
+	pageSize := 53
+
+	for _, order := range []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc} {
+		for {
+			qpr, docs, _, err := env.Search(`service:*`, pageSize, setup.WithOffset(offset), setup.WithOrder(order))
+			r.NoError(err, "search failed")
+
+			if len(qpr.IDs) == 0 {
+				break
+			}
+
+			for i, doc := range docs {
+				docID := qpr.IDs[i].ID.String()
+				r.False(fetchedIDs[docID], "seen some doc ID twice")
+				fetchedIDs[docID] = true
+				docStr := string(doc)
+				r.False(fetchedDocs[docStr], "seen some doc twice")
+				fetchedDocs[string(doc)] = true
+			}
+
+			offset += len(qpr.IDs)
+		}
+
+		r.Equal(totalDocs, len(fetchedIDs), "total doc IDs count does not match")
+		r.Equal(totalDocs, len(fetchedDocs), "count of unique docs does not match")
+	}
+}
+
+func (s *IntegrationTestSuite) TestPaginationWithOffsetId() {
+	t := s.T()
+	r := require.New(t)
+
+	env := setup.NewTestingEnv(s.Config)
+	defer env.StopAll()
+
+	docsPerBulk := 100
+	bulksNum := getBulkIterationsNum(env)
+	totalDocs := docsPerBulk * bulksNum
+
+	for j := 0; j < bulksNum; j++ {
+		var bulk []string
+		for i := 0; i < docsPerBulk; i++ {
+			bulk = append(bulk, fmt.Sprintf(`{"service":"api-gateway", "doc":"%d"}`, j*docsPerBulk+i))
+		}
+		setup.Bulk(s.T(), env.IngestorBulkAddr(), bulk)
+	}
+	env.WaitIdle()
+
+	pageSize := 53
+
+	for _, order := range []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc} {
+
+		fetchedIDs := make(map[string]bool)
+		fetchedDocs := make(map[string]bool)
+		var offsetId string
+		for {
+			qpr, docs, _, err := env.Search(`service:*`, pageSize, setup.WithOffsetId(offsetId), setup.WithOrder(order))
+			r.NoError(err, "search failed")
+
+			if len(qpr.IDs) == 0 {
+				break
+			}
+
+			for i, doc := range docs {
+				docID := qpr.IDs[i].ID.String()
+				r.False(fetchedIDs[docID], "doc ID has appeared more than once")
+				fetchedIDs[docID] = true
+				docStr := string(doc)
+				r.False(fetchedDocs[docStr], "doc has appeared more than once")
+				fetchedDocs[string(doc)] = true
+			}
+
+			offsetId = qpr.IDs.IDs()[qpr.IDs.Len()-1].String()
+		}
+
+		r.Equal(totalDocs, len(fetchedIDs), "total doc IDs count does not match")
+		r.Equal(totalDocs, len(fetchedDocs), "count of unique docs does not match")
+	}
 }

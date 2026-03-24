@@ -3,11 +3,14 @@ package pattern
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/netip"
+	"regexp"
 	"strconv"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/util"
 )
@@ -64,11 +67,11 @@ func (s *literalSearch) Narrow(tp tokenProvider) {
 	s.last = s.first - 1 // begin > end: will be considered empty
 }
 
-func (s *literalSearch) check(val []byte) bool {
+func (s *literalSearch) check(val []byte) (bool, error) {
 	if s.narrowed {
-		return len(s.value) == len(val)
+		return len(s.value) == len(val), nil
 	}
-	return bytes.Equal(s.value, val)
+	return bytes.Equal(s.value, val), nil
 }
 
 type wildcardSearch struct {
@@ -162,8 +165,8 @@ func findSequence(haystack []byte, needles [][]byte) int {
 	return len(needles)
 }
 
-func (s *wildcardSearch) check(val []byte) bool {
-	return s.checkPrefix(val) && s.checkSuffix(val) && s.checkMiddle(val)
+func (s *wildcardSearch) check(val []byte) (bool, error) {
+	return s.checkPrefix(val) && s.checkSuffix(val) && s.checkMiddle(val), nil
 }
 
 type rangeTextSearch struct {
@@ -178,31 +181,31 @@ func newRangeTextSearch(base baseSearch, token *parser.Range) *rangeTextSearch {
 	}
 }
 
-func (s *rangeTextSearch) check(val []byte) bool {
+func (s *rangeTextSearch) check(val []byte) (bool, error) {
 	valStr := string(val)
 	if s.token.From.Kind != parser.TermSymbol {
 		if s.token.IncludeFrom {
 			if !(s.token.From.Data <= valStr) {
-				return false
+				return false, nil
 			}
 		} else {
 			if !(s.token.From.Data < valStr) {
-				return false
+				return false, nil
 			}
 		}
 	}
 	if s.token.To.Kind != parser.TermSymbol {
 		if s.token.IncludeTo {
 			if !(valStr <= s.token.To.Data) {
-				return false
+				return false, nil
 			}
 		} else {
 			if !(valStr < s.token.To.Data) {
-				return false
+				return false, nil
 			}
 		}
 	}
-	return true
+	return true, nil
 }
 
 type rangeNumberSearch struct {
@@ -241,31 +244,32 @@ func newRangeNumberSearch(base baseSearch, token *parser.Range) *rangeNumberSear
 	return s
 }
 
-func (s *rangeNumberSearch) check(rawVal []byte) bool {
+func (s *rangeNumberSearch) check(rawVal []byte) (bool, error) {
 	val, err := strconv.ParseFloat(string(rawVal), 64)
 	if err != nil || isNaNOrInf(val) {
-		return false
+		return false, nil
 	}
 
 	if s.includeFrom {
 		if !(s.from <= val) {
-			return false
+			return false, nil
 		}
 	} else {
 		if !(s.from < val) {
-			return false
+			return false, nil
 		}
 	}
 	if s.includeTo {
 		if !(val <= s.to) {
-			return false
+			return false, nil
 		}
 	} else {
 		if !(val < s.to) {
-			return false
+			return false, nil
 		}
 	}
-	return true
+
+	return true, nil
 }
 
 type rangeIpSearch struct {
@@ -297,20 +301,44 @@ func newRangeIPSearch(base baseSearch, token *parser.IPRange) *rangeIpSearch {
 	return s
 }
 
-func (s *rangeIpSearch) check(rawVal []byte) bool {
+func (s *rangeIpSearch) check(rawVal []byte) (bool, error) {
 	val, err := netip.ParseAddr(string(rawVal))
 	if err != nil {
-		return false
+		return false, nil
 	}
 
 	// s.from <= val <= s.to
-	return s.from.Compare(val) <= 0 && val.Compare(s.to) <= 0
+	return s.from.Compare(val) <= 0 && val.Compare(s.to) <= 0, nil
+}
+
+type reSearch struct {
+	baseSearch
+	r       *regexp.Regexp
+	checked int
+}
+
+func newReSearch(base baseSearch, token *parser.Re) *reSearch {
+	if token.Expression.Kind != parser.TermText {
+		panic("BUG: wrong term kind in re")
+	}
+	return &reSearch{baseSearch: base, r: token.CompiledExpression}
+}
+
+func (s *reSearch) check(rawVal []byte) (bool, error) {
+	if config.MaxRegexTokensCheck > 0 && s.checked >= config.MaxRegexTokensCheck {
+		return false, errors.New(
+			"'re' filter exceeded token limit: " +
+				"consider using regular filters",
+		)
+	}
+	s.checked++
+	return s.r.Match(rawVal), nil
 }
 
 type searcher interface {
 	firstTID() uint32
 	lastTID() uint32
-	check(val []byte) bool
+	check(val []byte) (bool, error)
 }
 
 func newSearcher(token parser.Token, tp tokenProvider) searcher {
@@ -339,6 +367,21 @@ func newSearcher(token parser.Token, tp tokenProvider) searcher {
 		return newRangeTextSearch(base, t)
 	case *parser.IPRange:
 		return newRangeIPSearch(base, t)
+	case *parser.Re:
+		// TODO(dkharms): We can benefit from many optimizations when dealing with regular expressions.
+		//
+		// For example, with the most obvious one we can narrow search space
+		// by extracting prefix and suffix from expression if there is any:
+		//
+		//   prefix := regexp.Compile(expr).LiteralPrefix()
+		//   suffix := Reverse(regexp.Compile(Reverse(expr)).LiteralPrefix())
+		//
+		// and then performing similar logic as in [literalSearch.Narrow] to find
+		// boundaries for token ids.
+		//
+		// There are other techniques which are more complicated so it's
+		// worth studying Apache Lucene, TSDB (Prometheus) etc.
+		return newReSearch(base, t)
 	}
 	panic(fmt.Sprintf("unknown token type: %T", token))
 }
@@ -354,7 +397,13 @@ func Search(ctx context.Context, t parser.Token, tp tokenProvider) ([]uint32, er
 		if tid&1023 == 0 && util.IsCancelled(ctx) {
 			return nil, ctx.Err()
 		}
-		if s.check(tp.GetToken(tid)) {
+
+		match, err := s.check(tp.GetToken(tid))
+		if err != nil {
+			return nil, err
+		}
+
+		if match {
 			tids = append(tids, tid)
 		}
 	}

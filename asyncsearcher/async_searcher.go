@@ -353,7 +353,11 @@ func (as *AsyncSearcher) doSearch(id string, fracs fracmanager.List) {
 			break
 		}
 
-		f := fracsByName[fracInfo.Name]
+		f, ok := fracsByName[fracInfo.Name]
+		if !ok { // oldest fracs may already be removed
+			logger.Info("async search: skip missing fraction", zap.String("id", id), zap.String("frac", fracInfo.Name))
+			continue
+		}
 		if err := as.processFrac(f, info); err != nil {
 			as.updateSearchInfo(id, func(info *asyncSearchInfo) {
 				info.Error = err.Error()
@@ -396,7 +400,13 @@ func compressQPR(qpr *seq.QPR, cb func(compressed []byte) error) error {
 	return nil
 }
 
-func (as *AsyncSearcher) processFrac(f frac.Fraction, info asyncSearchInfo) error {
+func (as *AsyncSearcher) processFrac(f frac.Fraction, info asyncSearchInfo) (err error) {
+	defer func() {
+		if panicData := util.RecoverToError(recover(), asyncSearchPanics); panicData != nil {
+			err = fmt.Errorf("async search panic during processFrac: %w", panicData)
+		}
+	}()
+
 	qpr, err := f.Search(info.ctx, info.Request.Params)
 	if err != nil {
 		return err

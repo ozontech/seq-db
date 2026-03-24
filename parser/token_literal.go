@@ -87,6 +87,8 @@ func GetField(token Token) string {
 		return t.Field
 	case *IPRange:
 		return t.Field
+	case *Re:
+		return t.Field
 	}
 	panic(fmt.Sprintf("unknown token type: %T", token))
 }

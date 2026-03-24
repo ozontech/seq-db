@@ -30,20 +30,31 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 		return newLeaf(token)
 	case *parser.IPRange:
 		return newLeaf(token)
+	case *parser.Re:
+		return newLeaf(token)
 	case *parser.Logical:
 		switch token.Operator {
 		case parser.LogicalAnd:
 			stats.NodesTotal++
-			return node.NewAnd(children[0], children[1], reverse), nil
+			return node.NewAnd(children[0], children[1]), nil
 		case parser.LogicalOr:
 			stats.NodesTotal++
-			return node.NewOr(children[0], children[1], reverse), nil
+			return node.NewOr(children[0], children[1]), nil
 		case parser.LogicalNAnd:
 			stats.NodesTotal++
-			return node.NewNAnd(children[0], children[1], reverse), nil
+			return node.NewNAnd(children[0], children[1]), nil
 		case parser.LogicalNot:
 			stats.NodesTotal++
-			return node.NewNot(children[0], minVal, maxVal, reverse), nil
+			var minLID node.LID
+			var maxLID node.LID
+			if reverse {
+				minLID = node.NewAscLID(maxVal)
+				maxLID = node.NewAscLID(minVal)
+			} else {
+				minLID = node.NewDescLID(minVal)
+				maxLID = node.NewDescLID(maxVal)
+			}
+			return node.NewNot(children[0], minLID, maxLID), nil
 		}
 	}
 	return nil, fmt.Errorf("unknown token type")
@@ -74,12 +85,12 @@ func evalLeaf(
 		stats.NodesTotal += len(lidsTids)*2 - 1
 	}
 
-	return node.BuildORTree(lidsTids, order.IsReverse()), nil
+	return node.BuildORTree(lidsTids), nil
 }
 
 type Aggregator interface {
 	// Next iterates to count the next lid.
-	Next(lid uint32) error
+	Next(lid node.LID) error
 	// Aggregate processes and returns the final aggregation result.
 	Aggregate() (seq.AggregatableSamples, error)
 }
@@ -87,6 +98,8 @@ type Aggregator interface {
 type AggLimits struct {
 	// MaxFieldTokens max AggQuery.Field uniq values to parse.
 	MaxFieldTokens int
+	// MaxFieldValues max AggQuery.Field uniq values to hold in memory
+	MaxFieldValues int
 	// MaxGroupTokens max AggQuery.GroupBy unique values.
 	MaxGroupTokens int
 	// MaxTIDsPerFraction max number of tokens per fraction.
@@ -122,7 +135,7 @@ func evalAgg(
 
 		return NewSingleSourceUniqueAggregator(groupIterator), nil
 
-	case seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncSum, seq.AggFuncAvg, seq.AggFuncQuantile:
+	case seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncSum, seq.AggFuncAvg, seq.AggFuncQuantile, seq.AggFuncUniqueCount:
 		fieldIterator, err := iteratorFromLiteral(
 			ti, query.Field, sw, stats, minLID, maxLID,
 			limits.MaxTIDsPerFraction, iteratorLimit{limit: limits.MaxFieldTokens, err: consts.ErrTooManyFieldTokens}, order,
@@ -133,6 +146,7 @@ func evalAgg(
 
 		collectSamples := query.Func == seq.AggFuncQuantile &&
 			haveNotMinMaxQuantiles(query.Quantiles)
+		collectValues := query.Func == seq.AggFuncUniqueCount
 
 		if query.GroupBy == nil {
 			return NewSingleSourceHistogramAggregator(
@@ -149,7 +163,7 @@ func evalAgg(
 		}
 
 		return NewGroupAndFieldAggregator(
-			fieldIterator, groupIterator, extractMID, collectSamples,
+			fieldIterator, groupIterator, extractMID, collectSamples, collectValues, limits,
 		), nil
 
 	default:
@@ -203,6 +217,6 @@ func iteratorFromLiteral(
 		stats.AggNodesTotal += len(lidsTids)*2 - 1
 	}
 
-	sourcedNode := node.BuildORTreeAgg(lidsTids, order.IsReverse())
-	return NewSourcedNodeIterator(sourcedNode, ti, tids, iteratorLimit, order.IsReverse()), nil
+	sourcedNode := node.BuildORTreeAgg(lidsTids)
+	return NewSourcedNodeIterator(sourcedNode, ti, tids, iteratorLimit), nil
 }

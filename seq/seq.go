@@ -54,6 +54,26 @@ func (d ID) Bytes() []byte {
 	return final
 }
 
+func (d ID) Dec() ID {
+	if d.RID != 0 {
+		d.RID -= 1
+	} else if d.MID != 0 {
+		d.MID -= 1
+		d.RID = math.MaxUint64
+	}
+	return d
+}
+
+func (d ID) Inc() ID {
+	if d.RID != math.MaxUint64 {
+		d.RID += 1
+	} else if d.MID != math.MaxUint64 {
+		d.MID += 1
+		d.RID = 0
+	}
+	return d
+}
+
 func LessOrEqual(a, b ID) bool {
 	if a.MID == b.MID {
 		return a.RID <= b.RID
@@ -130,6 +150,10 @@ func MIDToTime(t MID) time.Time {
 
 func MIDToMillis(t MID) uint64 {
 	return uint64(t) / uint64(time.Millisecond)
+}
+
+func MIDToSeconds(t MID) uint64 {
+	return uint64(t) / uint64(time.Second)
 }
 
 func MIDToCeilingMillis(t MID) uint64 {

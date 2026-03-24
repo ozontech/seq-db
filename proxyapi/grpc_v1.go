@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -11,10 +12,12 @@ import (
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -66,14 +69,14 @@ type grpcV1 struct {
 }
 
 func newGrpcV1(
-	config APIConfig,
+	apiConfig APIConfig,
 	si SearchIngestor,
 	mappingProvider MappingProvider,
 	rl RateLimiter,
 	mirror seqproxyapi.SeqProxyApiClient,
 ) *grpcV1 {
 	return &grpcV1{
-		config:          config,
+		config:          apiConfig,
 		searchIngestor:  si,
 		mappingProvider: mappingProvider,
 		rateLimiter:     rl,
@@ -192,6 +195,9 @@ func (g *grpcV1) doSearch(
 	if req.Query.From == nil || req.Query.To == nil {
 		return nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
 	}
+	if req.Offset != 0 && req.OffsetId != "" {
+		return nil, status.Error(codes.InvalidArgument, `only one of "offset" and "offset_id" must be provided`)
+	}
 
 	fromTime := req.Query.From.AsTime()
 	toTime := req.Query.To.AsTime()
@@ -203,6 +209,7 @@ func (g *grpcV1) doSearch(
 			trace.BoolAttribute("explain", req.Query.Explain),
 			trace.Int64Attribute("size", req.Size),
 			trace.Int64Attribute("offset", req.Offset),
+			trace.StringAttribute("offset_id", req.OffsetId),
 			trace.BoolAttribute("with_total", req.WithTotal),
 			trace.StringAttribute("order", req.Order.String()),
 		)
@@ -231,6 +238,7 @@ func (g *grpcV1) doSearch(
 		Explain:     req.Query.Explain,
 		Size:        int(req.Size),
 		Offset:      int(req.Offset),
+		OffsetId:    req.OffsetId,
 		WithTotal:   req.WithTotal,
 		ShouldFetch: shouldFetch,
 		Order:       req.Order.MustDocsOrder(),
@@ -427,6 +435,18 @@ func parseProxyError(e error) (*seqproxyapi.Error, bool) {
 	}
 
 	return nil, false
+}
+
+func shouldFailPartialResponse(ctx context.Context) bool {
+	md, _ := metadata.FromIncomingContext(ctx)
+	failPartialResponseValues := md.Get("fail-partial-response")
+	if len(failPartialResponseValues) == 0 {
+		// Header isn't set, so use value from config
+		return config.FailPartialResponse
+	}
+	val := failPartialResponseValues[0]
+	failPartialResponse, _ := strconv.ParseBool(val)
+	return failPartialResponse
 }
 
 func shouldHaveResponse(code seqproxyapi.ErrorCode) bool {

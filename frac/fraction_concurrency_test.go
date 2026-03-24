@@ -55,10 +55,12 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	)
 
 	mapping := seq.Mapping{
-		"service":  seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
-		"message":  seq.NewSingleType(seq.TokenizerTypeText, "", 100),
-		"level":    seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
-		"trace_id": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"service":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"client_ip": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"message":   seq.NewSingleType(seq.TokenizerTypeText, "", 100),
+		"level":     seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"trace_id":  seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
 	}
 	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(1024, false, true, 8192),
@@ -145,7 +147,16 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	readTest(t, sealed, numReaders, numQueries, docs, fromTime, toTime, mapping)
 }
 
-func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs []testDoc, fromTime, toTime time.Time, mapping seq.Mapping) {
+const (
+	scheduler = "scheduler"
+	database  = "database"
+	bus       = "bus"
+	proxy     = "proxy"
+	gateway   = "gateway"
+	kafka     = "kafka"
+)
+
+func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs []*testDoc, fromTime, toTime time.Time, mapping seq.Mapping) {
 	readersGroup, ctx := errgroup.WithContext(t.Context())
 
 	type queryFilter func(doc *testDoc) bool
@@ -171,7 +182,7 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 				case 1:
 					query = "service:gateway"
 					filter = func(doc *testDoc) bool {
-						return doc.service == "gateway"
+						return doc.service == gateway
 					}
 				case 2:
 					query = "level:2"
@@ -196,7 +207,7 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 				case 6:
 					query = "service:gateway AND level:3"
 					filter = func(doc *testDoc) bool {
-						return doc.service == "gateway" && doc.level == 3
+						return doc.service == gateway && doc.level == 3
 					}
 				}
 
@@ -232,7 +243,7 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 				// find docs by time range and provided query filter to match against fetched docs
 				var expectedDocs []string
 				for i := len(docs) - 1; i >= 0 && len(expectedDocs) < searchParams.Limit; i-- {
-					if (docs[i].timestamp.Before(queryTime) || docs[i].timestamp.Equal(queryTime)) && filter(&docs[i]) {
+					if (docs[i].timestamp.Before(queryTime) || docs[i].timestamp.Equal(queryTime)) && filter(docs[i]) {
 						expectedDocs = append(expectedDocs, docs[i].json)
 					}
 				}
@@ -251,16 +262,19 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 }
 
 type testDoc = struct {
+	id        string
 	json      string
 	message   string
 	service   string
+	pod       string
+	clientIp  string
 	level     int
 	traceId   string
 	timestamp time.Time
 }
 
-func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.Time, time.Time) {
-	services := []string{"gateway", "proxy", "scheduler", "database", "bus"}
+func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.Time, time.Time) {
+	services := []string{gateway, proxy, scheduler, database, bus, kafka}
 	messages := []string{
 		"request started", "request completed", "processing timed out",
 		"processing data", "processing failed", "processing retry",
@@ -269,26 +283,32 @@ func generatesMessages(numMessages, bulkSize int) ([]testDoc, [][]string, time.T
 	fromTime := time.Date(2000, 1, 1, 13, 0, 0, 0, time.UTC)
 	var toTime time.Time
 
-	docs := make([]testDoc, 0, numMessages)
+	docs := make([]*testDoc, 0, numMessages)
 
 	for i := 0; i < numMessages; i++ {
 		service := services[rand.IntN(len(services))]
 		message := messages[rand.IntN(len(messages))]
 		level := rand.IntN(6)
 		timestamp := fromTime.Add(time.Duration(i) * time.Millisecond)
+		id := fmt.Sprintf("id-%d", i)
 		traceId := fmt.Sprintf("trace-%d", i%5000)
+		pod := fmt.Sprintf("pod-%d", i%50)
+		clientIp := fmt.Sprintf("192.168.%d.%d", rand.IntN(64), rand.IntN(256))
 		if i == numMessages-1 {
 			toTime = timestamp
 		}
 
-		json := fmt.Sprintf(`{"timestamp":%q,"service":%q,"message":%q,"trace_id": %q,"level":"%d"}`,
-			timestamp.Format(time.RFC3339Nano), service, message, traceId, level)
+		json := fmt.Sprintf(`{"timestamp":%q,"id": %q, "service":%q,"pod":%q,"client_ip":%q,"message":%q,"trace_id": %q,"level":"%d"}`,
+			timestamp.Format(time.RFC3339Nano), id, service, pod, clientIp, message, traceId, level)
 
-		docs = append(docs, testDoc{
+		docs = append(docs, &testDoc{
 			json:      json,
 			timestamp: timestamp,
+			id:        id,
 			message:   message,
 			service:   service,
+			pod:       pod,
+			clientIp:  clientIp,
 			level:     level,
 			traceId:   traceId,
 		})

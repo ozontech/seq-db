@@ -65,6 +65,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(512, false, true),
 	}
 	s.mapping = seq.Mapping{
+		"id":            seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"k8s_pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"k8s_namespace": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"k8s_container": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -72,6 +73,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		"level":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"client_ip":     seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"service":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"pod":           seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"source":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"trace_id":      seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -309,6 +311,28 @@ func (s *FractionTestSuite) TestSearchRange() {
 	s.AssertSearch("level:(127, 200]", docs, []int{})
 }
 
+func (s *FractionTestSuite) TestSearchRe() {
+	docs := []string{
+		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z", "k8s_pod": "foo-1", "v": "[ERROR] Oopsie!"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:01.000Z", "k8s_pod": "foo-42", "v": "[INFO] Oopsie!"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:02.000Z", "k8s_pod": "bar-1", "v": "[WARN] Oopsie!"}`,
+		/*3*/ `{"timestamp":"2000-01-01T13:00:03.000Z", "k8s_pod": "bar-42", "v": "[INFO] Oopsie!"}`,
+		/*4*/ `{"timestamp":"2000-01-01T13:00:04.000Z", "k8s_pod": "baz-1", "v": "[DEBUG] Oopsie!"}`,
+		/*5*/ `{"timestamp":"2000-01-01T13:00:05.000Z", "k8s_pod": "baz-42","v": "[FATAL] Oopsie!"}`,
+		/*6*/ `{"timestamp":"2000-01-01T13:00:06.000Z", "k8s_pod": "baz-42","v": "[FATAL]"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	s.AssertSearch(`k8s_pod:re("^(foo|bar)-[\d]+$")`, docs, []int{3, 2, 1, 0})
+	s.AssertSearch(`k8s_pod:re("^ba[a-z]-[\d]{1}$")`, docs, []int{4, 2})
+	s.AssertSearch(`v:re("\[(ERROR|FATAL)\].*")`, docs, []int{6, 5, 0})
+	s.AssertSearch(`v:re("^\[(ERROR|FATAL)\]$")`, docs, []int{6})
+	// In tests we transform keyword token to lower-case.
+	// So case-sensitive expression will always yield nothing.
+	s.AssertSearch(`v:re("(?-i)^\[(ERROR|FATAL)\]$")`, docs, []int{})
+}
+
 func (s *FractionTestSuite) TestSearchIPRange() {
 	docs := []string{
 		/*0*/ `{"timestamp":"2000-01-01T13:00:00.000Z","service":"gateway-0","level":"1","client_ip":"192.168.31.0"}`,
@@ -515,6 +539,58 @@ func (s *FractionTestSuite) TestSearchWithLimit() {
 		[]int{5, 3})
 }
 
+func (s *FractionTestSuite) TestSearchWithOffsetId() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T12:59:59.999Z","message":"outsider1"}`,
+		`{"timestamp":"2000-01-01T12:59:59.999Z","message":"outsider2"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","message":"good"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"good"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.001Z","message":"good"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"good"}`,
+		`{"timestamp":"2000-01-01T13:00:00.002Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"good"}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","message":"bad"}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"ugly"}`,
+		`{"timestamp":"2000-01-01T13:00:00.004Z","message":"ugly"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	// validate that we can page through fraction using offset id in both orders.
+	// every message must appear exactly once. some docs have same MID
+
+	for _, order := range []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc} {
+		searchParams := s.query("message:*",
+			withFrom("2000-01-01T13:00:00.000Z"),
+			withTo("2000-01-01T13:00:00.003Z"),
+			withLimit(2))
+		searchParams.Order = order
+
+		ids := make(map[seq.ID]bool)
+
+		for {
+			qpr, err := s.fraction.Search(context.Background(), *searchParams)
+			s.Require().NoError(err, "search failed")
+			if len(qpr.IDs) == 0 {
+				break
+			}
+
+			qprIDs := qpr.IDs.IDs()
+			for _, id := range qprIDs {
+				ids[id] = true
+			}
+			// switch to the next page
+			searchParams.OffsetId = qprIDs[len(qprIDs)-1]
+		}
+
+		s.Require().Equal(11, len(ids), "duplicate IDs found")
+	}
+}
+
 func (s *FractionTestSuite) TestSearchWithTotal() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:01.549Z","message": "apple banana smoothie"}`,
@@ -648,7 +724,6 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 	s.insertDocuments(docs)
 
 	assertAggSearch := func(searchParams *processor.SearchParams, expected []map[string]uint64) {
-
 		qpr, err := s.fraction.Search(context.Background(), *searchParams)
 		s.Require().NoError(err, "search failed")
 
@@ -665,14 +740,14 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 			"message:*",
 			withAggQuery(processor.AggQuery{GroupBy: aggField("service")})),
 		[]map[string]uint64{
-			{"gateway": 3, "proxy": 2, "scheduler": 1},
+			{gateway: 3, proxy: 2, scheduler: 1},
 		})
 	assertAggSearch(
 		s.query(
 			"message:good",
 			withAggQuery(processor.AggQuery{GroupBy: aggField("service")})),
 		[]map[string]uint64{
-			{"gateway": 2, "proxy": 1},
+			{gateway: 2, proxy: 1},
 		})
 	assertAggSearch(
 		s.query(
@@ -687,7 +762,7 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 			withAggQuery(processor.AggQuery{GroupBy: aggField("service")}),
 			withAggQuery(processor.AggQuery{GroupBy: aggField("level")})),
 		[]map[string]uint64{
-			{"gateway": 3, "proxy": 2, "scheduler": 1},
+			{gateway: 3, proxy: 2, scheduler: 1},
 			{"1": 4, "2": 1, "3": 1},
 		})
 }
@@ -731,6 +806,42 @@ func (s *FractionTestSuite) TestAggSum() {
 		{Name: "sum3", Value: 1, NotExists: 0},
 		{Name: "sum5", Value: 1, NotExists: 1},
 		{Name: "sum2", Value: -8, NotExists: 0},
+	}
+	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncSum}, expectedBuckets)
+}
+
+func (s *FractionTestSuite) TestAggSumTimeSeries() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum2","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum2","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum3","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum4","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum4","v":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum4"}`,
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum5","v":1}`,
+	}
+
+	s.insertDocuments(docs)
+
+	searchParams := s.query(
+		"service:sum*",
+		withAggQuery(processor.AggQuery{
+			Field:    aggField("v"),
+			GroupBy:  aggField("service"),
+			Func:     seq.AggFuncSum,
+			Interval: 1000,
+		}))
+	expectedBuckets := []seq.AggregationBucket{
+		// all NotExists go to a dedicated bucket with MID=0 in time series mode
+		{Name: "sum4", MID: seq.MID(0), Value: math.NaN(), NotExists: 1},
+		{Name: "sum4", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000Z")), Value: 2, NotExists: 0},
+		{Name: "sum1", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000Z")), Value: 3, NotExists: 0},
+		{Name: "sum3", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000Z")), Value: 1, NotExists: 0},
+		{Name: "sum5", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000Z")), Value: 1, NotExists: 0},
+		{Name: "sum2", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:00.000Z")), Value: 2, NotExists: 0},
 	}
 	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncSum}, expectedBuckets)
 }
@@ -959,6 +1070,70 @@ func (s *FractionTestSuite) TestAggAvgWithoutGroupBy() {
 	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
 }
 
+func (s *FractionTestSuite) TestAggUniqueCountTimeSeries() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service1","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service1","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service1","level":3}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service2","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service2","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service3","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service4","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service4","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service4","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:01.000Z","service":"service4"}`,
+	}
+
+	s.insertDocuments(docs)
+	searchParams := s.query(
+		"service:service*",
+		withAggQuery(processor.AggQuery{
+			Field:    aggField("level"),
+			GroupBy:  aggField("service"),
+			Func:     seq.AggFuncUniqueCount,
+			Interval: 1000,
+		}))
+	expectedBuckets := []seq.AggregationBucket{
+		{Name: "service1", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:01.000Z")), Value: 3, NotExists: 0},
+		{Name: "service2", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:01.000Z")), Value: 2, NotExists: 0},
+		{Name: "service3", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:01.000Z")), Value: 1, NotExists: 0},
+		{Name: "service4", MID: seq.TimeToMID(mustParseTime("2000-01-01T13:00:01.000Z")), Value: 2, NotExists: 0},
+		{Name: "service4", MID: seq.MID(0), Value: math.NaN(), NotExists: 1},
+	}
+	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncUniqueCount}, expectedBuckets)
+}
+
+func (s *FractionTestSuite) TestAggUniqueCount() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:00.002Z","service":"service1","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.003Z","service":"service1","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:00.007Z","service":"service1","level":3}`,
+		`{"timestamp":"2000-01-01T13:00:00.009Z","service":"service2","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.010Z","service":"service2","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:00.011Z","service":"service3","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.012Z","service":"service4","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.013Z","service":"service4","level":1}`,
+		`{"timestamp":"2000-01-01T13:00:00.017Z","service":"service4","level":2}`,
+		`{"timestamp":"2000-01-01T13:00:00.017Z","service":"service4"}`,
+	}
+
+	s.insertDocuments(docs)
+	searchParams := s.query(
+		"service:service*",
+		withAggQuery(processor.AggQuery{
+			Field:   aggField("level"),
+			GroupBy: aggField("service"),
+			Func:    seq.AggFuncUniqueCount,
+		}))
+	expectedBuckets := []seq.AggregationBucket{
+		{Name: "service1", Value: 3, NotExists: 0},
+		{Name: "service2", Value: 2, NotExists: 0},
+		{Name: "service3", Value: 1, NotExists: 0},
+		{Name: "service4", Value: 2, NotExists: 1},
+	}
+	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncUniqueCount}, expectedBuckets)
+}
+
 func (s *FractionTestSuite) TestSearchMultipleBulks() {
 	docs := []string{
 		/*0*/ `{"timestamp":"2000-01-01T13:00:01Z","service":"service_a","message":"request started","source":"prod01","level":"1"}`,
@@ -1048,16 +1223,30 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   toTime,
 		},
 		{
+			name:     "NOT service:bus",
+			query:    "NOT service:bus",
+			filter:   func(doc *testDoc) bool { return doc.service != bus },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:     "NOT service:bus (time range)",
+			query:    "NOT service:bus",
+			filter:   func(doc *testDoc) bool { return doc.service != bus },
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+		{
 			name:     "service:proxy (time range)",
 			query:    "service:proxy",
-			filter:   func(doc *testDoc) bool { return doc.service == "proxy" },
+			filter:   func(doc *testDoc) bool { return doc.service == proxy },
 			fromTime: fromTime,
 			toTime:   midTime,
 		},
 		{
 			name:     "service:scheduler (time range + limit)",
 			query:    "service:scheduler",
-			filter:   func(doc *testDoc) bool { return doc.service == "scheduler" },
+			filter:   func(doc *testDoc) bool { return doc.service == scheduler },
 			fromTime: fromTime,
 			toTime:   midTime,
 			limit:    100,
@@ -1098,6 +1287,13 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   midTime,
 		},
 		{
+			name:     "NOT trace_id:trace-4999",
+			query:    "NOT trace_id:trace-4999",
+			filter:   func(doc *testDoc) bool { return doc.traceId != "trace-4999" },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
 			name:     "trace_id:trace-4999",
 			query:    "trace_id:trace-4999",
 			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-4999" },
@@ -1111,13 +1307,104 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			fromTime: fromTime,
 			toTime:   midTime,
 		},
+		// AND operator queries
+		{
+			name:  "message:request AND message:failed",
+			query: "message:request AND message:failed",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.message, "request") && strings.Contains(doc.message, "failed")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND message:processing AND message:retry AND level:5",
+			query: "service:gateway AND message:processing AND message:retry AND level:5",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && strings.Contains(doc.message, "processing") &&
+					strings.Contains(doc.message, "retry") && doc.level == 5
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		// OR operator queries
+		{
+			name:  "trace_id OR",
+			query: "trace_id:trace-1000 OR trace_id:trace-1500 OR trace_id:trace-2000 OR trace_id:trace-2500 OR trace_id:trace-3000",
+			filter: func(doc *testDoc) bool {
+				return doc.traceId == "trace-1000" ||
+					doc.traceId == "trace-1500" ||
+					doc.traceId == "trace-2000" ||
+					doc.traceId == "trace-2500" ||
+					doc.traceId == "trace-3000"
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+
+		// mixed AND/OR/NOT
+		{
+			name:  "message:request AND (level:1 OR level:3 OR level:5) AND trace_id:trace-2*",
+			query: "message:request AND (level:1 OR level:3 OR level:5) AND trace_id:trace-2*",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.message, "request") && (doc.level == 1 || doc.level == 3 || doc.level == 5) &&
+					strings.Contains(doc.traceId, "trace-2")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name: "complex AND+OR",
+			query: "(service:gateway OR service:proxy OR service:scheduler) AND " +
+				"(message:request OR message:failed) AND level:[1 to 3]",
+			filter: func(doc *testDoc) bool {
+				return (doc.service == gateway || doc.service == proxy || doc.service == "scheduler") &&
+					(strings.Contains(doc.message, "request") || strings.Contains(doc.message, "failed")) &&
+					(doc.level >= 1 && doc.level <= 3)
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND NOT (message:request OR message:timed OR level:[0 to 3])",
+			query: "service:gateway AND NOT (message:request OR message:timed OR level:[0 to 3])",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway &&
+					!(strings.Contains(doc.message, "request") ||
+						strings.Contains(doc.message, "timed") ||
+						(doc.level >= 0 && doc.level <= 3))
+			},
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+		{
+			name:  "service:proxy AND NOT level:5 AND NOT pod:pod-2* AND NOT client_ip:ip_range(192.168.19.0,192.168.19.255)",
+			query: "service:proxy AND NOT level:5 AND NOT pod:pod-2* AND NOT client_ip:ip_range(192.168.19.0,192.168.19.255)",
+			filter: func(doc *testDoc) bool {
+				return doc.service == proxy &&
+					doc.level != 5 &&
+					!strings.Contains(doc.pod, "pod-2") &&
+					!strings.Contains(doc.clientIp, "192.168.19")
+			},
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+
+		// other queries
+		{
+			name:     "trace_id:trace-4*",
+			query:    "trace_id:trace-4*",
+			filter:   func(doc *testDoc) bool { return strings.Contains(doc.traceId, "trace-4") },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
 	}
 
 	for _, tc := range searchTestCases {
 		s.Run(tc.name, func() {
 			var expectedIndexes []int
 			for i := len(testDocs) - 1; i >= 0; i-- {
-				doc := &testDocs[i]
+				doc := testDocs[i]
 
 				if doc.timestamp.Before(tc.fromTime) {
 					continue
@@ -1143,6 +1430,115 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			s.AssertSearch(s.query(tc.query, options...), docJsons, expectedIndexes)
 		})
 	}
+
+	s.Run("service:kafka | group by pod unique_count(client_ip)", func() {
+		// Check both sort orders simply for aggTree to be iterated in a different order
+		orders := []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc}
+
+		for _, ord := range orders {
+			ips := make(map[string]map[string]struct{})
+			for _, doc := range testDocs {
+				if doc.service != kafka {
+					continue
+				}
+				if ips[doc.pod] == nil {
+					ips[doc.pod] = make(map[string]struct{})
+				}
+
+				ips[doc.pod][doc.clientIp] = struct{}{}
+			}
+
+			var expectedBuckets []seq.AggregationBucket
+			for pod, podIps := range ips {
+				expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+					Name:      pod,
+					Value:     float64(len(podIps)),
+					NotExists: 0,
+				})
+			}
+
+			searchParams := s.query(
+				"service:kafka",
+				withTo(toTime.Format(time.RFC3339Nano)),
+				withAggQuery(processor.AggQuery{
+					Field:   aggField("client_ip"),
+					GroupBy: aggField("pod"),
+					Func:    seq.AggFuncUniqueCount,
+				}))
+			searchParams.Order = ord
+
+			s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncUniqueCount}, expectedBuckets)
+		}
+	})
+
+	s.Run("service:scheduler | group by pod avg(level)", func() {
+		// Check both sort orders simply for aggTree to be iterated in a different order
+		orders := []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc}
+
+		for _, ord := range orders {
+			levelsByPod := make(map[string][]int)
+			for _, doc := range testDocs {
+				if doc.service != "scheduler" {
+					continue
+				}
+
+				levelsByPod[doc.pod] = append(levelsByPod[doc.pod], doc.level)
+			}
+
+			var expectedBuckets []seq.AggregationBucket
+			for pod, levels := range levelsByPod {
+				sum := 0
+				for _, level := range levels {
+					sum += level
+				}
+				avg := float64(sum) / float64(len(levels))
+				expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+					Name:      pod,
+					Value:     avg,
+					NotExists: 0,
+				})
+			}
+
+			searchParams := s.query(
+				"service:scheduler",
+				withTo(toTime.Format(time.RFC3339Nano)),
+				withAggQuery(processor.AggQuery{
+					Field:   aggField("level"),
+					GroupBy: aggField("pod"),
+					Func:    seq.AggFuncAvg,
+				}))
+			searchParams.Order = ord
+
+			s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
+		}
+	})
+
+	// Test large QPR with 25000 groups (all ids are unique)
+	s.Run("_exists_:service | group by id count()", func() {
+		countById := make(map[string]int)
+		for _, doc := range testDocs {
+			countById[doc.id]++
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for id, cnt := range countById {
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      id,
+				Value:     float64(cnt),
+				NotExists: 0,
+			})
+		}
+
+		searchParams := s.query(
+			"_exists_:service",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				GroupBy: aggField("id"),
+				Func:    seq.AggFuncCount,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncCount}, expectedBuckets)
+	})
 
 	s.Run("NOT message:retry | group by service avg(level)", func() {
 		levelsByService := make(map[string][]int)
@@ -1182,18 +1578,91 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 	})
 
 	s.Run("service:database AND level:3 | hist 1s", func() {
-		histBuckets := make(map[string]uint64)
-		for _, doc := range testDocs {
-			if doc.service == "database" && doc.level == 3 {
-				bucketTime := doc.timestamp.Truncate(time.Second)
-				bucketKey := bucketTime.Format(time.RFC3339Nano)
-				histBuckets[bucketKey]++
+		// Check both sort orders simply for lid tree to be iterated in a different order
+		orders := []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc}
+
+		for _, ord := range orders {
+			histBuckets := make(map[string]uint64)
+			for _, doc := range testDocs {
+				if doc.service == "database" && doc.level == 3 {
+					bucketTime := doc.timestamp.Truncate(time.Second)
+					bucketKey := bucketTime.Format(time.RFC3339Nano)
+					histBuckets[bucketKey]++
+				}
+			}
+
+			searchParams := s.query(
+				"service:database AND level:3",
+				withTo(toTime.Format(time.RFC3339Nano)),
+				withHist(1000))
+			searchParams.Order = ord
+
+			s.AssertHist(searchParams, histBuckets)
+		}
+	})
+
+	s.Run("scroll with offset id", func() {
+		query := "message:request AND level:4"
+		scrollFrom := fromTime
+		scrollTo := midTime
+		pageSize := 98
+
+		var expectedIndexesAsc []int
+		for i := range testDocs {
+			doc := testDocs[i]
+			if !doc.timestamp.Before(scrollFrom) &&
+				!doc.timestamp.After(scrollTo) &&
+				strings.Contains(doc.message, "request") &&
+				doc.level == 4 {
+				expectedIndexesAsc = append(expectedIndexesAsc, i)
 			}
 		}
 
-		s.AssertHist(
-			s.query("service:database AND level:3", withTo(toTime.Format(time.RFC3339Nano)), withHist(1000)),
-			histBuckets)
+		var expectedIndexes []int
+		for _, order := range []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc} {
+			if order == seq.DocsOrderAsc {
+				expectedIndexes = expectedIndexesAsc
+			} else {
+				expectedIndexes = append([]int{}, expectedIndexesAsc...)
+				slices.Reverse(expectedIndexes)
+			}
+
+			searchParams := s.query(query,
+				withFrom(scrollFrom.Format(time.RFC3339Nano)),
+				withTo(scrollTo.Format(time.RFC3339Nano)),
+				withLimit(pageSize))
+			searchParams.Order = order
+
+			expectedOffset := 0
+			totalIDsScrolled := 0
+
+			for {
+				qpr, err := s.fraction.Search(context.Background(), *searchParams)
+
+				s.Require().NoError(err, "search failed")
+
+				if len(qpr.IDs) == 0 {
+					break
+				}
+
+				qprIDs := qpr.IDs.IDs()
+				totalIDsScrolled += len(qprIDs)
+
+				docs, err := s.fraction.Fetch(context.Background(), qprIDs)
+				s.Require().NoError(err, "fetch failed for order=%v", order)
+
+				for j, doc := range docs {
+					idx := expectedOffset + j
+					s.Require().Equalf(docJsons[expectedIndexes[idx]], string(doc),
+						"doc at scroll position %d (order=%v) doesn't match", idx, order)
+				}
+				expectedOffset += len(docs)
+
+				searchParams.OffsetId = qprIDs[len(qprIDs)-1]
+			}
+
+			s.Require().Equal(totalIDsScrolled, len(expectedIndexesAsc), "total number of docs scrolled mismatch")
+		}
 	})
 }
 
@@ -1460,7 +1929,7 @@ func mustParseTime(timeStr string) time.Time {
 	return t
 }
 
-func (s *FractionTestSuite) AssertSearch(queryObject interface{}, originalDocs []string, expectedIndexes []int) {
+func (s *FractionTestSuite) AssertSearch(queryObject any, originalDocs []string, expectedIndexes []int) {
 	switch q := queryObject.(type) {
 	case string:
 		s.AssertSearchWithSearchParams(s.query(q), originalDocs, expectedIndexes)
@@ -1474,9 +1943,9 @@ func (s *FractionTestSuite) AssertSearch(queryObject interface{}, originalDocs [
 func (s *FractionTestSuite) AssertSearchWithSearchParams(
 	params *processor.SearchParams,
 	originalDocs []string,
-	expectedIndexes []int) {
-
-	var sortOrders = []seq.DocsOrder{params.Order}
+	expectedIndexes []int,
+) {
+	sortOrders := []seq.DocsOrder{params.Order}
 	if params.Order == seq.DocsOrderDesc && params.Limit == math.MaxInt32 {
 		sortOrders = append(sortOrders, seq.DocsOrderAsc)
 	}
@@ -1510,8 +1979,8 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 func (s *FractionTestSuite) AssertAggregation(
 	searchParams *processor.SearchParams,
 	aggregate seq.AggregateArgs,
-	expectedBuckets []seq.AggregationBucket) {
-
+	expectedBuckets []seq.AggregationBucket,
+) {
 	qpr, err := s.fraction.Search(context.Background(), *searchParams)
 	s.Require().NoError(err, "search failed")
 
@@ -1522,27 +1991,27 @@ func (s *FractionTestSuite) AssertAggregation(
 	for _, expectedBucket := range expectedBuckets {
 		found := false
 		for _, gotBucket := range aggResults[0].Buckets {
-			if gotBucket.Name == expectedBucket.Name {
+			if gotBucket.Name == expectedBucket.Name && gotBucket.MID == expectedBucket.MID {
 				if math.IsNaN(expectedBucket.Value) || math.IsNaN(gotBucket.Value) {
 					s.Require().Truef(math.IsNaN(expectedBucket.Value) && math.IsNaN(gotBucket.Value),
 						"wrong value for bucket %s: expected NaN=%v, got NaN=%v",
 						expectedBucket.Name, math.IsNaN(expectedBucket.Value), math.IsNaN(gotBucket.Value))
 				} else {
-					s.Require().Equal(expectedBucket.Value, gotBucket.Value, "wrong value for bucket %s", expectedBucket.Name)
+					s.Require().Equal(expectedBucket.Value, gotBucket.Value, "wrong value for bucket %s-%s", expectedBucket.Name, expectedBucket.MID)
 				}
-				s.Require().Equal(expectedBucket.NotExists, gotBucket.NotExists, "wrong NotExists for bucket %s", expectedBucket.Name)
+				s.Require().Equal(expectedBucket.NotExists, gotBucket.NotExists, "wrong NotExists for bucket %s-%s", expectedBucket.Name, expectedBucket.MID)
 				found = true
 				break
 			}
 		}
-		s.Require().True(found, "bucket %s not found in results", expectedBucket.Name)
+		s.Require().True(found, "bucket %s-%s not found in results", expectedBucket.Name, expectedBucket.MID)
 	}
 }
 
 func (s *FractionTestSuite) AssertHist(
 	searchParams *processor.SearchParams,
-	expectedHist map[string]uint64) {
-
+	expectedHist map[string]uint64,
+) {
 	qpr, err := s.fraction.Search(context.Background(), *searchParams)
 	s.Require().NoError(err, "search failed")
 	s.Require().Equal(len(expectedHist), len(qpr.Histogram), "histogram count doesn't match")
@@ -1862,7 +2331,6 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			"SECRET_KEY",
 			"eu-west-3",
 			bucketName,
-			3,
 		)
 		s.Require().NoError(err, "s3 client setup failed")
 

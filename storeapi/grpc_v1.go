@@ -106,6 +106,7 @@ func NewGrpcV1(cfg APIConfig, fracManager *fracmanager.FracManager, mappingProvi
 			searcher: fracmanager.NewSearcher(cfg.Search.WorkersCount, fracmanager.SearcherCfg{
 				MaxFractionHits:       cfg.Search.MaxFractionHits,
 				FractionsPerIteration: cfg.Search.FractionsPerIteration,
+				SlowLogThreshold:      cfg.Search.LogThreshold,
 			}),
 		},
 		fetchData: fetchData{
@@ -140,6 +141,9 @@ func tracerSpanToExplainEntry(span *querytracer.Span) *storeapi.ExplainEntry {
 func parseStoreError(e error) (storeapi.SearchErrorCode, bool) {
 	if errors.Is(e, consts.ErrTooManyFieldTokens) {
 		return storeapi.SearchErrorCode_TOO_MANY_FIELD_TOKENS, true
+	}
+	if errors.Is(e, consts.ErrTooManyFieldValues) {
+		return storeapi.SearchErrorCode_TOO_MANY_FIELD_VALUES, true
 	}
 	if errors.Is(e, consts.ErrTooManyGroupTokens) {
 		return storeapi.SearchErrorCode_TOO_MANY_GROUP_TOKENS, true

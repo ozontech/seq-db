@@ -1,131 +1,239 @@
 package node
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func newNodeStaticSize(size int) *staticAsc {
-	data, _ := Generate(size)
+const benchRandSeed int64 = 1
+
+func newNodeStaticSize(r *rand.Rand, size int) *staticAsc {
+	data, _ := Generate(r, size)
 	return &staticAsc{staticCursor: staticCursor{data: data}}
 }
 
-func Generate(n int) ([]uint32, uint32) {
+func newNodeStaticSizeFixedDelta(size, start, delta int) *staticAsc {
+	data, _ := GenerateFixedDelta(size, start, delta)
+	return &staticAsc{staticCursor: staticCursor{data: data}}
+}
+
+func Generate(r *rand.Rand, n int) ([]uint32, uint32) {
 	v := make([]uint32, n)
 	last := uint32(1)
 	for i := 0; i < len(v); i++ {
 		v[i] = last
-		last += uint32(1 + rand.Intn(5))
+		last += uint32(1 + r.Intn(5))
 	}
 	return v, last
 }
 
-// bench for base point
-// you can't go faster
-func BenchmarkCopy(b *testing.B) {
-	res := make([]uint32, b.N)
-	n := newNodeStaticSize(b.N)
-	b.ResetTimer()
-	copy(res, n.data)
-}
-
-// base point
-func BenchmarkIterate(b *testing.B) {
-	res := make([]uint32, b.N)
-	n := newNodeStaticSize(b.N)
-	b.ResetTimer()
-	for i, v := range n.data {
-		res[i] = v
+func GenerateFixedDelta(n, start, step int) ([]uint32, uint32) {
+	v := make([]uint32, n)
+	last := uint32(start)
+	for i := 0; i < len(v); i++ {
+		v[i] = last
+		last += uint32(step)
 	}
-}
-
-func BenchmarkStatic(b *testing.B) {
-	res := make([]uint32, 0, b.N)
-	n := newNodeStaticSize(b.N)
-	b.ResetTimer()
-	res = readAllInto(n, res)
-	assert.Equal(b, cap(res), b.N)
+	return v, last
 }
 
 func BenchmarkNot(b *testing.B) {
-	v, last := Generate(b.N)
-	res := make([]uint32, 0, last+1)
-	n := NewNot(NewStatic(v, false), 1, last, false)
-	b.ResetTimer()
-	res = readAllInto(n, res)
-	assert.Equal(b, cap(res), int(last)+1)
+	sizes := []int{1000, 10_000, 1_000_000}
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			r := rand.New(rand.NewSource(benchRandSeed))
+			v, last := Generate(r, s)
+			res := make([]uint32, 0, last+1)
+			n := NewNot(NewStatic(v, false), NewDescLID(1), NewDescLID(last))
+
+			for b.Loop() {
+				res = readAllInto(n, res)
+			}
+
+			assert.Equal(b, cap(res), int(last)+1)
+		})
+	}
 }
 
 func BenchmarkNotEmpty(b *testing.B) {
-	res := make([]uint32, 0, b.N*2)
-	n := NewNot(NewStatic(nil, false), 1, uint32(b.N), false)
-	b.ResetTimer()
-	res = readAllInto(n, res)
-	assert.Equal(b, cap(res), b.N*2)
+	sizes := []int{1000, 10_000, 1_000_000}
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			res := make([]uint32, 0, s*2)
+			n := NewNot(NewStatic(nil, false), NewDescLID(1), NewDescLID(uint32(s)))
+
+			for b.Loop() {
+				res = readAllInto(n, res)
+			}
+
+			assert.Equal(b, cap(res), s*2)
+		})
+	}
+
 }
 
 func BenchmarkOr(b *testing.B) {
-	res := make([]uint32, 0, b.N*2)
-	n := NewOr(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	b.ResetTimer()
-	res = readAllInto(n, res)
-	assert.Equal(b, cap(res), b.N*2)
+	sizes := []int{1000, 10_000, 1_000_000}
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			r := rand.New(rand.NewSource(benchRandSeed))
+			res := make([]uint32, 0, s*2)
+			n := NewOr(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+
+			for b.Loop() {
+				res = readAllInto(n, res)
+			}
+
+			assert.Equal(b, cap(res), s*2)
+		})
+	}
 }
 
 func BenchmarkAnd(b *testing.B) {
-	res := make([]uint32, 0, b.N)
-	n := NewAnd(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	b.ResetTimer()
-	res = readAllInto(n, res)
-	assert.Equal(b, cap(res), b.N)
+	sizes := []int{1000, 10_000, 1_000_000}
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			r := rand.New(rand.NewSource(benchRandSeed))
+			res := make([]uint32, 0, s)
+			n := NewAnd(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+
+			for b.Loop() {
+				res = readAllInto(n, res)
+			}
+
+			assert.Equal(b, cap(res), s)
+		})
+	}
 }
 
 func BenchmarkNAnd(b *testing.B) {
-	res := make([]uint32, 0, b.N)
-	n := NewNAnd(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	b.ResetTimer()
-	res = readAllInto(n, res)
-	assert.Equal(b, cap(res), b.N)
+	sizes := []int{1000, 10_000, 1_000_000}
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			r := rand.New(rand.NewSource(benchRandSeed))
+			res := make([]uint32, 0, s)
+			n := NewNAnd(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+
+			for b.Loop() {
+				res = readAllInto(n, res)
+			}
+
+			assert.Equal(b, cap(res), s)
+		})
+	}
 }
 
 func BenchmarkAndTree(b *testing.B) {
-	n1 := NewAnd(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	n2 := NewAnd(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	n3 := NewAnd(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	n4 := NewAnd(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	n12 := NewAnd(n1, n2, false)
-	n34 := NewAnd(n3, n4, false)
-	n := NewAnd(n12, n34, false)
-	res := make([]uint32, 0, b.N)
-	b.ResetTimer()
-	res = readAllInto(n, res)
-	assert.Equal(b, cap(res), b.N)
+	sizes := []int{1000, 10_000, 1_000_000}
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			r := rand.New(rand.NewSource(benchRandSeed))
+			n1 := NewAnd(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+			n2 := NewAnd(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+			n3 := NewAnd(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+			n4 := NewAnd(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+			n12 := NewAnd(n1, n2)
+			n34 := NewAnd(n3, n4)
+			n := NewAnd(n12, n34)
+			res := make([]uint32, 0, s)
+
+			for b.Loop() {
+				res = readAllInto(n, res)
+			}
+
+			assert.Equal(b, cap(res), s)
+		})
+	}
 }
 
 func BenchmarkOrTree(b *testing.B) {
-	n1 := NewOr(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	n2 := NewOr(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	n3 := NewOr(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	n4 := NewOr(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	n12 := NewOr(n1, n2, false)
-	n34 := NewOr(n3, n4, false)
-	n := NewOr(n12, n34, false)
-	res := make([]uint32, 0, b.N*8)
-	b.ResetTimer()
-	res = readAllInto(n, res)
-	assert.Equal(b, cap(res), b.N*8)
+	sizes := []int{1000, 10_000, 1_000_000}
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			r := rand.New(rand.NewSource(benchRandSeed))
+			n1 := NewOr(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+			n2 := NewOr(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+			n3 := NewOr(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+			n4 := NewOr(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+			n12 := NewOr(n1, n2)
+			n34 := NewOr(n3, n4)
+			n := NewOr(n12, n34)
+			res := make([]uint32, 0, s*8)
+
+			for b.Loop() {
+				res = readAllInto(n, res)
+			}
+
+			assert.Equal(b, cap(res), s*8)
+
+		})
+	}
+}
+
+// BenchmarkOrTreeNextGeq checks the performance of NextGeq vs Next when no skipping occur and all node
+// yield distinct values (no intersection between nodes)
+func BenchmarkOrTreeNextGeq(b *testing.B) {
+	sizes := []int{1000, 10_000, 1_000_000}
+	// step is equal to total number of nodes, so that every node produces distinct values
+	step := 8
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			n1 := NewOr(
+				newNodeStaticSizeFixedDelta(s, 1, step),
+				newNodeStaticSizeFixedDelta(s, 5, step))
+			n2 := NewOr(
+				newNodeStaticSizeFixedDelta(s, 2, step),
+				newNodeStaticSizeFixedDelta(s, 6, step))
+			n3 := NewOr(
+				newNodeStaticSizeFixedDelta(s, 3, step),
+				newNodeStaticSizeFixedDelta(s, 8, step))
+			n4 := NewOr(
+				newNodeStaticSizeFixedDelta(s, 4, step),
+				newNodeStaticSizeFixedDelta(s, 7, step))
+			n12 := NewOr(n1, n2)
+			n34 := NewOr(n3, n4)
+			n := NewOr(n12, n34)
+			res := make([]uint32, 0, s*8)
+
+			for b.Loop() {
+				res = readAllIntoGeq(n, res)
+			}
+
+			assert.Equal(b, cap(res), s*8)
+
+		})
+	}
 }
 
 func BenchmarkComplex(b *testing.B) {
-	res := make([]uint32, 0, b.N*2)
-	n1 := NewAnd(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	n2 := NewOr(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	n3 := NewNAnd(newNodeStaticSize(b.N), newNodeStaticSize(b.N), false)
-	n12 := NewOr(n1, n2, false)
-	n := NewAnd(n12, n3, false)
-	b.ResetTimer()
-	res = readAllInto(n, res)
-	assert.Equal(b, cap(res), b.N*2)
+	sizes := []int{1000, 10_000, 1_000_000}
+
+	for _, s := range sizes {
+		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
+			r := rand.New(rand.NewSource(benchRandSeed))
+			res := make([]uint32, 0, s*2)
+			n1 := NewAnd(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+			n2 := NewOr(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+			n3 := NewNAnd(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+			n12 := NewOr(n1, n2)
+			n := NewAnd(n12, n3)
+
+			for b.Loop() {
+				res = readAllInto(n, res)
+			}
+
+			assert.Equal(b, cap(res), s*2)
+		})
+	}
 }
