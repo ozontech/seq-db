@@ -16,32 +16,43 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-type Loader struct {
-	reader     *storage.IndexReader
-	blockIndex uint32
-	blockBuf   []byte
+// IndexReaders holds one IndexReader per split index file.
+type IndexReaders struct {
+	Info    storage.IndexReader
+	Token   storage.IndexReader
+	Offsets storage.IndexReader
+	ID      storage.IndexReader
+	LID     storage.IndexReader
 }
 
-func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, indexReader *storage.IndexReader) {
+// Loader reads the per-section index files to populate BlocksData.
+// Token data is loaded lazily (BlockLoader / TableLoader use the Token reader directly).
+// Info is loaded separately via loadHeader before Load is called.
+type Loader struct {
+	buf []byte
+}
+
+// Load populates blocksData from the .offsets, .id, and .lid files.
+func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, readers IndexReaders) {
 	t := time.Now()
-
-	l.reader = indexReader
-	l.blockIndex = 1 // skipping info block that's already read
-
-	l.skipTokens()
 
 	var err error
 
-	if blocksData.IDsTable, blocksData.BlocksOffsets, err = l.loadIDs(info.BinaryDataVer); err != nil {
-		logger.Fatal("load ids error", zap.Error(err))
+	var blockOffsets sealed.BlockOffsets
+	blockOffsets, err = l.loadBlocksOffsets(readers.Offsets)
+	if err != nil {
+		logger.Fatal("load offsets error", zap.Error(err))
 	}
+	blocksData.BlocksOffsets = blockOffsets.Offsets
 
-	if blocksData.LIDsTable, err = l.loadLIDsBlocksTable(); err != nil {
+	blocksData.IDsTable = l.loadIDsTable(readers.ID, blockOffsets.IDsTotal, info.BinaryDataVer)
+
+	blocksData.LIDsTable, err = l.loadLIDsTable(readers.LID)
+	if err != nil {
 		logger.Fatal("load lids error", zap.Error(err))
 	}
 
 	took := time.Since(t)
-
 	docsTotalK := float64(info.DocsTotal) / 1000
 	indexOnDiskMb := util.SizeToUnit(info.IndexOnDisk, "mb")
 	throughput := indexOnDiskMb / util.DurationToUnit(took, "s")
@@ -56,43 +67,34 @@ func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, indexRea
 	)
 }
 
-func (l *Loader) nextIndexBlock() ([]byte, error) {
-	data, _, err := l.reader.ReadIndexBlock(l.blockIndex, l.blockBuf)
-	l.blockBuf = data
-	l.blockIndex++
-	return data, err
-}
-
-func (l *Loader) skipBlock() storage.IndexBlockHeader {
-	header, err := l.reader.GetBlockHeader(l.blockIndex)
+// loadBlocksOffsets reads block 0 from the .offsets file.
+func (l *Loader) loadBlocksOffsets(r storage.IndexReader) (sealed.BlockOffsets, error) {
+	data, _, err := r.ReadIndexBlock(0, l.buf)
+	l.buf = data
 	if err != nil {
-		logger.Panic("error reading block header", zap.Error(err))
+		return sealed.BlockOffsets{}, err
 	}
-	l.blockIndex++
-	return header
+	b := sealed.BlockOffsets{}
+	if err := b.Unpack(data); err != nil {
+		return sealed.BlockOffsets{}, err
+	}
+	return b, nil
 }
 
-func (l *Loader) loadIDs(fracVersion config.BinaryDataVersion) (idsTable seqids.Table, blocksOffsets []uint64, err error) {
-	var result []byte
-
-	if result, err = l.nextIndexBlock(); err != nil {
-		return idsTable, nil, err
+// loadIDsTable scans block headers in the .id file to build seqids.Table.
+// Blocks are stored as (MIDs, RIDs, Pos) triplets; we only need MIDs headers.
+func (l *Loader) loadIDsTable(r storage.IndexReader, idsTotal uint32, fracVersion config.BinaryDataVersion) seqids.Table {
+	table := seqids.Table{
+		StartBlockIndex: 0,
+		IDsTotal:        idsTotal,
 	}
 
-	b := sealed.BlockOffsets{}
-	if err := b.Unpack(result); err != nil {
-		return idsTable, nil, err
-	}
-
-	blocksOffsets = b.Offsets
-	idsTable.IDsTotal = b.IDsTotal
-	idsTable.IDBlocksTotal = uint32(len(b.Offsets))
-	idsTable.StartBlockIndex = l.blockIndex
-
-	for {
-		// get MIDs block header
-		header := l.skipBlock()
-		if header.Len() == 0 {
+	for blockIdx := uint32(0); ; {
+		header, err := r.GetBlockHeader(blockIdx)
+		if err != nil {
+			logger.Fatal("error reading id block header", zap.Error(err))
+		}
+		if header.Len() == 0 { // separator
 			break
 		}
 
@@ -102,58 +104,36 @@ func (l *Loader) loadIDs(fracVersion config.BinaryDataVersion) (idsTable seqids.
 		} else {
 			mid = seq.MID(header.GetExt1())
 		}
-
-		idsTable.MinBlockIDs = append(idsTable.MinBlockIDs, seq.ID{
+		table.MinBlockIDs = append(table.MinBlockIDs, seq.ID{
 			MID: mid,
 			RID: seq.RID(header.GetExt2()),
 		})
+		table.IDBlocksTotal++
 
-		// skipping RIDs and Pos blocks
-		l.skipBlock()
-		l.skipBlock()
+		blockIdx += 3 // skip RIDs and Pos blocks
 	}
 
-	return idsTable, blocksOffsets, nil
+	return table
 }
 
-func (l *Loader) skipTokens() {
-	for {
-		// skip actual token blocks
-		header := l.skipBlock()
+// loadLIDsTable scans block headers in the .lid file to build lids.Table.
+func (l *Loader) loadLIDsTable(r storage.IndexReader) (*lids.Table, error) {
+	var maxTIDs, minTIDs []uint32
+	var isContinued []bool
+
+	for blockIdx := uint32(0); ; blockIdx++ {
+		header, err := r.GetBlockHeader(blockIdx)
+		if err != nil {
+			return nil, err
+		}
 		if header.Len() == 0 {
 			break
 		}
-	}
-
-	for {
-		// skip token table
-		header := l.skipBlock()
-		if header.Len() == 0 {
-			break
-		}
-	}
-}
-
-func (l *Loader) loadLIDsBlocksTable() (*lids.Table, error) {
-	maxTIDs := make([]uint32, 0)
-	minTIDs := make([]uint32, 0)
-	isContinued := make([]bool, 0)
-
-	startIndex := l.blockIndex
-	for {
-		header := l.skipBlock()
-		if header.Len() == 0 {
-			break
-		}
-
-		ext1 := header.GetExt1()
 		ext2 := header.GetExt2()
-
 		maxTIDs = append(maxTIDs, uint32(ext2>>32))
 		minTIDs = append(minTIDs, uint32(ext2&0xFFFFFFFF))
-
-		isContinued = append(isContinued, ext1 == 1)
+		isContinued = append(isContinued, header.GetExt1() == 1)
 	}
 
-	return lids.NewTable(startIndex, minTIDs, maxTIDs, isContinued), nil
+	return lids.NewTable(0, minTIDs, maxTIDs, isContinued), nil
 }

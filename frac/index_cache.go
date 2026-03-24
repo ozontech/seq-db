@@ -8,7 +8,14 @@ import (
 )
 
 type IndexCache struct {
-	Registry   *cache.Cache[[]byte]
+	// Per-file registry caches (each IndexReader needs its own).
+	InfoRegistry    *cache.Cache[[]byte]
+	TokenRegistry   *cache.Cache[[]byte]
+	OffsetsRegistry *cache.Cache[[]byte]
+	IDRegistry      *cache.Cache[[]byte]
+	LIDRegistry     *cache.Cache[[]byte]
+
+	// Block-level data caches shared across all readers.
 	MIDs       *cache.Cache[[]byte]
 	RIDs       *cache.Cache[seqids.BlockRIDs]
 	Params     *cache.Cache[seqids.BlockParams]
@@ -18,11 +25,15 @@ type IndexCache struct {
 }
 
 func (s *IndexCache) Release() {
+	s.InfoRegistry.Release()
+	s.TokenRegistry.Release()
+	s.OffsetsRegistry.Release()
+	s.IDRegistry.Release()
+	s.LIDRegistry.Release()
 	s.LIDs.Release()
 	s.MIDs.Release()
 	s.RIDs.Release()
 	s.Params.Release()
-	s.Registry.Release()
 	s.Tokens.Release()
 	s.TokenTable.Release()
 }
