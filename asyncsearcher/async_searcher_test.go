@@ -49,8 +49,8 @@ func (fp fakeFractionProvider) AcquireFraction(name string) (frac.Fraction, func
 	return nil, func() {}, false
 }
 
-func (fp fakeFractionProvider) Fractions() fracmanager.List {
-	return fracmanager.List(fp)
+func (fp fakeFractionProvider) AcquireFractions() (fracmanager.List, func()) {
+	return fracmanager.List(fp), func() {}
 }
 
 func TestAsyncSearcherMaintain(t *testing.T) {

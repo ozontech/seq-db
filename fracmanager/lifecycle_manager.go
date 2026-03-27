@@ -2,7 +2,6 @@ package fracmanager
 
 import (
 	"context"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
-	"github.com/ozontech/seq-db/util"
 )
 
 // lifecycleManager manages the complete lifecycle of fractions.
@@ -23,7 +21,7 @@ type lifecycleManager struct {
 	registry  *fractionRegistry // fraction state registry
 	tasks     *TaskManager      // Background offloading tasks
 
-	sealingWg sync.WaitGroup
+	sealingWg sync.WaitGroup // todo: get rid after removing SealAll in tests
 }
 
 func newLifecycleManager(
@@ -67,41 +65,14 @@ func (lc *lifecycleManager) SyncInfoCache() {
 	}
 }
 
-// seal converts an active fraction to sealed state.
-// It freezes writes, waits for pending operations, then seals the fraction.
-func (lc *lifecycleManager) seal(active *activeProxy) error {
-	sealsTotal.Inc()
-	now := time.Now()
-	sealed, err := lc.provider.Seal(active.instance)
-	if err != nil {
-		return err
-	}
-	sealingTime := time.Since(now)
-	sealsDoneSeconds.Observe(sealingTime.Seconds())
-
-	logger.Info(
-		"fraction sealed",
-		zap.String("fraction", filepath.Base(sealed.BaseFileName)),
-		zap.Float64("time_spent_s", util.DurationToUnit(sealingTime, "s")),
-	)
-
-	lc.infoCache.Add(sealed.Info())
-	lc.registry.PromoteToSealed(active, sealed)
-	active.proxy.Redirect(sealed)
-	active.instance.Release()
-	return nil
-}
-
 // rotate checks if active fraction needs rotation based on size limit.
 // Creates new active fraction and starts sealing the previous one.
 func (lc *lifecycleManager) rotate(maxSize uint64, wg *sync.WaitGroup) {
-	activeToSeal, waitBeforeSealing, err := lc.registry.RotateIfFull(maxSize, func() *activeProxy {
-		return newActiveProxy(lc.provider.CreateActive())
-	})
+	active, waitBeforeSealing, err := lc.registry.RotateIfFull(maxSize, lc.provider)
 	if err != nil {
 		logger.Fatal("active fraction rotation error", zap.Error(err))
 	}
-	if activeToSeal == nil {
+	if active == nil {
 		return
 	}
 
@@ -112,37 +83,39 @@ func (lc *lifecycleManager) rotate(maxSize uint64, wg *sync.WaitGroup) {
 		defer lc.sealingWg.Done()
 
 		waitBeforeSealing()
-		if err := lc.seal(activeToSeal); err != nil {
+		sealed, err := lc.provider.Seal(active.Active)
+		if err != nil {
 			logger.Fatal("sealing error", zap.Error(err))
 		}
+
+		lc.infoCache.Add(sealed.Info())
+		lc.registry.PromoteToSealed(active, sealed)
+		active.Destroy()
 	}()
 }
 
 // offloadLocal starts offloading of local fractions to remote storage.
 // Selects fractions based on disk space usage and retention policy.
 func (lc *lifecycleManager) offloadLocal(ctx context.Context, sizeLimit uint64, retryDelay time.Duration, wg *sync.WaitGroup) {
-	toOffload, err := lc.registry.EvictLocal(true, sizeLimit)
+	toOffload, err := lc.registry.EvictLocalForOffload(sizeLimit)
 	if err != nil {
 		logger.Fatal("error releasing old fractions:", zap.Error(err))
 	}
-	for _, sealed := range toOffload {
+	for _, frac := range toOffload {
 		wg.Add(1)
-		_, err := lc.tasks.Run(sealed.instance.BaseFileName, ctx, func(ctx context.Context) {
+		_, err := lc.tasks.Run(frac.BaseFileName, ctx, func(ctx context.Context) {
 			defer wg.Done()
 
-			remote := lc.offloadWithRetry(ctx, sealed.instance, retryDelay)
+			remote := lc.offloadWithRetry(ctx, frac.Sealed, retryDelay)
 
-			lc.registry.PromoteToRemote(sealed, remote)
+			lc.registry.PromoteToRemote(frac, remote)
 
 			if remote == nil {
-				sealed.proxy.Redirect(emptyFraction{})
-				lc.infoCache.Remove(sealed.instance.Info().Name())
-			} else {
-				sealed.proxy.Redirect(remote)
+				lc.infoCache.Remove(frac.Info().Name())
 			}
 
 			// free up local resources
-			sealed.instance.Suicide()
+			frac.Destroy()
 			maintenanceTruncateTotal.Add(1)
 		})
 		if err != nil {
@@ -209,20 +182,19 @@ func (lc *lifecycleManager) tryOffload(ctx context.Context, sealed *frac.Sealed)
 // cleanRemote deletes outdated remote fractions based on retention policy.
 func (lc *lifecycleManager) cleanRemote(retention time.Duration, wg *sync.WaitGroup) {
 	toDelete := lc.registry.EvictRemote(retention)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for _, remote := range toDelete {
-			remote.proxy.Redirect(emptyFraction{})
-			lc.infoCache.Remove(remote.instance.Info().Name())
-			remote.instance.Suicide()
-		}
-	}()
+	wg.Add(len(toDelete))
+	for _, remote := range toDelete {
+		go func() {
+			defer wg.Done()
+			lc.infoCache.Remove(remote.Info().Name())
+			remote.Destroy()
+		}()
+	}
 }
 
 // cleanLocal deletes outdated local fractions when offloading is disabled.
 func (lc *lifecycleManager) cleanLocal(sizeLimit uint64, wg *sync.WaitGroup) {
-	toDelete, err := lc.registry.EvictLocal(false, sizeLimit)
+	toDelete, err := lc.registry.EvictLocalForDelete(sizeLimit)
 	if err != nil {
 		logger.Fatal("error releasing old fractions:", zap.Error(err))
 	}
@@ -232,16 +204,15 @@ func (lc *lifecycleManager) cleanLocal(sizeLimit uint64, wg *sync.WaitGroup) {
 		}
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for _, sealed := range toDelete {
-			sealed.proxy.Redirect(emptyFraction{})
-			lc.infoCache.Remove(sealed.instance.Info().Name())
-			sealed.instance.Suicide()
+	wg.Add(len(toDelete))
+	for _, frac := range toDelete {
+		go func() {
+			defer wg.Done()
+			lc.infoCache.Remove(frac.Info().Name())
+			frac.Destroy()
 			maintenanceTruncateTotal.Add(1)
-		}
-	}()
+		}()
+	}
 }
 
 // updateOldestMetric updates the prometheus metric with oldest fraction timestamp.
@@ -254,13 +225,13 @@ func (lc *lifecycleManager) updateOldestMetric() {
 // Stops ongoing offloading tasks and cleans up both local and remote resources.
 func (lc *lifecycleManager) removeOverflowed(sizeLimit uint64, wg *sync.WaitGroup) {
 	evicted := lc.registry.EvictOverflowed(sizeLimit)
-	for _, item := range evicted {
+	for _, sealed := range evicted {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			// Cancel the offloading task - this operation may take significant time
 			// hence executed in a separate goroutine to avoid blocking
-			lc.tasks.Cancel(item.instance.BaseFileName)
+			lc.tasks.Cancel(sealed.BaseFileName)
 		}()
 	}
 }

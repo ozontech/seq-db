@@ -76,18 +76,19 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 		cancel()
 		wg.Wait()
 
-		// freeze active fraction to prevent new writes
-		active := lc.registry.Active()
-		if err := active.Finalize(); err != nil {
+		// finalize appender to prevent new writes
+		appender := lc.registry.Appender()
+		if err := appender.Finalize(); err != nil {
 			logger.Fatal("shutdown fraction freezing error", zap.Error(err))
 		}
-		active.WaitWriteIdle()
+		appender.WaitWriteIdle()
 
 		stopIdx()
 
 		lc.SyncInfoCache()
 
-		sealOnShutdown(active.instance, provider, cfg.MinSealFracSize)
+		// Seal active fraction
+		sealOnShutdown(appender.Active, provider, cfg.MinSealFracSize)
 
 		logger.Info("fracmanager's workers are stopped", zap.Int64("took_ms", time.Since(n).Milliseconds()))
 	}
@@ -96,11 +97,11 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 }
 
 func (fm *FracManager) AcquireFraction(name string) (frac.Fraction, func(), bool) {
-	return fm.lc.registry.AcquireFraction(name)
+	return fm.lc.registry.AcquireOneFraction(name)
 }
 
-func (fm *FracManager) Fractions() List {
-	return fm.lc.registry.AllFractions()
+func (fm *FracManager) AcquireFractions() (List, func()) {
+	return fm.lc.registry.AcquireAllFractions()
 }
 
 func (fm *FracManager) Oldest() uint64 {
@@ -120,7 +121,7 @@ func (fm *FracManager) Append(ctx context.Context, docs storage.DocBlock, metas 
 			return ctx.Err()
 		default:
 			// Try to append data to the currently active fraction
-			err := fm.lc.registry.Active().Append(docs, metas)
+			err := fm.lc.registry.Appender().Append(docs, metas)
 			if err != nil {
 				logger.Info("append fail", zap.Error(err))
 				if err == ErrFractionNotWritable {
