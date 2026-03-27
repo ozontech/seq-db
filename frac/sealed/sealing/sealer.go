@@ -16,12 +16,24 @@ import (
 // Source interface defines the contract for data sources that can be sealed.
 // Provides access to all necessary data components for index creation.
 type Source interface {
-	Info() *common.Info                        // Fraction metadata information
-	ID() iter.Seq2[seq.ID, seq.DocPos]         // Ordered sequence of document IDs and their positions
-	TokenAndLIDs() iter.Seq2[[]byte, []uint32] // Ordered sequence of tokens paired with their LID list
-	Field() iter.Seq2[string, uint32]          // Ordered sequence of fields with their max TID value
-	BlockOffsets() []uint64                    // Offsets of DocBlocks in the doc file
-	LastError() error                          // Last error encountered during data retrieval
+	// Info returns information about [sealing.Source].
+	// For example, in one case it returns information about [frac.Active].
+	Info() *common.Info
+
+	// ID returns a view into [sealing.Source] stored ids.
+	// Identificators are returned in sorted order starting with the biggest seq.ID.
+	ID() iter.Seq2[seq.ID, seq.DocPos]
+
+	// BlockOffsets returns all offsets to [storage.DocBlock]
+	// stored nside `.docs` file that is owned by [sealing.Source].
+	BlockOffsets() []uint64
+
+	Iterator() iter.Seq2[
+		string,                      // Field name
+		iter.Seq2[[]byte, []uint32], // Token value and lids for this token
+	]
+
+	LastError() error // Last error encountered during data retrieval
 }
 
 // createAndWrite creates a tmp file, calls write, syncs, closes, then renames to finalPath.

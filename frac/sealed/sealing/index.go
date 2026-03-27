@@ -219,7 +219,7 @@ func (s *IndexSealer) WriteTokenAndLIDFiles(tokenWS, lidWS io.WriteSeeker, src S
 	}
 
 	blocks := bb.BuildTokenBlocks(
-		src.TokenAndLIDs(), src.Field(),
+		src.Iterator(),
 		accumulate, consts.RegularBlockSize,
 	)
 
