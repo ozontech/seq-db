@@ -68,7 +68,11 @@ func (g *GrpcV1) doFetch(ctx context.Context, req *storeapi.FetchRequest, stream
 	dp := acquireDocFieldsFilter(req.FieldsFilter)
 	defer releaseDocFieldsFilter(dp)
 
-	docsStream := newDocsStream(ctx, ids, g.fetchData.docFetcher, g.fracManager.Fractions(), req.NoSkipMasks)
+	fracs, release := g.fracManager.AcquireFractions()
+	defer release()
+
+	docsStream := newDocsStream(ctx, ids, g.fetchData.docFetcher, fracs, req.NoSkipMasks)
+
 	for _, id := range ids {
 		workTime := time.Now()
 		doc, err := docsStream.Next()

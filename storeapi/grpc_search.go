@@ -189,18 +189,13 @@ func (g *GrpcV1) doSearch(
 	}
 
 	searchTr := tr.NewChild("search iteratively")
-	qpr, err := g.searchData.searcher.SearchDocs(
-		ctx,
-		g.fracManager.Fractions(),
-		searchParams,
-		tr,
-	)
+	qpr, err := g.searchDocs(ctx, searchParams, tr)
 	searchTr.Done()
+
 	if err != nil {
 		if code, ok := parseStoreError(err); ok {
 			return &storeapi.SearchResponse{Code: code}, nil
 		}
-
 		return nil, err
 	}
 
@@ -227,6 +222,13 @@ func (g *GrpcV1) doSearch(
 	}
 
 	return buildSearchResponse(qpr), nil
+}
+
+func (g *GrpcV1) searchDocs(ctx context.Context, sp processor.SearchParams, tr *querytracer.Tracer) (*seq.QPR, error) {
+	fracs, release := g.fracManager.AcquireFractions()
+	defer release()
+
+	return g.searchData.searcher.SearchDocs(ctx, fracs, sp, tr)
 }
 
 func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, error) {

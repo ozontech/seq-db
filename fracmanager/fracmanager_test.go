@@ -65,30 +65,32 @@ func TestSealingOnShutdown(t *testing.T) {
 	cfg.MinSealFracSize = 0 // to ensure that the frac will not be sealed on shutdown
 	cfg, fm, stop := setupFracManager(t, cfg)
 	appendDocsToFracManager(t, fm, 10)
-	activeName := fm.Fractions()[0].Info().Name()
+
+	activeName := fm.lc.registry.all.fractions[0].Info().Name()
+
 	stop()
 
 	// second start
 	cfg.MinSealFracSize = 1 // to ensure that the frac will be sealed on shutdown
 	cfg, fm, stop = setupFracManager(t, cfg)
 
-	assert.Equal(t, 1, len(fm.Fractions()), "should have one fraction")
-	assert.Equal(t, activeName, fm.Fractions()[0].Info().Name(), "fraction should have the same name")
-	_, ok := fm.Fractions()[0].(*fractionProxy).impl.(*frac.Active)
+	allFractions := fm.lc.registry.all.fractions
+	assert.Equal(t, 1, len(allFractions), "should have one fraction")
+	assert.Equal(t, activeName, allFractions[0].Info().Name(), "fraction should have the same name")
+	_, ok := allFractions[0].(*syncAppender)
 	assert.True(t, ok, "fraction should be active")
-
 	stop()
 
 	// third start
 	_, fm, stop = setupFracManager(t, cfg)
 
-	assert.Equal(t, 2, len(fm.Fractions()), "should have 2 fraction: new active and old sealed")
-	_, ok = fm.Fractions()[0].(*fractionProxy).impl.(*frac.Sealed)
+	allFractions = fm.lc.registry.all.fractions
+	assert.Equal(t, 2, len(allFractions), "should have 2 fraction: new active and old sealed")
+	_, ok = allFractions[0].(*refCountedSealed)
 	assert.True(t, ok, "first fraction should be sealed")
-	assert.Equal(t, activeName, fm.Fractions()[0].Info().Name(), "sealed fraction should have the same name")
-	assert.Equal(t, uint32(0), fm.Fractions()[1].Info().DocsTotal, "active fraction should be empty")
-	_, ok = fm.Fractions()[1].(*fractionProxy).impl.(*frac.Active)
+	assert.Equal(t, activeName, allFractions[0].Info().Name(), "sealed fraction should have the same name")
+	assert.Equal(t, uint32(0), allFractions[1].Info().DocsTotal, "active fraction should be empty")
+	_, ok = allFractions[1].(*syncAppender)
 	assert.True(t, ok, "new fraction should be active")
-
 	stop()
 }
