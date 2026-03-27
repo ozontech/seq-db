@@ -27,12 +27,26 @@ type mockSource struct {
 
 func (m *mockSource) Info() common.Info { return m.info }
 
-func (m *mockSource) Field() iter.Seq2[string, uint32] {
-	return func(yield func(string, uint32) bool) {
-		for i := range len(m.fields) {
-			if !yield(m.fields[i], m.fieldMaxTIDs[i]) {
+func (m *mockSource) Iterator() iter.Seq2[string, iter.Seq2[[]byte, []uint32]] {
+	return func(yield func(string, iter.Seq2[[]byte, []uint32]) bool) {
+		start := 0
+		for i, field := range m.fields {
+			end := int(m.fieldMaxTIDs[i])
+			tokenStart, tokenEnd := start, end
+			if !yield(field, func(yield func([]byte, []uint32) bool) {
+				for j := tokenStart; j < tokenEnd; j++ {
+					var lids []uint32
+					if j < len(m.tokenLIDs) {
+						lids = m.tokenLIDs[j]
+					}
+					if !yield(m.tokens[j], lids) {
+						return
+					}
+				}
+			}) {
 				return
 			}
+			start = end
 		}
 	}
 }
@@ -114,7 +128,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	lidAccum := newLIDBlocksAccumulator(lidBlockCap)
 	var lidBlocks []lidsSealBlock
 	tokenBlocks := bb.BuildTokenBlocks(
-		src.TokenAndLIDs(), src.Field(),
+		src.Iterator(),
 		func(lids []uint32) error {
 			return lidAccum.Add(lids, func(block lidsSealBlock) error {
 				block.payload.LIDs = slices.Clone(block.payload.LIDs)

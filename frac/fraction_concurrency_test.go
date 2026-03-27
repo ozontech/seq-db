@@ -24,7 +24,7 @@ import (
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
-	test_common "github.com/ozontech/seq-db/tests/common"
+	testcommon "github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
@@ -38,9 +38,9 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 	docs, bulks, fromTime, toTime := generatesMessages(numWriters*numMessagesPerWriter, bulkSize)
 
-	tmpDir := test_common.CreateTempDir()
+	tmpDir := testcommon.CreateTempDir()
 	fracPath := filepath.Join(tmpDir, "test_fraction")
-	defer test_common.RemoveDir(fracPath)
+	defer testcommon.RemoveDir(fracPath)
 
 	activeIndexer, stop := NewActiveIndexer(numIndexWorkers, 1000)
 	defer stop()
@@ -353,12 +353,12 @@ func seal(active *Active) (*Sealed, error) {
 		return nil, err
 	}
 	indexCache := &IndexCache{
-		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
-		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
-		LIDs:       cache.NewCache[*lids.Block](nil, nil),
-		Tokens:     cache.NewCache[*token.Block](nil, nil),
-		TokenTable: cache.NewCache[token.Table](nil, nil),
+		MIDs:            cache.NewCache[[]byte](nil, nil),
+		RIDs:            cache.NewCache[seqids.BlockRIDs](nil, nil),
+		Params:          cache.NewCache[seqids.BlockParams](nil, nil),
+		LIDs:            cache.NewCache[*lids.Block](nil, nil),
+		Tokens:          cache.NewCache[*token.Block](nil, nil),
+		TokenTable:      cache.NewCache[token.Table](nil, nil),
 		InfoRegistry:    cache.NewCache[[]byte](nil, nil),
 		TokenRegistry:   cache.NewCache[[]byte](nil, nil),
 		OffsetsRegistry: cache.NewCache[[]byte](nil, nil),
