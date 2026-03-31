@@ -24,9 +24,7 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-var (
-	_ Fraction = (*Sealed)(nil)
-)
+var _ Fraction = (*Sealed)(nil)
 
 type Sealed struct {
 	Config *Config
@@ -247,6 +245,7 @@ func (f *Sealed) load() {
 			ID:      f.idReader,
 			LID:     f.lidReader,
 		}
+
 		(&Loader{}).Load(&f.blocksData, f.info, readers)
 		f.isLoaded = true
 	}

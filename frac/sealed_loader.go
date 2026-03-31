@@ -36,15 +36,17 @@ type Loader struct {
 func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, readers IndexReaders) {
 	t := time.Now()
 
-	var err error
+	var (
+		err          error
+		blockOffsets sealed.BlockOffsets
+	)
 
-	var blockOffsets sealed.BlockOffsets
 	blockOffsets, err = l.loadBlocksOffsets(readers.Offsets)
 	if err != nil {
 		logger.Fatal("load offsets error", zap.Error(err))
 	}
-	blocksData.BlocksOffsets = blockOffsets.Offsets
 
+	blocksData.BlocksOffsets = blockOffsets.Offsets
 	blocksData.IDsTable = l.loadIDsTable(readers.ID, blockOffsets.IDsTotal, info.BinaryDataVer)
 
 	blocksData.LIDsTable, err = l.loadLIDsTable(readers.LID)
@@ -71,13 +73,16 @@ func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, readers 
 func (l *Loader) loadBlocksOffsets(r storage.IndexReader) (sealed.BlockOffsets, error) {
 	data, _, err := r.ReadIndexBlock(0, l.buf)
 	l.buf = data
+
 	if err != nil {
 		return sealed.BlockOffsets{}, err
 	}
-	b := sealed.BlockOffsets{}
+
+	var b sealed.BlockOffsets
 	if err := b.Unpack(data); err != nil {
 		return sealed.BlockOffsets{}, err
 	}
+
 	return b, nil
 }
 
@@ -104,12 +109,13 @@ func (l *Loader) loadIDsTable(r storage.IndexReader, idsTotal uint32, fracVersio
 		} else {
 			mid = seq.MID(header.GetExt1())
 		}
+
 		table.MinBlockIDs = append(table.MinBlockIDs, seq.ID{
 			MID: mid,
 			RID: seq.RID(header.GetExt2()),
 		})
-		table.IDBlocksTotal++
 
+		table.IDBlocksTotal++
 		blockIdx += 3 // skip RIDs and Pos blocks
 	}
 
@@ -118,20 +124,26 @@ func (l *Loader) loadIDsTable(r storage.IndexReader, idsTotal uint32, fracVersio
 
 // loadLIDsTable scans block headers in the .lid file to build lids.Table.
 func (l *Loader) loadLIDsTable(r storage.IndexReader) (*lids.Table, error) {
-	var maxTIDs, minTIDs []uint32
-	var isContinued []bool
+	var (
+		maxTIDs     []uint32
+		minTIDs     []uint32
+		isContinued []bool
+	)
 
 	for blockIdx := uint32(0); ; blockIdx++ {
 		header, err := r.GetBlockHeader(blockIdx)
 		if err != nil {
 			return nil, err
 		}
+
 		if header.Len() == 0 {
 			break
 		}
+
 		ext2 := header.GetExt2()
 		maxTIDs = append(maxTIDs, uint32(ext2>>32))
 		minTIDs = append(minTIDs, uint32(ext2&0xFFFFFFFF))
+
 		isContinued = append(isContinued, header.GetExt1() == 1)
 	}
 

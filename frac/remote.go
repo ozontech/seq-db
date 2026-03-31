@@ -23,9 +23,7 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-var (
-	_ Fraction = (*Remote)(nil)
-)
+var _ Fraction = (*Remote)(nil)
 
 // Remote fraction is a fraction that is backed by remote storage.
 //
@@ -255,6 +253,7 @@ func (f *Remote) load() error {
 		ID:      f.idReader,
 		LID:     f.lidReader,
 	}
+
 	(&Loader{}).Load(&f.blocksData, f.info, readers)
 	f.isLoaded = true
 
