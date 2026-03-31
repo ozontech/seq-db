@@ -63,21 +63,21 @@ const (
 	InfoTmpFileSuffix = "._info"
 	InfoDelFileSuffix = ".info.del"
 
-	TokenFileSuffix    = ".token"
-	TokenTmpFileSuffix = "._token"
-	TokenDelFileSuffix = ".token.del"
+	TokenFileSuffix    = ".tokens"
+	TokenTmpFileSuffix = "._tokens"
+	TokenDelFileSuffix = ".tokens.del"
 
 	OffsetsFileSuffix    = ".offsets"
 	OffsetsTmpFileSuffix = "._offsets"
 	OffsetsDelFileSuffix = ".offsets.del"
 
-	IDFileSuffix    = ".id"
-	IDTmpFileSuffix = "._id"
-	IDDelFileSuffix = ".id.del"
+	IDFileSuffix    = ".ids"
+	IDTmpFileSuffix = "._ids"
+	IDDelFileSuffix = ".ids.del"
 
-	LIDFileSuffix    = ".lid"
-	LIDTmpFileSuffix = "._lid"
-	LIDDelFileSuffix = ".lid.del"
+	LIDFileSuffix    = ".lids"
+	LIDTmpFileSuffix = "._lids"
+	LIDDelFileSuffix = ".lids.del"
 
 	RemoteFractionSuffix = ".remote"
 

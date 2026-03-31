@@ -14,45 +14,52 @@ import (
 )
 
 // Source interface defines the contract for data sources that can be sealed.
-// Provides access to all necessary data components for index creation.
+// Provides access to all necessary data components for index creation
 type Source interface {
-	// Info returns information about [sealing.Source].
-	// For example, in one case it returns information about [frac.Active].
+	// Info returns metadata describing this source.
 	Info() *common.Info
 
-	// ID returns a view into [sealing.Source] stored ids.
-	// Identificators are returned in sorted order starting with the biggest seq.ID.
+	// ID returns an iterator over stored document identifiers paired with
+	// their positions, in descending [seq.ID] order.
 	ID() iter.Seq2[seq.ID, seq.DocPos]
 
-	// BlockOffsets returns all offsets to [storage.DocBlock]
-	// stored nside `.docs` file that is owned by [sealing.Source].
+	// BlockOffsets returns byte offsets to each document block
+	// within this source's `.docs` file.
 	BlockOffsets() []uint64
 
-	Iterator() iter.Seq2[
-		string,                      // Field name
-		iter.Seq2[[]byte, []uint32], // Token value and lids for this token
-	]
+	// TokenTriplet iterates over fields in lexicographic order.
+	// For each field, it yields tokens (lexicographically sorted)
+	// paired with the local document ID list for that token.
+	TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint32]]
 
-	LastError() error // Last error encountered during data retrieval
+	// LastError returns the last error encountered during iteration,
+	// or nil if no error occurred.
+	LastError() error
 }
 
-// createAndWrite creates a tmp file, calls write, syncs, closes, then renames to finalPath.
-func createAndWrite(tmpPath, finalPath string, write func(*os.File) error) error {
+func createAndWrite(
+	tmpPath, finalPath string,
+	write func(*os.File) error,
+) error {
 	f, err := os.Create(tmpPath)
 	if err != nil {
 		return err
 	}
+
 	if err := write(f); err != nil {
 		f.Close()
 		return err
 	}
+
 	if err := f.Sync(); err != nil {
 		f.Close()
 		return err
 	}
+
 	if err := f.Close(); err != nil {
 		return err
 	}
+
 	return os.Rename(tmpPath, finalPath)
 }
 
@@ -107,14 +114,6 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	sealer := NewIndexSealer(params)
 
 	if err := createAndWrite(
-		info.Path+consts.InfoTmpFileSuffix,
-		info.Path+consts.InfoFileSuffix,
-		func(f *os.File) error { return sealer.WriteInfoFile(f, src) },
-	); err != nil {
-		return nil, err
-	}
-
-	if err := createAndWrite(
 		info.Path+consts.OffsetsTmpFileSuffix,
 		info.Path+consts.OffsetsFileSuffix,
 		func(f *os.File) error { return sealer.WriteOffsetsFile(f, src) },
@@ -133,7 +132,15 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	if err := createAndWriteBoth(
 		info.Path+consts.TokenTmpFileSuffix, info.Path+consts.TokenFileSuffix,
 		info.Path+consts.LIDTmpFileSuffix, info.Path+consts.LIDFileSuffix,
-		func(tokenF, lidF *os.File) error { return sealer.WriteTokenAndLIDFiles(tokenF, lidF, src) },
+		func(tokenF, lidF *os.File) error { return sealer.WriteTokenTriplet(tokenF, lidF, src) },
+	); err != nil {
+		return nil, err
+	}
+
+	if err := createAndWrite(
+		info.Path+consts.InfoTmpFileSuffix,
+		info.Path+consts.InfoFileSuffix,
+		func(f *os.File) error { return sealer.WriteInfoFile(f, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -155,9 +162,10 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 		}
 		totalSize += uint64(st.Size())
 	}
-	info.IndexOnDisk = totalSize
 
+	info.IndexOnDisk = totalSize
 	lidsTable := sealer.LIDsTable()
+
 	preloaded := &sealed.PreloadedData{
 		Info:       info,
 		TokenTable: sealer.TokenTable(),
