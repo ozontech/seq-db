@@ -230,10 +230,10 @@ func newLIDBlocksAccumulator(blockCap int) *lidBlocksAcc {
 // For each block that fills up, `onBlock` is called immediately
 // before the backing arrays are reset, so `onBlock` may read the
 // block data but must not retain references to it.
-func (a *lidBlocksAcc) Add(lids []uint32, onBlock func(lidsSealBlock) error) error {
+func (a *lidBlocksAcc) Add(lidsbuf []uint32, onBlock func(lidsSealBlock) error) error {
 	a.currentTID++
 
-	for _, lid := range lids {
+	for _, lid := range lidsbuf {
 		if len(a.currentBlock.payload.LIDs) == a.blockCap {
 			if err := onBlock(a.finalizeBlock()); err != nil {
 				return err
