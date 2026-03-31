@@ -77,6 +77,7 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 	}
 
 	src.prepareInfo()
+	src.prepareLids()
 
 	// Sort documents if not skipped in configuration
 	if !active.Config.SkipSortDocs {
@@ -161,6 +162,12 @@ func (src *ActiveSealingSource) prepareInfo() {
 		mids = mids[1:]
 	}
 	src.info.BuildDistribution(mids)
+}
+
+func (src *ActiveSealingSource) prepareLids() {
+	for _, tl := range src.lids[1:] {
+		tl.GetLIDs(src.mids, src.rids)
+	}
 }
 
 func (src *ActiveSealingSource) Info() *common.Info {
