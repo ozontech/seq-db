@@ -1,14 +1,8 @@
 package sealing
 
 import (
-	"bytes"
-	"encoding/binary"
 	"io"
-	"iter"
 
-	"github.com/alecthomas/units"
-
-	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
@@ -69,47 +63,66 @@ func (s *IndexSealer) IDsTable() seqids.Table {
 
 // WriteOffsetsFile writes the .offsets file containing a single BlockOffsets block.
 func (s *IndexSealer) WriteOffsetsFile(ws io.WriteSeeker, src Source) error {
-	return s.write(ws, func(yield func(indexBlock) bool) {
-		offsets := sealed.BlockOffsets{
-			IDsTotal: src.Info().DocsTotal + 1,
-			Offsets:  src.BlockOffsets(),
-		}
-		yield(s.packBlocksOffsetsBlock(offsets))
-	})
+	w, err := newWriter(ws)
+	if err != nil {
+		return err
+	}
+	defer w.release()
+
+	offsets := sealed.BlockOffsets{
+		IDsTotal: src.Info().DocsTotal + 1,
+		Offsets:  src.BlockOffsets(),
+	}
+
+	if err := w.writeBlock(s.packBlocksOffsetsBlock(offsets)); err != nil {
+		return err
+	}
+
+	// Emit trailing separator.
+	if err := w.writeBlock(indexBlock{}); err != nil {
+		return err
+	}
+
+	return w.finalize()
 }
 
 func (s *IndexSealer) WriteIDFile(ws io.WriteSeeker, src Source) error {
-	return s.write(ws, func(yield func(indexBlock) bool) {
-		for block := range seqBlockID(src.ID(), consts.IDsPerBlock) {
-			if !yield(s.packMIDsBlock(block)) {
-				return
-			}
+	w, err := newWriter(ws)
+	if err != nil {
+		return err
+	}
+	defer w.release()
 
-			if !yield(s.packRIDsBlock(block)) {
-				return
-			}
-
-			if !yield(s.packPosBlock(block)) {
-				return
-			}
+	for block := range seqBlockID(src.ID(), consts.IDsPerBlock) {
+		if err := w.writeBlock(s.packMIDsBlock(block)); err != nil {
+			return err
 		}
 
-		if s.lastErr = src.LastError(); s.lastErr != nil {
-			return
+		if err := w.writeBlock(s.packRIDsBlock(block)); err != nil {
+			return err
 		}
 
-		yield(indexBlock{}) // trailing separator
-	})
+		if err := w.writeBlock(s.packPosBlock(block)); err != nil {
+			return err
+		}
+	}
+
+	// Emit trailing separator.
+	if err := w.writeBlock(indexBlock{}); err != nil {
+		return err
+	}
+
+	return w.finalize()
 }
 
 func (s *IndexSealer) WriteTokenTriplet(tokenWS, lidWS io.WriteSeeker, src Source) error {
-	tokenFW, err := newFileStreamWriter(tokenWS)
+	tokenFW, err := newWriter(tokenWS)
 	if err != nil {
 		return err
 	}
 	defer tokenFW.release()
 
-	lidFW, err := newFileStreamWriter(lidWS)
+	lidFW, err := newWriter(lidWS)
 	if err != nil {
 		return err
 	}
@@ -171,9 +184,23 @@ func (s *IndexSealer) WriteTokenTriplet(tokenWS, lidWS io.WriteSeeker, src Sourc
 }
 
 func (s *IndexSealer) WriteInfoFile(ws io.WriteSeeker, src Source) error {
-	return s.write(ws, func(yield func(indexBlock) bool) {
-		yield(s.packInfoBlock(sealed.BlockInfo{Info: src.Info()}))
-	})
+	w, err := newWriter(ws)
+	if err != nil {
+		return err
+	}
+	defer w.release()
+
+	block := sealed.BlockInfo{Info: src.Info()}
+	if err := w.writeBlock(s.packInfoBlock(block)); err != nil {
+		return err
+	}
+
+	// Emit trailing separator.
+	if err := w.writeBlock(indexBlock{}); err != nil {
+		return err
+	}
+
+	return w.finalize()
 }
 
 // collapseOrderedFieldsTables merges FieldTables with the same field name.
@@ -196,67 +223,6 @@ func collapseOrderedFieldsTables(src []token.FieldTable) []token.FieldTable {
 	}
 
 	return append(dst, current)
-}
-
-// write writes blocks to ws using [16-byte prefix][blocks][registry].
-// The prefix is written last (via seek-back) and stores registry position + size.
-func (s *IndexSealer) write(ws io.WriteSeeker, blocks iter.Seq[indexBlock]) error {
-	if _, err := ws.Seek(filePrefixSize, io.SeekStart); err != nil {
-		return err
-	}
-
-	hw := bytes.NewBuffer(nil)
-	bw := bytespool.AcquireWriterSize(ws, int(units.MiB))
-	defer bytespool.ReleaseWriter(bw)
-
-	pos := filePrefixSize
-	for block := range blocks {
-		if s.lastErr != nil {
-			return s.lastErr
-		}
-
-		header, payload := block.Bin(int64(pos))
-		if _, err := bw.Write(payload); err != nil {
-			return err
-		}
-
-		if _, err := hw.Write(header); err != nil {
-			return err
-		}
-
-		pos += len(payload)
-	}
-
-	if s.lastErr != nil {
-		return s.lastErr
-	}
-
-	if err := bw.Flush(); err != nil {
-		return err
-	}
-
-	size := hw.Len()
-	regPos, err := ws.Seek(0, io.SeekEnd)
-	if err != nil {
-		return err
-	}
-
-	if _, err := bw.Write(hw.Bytes()); err != nil {
-		return err
-	}
-
-	if err := bw.Flush(); err != nil {
-		return err
-	}
-
-	prefix := binary.LittleEndian.AppendUint64(nil, uint64(regPos))
-	prefix = binary.LittleEndian.AppendUint64(prefix, uint64(size))
-	if _, err := ws.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-
-	_, err = ws.Write(prefix)
-	return err
 }
 
 func newIndexBlock(raw []byte) indexBlock {
