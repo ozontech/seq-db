@@ -16,6 +16,143 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
+// LegacyLoader reads the old single .index file format by scanning blocks sequentially.
+// Block indices stored in lids.Table and seqids.Table are absolute within the .index file,
+// so the same IndexReader can be passed to all sub-loaders unchanged.
+type LegacyLoader struct {
+	reader     storage.IndexReader
+	blockIndex uint32
+}
+
+// Load populates blocksData from a single legacy .index file.
+// It starts at block 1 (block 0 is the Info block, already read by loadHeader).
+func (l *LegacyLoader) Load(blocksData *sealed.BlocksData, info *common.Info, reader storage.IndexReader) {
+	t := time.Now()
+
+	l.reader = reader
+	l.blockIndex = 1 // skip Info block at index 0
+
+	l.skipSection() // skip token blocks
+	l.skipSection() // skip token table blocks
+
+	var err error
+	blocksData.IDsTable, blocksData.BlocksOffsets, err = l.loadIDs(info.BinaryDataVer)
+	if err != nil {
+		logger.Fatal("legacy load ids error", zap.Error(err))
+	}
+
+	blocksData.LIDsTable, err = l.loadLIDs()
+	if err != nil {
+		logger.Fatal("legacy load lids error", zap.Error(err))
+	}
+
+	took := time.Since(t)
+	docsTotalK := float64(info.DocsTotal) / 1000
+	indexOnDiskMb := util.SizeToUnit(info.IndexOnDisk, "mb")
+	throughput := indexOnDiskMb / util.DurationToUnit(took, "s")
+	logger.Info("sealed fraction loaded (legacy format)",
+		zap.String("fraction", info.Path),
+		util.ZapMsTsAsESTimeStr("creation_time", info.CreationTime),
+		zap.String("from", info.From.String()),
+		zap.String("to", info.To.String()),
+		util.ZapFloat64WithPrec("docs_k", docsTotalK, 1),
+		util.ZapDurationWithPrec("took_ms", took, "ms", 1),
+		util.ZapFloat64WithPrec("throughput_mb_sec", throughput, 1),
+	)
+}
+
+// skipSection advances past one separator-delimited section (reads headers until Len() == 0).
+func (l *LegacyLoader) skipSection() {
+	for {
+		h, err := l.reader.GetBlockHeader(l.blockIndex)
+		if err != nil {
+			logger.Panic("error reading block header", zap.Error(err))
+		}
+
+		l.blockIndex++
+		if h.Len() == 0 {
+			return
+		}
+	}
+}
+
+// loadIDs reads the BlockOffsets block and then scans MID/RID/Pos triplets.
+func (l *LegacyLoader) loadIDs(fracVersion config.BinaryDataVersion) (seqids.Table, []uint64, error) {
+	var buf []byte
+	data, _, err := l.reader.ReadIndexBlock(l.blockIndex, buf)
+	l.blockIndex++
+	if err != nil {
+		return seqids.Table{}, nil, err
+	}
+
+	var offsets sealed.BlockOffsets
+	if err := offsets.Unpack(data); err != nil {
+		return seqids.Table{}, nil, err
+	}
+
+	table := seqids.Table{
+		StartBlockIndex: l.blockIndex, // absolute index of first MID block in .index
+		IDsTotal:        offsets.IDsTotal,
+		IDBlocksTotal:   uint32(len(offsets.Offsets)),
+	}
+
+	for {
+		h, err := l.reader.GetBlockHeader(l.blockIndex)
+		if err != nil {
+			logger.Fatal("error reading id block header", zap.Error(err))
+		}
+
+		l.blockIndex++
+		if h.Len() == 0 {
+			break
+		}
+
+		mid := seq.MID(h.GetExt1())
+		if fracVersion < config.BinaryDataV2 {
+			mid = seq.MillisToMID(h.GetExt1())
+		}
+
+		table.MinBlockIDs = append(table.MinBlockIDs, seq.ID{
+			MID: mid,
+			RID: seq.RID(h.GetExt2()),
+		})
+
+		l.blockIndex += 2 // skip RIDs and Pos blocks
+	}
+
+	return table, offsets.Offsets, nil
+}
+
+// loadLIDs scans LID block headers, recording the absolute start index for lids.Table.
+func (l *LegacyLoader) loadLIDs() (*lids.Table, error) {
+	startIndex := l.blockIndex // absolute index of first LID block in .index
+
+	var (
+		maxTIDs     []uint32
+		minTIDs     []uint32
+		isContinued []bool
+	)
+
+	for {
+		h, err := l.reader.GetBlockHeader(l.blockIndex)
+		if err != nil {
+			return nil, err
+		}
+
+		l.blockIndex++
+		if h.Len() == 0 {
+			break
+		}
+
+		maxTIDs = append(maxTIDs, uint32(h.GetExt2()>>32))
+		minTIDs = append(minTIDs, uint32(h.GetExt2()&0xFFFFFFFF))
+
+		isContinued = append(isContinued, h.GetExt1() == 1)
+	}
+
+	return lids.NewTable(startIndex, minTIDs, maxTIDs, isContinued), nil
+}
+
 // IndexReaders holds one IndexReader per split index file.
 type IndexReaders struct {
 	Info    storage.IndexReader
