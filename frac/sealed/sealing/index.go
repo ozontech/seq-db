@@ -74,12 +74,12 @@ func (s *IndexSealer) WriteOffsetsFile(ws io.WriteSeeker, src Source) error {
 		Offsets:  src.BlockOffsets(),
 	}
 
-	if err := w.writeBlock(s.packBlocksOffsetsBlock(offsets)); err != nil {
+	if err := w.writeBlock(btypeOffset, s.packBlocksOffsetsBlock(offsets)); err != nil {
 		return err
 	}
 
 	// Emit trailing separator.
-	if err := w.writeBlock(indexBlock{}); err != nil {
+	if err := w.writeBlock(btypeBlackhole, indexBlock{}); err != nil {
 		return err
 	}
 
@@ -94,55 +94,55 @@ func (s *IndexSealer) WriteIDFile(ws io.WriteSeeker, src Source) error {
 	defer w.release()
 
 	for block := range seqBlockID(src.ID(), consts.IDsPerBlock) {
-		if err := w.writeBlock(s.packMIDsBlock(block)); err != nil {
+		if err := w.writeBlock(btypeMid, s.packMIDsBlock(block)); err != nil {
 			return err
 		}
 
-		if err := w.writeBlock(s.packRIDsBlock(block)); err != nil {
+		if err := w.writeBlock(btypeRid, s.packRIDsBlock(block)); err != nil {
 			return err
 		}
 
-		if err := w.writeBlock(s.packPosBlock(block)); err != nil {
+		if err := w.writeBlock(btypeDocPos, s.packPosBlock(block)); err != nil {
 			return err
 		}
 	}
 
 	// Emit trailing separator.
-	if err := w.writeBlock(indexBlock{}); err != nil {
+	if err := w.writeBlock(btypeBlackhole, indexBlock{}); err != nil {
 		return err
 	}
 
 	return w.finalize()
 }
 
-func (s *IndexSealer) WriteTokenTriplet(tokenWS, lidWS io.WriteSeeker, src Source) error {
-	tokenFW, err := newWriter(tokenWS)
+func (s *IndexSealer) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) error {
+	tw, err := newWriter(tws)
 	if err != nil {
 		return err
 	}
-	defer tokenFW.release()
+	defer tw.release()
 
-	lidFW, err := newWriter(lidWS)
+	lw, err := newWriter(lws)
 	if err != nil {
 		return err
 	}
-	defer lidFW.release()
+	defer lw.release()
 
 	var (
 		bb              blocksBuilder
 		allFieldsTables []token.FieldTable
-		lidAccum        = newLIDBlocksAccumulator(consts.LIDBlockCap)
+		lidacc          = newLIDBlocksAccumulator(consts.LIDBlockCap)
 	)
 
 	// NOTE(dkharms): This is so ugly but I cannot come up with other solution here.
 	accumulate := func(lids []uint32) error {
-		return lidAccum.Add(lids, func(block lidsSealBlock) error {
-			return lidFW.writeBlock(s.packLIDsBlock(block))
+		return lidacc.Add(lids, func(block lidsSealBlock) error {
+			return lw.writeBlock(btypeLid, s.packLIDsBlock(block))
 		})
 	}
 
 	for block, fieldsTables := range bb.BuildTokenBlocks(src.TokenTriplet(), accumulate, consts.RegularBlockSize) {
-		if err := tokenFW.writeBlock(s.packTokenBlock(block)); err != nil {
+		if err := tw.writeBlock(btypeToken, s.packTokenBlock(block)); err != nil {
 			return err
 		}
 		allFieldsTables = append(allFieldsTables, fieldsTables...)
@@ -152,20 +152,20 @@ func (s *IndexSealer) WriteTokenTriplet(tokenWS, lidWS io.WriteSeeker, src Sourc
 		return s.lastErr
 	}
 
-	if err := s.finalizeLIDFile(lidFW, lidAccum); err != nil {
+	if err := s.finalizeLIDFile(lw, lidacc); err != nil {
 		return err
 	}
 
-	return s.finalizeTokenFile(tokenFW, allFieldsTables)
+	return s.finalizeTokenFile(tw, allFieldsTables)
 }
 
 func (s *IndexSealer) finalizeLIDFile(w *writer, lidAccum *lidBlocksAcc) error {
-	if err := w.writeBlock(s.packLIDsBlock(lidAccum.Flush())); err != nil {
+	if err := w.writeBlock(btypeLid, s.packLIDsBlock(lidAccum.Flush())); err != nil {
 		return err
 	}
 
 	// Emit trailing separator.
-	if err := w.writeBlock(indexBlock{}); err != nil {
+	if err := w.writeBlock(btypeBlackhole, indexBlock{}); err != nil {
 		return err
 	}
 
@@ -174,17 +174,17 @@ func (s *IndexSealer) finalizeLIDFile(w *writer, lidAccum *lidBlocksAcc) error {
 
 func (s *IndexSealer) finalizeTokenFile(w *writer, allFieldsTables []token.FieldTable) error {
 	// Emit section separator.
-	if err := w.writeBlock(indexBlock{}); err != nil {
+	if err := w.writeBlock(btypeToken, indexBlock{}); err != nil {
 		return err
 	}
 
 	tokenTableBlock := token.TableBlock{FieldsTables: collapseOrderedFieldsTables(allFieldsTables)}
-	if err := w.writeBlock(s.packTokenTableBlock(tokenTableBlock)); err != nil {
+	if err := w.writeBlock(btypeTokenTable, s.packTokenTableBlock(tokenTableBlock)); err != nil {
 		return err
 	}
 
 	// Emit trailing separator.
-	if err := w.writeBlock(indexBlock{}); err != nil {
+	if err := w.writeBlock(btypeBlackhole, indexBlock{}); err != nil {
 		return err
 	}
 
@@ -199,12 +199,12 @@ func (s *IndexSealer) WriteInfoFile(ws io.WriteSeeker, src Source) error {
 	defer w.release()
 
 	block := sealed.BlockInfo{Info: src.Info()}
-	if err := w.writeBlock(s.packInfoBlock(block)); err != nil {
+	if err := w.writeBlock(btypeInfo, s.packInfoBlock(block)); err != nil {
 		return err
 	}
 
 	// Emit trailing separator.
-	if err := w.writeBlock(indexBlock{}); err != nil {
+	if err := w.writeBlock(btypeBlackhole, indexBlock{}); err != nil {
 		return err
 	}
 
