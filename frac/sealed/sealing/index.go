@@ -134,18 +134,14 @@ func (s *IndexSealer) WriteTokenTriplet(tokenWS, lidWS io.WriteSeeker, src Sourc
 		lidAccum        = newLIDBlocksAccumulator(consts.LIDBlockCap)
 	)
 
+	// NOTE(dkharms): This is so ugly but I cannot come up with other solution here.
 	accumulate := func(lids []uint32) error {
 		return lidAccum.Add(lids, func(block lidsSealBlock) error {
 			return lidFW.writeBlock(s.packLIDsBlock(block))
 		})
 	}
 
-	blocks := bb.BuildTokenBlocks(
-		src.TokenTriplet(),
-		accumulate, consts.RegularBlockSize,
-	)
-
-	for block, fieldsTables := range blocks {
+	for block, fieldsTables := range bb.BuildTokenBlocks(src.TokenTriplet(), accumulate, consts.RegularBlockSize) {
 		if err := tokenFW.writeBlock(s.packTokenBlock(block)); err != nil {
 			return err
 		}
@@ -156,31 +152,43 @@ func (s *IndexSealer) WriteTokenTriplet(tokenWS, lidWS io.WriteSeeker, src Sourc
 		return s.lastErr
 	}
 
-	// Write the final (possibly partial) LID block and trailing separator.
-	if err := lidFW.writeBlock(s.packLIDsBlock(lidAccum.Flush())); err != nil {
+	if err := s.finalizeLIDFile(lidFW, lidAccum); err != nil {
 		return err
 	}
 
-	if err := lidFW.writeBlock(indexBlock{}); err != nil { // trailing separator
+	return s.finalizeTokenFile(tokenFW, allFieldsTables)
+}
+
+func (s *IndexSealer) finalizeLIDFile(w *writer, lidAccum *lidBlocksAcc) error {
+	if err := w.writeBlock(s.packLIDsBlock(lidAccum.Flush())); err != nil {
 		return err
 	}
 
-	if err := lidFW.finalize(); err != nil {
+	// Emit trailing separator.
+	if err := w.writeBlock(indexBlock{}); err != nil {
 		return err
 	}
 
-	// Write token section separator, token table, trailing separator.
-	if err := tokenFW.writeBlock(indexBlock{}); err != nil { // section separator
+	return w.finalize()
+}
+
+func (s *IndexSealer) finalizeTokenFile(w *writer, allFieldsTables []token.FieldTable) error {
+	// Emit section separator.
+	if err := w.writeBlock(indexBlock{}); err != nil {
 		return err
 	}
+
 	tokenTableBlock := token.TableBlock{FieldsTables: collapseOrderedFieldsTables(allFieldsTables)}
-	if err := tokenFW.writeBlock(s.packTokenTableBlock(tokenTableBlock)); err != nil {
+	if err := w.writeBlock(s.packTokenTableBlock(tokenTableBlock)); err != nil {
 		return err
 	}
-	if err := tokenFW.writeBlock(indexBlock{}); err != nil { // trailing separator
+
+	// Emit trailing separator.
+	if err := w.writeBlock(indexBlock{}); err != nil {
 		return err
 	}
-	return tokenFW.finalize()
+
+	return w.finalize()
 }
 
 func (s *IndexSealer) WriteInfoFile(ws io.WriteSeeker, src Source) error {
