@@ -37,68 +37,52 @@ type Source interface {
 	LastError() error
 }
 
-func createAndWrite(
-	tmpPath, finalPath string,
-	write func(*os.File) error,
-) error {
+func syncAndClose(f *os.File) error {
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+func createAndWrite(tmpPath, finalPath string, write func(*os.File) error) error {
 	f, err := os.Create(tmpPath)
 	if err != nil {
 		return err
 	}
 
-	if err := write(f); err != nil {
-		f.Close()
-		return err
-	}
-
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-
-	if err := f.Close(); err != nil {
+	if err := errors.Join(write(f), syncAndClose(f)); err != nil {
 		return err
 	}
 
 	return os.Rename(tmpPath, finalPath)
 }
 
-// createAndWriteBoth creates two tmp files, calls write with both, syncs and closes them,
-// then renames both to their final paths.
-func createAndWriteBoth(tmpPath1, finalPath1, tmpPath2, finalPath2 string, write func(*os.File, *os.File) error) error {
+func createAndWriteBoth(
+	tmpPath1, finalPath1,
+	tmpPath2, finalPath2 string,
+	write func(*os.File, *os.File) error,
+) error {
 	f1, err := os.Create(tmpPath1)
 	if err != nil {
 		return err
 	}
+
 	f2, err := os.Create(tmpPath2)
 	if err != nil {
 		f1.Close()
 		return err
 	}
-	if err := write(f1, f2); err != nil {
-		f1.Close()
-		f2.Close()
+
+	writeErr := write(f1, f2)
+	if err := errors.Join(writeErr, syncAndClose(f1), syncAndClose(f2)); err != nil {
 		return err
 	}
-	if err := f1.Sync(); err != nil {
-		f1.Close()
-		f2.Close()
-		return err
-	}
-	if err := f1.Close(); err != nil {
-		f2.Close()
-		return err
-	}
-	if err := f2.Sync(); err != nil {
-		f2.Close()
-		return err
-	}
-	if err := f2.Close(); err != nil {
-		return err
-	}
+
 	if err := os.Rename(tmpPath1, finalPath1); err != nil {
 		return err
 	}
+
 	return os.Rename(tmpPath2, finalPath2)
 }
 
