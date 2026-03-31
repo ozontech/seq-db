@@ -2085,12 +2085,12 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 	s.Require().NoError(err, "Sealing failed")
 
 	indexCache := &IndexCache{
-		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
-		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
-		LIDs:       cache.NewCache[*lids.Block](nil, nil),
-		Tokens:     cache.NewCache[*token.Block](nil, nil),
-		TokenTable: cache.NewCache[token.Table](nil, nil),
+		MIDs:            cache.NewCache[[]byte](nil, nil),
+		RIDs:            cache.NewCache[seqids.BlockRIDs](nil, nil),
+		Params:          cache.NewCache[seqids.BlockParams](nil, nil),
+		LIDs:            cache.NewCache[*lids.Block](nil, nil),
+		Tokens:          cache.NewCache[*token.Block](nil, nil),
+		TokenTable:      cache.NewCache[token.Table](nil, nil),
 		InfoRegistry:    cache.NewCache[[]byte](nil, nil),
 		TokenRegistry:   cache.NewCache[[]byte](nil, nil),
 		OffsetsRegistry: cache.NewCache[[]byte](nil, nil),
@@ -2106,6 +2106,7 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
 	)
+
 	active.Release()
 	return sealed
 }
@@ -2277,12 +2278,12 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 	sealed.Release()
 
 	indexCache := &IndexCache{
-		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
-		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
-		LIDs:       cache.NewCache[*lids.Block](nil, nil),
-		Tokens:     cache.NewCache[*token.Block](nil, nil),
-		TokenTable: cache.NewCache[token.Table](nil, nil),
+		MIDs:            cache.NewCache[[]byte](nil, nil),
+		RIDs:            cache.NewCache[seqids.BlockRIDs](nil, nil),
+		Params:          cache.NewCache[seqids.BlockParams](nil, nil),
+		LIDs:            cache.NewCache[*lids.Block](nil, nil),
+		Tokens:          cache.NewCache[*token.Block](nil, nil),
+		TokenTable:      cache.NewCache[token.Table](nil, nil),
 		InfoRegistry:    cache.NewCache[[]byte](nil, nil),
 		TokenRegistry:   cache.NewCache[[]byte](nil, nil),
 		OffsetsRegistry: cache.NewCache[[]byte](nil, nil),
@@ -2296,7 +2297,10 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 		indexCache,
 		cache.NewCache[[]byte](nil, nil),
 		nil,
-		s.config)
+		s.config,
+		false,
+	)
+
 	s.fraction = sealed
 	return sealed
 }
@@ -2347,12 +2351,12 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 		s.Require().True(offloaded, "didn't offload frac")
 
 		indexCache := &IndexCache{
-			MIDs:       cache.NewCache[[]byte](nil, nil),
-			RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
-			Params:     cache.NewCache[seqids.BlockParams](nil, nil),
-			LIDs:       cache.NewCache[*lids.Block](nil, nil),
-			Tokens:     cache.NewCache[*token.Block](nil, nil),
-			TokenTable: cache.NewCache[token.Table](nil, nil),
+			MIDs:            cache.NewCache[[]byte](nil, nil),
+			RIDs:            cache.NewCache[seqids.BlockRIDs](nil, nil),
+			Params:          cache.NewCache[seqids.BlockParams](nil, nil),
+			LIDs:            cache.NewCache[*lids.Block](nil, nil),
+			Tokens:          cache.NewCache[*token.Block](nil, nil),
+			TokenTable:      cache.NewCache[token.Table](nil, nil),
 			InfoRegistry:    cache.NewCache[[]byte](nil, nil),
 			TokenRegistry:   cache.NewCache[[]byte](nil, nil),
 			OffsetsRegistry: cache.NewCache[[]byte](nil, nil),

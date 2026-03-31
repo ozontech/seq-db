@@ -55,7 +55,7 @@ func (fp *fractionProvider) NewActive(name string) *frac.Active {
 	)
 }
 
-func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *frac.Sealed {
+func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info, isLegacy bool) *frac.Sealed {
 	return frac.NewSealed(
 		name,
 		fp.readLimiter,
@@ -63,6 +63,7 @@ func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *fra
 		fp.cacheProvider.CreateDocBlockCache(),
 		cachedInfo, // Preloaded meta information
 		&fp.config.Fraction,
+		isLegacy,
 	)
 }
 

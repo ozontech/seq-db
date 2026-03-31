@@ -136,7 +136,7 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 		case fracStageActive:
 			actives = append(actives, l.provider.NewActive(manifest.basePath))
 		case fracStageSealed:
-			locals = append(locals, l.loadSealed(manifest.basePath, loadedInfoCache))
+			locals = append(locals, l.loadSealed(manifest, loadedInfoCache))
 		case fracStageRemote:
 			remotes = append(remotes, l.loadRemote(ctx, manifest.basePath, loadedInfoCache))
 		default:
@@ -153,11 +153,11 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 }
 
 // loadSealed loads a sealed fraction using cache
-func (l *Loader) loadSealed(basePath string, loadedInfoCache *fracInfoCache) *frac.Sealed {
-	info, found := loadedInfoCache.Get(filepath.Base(basePath))
+func (l *Loader) loadSealed(manifest *fracManifest, loadedInfoCache *fracInfoCache) *frac.Sealed {
+	info, found := loadedInfoCache.Get(filepath.Base(manifest.basePath))
 	l.updateStats(found)
 
-	f := l.provider.NewSealed(basePath, info)
+	f := l.provider.NewSealed(manifest.basePath, info, manifest.hasIndex)
 	l.infoCache.Add(f.Info())
 	return f
 }

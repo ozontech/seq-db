@@ -62,6 +62,8 @@ func (m *fracManifest) AddExtension(ext string) error {
 		m.hasWal = true
 	case consts.SdocsFileSuffix:
 		m.hasSdocs = true
+	case consts.IndexFileSuffix:
+		m.hasIndex = true
 	case consts.RemoteFractionSuffix:
 		m.hasRemote = true
 
@@ -118,7 +120,7 @@ func (m *fracManifest) Stage() fracStage {
 	if m.hasRemote {
 		return fracStageRemote
 	}
-	if m.hasAllIndexFiles() && (m.hasSdocs || m.hasDocs) {
+	if (m.hasAllIndexFiles() || m.hasIndex) && (m.hasSdocs || m.hasDocs) {
 		return fracStageSealed
 	}
 	if (m.hasMeta || m.hasWal) && m.hasDocs {
@@ -162,6 +164,7 @@ func removeIndexFiles(m *fracManifest) {
 		consts.OffsetsFileSuffix,
 		consts.IDFileSuffix,
 		consts.LIDFileSuffix,
+		consts.IndexFileSuffix,
 	} {
 		util.RemoveFile(m.basePath + suffix)
 	}
@@ -170,6 +173,7 @@ func removeIndexFiles(m *fracManifest) {
 	m.hasOffsets = false
 	m.hasID = false
 	m.hasLID = false
+	m.hasIndex = false
 }
 
 func removeSdocsDel(m *fracManifest) {
@@ -313,6 +317,7 @@ func removeAllFiles(basePath string) {
 		consts.OffsetsFileSuffix,
 		consts.IDFileSuffix,
 		consts.LIDFileSuffix,
+		consts.IndexFileSuffix,
 		consts.DocsFileSuffix,
 		consts.SdocsFileSuffix,
 		consts.MetaFileSuffix,
