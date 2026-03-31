@@ -9,66 +9,75 @@ import (
 	"github.com/ozontech/seq-db/bytespool"
 )
 
-const filePrefixSize = 16
+const prefixSize = 16
 
-// fileStreamWriter writes blocks incrementally to a single file using the
-// [prefix][blocks][registry] format, allowing interleaved writes to multiple files.
-type fileStreamWriter struct {
-	ws  io.WriteSeeker
-	bw  *bytespool.Writer
-	hw  bytes.Buffer
+// writer writes blocks incrementally to a single file using the
+// [prefix][blocks][registry] format.
+type writer struct {
+	ws io.WriteSeeker
+
+	wpayload *bytespool.Writer
+	wheader  bytes.Buffer
+
 	pos int
 }
 
-func newFileStreamWriter(ws io.WriteSeeker) (*fileStreamWriter, error) {
-	if _, err := ws.Seek(filePrefixSize, io.SeekStart); err != nil {
+func newWriter(ws io.WriteSeeker) (*writer, error) {
+	if _, err := ws.Seek(prefixSize, io.SeekStart); err != nil {
 		return nil, err
 	}
 
-	return &fileStreamWriter{
-		ws:  ws,
-		bw:  bytespool.AcquireWriterSize(ws, int(units.MiB)),
-		pos: filePrefixSize,
+	return &writer{
+		ws:       ws,
+		wpayload: bytespool.AcquireWriterSize(ws, int(units.MiB)),
+		pos:      prefixSize,
 	}, nil
 }
 
-func (fw *fileStreamWriter) writeBlock(block indexBlock) error {
-	header, payload := block.Bin(int64(fw.pos))
-	if _, err := fw.bw.Write(payload); err != nil {
+func (w *writer) writeBlock(block indexBlock) error {
+	header, payload := block.Bin(int64(w.pos))
+
+	if _, err := w.wpayload.Write(payload); err != nil {
 		return err
 	}
-	fw.hw.Write(header) // bytes.Buffer.Write never fails
-	fw.pos += len(payload)
+
+	w.wheader.Write(header)
+	w.pos += len(payload)
+
 	return nil
 }
 
-func (fw *fileStreamWriter) finalize() (err error) {
-	defer fw.release()
-	if err = fw.bw.Flush(); err != nil {
-		return
+func (w *writer) finalize() error {
+	if err := w.wpayload.Flush(); err != nil {
+		return err
 	}
-	var regPos int64
-	if regPos, err = fw.ws.Seek(0, io.SeekEnd); err != nil {
-		return
+
+	regpos, err := w.ws.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
 	}
-	if _, err = fw.bw.Write(fw.hw.Bytes()); err != nil {
-		return
+
+	if _, err := w.wpayload.Write(w.wheader.Bytes()); err != nil {
+		return err
 	}
-	if err = fw.bw.Flush(); err != nil {
-		return
+
+	if err := w.wpayload.Flush(); err != nil {
+		return err
 	}
-	prefix := binary.LittleEndian.AppendUint64(make([]byte, 0, filePrefixSize), uint64(regPos))
-	prefix = binary.LittleEndian.AppendUint64(prefix, uint64(fw.hw.Len()))
-	if _, err = fw.ws.Seek(0, io.SeekStart); err != nil {
-		return
+
+	prefix := make([]byte, 0, prefixSize)
+	prefix = binary.LittleEndian.AppendUint64(prefix, uint64(regpos))
+	prefix = binary.LittleEndian.AppendUint64(prefix, uint64(w.wheader.Len()))
+
+	if _, err := w.ws.Seek(0, io.SeekStart); err != nil {
+		return err
 	}
-	_, err = fw.ws.Write(prefix)
-	return
+
+	_, err = w.ws.Write(prefix)
+	return err
 }
 
-func (fw *fileStreamWriter) release() {
-	if fw.bw != nil {
-		bytespool.ReleaseWriter(fw.bw)
-		fw.bw = nil
-	}
+func (w *writer) release() {
+	bytespool.ReleaseWriter(w.wpayload)
+	w.wpayload = nil
 }
