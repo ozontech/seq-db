@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"math"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -40,6 +41,21 @@ type searchIndex interface {
 	idsIndex
 }
 
+type LIDsIter interface {
+	Lids(out []node.LID) []node.LID
+	Len() int
+}
+
+var lidsBufPool = sync.Pool{
+	New: func() any {
+		return lidsBuf{
+			lids: make([]node.LID, 0, maxLIDBufCap),
+		}
+	},
+}
+
+const maxLIDBufCap = consts.LIDBlockCap
+
 func IndexSearch(
 	ctx context.Context,
 	params SearchParams,
@@ -59,6 +75,10 @@ func IndexSearch(
 			return evalLeaf(index, token, sw, stats, minLID, maxLID, params.Order)
 		},
 	)
+	if err != nil {
+		return nil, err
+	}
+
 	m.Stop()
 
 	if err != nil {
@@ -93,8 +113,30 @@ func IndexSearch(
 		}
 	}
 
+	var evalTreeIter func(need int, out lidsBuf) LIDsIter
+	batchNode, ok := tryConvertToBatchedTree(evalTree)
+
+	if ok {
+		evalTreeIter = func(need int, _ lidsBuf) LIDsIter {
+			// batched flow: juts get a batch and return
+			return batchNode.NextBatch()
+		}
+	} else {
+		evalTreeIter = func(need int, buf lidsBuf) LIDsIter {
+			// iterator flow: buffer LIDs one by one and return a batch
+			for i := 0; i < need; i++ {
+				lid := evalTree.Next()
+				if lid.IsNull() {
+					break
+				}
+				buf = buf.append(lid)
+			}
+			return buf
+		}
+	}
+
 	m = sw.Start("iterate_eval_tree")
-	total, ids, histogram, aggs, err := iterateEvalTree(ctx, params, index, evalTree, aggSupplier, sw)
+	total, ids, histogram, aggs, err := iterateEvalTree(ctx, params, index, evalTreeIter, aggSupplier, sw)
 	m.Stop()
 
 	if err != nil {
@@ -156,7 +198,7 @@ func iterateEvalTree(
 	ctx context.Context,
 	params SearchParams,
 	idsIndex idsIndex,
-	evalTree node.Node,
+	evalTree func(need int, buf lidsBuf) LIDsIter,
 	aggSupplier func() ([]Aggregator, error),
 	sw *stopwatch.Stopwatch,
 ) (int, seq.IDSources, []uint64, []Aggregator, error) {
@@ -178,6 +220,8 @@ func iterateEvalTree(
 	total := 0
 	ids := seq.IDSources{}
 	var lastID seq.ID
+	buf := lidsBufPool.Get().(lidsBuf)
+	defer lidsBufPool.Put(buf)
 
 	timerEval := sw.Timer("eval_tree_next")
 	timerMID := sw.Timer("get_mid")
@@ -185,9 +229,8 @@ func iterateEvalTree(
 	timerAgg := sw.Timer("agg_node_count")
 
 	var aggs []Aggregator
-
-	for i := 0; ; i++ {
-		if i&1023 == 0 && util.IsCancelled(ctx) {
+	for {
+		if util.IsCancelled(ctx) {
 			return total, ids, histogram, aggs, ctx.Err()
 		}
 
@@ -195,71 +238,122 @@ func iterateEvalTree(
 		if !needMore && !needScanAllRange {
 			break
 		}
+		need := params.Limit - len(ids)
+		if needScanAllRange {
+			need = math.MaxUint32
+		}
+		// limit how much we drain from eval tree for one-by-one flow. ignored for batched flow
+		need = min(need, maxLIDBufCap)
 
 		timerEval.Start()
-		lid := evalTree.Next()
+		buf = buf.reset()
+		lidBatch := evalTree(need, buf)
 		timerEval.Stop()
 
-		if lid.IsNull() {
+		if lidBatch.Len() == 0 {
 			break
 		}
-		rawLid := lid.Unpack()
 
-		if needMore || hasHist {
-			timerMID.Start()
-			mid := idsIndex.GetMID(seq.LID(rawLid))
-			timerMID.Stop()
+		for _, lid := range lidBatch.Lids(buf.lids) {
 
-			if hasHist {
-				if mid < params.From || mid > params.To {
-					logger.Error("MID value outside the query range",
-						zap.Time("from", params.From.Time()),
-						zap.Time("to", params.To.Time()),
-						zap.Time("mid", mid.Time()))
-					continue
+			needMore = len(ids) < params.Limit
+			if !needMore && !needScanAllRange {
+				break
+			}
+			seqLID := lid.ToSeqLID()
+
+			if needMore || hasHist {
+				timerMID.Start()
+				mid := idsIndex.GetMID(seqLID)
+				timerMID.Stop()
+
+				if hasHist {
+					if mid < params.From || mid > params.To {
+						logger.Error("MID value outside the query range",
+							zap.Time("from", params.From.Time()),
+							zap.Time("to", params.To.Time()),
+							zap.Time("mid", mid.Time()))
+						continue
+					}
+					bucketIndex := uint64(mid)/uint64(histInterval) - histBase
+					histogram[bucketIndex]++
 				}
-				bucketIndex := uint64(mid)/uint64(histInterval) - histBase
-				histogram[bucketIndex]++
+
+				if needMore {
+					timerRID.Start()
+					rid := idsIndex.GetRID(seqLID)
+					timerRID.Stop()
+
+					id := seq.ID{MID: mid, RID: rid}
+
+					if total == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
+						ids = append(ids, seq.IDSource{ID: id})
+					}
+					lastID = id
+				}
 			}
 
-			if needMore {
-				timerRID.Start()
-				rid := idsIndex.GetRID(seq.LID(rawLid))
-				timerRID.Stop()
+			total++ // increment found counter, use aggNode, calculate histogram and collect ids only if id in borders
 
-				id := seq.ID{MID: mid, RID: rid}
-
-				if total == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
-					ids = append(ids, seq.IDSource{ID: id})
+			if params.HasAgg() {
+				if aggs == nil {
+					var err error
+					aggs, err = aggSupplier()
+					if err != nil {
+						return total, ids, histogram, nil, err
+					}
 				}
-				lastID = id
+
+				timerAgg.Start()
+				for i := range aggs {
+					if err := aggs[i].Next(lid); err != nil {
+						timerAgg.Stop()
+						return total, ids, histogram, aggs, err
+					}
+				}
+				timerAgg.Stop()
 			}
 		}
-
-		total++ // increment found counter, use aggNode, calculate histogram and collect ids only if id in borders
-
-		if params.HasAgg() {
-			if aggs == nil {
-				var err error
-				aggs, err = aggSupplier()
-				if err != nil {
-					return total, ids, histogram, nil, err
-				}
-			}
-
-			timerAgg.Start()
-			for i := range aggs {
-				if err := aggs[i].Next(lid); err != nil {
-					timerAgg.Stop()
-					return total, ids, histogram, aggs, err
-				}
-			}
-			timerAgg.Stop()
-		}
-
 	}
 
 	return total, ids, histogram, aggs, nil
+}
+
+// lidsBuf maintains node.LID in slice as is (append order).
+// Used to drain batches of LIDs when eval tree doesn't support batching.
+type lidsBuf struct {
+	lids []node.LID
+}
+
+func (b lidsBuf) reset() lidsBuf {
+	return lidsBuf{
+		lids: b.lids[:0],
+	}
+}
+
+func (b lidsBuf) append(x node.LID) lidsBuf {
+	return lidsBuf{
+		lids: append(b.lids, x),
+	}
+}
+
+func (b lidsBuf) Len() int {
+	return len(b.lids)
+}
+
+func (b lidsBuf) Lids(_ []node.LID) []node.LID {
+	return b.lids
+}
+
+func tryConvertToBatchedTree(evalTree node.Node) (node.BatchedNode, bool) {
+	switch it := evalTree.(type) {
+	case *lids.IteratorDesc:
+		return it, true
+	case *lids.IteratorAsc:
+		return it, true
+	default:
+		return nil, false
+	}
 }
 
 // getLIDsBorders return min and max LID borders (including) for search

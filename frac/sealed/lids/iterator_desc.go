@@ -103,3 +103,40 @@ func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
 		it.lids = it.lids[:0]
 	}
 }
+
+func (it *IteratorDesc) NextBatch() node.LIDBatch {
+	return it.NextBatchGeq(node.NewDescZeroLID())
+}
+
+func (it *IteratorDesc) NextBatchGeq(nextID node.LID) node.LIDBatch {
+	for {
+		for len(it.lids) == 0 {
+			if !it.tryNextBlock {
+				return node.NewDescBatch(nil)
+			}
+			it.loadNextLIDsBlock()
+			it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
+			it.counter.AddLIDsCount(len(it.lids))
+		}
+		last := it.lids[len(it.lids)-1]
+		if nextID.Unpack() > last {
+			it.lids = it.lids[:0]
+			continue
+		}
+
+		// fast path: last LID < nextLID => skip the entire block
+		if nextID.Unpack() > it.lids[len(it.lids)-1] {
+			it.lids = it.lids[:0]
+			continue
+		}
+
+		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] >= nextID.Unpack() })
+		if idx < len(it.lids) {
+			batch := it.lids[idx:len(it.lids)]
+			it.lids = it.lids[:0]
+			return node.NewDescBatch(batch)
+		}
+
+		it.lids = it.lids[:0]
+	}
+}
