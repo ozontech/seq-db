@@ -79,6 +79,9 @@ const (
 	LIDTmpFileSuffix = "._lids"
 	LIDDelFileSuffix = ".lids.del"
 
+	// IndexFileSuffix is the legacy single-file index format (pre-split).
+	IndexFileSuffix = ".index"
+
 	RemoteFractionSuffix = ".remote"
 
 	FracCacheFileSuffix = ".frac-cache"
