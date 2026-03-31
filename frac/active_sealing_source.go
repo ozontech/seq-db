@@ -115,20 +115,29 @@ func (src *ActiveSealingSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
 		mids := src.mids.vals
 		rids := src.rids.vals
 
-		// First reserved ID (system). Position unused; LIDs use 1-based indexing.
-		if !yield(seq.ID{MID: seq.MID(mids[0]), RID: seq.RID(rids[0])}, 0) {
+		// System ID and DocPos are not stored in `src.sortedLIDs`.
+		// However we do have to yield them to preserve 1-baseed indexing for ids.
+		if !yield(seq.SystemID, seq.SystemDocPos) {
 			return
 		}
 
 		for i, lid := range src.sortedLIDs {
-			id := seq.ID{MID: seq.MID(mids[lid]), RID: seq.RID(rids[lid])}
-			var pos seq.DocPos
-			if len(src.docPosSorted) == 0 {
-				pos = src.docPosMap[id]
-			} else {
-				pos = src.docPosSorted[i+1] // +1 for system document
+			id := seq.ID{
+				MID: seq.MID(mids[lid]),
+				RID: seq.RID(rids[lid]),
 			}
-			if !yield(id, pos) {
+
+			// Documents were not sorted previously.
+			if len(src.docPosSorted) == 0 {
+				if !yield(id, src.docPosMap[id]) {
+					return
+				}
+				continue
+			}
+
+			// `i` in range [0; len(src.sortedLIDs))
+			// but lids indexes are 1-based.
+			if !yield(id, src.docPosSorted[i+1]) {
 				return
 			}
 		}
@@ -158,7 +167,7 @@ func (src *ActiveSealingSource) Info() *common.Info {
 	return src.info
 }
 
-func (src *ActiveSealingSource) Iterator() iter.Seq2[string, iter.Seq2[[]byte, []uint32]] {
+func (src *ActiveSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint32]] {
 	return func(yield func(string, iter.Seq2[[]byte, []uint32]) bool) {
 		for _, field := range src.fields {
 			if !yield(field, src.tokensForField(field)) {

@@ -81,6 +81,7 @@ func (bb *blocksBuilder) BuildTokenBlocks(
 		)
 
 		emitFieldEntry := func() {
+			// Handle case when field does not have tokens.
 			if fieldName == "" || fieldEntryStartTID > currentTID {
 				return
 			}
@@ -203,20 +204,24 @@ func seqBlockID(
 }
 
 type lidBlocksAcc struct {
-	blockCap     int
+	blockCap int
+
 	currentTID   uint32
 	currentBlock lidsSealBlock
+
 	isEndOfToken bool
 	isContinued  bool
 }
 
 func newLIDBlocksAccumulator(blockCap int) *lidBlocksAcc {
 	a := &lidBlocksAcc{blockCap: blockCap}
+
 	a.currentBlock.ext.minTID = 1
 	a.currentBlock.payload = lids.Block{
 		LIDs:    make([]uint32, 0, blockCap),
 		Offsets: []uint32{0},
 	}
+
 	return a
 }
 
@@ -268,7 +273,7 @@ func (a *lidBlocksAcc) finalizeBlock() lidsSealBlock {
 	result := a.currentBlock
 	result.payload.IsLastLID = a.isEndOfToken
 	result.ext.isContinued = a.isContinued
-	a.isContinued = !a.isEndOfToken
 
+	a.isContinued = !a.isEndOfToken
 	return result
 }
