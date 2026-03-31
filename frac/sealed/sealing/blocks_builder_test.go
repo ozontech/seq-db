@@ -35,11 +35,11 @@ func (m *mockSource) Iterator() iter.Seq2[string, iter.Seq2[[]byte, []uint32]] {
 			tokenStart, tokenEnd := start, end
 			if !yield(field, func(yield func([]byte, []uint32) bool) {
 				for j := tokenStart; j < tokenEnd; j++ {
-					var lids []uint32
+					var lidsbuf []uint32
 					if j < len(m.tokenLIDs) {
-						lids = m.tokenLIDs[j]
+						lidsbuf = m.tokenLIDs[j]
 					}
-					if !yield(m.tokens[j], lids) {
+					if !yield(m.tokens[j], lidsbuf) {
 						return
 					}
 				}
@@ -64,11 +64,11 @@ func (m *mockSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
 func (m *mockSource) TokenAndLIDs() iter.Seq2[[]byte, []uint32] {
 	return func(yield func([]byte, []uint32) bool) {
 		for i, token := range m.tokens {
-			var lids []uint32
+			var lidsbuf []uint32
 			if i < len(m.tokenLIDs) {
-				lids = m.tokenLIDs[i]
+				lidsbuf = m.tokenLIDs[i]
 			}
-			if !yield(token, lids) {
+			if !yield(token, lidsbuf) {
 				return
 			}
 		}

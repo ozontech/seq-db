@@ -5,11 +5,28 @@ import (
 	"encoding/binary"
 	"io"
 
+	"go.uber.org/zap"
+
 	"github.com/alecthomas/units"
+
 	"github.com/ozontech/seq-db/bytespool"
+	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/util"
 )
 
 const prefixSize = 16
+
+const (
+	btypeInfo       = "info"
+	btypeOffset     = "offset"
+	btypeToken      = "token"
+	btypeTokenTable = "token-table"
+	btypeMid        = "mid"
+	btypeRid        = "rid"
+	btypeDocPos     = "doc-pos"
+	btypeLid        = "lid"
+	btypeBlackhole  = "blackhole"
+)
 
 // writer writes blocks incrementally to a single file using the
 // [prefix][blocks][registry] format.
@@ -19,7 +36,26 @@ type writer struct {
 	wpayload *bytespool.Writer
 	wheader  bytes.Buffer
 
-	pos int
+	pos   int
+	stats map[string]blockstat
+}
+
+type blockstat struct {
+	count      int
+	raw        int
+	compressed int
+	header     int
+}
+
+func (b blockstat) log(btype string) {
+	logger.Info(
+		"seal block stats",
+		zap.String("type", btype),
+		util.ZapUint64AsSizeStr("raw", uint64(b.raw)),
+		util.ZapUint64AsSizeStr("compressed", uint64(b.compressed)),
+		util.ZapUint64AsSizeStr("header", uint64(b.header)),
+		zap.Uint64("blocks_count", uint64(b.count)),
+	)
 }
 
 func newWriter(ws io.WriteSeeker) (*writer, error) {
@@ -31,14 +67,23 @@ func newWriter(ws io.WriteSeeker) (*writer, error) {
 		ws:       ws,
 		wpayload: bytespool.AcquireWriterSize(ws, int(units.MiB)),
 		pos:      prefixSize,
+		stats:    make(map[string]blockstat),
 	}, nil
 }
 
-func (w *writer) writeBlock(block indexBlock) error {
+func (w *writer) writeBlock(btype string, block indexBlock) error {
 	header, payload := block.Bin(int64(w.pos))
-
 	if _, err := w.wpayload.Write(payload); err != nil {
 		return err
+	}
+
+	if btype != btypeBlackhole {
+		w.stats[btype] = blockstat{
+			count:      w.stats[btype].count + 1,
+			raw:        w.stats[btype].raw + int(block.rawLen),
+			compressed: w.stats[btype].compressed + len(block.payload),
+			header:     w.stats[btype].header + len(header),
+		}
 	}
 
 	w.wheader.Write(header)
@@ -73,8 +118,15 @@ func (w *writer) finalize() error {
 		return err
 	}
 
-	_, err = w.ws.Write(prefix)
-	return err
+	if _, err := w.ws.Write(prefix); err != nil {
+		return err
+	}
+
+	for btype, stats := range w.stats {
+		stats.log(btype)
+	}
+
+	return nil
 }
 
 func (w *writer) release() {
