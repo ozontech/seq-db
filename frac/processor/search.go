@@ -54,7 +54,7 @@ var lidsBufPool = sync.Pool{
 	},
 }
 
-const maxLIDBufCap = consts.LIDBlockCap
+const maxLIDBufCap = 4096
 
 func IndexSearch(
 	ctx context.Context,
@@ -246,7 +246,6 @@ func iterateEvalTree(
 		need = min(need, maxLIDBufCap)
 
 		timerEval.Start()
-		buf = buf.reset()
 		lidBatch := evalTree(need, buf)
 		timerEval.Stop()
 
