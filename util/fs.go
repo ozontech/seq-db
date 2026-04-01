@@ -5,6 +5,7 @@ package util
 
 import (
 	"errors"
+	"io"
 	"os"
 
 	"go.uber.org/zap"
@@ -52,4 +53,25 @@ func RemoveFile(file string) {
 	} else if !os.IsNotExist(err) {
 		logger.Error("file removing error", zap.Error(err))
 	}
+}
+
+// CopyFile copies a file (overwrites if already exists)
+func CopyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o666)
+	if err != nil {
+		return err
+	}
+
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
 }
