@@ -8,7 +8,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/seq"
@@ -274,50 +273,4 @@ func makeInverser(sortedLIDs []uint32) []uint32 {
 		inverser[lid] = uint32(i + 1) // +1 because 0 position is reserved and unused
 	}
 	return inverser
-}
-
-// Docs returns an iterator for documents with their IDs.
-// Handles duplicate IDs (for nested indexes).
-func (src *SealingSource) Docs() iter.Seq2[seq.ID, []byte] {
-	src.lastErr = nil
-	return func(yield func(seq.ID, []byte) bool) {
-		var (
-			prev   seq.ID
-			curDoc []byte
-		)
-
-		// Iterate through ID and position blocks
-		for ids, pos := range src.IDsBlocks(consts.IDsPerBlock) {
-			for i, id := range ids {
-				if id == systemSeqID {
-					curDoc = nil // reserved system document (no payload)
-				} else if id != prev {
-					// If ID changed, read new document
-					if curDoc, src.lastErr = src.doc(pos[i]); src.lastErr != nil {
-						return
-					}
-				}
-				prev = id
-				if !yield(id, curDoc) {
-					return
-				}
-			}
-		}
-	}
-}
-
-// doc reads a document from storage by its position.
-func (src *SealingSource) doc(pos seq.DocPos) ([]byte, error) {
-	blockIndex, docOffset := pos.Unpack()
-	blockOffset := src.blocksOffsets[blockIndex]
-
-	var doc []byte
-	err := src.docsReader.ReadDocsFunc(blockOffset, []uint64{docOffset}, func(b []byte) error {
-		doc = b
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return doc, nil
 }
