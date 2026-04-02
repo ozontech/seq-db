@@ -2372,7 +2372,10 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			cache.NewCache[[]byte](nil, nil),
 			sealed.info,
 			s.config,
-			s3cli)
+			s3cli,
+			false,
+		)
+
 		s.fraction = remoteFrac
 	}
 }
