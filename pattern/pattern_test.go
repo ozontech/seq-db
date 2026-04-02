@@ -1,6 +1,7 @@
 package pattern
 
 import (
+	"bytes"
 	"errors"
 	"math"
 	"math/rand"
@@ -99,6 +100,36 @@ func (tp *simpleTokenProvider) Ordered() bool {
 	return tp.ordered
 }
 
+func (tp *simpleTokenProvider) FindContains(firstTID uint32, lastTID uint32, needle []byte) ([]uint32, error) {
+	if len(needle) == 0 {
+		return nil, nil
+	}
+	var tids []uint32
+	for t := firstTID; t <= lastTID; t++ {
+		if bytes.Contains(tp.GetToken(t), needle) {
+			tids = append(tids, t)
+		}
+	}
+	return tids, nil
+}
+
+func (tp *simpleTokenProvider) FindToken(searcher Searcher) ([]uint32, error) {
+	firstTID := searcher.FirstTID()
+	lastTID := searcher.LastTID()
+	var tids []uint32
+	for t := firstTID; t <= lastTID; t++ {
+		match, err := searcher.Check(tp.GetToken(t))
+		if err != nil {
+			return nil, err
+		}
+
+		if match {
+			tids = append(tids, t)
+		}
+	}
+	return tids, nil
+}
+
 func searchAll(t *testing.T, tp testTokenProvider, req string, expect []string) {
 	sort.Strings(expect)
 	assert.False(t, tp.shuffled.Ordered(), "data is sorted")
@@ -133,10 +164,10 @@ func search(t *testing.T, tp *simpleTokenProvider, req string, expect []string) 
 	s := newSearcher(token, tp)
 
 	res := []string{}
-	for i := s.firstTID(); i <= s.lastTID(); i++ {
+	for i := s.FirstTID(); i <= s.LastTID(); i++ {
 		val := tp.GetToken(i)
 
-		match, err := s.check(val)
+		match, err := s.Check(val)
 		if err != nil {
 			t.Fatal(err)
 		}

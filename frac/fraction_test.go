@@ -1390,11 +1390,66 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   midTime,
 		},
 
-		// other queries
+		// wildcards
 		{
 			name:     "trace_id:trace-4*",
 			query:    "trace_id:trace-4*",
 			filter:   func(doc *testDoc) bool { return strings.Contains(doc.traceId, "trace-4") },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "id:*1* OR id:*2*",
+			query: "id:*1* OR id:*2*",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.id, "1") || strings.Contains(doc.id, "2")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "id:*1* AND id:*2*",
+			query: "id:*1* AND id:*2*",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.id, "1") && strings.Contains(doc.id, "2")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "id:*1 OR id:*2 OR id:*3",
+			query: "id:*1 OR id:*2 OR id:*3",
+			filter: func(doc *testDoc) bool {
+				return strings.HasSuffix(doc.id, "1") || strings.HasSuffix(doc.id, "2") || strings.HasSuffix(doc.id, "3")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "message:*re*",
+			query: "message:*re*",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.message, "re")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "message:*uest OR id:*1",
+			query: "message:*uest OR id:*1",
+			filter: func(doc *testDoc) bool {
+				// the only message token which suffices is 'request'
+				return strings.Contains(doc.message, "request") || strings.HasSuffix(doc.id, "1")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:*a*",
+			query: "service:*a*",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.service, "a")
+			},
 			fromTime: fromTime,
 			toTime:   toTime,
 		},

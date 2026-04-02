@@ -17,6 +17,8 @@ import (
 
 type tokenProvider interface {
 	GetToken(uint32) []byte
+	FindContains(firstTID uint32, lastTID uint32, needle []byte) ([]uint32, error)
+	FindToken(searcher Searcher) ([]uint32, error)
 	FirstTID() uint32
 	LastTID() uint32
 	Ordered() bool
@@ -27,11 +29,11 @@ type baseSearch struct {
 	last  int
 }
 
-func (s *baseSearch) firstTID() uint32 {
+func (s *baseSearch) FirstTID() uint32 {
 	return uint32(s.first)
 }
 
-func (s *baseSearch) lastTID() uint32 {
+func (s *baseSearch) LastTID() uint32 {
 	return uint32(s.last)
 }
 
@@ -67,7 +69,7 @@ func (s *literalSearch) Narrow(tp tokenProvider) {
 	s.last = s.first - 1 // begin > end: will be considered empty
 }
 
-func (s *literalSearch) check(val []byte) (bool, error) {
+func (s *literalSearch) Check(val []byte) (bool, error) {
 	if s.narrowed {
 		return len(s.value) == len(val), nil
 	}
@@ -165,7 +167,7 @@ func findSequence(haystack []byte, needles [][]byte) int {
 	return len(needles)
 }
 
-func (s *wildcardSearch) check(val []byte) (bool, error) {
+func (s *wildcardSearch) Check(val []byte) (bool, error) {
 	return s.checkPrefix(val) && s.checkSuffix(val) && s.checkMiddle(val), nil
 }
 
@@ -181,7 +183,7 @@ func newRangeTextSearch(base baseSearch, token *parser.Range) *rangeTextSearch {
 	}
 }
 
-func (s *rangeTextSearch) check(val []byte) (bool, error) {
+func (s *rangeTextSearch) Check(val []byte) (bool, error) {
 	valStr := string(val)
 	if s.token.From.Kind != parser.TermSymbol {
 		if s.token.IncludeFrom {
@@ -244,7 +246,7 @@ func newRangeNumberSearch(base baseSearch, token *parser.Range) *rangeNumberSear
 	return s
 }
 
-func (s *rangeNumberSearch) check(rawVal []byte) (bool, error) {
+func (s *rangeNumberSearch) Check(rawVal []byte) (bool, error) {
 	val, err := strconv.ParseFloat(string(rawVal), 64)
 	if err != nil || isNaNOrInf(val) {
 		return false, nil
@@ -301,7 +303,7 @@ func newRangeIPSearch(base baseSearch, token *parser.IPRange) *rangeIpSearch {
 	return s
 }
 
-func (s *rangeIpSearch) check(rawVal []byte) (bool, error) {
+func (s *rangeIpSearch) Check(rawVal []byte) (bool, error) {
 	val, err := netip.ParseAddr(string(rawVal))
 	if err != nil {
 		return false, nil
@@ -324,7 +326,7 @@ func newReSearch(base baseSearch, token *parser.Re) *reSearch {
 	return &reSearch{baseSearch: base, r: token.CompiledExpression}
 }
 
-func (s *reSearch) check(rawVal []byte) (bool, error) {
+func (s *reSearch) Check(rawVal []byte) (bool, error) {
 	if config.MaxRegexTokensCheck > 0 && s.checked >= config.MaxRegexTokensCheck {
 		return false, errors.New(
 			"'re' filter exceeded token limit: " +
@@ -335,13 +337,13 @@ func (s *reSearch) check(rawVal []byte) (bool, error) {
 	return s.r.Match(rawVal), nil
 }
 
-type searcher interface {
-	firstTID() uint32
-	lastTID() uint32
-	check(val []byte) (bool, error)
+type Searcher interface {
+	FirstTID() uint32
+	LastTID() uint32
+	Check(val []byte) (bool, error)
 }
 
-func newSearcher(token parser.Token, tp tokenProvider) searcher {
+func newSearcher(token parser.Token, tp tokenProvider) Searcher {
 	base := baseSearch{
 		first: int(tp.FirstTID()),
 		last:  int(tp.LastTID()),
@@ -390,22 +392,24 @@ func isNaNOrInf(f float64) bool {
 	return math.IsNaN(f) || math.IsInf(f, 0)
 }
 
-func Search(ctx context.Context, t parser.Token, tp tokenProvider) ([]uint32, error) {
-	tids := []uint32{}
-	s := newSearcher(t, tp)
-	for tid := s.firstTID(); tid <= s.lastTID(); tid++ {
-		if tid&1023 == 0 && util.IsCancelled(ctx) {
-			return nil, ctx.Err()
-		}
-
-		match, err := s.check(tp.GetToken(tid))
-		if err != nil {
-			return nil, err
-		}
-
-		if match {
-			tids = append(tids, tid)
-		}
+func isSimpleWildcardContains(token parser.Token) (needle []byte, ok bool) {
+	lit, ok := token.(*parser.Literal)
+	if !ok || len(lit.Terms) != 3 {
+		return nil, false
 	}
-	return tids, nil
+	if !lit.Terms[0].IsWildcard() || lit.Terms[1].Kind != parser.TermText || !lit.Terms[2].IsWildcard() {
+		return nil, false
+	}
+	return []byte(lit.Terms[1].Data), true
+}
+
+func Search(ctx context.Context, t parser.Token, tp tokenProvider) ([]uint32, error) {
+	if util.IsCancelled(ctx) {
+		return nil, ctx.Err()
+	}
+	if needle, ok := isSimpleWildcardContains(t); ok {
+		return tp.FindContains(tp.FirstTID(), tp.LastTID(), needle)
+	}
+	s := newSearcher(t, tp)
+	return tp.FindToken(s)
 }

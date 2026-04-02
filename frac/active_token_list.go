@@ -1,6 +1,7 @@
 package frac
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"hash/crc32"
@@ -36,6 +37,38 @@ type activeTokenProvider struct {
 func (tp *activeTokenProvider) GetToken(tid uint32) []byte {
 	id := tp.inverseIndex[tid-1]
 	return tp.tidToVal[id]
+}
+
+// FindContains finds tids of tokens which contain a provided needle. From and to indices are specified inclusive.
+func (tp *activeTokenProvider) FindContains(firstTID uint32, lastTID uint32, needle []byte) ([]uint32, error) {
+	if len(needle) == 0 {
+		return nil, nil
+	}
+	var tids []uint32
+	for tid := firstTID; tid <= lastTID; tid++ {
+		if bytes.Contains(tp.GetToken(tid), needle) {
+			tids = append(tids, tid)
+		}
+	}
+	return tids, nil
+}
+
+// FindToken finds tids of tokens which suffice a provided searcher (predicate).
+func (tp *activeTokenProvider) FindToken(searcher pattern.Searcher) ([]uint32, error) {
+	firstTID := searcher.FirstTID()
+	lastTID := searcher.LastTID()
+	var tids []uint32
+	for tid := firstTID; tid <= lastTID; tid++ {
+		match, err := searcher.Check(tp.GetToken(tid))
+		if err != nil {
+			return nil, err
+		}
+
+		if match {
+			tids = append(tids, tid)
+		}
+	}
+	return tids, nil
 }
 
 func (tp *activeTokenProvider) FirstTID() uint32 {
