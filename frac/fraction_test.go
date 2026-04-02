@@ -2391,6 +2391,11 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			s3cli,
 			testSkipMaskProvider{},
 		)
+			s3cli)
+			s3cli,
+			false,
+		)
+
 		s.fraction = remoteFrac
 	}
 }

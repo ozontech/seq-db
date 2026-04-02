@@ -35,14 +35,6 @@ type fracManifest struct {
 	// Deletion marker file flags
 	hasDocsDel  bool // documents deletion marker
 	hasSdocsDel bool // sorted documents deletion marker
-
-	// Temporary file flags
-	hasInfoTmp    bool
-	hasTokenTmp   bool
-	hasOffsetsTmp bool
-	hasIDTmp      bool
-	hasLIDTmp     bool
-	hasSdocsTmp   bool // temporary sorted documents file
 }
 
 // hasAllIndexFiles reports whether all 5 split index files are present.
@@ -83,18 +75,12 @@ func (m *fracManifest) AddExtension(ext string) error {
 	case consts.SdocsDelFileSuffix:
 		m.hasSdocsDel = true
 
-	case consts.InfoTmpFileSuffix:
-		m.hasInfoTmp = true
-	case consts.TokenTmpFileSuffix:
-		m.hasTokenTmp = true
-	case consts.OffsetsTmpFileSuffix:
-		m.hasOffsetsTmp = true
-	case consts.IDTmpFileSuffix:
-		m.hasIDTmp = true
-	case consts.LIDTmpFileSuffix:
-		m.hasLIDTmp = true
-	case consts.SdocsTmpFileSuffix:
-		m.hasSdocsTmp = true
+	case consts.IndexTmpFileSuffix,
+		consts.InfoTmpFileSuffix, consts.TokenTmpFileSuffix,
+		consts.OffsetsTmpFileSuffix, consts.IDTmpFileSuffix,
+		consts.LIDTmpFileSuffix, consts.SdocsTmpFileSuffix:
+
+		// Just handle temporary files (which were not commited).
 
 	default:
 		return fmt.Errorf("unknown fraction file type %s", ext)
@@ -192,6 +178,7 @@ func removeDocsDel(m *fracManifest) {
 
 func removeIndexTmp(m *fracManifest) {
 	for _, suffix := range []string{
+		consts.IndexTmpFileSuffix,
 		consts.InfoTmpFileSuffix,
 		consts.TokenTmpFileSuffix,
 		consts.OffsetsTmpFileSuffix,
@@ -200,18 +187,10 @@ func removeIndexTmp(m *fracManifest) {
 	} {
 		util.RemoveFile(m.basePath + suffix)
 	}
-	m.hasInfoTmp = false
-	m.hasTokenTmp = false
-	m.hasOffsetsTmp = false
-	m.hasIDTmp = false
-	m.hasLIDTmp = false
 }
 
 func removeSdocsTmp(m *fracManifest) {
-	if m.hasSdocsTmp {
-		util.RemoveFile(m.basePath + consts.SdocsTmpFileSuffix)
-		m.hasSdocsTmp = false
-	}
+	util.RemoveFile(m.basePath + consts.SdocsTmpFileSuffix)
 }
 
 // analyzeFiles analyzes fraction files and groups them by fraction ID

@@ -173,11 +173,8 @@ func newTokenTableEntry(
 }
 
 // seqBlockID accumulates scalar (ID, position) pairs into sealed ID blocks.
-// A new block is yielded every `blockSize` IDs.
-func seqBlockID(
-	ids iter.Seq2[seq.ID, seq.DocPos],
-	blockSize int,
-) iter.Seq[idsSealBlock] {
+// A new block is yielded every `blockCapacity` IDs.
+func seqBlockID(ids iter.Seq2[seq.ID, seq.DocPos], blockCapacity int) iter.Seq[idsSealBlock] {
 	return func(yield func(idsSealBlock) bool) {
 		var block idsSealBlock
 
@@ -186,7 +183,7 @@ func seqBlockID(
 			block.rids.Values = append(block.rids.Values, uint64(id.RID))
 			block.params.Values = append(block.params.Values, uint64(pos))
 
-			if len(block.mids.Values) == blockSize {
+			if len(block.mids.Values) == blockCapacity {
 				if !yield(block) {
 					return
 				}
@@ -204,7 +201,7 @@ func seqBlockID(
 }
 
 type lidBlocksAcc struct {
-	blockCap int
+	blockCapacity int
 
 	currentTID   uint32
 	currentBlock lidsSealBlock
@@ -213,12 +210,12 @@ type lidBlocksAcc struct {
 	isContinued  bool
 }
 
-func newLIDBlocksAccumulator(blockCap int) *lidBlocksAcc {
-	a := &lidBlocksAcc{blockCap: blockCap}
+func newLIDBlocksAccumulator(blockCapacity int) *lidBlocksAcc {
+	a := &lidBlocksAcc{blockCapacity: blockCapacity}
 
 	a.currentBlock.ext.minTID = 1
 	a.currentBlock.payload = lids.Block{
-		LIDs:    make([]uint32, 0, blockCap),
+		LIDs:    make([]uint32, 0, blockCapacity),
 		Offsets: []uint32{0},
 	}
 
@@ -234,7 +231,7 @@ func (a *lidBlocksAcc) Add(lidsbuf []uint32, onBlock func(lidsSealBlock) error) 
 	a.currentTID++
 
 	for _, lid := range lidsbuf {
-		if len(a.currentBlock.payload.LIDs) == a.blockCap {
+		if len(a.currentBlock.payload.LIDs) == a.blockCapacity {
 			if err := onBlock(a.finalizeBlock()); err != nil {
 				return err
 			}
