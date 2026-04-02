@@ -35,6 +35,7 @@ type fracManifest struct {
 	// Deletion marker file flags
 	hasDocsDel  bool // documents deletion marker
 	hasSdocsDel bool // sorted documents deletion marker
+	hasIndexDel bool // index deletion marker
 }
 
 // hasAllIndexFiles reports whether all 5 split index files are present.
@@ -74,6 +75,8 @@ func (m *fracManifest) AddExtension(ext string) error {
 		m.hasDocsDel = true
 	case consts.SdocsDelFileSuffix:
 		m.hasSdocsDel = true
+	case consts.IndexDelFileSuffix:
+		m.hasIndexDel = true
 
 	case consts.IndexTmpFileSuffix,
 		consts.InfoTmpFileSuffix, consts.TokenTmpFileSuffix,
@@ -81,6 +84,7 @@ func (m *fracManifest) AddExtension(ext string) error {
 		consts.LIDTmpFileSuffix, consts.SdocsTmpFileSuffix:
 
 		// Just handle temporary files (which were not commited).
+		// We will just drop them in all possible cases.
 
 	default:
 		return fmt.Errorf("unknown fraction file type %s", ext)
@@ -112,7 +116,7 @@ func (m *fracManifest) Stage() fracStage {
 	if (m.hasMeta || m.hasWal) && m.hasDocs {
 		return fracStageActive
 	}
-	if m.hasDocsDel || m.hasSdocsDel {
+	if m.hasDocsDel || m.hasSdocsDel || m.hasIndexDel {
 		return fracStageZombie
 	}
 	return fracStageUnknown
@@ -126,7 +130,7 @@ func removeDocs(m *fracManifest) {
 }
 
 func removeSdocs(m *fracManifest) {
-	if m.hasDocs {
+	if m.hasSdocs {
 		util.RemoveFile(m.basePath + consts.SdocsFileSuffix)
 		m.hasSdocs = false
 	}
@@ -291,23 +295,18 @@ func cleanupTemporary(m *fracManifest) {
 // Used for cleaning up partially deleted or corrupted fractions
 func removeAllFiles(basePath string) {
 	for _, suffix := range []string{
-		consts.InfoFileSuffix,
-		consts.TokenFileSuffix,
-		consts.OffsetsFileSuffix,
-		consts.IDFileSuffix,
-		consts.LIDFileSuffix,
-		consts.IndexFileSuffix,
-		consts.DocsFileSuffix,
-		consts.SdocsFileSuffix,
+		consts.DocsFileSuffix, consts.DocsDelFileSuffix,
+		consts.SdocsFileSuffix, consts.SdocsDelFileSuffix, consts.SdocsTmpFileSuffix,
+		consts.IndexFileSuffix, consts.IndexDelFileSuffix, consts.IndexTmpFileSuffix,
+
+		consts.InfoFileSuffix, consts.InfoTmpFileSuffix,
+		consts.TokenFileSuffix, consts.TokenTmpFileSuffix,
+		consts.OffsetsFileSuffix, consts.OffsetsTmpFileSuffix,
+		consts.IDFileSuffix, consts.IDTmpFileSuffix,
+		consts.LIDFileSuffix, consts.LIDTmpFileSuffix,
+
 		consts.MetaFileSuffix,
-		consts.DocsDelFileSuffix,
-		consts.SdocsDelFileSuffix,
-		consts.SdocsTmpFileSuffix,
-		consts.InfoTmpFileSuffix,
-		consts.TokenTmpFileSuffix,
-		consts.OffsetsTmpFileSuffix,
-		consts.IDTmpFileSuffix,
-		consts.LIDTmpFileSuffix,
+		consts.WalFileSuffix,
 	} {
 		util.RemoveFile(basePath + suffix)
 	}

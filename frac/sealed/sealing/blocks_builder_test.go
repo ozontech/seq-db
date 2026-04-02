@@ -13,6 +13,8 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
+var _ Source = (*mockSource)(nil)
+
 type mockSource struct {
 	info          common.Info
 	tokens        [][]byte
@@ -25,9 +27,9 @@ type mockSource struct {
 	lastError     error
 }
 
-func (m *mockSource) Info() common.Info { return m.info }
+func (m *mockSource) Info() *common.Info { return &m.info }
 
-func (m *mockSource) Iterator() iter.Seq2[string, iter.Seq2[[]byte, []uint32]] {
+func (m *mockSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint32]] {
 	return func(yield func(string, iter.Seq2[[]byte, []uint32]) bool) {
 		start := 0
 		for i, field := range m.fields {
@@ -128,7 +130,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	lidAccum := newLIDBlocksAccumulator(lidBlockCap)
 	var lidBlocks []lidsSealBlock
 	tokenBlocks := bb.BuildTokenBlocks(
-		src.Iterator(),
+		src.TokenTriplet(),
 		func(lids []uint32) error {
 			return lidAccum.Add(lids, func(block lidsSealBlock) error {
 				block.payload.LIDs = slices.Clone(block.payload.LIDs)
