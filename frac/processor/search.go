@@ -324,12 +324,6 @@ type lidsBuf struct {
 	lids []node.LID
 }
 
-func (b lidsBuf) reset() lidsBuf {
-	return lidsBuf{
-		lids: b.lids[:0],
-	}
-}
-
 func (b lidsBuf) append(x node.LID) lidsBuf {
 	return lidsBuf{
 		lids: append(b.lids, x),
