@@ -223,7 +223,7 @@ func (src *ActiveSealingSource) Docs() iter.Seq2[seq.ID, []byte] {
 		)
 
 		for id, pos := range src.ID() {
-			if id == systemSeqID {
+			if id == seq.SystemID {
 				curDoc = nil // reserved system document (no payload)
 			} else if id != prev {
 				if curDoc, src.lastErr = src.doc(pos); src.lastErr != nil {

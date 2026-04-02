@@ -10,15 +10,17 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
+var (
+	SystemMID    MID    = math.MaxUint64
+	SystemRID    RID    = math.MaxUint64
+	SystemID     ID     = ID{SystemMID, SystemRID}
+	SystemDocPos DocPos = DocPos(0)
+)
+
 type ID struct {
 	MID MID
 	RID RID
 }
-
-var (
-	SystemID     = ID{math.MaxUint64, math.MaxUint64}
-	SystemDocPos = DocPos(0)
-)
 
 type (
 	MID uint64 // nanoseconds part of ID
