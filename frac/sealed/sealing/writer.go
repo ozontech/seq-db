@@ -5,9 +5,8 @@ import (
 	"encoding/binary"
 	"io"
 
-	"go.uber.org/zap"
-
 	"github.com/alecthomas/units"
+	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/logger"

@@ -77,6 +77,9 @@ const (
 	// IndexFileSuffix is the legacy single-file index format (pre-split).
 	IndexFileSuffix    = ".index"
 	IndexTmpFileSuffix = "._index"
+	// TODO(dkharms): [IndexDelFileSuffix] is actually not necessary.
+	// We can remove it in the future releases.
+	IndexDelFileSuffix = ".index.del"
 
 	RemoteFractionSuffix = ".remote"
 

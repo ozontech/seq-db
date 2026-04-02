@@ -3,7 +3,6 @@ package frac
 import (
 	"context"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -26,9 +25,7 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-var (
-	_ Fraction = (*Active)(nil)
-)
+var _ Fraction = (*Active)(nil)
 
 type Active struct {
 	Config *Config
@@ -59,16 +56,6 @@ type Active struct {
 
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
-}
-
-const (
-	systemMID = math.MaxUint64
-	systemRID = math.MaxUint64
-)
-
-var systemSeqID = seq.ID{
-	MID: systemMID,
-	RID: systemRID,
 }
 
 func NewActive(
@@ -109,8 +96,8 @@ func NewActive(
 	}
 
 	// use of 0 as keys in maps is prohibited – it's system key, so add first element
-	f.MIDs.Append(systemMID)
-	f.RIDs.Append(systemRID)
+	f.MIDs.Append(uint64(seq.SystemMID))
+	f.RIDs.Append(uint64(seq.SystemRID))
 
 	logger.Info("active fraction created", zap.String("fraction", baseFileName))
 
@@ -121,7 +108,8 @@ func mustOpenMetaWriter(
 	baseFileName string,
 	readLimiter *storage.ReadLimiter,
 	docsFile *os.File,
-	docsStats os.FileInfo) (*os.File, *ActiveWriter, *storage.DocBlocksReader, *storage.WalReader, uint64) {
+	docsStats os.FileInfo,
+) (*os.File, *ActiveWriter, *storage.DocBlocksReader, *storage.WalReader, uint64) {
 	legacyMetaFileName := baseFileName + consts.MetaFileSuffix
 
 	if _, err := os.Stat(legacyMetaFileName); err == nil {
