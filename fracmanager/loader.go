@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 )
@@ -138,7 +139,21 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 		case fracStageSealed:
 			locals = append(locals, l.loadSealed(manifest, loadedInfoCache))
 		case fracStageRemote:
-			remotes = append(remotes, l.loadRemote(ctx, manifest.basePath, loadedInfoCache))
+			// TODO(dkharms): Drop this compatibility check.
+
+			indexName := filepath.Base(manifest.basePath) + consts.IndexFileSuffix
+			hasIndex, err := l.provider.s3cli.Exists(ctx, indexName)
+			if err != nil {
+				logger.Error(
+					"will skip fraction: cannot check existence of .index file",
+					zap.String("fraction", filepath.Base(manifest.basePath)),
+					zap.Error(err),
+				)
+				continue
+			}
+
+			manifest.hasIndex = hasIndex
+			remotes = append(remotes, l.loadRemote(ctx, manifest, loadedInfoCache))
 		default:
 			logger.Error("unexpected fraction stage", zap.Any("manifest", manifest))
 		}
@@ -163,11 +178,11 @@ func (l *Loader) loadSealed(manifest *fracManifest, loadedInfoCache *fracInfoCac
 }
 
 // loadRemote loads a remote fraction
-func (l *Loader) loadRemote(ctx context.Context, basePath string, loadedInfoCache *fracInfoCache) *frac.Remote {
-	info, found := loadedInfoCache.Get(filepath.Base(basePath))
+func (l *Loader) loadRemote(ctx context.Context, manifest *fracManifest, loadedInfoCache *fracInfoCache) *frac.Remote {
+	info, found := loadedInfoCache.Get(filepath.Base(manifest.basePath))
 	l.updateStats(found)
 
-	f := l.provider.NewRemote(ctx, basePath, info)
+	f := l.provider.NewRemote(ctx, manifest.basePath, info, manifest.hasIndex)
 	l.infoCache.Add(f.Info())
 	return f
 }

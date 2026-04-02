@@ -106,6 +106,7 @@ func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
 		tb.Unpack(blockData)
 		blocks = append(blocks, tb)
 	}
+
 	return blocks, nil
 }
 

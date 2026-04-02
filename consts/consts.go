@@ -61,26 +61,22 @@ const (
 
 	InfoFileSuffix    = ".info"
 	InfoTmpFileSuffix = "._info"
-	InfoDelFileSuffix = ".info.del"
 
 	TokenFileSuffix    = ".tokens"
 	TokenTmpFileSuffix = "._tokens"
-	TokenDelFileSuffix = ".tokens.del"
 
 	OffsetsFileSuffix    = ".offsets"
 	OffsetsTmpFileSuffix = "._offsets"
-	OffsetsDelFileSuffix = ".offsets.del"
 
 	IDFileSuffix    = ".ids"
 	IDTmpFileSuffix = "._ids"
-	IDDelFileSuffix = ".ids.del"
 
 	LIDFileSuffix    = ".lids"
 	LIDTmpFileSuffix = "._lids"
-	LIDDelFileSuffix = ".lids.del"
 
 	// IndexFileSuffix is the legacy single-file index format (pre-split).
-	IndexFileSuffix = ".index"
+	IndexFileSuffix    = ".index"
+	IndexTmpFileSuffix = "._index"
 
 	RemoteFractionSuffix = ".remote"
 

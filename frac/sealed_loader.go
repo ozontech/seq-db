@@ -79,8 +79,8 @@ func (l *LegacyLoader) skipSection() {
 // loadIDs reads the BlockOffsets block and then scans MID/RID/Pos triplets.
 func (l *LegacyLoader) loadIDs(fracVersion config.BinaryDataVersion) (seqids.Table, []uint64, error) {
 	var buf []byte
+
 	data, _, err := l.reader.ReadIndexBlock(l.blockIndex, buf)
-	l.blockIndex++
 	if err != nil {
 		return seqids.Table{}, nil, err
 	}
@@ -89,6 +89,9 @@ func (l *LegacyLoader) loadIDs(fracVersion config.BinaryDataVersion) (seqids.Tab
 	if err := offsets.Unpack(data); err != nil {
 		return seqids.Table{}, nil, err
 	}
+
+	// Move to the first block of ID section.
+	l.blockIndex++
 
 	table := seqids.Table{
 		StartBlockIndex: l.blockIndex, // absolute index of first MID block in .index

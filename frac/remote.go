@@ -43,7 +43,12 @@ type Remote struct {
 	docsCache  *cache.Cache[[]byte]
 	docsReader storage.DocsReader
 
-	// Per-section index files and their readers.
+	// IsLegacy is true for fractions that use the old single .index file format.
+	IsLegacy     bool
+	legacyFile   storage.ImmutableFile
+	legacyReader storage.IndexReader
+
+	// Per-section index files and their readers (new split format only).
 	infoFile    storage.ImmutableFile
 	tokenFile   storage.ImmutableFile
 	offsetsFile storage.ImmutableFile
@@ -75,6 +80,7 @@ func NewRemote(
 	info *common.Info,
 	config *Config,
 	s3cli *s3.Client,
+	isLegacy bool,
 ) *Remote {
 	f := &Remote{
 		ctx: ctx,
@@ -89,7 +95,8 @@ func NewRemote(
 		BaseFileName: baseFile,
 		Config:       config,
 
-		s3cli: s3cli,
+		s3cli:    s3cli,
+		IsLegacy: isLegacy,
 	}
 
 	// Fast path if fraction-info cache exists AND it has valid index size.
@@ -104,7 +111,7 @@ func NewRemote(
 	// I wrote a small proposal on how we can reduce impact of such events.
 	// https://github.com/ozontech/seq-db/issues/92
 
-	if err := f.openInfoFile(); err != nil {
+	if err := f.openInfo(); err != nil {
 		logger.Error(
 			"cannot open info file: any subsequent operation will fail",
 			zap.String("fraction", filepath.Base(f.BaseFileName)),
@@ -112,7 +119,7 @@ func NewRemote(
 		)
 	}
 
-	f.info = loadHeader(f.infoReader)
+	f.info = loadInfo(f.infoReader)
 	return f
 }
 
@@ -149,6 +156,17 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		)
 		return nil, err
 	}
+
+	tokenReader := &f.tokenReader
+	lidReader := &f.lidReader
+	idReader := &f.idReader
+
+	if f.IsLegacy {
+		tokenReader = &f.legacyReader
+		lidReader = &f.legacyReader
+		idReader = &f.legacyReader
+	}
+
 	return &sealedDataProvider{
 		ctx:               ctx,
 		fractionTypeLabel: "remote",
@@ -158,13 +176,13 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		docsReader:       &f.docsReader,
 		blocksOffsets:    f.blocksData.BlocksOffsets,
 		lidsTable:        f.blocksData.LIDsTable,
-		lidsLoader:       lids.NewLoader(&f.lidReader, f.indexCache.LIDs),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.tokenReader, f.indexCache.TokenTable),
+		lidsLoader:       lids.NewLoader(lidReader, f.indexCache.LIDs),
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, tokenReader, f.indexCache.Tokens),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, tokenReader, f.indexCache.TokenTable),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
-			&f.idReader,
+			idReader,
 			f.indexCache.MIDs,
 			f.indexCache.RIDs,
 			f.indexCache.Params,
@@ -191,6 +209,9 @@ func (f *Remote) Suicide() {
 	files := []string{
 		filepath.Base(f.BaseFileName) + consts.DocsFileSuffix,
 		filepath.Base(f.BaseFileName) + consts.SdocsFileSuffix,
+		// Legacy single-file format.
+		filepath.Base(f.BaseFileName) + consts.IndexFileSuffix,
+		// New split format.
 		filepath.Base(f.BaseFileName) + consts.InfoFileSuffix,
 		filepath.Base(f.BaseFileName) + consts.TokenFileSuffix,
 		filepath.Base(f.BaseFileName) + consts.OffsetsFileSuffix,
@@ -224,73 +245,117 @@ func (f *Remote) load() error {
 		return err
 	}
 
-	if err := f.openIndexFiles(); err != nil {
+	if err := f.openIndex(); err != nil {
 		return err
 	}
 
-	readers := IndexReaders{
+	if f.IsLegacy {
+		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.legacyReader)
+		f.isLoaded = true
+		return nil
+	}
+
+	(&Loader{}).Load(&f.blocksData, f.info, IndexReaders{
 		Info:    f.infoReader,
 		Token:   f.tokenReader,
 		Offsets: f.offsetsReader,
 		ID:      f.idReader,
 		LID:     f.lidReader,
-	}
+	})
 
-	(&Loader{}).Load(&f.blocksData, f.info, readers)
 	f.isLoaded = true
-
 	return nil
 }
 
-func (f *Remote) openInfoFile() error {
+func (f *Remote) openInfo() error {
+	if f.IsLegacy {
+		if f.legacyFile != nil {
+			return nil
+		}
+
+		indexName := filepath.Base(f.BaseFileName) + consts.IndexFileSuffix
+		f.legacyFile = s3.NewReader(f.ctx, f.s3cli, indexName)
+
+		f.legacyReader = storage.NewIndexReader(
+			f.readLimiter, indexName,
+			f.legacyFile, f.indexCache.InfoRegistry,
+		)
+
+		// infoReader is used by [loadInfo]
+		f.infoReader = f.legacyReader
+		return nil
+	}
+
 	if f.infoFile != nil {
 		return nil
 	}
-	return f.openRemoteFile(
-		consts.InfoFileSuffix,
-		func(file storage.ImmutableFile) {
-			f.infoFile = file
-			f.infoReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.InfoRegistry)
-		},
-	)
+
+	return f.openRemoteFile(consts.InfoFileSuffix, func(file storage.ImmutableFile) {
+		f.infoFile = file
+		f.infoReader = storage.NewIndexReader(
+			f.readLimiter, file.Name(),
+			file, f.indexCache.InfoRegistry,
+		)
+	})
 }
 
-func (f *Remote) openIndexFiles() error {
-	if err := f.openInfoFile(); err != nil {
+func (f *Remote) openIndex() error {
+	if err := f.openInfo(); err != nil {
 		return err
 	}
+
+	if f.IsLegacy {
+		return nil
+	}
+
 	if f.tokenFile == nil {
 		if err := f.openRemoteFile(consts.TokenFileSuffix, func(file storage.ImmutableFile) {
 			f.tokenFile = file
-			f.tokenReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.TokenRegistry)
+			f.tokenReader = storage.NewIndexReader(
+				f.readLimiter, file.Name(),
+				file, f.indexCache.TokenRegistry,
+			)
 		}); err != nil {
 			return err
 		}
 	}
+
 	if f.offsetsFile == nil {
 		if err := f.openRemoteFile(consts.OffsetsFileSuffix, func(file storage.ImmutableFile) {
 			f.offsetsFile = file
-			f.offsetsReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.OffsetsRegistry)
+			f.offsetsReader = storage.NewIndexReader(
+				f.readLimiter, file.Name(),
+				file, f.indexCache.OffsetsRegistry,
+			)
 		}); err != nil {
 			return err
 		}
 	}
+
 	if f.idFile == nil {
 		if err := f.openRemoteFile(consts.IDFileSuffix, func(file storage.ImmutableFile) {
 			f.idFile = file
-			f.idReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.IDRegistry)
+			f.idReader = storage.NewIndexReader(
+				f.readLimiter, file.Name(),
+				file, f.indexCache.IDRegistry,
+			)
 		}); err != nil {
 			return err
 		}
 	}
+
 	if f.lidFile == nil {
 		if err := f.openRemoteFile(consts.LIDFileSuffix, func(file storage.ImmutableFile) {
 			f.lidFile = file
-			f.lidReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.LIDRegistry)
+			f.lidReader = storage.NewIndexReader(
+				f.readLimiter, file.Name(),
+				file, f.indexCache.LIDRegistry,
+			)
 		}); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -299,8 +364,12 @@ func (f *Remote) openRemoteFile(suffix string, assign func(storage.ImmutableFile
 
 	ok, err := f.s3cli.Exists(f.ctx, name)
 	if err != nil {
-		return fmt.Errorf("cannot check existence of %q file: %w", suffix, err)
+		return fmt.Errorf(
+			"cannot check existence of %q file: %w",
+			suffix, err,
+		)
 	}
+
 	if !ok {
 		return fmt.Errorf("missing %q file", suffix)
 	}
