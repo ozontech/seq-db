@@ -100,7 +100,7 @@ func (tp *simpleTokenProvider) Ordered() bool {
 	return tp.ordered
 }
 
-func (tp *simpleTokenProvider) FindContains(firstTID uint32, lastTID uint32, needle []byte) ([]uint32, error) {
+func (tp *simpleTokenProvider) FindContains(firstTID, lastTID uint32, needle []byte) ([]uint32, error) {
 	if len(needle) == 0 {
 		return nil, nil
 	}

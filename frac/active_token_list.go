@@ -40,7 +40,7 @@ func (tp *activeTokenProvider) GetToken(tid uint32) []byte {
 }
 
 // FindContains finds tids of tokens which contain a provided needle. From and to indices are specified inclusive.
-func (tp *activeTokenProvider) FindContains(firstTID uint32, lastTID uint32, needle []byte) ([]uint32, error) {
+func (tp *activeTokenProvider) FindContains(firstTID, lastTID uint32, needle []byte) ([]uint32, error) {
 	if len(needle) == 0 {
 		return nil, nil
 	}

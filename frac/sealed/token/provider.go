@@ -58,7 +58,7 @@ func (tp *Provider) GetToken(tid uint32) []byte {
 	return block.GetToken(entry.GetIndexInTokensBlock(tid))
 }
 
-func (tp *Provider) FindContains(firstTID uint32, lastTID uint32, needle []byte) ([]uint32, error) {
+func (tp *Provider) FindContains(firstTID, lastTID uint32, needle []byte) ([]uint32, error) {
 	return tp.findInBlocks(firstTID, lastTID, func(b *Block, firstIndex, lastIndex int) ([]int, error) {
 		return b.FindContains(firstIndex, lastIndex, needle)
 	})
@@ -93,7 +93,7 @@ func (tp *Provider) findInBlocks(firstTID, lastTID uint32, search func(*Block, i
 	return tids, nil
 }
 
-func (tp *Provider) narrowTIDs(entry *TableEntry, firstTID uint32, fromTID uint32) (int, int) {
+func (tp *Provider) narrowTIDs(entry *TableEntry, firstTID, fromTID uint32) (int, int) {
 	tidStart := firstTID
 	if entry.StartTID > tidStart {
 		tidStart = entry.StartTID
@@ -108,7 +108,7 @@ func (tp *Provider) narrowTIDs(entry *TableEntry, firstTID uint32, fromTID uint3
 	return firstIndex, lastIndex
 }
 
-func (tp *Provider) narrowEntries(firstTID uint32, lastTID uint32) []*TableEntry {
+func (tp *Provider) narrowEntries(firstTID, lastTID uint32) []*TableEntry {
 	firstIdx := sort.Search(len(tp.entries), func(i int) bool {
 		return tp.entries[i].getLastTID() >= firstTID
 	})
