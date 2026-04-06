@@ -131,6 +131,9 @@ type Config struct {
 		// DocSize specifies maximum possible size for single document.
 		// Document larger than this threshold will be skipped.
 		DocSize Bytes `config:"doc_size" default:"128KiB"`
+		// QprMemoryUsage specifies maximum heap memory which a single QPR (query partial result)
+		// can use in either store or proxy.
+		QprMemoryUsage Bytes `config:"qpr_memory_usage" default:"0B"`
 
 		Aggregation struct {
 			// FieldTokens specifies maximum amount of unique field tokens
