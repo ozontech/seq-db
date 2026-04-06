@@ -137,6 +137,7 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 			zap.Strings("fracs_found", fracsFound),
 			zap.Int("total_fracs_skipped", totalFracsSkipped),
 			zap.Strings("fracs_skipped", fracsSkipped),
+			util.ZapUint64AsSizeStr("qpr_size", uint64(totalMemUsage)),
 			zap.Uint64("total", total.Total),
 		}
 
