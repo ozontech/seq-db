@@ -32,12 +32,12 @@ func (o DocsOrder) IsReverse() bool {
 }
 
 const (
-	SizeOfIDSource            = int(unsafe.Sizeof(*new(IDSource)))
-	SizeOfErrorSource         = int(unsafe.Sizeof(*new(ErrorSource)))
-	SizeOfAggBin              = int(unsafe.Sizeof(*new(AggBin)))
-	SizeOfSamplesContainer    = int(unsafe.Sizeof(*new(SamplesContainer)))
-	SizeOfAggregatableSamples = int(unsafe.Sizeof(*new(AggregatableSamples)))
-	SizeOfQPR                 = int(unsafe.Sizeof(*new(QPR)))
+	SizeOfIDSource            = int(unsafe.Sizeof(IDSource{}))
+	SizeOfErrorSource         = int(unsafe.Sizeof(ErrorSource{}))
+	SizeOfAggBin              = int(unsafe.Sizeof(AggBin{}))
+	SizeOfSamplesContainer    = int(unsafe.Sizeof(SamplesContainer{}))
+	SizeOfAggregatableSamples = int(unsafe.Sizeof(AggregatableSamples{}))
+	SizeOfQPR                 = int(unsafe.Sizeof(QPR{}))
 )
 
 type IDSource struct {
@@ -393,7 +393,7 @@ func (h *SamplesContainer) MemUsage() int {
 		return 0
 	}
 	total := SizeOfSamplesContainer
-	total += len(h.Samples) * util.SizeOfFloat64
+	total += cap(h.Samples) * util.SizeOfFloat64
 	if h.Values != nil {
 		for range h.Values {
 			total += util.SizeOfUint32
