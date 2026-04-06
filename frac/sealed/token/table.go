@@ -75,13 +75,18 @@ func (t Table) GetEntryByTID(tid uint32) *TableEntry {
 	if tid == 0 {
 		return nil
 	}
-	// todo: use bin search (we must have ordered slice here)
 	for _, data := range t {
-		for _, entry := range data.Entries {
-			if tid >= entry.StartTID && tid < entry.StartTID+entry.ValCount {
-				return entry
-			}
+		from := data.Entries[0].StartTID
+		to := data.Entries[len(data.Entries)-1].getLastTID()
+		if tid < from || tid > to {
+			continue
 		}
+
+		i := sort.Search(len(data.Entries), func(j int) bool {
+			return data.Entries[j].StartTID > tid
+		})
+
+		return data.Entries[i-1]
 	}
 
 	logger.Panic("can't find tid", zap.Uint32("tid", tid))

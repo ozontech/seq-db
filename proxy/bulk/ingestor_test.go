@@ -430,7 +430,7 @@ func TestProcessDocuments(t *testing.T) {
 				gotDocs = append(gotDocs, docsUnpacker.GetBinary())
 			}
 
-			binaryMetas, err := storage.DocBlock(c.metas).DecompressTo(nil)
+			binaryMetas, err := storage.WalBlock(c.metas).DecompressTo(nil)
 			require.NoError(t, err)
 			metasUnpacker := packer.NewBytesUnpacker(binaryMetas)
 			var gotMetas []indexer.MetaData

@@ -8,10 +8,17 @@ import (
 )
 
 func readAllInto(node Node, ids []uint32) []uint32 {
-	id, has := node.Next()
-	for has {
-		ids = append(ids, id)
-		id, has = node.Next()
+	for cur := node.Next(); !cur.IsNull(); cur = node.Next() {
+		ids = append(ids, cur.Unpack())
+	}
+	return ids
+}
+
+func readAllIntoGeq(node Node, ids []uint32) []uint32 {
+	id := node.Next()
+	for !id.IsNull() {
+		ids = append(ids, id.Unpack())
+		id = node.NextGeq(id)
 	}
 	return ids
 }
@@ -35,25 +42,85 @@ var (
 
 func TestNodeAnd(t *testing.T) {
 	expect := []uint32{5, 6, 13}
-	and := NewAnd(NewStatic(data[0], false), NewStatic(data[1], false), false)
+	and := NewAnd(NewStatic(data[0], false), NewStatic(data[1], false))
 	assert.Equal(t, expect, readAll(and))
+
+	// commutativity test
+	and2 := NewAnd(NewStatic(data[1], false), NewStatic(data[0], false))
+	assert.Equal(t, expect, readAll(and2))
 }
 
 func TestNodeOr(t *testing.T) {
 	expect := []uint32{1, 2, 3, 5, 6, 7, 8, 9, 13, 14}
-	or := NewOr(NewStatic(data[0], false), NewStatic(data[1], false), false)
+	or := NewOr(NewStatic(data[0], false), NewStatic(data[1], false))
 	assert.Equal(t, expect, readAll(or))
+
+	// commutativity test
+	or2 := NewOr(NewStatic(data[1], false), NewStatic(data[0], false))
+	assert.Equal(t, expect, readAll(or2))
 }
 
 func TestNodeNAnd(t *testing.T) {
 	expect := []uint32{2, 3, 14}
-	nand := NewNAnd(NewStatic(data[0], false), NewStatic(data[1], false), false)
+	nand := NewNAnd(NewStatic(data[0], false), NewStatic(data[1], false))
 	assert.Equal(t, expect, readAll(nand))
+}
+
+func TestNodeAndReverse(t *testing.T) {
+	expect := []uint32{13, 6, 5}
+	and := NewAnd(NewStatic(data[0], true), NewStatic(data[1], true))
+	assert.Equal(t, expect, readAll(and))
+}
+
+func TestNodeOrReverse(t *testing.T) {
+	expect := []uint32{14, 13, 9, 8, 7, 6, 5, 3, 2, 1}
+	or := NewOr(NewStatic(data[0], true), NewStatic(data[1], true))
+	assert.Equal(t, expect, readAll(or))
+
+	// commutativity test
+	or2 := NewOr(NewStatic(data[0], true), NewStatic(data[1], true))
+	assert.Equal(t, expect, readAll(or2))
+}
+
+func TestNodeNAndReverse(t *testing.T) {
+	expect := []uint32{14, 3, 2}
+	nand := NewNAnd(NewStatic(data[0], true), NewStatic(data[1], true))
+	assert.Equal(t, expect, readAll(nand))
+}
+
+func TestNodeNotReverse(t *testing.T) {
+	expect := []uint32{15, 12, 11, 10, 9, 8, 7, 4, 1}
+	not := NewNot(NewStatic(data[1], true), NewAscLID(15), NewAscLID(1))
+	assert.Equal(t, expect, readAll(not))
+}
+
+func TestNodeRange(t *testing.T) {
+	expect := []uint32{3, 4, 5, 6, 7, 8, 9, 10}
+	not := NewRange(NewDescLID(3), NewDescLID(10))
+	assert.Equal(t, expect, readAll(not))
+}
+
+func TestNodeRangeReverse(t *testing.T) {
+	expect := []uint32{10, 9, 8, 7, 6, 5, 4, 3}
+	not := NewRange(NewAscLID(10), NewAscLID(3))
+	assert.Equal(t, expect, readAll(not))
+}
+
+func TestNodeNotPartialRange(t *testing.T) {
+	expect := []uint32{4, 7, 8, 9, 10}
+	not := NewNot(NewStatic(data[1], false), NewDescLID(3), NewDescLID(10))
+	assert.Equal(t, expect, readAll(not))
+}
+
+func TestNodeNotPartialRangeReverse(t *testing.T) {
+	expect := []uint32{10, 9, 8, 7, 4}
+	not := NewNot(NewStatic(data[1], true), NewAscLID(10), NewAscLID(3))
+	assert.Equal(t, expect, readAll(not))
 }
 
 func TestNodeNot(t *testing.T) {
 	expect := []uint32{1, 4, 7, 8, 9, 10, 11, 12, 15}
-	nand := NewNot(NewStatic(data[1], false), 1, 15, false)
+	nand := NewNot(NewStatic(data[1], false), NewDescLID(1), NewDescLID(15))
 	assert.Equal(t, expect, readAll(nand))
 }
 
@@ -61,7 +128,7 @@ func TestNodeNot(t *testing.T) {
 func TestNodeLazyAnd(t *testing.T) {
 	left := []uint32{1, 2}
 	right := []uint32{1, 2, 3, 4, 5, 6}
-	and := NewAnd(NewStatic(left, false), NewStatic(right, false), false)
+	and := NewAnd(NewStatic(left, false), NewStatic(right, false))
 	assert.Equal(t, []uint32{1, 2}, readAll(and))
 	assert.Equal(t, []uint32{4, 5, 6}, getRemainingSlice(t, and.right))
 	assert.Equal(t, []uint32(nil), readAll(and))
@@ -72,7 +139,7 @@ func TestNodeLazyAnd(t *testing.T) {
 func TestNodeLazyNAnd(t *testing.T) {
 	left := []uint32{1, 2, 5, 6, 7, 8}
 	right := []uint32{2, 4}
-	nand := NewNAnd(NewStatic(left, false), NewStatic(right, false), false)
+	nand := NewNAnd(NewStatic(left, false), NewStatic(right, false))
 	assert.Equal(t, []uint32{4}, readAll(nand))
 	assert.Equal(t, []uint32{6, 7, 8}, getRemainingSlice(t, nand.neg))
 	assert.Equal(t, []uint32(nil), readAll(nand))
@@ -92,44 +159,44 @@ func isEmptyNode(node any) bool {
 func TestNodeTreeBuilding(t *testing.T) {
 	t.Run("size_0", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 0))
-		assert.True(t, isEmptyNode(BuildORTree(dn, false)), "expected empty node")
-		assert.True(t, isEmptyNode(BuildORTreeAgg(dn, false)), "expected empty node")
+		assert.True(t, isEmptyNode(BuildORTree(dn)), "expected empty node")
+		assert.True(t, isEmptyNode(BuildORTreeAgg(dn)), "expected empty node")
 	})
 	t.Run("size_1", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 1))
-		assert.Equal(t, "STATIC", BuildORTree(dn, false).String())
-		assert.Equal(t, "SOURCED", BuildORTreeAgg(dn, false).String())
+		assert.Equal(t, "STATIC", BuildORTree(dn).String())
+		assert.Equal(t, "SOURCED", BuildORTreeAgg(dn).String())
 	})
 	t.Run("size_2", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 2))
-		assert.Equal(t, "(STATIC OR STATIC)", BuildORTree(dn, false).String())
-		assert.Equal(t, "(SOURCED OR SOURCED)", BuildORTreeAgg(dn, false).String())
+		assert.Equal(t, "(STATIC OR STATIC)", BuildORTree(dn).String())
+		assert.Equal(t, "(SOURCED OR SOURCED)", BuildORTreeAgg(dn).String())
 	})
 	t.Run("size_3", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 3))
-		assert.Equal(t, "(STATIC OR (STATIC OR STATIC))", BuildORTree(dn, false).String())
-		assert.Equal(t, "(SOURCED OR (SOURCED OR SOURCED))", BuildORTreeAgg(dn, false).String())
+		assert.Equal(t, "(STATIC OR (STATIC OR STATIC))", BuildORTree(dn).String())
+		assert.Equal(t, "(SOURCED OR (SOURCED OR SOURCED))", BuildORTreeAgg(dn).String())
 	})
 	t.Run("size_4", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 4))
-		assert.Equal(t, "((STATIC OR STATIC) OR (STATIC OR STATIC))", BuildORTree(dn, false).String())
-		assert.Equal(t, "((SOURCED OR SOURCED) OR (SOURCED OR SOURCED))", BuildORTreeAgg(dn, false).String())
+		assert.Equal(t, "((STATIC OR STATIC) OR (STATIC OR STATIC))", BuildORTree(dn).String())
+		assert.Equal(t, "((SOURCED OR SOURCED) OR (SOURCED OR SOURCED))", BuildORTreeAgg(dn).String())
 	})
 	t.Run("size_5", func(t *testing.T) {
 		dn := MakeStaticNodes(make([][]uint32, 5))
-		assert.Equal(t, "((STATIC OR STATIC) OR (STATIC OR (STATIC OR STATIC)))", BuildORTree(dn, false).String())
-		assert.Equal(t, "((SOURCED OR SOURCED) OR (SOURCED OR (SOURCED OR SOURCED)))", BuildORTreeAgg(dn, false).String())
+		assert.Equal(t, "((STATIC OR STATIC) OR (STATIC OR (STATIC OR STATIC)))", BuildORTree(dn).String())
+		assert.Equal(t, "((SOURCED OR SOURCED) OR (SOURCED OR (SOURCED OR SOURCED)))", BuildORTreeAgg(dn).String())
 	})
 	t.Run("size_6", func(t *testing.T) {
-		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 6)), false).String()
+		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 6))).String()
 		assert.Equal(t, "((STATIC OR (STATIC OR STATIC)) OR (STATIC OR (STATIC OR STATIC)))", labels)
 	})
 	t.Run("size_7", func(t *testing.T) {
-		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 7)), false).String()
+		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 7))).String()
 		assert.Equal(t, "((STATIC OR (STATIC OR STATIC)) OR ((STATIC OR STATIC) OR (STATIC OR STATIC)))", labels)
 	})
 	t.Run("size_8", func(t *testing.T) {
-		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 8)), false).String()
+		labels := BuildORTree(MakeStaticNodes(make([][]uint32, 8))).String()
 		assert.Equal(t, "(((STATIC OR STATIC) OR (STATIC OR STATIC)) OR ((STATIC OR STATIC) OR (STATIC OR STATIC)))", labels)
 	})
 }

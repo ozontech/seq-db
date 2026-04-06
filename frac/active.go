@@ -54,7 +54,8 @@ type Active struct {
 	sortCache  *cache.Cache[[]byte]
 
 	metaFile   *os.File
-	metaReader storage.DocBlocksReader
+	metaReader *storage.DocBlocksReader
+	walReader  *storage.WalReader
 
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
@@ -79,7 +80,8 @@ func NewActive(
 	cfg *Config,
 ) *Active {
 	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
-	metaFile, metaStats := mustOpenFile(baseFileName+consts.MetaFileSuffix, config.SkipFsync)
+
+	metaFile, writer, metaReader, walReader, metaSize := mustOpenMetaWriter(baseFileName, readLimiter, docsFile, docsStats)
 
 	f := &Active{
 		TokenList:     NewActiveTokenList(config.IndexWorkers),
@@ -95,13 +97,14 @@ func NewActive(
 		sortReader: storage.NewDocsReader(readLimiter, docsFile, sortCache),
 
 		metaFile:   metaFile,
-		metaReader: storage.NewDocBlocksReader(readLimiter, metaFile),
+		metaReader: metaReader,
+		walReader:  walReader,
 
 		indexer: activeIndexer,
-		writer:  NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync),
+		writer:  writer,
 
 		BaseFileName: baseFileName,
-		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), uint64(metaStats.Size())),
+		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), metaSize),
 		Config:       cfg,
 	}
 
@@ -112,6 +115,35 @@ func NewActive(
 	logger.Info("active fraction created", zap.String("fraction", baseFileName))
 
 	return f
+}
+
+func mustOpenMetaWriter(
+	baseFileName string,
+	readLimiter *storage.ReadLimiter,
+	docsFile *os.File,
+	docsStats os.FileInfo) (*os.File, *ActiveWriter, *storage.DocBlocksReader, *storage.WalReader, uint64) {
+	legacyMetaFileName := baseFileName + consts.MetaFileSuffix
+
+	if _, err := os.Stat(legacyMetaFileName); err == nil {
+		// .meta file exists
+		metaFile, metaStats := mustOpenFile(legacyMetaFileName, config.SkipFsync)
+		metaSize := uint64(metaStats.Size())
+		metaReader := storage.NewDocBlocksReader(readLimiter, metaFile)
+		writer := NewActiveWriterLegacy(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
+		logger.Info("using legacy meta file format", zap.String("fraction", baseFileName))
+		return metaFile, writer, &metaReader, nil, metaSize
+	}
+
+	logger.Info("using new WAL format", zap.String("fraction", baseFileName))
+	walFileName := baseFileName + consts.WalFileSuffix
+	metaFile, metaStats := mustOpenFile(walFileName, config.SkipFsync)
+	metaSize := uint64(metaStats.Size())
+	writer := NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
+	walReader, err := storage.NewWalReader(readLimiter, metaFile, baseFileName)
+	if err != nil {
+		logger.Fatal("failed to initialize WAL reader", zap.String("fraction", baseFileName), zap.Error(err))
+	}
+	return metaFile, writer, nil, walReader, metaSize
 }
 
 func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
@@ -133,6 +165,69 @@ func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
 }
 
 func (f *Active) Replay(ctx context.Context) error {
+	if f.metaReader != nil {
+		return f.replayMetaFileLegacy(ctx)
+	}
+	return f.replayWalFile(ctx)
+}
+
+func (f *Active) replayWalFile(ctx context.Context) error {
+	logger.Info("start replaying WAL file...", zap.String("name", f.info.Name()))
+
+	t := time.Now()
+
+	step := f.info.MetaOnDisk / 10
+	next := step
+
+	sw := stopwatch.New()
+	wg := sync.WaitGroup{}
+
+	for entry := range f.walReader.Entries() {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if entry.Err != nil {
+			return entry.Err
+		}
+
+		if uint64(entry.Offset) > next {
+			next += step
+			progress := float64(uint64(entry.Offset)) / float64(f.info.MetaOnDisk) * 100
+			logger.Info("replaying batch, meta",
+				zap.String("name", f.info.Name()),
+				zap.Int64("from", entry.Offset),
+				zap.Int64("to", entry.Offset+entry.Size),
+				zap.Uint64("target", f.info.MetaOnDisk),
+				util.ZapFloat64WithPrec("progress_percentage", progress, 2),
+			)
+		}
+
+		wg.Add(1)
+		f.indexer.Index(f, entry.Data, &wg, sw)
+	}
+
+	wg.Wait()
+
+	tookSeconds := util.DurationToUnit(time.Since(t), "s")
+	throughputRaw := util.SizeToUnit(f.info.DocsRaw, "mb") / tookSeconds
+	throughputMeta := util.SizeToUnit(f.info.MetaOnDisk, "mb") / tookSeconds
+	logger.Info("active fraction replayed",
+		zap.String("name", f.info.Name()),
+		zap.Uint32("docs_total", f.info.DocsTotal),
+		util.ZapUint64AsSizeStr("docs_size", f.info.DocsOnDisk),
+		util.ZapFloat64WithPrec("took_s", tookSeconds, 1),
+		util.ZapFloat64WithPrec("throughput_raw_mb_sec", throughputRaw, 1),
+		util.ZapFloat64WithPrec("throughput_meta_mb_sec", throughputMeta, 1),
+	)
+	return nil
+}
+
+// replayMetaFileLegacy replays legacy *.meta files. Only basic corruption detection support is implemented
+func (f *Active) replayMetaFileLegacy(ctx context.Context) error {
 	logger.Info("start replaying...", zap.String("name", f.info.Name()))
 
 	t := time.Now()
@@ -175,7 +270,9 @@ out:
 			offset += metaSize
 
 			wg.Add(1)
-			f.indexer.Index(f, meta, &wg, sw)
+
+			walBlock := storage.PackDocBlockToWalBlock(meta)
+			f.indexer.Index(f, walBlock, &wg, sw)
 		}
 	}
 
@@ -204,7 +301,7 @@ var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 }, []string{"stage"})
 
 // Append causes data to be written on disk and sends metas to index workers
-func (f *Active) Append(docs, metas []byte, wg *sync.WaitGroup) (err error) {
+func (f *Active) Append(docs storage.DocBlock, metas storage.WalBlock, wg *sync.WaitGroup) (err error) {
 	sw := stopwatch.New()
 	m := sw.Start("append")
 	if err = f.writer.Write(docs, metas, sw); err != nil {

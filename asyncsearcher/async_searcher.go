@@ -328,7 +328,7 @@ func (as *AsyncSearcher) doSearch(id string, fracs fracmanager.List) {
 	logger.Info("starting async search request",
 		zap.String("id", id),
 		zap.Any("query", info.Request.Query),
-		zap.Duration("interval", time.Duration(info.Request.Params.To-info.Request.Params.From)*time.Millisecond),
+		zap.Object("params", info.Request.Params),
 	)
 
 	// AST can be nil in case of restarts.

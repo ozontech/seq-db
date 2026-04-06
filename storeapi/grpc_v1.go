@@ -107,6 +107,7 @@ func NewGrpcV1(cfg APIConfig, fracManager *fracmanager.FracManager, mappingProvi
 			searcher: fracmanager.NewSearcher(cfg.Search.WorkersCount, fracmanager.SearcherCfg{
 				MaxFractionHits:       cfg.Search.MaxFractionHits,
 				FractionsPerIteration: cfg.Search.FractionsPerIteration,
+				SlowLogThreshold:      cfg.Search.LogThreshold,
 				MaxQprMemory:          cfg.Search.MaxQprMemory,
 			}),
 		},

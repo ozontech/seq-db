@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/node"
 )
 
 type IteratorDesc Cursor
@@ -55,10 +56,10 @@ func (it *IteratorDesc) loadNextLIDsBlock() {
 	it.blockIndex++
 }
 
-func (it *IteratorDesc) Next() (uint32, bool) {
+func (it *IteratorDesc) Next() node.LID {
 	for len(it.lids) == 0 {
 		if !it.tryNextBlock {
-			return 0, false
+			return node.NullLID()
 		}
 
 		it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
@@ -68,5 +69,37 @@ func (it *IteratorDesc) Next() (uint32, bool) {
 
 	lid := it.lids[0]
 	it.lids = it.lids[1:]
-	return lid, true
+	return node.NewDescLID(lid)
+}
+
+// NextGeq finds next greater or equal
+func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
+	for {
+		for len(it.lids) == 0 {
+			if !it.tryNextBlock {
+				return node.NullLID()
+			}
+
+			it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
+			it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
+			it.counter.AddLIDsCount(len(it.lids)) // inc loaded LIDs count
+		}
+
+		// fast path: last LID < nextID => skip the entire block
+		// TODO(cheb0): We could also pass LID into narrowLIDsRange to perform block skipping once we add something like MinLID to LID block header
+		if nextID.Unpack() > it.lids[len(it.lids)-1] {
+			it.lids = it.lids[:0]
+			continue
+		}
+
+		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] >= nextID.Unpack() })
+		if idx < len(it.lids) {
+			it.lids = it.lids[idx:]
+			lid := it.lids[0]
+			it.lids = it.lids[1:]
+			return node.NewDescLID(lid)
+		}
+
+		it.lids = it.lids[:0]
+	}
 }

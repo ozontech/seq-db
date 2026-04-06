@@ -24,7 +24,7 @@ type ActiveIndexer struct {
 
 type indexTask struct {
 	Frac  *Active
-	Metas storage.DocBlock
+	Metas storage.WalBlock
 	Pos   uint64
 	Wg    *sync.WaitGroup
 }
@@ -45,10 +45,10 @@ func NewActiveIndexer(workerCount, chLen int) (*ActiveIndexer, func()) {
 	return &idx, stopIdx
 }
 
-func (ai *ActiveIndexer) Index(frac *Active, metas []byte, wg *sync.WaitGroup, sw *stopwatch.Stopwatch) {
+func (ai *ActiveIndexer) Index(frac *Active, metas storage.WalBlock, wg *sync.WaitGroup, sw *stopwatch.Stopwatch) {
 	m := sw.Start("send_index_chan")
 	ai.ch <- &indexTask{
-		Pos:   storage.DocBlock(metas).GetExt2(),
+		Pos:   metas.DocsOffset(),
 		Metas: metas,
 		Frac:  frac,
 		Wg:    wg,

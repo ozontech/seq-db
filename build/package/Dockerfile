@@ -2,7 +2,7 @@ ARG GO_VERSION
 ARG APP_IMAGE=ubuntu:latest
 
 # Build
-FROM golang:${GO_VERSION:-1.24} AS build
+FROM golang:${GO_VERSION:-1.25} AS build
 
 WORKDIR /seq-db
 
