@@ -390,9 +390,12 @@ func (q *AggregatableSamples) MemUsage() int {
 	}
 
 	total := SizeOfAggregatableSamples
+
+	total += util.SizeOfString * cap(q.ValuesPool)
 	for _, s := range q.ValuesPool {
-		total += util.SizeOfString + len(s)
+		total += len(s)
 	}
+
 	for bin, samples := range q.SamplesByBin {
 		total += bin.MemUsage() + util.SizeOfPointer + samples.MemUsage()
 	}
