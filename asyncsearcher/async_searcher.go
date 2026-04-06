@@ -281,7 +281,7 @@ func (as *AsyncSearcher) storeSearchInfoLocked(id string, info asyncSearchInfo) 
 		panic(err)
 	}
 	fpath := path.Join(as.config.DataDir, id+asyncSearchExtInfo)
-	util.MustWriteFileAtomic(fpath, b, asyncSearchTmpFile)
+	util.MustWriteFileAtomic(fpath, b, 0o666, asyncSearchTmpFile)
 	info.infoSize.Store(int64(len(b)))
 	as.requests[id] = info
 }
@@ -420,7 +420,7 @@ func (as *AsyncSearcher) processFrac(f frac.Fraction, info asyncSearchInfo) (err
 
 		name := getQPRFilename(info.Request.ID, f.Info().Name())
 		fpath := path.Join(as.config.DataDir, name)
-		util.MustWriteFileAtomic(fpath, rawQPR, asyncSearchTmpFile)
+		util.MustWriteFileAtomic(fpath, rawQPR, 0o666, asyncSearchTmpFile)
 
 		info.qprsSize.Add(int64(len(rawQPR)))
 		return nil
@@ -807,7 +807,7 @@ func (as *AsyncSearcher) mergeQPRs(job mergeJob) {
 	storeMQPR := func(compressed []byte) error {
 		sizeAfter = len(compressed)
 		mqprPath := path.Join(as.config.DataDir, job.ID+asyncSearchExtMergedQPR)
-		util.MustWriteFileAtomic(mqprPath, compressed, asyncSearchTmpFile)
+		util.MustWriteFileAtomic(mqprPath, compressed, 0o666, asyncSearchTmpFile)
 		return nil
 	}
 	if err := compressQPR(&qpr, storeMQPR); err != nil {

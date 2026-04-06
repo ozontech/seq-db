@@ -1,4 +1,4 @@
-package docsfilter
+package filtermanager
 
 import (
 	"testing"

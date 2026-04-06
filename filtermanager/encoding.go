@@ -1,4 +1,4 @@
-package docsfilter
+package filtermanager
 
 import (
 	"encoding/binary"
@@ -53,15 +53,15 @@ func (h *lidsBlockHeader) marshal(dst []byte) {
 
 	dst[0] = byte(h.Codec)
 	dst = dst[1:]
-	binary.BigEndian.PutUint32(dst, h.Length)
+	binary.LittleEndian.PutUint32(dst, h.Length)
 	dst = dst[sizeOfUint32:]
-	binary.BigEndian.PutUint32(dst, h.MinLID)
+	binary.LittleEndian.PutUint32(dst, h.MinLID)
 	dst = dst[sizeOfUint32:]
-	binary.BigEndian.PutUint32(dst, h.MaxLID)
+	binary.LittleEndian.PutUint32(dst, h.MaxLID)
 	dst = dst[sizeOfUint32:]
-	binary.BigEndian.PutUint32(dst, h.Size)
+	binary.LittleEndian.PutUint32(dst, h.Size)
 	dst = dst[sizeOfUint32:]
-	binary.BigEndian.PutUint64(dst, h.Offset)
+	binary.LittleEndian.PutUint64(dst, h.Offset)
 	dst = dst[sizeOfUint64:]
 }
 
@@ -72,15 +72,15 @@ func (h *lidsBlockHeader) unmarshal(src []byte) ([]byte, error) {
 
 	h.Codec = lidsCodec(src[0])
 	src = src[1:]
-	h.Length = binary.BigEndian.Uint32(src)
+	h.Length = binary.LittleEndian.Uint32(src)
 	src = src[sizeOfUint32:]
-	h.MinLID = binary.BigEndian.Uint32(src)
+	h.MinLID = binary.LittleEndian.Uint32(src)
 	src = src[sizeOfUint32:]
-	h.MaxLID = binary.BigEndian.Uint32(src)
+	h.MaxLID = binary.LittleEndian.Uint32(src)
 	src = src[sizeOfUint32:]
-	h.Size = binary.BigEndian.Uint32(src)
+	h.Size = binary.LittleEndian.Uint32(src)
 	src = src[sizeOfUint32:]
-	h.Offset = binary.BigEndian.Uint64(src)
+	h.Offset = binary.LittleEndian.Uint64(src)
 	src = src[sizeOfUint64:]
 
 	return src, nil
@@ -109,7 +109,7 @@ func marshalLIDsBlocks(dst []byte, in []seq.LID) []byte {
 	defer lidsBlockBufPool.Put(b)
 
 	numberOfBlocks := (len(in) + maxLIDsBlockLen - 1) / maxLIDsBlockLen
-	dst = binary.BigEndian.AppendUint32(dst, uint32(numberOfBlocks))
+	dst = binary.LittleEndian.AppendUint32(dst, uint32(numberOfBlocks))
 
 	// reserve space for headers
 	curHeaderOffset := len(dst)
@@ -190,7 +190,7 @@ func unmarshalDocsFilter(dst *DocsFilterBinOut, src []byte) (_ []byte, err error
 }
 
 func unmarshalLIDsBlocks(dst []uint32, src []byte) ([]uint32, []byte, error) {
-	numberOfBlocks := binary.BigEndian.Uint32(src)
+	numberOfBlocks := binary.LittleEndian.Uint32(src)
 	src = src[sizeOfUint32:]
 
 	var err error

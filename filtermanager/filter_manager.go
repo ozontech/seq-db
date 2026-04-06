@@ -1,4 +1,4 @@
-package docsfilter
+package filtermanager
 
 import (
 	"context"
@@ -26,6 +26,8 @@ const (
 	fracInQueueExt = ".queue"
 	fracDoneExt    = ".filter"
 	tmpExt         = ".tmp"
+
+	tmpDirSuffix = "_tmp"
 )
 
 const (
@@ -42,7 +44,7 @@ type Config struct {
 	CacheSizeLimit uint64
 }
 
-type DocsFilter struct {
+type FilterManager struct {
 	ctx context.Context
 
 	config  Config
@@ -53,10 +55,11 @@ type DocsFilter struct {
 
 	mp MappingProvider
 
-	rateLimit     chan struct{}
-	createDirOnce *sync.Once
+	rateLimit chan struct{}
 
+	maintenanceWG       *sync.WaitGroup
 	maintenanceInterval time.Duration
+	maintenanceStop     context.CancelFunc
 }
 
 func New(
@@ -64,7 +67,7 @@ func New(
 	cfg Config,
 	params []Params,
 	mp MappingProvider,
-) *DocsFilter {
+) *FilterManager {
 	workers := cfg.Workers
 	if workers <= 0 {
 		workers = runtime.GOMAXPROCS(0)
@@ -74,10 +77,10 @@ func New(
 
 	for _, p := range params {
 		f := NewFilter(p)
-		filtersMap[string(f.Hash())] = f
+		filtersMap[f.Hash()] = f
 	}
 
-	return &DocsFilter{
+	return &FilterManager{
 		ctx:                 ctx,
 		config:              cfg,
 		filters:             filtersMap,
@@ -85,97 +88,106 @@ func New(
 		fracsMu:             &sync.RWMutex{},
 		mp:                  mp,
 		rateLimit:           make(chan struct{}, workers),
-		createDirOnce:       &sync.Once{},
 		maintenanceInterval: defaultMaintenanceInterval,
 	}
 }
 
-func (df *DocsFilter) Start(fracs fracmanager.List) {
-	df.createDataDir()
+func (fm *FilterManager) Start(ctx context.Context, fracs fracmanager.List) {
+	fm.createDataDir()
 
-	err := df.loadFilters()
+	err := fm.loadFilters()
 	if err != nil {
 		logger.Fatal("failed to load previous docs filters", zap.Error(err))
 	}
 
-	err = df.buildQueue(fracs)
+	err = fm.buildQueue(fracs)
 	if err != nil {
 		logger.Fatal("failed to build docs filters queue", zap.Error(err))
 	}
 
-	go df.maintenance()
+	ctx, cancel := context.WithCancel(ctx)
+	fm.maintenanceStop = cancel
+	fm.startMaintenance(ctx)
 
-	mapping := df.mp.GetMapping()
+	mapping := fm.mp.GetMapping()
 
-	for _, f := range df.filters {
-		ast, err := parser.ParseSeqQL(f.params.Query, mapping)
-		if err != nil {
-			panic(fmt.Errorf("BUG: search query must be valid: %s", err))
+	go func() {
+		for _, f := range fm.filters {
+			ast, err := parser.ParseSeqQL(f.params.Query, mapping)
+			if err != nil {
+				panic(fmt.Errorf("BUG: search query must be valid: %s", err))
+			}
+			f.ast = ast
+
+			fm.processFilter(ctx, f, fracs.FilterInRange(f.params.From, f.params.To))
 		}
-		f.ast = ast
-
-		df.processFilter(f, fracs.FilterInRange(seq.MID(f.params.From), seq.MID(f.params.To)))
-	}
+	}()
 }
 
-// RefreshFrac replaces frac's tombstone files with newly found results. Used after active frac is sealed.
-func (df *DocsFilter) RefreshFrac(fraction frac.Fraction) {
-	df.fracsMu.RLock()
-	fracsFiles, has := df.fracs[fraction.Info().Name()]
-	df.fracsMu.RUnlock()
+func (fm *FilterManager) Stop() {
+	fm.maintenanceStop()
+	fm.maintenanceWG.Wait()
+}
+
+// RefreshFrac replaces frac's filter files with newly found results. Used after active frac is sealed.
+func (fm *FilterManager) RefreshFrac(fraction frac.Fraction) {
+	fm.fracsMu.RLock()
+	fracsFiles, has := fm.fracs[fraction.Info().Name()]
+	fm.fracsMu.RUnlock()
 
 	if !has {
 		return
 	}
 
 	for _, fileName := range fracsFiles {
-		filter := df.filters[filterNameFromTombstonesPath(fileName)]
+		filter := fm.filters[filterNameFromPath(fileName)]
 
 		queueFilePath := path.Join(filter.dirPath, makeFileName(fraction.Info().Name(), fracInQueueExt))
-		util.MustWriteFileAtomic(queueFilePath, []byte{}, tmpExt)
+		util.MustWriteFileAtomic(queueFilePath, []byte{}, 0o666, tmpExt)
 
-		filter.processWg.Add(1)
+		fm.rateLimit <- struct{}{}
 		go func() {
-			if err := df.processFrac(fraction, filter, false); err != nil {
+			defer func() { <-fm.rateLimit }()
+			if err := fm.processFrac(fraction, filter, false); err != nil {
 				panic(fmt.Errorf("docs filter refresh frac err: %s", err))
 			}
 		}()
 	}
 }
 
-// RemoveFrac removes fraction's tombstones. Used after frac is deleted
-func (df *DocsFilter) RemoveFrac(fracName string) {
-	df.fracsMu.RLock()
-	fracsFiles, has := df.fracs[fracName]
-	df.fracsMu.RUnlock()
+// RemoveFrac removes fraction's filter files. Used after frac is deleted
+func (fm *FilterManager) RemoveFrac(fracName string) {
+	fm.fracsMu.RLock()
+	fracsFiles, has := fm.fracs[fracName]
+	fm.fracsMu.RUnlock()
 
 	if !has {
 		return
 	}
 
-	df.fracsMu.Lock()
-	delete(df.fracs, fracName)
-	df.fracsMu.Unlock()
+	fm.fracsMu.Lock()
+	delete(fm.fracs, fracName)
+	fm.fracsMu.Unlock()
 
 	for _, fileName := range fracsFiles {
 		util.RemoveFile(fileName)
 	}
 }
 
-func filterNameFromTombstonesPath(p string) string {
+func filterNameFromPath(p string) string {
 	return path.Base(path.Dir(p))
 }
 
-func (df *DocsFilter) addDoneFrac(fracName, fracPath string) {
-	df.fracsMu.Lock()
-	defer df.fracsMu.Unlock()
+func (fm *FilterManager) addDoneFrac(fracName, fracPath string) {
+	fm.fracsMu.Lock()
+	defer fm.fracsMu.Unlock()
 
-	df.fracs[fracName] = append(df.fracs[fracName], fracPath)
+	fm.fracs[fracName] = append(fm.fracs[fracName], fracPath)
 }
 
 // loadFilters loads existing filters
-func (df *DocsFilter) loadFilters() error {
-	des, err := os.ReadDir(df.config.DataDir)
+func (fm *FilterManager) loadFilters() error {
+	des, err := os.ReadDir(fm.config.DataDir)
 	if err != nil {
 		return err
 	}
@@ -187,9 +199,9 @@ func (df *DocsFilter) loadFilters() error {
 			continue
 		}
 
-		if _, ok := df.filters[de.Name()]; !ok {
+		if _, ok := fm.filters[de.Name()]; !ok {
 			logger.Info("there is filter folder on disk, but not in config. need to delete it.")
-			err := os.RemoveAll(path.Join(df.config.DataDir, de.Name()))
+			err := os.RemoveAll(path.Join(fm.config.DataDir, de.Name()))
 			if err != nil && !os.IsNotExist(err) {
 				return err
 			}
@@ -197,9 +209,9 @@ func (df *DocsFilter) loadFilters() error {
 			continue
 		}
 
-		f := df.filters[de.Name()]
+		f := fm.filters[de.Name()]
 		f.status = StatusInProgress
-		f.dirPath = path.Join(df.config.DataDir, de.Name())
+		f.dirPath = path.Join(fm.config.DataDir, de.Name())
 
 		filterDes, err := os.ReadDir(f.dirPath)
 		if err != nil {
@@ -218,7 +230,7 @@ func (df *DocsFilter) loadFilters() error {
 			case fracInQueueExt:
 				hasFracsInQueue = true
 			case fracDoneExt:
-				df.addDoneFrac(fracNameFromFilePath(name), path.Join(f.dirPath, name))
+				fm.addDoneFrac(fracNameFromFilePath(name), path.Join(f.dirPath, name))
 			}
 		}
 
@@ -228,33 +240,43 @@ func (df *DocsFilter) loadFilters() error {
 	}
 
 	if anyRemove {
-		util.MustFsyncFile(df.config.DataDir)
+		util.MustFsyncFile(fm.config.DataDir)
 	}
 
 	return nil
 }
 
 // buildQueue creates a directory for each of unprocessed filters and creates .queue files
-func (df *DocsFilter) buildQueue(fracs fracmanager.List) error {
-	for _, filter := range df.filters {
+func (fm *FilterManager) buildQueue(fracs fracmanager.List) error {
+	for _, filter := range fm.filters {
 		if filter.status != StatusCreated {
 			continue
 		}
-		filter.dirPath = path.Join(df.config.DataDir, filter.Hash())
-		util.MustCreateDir(filter.dirPath)
+
+		// create tmp dir
+		tmpDir := path.Join(fm.config.DataDir, filter.Hash(), tmpDirSuffix)
+		util.MustCreateDir(tmpDir)
 
 		filterFracs := fracs.FilterInRange(seq.MID(filter.params.From), seq.MID(filter.params.To))
 		for _, f := range filterFracs {
-			queueFilePath := path.Join(filter.dirPath, makeFileName(f.Info().Name(), fracInQueueExt))
-			util.MustWriteFileAtomic(queueFilePath, []byte{}, tmpExt)
+			queueFilePath := path.Join(tmpDir, makeFileName(f.Info().Name(), fracInQueueExt))
+			util.MustWriteFileAtomic(queueFilePath, []byte{}, 0o666, tmpExt)
 		}
+
+		// rename tmp dir
+		dir := path.Join(fm.config.DataDir, filter.Hash())
+		if err := os.Rename(tmpDir, dir); err != nil {
+			return err
+		}
+		util.MustFsyncFile(fm.config.DataDir)
+		filter.dirPath = dir
 	}
 
 	return nil
 }
 
 // handleFilter finds docs and writes to fs
-func (df *DocsFilter) processFilter(filter *Filter, fracs fracmanager.List) {
+func (fm *FilterManager) processFilter(ctx context.Context, filter *Filter, fracs fracmanager.List) {
 	if len(fracs) == 0 {
 		return
 	}
@@ -276,12 +298,18 @@ func (df *DocsFilter) processFilter(filter *Filter, fracs fracmanager.List) {
 		if !ok { // skip missing fracs
 			return nil
 		}
-		filter.processWg.Add(1)
-		go func() {
-			if err := df.processFrac(f, filter, false); err != nil {
-				panic(fmt.Errorf("docs filter process frac err: %s", err))
-			}
-		}()
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case fm.rateLimit <- struct{}{}:
+			filter.processWg.Go(func() {
+				defer func() { <-fm.rateLimit }()
+				if err := fm.processFrac(f, filter, false); err != nil {
+					panic(fmt.Errorf("docs filter process frac err: %s", err))
+				}
+			})
+		}
 		return nil
 	}
 	_ = util.VisitFilesWithExt(filterDes, fracInQueueExt, processFracInQueue)
@@ -293,13 +321,8 @@ func (df *DocsFilter) processFilter(filter *Filter, fracs fracmanager.List) {
 	}()
 }
 
-func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter, refresh bool) error {
-	defer filter.processWg.Done()
-
-	df.rateLimit <- struct{}{}
-	defer func() { <-df.rateLimit }()
-
-	qpr, err := f.Search(df.ctx, processor.SearchParams{
+func (fm *FilterManager) processFrac(f frac.Fraction, filter *Filter, refresh bool) error {
+	qpr, err := f.Search(fm.ctx, processor.SearchParams{
 		AST:   filter.ast.Root,
 		From:  seq.MID(filter.params.From),
 		To:    seq.MID(filter.params.To),
@@ -317,46 +340,42 @@ func (df *DocsFilter) processFrac(f frac.Fraction, filter *Filter, refresh bool)
 		return nil
 	}
 
-	storeDocsFilter := func(rawDocsFilter []byte) error {
-		util.MustWriteFileAtomic(doneFilePath, rawDocsFilter, tmpExt)
-		util.RemoveFile(queueFilePath)
-		return nil
-	}
-
 	// TODO: here we doing part of the work twice:
 	// first time we find LIDs inside f.Search() and then find IDs by these LIDs.
 	// Then we again find LIDs by earlier found IDs in f.FindLIDs().
 	// We did it like this because otherwise we had to do serious f.Search() rewrite.
 	// For now we're ok with some performance penalty.
-	lids, err := f.FindLIDs(df.ctx, qpr.IDs.IDs())
+	lids, err := f.FindLIDs(fm.ctx, qpr.IDs.IDs())
 	if err != nil {
 		return err
 	}
 
 	docsFilterBin := DocsFilterBinIn{LIDs: lids}
-	if err := writeDocsFilter(&docsFilterBin, storeDocsFilter); err != nil {
+	if err := writeDocsFilter(&docsFilterBin, queueFilePath, doneFilePath); err != nil {
 		return err
 	}
 
 	if !refresh {
-		df.addDoneFrac(f.Info().Name(), doneFilePath)
+		fm.addDoneFrac(f.Info().Name(), doneFilePath)
 	}
 
 	return nil
 }
 
-func (df *DocsFilter) maintenance() {
-	for {
-		logger.Info("docs filter maintenance iteration")
-		df.checkDiskUsage()
-		time.Sleep(df.maintenanceInterval)
-	}
+func (fm *FilterManager) startMaintenance(ctx context.Context) {
+	fm.maintenanceWG.Go(func() {
+		logger.Info("start docs filter maintenance")
+		util.RunEvery(ctx.Done(), fm.maintenanceInterval, func() {
+			logger.Info("docs filter maintenance iteration")
+			fm.checkDiskUsage()
+		})
+	})
 }
 
-func (df *DocsFilter) checkDiskUsage() {
+func (fm *FilterManager) checkDiskUsage() {
 	du := int64(0)
 
-	for _, f := range df.filters {
+	for _, f := range fm.filters {
 		des, err := os.ReadDir(f.dirPath)
 		if err != nil {
 			logger.Error("docs filter: can't read filter's dir",
@@ -370,7 +389,7 @@ func (df *DocsFilter) checkDiskUsage() {
 			}
 			info, err := fde.Info()
 			if err != nil {
-				logger.Error("docs filter: can't read tombstones file info",
+				logger.Error("docs filter: can't read filter file info",
 					zap.String("filter", f.String()), zap.Error(err))
 				return
 			}
@@ -379,7 +398,7 @@ func (df *DocsFilter) checkDiskUsage() {
 	}
 
 	diskUsage.Set(float64(du))
-	storedFilters.Set(float64(len(df.filters)))
+	storedFilters.Set(float64(len(fm.filters)))
 }
 
 func makeFileName(name, ext string) string {
@@ -392,22 +411,20 @@ func fracNameFromFilePath(filterFilePath string) string {
 
 var marshalBufferPool util.BufferPool
 
-func writeDocsFilter(df *DocsFilterBinIn, cb func(compressed []byte) error) error {
+func writeDocsFilter(df *DocsFilterBinIn, queueFilePath, doneFilePath string) error {
 	rawDocsFilter := marshalBufferPool.Get()
 	defer marshalBufferPool.Put(rawDocsFilter)
 
 	rawDocsFilter.B = marshalDocsFilter(rawDocsFilter.B, df)
-	if err := cb(rawDocsFilter.B); err != nil {
-		return err
-	}
+	util.MustWriteFileAtomic(doneFilePath, rawDocsFilter.B, 0o666, tmpExt)
+	util.RemoveFile(queueFilePath)
+
 	return nil
 }
 
-// createDataDir creates dir data lazily to avoid creating extra folders.
-func (df *DocsFilter) createDataDir() {
-	df.createDirOnce.Do(func() {
-		if err := os.MkdirAll(df.config.DataDir, 0o777); err != nil {
-			panic(err)
-		}
-	})
+// createDataDir creates data dir.
+func (fm *FilterManager) createDataDir() {
+	if err := os.MkdirAll(fm.config.DataDir, 0o777); err != nil {
+		panic(err)
+	}
 }

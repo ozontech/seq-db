@@ -5,6 +5,7 @@ package util
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -56,37 +57,51 @@ func RemoveFile(file string) {
 	}
 }
 
-func MustWriteFileAtomic(fpath string, data []byte, tmpFileExt string) {
-	fpathTmp := fpath + tmpFileExt
-
-	f, err := os.Create(fpathTmp)
-	if err != nil {
-		logger.Panic("can't create file", zap.Error(err))
+func MustWriteFileAtomic(fpath string, data []byte, perm os.FileMode, tmpFileExt string) {
+	if err := WriteFileAtomic(fpath, data, perm, tmpFileExt); err != nil {
+		logger.Panic("can't write file atomic", zap.String("path", fpath), zap.Error(err))
 	}
+}
+
+// atomicWrite safely writes data to file using atomic replacement pattern
+func WriteFileAtomic(fpath string, data []byte, perm os.FileMode, tmpFileExt string) error {
+	tmpPath := fpath + tmpFileExt
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+
 	defer func() {
-		if err := f.Close(); err != nil {
-			logger.Panic("can't close file", zap.Error(err))
+		if f != nil {
+			f.Close()
+		}
+		if err != nil {
+			os.Remove(tmpPath)
 		}
 	}()
 
-	if _, err := f.Write(data); err != nil {
-		logger.Panic("can't write to file", zap.Error(err))
+	if _, err = f.Write(data); err != nil {
+		return fmt.Errorf("write data: %w", err)
 	}
 
-	if err := f.Sync(); err != nil {
-		logger.Panic("can't sync file", zap.Error(err))
+	if err = f.Sync(); err != nil {
+		return fmt.Errorf("sync data: %w", err)
 	}
 
-	if err := os.Rename(fpathTmp, fpath); err != nil {
-		logger.Panic("can't rename file", zap.Error(err))
+	if err = f.Close(); err != nil {
+		return fmt.Errorf("close file: %w", err)
+	}
+	f = nil // mark as closed so defer doesn't close again
+
+	if err = os.Rename(tmpPath, fpath); err != nil {
+		return fmt.Errorf("rename file: %w", err)
 	}
 
-	absFpath, err := filepath.Abs(fpath)
-	if err != nil {
-		logger.Panic("can't get absolute path", zap.String("path", fpath), zap.Error(err))
+	if err = SyncPath(filepath.Dir(fpath)); err != nil { // also sync parent directory
+		return fmt.Errorf("sync dir: %w", err)
 	}
-	dir := path.Dir(absFpath)
-	MustFsyncFile(dir)
+
+	return nil
 }
 
 func MustFsyncFile(fpath string) {

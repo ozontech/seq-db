@@ -1,4 +1,4 @@
-package docsfilter
+package filtermanager
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -16,6 +16,7 @@ var (
 		Namespace: "seq_db_store",
 		Subsystem: "filters",
 		Name:      "disk_usage_bytes",
+		Help:      "Disk space used by filter files in bytes",
 	})
 	storedFilters = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",

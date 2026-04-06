@@ -1,4 +1,4 @@
-package docsfilter
+package filtermanager
 
 import (
 	"crypto/sha256"
@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/ozontech/seq-db/parser"
+	"github.com/ozontech/seq-db/seq"
 )
 
 type FilterStatus byte
@@ -20,8 +21,8 @@ const (
 
 type Params struct {
 	Query string
-	From  int64
-	To    int64
+	From  seq.MID
+	To    seq.MID
 }
 
 type Filter struct {
