@@ -10,14 +10,14 @@ import (
 type IteratorAsc Iterator
 
 func (it *IteratorAsc) String() string {
-	return "TOMBSTONES_ITERATOR_ASC"
+	return "HIDE_FLAG_ITERATOR_ASC"
 }
 
 func (it *IteratorAsc) Next() node.LID {
 	if it.loader.headers == nil {
 		headers, err := it.loader.getHeaders()
 		if err != nil {
-			logger.Panic("can't load tombstones headers", zap.Error(err))
+			logger.Panic("can't load filter file headers", zap.Error(err))
 		}
 		it.loader.headers = headers
 		it.blockIndex = len(it.loader.headers) - 1

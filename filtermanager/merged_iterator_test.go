@@ -55,7 +55,7 @@ type testIteratorDesc struct {
 }
 
 func (it *testIteratorDesc) String() string {
-	return "TEST_TOMBSTONES_ITERATOR_DESC"
+	return "TEST_HIDE_FLAG_ITERATOR_DESC"
 }
 
 func (it *testIteratorDesc) Next() node.LID {
@@ -73,7 +73,7 @@ type testIteratorAsc struct {
 }
 
 func (it *testIteratorAsc) String() string {
-	return "TEST_TOMBSTONES_ITERATOR_ASC"
+	return "TEST_HIDE_FLAG_ITERATOR_ASC"
 }
 
 func (it *testIteratorAsc) Next() node.LID {

@@ -10,14 +10,14 @@ import (
 type IteratorDesc Iterator
 
 func (it *IteratorDesc) String() string {
-	return "TOMBSTONES_ITERATOR_DESC"
+	return "HIDE_FLAG_ITERATOR_DESC"
 }
 
 func (it *IteratorDesc) Next() node.LID {
 	if it.loader.headers == nil {
 		headers, err := it.loader.getHeaders()
 		if err != nil {
-			logger.Panic("can't load tombstones headers", zap.Error(err))
+			logger.Panic("can't load filter file headers", zap.Error(err))
 		}
 		it.loader.headers = headers
 	}

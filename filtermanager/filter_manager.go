@@ -147,7 +147,7 @@ func (fm *FilterManager) Stop() {
 	fm.maintenanceWG.Wait()
 }
 
-func (fm *FilterManager) GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
+func (fm *FilterManager) GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
 	fm.fracsMu.RLock()
 	defer fm.fracsMu.RUnlock()
 

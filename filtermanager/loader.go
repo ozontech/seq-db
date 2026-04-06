@@ -85,9 +85,6 @@ func (l *loader) loadHeaders() ([]lidsBlockHeader, error) {
 	if n != len(headersBuf) {
 		return nil, fmt.Errorf("can't read headers, read=%d, requested=%d", n, len(headersBuf))
 	}
-	if len(headersBuf)%int(lidsBlockHeaderSizeBytes) != 0 {
-		return nil, fmt.Errorf("wrong headers format")
-	}
 
 	headers := make([]lidsBlockHeader, 0, numberOfBlocks)
 	for range numberOfBlocks {
@@ -151,7 +148,7 @@ func (l *loader) loadBlock(index int) ([]uint32, error) {
 func (l *loader) release() error {
 	if l.file != nil {
 		if err := l.file.Close(); err != nil {
-			logger.Error("can't close tombstones file", zap.Error(err))
+			logger.Error("can't close filter file", zap.Error(err))
 			return err
 		}
 		l.file = nil
