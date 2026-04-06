@@ -277,13 +277,13 @@ type Config struct {
 	} `config:"tracing"`
 
 	// Additional filtering options
-	Filtering  Filter `config:"filtering"`
-	DocsFilter struct {
-		DataDir     string   `config:"data_dir"`
-		Concurrency int      `config:"concurrency"`
-		Filters     []Filter `config:"filters"`
-		CacheSize   Bytes    `config:"cache_size" default:"100MiB"`
-	} `config:"docs_filter"`
+	Filtering struct {
+		// If a search query time range overlaps with the [from; to] range
+		// the search query will be `AND`-ed with an additional predicate with the provided query expression
+		Query string    `config:"query"`
+		From  time.Time `config:"from"`
+		To    time.Time `config:"to"`
+	} `config:"filtering"`
 
 	// Experimental provides flags
 	// For configuring experimental features.
@@ -304,10 +304,4 @@ func (b *Bytes) UnmarshalString(s string) error {
 	}
 	*b = Bytes(bytes)
 	return nil
-}
-
-type Filter struct {
-	Query string    `config:"query"`
-	From  time.Time `config:"from"`
-	To    time.Time `config:"to"`
 }
