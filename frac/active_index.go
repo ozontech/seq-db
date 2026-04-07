@@ -191,13 +191,13 @@ type activeSearchIndex struct {
 	fracName      string
 }
 
-func (si *activeSearchIndex) GetHideFlags(minLID, maxLID uint32, reverse bool) (node.Node, error) {
+func (si *activeSearchIndex) GetHideFlags(minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
 	// active fraction doesn't meet min and max lid
 	minLID, maxLID = uint32(0), uint32(math.MaxUint32)
 
-	iterator, err := si.filterManager.GetHideFlagIteratorByFrac(si.fracName, minLID, maxLID, reverse)
+	iterator, has, err := si.filterManager.GetHideFlagIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	res := make([]uint32, 0)
@@ -215,7 +215,7 @@ func (si *activeSearchIndex) GetHideFlags(minLID, maxLID uint32, reverse bool) (
 	// we need to sort inversed values since they may be out of order after replay of active fraction
 	slices.Sort(res)
 
-	return node.NewStatic(res, reverse), nil
+	return node.NewStatic(res, reverse), has, nil
 }
 
 type activeTokenIndex struct {
@@ -272,17 +272,26 @@ func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 }
 
 func (di *activeFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
+	docsPos := make([]seq.DocPos, len(ids))
+	for i, id := range ids {
+		docsPos[i] = di.docsPositions.GetSync(id)
+	}
+
+	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
+	hideFlagsIterator, has, err := di.filterManager.GetHideFlagIteratorByFrac(di.fracName, minLID, maxLID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if !has {
+		return docsPos, nil
+	}
+
 	allLids := make([]uint32, len(ids))
 	for i, id := range ids {
 		if lid, ok := di.idsToLids.Get(id); ok {
 			allLids[i] = uint32(lid)
 		}
-	}
-
-	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
-	hideFlagsIterator, err := di.filterManager.GetHideFlagIteratorByFrac(di.fracName, minLID, maxLID, false)
-	if err != nil {
-		return nil, err
 	}
 
 	filteredLIDs := make(map[uint32]struct{})
@@ -292,15 +301,6 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
 			break
 		}
 		filteredLIDs[lid.Unpack()] = struct{}{}
-	}
-
-	docsPos := make([]seq.DocPos, len(ids))
-	for i, id := range ids {
-		docsPos[i] = di.docsPositions.GetSync(id)
-	}
-
-	if len(filteredLIDs) == 0 {
-		return docsPos, nil
 	}
 
 	for i, lid := range allLids {

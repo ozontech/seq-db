@@ -14,8 +14,8 @@ import (
 
 type testFilterManager struct{}
 
-func (testFilterManager) GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
-	return node.NewStatic([]uint32{}, reverse), nil
+func (testFilterManager) GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
+	return node.NewStatic([]uint32{}, reverse), false, nil
 }
 func (testFilterManager) RefreshFrac(_ frac.Fraction) {}
 func (testFilterManager) RemoveFrac(_ string)         {}

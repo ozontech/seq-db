@@ -1792,7 +1792,7 @@ func (s *IntegrationTestSuite) TestFilterManager() {
 	defer env.StopAll()
 
 	// we don't have a convenient way to wait for doc filters processing, so just wait enough time for now
-	time.Sleep(2 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	// test search
 
@@ -1812,4 +1812,14 @@ func (s *IntegrationTestSuite) TestFilterManager() {
 	for _, doc := range fetchedDocs {
 		r.Len(doc, 0) // fetch hiddenID returns nothing
 	}
+
+	// refresh frac
+
+	env.WaitIdle()
+	env.SealAll()
+	time.Sleep(1 * time.Second)
+
+	qpr, _, _, err = env.Search(`service:hidden`, 10, setup.WithTotal(true))
+	r.NoError(err)
+	r.Equal(uint64(0), qpr.Total)
 }

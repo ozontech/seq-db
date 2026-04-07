@@ -38,7 +38,7 @@ type tokenIndex interface {
 type searchIndex interface {
 	tokenIndex
 	idsIndex
-	GetHideFlags(minLID, maxLID uint32, reverse bool) (node.Node, error)
+	GetHideFlags(minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
 }
 
 func IndexSearch(
@@ -95,15 +95,17 @@ func IndexSearch(
 	}
 
 	m = sw.Start("get_hide_flags")
-	hideFlags, err := index.GetHideFlags(minLID, maxLID, params.Order.IsReverse())
+	hideFlags, hasHideFlags, err := index.GetHideFlags(minLID, maxLID, params.Order.IsReverse())
 	m.Stop()
 	if err != nil {
 		return nil, err
 	}
 
-	m = sw.Start("eval_hide_flags")
-	evalTree = evalHideFlags(evalTree, hideFlags, stats)
-	m.Stop()
+	if hasHideFlags {
+		m = sw.Start("eval_hide_flags")
+		evalTree = evalHideFlags(evalTree, hideFlags, stats)
+		m.Stop()
+	}
 
 	m = sw.Start("iterate_eval_tree")
 	total, ids, histogram, aggs, err := iterateEvalTree(ctx, params, index, evalTree, aggSupplier, sw)

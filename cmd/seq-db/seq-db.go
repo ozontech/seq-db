@@ -320,7 +320,7 @@ func startStore(
 		},
 		Filters: filtermanager.Config{
 			DataDir:        cfg.DocsFilter.DataDir,
-			Workers:        cfg.DocsFilter.Concurrency,
+			Workers:        cfg.DocsFilter.Workers,
 			CacheSizeLimit: uint64(cfg.DocsFilter.CacheSize),
 		},
 	}

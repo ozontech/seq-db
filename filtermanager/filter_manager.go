@@ -3,6 +3,7 @@ package filtermanager
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"os"
 	"path"
@@ -152,13 +153,13 @@ func (fm *FilterManager) GetHideFlagIteratorByFrac(
 	fracName string,
 	minLID, maxLID uint32,
 	reverse bool,
-) (node.Node, error) {
+) (node.Node, bool, error) {
 	fm.fracsMu.RLock()
 	defer fm.fracsMu.RUnlock()
 
 	fracFiles, has := fm.fracs[fracName]
 	if !has {
-		return &EmptyIterator{}, nil
+		return &EmptyIterator{}, has, nil
 	}
 
 	iterators := make([]node.Node, 0, len(fracFiles))
@@ -166,7 +167,7 @@ func (fm *FilterManager) GetHideFlagIteratorByFrac(
 		loader, err := newLoader(f, fm.headersCache)
 		if err != nil {
 			logger.Error("can't open filtered lids file", zap.String("path", f), zap.Error(err))
-			return nil, err
+			return nil, has, err
 		}
 		if reverse {
 			iterators = append(iterators, (*IteratorAsc)(NewIterator(loader, minLID, maxLID)))
@@ -175,20 +176,24 @@ func (fm *FilterManager) GetHideFlagIteratorByFrac(
 		}
 	}
 
-	return NewNMergedIterators(iterators), nil
+	return NewNMergedIterators(iterators), has, nil
 }
 
 // RefreshFrac replaces frac's filter files with newly found results. Used after active frac is sealed.
 func (fm *FilterManager) RefreshFrac(fraction frac.Fraction) {
-	fm.fracsMu.RLock()
+	fm.fracsMu.Lock()
 	fracsFiles, has := fm.fracs[fraction.Info().Name()]
-	fm.fracsMu.RUnlock()
+	delete(fm.fracs, fraction.Info().Name())
+	fm.fracsMu.Unlock()
 
 	if !has {
 		return
 	}
 
 	for _, fileName := range fracsFiles {
+		fm.headersCache.Evict(hashFilePath(fileName))
+		util.RemoveFile(fileName)
+
 		filter := fm.filters[filterNameFromPath(fileName)]
 
 		queueFilePath := path.Join(filter.dirPath, makeFileName(fraction.Info().Name(), fracInQueueExt))
@@ -197,7 +202,7 @@ func (fm *FilterManager) RefreshFrac(fraction frac.Fraction) {
 		fm.rateLimit <- struct{}{}
 		go func() {
 			defer func() { <-fm.rateLimit }()
-			if err := fm.processFrac(fraction, filter, false); err != nil {
+			if err := fm.processFrac(fraction, filter); err != nil {
 				panic(fmt.Errorf("docs filter refresh frac err: %s", err))
 			}
 		}()
@@ -219,6 +224,7 @@ func (fm *FilterManager) RemoveFrac(fracName string) {
 	fm.fracsMu.Unlock()
 
 	for _, fileName := range fracsFiles {
+		fm.headersCache.Evict(hashFilePath(fileName))
 		util.RemoveFile(fileName)
 	}
 }
@@ -306,7 +312,7 @@ func (fm *FilterManager) buildQueue(fracs fracmanager.List) error {
 		tmpDir := path.Join(fm.config.DataDir, fmt.Sprintf("%s%s", filter.Hash(), tmpDirSuffix))
 		util.MustCreateDir(tmpDir)
 
-		filterFracs := fracs.FilterInRange(seq.MID(filter.params.From), seq.MID(filter.params.To))
+		filterFracs := fracs.FilterInRange(filter.params.From, filter.params.To)
 		for _, f := range filterFracs {
 			queueFilePath := path.Join(tmpDir, makeFileName(f.Info().Name(), fracInQueueExt))
 			util.MustWriteFileAtomic(queueFilePath, []byte{}, 0o666, tmpExt)
@@ -324,7 +330,7 @@ func (fm *FilterManager) buildQueue(fracs fracmanager.List) error {
 	return nil
 }
 
-// handleFilter finds docs and writes to fs
+// processFilter finds docs and writes to fs
 func (fm *FilterManager) processFilter(ctx context.Context, filter *Filter, fracs fracmanager.List) {
 	if len(fracs) == 0 {
 		return
@@ -354,7 +360,7 @@ func (fm *FilterManager) processFilter(ctx context.Context, filter *Filter, frac
 		case fm.rateLimit <- struct{}{}:
 			filter.processWg.Go(func() {
 				defer func() { <-fm.rateLimit }()
-				if err := fm.processFrac(f, filter, false); err != nil {
+				if err := fm.processFrac(f, filter); err != nil {
 					panic(fmt.Errorf("docs filter process frac err: %s", err))
 				}
 			})
@@ -370,11 +376,11 @@ func (fm *FilterManager) processFilter(ctx context.Context, filter *Filter, frac
 	}()
 }
 
-func (fm *FilterManager) processFrac(f frac.Fraction, filter *Filter, refresh bool) error {
+func (fm *FilterManager) processFrac(f frac.Fraction, filter *Filter) error {
 	qpr, err := f.Search(fm.ctx, processor.SearchParams{
 		AST:   filter.ast.Root,
-		From:  seq.MID(filter.params.From),
-		To:    seq.MID(filter.params.To),
+		From:  filter.params.From,
+		To:    filter.params.To,
 		Limit: math.MaxInt64,
 	})
 	if err != nil {
@@ -404,9 +410,7 @@ func (fm *FilterManager) processFrac(f frac.Fraction, filter *Filter, refresh bo
 		return err
 	}
 
-	if !refresh {
-		fm.addDoneFrac(f.Info().Name(), doneFilePath)
-	}
+	fm.addDoneFrac(f.Info().Name(), doneFilePath)
 
 	return nil
 }
@@ -475,6 +479,12 @@ func makeFileName(name, ext string) string {
 
 func fracNameFromFilePath(filterFilePath string) string {
 	return strings.Split(path.Base(filterFilePath), ".")[0]
+}
+
+func hashFilePath(filePath string) uint32 {
+	hash := fnv.New32a()
+	hash.Write([]byte(filterNameFromPath(filePath) + fracNameFromFilePath(filePath)))
+	return hash.Sum32()
 }
 
 var marshalBufferPool util.BufferPool

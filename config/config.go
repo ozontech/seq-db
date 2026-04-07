@@ -279,10 +279,10 @@ type Config struct {
 	// Additional filtering options
 	Filtering  Filter `config:"filtering"`
 	DocsFilter struct {
-		DataDir     string   `config:"data_dir"`
-		Concurrency int      `config:"concurrency"`
-		Filters     []Filter `config:"filters"`
-		CacheSize   Bytes    `config:"cache_size" default:"100MiB"`
+		DataDir   string   `config:"data_dir"`
+		Workers   int      `config:"workers" default:"1"`
+		Filters   []Filter `config:"filters"`
+		CacheSize Bytes    `config:"cache_size" default:"100MiB"`
 	} `config:"docs_filter"`
 
 	// Experimental provides flags

@@ -3,7 +3,6 @@ package filtermanager
 import (
 	"encoding/binary"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"os"
 
@@ -22,13 +21,10 @@ type loader struct {
 }
 
 func newLoader(filePath string, headersCache *cache.Cache[[]lidsBlockHeader]) (*loader, error) {
-	hash := fnv.New32a()
-	hash.Write([]byte(filterNameFromPath(filePath) + fracNameFromFilePath(filePath)))
-
 	return &loader{
 		filePath:     filePath,
 		headersCache: headersCache,
-		cashKey:      hash.Sum32(),
+		cashKey:      hashFilePath(filePath),
 	}, nil
 }
 

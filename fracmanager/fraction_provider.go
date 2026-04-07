@@ -21,7 +21,7 @@ import (
 const fileBasePattern = "seq-db-"
 
 type FilterManager interface {
-	GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error)
+	GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
 	RefreshFrac(frac frac.Fraction)
 	RemoveFrac(fracName string)
 }
@@ -132,7 +132,7 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 	}
 
 	sealedFrac := fp.NewSealedPreloaded(active.BaseFileName, preloaded)
-	fp.filterManager.RefreshFrac(sealedFrac)
+	go fp.filterManager.RefreshFrac(sealedFrac)
 	return sealedFrac, nil
 }
 

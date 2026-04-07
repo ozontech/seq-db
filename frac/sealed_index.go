@@ -23,7 +23,7 @@ import (
 )
 
 type FilterManager interface {
-	GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error)
+	GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
 	RemoveFrac(fracName string)
 }
 
@@ -294,9 +294,13 @@ func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
 		minLID, maxLID = uint32(minVal), uint32(maxVal)
 	}
 
-	hideFlagsIterator, err := fi.filterManager.GetHideFlagIteratorByFrac(fi.fracName, minLID, maxLID, false)
+	hideFlagsIterator, has, err := fi.filterManager.GetHideFlagIteratorByFrac(fi.fracName, minLID, maxLID, false)
 	if err != nil {
 		return nil, err
+	}
+
+	if !has {
+		return fi.getDocPosByLIDs(allLids), nil
 	}
 
 	filteredLIDs := make(map[uint32]struct{})
@@ -306,10 +310,6 @@ func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
 			break
 		}
 		filteredLIDs[lid.Unpack()] = struct{}{}
-	}
-
-	if len(filteredLIDs) == 0 {
-		return fi.getDocPosByLIDs(allLids), nil
 	}
 
 	for i, lid := range allLids {
@@ -376,6 +376,6 @@ type sealedSearchIndex struct {
 	filterManager FilterManager
 }
 
-func (si *sealedSearchIndex) GetHideFlags(minLID, maxLID uint32, reverse bool) (node.Node, error) {
+func (si *sealedSearchIndex) GetHideFlags(minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
 	return si.filterManager.GetHideFlagIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 }
