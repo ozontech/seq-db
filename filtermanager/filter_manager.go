@@ -254,7 +254,7 @@ func (fm *FilterManager) buildQueue(fracs fracmanager.List) error {
 		}
 
 		// create tmp dir
-		tmpDir := path.Join(fm.config.DataDir, filter.Hash(), tmpDirSuffix)
+		tmpDir := path.Join(fm.config.DataDir, fmt.Sprintf("%s%s", filter.Hash(), tmpDirSuffix))
 		util.MustCreateDir(tmpDir)
 
 		filterFracs := fracs.FilterInRange(seq.MID(filter.params.From), seq.MID(filter.params.To))
