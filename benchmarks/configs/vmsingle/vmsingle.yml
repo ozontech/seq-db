@@ -19,3 +19,7 @@ scrape_configs:
     scrape_interval: 5s
     static_configs:
       - targets: [ 'seq-db:9200' ]
+  - job_name: 'victorialogs'
+    scrape_interval: 5s
+    static_configs:
+      - targets: [ 'vlogs:9428' ]

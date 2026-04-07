@@ -1,0 +1,34 @@
+version: "3"
+
+services:
+  vlogs:
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: "8GB"
+    image: victoriametrics/victoria-logs:v1.49.0
+    ports:
+      - "9428:9428"
+    command:
+      - "--storageDataPath=/vlogs"
+    volumes:
+      - ./victorialogs-data:/vlogs
+
+  filed:
+    image: "ghcr.io/ozontech/file.d:0.777"
+    deploy:
+      resources:
+        limits:
+          memory: "12GB"
+    volumes:
+      - ./dataset/:/var/file.d/logs/
+      - filed-offsets:/var/file.d/offsets
+      - ./configs/file.d/victorialogs.yaml:/usr/share/file.d/victorialogs.yaml
+    command: ./file.d --config=/usr/share/file.d/victorialogs.yaml
+    depends_on:
+      - vlogs
+
+volumes:
+  victorialogs-data:
+  filed-offsets:

@@ -12,7 +12,7 @@ You can find more detailed information about logs in dataset right [here](https:
 
 Be aware, that command may execute for a while because it deals with around 30 GiB of data.
 
-We decided to split benchmarks into two separate suites, because `seq-db` and Elasticsearch may interfere with each other causing performance degradations.
+We decided to split benchmarks into separate suites, because `seq-db`, Elasticsearch, and VictoriaLogs may interfere with each other causing performance degradations.
 
 So, in order to start `seq-db` benchmark suite, you need to run following command:
 ```bash
@@ -24,14 +24,20 @@ In order to start Elasticsearch benchmark suite, you need to run following comma
 make docker-run-elastic
 ```
 
-It will start up necessary containers and then you can observe metrics on Grafana [dashboard](http://localhost:3000/)
+In order to start VictoriaLogs benchmark suite, you need to run following command:
+```bash
+make docker-run-victorialogs
+```
+
+It will start up necessary containers and then you can observe metrics on Grafana [dashboard](http://localhost:3000/).
 
 ## How it works?
 
 There are several the most important containers:
 - `seq-db` - seq-db container that processes logs (version `v0.61.0`);
 - `elastic` - Elasticsearch container that processes logs (version `v8.17.4`);
-- `filed` - file.d log shipper which has two outputs pointing to `seq-db` and `elastic` containers;
+- `vlogs` - VictoriaLogs container that processes logs (image `victoriametrics/victoria-logs:v1.49.0`);
+- `filed` - file.d log shipper; each suite runs a single `filed` instance with output pointing to `seq-db`, `elastic`, or `vlogs` respectively;
 
 We decided to stick with file.d instead of Filebeat, Logstash or others for several reasons:
 - file.d is more [performant](https://github.com/ozontech/file.d-bench);
@@ -49,14 +55,20 @@ This directory has following layout which is explained in comments:
 │  ├── grafana
 │  ├── seqdb
 │  └── vmsingle
+├── k6  # Here you can find k6 scripts for testing search performance
 ├── dataset  # Here you can find logs which will be ingested by ElasticSearch and seq-db
 │  ├── logs
 │  └── distribute.py
 ├── docker-compose-seqdb.yml  # File that contains `seq-db` and `filed` containers
 ├── docker-compose-elastic.yml  # File that contains `elastic` and `filed` containers
+├── docker-compose-victorialogs.yml  # File that contains `vlogs` (VictoriaLogs) and `filed` containers
 ├── docker-compose.yml  # File that contains all infra containers (different metric exporters)
 └── Makefile
 ```
+
+### Benchmarking search performance
+
+Once data is loaded to the chosen database, one may want to run search benchmarks in k6 directory. Please consult the corresponding [README.md file](https://github.com/ozontech/seq-db/blob/main/benchmarks/k6/README.md).
 
 ## Results
 

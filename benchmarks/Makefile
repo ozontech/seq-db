@@ -10,14 +10,19 @@ docker-run-seqdb:
 docker-run-elastic:
 	docker compose -f docker-compose.yml -f docker-compose-elastic.yml up -d
 
+docker-run-vlogs:
+	docker compose -f docker-compose.yml -f docker-compose-vlogs.yml up -d
+
 docker-cleanup:
 	docker compose \
 		-f docker-compose-seqdb.yml \
 		-f docker-compose-elastic.yml \
+		-f docker-compose-vlogs.yml \
 		down -v --remove-orphans
 
 docker-cleanup-all:
 	docker compose -f docker-compose.yml \
 		-f docker-compose-seqdb.yml \
 		-f docker-compose-elastic.yml \
+		-f docker-compose-vlogs.yml \
 		down -v --remove-orphans
