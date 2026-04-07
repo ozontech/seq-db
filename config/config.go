@@ -277,13 +277,13 @@ type Config struct {
 	} `config:"tracing"`
 
 	// Additional filtering options
-	Filtering struct {
-		// If a search query time range overlaps with the [from; to] range
-		// the search query will be `AND`-ed with an additional predicate with the provided query expression
-		Query string    `config:"query"`
-		From  time.Time `config:"from"`
-		To    time.Time `config:"to"`
-	} `config:"filtering"`
+	Filtering  Filter `config:"filtering"`
+	DocsFilter struct {
+		DataDir     string   `config:"data_dir"`
+		Concurrency int      `config:"concurrency"`
+		Filters     []Filter `config:"filters"`
+		CacheSize   Bytes    `config:"cache_size" default:"100MiB"`
+	} `config:"docs_filter"`
 
 	// Experimental provides flags
 	// For configuring experimental features.
@@ -293,6 +293,12 @@ type Config struct {
 		// If zero then there is no limit.
 		MaxRegexTokensCheck int `config:"max_regex_tokens_check" default:"0"`
 	} `config:"experimental"`
+}
+
+type Filter struct {
+	Query string    `config:"query"`
+	From  time.Time `config:"from"`
+	To    time.Time `config:"to"`
 }
 
 type Bytes units.Base2Bytes

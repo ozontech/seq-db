@@ -35,15 +35,12 @@ import (
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
-type testDocsFilter struct{}
+type testFilterManager struct{}
 
-func (testDocsFilter) GetFilteredLIDsByFrac(_ string) ([]uint32, error) {
-	return []uint32{}, nil
-}
-func (testDocsFilter) GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
+func (testFilterManager) GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
 	return node.NewStatic([]uint32{}, false), nil
 }
-func (testDocsFilter) RemoveFrac(_ string) {}
+func (testFilterManager) RemoveFrac(_ string) {}
 
 type FractionTestSuite struct {
 	suite.Suite
@@ -2050,7 +2047,7 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
-		testDocsFilter{},
+		testFilterManager{},
 	)
 
 	var wg sync.WaitGroup
@@ -2113,7 +2110,7 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 		indexCache,
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
-		testDocsFilter{},
+		testFilterManager{},
 	)
 	active.Release()
 	return sealed
@@ -2191,7 +2188,7 @@ func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		&Config{},
-		testDocsFilter{},
+		testFilterManager{},
 	)
 	err := replayedFrac.Replay(context.Background())
 	s.Require().NoError(err, "replay failed")
@@ -2304,7 +2301,7 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 		cache.NewCache[[]byte](nil, nil),
 		nil,
 		s.config,
-		testDocsFilter{},
+		testFilterManager{},
 	)
 	s.fraction = sealed
 	return sealed
@@ -2374,7 +2371,7 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			sealed.info,
 			s.config,
 			s3cli,
-			testDocsFilter{},
+			testFilterManager{},
 		)
 		s.fraction = remoteFrac
 	}

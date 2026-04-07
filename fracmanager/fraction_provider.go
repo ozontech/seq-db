@@ -20,8 +20,8 @@ import (
 
 const fileBasePattern = "seq-db-"
 
-type DocsFilter interface {
-	GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error)
+type FilterManager interface {
+	GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error)
 	RefreshFrac(frac frac.Fraction)
 	RemoveFrac(fracName string)
 }
@@ -35,13 +35,13 @@ type fractionProvider struct {
 	activeIndexer *frac.ActiveIndexer  // Indexer for active fractions
 	readLimiter   *storage.ReadLimiter // Read rate limiter
 	ulidEntropy   io.Reader            // Entropy source for ULID generation
-	docsFilter    DocsFilter
+	filterManager FilterManager
 }
 
 func newFractionProvider(
 	cfg *Config, s3cli *s3.Client, cp *CacheMaintainer,
 	readLimiter *storage.ReadLimiter, indexer *frac.ActiveIndexer,
-	docsFilter DocsFilter,
+	filterManager FilterManager,
 ) *fractionProvider {
 	return &fractionProvider{
 		s3cli:         s3cli,
@@ -50,7 +50,7 @@ func newFractionProvider(
 		activeIndexer: indexer,
 		readLimiter:   readLimiter,
 		ulidEntropy:   ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
-		docsFilter:    docsFilter,
+		filterManager: filterManager,
 	}
 }
 
@@ -62,7 +62,7 @@ func (fp *fractionProvider) NewActive(name string) *frac.Active {
 		fp.cacheProvider.CreateDocBlockCache(),
 		fp.cacheProvider.CreateSortDocsCache(),
 		&fp.config.Fraction,
-		fp.docsFilter,
+		fp.filterManager,
 	)
 }
 
@@ -74,7 +74,7 @@ func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *fra
 		fp.cacheProvider.CreateDocBlockCache(),
 		cachedInfo, // Preloaded meta information
 		&fp.config.Fraction,
-		fp.docsFilter,
+		fp.filterManager,
 	)
 }
 
@@ -86,7 +86,7 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *seale
 		fp.cacheProvider.CreateIndexCache(),
 		fp.cacheProvider.CreateDocBlockCache(),
 		&fp.config.Fraction,
-		fp.docsFilter,
+		fp.filterManager,
 	)
 }
 
@@ -100,7 +100,7 @@ func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedIn
 		cachedInfo,
 		&fp.config.Fraction,
 		fp.s3cli,
-		fp.docsFilter,
+		fp.filterManager,
 	)
 }
 
@@ -132,7 +132,7 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 	}
 
 	sealedFrac := fp.NewSealedPreloaded(active.BaseFileName, preloaded)
-	fp.docsFilter.RefreshFrac(sealedFrac)
+	fp.filterManager.RefreshFrac(sealedFrac)
 	return sealedFrac, nil
 }
 

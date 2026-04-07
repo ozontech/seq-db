@@ -27,7 +27,7 @@ import (
 
 	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/docsfilter"
+	"github.com/ozontech/seq-db/filtermanager"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
@@ -1753,7 +1753,7 @@ func (s *IntegrationTestSuite) TestPaginationWithOffsetId() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestDocsFilter() {
+func (s *IntegrationTestSuite) TestFilterManager() {
 	t := s.T()
 	r := require.New(t)
 
@@ -1781,11 +1781,11 @@ func (s *IntegrationTestSuite) TestDocsFilter() {
 	env.WaitIdle()
 	env.StopAll()
 
-	cfg.DocsFilters = []docsfilter.Params{
+	cfg.DocsFilters = []filtermanager.Params{
 		{
 			Query: "service:hidden",
 			From:  0,
-			To:    time.Now().UnixNano(),
+			To:    seq.MID(time.Now().UnixNano()),
 		},
 	}
 	env = setup.NewTestingEnv(&cfg)

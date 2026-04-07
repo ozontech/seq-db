@@ -22,7 +22,7 @@ import (
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/docsfilter"
+	"github.com/ozontech/seq-db/filtermanager"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
@@ -49,7 +49,7 @@ type TestingEnvConfig struct {
 	HotModeEnabled    bool
 	QueryRateLimit    *float64
 	FracManagerConfig *fracmanager.Config
-	DocsFilters       []docsfilter.Params
+	DocsFilters       []filtermanager.Params
 
 	Mapping        seq.Mapping
 	IndexAllFields bool
@@ -124,7 +124,7 @@ func (cfg *TestingEnvConfig) GetStoreConfig(replicaID string, cold bool) storeap
 				LogThreshold:          0,
 			},
 		},
-		Filters: docsfilter.Config{
+		Filters: filtermanager.Config{
 			DataDir: filepath.Join(cfg.DataDir, replicaID, "filters"),
 		},
 	}

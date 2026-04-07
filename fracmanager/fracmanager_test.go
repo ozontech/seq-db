@@ -12,16 +12,13 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
-type testDocsFilter struct{}
+type testFilterManager struct{}
 
-func (testDocsFilter) GetFilteredLIDsByFrac(_ string) ([]uint32, error) {
-	return nil, nil
-}
-func (testDocsFilter) GetTombstonesIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
+func (testFilterManager) GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
 	return node.NewStatic([]uint32{}, reverse), nil
 }
-func (testDocsFilter) RefreshFrac(_ frac.Fraction) {}
-func (testDocsFilter) RemoveFrac(_ string)         {}
+func (testFilterManager) RefreshFrac(_ frac.Fraction) {}
+func (testFilterManager) RemoveFrac(_ string)         {}
 
 func setupDataDir(t testing.TB, cfg *Config) *Config {
 	if cfg == nil {
@@ -37,7 +34,7 @@ func setupDataDir(t testing.TB, cfg *Config) *Config {
 
 func setupFracManager(t testing.TB, cfg *Config) (*Config, *FracManager, func()) {
 	cfg = setupDataDir(t, cfg)
-	fm, stop, err := New(t.Context(), cfg, nil, testDocsFilter{})
+	fm, stop, err := New(t.Context(), cfg, nil, testFilterManager{})
 	assert.NoError(t, err)
 	return cfg, fm, stop
 }

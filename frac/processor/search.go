@@ -38,7 +38,7 @@ type tokenIndex interface {
 type searchIndex interface {
 	tokenIndex
 	idsIndex
-	GetTombstones(minLID, maxLID uint32, reverse bool) (node.Node, error)
+	GetHideFlags(minLID, maxLID uint32, reverse bool) (node.Node, error)
 }
 
 func IndexSearch(
@@ -94,15 +94,15 @@ func IndexSearch(
 		}
 	}
 
-	m = sw.Start("get_tombstones")
-	tombstones, err := index.GetTombstones(minLID, maxLID, params.Order.IsReverse())
+	m = sw.Start("get_hide_flags")
+	hideFlags, err := index.GetHideFlags(minLID, maxLID, params.Order.IsReverse())
 	m.Stop()
 	if err != nil {
 		return nil, err
 	}
 
-	m = sw.Start("eval_tombstones")
-	evalTree = evalTombstones(evalTree, tombstones, stats)
+	m = sw.Start("eval_hide_flags")
+	evalTree = evalHideFlags(evalTree, hideFlags, stats)
 	m.Stop()
 
 	m = sw.Start("iterate_eval_tree")

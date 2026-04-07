@@ -32,7 +32,7 @@ type activeDataProvider struct {
 
 	idsIndex *activeIDsIndex
 
-	docsFilter DocsFilter
+	filterManager FilterManager
 }
 
 func (dp *activeDataProvider) release() {
@@ -83,7 +83,7 @@ func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 		docsPositions: dp.docsPositions,
 		idsToLids:     dp.idsToLids,
 		docsReader:    dp.docsReader,
-		docsFilter:    dp.docsFilter,
+		filterManager: dp.filterManager,
 		fracName:      dp.info.Name(),
 	}}
 
@@ -124,7 +124,7 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	indexes := []activeSearchIndex{{
 		activeIDsIndex:   dp.getIDsIndex(),
 		activeTokenIndex: dp.getTokenIndex(),
-		docsFilter:       dp.docsFilter,
+		filterManager:    dp.filterManager,
 		fracName:         dp.info.Name(),
 	}}
 	m.Stop()
@@ -187,15 +187,15 @@ func (p *activeIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 type activeSearchIndex struct {
 	*activeIDsIndex
 	*activeTokenIndex
-	docsFilter DocsFilter
-	fracName   string
+	filterManager FilterManager
+	fracName      string
 }
 
-func (si *activeSearchIndex) GetTombstones(minLID, maxLID uint32, reverse bool) (node.Node, error) {
+func (si *activeSearchIndex) GetHideFlags(minLID, maxLID uint32, reverse bool) (node.Node, error) {
 	// active fraction doesn't meet min and max lid
 	minLID, maxLID = uint32(0), uint32(math.MaxUint32)
 
-	iterator, err := si.docsFilter.GetTombstonesIteratorByFrac(si.fracName, minLID, maxLID, reverse)
+	iterator, err := si.filterManager.GetHideFlagIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +263,7 @@ type activeFetchIndex struct {
 	docsPositions *DocsPositions
 	idsToLids     *ActiveLIDs
 	docsReader    *storage.DocsReader
-	docsFilter    DocsFilter
+	filterManager FilterManager
 	fracName      string
 }
 
@@ -280,14 +280,14 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
 	}
 
 	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
-	tombstonesIterator, err := di.docsFilter.GetTombstonesIteratorByFrac(di.fracName, minLID, maxLID, false)
+	hideFlagsIterator, err := di.filterManager.GetHideFlagIteratorByFrac(di.fracName, minLID, maxLID, false)
 	if err != nil {
 		return nil, err
 	}
 
 	filteredLIDs := make(map[uint32]struct{})
 	for {
-		lid := tombstonesIterator.Next()
+		lid := hideFlagsIterator.Next()
 		if lid.IsNull() {
 			break
 		}

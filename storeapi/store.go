@@ -9,7 +9,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/docsfilter"
+	"github.com/ozontech/seq-db/filtermanager"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -36,7 +36,7 @@ type Store struct {
 type StoreConfig struct {
 	API         APIConfig
 	FracManager fracmanager.Config
-	Filters     docsfilter.Config
+	Filters     filtermanager.Config
 }
 
 func (c *StoreConfig) setDefaults() error {
@@ -57,20 +57,20 @@ func NewStore(
 	c StoreConfig,
 	s3cli *s3.Client,
 	mappingProvider MappingProvider,
-	docFilterParams []docsfilter.Params,
+	docFilterParams []filtermanager.Params,
 ) (*Store, error) {
 	if err := c.setDefaults(); err != nil {
 		return nil, err
 	}
 
-	df := docsfilter.New(ctx, c.Filters, docFilterParams, mappingProvider)
+	filterManager := filtermanager.New(ctx, c.Filters, docFilterParams, mappingProvider)
 
-	fracManager, stop, err := fracmanager.New(ctx, &c.FracManager, s3cli, df)
+	fracManager, stop, err := fracmanager.New(ctx, &c.FracManager, s3cli, filterManager)
 	if err != nil {
 		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
 
-	df.Start(fracManager.Fractions())
+	filterManager.Start(ctx, fracManager.Fractions())
 
 	return &Store{
 		Config: c,
