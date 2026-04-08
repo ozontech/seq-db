@@ -16,7 +16,8 @@ services:
       - ./victorialogs-data:/vlogs
 
   filed:
-    image: "ghcr.io/ozontech/file.d:0.777"
+# TODO file.d can't post to vlogs, since &_msg_field=request must be appended to _bulk url (otherwise, full text dones't work)
+    image: "ghcr.io/ozontech/file.d:v0.58.1-alpine"
     deploy:
       resources:
         limits:
