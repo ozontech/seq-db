@@ -2,40 +2,19 @@ package sealing
 
 import (
 	"errors"
-	"iter"
 	"os"
 	"path/filepath"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
-	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/indexwriter"
 	"github.com/ozontech/seq-db/util"
 )
 
-// Source interface defines the contract for data sources that can be sealed.
-// Provides access to all necessary data components for index creation
-type Source interface {
-	// Info returns metadata describing this source.
-	Info() *common.Info
-
-	// ID returns an iterator over stored document identifiers paired with
-	// their positions, in descending [seq.ID] order.
-	ID() iter.Seq2[seq.ID, seq.DocPos]
-
-	// BlockOffsets returns byte offsets to each document block
-	// within this source's `.docs` file.
-	BlockOffsets() []uint64
-
-	// TokenTriplet iterates over fields in lexicographic order.
-	// For each field, it yields tokens (lexicographically sorted)
-	// paired with the local document ID list for that token.
-	TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint32]]
-
-	// LastError returns the last error encountered during iteration,
-	// or nil if no error occurred.
-	LastError() error
-}
+// Source defines the contract for data sources that can be sealed.
+// Provides access to all necessary data components for index creation.
+type Source = indexwriter.Source
 
 func syncAndClose(f *os.File) error {
 	if err := f.Sync(); err != nil {
@@ -95,7 +74,7 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 		return nil, errors.New("sealing of an empty active fraction is not supported")
 	}
 
-	sealer := NewIndexSealer(params)
+	sealer := indexwriter.New(params)
 
 	if err := createAndWrite(
 		info.Path+consts.OffsetsTmpFileSuffix,
