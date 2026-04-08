@@ -26,7 +26,7 @@ make docker-run-elastic
 
 In order to start VictoriaLogs benchmark suite, you need to run following command:
 ```bash
-make docker-run-victorialogs
+make docker-run-vlogs
 ```
 
 It will start up necessary containers and then you can observe metrics on Grafana [dashboard](http://localhost:3000/).
