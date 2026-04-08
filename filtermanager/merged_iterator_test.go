@@ -68,6 +68,10 @@ func (it *testIteratorDesc) Next() node.LID {
 	return node.NewDescLID(lid)
 }
 
+func (it *testIteratorDesc) NextGeq(nextID node.LID) node.LID {
+	return node.NullLID() // TODO: ???
+}
+
 type testIteratorAsc struct {
 	lids []uint32
 }
@@ -83,5 +87,9 @@ func (it *testIteratorAsc) Next() node.LID {
 
 	lid := it.lids[0]
 	it.lids = it.lids[1:]
-	return node.NewAscLID(lid)
+	return node.NewAscLID(lid) // TODO: ???
+}
+
+func (it *testIteratorAsc) NextGeq(nextID node.LID) node.LID {
+	return node.NullLID()
 }

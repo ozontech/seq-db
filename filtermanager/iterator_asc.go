@@ -41,6 +41,15 @@ func (it *IteratorAsc) Next() node.LID {
 	return node.NewAscLID(lid)
 }
 
+func (it *IteratorAsc) NextGeq(nextID node.LID) node.LID {
+	// TODO: implement NextGeq
+	lid := it.Next()
+	for lid.Less(nextID) {
+		lid = it.Next()
+	}
+	return lid
+}
+
 func (it *IteratorAsc) loadNextLIDsBlock() {
 	hasLIDsInRange := (*Iterator)(it).hasLIDsInRange()
 	if !hasLIDsInRange {

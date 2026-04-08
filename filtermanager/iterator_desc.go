@@ -39,6 +39,15 @@ func (it *IteratorDesc) Next() node.LID {
 	return node.NewDescLID(lid)
 }
 
+func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
+	// TODO: implement NextGeq
+	lid := it.Next()
+	for lid.Less(nextID) {
+		lid = it.Next()
+	}
+	return lid
+}
+
 func (it *IteratorDesc) loadNextLIDsBlock() {
 	hasLIDsInRange := (*Iterator)(it).hasLIDsInRange()
 	if !hasLIDsInRange {

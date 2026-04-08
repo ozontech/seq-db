@@ -28,3 +28,7 @@ func (it *EmptyIterator) String() string {
 func (it *EmptyIterator) Next() node.LID {
 	return node.NullLID()
 }
+
+func (it *EmptyIterator) NextGeq(nextID node.LID) node.LID {
+	return node.NullLID()
+}
