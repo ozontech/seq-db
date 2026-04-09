@@ -36,14 +36,8 @@ It will start up necessary containers and then you can observe metrics on Grafan
 There are several the most important containers:
 - `seq-db` - seq-db container that processes logs (version `v0.61.0`);
 - `elastic` - Elasticsearch container that processes logs (version `v8.17.4`);
-- `vlogs` - VictoriaLogs container that processes logs (image `victoriametrics/victoria-logs:v1.49.0`);
-- `filed` - file.d log shipper; each suite runs a single `filed` instance with output pointing to `seq-db`, `elastic`, or `vlogs` respectively;
-
-We decided to stick with file.d instead of Filebeat, Logstash or others for several reasons:
-- file.d is more [performant](https://github.com/ozontech/file.d-bench);
-- We have a lot more experience with setting up and tuning file.d log shipper, so we can be sure that transport layer is not a bottleneck;
-
-You can learn more about file.d by checking out their GitHub [repository](https://github.com/ozontech/file.d).
+- `vlogs` - VictoriaLogs container that processes logs (version `v1.49.0`);
+- `logs-loader` - Go-based logs loader which sends logs via Elasticsearch bulk API
 
 This directory has following layout which is explained in comments:
 ```text
@@ -51,7 +45,6 @@ This directory has following layout which is explained in comments:
 ├── configs  # Configuration files for all containers
 │  ├── du
 │  ├── elasticsearch
-│  ├── file.d
 │  ├── grafana
 │  ├── seqdb
 │  └── vmsingle
@@ -59,9 +52,9 @@ This directory has following layout which is explained in comments:
 ├── dataset  # Here you can find logs which will be ingested by ElasticSearch and seq-db
 │  ├── logs
 │  └── distribute.py
-├── docker-compose-seqdb.yml  # File that contains `seq-db` and `filed` containers
-├── docker-compose-elastic.yml  # File that contains `elastic` and `filed` containers
-├── docker-compose-victorialogs.yml  # File that contains `vlogs` (VictoriaLogs) and `filed` containers
+├── docker-compose-seqdb.yml  # File that contains `seq-db` and `logs-loader` containers
+├── docker-compose-elastic.yml  # File that contains `elastic` and `logs-loader` containers
+├── docker-compose-victorialogs.yml  # File that contains `vlogs` (VictoriaLogs) and `logs-loader` containers
 ├── docker-compose.yml  # File that contains all infra containers (different metric exporters)
 └── Makefile
 ```

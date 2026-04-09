@@ -31,20 +31,24 @@ services:
     environment:
       ES_JAVA_OPTS: "-Xmx8192m -XX:+UnlockExperimentalVMOptions -XX:NewRatio=1 -XX:MaxMetaspaceSize=256m -server -XX:+ResizeTLAB -XX:+UseG1GC -XX:+UseStringDeduplication"
 
-  filed:
-    image: 'ghcr.io/ozontech/file.d:v0.58.1-alpine'
+  logs-sender:
+    image: golang:1.25-alpine
     deploy:
       resources:
         limits:
-          memory: "12GB"
+          memory: "2GB"
+    working_dir: /workspace
     volumes:
-      - ./dataset/:/var/file.d/logs/
-      - filed-offsets:/var/file.d/offsets
-      - ./configs/file.d/elastic.yaml:/usr/share/file.d/elastic.yaml
-    command: ./file.d --config=/usr/share/file.d/elastic.yaml
+      - ../:/workspace
+      - ./dataset/:/dataset:ro
+    command: go run ./benchmarks/cmd/logs-sender
+    environment:
+      BULK_URL: http://elastic:9200/_bulk
+      FILE_PATTERN: "*.log"
+      BULK_SIZE: 4096
+      INDEX_NAME: logs-index
     depends_on:
       - elastic-setup
 
 volumes:
   elastic-data:
-  filed-offsets:

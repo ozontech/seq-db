@@ -11,10 +11,6 @@ scrape_configs:
     static_configs:
       - targets: [ 'node-exporter:9100' ]
       - targets: [ 'du-exporter:9995' ]
-  - job_name: 'filed'
-    scrape_interval: 5s
-    static_configs:
-      - targets: [ 'filed:9000' ]
   - job_name: 'seq-db'
     scrape_interval: 5s
     static_configs:

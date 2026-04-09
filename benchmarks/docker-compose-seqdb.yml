@@ -18,20 +18,24 @@ services:
       --mode=single
       --config=/configs/config.yaml
 
-  filed:
-    image: 'ghcr.io/ozontech/file.d:v0.58.1-alpine'
+  logs-sender:
+    image: golang:1.25-alpine
     deploy:
       resources:
         limits:
-          memory: "12GB"
+          memory: "2GB"
+    working_dir: /workspace
     volumes:
-      - ./dataset/:/var/file.d/logs/
-      - filed-offsets:/var/file.d/offsets
-      - ./configs/file.d/seq-db.yaml:/usr/share/file.d/seq-db.yaml
-    command: ./file.d --config=/usr/share/file.d/seq-db.yaml
+      - ../:/workspace
+      - ./dataset/:/dataset:ro
+    command: go run ./benchmarks/cmd/logs-sender
+    environment:
+      BULK_URL: http://seq-db:9002/_bulk
+      FILE_PATTERN: docs-*.log
+      BULK_SIZE: 4096
+      INDEX_NAME: logs-index
     depends_on:
       - seq-db
 
 volumes:
   seq-db-data:
-  filed-offsets:
