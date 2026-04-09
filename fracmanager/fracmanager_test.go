@@ -12,13 +12,13 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
-type testFilterManager struct{}
+type testSkipMaskProvider struct{}
 
-func (testFilterManager) GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
+func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
 	return node.NewStatic([]uint32{}, reverse), false, nil
 }
-func (testFilterManager) RefreshFrac(_ frac.Fraction) {}
-func (testFilterManager) RemoveFrac(_ string)         {}
+func (testSkipMaskProvider) RefreshFrac(_ frac.Fraction) {}
+func (testSkipMaskProvider) RemoveFrac(_ string)         {}
 
 func setupDataDir(t testing.TB, cfg *Config) *Config {
 	if cfg == nil {
@@ -34,7 +34,7 @@ func setupDataDir(t testing.TB, cfg *Config) *Config {
 
 func setupFracManager(t testing.TB, cfg *Config) (*Config, *FracManager, func()) {
 	cfg = setupDataDir(t, cfg)
-	fm, stop, err := New(t.Context(), cfg, nil, testFilterManager{})
+	fm, stop, err := New(t.Context(), cfg, nil, testSkipMaskProvider{})
 	assert.NoError(t, err)
 	return cfg, fm, stop
 }

@@ -21,7 +21,6 @@ import (
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/filtermanager"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -35,6 +34,7 @@ import (
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/skipmaskmanager"
 	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/storeapi"
 	"github.com/ozontech/seq-db/tracing"
@@ -318,15 +318,15 @@ func startStore(
 				From:  cfg.Filtering.From,
 			},
 		},
-		Filters: filtermanager.Config{
-			DataDir:        cfg.DocsFilter.DataDir,
-			Workers:        cfg.DocsFilter.Workers,
-			CacheSizeLimit: uint64(cfg.DocsFilter.CacheSize),
+		SkipMaskManagerConfig: skipmaskmanager.Config{
+			DataDir:        cfg.SkipMaskManager.DataDir,
+			Workers:        cfg.SkipMaskManager.Workers,
+			CacheSizeLimit: uint64(cfg.SkipMaskManager.CacheSize),
 		},
 	}
 
 	s3cli := initS3Client(cfg)
-	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp, docFilterParamsFromCfg(cfg.DocsFilter.Filters))
+	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp, skipMaskParamsFromCfg(cfg.SkipMaskManager.SkipMasks))
 	if err != nil {
 		logger.Fatal("initializing store", zap.Error(err))
 	}
@@ -369,13 +369,13 @@ func enableIndexingForAllFields(mappingPath string) bool {
 	return mappingPath == "auto"
 }
 
-func docFilterParamsFromCfg(in []config.Filter) []filtermanager.Params {
-	out := make([]filtermanager.Params, 0, len(in))
+func skipMaskParamsFromCfg(in []config.SkipMaskParams) []skipmaskmanager.SkipMaskParams {
+	out := make([]skipmaskmanager.SkipMaskParams, 0, len(in))
 	for _, f := range in {
-		out = append(out, filtermanager.Params{
+		out = append(out, skipmaskmanager.SkipMaskParams{
 			Query: f.Query,
-			From:  seq.MID(f.From.UnixNano()),
-			To:    seq.MID(f.To.UnixNano()),
+			From:  seq.TimeToMID(f.From),
+			To:    seq.TimeToMID(f.To),
 		})
 	}
 	return out

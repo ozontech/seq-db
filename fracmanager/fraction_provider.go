@@ -20,8 +20,8 @@ import (
 
 const fileBasePattern = "seq-db-"
 
-type FilterManager interface {
-	GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
+type skipMaskProvider interface {
+	GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
 	RefreshFrac(frac frac.Fraction)
 	RemoveFrac(fracName string)
 }
@@ -29,28 +29,28 @@ type FilterManager interface {
 // fractionProvider is a factory for creating different types of fractions
 // Contains all necessary dependencies for creating and managing fractions
 type fractionProvider struct {
-	s3cli         *s3.Client           // Client for S3 storage operations
-	config        *Config              // Fraction manager configuration
-	cacheProvider *CacheMaintainer     // Cache provider for data access optimization
-	activeIndexer *frac.ActiveIndexer  // Indexer for active fractions
-	readLimiter   *storage.ReadLimiter // Read rate limiter
-	ulidEntropy   io.Reader            // Entropy source for ULID generation
-	filterManager FilterManager
+	s3cli            *s3.Client           // Client for S3 storage operations
+	config           *Config              // Fraction manager configuration
+	cacheProvider    *CacheMaintainer     // Cache provider for data access optimization
+	activeIndexer    *frac.ActiveIndexer  // Indexer for active fractions
+	readLimiter      *storage.ReadLimiter // Read rate limiter
+	ulidEntropy      io.Reader            // Entropy source for ULID generation
+	skipMaskProvider skipMaskProvider
 }
 
 func newFractionProvider(
 	cfg *Config, s3cli *s3.Client, cp *CacheMaintainer,
 	readLimiter *storage.ReadLimiter, indexer *frac.ActiveIndexer,
-	filterManager FilterManager,
+	skipMaskProvider skipMaskProvider,
 ) *fractionProvider {
 	return &fractionProvider{
-		s3cli:         s3cli,
-		config:        cfg,
-		cacheProvider: cp,
-		activeIndexer: indexer,
-		readLimiter:   readLimiter,
-		ulidEntropy:   ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
-		filterManager: filterManager,
+		s3cli:            s3cli,
+		config:           cfg,
+		cacheProvider:    cp,
+		activeIndexer:    indexer,
+		readLimiter:      readLimiter,
+		ulidEntropy:      ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
+		skipMaskProvider: skipMaskProvider,
 	}
 }
 
@@ -62,7 +62,7 @@ func (fp *fractionProvider) NewActive(name string) *frac.Active {
 		fp.cacheProvider.CreateDocBlockCache(),
 		fp.cacheProvider.CreateSortDocsCache(),
 		&fp.config.Fraction,
-		fp.filterManager,
+		fp.skipMaskProvider,
 	)
 }
 
@@ -74,7 +74,7 @@ func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *fra
 		fp.cacheProvider.CreateDocBlockCache(),
 		cachedInfo, // Preloaded meta information
 		&fp.config.Fraction,
-		fp.filterManager,
+		fp.skipMaskProvider,
 	)
 }
 
@@ -86,7 +86,7 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *seale
 		fp.cacheProvider.CreateIndexCache(),
 		fp.cacheProvider.CreateDocBlockCache(),
 		&fp.config.Fraction,
-		fp.filterManager,
+		fp.skipMaskProvider,
 	)
 }
 
@@ -100,7 +100,7 @@ func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedIn
 		cachedInfo,
 		&fp.config.Fraction,
 		fp.s3cli,
-		fp.filterManager,
+		fp.skipMaskProvider,
 	)
 }
 
@@ -132,7 +132,7 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 	}
 
 	sealedFrac := fp.NewSealedPreloaded(active.BaseFileName, preloaded)
-	fp.filterManager.RefreshFrac(sealedFrac)
+	fp.skipMaskProvider.RefreshFrac(sealedFrac)
 	return sealedFrac, nil
 }
 

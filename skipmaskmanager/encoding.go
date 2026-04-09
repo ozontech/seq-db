@@ -1,4 +1,4 @@
-package filtermanager
+package skipmaskmanager
 
 import (
 	"encoding/binary"
@@ -12,22 +12,22 @@ import (
 	"github.com/ozontech/seq-db/zstd"
 )
 
-type DocsFilterBinIn struct {
+type SkipMaskBinIn struct {
 	LIDs []seq.LID
 }
 
-type DocsFilterBinOut struct {
+type SkipMaskBinOut struct {
 	LIDs []uint32
 }
 
-type docsFilterBinVersion uint8
+type skipMaskBinVersion uint8
 
 const (
-	docsFilterBinVersion1 docsFilterBinVersion = iota + 1
+	skipMaskBinVersion1 skipMaskBinVersion = iota + 1
 )
 
-var availableVersions = map[docsFilterBinVersion]struct{}{
-	docsFilterBinVersion1: {},
+var availableVersions = map[skipMaskBinVersion]struct{}{
+	skipMaskBinVersion1: {},
 }
 
 type lidsCodec byte
@@ -86,8 +86,8 @@ func (h *lidsBlockHeader) unmarshal(src []byte) ([]byte, error) {
 	return src, nil
 }
 
-func marshalDocsFilter(dst []byte, in *DocsFilterBinIn) []byte {
-	dst = append(dst, uint8(docsFilterBinVersion1))
+func marshalSkipMask(dst []byte, in *SkipMaskBinIn) []byte {
+	dst = append(dst, uint8(skipMaskBinVersion1))
 	dst = marshalLIDsBlocks(dst, in.LIDs)
 	return dst
 }
@@ -168,17 +168,17 @@ func marshalLIDsBlock(dst []byte, in []seq.LID) ([]byte, lidsCodec) {
 	return dst, lidsCodecDeltaZstd
 }
 
-const minLIDsFIlterBytesLen = 10 // 1 byte lidsBinVersion + 8 byte number of LIDs + N (min 1) bytes varint + delta encoded LIDs
+const minSkipMaskBytesLen = 10 // 1 byte skipMaskBinVersion + 8 byte number of LIDs + N (min 1) bytes varint + delta encoded LIDs
 
-func unmarshalDocsFilter(dst *DocsFilterBinOut, src []byte) (_ []byte, err error) {
-	if len(src) < minLIDsFIlterBytesLen {
-		return nil, fmt.Errorf("invalid LIDs filter format; want %d bytes, got %d", minLIDsFIlterBytesLen, len(src))
+func unmarshalSkipMask(dst *SkipMaskBinOut, src []byte) (_ []byte, err error) {
+	if len(src) < minSkipMaskBytesLen {
+		return nil, fmt.Errorf("invalid skip mask format; want %d bytes, got %d", minSkipMaskBytesLen, len(src))
 	}
 
-	version := docsFilterBinVersion(src[0])
+	version := skipMaskBinVersion(src[0])
 	src = src[1:]
 	if _, ok := availableVersions[version]; !ok {
-		return nil, fmt.Errorf("invalid LIDs binary version: %d", version)
+		return nil, fmt.Errorf("invalid skip mask binary version: %d", version)
 	}
 
 	dst.LIDs, src, err = unmarshalLIDsBlocks(dst.LIDs, src)

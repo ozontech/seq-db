@@ -38,7 +38,7 @@ func setupFractionProvider(t testing.TB, cfg *Config) (*fractionProvider, func()
 	s3cli, stopS3 := setupS3Client(t)
 	idx, stopIdx := frac.NewActiveIndexer(1, 1)
 	cache := NewCacheMaintainer(uint64(units.MB), uint64(units.MB), nil)
-	provider := newFractionProvider(cfg, s3cli, cache, rl, idx, testFilterManager{})
+	provider := newFractionProvider(cfg, s3cli, cache, rl, idx, testSkipMaskProvider{})
 	return provider, func() {
 		stopIdx()
 		stopS3()

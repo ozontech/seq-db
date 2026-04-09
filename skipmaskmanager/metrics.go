@@ -1,4 +1,4 @@
-package filtermanager
+package skipmaskmanager
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -6,22 +6,22 @@ import (
 )
 
 var (
-	inProgressFilters = promauto.NewGauge(prometheus.GaugeOpts{
+	inProgress = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
-		Subsystem: "filters",
+		Subsystem: "skip_masks",
 		Name:      "in_progress",
-		Help:      "Number of doc filters in progress",
+		Help:      "Number of skip masks in progress",
 	})
 	diskUsage = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
-		Subsystem: "filters",
+		Subsystem: "skip_masks",
 		Name:      "disk_usage_bytes",
-		Help:      "Disk space used by filter files in bytes",
+		Help:      "Disk space used by skip mask files in bytes",
 	})
-	storedFilters = promauto.NewGauge(prometheus.GaugeOpts{
+	stored = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
-		Subsystem: "filters",
+		Subsystem: "skip_masks",
 		Name:      "stored",
-		Help:      "Number of active doc filters",
+		Help:      "Number of active skip masks",
 	})
 )

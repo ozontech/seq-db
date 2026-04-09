@@ -32,7 +32,7 @@ type activeDataProvider struct {
 
 	idsIndex *activeIDsIndex
 
-	filterManager FilterManager
+	skipMaskProvider skipMaskProvider
 }
 
 func (dp *activeDataProvider) release() {
@@ -79,12 +79,12 @@ func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	res := make([][]byte, len(ids))
 
 	indexes := []activeFetchIndex{{
-		blocksOffsets: dp.blocksOffsets,
-		docsPositions: dp.docsPositions,
-		idsToLids:     dp.idsToLids,
-		docsReader:    dp.docsReader,
-		filterManager: dp.filterManager,
-		fracName:      dp.info.Name(),
+		blocksOffsets:    dp.blocksOffsets,
+		docsPositions:    dp.docsPositions,
+		idsToLids:        dp.idsToLids,
+		docsReader:       dp.docsReader,
+		skipMaskProvider: dp.skipMaskProvider,
+		fracName:         dp.info.Name(),
 	}}
 
 	for _, fi := range indexes {
@@ -124,7 +124,7 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	indexes := []activeSearchIndex{{
 		activeIDsIndex:   dp.getIDsIndex(),
 		activeTokenIndex: dp.getTokenIndex(),
-		filterManager:    dp.filterManager,
+		skipMaskProvider: dp.skipMaskProvider,
 		fracName:         dp.info.Name(),
 	}}
 	m.Stop()
@@ -187,15 +187,15 @@ func (p *activeIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 type activeSearchIndex struct {
 	*activeIDsIndex
 	*activeTokenIndex
-	filterManager FilterManager
-	fracName      string
+	skipMaskProvider skipMaskProvider
+	fracName         string
 }
 
-func (si *activeSearchIndex) GetHideFlags(minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
+func (si *activeSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
 	// active fraction doesn't meet min and max lid
 	minLID, maxLID = uint32(0), uint32(math.MaxUint32)
 
-	iterator, has, err := si.filterManager.GetHideFlagIteratorByFrac(si.fracName, minLID, maxLID, reverse)
+	iterator, has, err := si.skipMaskProvider.GetIDsIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 	if err != nil {
 		return nil, false, err
 	}
@@ -259,12 +259,12 @@ func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint
 }
 
 type activeFetchIndex struct {
-	blocksOffsets []uint64
-	docsPositions *DocsPositions
-	idsToLids     *ActiveLIDs
-	docsReader    *storage.DocsReader
-	filterManager FilterManager
-	fracName      string
+	blocksOffsets    []uint64
+	docsPositions    *DocsPositions
+	idsToLids        *ActiveLIDs
+	docsReader       *storage.DocsReader
+	skipMaskProvider skipMaskProvider
+	fracName         string
 }
 
 func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
@@ -278,7 +278,7 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
 	}
 
 	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
-	hideFlagsIterator, has, err := di.filterManager.GetHideFlagIteratorByFrac(di.fracName, minLID, maxLID, false)
+	skipLIDsIterator, has, err := di.skipMaskProvider.GetIDsIteratorByFrac(di.fracName, minLID, maxLID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -294,17 +294,17 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
 		}
 	}
 
-	filteredLIDs := make(map[uint32]struct{})
+	skipLIDs := make(map[uint32]struct{})
 	for {
-		lid := hideFlagsIterator.Next()
+		lid := skipLIDsIterator.Next()
 		if lid.IsNull() {
 			break
 		}
-		filteredLIDs[lid.Unpack()] = struct{}{}
+		skipLIDs[lid.Unpack()] = struct{}{}
 	}
 
 	for i, lid := range allLids {
-		if _, ok := filteredLIDs[lid]; ok {
+		if _, ok := skipLIDs[lid]; ok {
 			docsPos[i] = seq.DocPosNotFound
 		}
 	}

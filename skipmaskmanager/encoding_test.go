@@ -1,4 +1,4 @@
-package filtermanager
+package skipmaskmanager
 
 import (
 	"testing"
@@ -9,28 +9,28 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
-func TestMarshalUnmarshalLIDsFilter(t *testing.T) {
-	test := func(df DocsFilterBinIn) {
+func TestMarshalUnmarshalSkipMask(t *testing.T) {
+	test := func(df SkipMaskBinIn) {
 		t.Helper()
 
-		rawDocsFilter := marshalDocsFilter(nil, &df)
-		var out DocsFilterBinOut
-		tail, err := unmarshalDocsFilter(&out, rawDocsFilter)
+		rawSkipMask := marshalSkipMask(nil, &df)
+		var out SkipMaskBinOut
+		tail, err := unmarshalSkipMask(&out, rawSkipMask)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(tail))
 		assert.Equal(t, lidsToUint32s(df.LIDs), out.LIDs)
 	}
 
-	test(DocsFilterBinIn{LIDs: []seq.LID{0, 1, 2, 3}})
-	test(DocsFilterBinIn{LIDs: []seq.LID{10, 15, 22, 18, 105, 1010}})
-	test(DocsFilterBinIn{LIDs: []seq.LID{11}})
+	test(SkipMaskBinIn{LIDs: []seq.LID{0, 1, 2, 3}})
+	test(SkipMaskBinIn{LIDs: []seq.LID{10, 15, 22, 18, 105, 1010}})
+	test(SkipMaskBinIn{LIDs: []seq.LID{11}})
 
 	multipleBlocksSize := maxLIDsBlockLen*3 + 15
 	multipleBlocksLIDs := make([]seq.LID, 0, multipleBlocksSize)
 	for i := range multipleBlocksSize {
 		multipleBlocksLIDs = append(multipleBlocksLIDs, seq.LID(i))
 	}
-	test(DocsFilterBinIn{LIDs: multipleBlocksLIDs})
+	test(SkipMaskBinIn{LIDs: multipleBlocksLIDs})
 }
 
 func lidsToUint32s(in []seq.LID) []uint32 {

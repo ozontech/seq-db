@@ -1,4 +1,4 @@
-package filtermanager
+package skipmaskmanager
 
 import (
 	"crypto/sha256"
@@ -10,47 +10,49 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
-type FilterStatus byte
+type SkipMaskStatus byte
 
 const (
-	StatusCreated FilterStatus = iota
+	StatusCreated SkipMaskStatus = iota
 	StatusInProgress
 	StatusDone
 	StatusError
 )
 
-type Params struct {
+type SkipMaskParams struct {
 	Query string
 	From  seq.MID
 	To    seq.MID
 }
 
-type Filter struct {
-	params Params
+type SkipMask struct {
+	params SkipMaskParams
 
-	status FilterStatus
+	status SkipMaskStatus
 
 	ast parser.SeqQLQuery
 
 	hash    string
 	dirPath string
 
+	mu        *sync.RWMutex
 	processWg *sync.WaitGroup
 }
 
-func NewFilter(params Params) *Filter {
-	return &Filter{
+func NewSkipMask(params SkipMaskParams) *SkipMask {
+	return &SkipMask{
 		params:    params,
 		status:    StatusCreated,
+		mu:        &sync.RWMutex{},
 		processWg: &sync.WaitGroup{},
 	}
 }
 
-func (f *Filter) String() string {
+func (f *SkipMask) String() string {
 	return fmt.Sprintf("%s_%d_%d", f.params.Query, f.params.From, f.params.To)
 }
 
-func (f *Filter) Hash() string {
+func (f *SkipMask) Hash() string {
 	if f.hash == "" {
 		h := sha256.New()
 		h.Write([]byte(f.String()))
@@ -60,6 +62,16 @@ func (f *Filter) Hash() string {
 	return f.hash
 }
 
-func (f *Filter) markAsDone() {
-	f.status = StatusDone
+func (f *SkipMask) setStatus(status SkipMaskStatus) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.status = status
+}
+
+func (f *SkipMask) getStatus() SkipMaskStatus {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	return f.status
 }

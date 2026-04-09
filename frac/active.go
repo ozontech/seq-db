@@ -61,7 +61,7 @@ type Active struct {
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
 
-	filterManager FilterManager
+	skipMaskProvider skipMaskProvider
 }
 
 const (
@@ -81,7 +81,7 @@ func NewActive(
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
 	cfg *Config,
-	filterManager FilterManager,
+	skipMaskProvider skipMaskProvider,
 ) *Active {
 	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
 
@@ -112,7 +112,7 @@ func NewActive(
 		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), metaSize),
 		Config:       cfg,
 
-		filterManager: filterManager,
+		skipMaskProvider: skipMaskProvider,
 	}
 
 	// use of 0 as keys in maps is prohibited – it's system key, so add first element
@@ -418,7 +418,7 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 		idsToLids:     f.IDsToLIDs,
 		docsReader:    &f.docsReader,
 
-		filterManager: f.filterManager,
+		skipMaskProvider: f.skipMaskProvider,
 	}
 }
 

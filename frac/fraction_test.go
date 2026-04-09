@@ -35,12 +35,12 @@ import (
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
-type testFilterManager struct{}
+type testSkipMaskProvider struct{}
 
-func (testFilterManager) GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
+func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
 	return node.NewStatic([]uint32{}, false), false, nil
 }
-func (testFilterManager) RemoveFrac(_ string) {}
+func (testSkipMaskProvider) RemoveFrac(_ string) {}
 
 type FractionTestSuite struct {
 	suite.Suite
@@ -2047,7 +2047,7 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
-		testFilterManager{},
+		testSkipMaskProvider{},
 	)
 
 	var wg sync.WaitGroup
@@ -2110,7 +2110,7 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 		indexCache,
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
-		testFilterManager{},
+		testSkipMaskProvider{},
 	)
 	active.Release()
 	return sealed
@@ -2188,7 +2188,7 @@ func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		&Config{},
-		testFilterManager{},
+		testSkipMaskProvider{},
 	)
 	err := replayedFrac.Replay(context.Background())
 	s.Require().NoError(err, "replay failed")
@@ -2301,7 +2301,7 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 		cache.NewCache[[]byte](nil, nil),
 		nil,
 		s.config,
-		testFilterManager{},
+		testSkipMaskProvider{},
 	)
 	s.fraction = sealed
 	return sealed
@@ -2371,7 +2371,7 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			sealed.info,
 			s.config,
 			s3cli,
-			testFilterManager{},
+			testSkipMaskProvider{},
 		)
 		s.fraction = remoteFrac
 	}

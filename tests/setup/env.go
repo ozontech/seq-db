@@ -22,7 +22,6 @@ import (
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/filtermanager"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
@@ -33,6 +32,7 @@ import (
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/skipmaskmanager"
 	seqs3 "github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/storeapi"
 	testscommon "github.com/ozontech/seq-db/tests/common"
@@ -49,7 +49,7 @@ type TestingEnvConfig struct {
 	HotModeEnabled    bool
 	QueryRateLimit    *float64
 	FracManagerConfig *fracmanager.Config
-	DocsFilters       []filtermanager.Params
+	SkipMaskParams    []skipmaskmanager.SkipMaskParams
 
 	Mapping        seq.Mapping
 	IndexAllFields bool
@@ -124,8 +124,8 @@ func (cfg *TestingEnvConfig) GetStoreConfig(replicaID string, cold bool) storeap
 				LogThreshold:          0,
 			},
 		},
-		Filters: filtermanager.Config{
-			DataDir: filepath.Join(cfg.DataDir, replicaID, "filters"),
+		SkipMaskManagerConfig: skipmaskmanager.Config{
+			DataDir: filepath.Join(cfg.DataDir, replicaID, "skipmasks"),
 		},
 	}
 }
@@ -280,7 +280,7 @@ func (cfg *TestingEnvConfig) MakeStores(
 			logger.Fatal("can't create mapping", zap.Error(err))
 		}
 
-		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider, cfg.DocsFilters)
+		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider, cfg.SkipMaskParams)
 		if err != nil {
 			panic(err)
 		}

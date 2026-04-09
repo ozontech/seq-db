@@ -88,9 +88,9 @@ func evalLeaf(
 	return node.BuildORTree(lidsTids), nil
 }
 
-func evalHideFlags(root, hideFlagsIterator node.Node, stats *searchStats) node.Node {
+func evalSkipLIDs(root, skipLIDsIterator node.Node, stats *searchStats) node.Node {
 	stats.NodesTotal++
-	return node.NewNAnd(hideFlagsIterator, root)
+	return node.NewNAnd(skipLIDsIterator, root)
 }
 
 type Aggregator interface {

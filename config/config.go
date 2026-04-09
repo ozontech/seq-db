@@ -277,13 +277,14 @@ type Config struct {
 	} `config:"tracing"`
 
 	// Additional filtering options
-	Filtering  Filter `config:"filtering"`
-	DocsFilter struct {
-		DataDir   string   `config:"data_dir"`
-		Workers   int      `config:"workers" default:"1"`
-		Filters   []Filter `config:"filters"`
-		CacheSize Bytes    `config:"cache_size" default:"100MiB"`
-	} `config:"docs_filter"`
+	Filtering SkipMaskParams `config:"filtering"`
+
+	SkipMaskManager struct {
+		DataDir   string           `config:"data_dir"`
+		Workers   int              `config:"workers" default:"1"`
+		SkipMasks []SkipMaskParams `config:"skip_masks"`
+		CacheSize Bytes            `config:"cache_size" default:"100MiB"`
+	} `config:"skip_mask_manager"`
 
 	// Experimental provides flags
 	// For configuring experimental features.
@@ -295,7 +296,7 @@ type Config struct {
 	} `config:"experimental"`
 }
 
-type Filter struct {
+type SkipMaskParams struct {
 	Query string    `config:"query"`
 	From  time.Time `config:"from"`
 	To    time.Time `config:"to"`

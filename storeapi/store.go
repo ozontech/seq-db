@@ -9,10 +9,10 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/filtermanager"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/skipmaskmanager"
 	"github.com/ozontech/seq-db/storage/s3"
 )
 
@@ -30,15 +30,15 @@ type Store struct {
 	FracManager     *fracmanager.FracManager
 	fracManagerStop func()
 
-	filterManagerStop func()
+	SkipMaskManager *skipmaskmanager.SkipMaskManager
 
 	isStopped atomic.Bool
 }
 
 type StoreConfig struct {
-	API         APIConfig
-	FracManager fracmanager.Config
-	Filters     filtermanager.Config
+	API                   APIConfig
+	FracManager           fracmanager.Config
+	SkipMaskManagerConfig skipmaskmanager.Config
 }
 
 func (c *StoreConfig) setDefaults() error {
@@ -48,8 +48,8 @@ func (c *StoreConfig) setDefaults() error {
 	if c.API.Search.Async.DataDir == "" {
 		c.API.Search.Async.DataDir = path.Join(c.FracManager.DataDir, "async_searches")
 	}
-	if c.Filters.DataDir == "" {
-		c.Filters.DataDir = path.Join(c.FracManager.DataDir, "filters")
+	if c.SkipMaskManagerConfig.DataDir == "" {
+		c.SkipMaskManagerConfig.DataDir = path.Join(c.FracManager.DataDir, "skipmasks")
 	}
 	return nil
 }
@@ -59,30 +59,30 @@ func NewStore(
 	c StoreConfig,
 	s3cli *s3.Client,
 	mappingProvider MappingProvider,
-	docFilterParams []filtermanager.Params,
+	skipMaskParams []skipmaskmanager.SkipMaskParams,
 ) (*Store, error) {
 	if err := c.setDefaults(); err != nil {
 		return nil, err
 	}
 
-	filterManager := filtermanager.New(ctx, c.Filters, docFilterParams, mappingProvider)
+	skipMaskManager := skipmaskmanager.New(ctx, c.SkipMaskManagerConfig, skipMaskParams, mappingProvider)
 
-	fracManager, stop, err := fracmanager.New(ctx, &c.FracManager, s3cli, filterManager)
+	fracManager, stop, err := fracmanager.New(ctx, &c.FracManager, s3cli, skipMaskManager)
 	if err != nil {
 		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
 
-	filterManager.Start(fracManager.Fractions())
+	skipMaskManager.Start(fracManager.Fractions())
 
 	return &Store{
 		Config: c,
 		// We will set grpcAddr later in Start()
-		grpcAddr:          "",
-		grpcServer:        newGRPCServer(c.API, fracManager, mappingProvider),
-		FracManager:       fracManager,
-		fracManagerStop:   stop,
-		filterManagerStop: filterManager.Stop,
-		isStopped:         atomic.Bool{},
+		grpcAddr:        "",
+		grpcServer:      newGRPCServer(c.API, fracManager, mappingProvider),
+		FracManager:     fracManager,
+		fracManagerStop: stop,
+		SkipMaskManager: skipMaskManager,
+		isStopped:       atomic.Bool{},
 	}, nil
 }
 
@@ -106,7 +106,7 @@ func (s *Store) Stop() {
 
 	s.grpcServer.Stop(ctx)
 	s.fracManagerStop()
-	s.filterManagerStop()
+	s.SkipMaskManager.Stop()
 
 	logger.Info("store stopped")
 }

@@ -27,11 +27,11 @@ import (
 
 	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/filtermanager"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/skipmaskmanager"
 	"github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tests/setup"
 	"github.com/ozontech/seq-db/tests/suites"
@@ -1753,7 +1753,7 @@ func (s *IntegrationTestSuite) TestPaginationWithOffsetId() {
 	}
 }
 
-func (s *IntegrationTestSuite) TestFilterManager() {
+func (s *IntegrationTestSuite) TestSkipMaskManager() {
 	t := s.T()
 	r := require.New(t)
 
@@ -1781,18 +1781,31 @@ func (s *IntegrationTestSuite) TestFilterManager() {
 	env.WaitIdle()
 	env.StopAll()
 
-	cfg.DocsFilters = []filtermanager.Params{
+	cfg.SkipMaskParams = []skipmaskmanager.SkipMaskParams{
 		{
 			Query: "service:hidden",
 			From:  0,
-			To:    seq.MID(time.Now().UnixNano()),
+			To:    seq.TimeToMID(time.Now()),
 		},
 	}
 	env = setup.NewTestingEnv(&cfg)
 	defer env.StopAll()
 
-	// we don't have a convenient way to wait for doc filters processing, so just wait enough time for now
-	time.Sleep(1 * time.Second)
+	var checkSkipMasksStatus = func(stores setup.Stores) bool {
+		for _, ss := range stores {
+			for _, s := range ss {
+				if !s.SkipMaskManager.IsDone() {
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	// wait for skip masks processing
+	r.Eventually(func() bool {
+		return checkSkipMasksStatus(env.HotStores) && checkSkipMasksStatus(env.ColdStores)
+	}, 5*time.Second, 100*time.Millisecond)
 
 	// test search
 
@@ -1817,7 +1830,11 @@ func (s *IntegrationTestSuite) TestFilterManager() {
 
 	env.WaitIdle()
 	env.SealAll()
-	time.Sleep(1 * time.Second)
+
+	// wait for skip masks processing
+	r.Eventually(func() bool {
+		return checkSkipMasksStatus(env.HotStores) && checkSkipMasksStatus(env.ColdStores)
+	}, 5*time.Second, 100*time.Millisecond)
 
 	qpr, _, _, err = env.Search(`service:hidden`, 10, setup.WithTotal(true))
 	r.NoError(err)
