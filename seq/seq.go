@@ -11,9 +11,13 @@ import (
 )
 
 var (
-	SystemMID    MID    = math.MaxUint64
-	SystemRID    RID    = math.MaxUint64
-	SystemID     ID     = ID{SystemMID, SystemRID}
+	SystemMID MID = math.MaxUint64
+	SystemRID RID = math.MaxUint64
+
+	SystemID ID = ID{SystemMID, SystemRID}
+	MinID    ID = ID{0, 0}
+	MaxID    ID = SystemID
+
 	SystemDocPos DocPos = DocPos(0)
 )
 
