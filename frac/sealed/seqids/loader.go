@@ -13,7 +13,6 @@ import (
 
 type Table struct {
 	MinBlockIDs     []seq.ID // from max to min
-	IDBlocksTotal   uint32
 	IDsTotal        uint32
 	StartBlockIndex uint32
 }

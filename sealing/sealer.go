@@ -110,8 +110,7 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 
 	util.MustSyncPath(filepath.Dir(info.Path))
 
-	// Compute total index size as sum of all 5 files.
-	var totalSize uint64
+	info.IndexOnDisk = 0
 	for _, suffix := range []string{
 		consts.InfoFileSuffix,
 		consts.TokenFileSuffix,
@@ -123,18 +122,16 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 		if err != nil {
 			return nil, err
 		}
-		totalSize += uint64(st.Size())
+		info.IndexOnDisk += uint64(st.Size())
 	}
 
-	info.IndexOnDisk = totalSize
 	lidsTable := sealer.LIDsTable()
-
 	preloaded := &sealed.PreloadedData{
 		Info:       info,
 		TokenTable: sealer.TokenTable(),
 		BlocksData: sealed.BlocksData{
-			IDsTable:      sealer.IDsTable(),
 			LIDsTable:     &lidsTable,
+			IDsTable:      sealer.IDsTable(),
 			BlocksOffsets: src.BlockOffsets(),
 		},
 	}

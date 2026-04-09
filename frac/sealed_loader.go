@@ -36,7 +36,7 @@ func (l *LegacyLoader) Load(blocksData *sealed.BlocksData, info *common.Info, re
 	l.skipSection() // skip token table blocks
 
 	var err error
-	blocksData.IDsTable, blocksData.BlocksOffsets, err = l.loadIDs(info.BinaryDataVer)
+	blocksData.IDsTable, blocksData.BlocksOffsets, err = l.loadIDs(info)
 	if err != nil {
 		logger.Fatal("legacy load ids error", zap.Error(err))
 	}
@@ -77,7 +77,7 @@ func (l *LegacyLoader) skipSection() {
 }
 
 // loadIDs reads the BlockOffsets block and then scans MID/RID/Pos triplets.
-func (l *LegacyLoader) loadIDs(fracVersion config.BinaryDataVersion) (seqids.Table, []uint64, error) {
+func (l *LegacyLoader) loadIDs(info *common.Info) (seqids.Table, []uint64, error) {
 	var buf []byte
 
 	data, _, err := l.reader.ReadIndexBlock(l.blockIndex, buf)
@@ -94,9 +94,8 @@ func (l *LegacyLoader) loadIDs(fracVersion config.BinaryDataVersion) (seqids.Tab
 	l.blockIndex++
 
 	table := seqids.Table{
-		StartBlockIndex: l.blockIndex, // absolute index of first MID block in .index
-		IDsTotal:        offsets.IDsTotal,
-		IDBlocksTotal:   uint32(len(offsets.Offsets)),
+		StartBlockIndex: l.blockIndex,       // absolute index of first MID block in .index
+		IDsTotal:        info.DocsTotal + 1, // increment by one for [seq.SystemID]
 	}
 
 	for {
@@ -111,7 +110,7 @@ func (l *LegacyLoader) loadIDs(fracVersion config.BinaryDataVersion) (seqids.Tab
 		}
 
 		mid := seq.MID(h.GetExt1())
-		if fracVersion < config.BinaryDataV2 {
+		if info.BinaryDataVer < config.BinaryDataV2 {
 			mid = seq.MillisToMID(h.GetExt1())
 		}
 
@@ -187,7 +186,7 @@ func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, readers 
 	}
 
 	blocksData.BlocksOffsets = blockOffsets.Offsets
-	blocksData.IDsTable = l.loadIDsTable(readers.ID, blockOffsets.IDsTotal, info.BinaryDataVer)
+	blocksData.IDsTable = l.loadIDsTable(readers.ID, info)
 
 	blocksData.LIDsTable, err = l.loadLIDsTable(readers.LID)
 	if err != nil {
@@ -228,10 +227,10 @@ func (l *Loader) loadBlocksOffsets(r storage.IndexReader) (sealed.BlockOffsets, 
 
 // loadIDsTable scans block headers in the .id file to build seqids.Table.
 // Blocks are stored as (MIDs, RIDs, Pos) triplets; we only need MIDs headers.
-func (l *Loader) loadIDsTable(r storage.IndexReader, idsTotal uint32, fracVersion config.BinaryDataVersion) seqids.Table {
+func (l *Loader) loadIDsTable(r storage.IndexReader, info *common.Info) seqids.Table {
 	table := seqids.Table{
 		StartBlockIndex: 0,
-		IDsTotal:        idsTotal,
+		IDsTotal:        info.DocsTotal + 1, // increment by one for [seq.SystemID]
 	}
 
 	for blockIdx := uint32(0); ; {
@@ -244,7 +243,7 @@ func (l *Loader) loadIDsTable(r storage.IndexReader, idsTotal uint32, fracVersio
 		}
 
 		var mid seq.MID
-		if fracVersion < config.BinaryDataV2 {
+		if info.BinaryDataVer < config.BinaryDataV2 {
 			mid = seq.MillisToMID(header.GetExt1())
 		} else {
 			mid = seq.MID(header.GetExt1())
@@ -255,7 +254,6 @@ func (l *Loader) loadIDsTable(r storage.IndexReader, idsTotal uint32, fracVersio
 			RID: seq.RID(header.GetExt2()),
 		})
 
-		table.IDBlocksTotal++
 		blockIdx += 3 // skip RIDs and Pos blocks
 	}
 
