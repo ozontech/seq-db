@@ -301,7 +301,7 @@ func (f *Sealed) Suicide() {
 		)
 	}
 
-	go f.filterManager.RemoveFrac(f.info.Name())
+	f.filterManager.RemoveFrac(f.info.Name())
 }
 
 func (f *Sealed) String() string {

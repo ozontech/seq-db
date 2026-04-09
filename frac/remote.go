@@ -208,7 +208,7 @@ func (f *Remote) Suicide() {
 		)
 	}
 
-	go f.filterManager.RemoveFrac(f.info.Name())
+	f.filterManager.RemoveFrac(f.info.Name())
 }
 
 func (f *Remote) String() string {

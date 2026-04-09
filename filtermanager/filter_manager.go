@@ -2,6 +2,7 @@ package filtermanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"math"
@@ -50,7 +51,8 @@ type Config struct {
 }
 
 type FilterManager struct {
-	ctx context.Context
+	ctx       context.Context
+	ctxCancel context.CancelFunc
 
 	config  Config
 	filters map[string]*Filter
@@ -62,9 +64,8 @@ type FilterManager struct {
 
 	rateLimit chan struct{}
 
-	maintenanceWG       *sync.WaitGroup
+	bgWG                *sync.WaitGroup
 	maintenanceInterval time.Duration
-	maintenanceStop     context.CancelFunc
 
 	cacheCleanInterval time.Duration
 	cacheGCDelay       time.Duration
@@ -79,6 +80,8 @@ func New(
 	params []Params,
 	mp MappingProvider,
 ) *FilterManager {
+	fmCtx, ctxCancel := context.WithCancel(ctx)
+
 	workers := cfg.Workers
 	if workers <= 0 {
 		workers = runtime.GOMAXPROCS(0)
@@ -94,14 +97,15 @@ func New(
 	cacheCleaner := cache.NewCleaner(cfg.CacheSizeLimit, nil)
 
 	return &FilterManager{
-		ctx:                 ctx,
+		ctx:                 fmCtx,
+		ctxCancel:           ctxCancel,
 		config:              cfg,
 		filters:             filtersMap,
 		fracs:               make(map[string][]string),
 		fracsMu:             &sync.RWMutex{},
 		mp:                  mp,
 		rateLimit:           make(chan struct{}, workers),
-		maintenanceWG:       &sync.WaitGroup{},
+		bgWG:                &sync.WaitGroup{},
 		maintenanceInterval: defaultMaintenanceInterval,
 		cacheCleanInterval:  defaultCacheCleanInterval,
 		cacheGCDelay:        defaultCacheGCDelay,
@@ -110,28 +114,28 @@ func New(
 	}
 }
 
-func (fm *FilterManager) Start(ctx context.Context, fracs fracmanager.List) {
+func (fm *FilterManager) Start(fracs fracmanager.List) {
 	fm.createDataDir()
 
 	err := fm.loadFilters()
 	if err != nil {
-		logger.Fatal("failed to load previous docs filters", zap.Error(err))
+		logger.Fatal("failed to load previous doc filters", zap.Error(err))
 	}
 
 	err = fm.buildQueue(fracs)
 	if err != nil {
-		logger.Fatal("failed to build docs filters queue", zap.Error(err))
+		logger.Fatal("failed to build filter manager queue", zap.Error(err))
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	fm.maintenanceStop = cancel
-	fm.startMaintenance(ctx)
-
-	go fm.cacheCleanLoop()
+	fm.startMaintenance()
+	fm.cacheCleanLoop()
 
 	mapping := fm.mp.GetMapping()
 
+	fm.bgWG.Add(1)
 	go func() {
+		defer fm.bgWG.Done()
+
 		for _, f := range fm.filters {
 			ast, err := parser.ParseSeqQL(f.params.Query, mapping)
 			if err != nil {
@@ -139,14 +143,15 @@ func (fm *FilterManager) Start(ctx context.Context, fracs fracmanager.List) {
 			}
 			f.ast = ast
 
-			fm.processFilter(ctx, f, fracs.FilterInRange(f.params.From, f.params.To))
+			fm.processFilter(f, fracs.FilterInRange(f.params.From, f.params.To))
 		}
 	}()
 }
 
 func (fm *FilterManager) Stop() {
-	fm.maintenanceStop()
-	fm.maintenanceWG.Wait()
+	fm.ctxCancel()
+	fm.bgWG.Wait()
+	logger.Info("filter manager stopped")
 }
 
 func (fm *FilterManager) GetHideFlagIteratorByFrac(
@@ -190,43 +195,59 @@ func (fm *FilterManager) RefreshFrac(fraction frac.Fraction) {
 		return
 	}
 
-	for _, fileName := range fracsFiles {
-		fm.headersCache.Evict(hashFilePath(fileName))
-		util.RemoveFile(fileName)
+	fm.bgWG.Add(1)
+	go func() {
+		defer fm.bgWG.Done()
 
-		filter := fm.filters[filterNameFromPath(fileName)]
+		for _, fileName := range fracsFiles {
+			fm.headersCache.Evict(hashFilePath(fileName))
+			util.RemoveFile(fileName)
 
-		queueFilePath := path.Join(filter.dirPath, makeFileName(fraction.Info().Name(), fracInQueueExt))
-		util.MustWriteFileAtomic(queueFilePath, []byte{}, 0o666, tmpExt)
+			filter := fm.filters[filterNameFromPath(fileName)]
 
-		fm.rateLimit <- struct{}{}
-		go func() {
-			defer func() { <-fm.rateLimit }()
-			if err := fm.processFrac(fraction, filter); err != nil {
-				panic(fmt.Errorf("docs filter refresh frac err: %s", err))
+			queueFilePath := path.Join(filter.dirPath, makeFileName(fraction.Info().Name(), fracInQueueExt))
+			util.MustWriteFileAtomic(queueFilePath, []byte{}, 0o666, tmpExt)
+
+			select {
+			case <-fm.ctx.Done():
+				// do not return because we have to create a .queue file for each of frac files to handle it on startup
+				continue
+			case fm.rateLimit <- struct{}{}:
+				go func() {
+					defer func() { <-fm.rateLimit }()
+					if err := fm.processFrac(fraction, filter); err != nil {
+						if errors.Is(err, context.Canceled) {
+							logger.Info("filter manager refresh frac context cancelled")
+							return
+						}
+						panic(fmt.Errorf("filter manager refresh frac err: %s", err))
+					}
+				}()
 			}
-		}()
-	}
+		}
+	}()
 }
 
 // RemoveFrac removes fraction's filter files. Used after frac is deleted
 func (fm *FilterManager) RemoveFrac(fracName string) {
-	fm.fracsMu.RLock()
-	fracsFiles, has := fm.fracs[fracName]
-	fm.fracsMu.RUnlock()
+	fm.bgWG.Go(func() {
+		fm.fracsMu.RLock()
+		fracsFiles, has := fm.fracs[fracName]
+		fm.fracsMu.RUnlock()
 
-	if !has {
-		return
-	}
+		if !has {
+			return
+		}
 
-	fm.fracsMu.Lock()
-	delete(fm.fracs, fracName)
-	fm.fracsMu.Unlock()
+		fm.fracsMu.Lock()
+		delete(fm.fracs, fracName)
+		fm.fracsMu.Unlock()
 
-	for _, fileName := range fracsFiles {
-		fm.headersCache.Evict(hashFilePath(fileName))
-		util.RemoveFile(fileName)
-	}
+		for _, fileName := range fracsFiles {
+			fm.headersCache.Evict(hashFilePath(fileName))
+			util.RemoveFile(fileName)
+		}
+	})
 }
 
 func filterNameFromPath(p string) string {
@@ -331,7 +352,7 @@ func (fm *FilterManager) buildQueue(fracs fracmanager.List) error {
 }
 
 // processFilter finds docs and writes to fs
-func (fm *FilterManager) processFilter(ctx context.Context, filter *Filter, fracs fracmanager.List) {
+func (fm *FilterManager) processFilter(filter *Filter, fracs fracmanager.List) {
 	if len(fracs) == 0 {
 		return
 	}
@@ -355,15 +376,21 @@ func (fm *FilterManager) processFilter(ctx context.Context, filter *Filter, frac
 		}
 
 		select {
-		case <-ctx.Done():
+		case <-fm.ctx.Done():
 			return nil
 		case fm.rateLimit <- struct{}{}:
-			filter.processWg.Go(func() {
+			filter.processWg.Add(1)
+			go func() {
+				defer filter.processWg.Done()
 				defer func() { <-fm.rateLimit }()
 				if err := fm.processFrac(f, filter); err != nil {
-					panic(fmt.Errorf("docs filter process frac err: %s", err))
+					if errors.Is(err, context.Canceled) {
+						logger.Info("filter manager refresh frac context cancelled")
+						return
+					}
+					panic(fmt.Errorf("filter manager process frac err: %s", err))
 				}
-			})
+			}()
 		}
 		return nil
 	}
@@ -415,33 +442,33 @@ func (fm *FilterManager) processFrac(f frac.Fraction, filter *Filter) error {
 	return nil
 }
 
-func (fm *FilterManager) startMaintenance(ctx context.Context) {
-	fm.maintenanceWG.Go(func() {
-		logger.Info("start docs filter maintenance")
-		util.RunEvery(ctx.Done(), fm.maintenanceInterval, func() {
-			logger.Info("docs filter maintenance iteration")
+func (fm *FilterManager) startMaintenance() {
+	fm.bgWG.Go(func() {
+		logger.Info("start filter manager maintenance")
+		util.RunEvery(fm.ctx.Done(), fm.maintenanceInterval, func() {
+			logger.Info("filter manager maintenance iteration")
 			fm.checkDiskUsage()
 		})
 	})
 }
 
 func (fm *FilterManager) cacheCleanLoop() {
-	runs := 0
-	gcRunsCount := int(fm.cacheGCDelay / fm.cacheCleanInterval)
+	fm.bgWG.Go(func() {
+		runs := 0
+		gcRunsCount := int(fm.cacheGCDelay / fm.cacheCleanInterval)
 
-	for {
-		runs++
-		fm.headersCacheCleaner.Cleanup(&cache.CleanStat{})
-		fm.headersCacheCleaner.Rotate()
+		util.RunEvery(fm.ctx.Done(), fm.cacheCleanInterval, func() {
+			runs++
+			fm.headersCacheCleaner.Cleanup(&cache.CleanStat{})
+			fm.headersCacheCleaner.Rotate()
 
-		if runs >= gcRunsCount {
-			runs = 0
-			fm.headersCacheCleaner.CleanEmptyGenerations()
-			fm.headersCacheCleaner.ReleaseBuckets()
-		}
-
-		time.Sleep(fm.cacheCleanInterval)
-	}
+			if runs >= gcRunsCount {
+				runs = 0
+				fm.headersCacheCleaner.CleanEmptyGenerations()
+				fm.headersCacheCleaner.ReleaseBuckets()
+			}
+		})
+	})
 }
 
 func (fm *FilterManager) checkDiskUsage() {
@@ -450,7 +477,7 @@ func (fm *FilterManager) checkDiskUsage() {
 	for _, f := range fm.filters {
 		des, err := os.ReadDir(f.dirPath)
 		if err != nil {
-			logger.Error("docs filter: can't read filter's dir",
+			logger.Error("filter manager: can't read filter's dir",
 				zap.String("filter", f.String()), zap.Error(err))
 			return
 		}
@@ -461,7 +488,7 @@ func (fm *FilterManager) checkDiskUsage() {
 			}
 			info, err := fde.Info()
 			if err != nil {
-				logger.Error("docs filter: can't read filter file info",
+				logger.Error("filter manager: can't read filter file info",
 					zap.String("filter", f.String()), zap.Error(err))
 				return
 			}

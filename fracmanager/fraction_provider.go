@@ -132,7 +132,7 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 	}
 
 	sealedFrac := fp.NewSealedPreloaded(active.BaseFileName, preloaded)
-	go fp.filterManager.RefreshFrac(sealedFrac)
+	fp.filterManager.RefreshFrac(sealedFrac)
 	return sealedFrac, nil
 }
 
