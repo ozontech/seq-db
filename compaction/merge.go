@@ -2,17 +2,15 @@ package compaction
 
 import (
 	"errors"
-	"fmt"
 	"os"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/indexwriter"
 )
 
-func Merge(filename string, srcs ...Source) error {
-	mergeDocs(filename, srcs...)
-
+func Merge(filename string, srcs ...Source) (*sealed.PreloadedData, error) {
 	src := NewMergeSource(filename, srcs)
 
 	// FIXME(dkharms): [common.SealParams] must be passed into [Merge] function.
@@ -31,7 +29,7 @@ func Merge(filename string, srcs ...Source) error {
 		filename+consts.OffsetsFileSuffix,
 		func(f *os.File) error { return writer.WriteOffsetsFile(f, src) },
 	); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := createAndWrite(
@@ -39,7 +37,7 @@ func Merge(filename string, srcs ...Source) error {
 		filename+consts.IDFileSuffix,
 		func(f *os.File) error { return writer.WriteIDFile(f, src) },
 	); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := createAndWriteBoth(
@@ -49,7 +47,7 @@ func Merge(filename string, srcs ...Source) error {
 		filename+consts.LIDFileSuffix,
 		func(tf, lf *os.File) error { return writer.WriteTokenTriplet(tf, lf, src) },
 	); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := createAndWrite(
@@ -57,10 +55,42 @@ func Merge(filename string, srcs ...Source) error {
 		filename+consts.InfoFileSuffix,
 		func(f *os.File) error { return writer.WriteInfoFile(f, src) },
 	); err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	if err := mergeDocs(filename, srcs...); err != nil {
+		return nil, err
+	}
+
+	info := src.Info()
+	info.IndexOnDisk = 0
+
+	for _, suffix := range []string{
+		consts.InfoFileSuffix,
+		consts.TokenFileSuffix,
+		consts.OffsetsFileSuffix,
+		consts.IDFileSuffix,
+		consts.LIDFileSuffix,
+	} {
+		st, err := os.Stat(info.Path + suffix)
+		if err != nil {
+			return nil, err
+		}
+		info.IndexOnDisk += uint64(st.Size())
+	}
+
+	lidsTable := writer.LIDsTable()
+	preloaded := &sealed.PreloadedData{
+		Info:       info,
+		TokenTable: writer.TokenTable(),
+		BlocksData: sealed.BlocksData{
+			LIDsTable:     &lidsTable,
+			IDsTable:      writer.IDsTable(),
+			BlocksOffsets: src.BlockOffsets(),
+		},
+	}
+
+	return preloaded, nil
 }
 
 func syncAndClose(f *os.File) error {

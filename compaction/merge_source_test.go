@@ -1,6 +1,7 @@
 package compaction
 
 import (
+	"cmp"
 	"iter"
 	"slices"
 	"testing"
@@ -31,8 +32,17 @@ type mockSealingSource struct {
 
 func (m *mockSealingSource) Info() *common.Info {
 	return &common.Info{
+		DocsRaw:    m.docsOnDisk,
 		DocsTotal:  uint32(len(m.ids)),
 		DocsOnDisk: m.docsOnDisk,
+
+		From: slices.MinFunc(m.ids, func(x, y seq.ID) int {
+			return cmp.Compare(x.MID, y.MID)
+		}).MID,
+
+		To: slices.MaxFunc(m.ids, func(x, y seq.ID) int {
+			return cmp.Compare(x.MID, y.MID)
+		}).MID,
 	}
 }
 
@@ -142,13 +152,13 @@ func TestMergeSource(t *testing.T) {
 
 	source := NewMergeSource("inmemory", []Source{first, second})
 
-	{
+	t.Run("offsets", func(t *testing.T) {
 		// Validate correctness of [storage.DocBlock] calculation.
 		offsets := source.BlockOffsets()
 		require.Equal(t, []uint64{0, 1024}, offsets)
-	}
+	})
 
-	{
+	t.Run("ids", func(t *testing.T) {
 		var (
 			ids    []seq.ID
 			docpos []seq.DocPos
@@ -183,9 +193,9 @@ func TestMergeSource(t *testing.T) {
 			},
 			docpos,
 		)
-	}
+	})
 
-	{
+	t.Run("tokens-lids", func(t *testing.T) {
 		var (
 			fields []string
 			tokens [][]byte
@@ -226,5 +236,19 @@ func TestMergeSource(t *testing.T) {
 			},
 			lids,
 		)
-	}
+	})
+
+	t.Run("info", func(t *testing.T) {
+		merged := source.Info()
+		finfo, sinfo := first.Info(), second.Info()
+
+		// Validate correctness of fraction time-range.
+		require.Equal(t, merged.From, min(finfo.From, sinfo.From))
+		require.Equal(t, merged.To, max(finfo.To, sinfo.To))
+
+		// Validate correctness of total documents of merged fractions.
+		require.Equal(t, merged.DocsTotal, finfo.DocsTotal+sinfo.DocsTotal)
+		require.Equal(t, merged.DocsOnDisk, finfo.DocsOnDisk+sinfo.DocsOnDisk)
+		require.Equal(t, merged.DocsRaw, finfo.DocsRaw+sinfo.DocsRaw)
+	})
 }

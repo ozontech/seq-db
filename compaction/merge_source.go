@@ -3,6 +3,7 @@ package compaction
 import (
 	"cmp"
 	"iter"
+	"math"
 	"slices"
 	"strings"
 
@@ -18,6 +19,7 @@ type Source interface {
 
 type MergeSource struct {
 	filename string
+	info     *common.Info
 
 	// sources is a slice of [sealing.Source]
 	// which provide view into underlying fractions.
@@ -33,6 +35,8 @@ type MergeSource struct {
 	// i-th index of lidmapping correponds to i-th fraction.
 	// j-th index of i-th lidmapping corresponds to rename of i-th lid.
 	lidmapping [][]uint32
+
+	from, to seq.MID
 }
 
 func NewMergeSource(filename string, sources []Source) *MergeSource {
@@ -40,23 +44,36 @@ func NewMergeSource(filename string, sources []Source) *MergeSource {
 	for i, src := range sources {
 		lidmapping[i] = make([]uint32, src.Info().DocsTotal+1)
 	}
-	return &MergeSource{sources: sources, lidmapping: lidmapping}
+
+	info := common.NewInfo(filename, 0, 0)
+	info.SealingTime = info.CreationTime
+
+	return &MergeSource{
+		info:     info,
+		filename: filename,
+
+		sources:    sources,
+		lidmapping: lidmapping,
+
+		from: math.MaxUint64, to: 0,
+	}
 }
 
-// FIXME(dkharms): now this is just a placeholder.
-// And info can be caculated after all merges.
 func (s *MergeSource) Info() *common.Info {
-	var (
-		docsOnDisk  uint64
-		indexOnDisk uint64
-	)
-
 	for i := range s.sources {
-		docsOnDisk += s.sources[i].Info().DocsOnDisk
-		indexOnDisk += s.sources[i].Info().IndexOnDisk
+		sinfo := s.sources[i].Info()
+
+		s.info.DocsRaw += sinfo.DocsRaw
+		s.info.DocsTotal += sinfo.DocsTotal
+		s.info.DocsOnDisk += sinfo.DocsOnDisk
+
+		// NOTE(dkharms): [IndexOnDisk] is calculated later.
 	}
 
-	return common.NewInfo(s.filename, docsOnDisk, 0)
+	s.info.From = s.from
+	s.info.To = s.to
+
+	return s.info
 }
 
 func (s *MergeSource) BlockOffsets() []uint64 {
@@ -82,7 +99,7 @@ func (s *MergeSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
 	//
 	// Its time complexity O(k*n) so it's not efficient enough if we compare it
 	// against time complexity of min-heap (which is O(n*log(k)))
-	// or another great data structure -- tournament tree -- which is O(n * log(k)) as well.
+	// or another great data structure -- tournament tree -- which is O(n*log(k)) as well.
 	//
 	// However, tournament tree performs less comparisons than min-heap
 	// and it is around log(k) vs 2*log(k).
@@ -110,6 +127,9 @@ func (s *MergeSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
 			ids = append(ids, entry{id, docpos, i, lid})
 
 			lid += 1
+
+			s.from = min(s.from, id.MID)
+			s.to = max(s.to, id.MID)
 		}
 	}
 
