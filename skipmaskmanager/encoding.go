@@ -12,10 +12,15 @@ import (
 	"github.com/ozontech/seq-db/zstd"
 )
 
+// SkipMaskBinIn is the input structure for serializing a skip mask.
+// It contains a slice of Local IDs (LIDs) that correspond to documents
+// matching the skip mask query criteria.
 type SkipMaskBinIn struct {
 	LIDs []seq.LID
 }
 
+// SkipMaskBinOut is the output structure for deserialized skip mask data.
+// After unmarshaling, LIDs are converted to uint32 array.
 type SkipMaskBinOut struct {
 	LIDs []uint32
 }
@@ -30,22 +35,28 @@ var availableVersions = map[skipMaskBinVersion]struct{}{
 	skipMaskBinVersion1: {},
 }
 
+// lidsCodec represents the compression codec used for LIDs block encoding.
 type lidsCodec byte
 
 const (
-	lidsCodecDelta     = 1
-	lidsCodecDeltaZstd = 2
+	lidsCodecDelta     = 1 // Delta-encoded varints without compression
+	lidsCodecDeltaZstd = 2 // Delta-encoded varints with zstd compression
 )
 
+// lidsBlockHeader contains metadata for a block of LIDs.
+// Each block stores a subset of LIDs (up to maxLIDsBlockLen) along with
+// information needed to decode and locate the block data.
 type lidsBlockHeader struct {
-	Codec  lidsCodec
-	Length uint32 // Number of LIDs in block
-	MinLID uint32
-	MaxLID uint32
-	Size   uint32 // Size of ids block in bytes.
-	Offset uint64 // block's offset in file
+	Codec  lidsCodec // Compression codec used for this block (delta or delta+zstd)
+	Length uint32    // Number of LIDs in this block
+	MinLID uint32    // Minimum LID value in the block
+	MaxLID uint32    // Maximum LID value in the block
+	Size   uint32    // Size of the compressed block data in bytes
+	Offset uint64    // Offset of the block data in the file
 }
 
+// marshal serializes the block header into the provided byte slice.
+// The format is: Codec (1 byte) + Length (4 bytes) + MinLID (4 bytes) + MaxLID (4 bytes) + Size (4 bytes) + Offset (8 bytes) = 25 bytes.
 func (h *lidsBlockHeader) marshal(dst []byte) {
 	if len(dst) < int(lidsBlockHeaderSizeBytes) {
 		panic("BUG: marshal lidsBlockHeader: len(dst) is less than header size")
@@ -65,6 +76,8 @@ func (h *lidsBlockHeader) marshal(dst []byte) {
 	dst = dst[sizeOfUint64:]
 }
 
+// unmarshal deserializes a block header from the provided byte slice.
+// Returns the remaining unconsumed bytes and any error encountered.
 func (h *lidsBlockHeader) unmarshal(src []byte) ([]byte, error) {
 	if len(src) < int(lidsBlockHeaderSizeBytes) {
 		return src, errors.New("too few bytes")
@@ -86,6 +99,8 @@ func (h *lidsBlockHeader) unmarshal(src []byte) ([]byte, error) {
 	return src, nil
 }
 
+// marshalSkipMask serializes a skip mask into binary format.
+// Returns the serialized data with the version byte prepended.
 func marshalSkipMask(dst []byte, in *SkipMaskBinIn) []byte {
 	dst = append(dst, uint8(skipMaskBinVersion1))
 	dst = marshalLIDsBlocks(dst, in.LIDs)
@@ -93,17 +108,22 @@ func marshalSkipMask(dst []byte, in *SkipMaskBinIn) []byte {
 }
 
 const (
-	sizeOfUint32 = unsafe.Sizeof(uint32(0))
-	sizeOfUint64 = unsafe.Sizeof(uint64(0))
+	sizeOfUint32 = unsafe.Sizeof(uint32(0)) // 4 bytes
+	sizeOfUint64 = unsafe.Sizeof(uint64(0)) // 8 bytes
 )
 
 const (
+	// lidsBlockHeaderSizeBytes is the size of a single block header in bytes: 1 (Codec) + 4*4 (Length, MinLID, MaxLID, Size) + 8 (Offset) = 25
 	lidsBlockHeaderSizeBytes = 1 + (4 * sizeOfUint32) + sizeOfUint64
-	maxLIDsBlockLen          = 1024
+	// maxLIDsBlockLen is the maximum number of LIDs stored in a single block
+	maxLIDsBlockLen = 1024
 )
 
 var lidsBlockBufPool util.BufferPool
 
+// marshalLIDsBlocks splits the input LIDs into blocks and serializes them.
+// Each block contains up to maxLIDsBlockLen LIDs. The output format is:
+// [number of blocks: 4 bytes] [block 1 header] [block 2 header] ... [block 1 data] [block 2 data] ...
 func marshalLIDsBlocks(dst []byte, in []seq.LID) []byte {
 	b := lidsBlockBufPool.Get()
 	defer lidsBlockBufPool.Put(b)
@@ -144,6 +164,10 @@ func marshalLIDsBlocks(dst []byte, in []seq.LID) []byte {
 	return dst
 }
 
+// marshalLIDsBlock encodes a slice of LIDs using delta compression.
+// It first computes delta-encoded varints, then attempts zstd compression.
+// If zstd provides at least 5% compression, it uses zstd; otherwise, it stores
+// the raw delta-encoded data. Returns the encoded data and the codec used.
 func marshalLIDsBlock(dst []byte, in []seq.LID) ([]byte, lidsCodec) {
 	b := lidsBlockBufPool.Get()
 	defer lidsBlockBufPool.Put(b)
@@ -170,6 +194,8 @@ func marshalLIDsBlock(dst []byte, in []seq.LID) ([]byte, lidsCodec) {
 
 const minSkipMaskBytesLen = 10 // 1 byte skipMaskBinVersion + 8 byte number of LIDs + N (min 1) bytes varint + delta encoded LIDs
 
+// unmarshalSkipMask deserializes a skip mask from binary format.
+// Validates the version and delegates to unmarshalLIDsBlocks for block processing.
 func unmarshalSkipMask(dst *SkipMaskBinOut, src []byte) (_ []byte, err error) {
 	if len(src) < minSkipMaskBytesLen {
 		return nil, fmt.Errorf("invalid skip mask format; want %d bytes, got %d", minSkipMaskBytesLen, len(src))
@@ -189,6 +215,9 @@ func unmarshalSkipMask(dst *SkipMaskBinOut, src []byte) (_ []byte, err error) {
 	return src, nil
 }
 
+// unmarshalLIDsBlocks reads all LIDs blocks from the source data.
+// First reads the number of blocks, then parses each block header,
+// and finally decodes each block's data.
 func unmarshalLIDsBlocks(dst []uint32, src []byte) ([]uint32, []byte, error) {
 	numberOfBlocks := binary.LittleEndian.Uint32(src)
 	src = src[sizeOfUint32:]
@@ -219,6 +248,8 @@ func unmarshalLIDsBlocks(dst []uint32, src []byte) ([]uint32, []byte, error) {
 	return dst, src, nil
 }
 
+// unmarshalLIDsBlock decodes a single LIDs block based on its header.
+// Handles both compressed (zstd) and uncompressed codec types.
 func unmarshalLIDsBlock(dst []uint32, src []byte, header lidsBlockHeader) ([]uint32, []byte, error) {
 	if len(src) == 0 {
 		return dst, src, fmt.Errorf("empty LIDs block")
@@ -274,6 +305,9 @@ func unmarshalLIDsDelta(dst []uint32, block []byte, header lidsBlockHeader) ([]u
 	return dst, nil
 }
 
+// getCompressLevel returns the appropriate zstd compression level based on data size.
+// Higher compression levels are used for larger data to achieve better ratios.
+// Returns: 1 for <=512 bytes, 2 for <=4KB, 3 for larger data.
 func getCompressLevel(size int) int {
 	level := 3
 	if size <= 512 {

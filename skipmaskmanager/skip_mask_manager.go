@@ -44,12 +44,24 @@ type MappingProvider interface {
 	GetMapping() seq.Mapping
 }
 
+// Config holds configuration parameters for SkipMaskManager.
 type Config struct {
-	DataDir        string
-	Workers        int
-	CacheSizeLimit uint64
+	DataDir        string // Directory to store skip mask files
+	Workers        int    // Number of concurrent workers for processing
+	CacheSizeLimit uint64 // Maximum size of the headers cache in bytes
 }
 
+// SkipMaskManager manages the lifecycle of skip masks across all fractions.
+// It processes skip mask queries, stores results to disk, and provides
+// iteration over matching document IDs.
+//
+// Skip masks are organized by query parameters (query string, from/to MID range).
+// Each skip mask maintains a directory containing files for each fraction:
+//   - .queue file: fraction is currently being processed
+//   - .skipmask file: processing complete, contains matching document LIDs
+//
+// The manager runs background maintenance tasks for disk usage monitoring
+// and cache cleanup.
 type SkipMaskManager struct {
 	ctx       context.Context
 	ctxCancel context.CancelFunc
@@ -74,6 +86,8 @@ type SkipMaskManager struct {
 	headersCacheCleaner *cache.Cleaner
 }
 
+// New creates a new SkipMaskManager with the given configuration.
+// If Workers is not set (0), it defaults to GOMAXPROCS.
 func New(
 	ctx context.Context,
 	cfg Config,
@@ -114,6 +128,15 @@ func New(
 	}
 }
 
+// Start initializes and starts the skip mask manager.
+// It performs the following steps:
+//   - Creates the data directory if it doesn't exist
+//   - Loads any existing skip masks from previous sessions
+//   - Builds the processing queue for all fractions
+//   - Starts background maintenance and cache cleanup loops
+//   - Begins asynchronous processing of all skip mask queries
+//
+// This method must be called before using the manager.
 func (smm *SkipMaskManager) Start(fracs fracmanager.List) {
 	smm.createDataDir()
 
@@ -148,12 +171,28 @@ func (smm *SkipMaskManager) Start(fracs fracmanager.List) {
 	}()
 }
 
+// Stop gracefully stops the skip mask manager.
+// It cancels the context, waits for all background goroutines to complete,
+// and logs a message when fully stopped.
 func (smm *SkipMaskManager) Stop() {
 	smm.ctxCancel()
 	smm.bgWG.Wait()
 	logger.Info("skip mask manager stopped")
 }
 
+// GetIDsIteratorByFrac returns an iterator over document IDs that match
+// the skip mask queries for a specific fraction, within the given LID range.
+//
+// Parameters:
+//   - fracName: the name of the fraction to query
+//   - minLID: minimum local ID (inclusive)
+//   - maxLID: maximum local ID (inclusive)
+//   - reverse: if true, iterates IDs in descending order
+//
+// Returns:
+//   - node.Node: iterator over matching document IDs
+//   - bool: true if the fraction has any skip mask files, false otherwise
+//   - error: any error encountered while opening the skip mask files
 func (smm *SkipMaskManager) GetIDsIteratorByFrac(
 	fracName string,
 	minLID, maxLID uint32,
@@ -184,7 +223,13 @@ func (smm *SkipMaskManager) GetIDsIteratorByFrac(
 	return NewNMergedIterators(iterators), has, nil
 }
 
-// RefreshFrac replaces frac's skip mask files with newly found results. Used after active frac is sealed.
+// RefreshFrac recomputes skip mask files for a fraction after it has been sealed.
+// This is called when an active fraction becomes sealed.
+// The method:
+//   - Removes existing skip mask files for the fraction
+//   - Marks relevant skip masks as in-progress
+//   - Queues the fraction for reprocessing
+//   - Asynchronously processes the fraction through all matching skip masks
 func (smm *SkipMaskManager) RefreshFrac(fraction frac.Fraction) {
 	smm.fracsMu.Lock()
 	fracsFiles, has := smm.fracs[fraction.Info().Name()]
@@ -234,7 +279,9 @@ func (smm *SkipMaskManager) RefreshFrac(fraction frac.Fraction) {
 	}()
 }
 
-// RemoveFrac removes fraction's skip mask files. Used after frac is deleted
+// RemoveFrac removes all skip mask files associated with a fraction.
+// This should be called when a fraction is deleted from the system.
+// The removal is performed asynchronously in the background.
 func (smm *SkipMaskManager) RemoveFrac(fracName string) {
 	// TODO: we might want to have some kind of GC on startup to clean up missed files
 	smm.bgWG.Go(func() {
@@ -257,6 +304,8 @@ func (smm *SkipMaskManager) RemoveFrac(fracName string) {
 	})
 }
 
+// IsDone returns true if all skip masks have been processed and are in StatusDone state.
+// This is useful for determining when initial skip mask computation is complete.
 func (smm *SkipMaskManager) IsDone() bool {
 	for _, sm := range smm.skipMasks {
 		if sm.getStatus() != StatusDone {
@@ -270,6 +319,8 @@ func skipMaskNameFromPath(p string) string {
 	return path.Base(path.Dir(p))
 }
 
+// addDoneFrac registers a completed fraction's skip mask file path.
+// Called when a fraction's skip mask processing finishes successfully.
 func (smm *SkipMaskManager) addDoneFrac(fracName, fracPath string) {
 	smm.fracsMu.Lock()
 	defer smm.fracsMu.Unlock()
@@ -277,7 +328,13 @@ func (smm *SkipMaskManager) addDoneFrac(fracName, fracPath string) {
 	smm.fracs[fracName] = append(smm.fracs[fracName], fracPath)
 }
 
-// loadSkipMasks loads existing skip masks
+// loadSkipMasks loads skip masks from a previous session.
+// It scans the data directory for existing skip mask files and:
+//   - Removes directories that are not in the current configuration
+//   - Marks in-progress skip masks based on .queue files
+//   - Registers completed skip masks (.skipmask files)
+//
+// This allows the manager to resume processing after a restart.
 func (smm *SkipMaskManager) loadSkipMasks() error {
 	des, err := os.ReadDir(smm.config.DataDir)
 	if err != nil {
@@ -338,7 +395,13 @@ func (smm *SkipMaskManager) loadSkipMasks() error {
 	return nil
 }
 
-// buildQueue creates a directory for each of unprocessed skip masks and creates .queue files
+// buildQueue initializes the processing queue for newly created skip masks.
+// For each skip mask in StatusCreated state, it:
+//   - Creates a temporary directory
+//   - Generates .queue files for all fractions in the mask's range
+//   - Atomically renames the temp directory to the final name
+//
+// This sets up the files needed for parallel processing.
 func (smm *SkipMaskManager) buildQueue(fracs fracmanager.List) error {
 	for _, skipMask := range smm.skipMasks {
 		if skipMask.getStatus() != StatusCreated {
@@ -367,7 +430,10 @@ func (smm *SkipMaskManager) buildQueue(fracs fracmanager.List) error {
 	return nil
 }
 
-// processSkipMask finds docs and writes to fs
+// processSkipMask executes the skip mask query against all fractions in range.
+// It processes each fraction with a .queue file, running search queries in parallel
+// (limited by the rate limiter). Each successful search writes results to a .skipmask
+// file. The skip mask status is set to Done when all fractions are processed.
 func (smm *SkipMaskManager) processSkipMask(skipMask *SkipMask, fracs fracmanager.List) {
 	if len(fracs) == 0 {
 		skipMask.setStatus(StatusDone)
@@ -420,6 +486,10 @@ func (smm *SkipMaskManager) processSkipMask(skipMask *SkipMask, fracs fracmanage
 	}()
 }
 
+// processFrac executes the skip mask query against a single fraction.
+// It performs a search to find matching document IDs, then converts them
+// to local IDs (LIDs), and writes the serialized skip mask to disk.
+// The .queue file is replaced with a .skipmask file upon completion.
 func (smm *SkipMaskManager) processFrac(f frac.Fraction, skipMask *SkipMask) error {
 	qpr, err := f.Search(smm.ctx, processor.SearchParams{
 		AST:   skipMask.ast.Root,
@@ -459,6 +529,8 @@ func (smm *SkipMaskManager) processFrac(f frac.Fraction, skipMask *SkipMask) err
 	return nil
 }
 
+// startMaintenance runs a background goroutine that periodically checks
+// disk usage metrics. It logs the total size of all skip mask files.
 func (smm *SkipMaskManager) startMaintenance() {
 	smm.bgWG.Go(func() {
 		logger.Info("start skip mask manager maintenance")
@@ -469,6 +541,9 @@ func (smm *SkipMaskManager) startMaintenance() {
 	})
 }
 
+// cacheCleanLoop runs a background goroutine that periodically cleans up
+// the headers cache. It performs incremental cleanup on each tick and
+// full GC periodically (based on cacheGCDelay).
 func (smm *SkipMaskManager) cacheCleanLoop() {
 	smm.bgWG.Go(func() {
 		runs := 0
@@ -488,6 +563,8 @@ func (smm *SkipMaskManager) cacheCleanLoop() {
 	})
 }
 
+// checkDiskUsage calculates and reports the total disk space used by all
+// skip mask files. Updates the diskUsage and stored metrics.
 func (smm *SkipMaskManager) checkDiskUsage() {
 	du := int64(0)
 
@@ -533,6 +610,8 @@ func hashFilePath(filePath string) uint32 {
 
 var marshalBufferPool util.BufferPool
 
+// writeSkipMask serializes the skip mask data and atomically writes it to disk.
+// It removes the .queue file and creates the .skipmask file.
 func writeSkipMask(df *SkipMaskBinIn, queueFilePath, doneFilePath string) error {
 	rawSkipMask := marshalBufferPool.Get()
 	defer marshalBufferPool.Put(rawSkipMask)
@@ -544,7 +623,7 @@ func writeSkipMask(df *SkipMaskBinIn, queueFilePath, doneFilePath string) error 
 	return nil
 }
 
-// createDataDir creates data dir.
+// createDataDir ensures the data directory exists, creating it if necessary.
 func (smm *SkipMaskManager) createDataDir() {
 	if err := os.MkdirAll(smm.config.DataDir, 0o777); err != nil {
 		panic(err)
