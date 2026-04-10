@@ -14,7 +14,7 @@ type DocsMetasCompressor struct {
 	metaCompressLevel int
 
 	docsBuf storage.DocBlock
-	metaBuf storage.DocBlock
+	metaBuf storage.WalBlock
 }
 
 var compressorPool = sync.Pool{
@@ -42,7 +42,7 @@ func (c *DocsMetasCompressor) CompressDocsAndMetas(docs, meta []byte) {
 	// Compress docs block.
 	c.docsBuf = storage.CompressDocBlock(docs, c.docsBuf, c.docsCompressLevel)
 	// Compress metas block.
-	c.metaBuf = storage.CompressDocBlock(meta, c.metaBuf, c.metaCompressLevel)
+	c.metaBuf = storage.CompressWalBlock(meta, c.metaBuf, c.metaCompressLevel)
 
 	bulkSizeAfterCompression.Observe(float64(len(c.docsBuf) + len(c.metaBuf)))
 }

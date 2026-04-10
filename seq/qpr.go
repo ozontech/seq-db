@@ -7,11 +7,13 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"unsafe"
 
 	"github.com/valyala/fastrand"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/util"
 )
 
 type DocsOrder uint8
@@ -28,6 +30,15 @@ func (o DocsOrder) IsDesc() bool {
 func (o DocsOrder) IsReverse() bool {
 	return o == DocsOrderAsc
 }
+
+const (
+	SizeOfIDSource            = int(unsafe.Sizeof(IDSource{}))
+	SizeOfErrorSource         = int(unsafe.Sizeof(ErrorSource{}))
+	SizeOfAggBin              = int(unsafe.Sizeof(AggBin{}))
+	SizeOfSamplesContainer    = int(unsafe.Sizeof(SamplesContainer{}))
+	SizeOfAggregatableSamples = int(unsafe.Sizeof(AggregatableSamples{}))
+	SizeOfQPR                 = int(unsafe.Sizeof(QPR{}))
+)
 
 func (f DocsOrder) String() string {
 	switch f {
@@ -48,6 +59,13 @@ type IDSource struct {
 
 func (id *IDSource) Equal(check IDSource) bool {
 	return id.ID.Equal(check.ID) && id.Source == check.Source
+}
+
+func (id *IDSource) MemUsage() int {
+	if id == nil {
+		return 0
+	}
+	return SizeOfIDSource + len(id.Hint)
 }
 
 type IDSources []IDSource
@@ -75,6 +93,13 @@ type ErrorSource struct {
 	Source uint64
 }
 
+func (e *ErrorSource) MemUsage() int {
+	if e == nil {
+		return 0
+	}
+	return SizeOfErrorSource + len(e.ErrStr)
+}
+
 // QPR query partial result, stores intermediate result of running query e.g. result from only one fraction or particular store
 // TODO: remove single Agg when n-agg support in proxy is deployed
 type QPR struct {
@@ -87,6 +112,29 @@ type QPR struct {
 
 func (q *QPR) Empty() bool {
 	return len(q.IDs) == 0 && len(q.Histogram) == 0 && len(q.Aggs) == 0
+}
+
+// MemUsage returns estimated total memory used by the QPR and its nested structs.
+func (q *QPR) MemUsage() int {
+	if q == nil {
+		return 0
+	}
+	total := SizeOfQPR
+
+	for i := range q.IDs {
+		total += q.IDs[i].MemUsage()
+	}
+	for range q.Histogram {
+		total += util.SizeOfUint64 + util.SizeOfUint64
+	}
+	for i := range q.Aggs {
+		total += q.Aggs[i].MemUsage()
+	}
+	for i := range q.Errors {
+		total += q.Errors[i].MemUsage()
+	}
+
+	return total
 }
 
 func (q *QPR) Aggregate(args []AggregateArgs) []AggregationResult {
@@ -148,6 +196,13 @@ func (f AggFunc) String() string {
 type AggBin struct {
 	MID   MID
 	Token string
+}
+
+func (b *AggBin) MemUsage() int {
+	if b == nil {
+		return 0
+	}
+	return SizeOfAggBin + len(b.Token)
 }
 
 type AggregatableSamples struct {
@@ -329,6 +384,24 @@ func (q *AggregatableSamples) Merge(agg AggregatableSamples) {
 	q.NotExists += agg.NotExists
 }
 
+func (q *AggregatableSamples) MemUsage() int {
+	if q == nil {
+		return 0
+	}
+
+	total := SizeOfAggregatableSamples
+
+	total += util.SizeOfString * cap(q.ValuesPool)
+	for _, s := range q.ValuesPool {
+		total += len(s)
+	}
+
+	for bin, samples := range q.SamplesByBin {
+		total += bin.MemUsage() + util.SizeOfPointer + samples.MemUsage()
+	}
+	return total
+}
+
 // SamplesContainer is a container that is used for aggregations.
 // Implements reservoir sampling algorithm.
 type SamplesContainer struct {
@@ -354,6 +427,20 @@ func NewSamplesContainers() *SamplesContainer {
 	// Fixed seed to have same result on the same input
 	h.rng.Seed(73)
 	return h
+}
+
+func (h *SamplesContainer) MemUsage() int {
+	if h == nil {
+		return 0
+	}
+	total := SizeOfSamplesContainer
+	total += cap(h.Samples) * util.SizeOfFloat64
+	if h.Values != nil {
+		for range h.Values {
+			total += util.SizeOfUint32
+		}
+	}
+	return total
 }
 
 // Quantile calculates the quantile value of the histogram.

@@ -50,6 +50,7 @@ const (
 
 	// known extensions
 	MetaFileSuffix = ".meta"
+	WalFileSuffix  = ".wal"
 
 	DocsFileSuffix    = ".docs"
 	DocsDelFileSuffix = ".docs.del"
@@ -88,4 +89,5 @@ var (
 	ErrTooManyGroupTokens        = errors.New("aggregation has too many group tokens")
 	ErrTooManyFractionTokens     = errors.New("aggregation has too many fraction tokens")
 	ErrTooManyFractionsHit       = errors.New("too many fractions hit")
+	ErrMemoryLimitExceeded       = errors.New("memory limit exceeded")
 )

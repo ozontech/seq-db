@@ -1,4 +1,4 @@
-package frac
+package storage
 
 import (
 	"io"
@@ -8,7 +8,7 @@ import (
 	"github.com/ozontech/seq-db/metric/stopwatch"
 )
 
-type writeSyncer interface {
+type fileWriterSyncer interface {
 	io.WriterAt
 	Sync() error
 }
@@ -21,8 +21,10 @@ type writeSyncer interface {
 // is performed, after which all requests receive a response about the successful (or unsuccessful) fsync.
 //
 // This results in one fsync system call for several writers performing a write at approximately the same time.
+//
+// FileWriter does not interpret block format; it only writes bytes and triggers fsync.
 type FileWriter struct {
-	ws       writeSyncer
+	ws       fileWriterSyncer
 	offset   atomic.Int64
 	skipSync bool
 
@@ -33,7 +35,8 @@ type FileWriter struct {
 	wg sync.WaitGroup
 }
 
-func NewFileWriter(ws writeSyncer, offset int64, skipSync bool) *FileWriter {
+// NewFileWriter creates a new FileWriter. offset is the initial write position for sequential Write.
+func NewFileWriter(ws fileWriterSyncer, offset int64, skipSync bool) *FileWriter {
 	fs := &FileWriter{
 		ws:       ws,
 		skipSync: skipSync,
@@ -67,10 +70,22 @@ func (fs *FileWriter) syncLoop() {
 }
 
 func (fs *FileWriter) Write(data []byte, sw *stopwatch.Stopwatch) (int64, error) {
+	offset := fs.ReserveSpace(int64(len(data)))
+	return fs.writeAt(offset, data, sw)
+}
+
+func (fs *FileWriter) WriteAt(offset int64, data []byte, sw *stopwatch.Stopwatch) (int64, error) {
+	return fs.writeAt(offset, data, sw)
+}
+func (fs *FileWriter) ReserveSpace(size int64) int64 {
+	end := fs.offset.Add(size)
+	start := end - size
+	return start
+}
+
+func (fs *FileWriter) writeAt(offset int64, data []byte, sw *stopwatch.Stopwatch) (int64, error) {
 	m := sw.Start("write_duration")
 
-	dataLen := int64(len(data))
-	offset := fs.offset.Add(dataLen) - dataLen
 	_, err := fs.ws.WriteAt(data, offset)
 	m.Stop()
 
