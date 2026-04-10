@@ -7,8 +7,6 @@ import (
 	"unsafe"
 
 	"github.com/ronanh/intcomp"
-
-	"github.com/ozontech/seq-db/util"
 )
 
 const (
@@ -31,14 +29,16 @@ func CompressDeltaBitpackUint32(dst []byte, values, buf []uint32) []byte {
 	}
 
 	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(buf)))
-	dst = util.CopyUints32(buf, dst)
+	for _, v := range buf {
+		dst = binary.LittleEndian.AppendUint32(dst, v)
+	}
 
 	return dst
 }
 
-func DecompressDeltaBitpackUint32(data []byte, buf []uint32) ([]byte, []uint32, error) {
+func DecompressDeltaBitpackUint32(data []byte, buf []uint32, compressed []uint32) ([]byte, []uint32, error) {
 	if len(data) < sizeOfUint32 {
-		return nil, nil, errors.New(fmt.Sprintf("not enough data. slice len %d", len(data)))
+		return nil, nil, fmt.Errorf("not enough data. slice len %d", len(data))
 	}
 
 	uintsCount := binary.LittleEndian.Uint32(data[:4])
@@ -46,10 +46,10 @@ func DecompressDeltaBitpackUint32(data []byte, buf []uint32) ([]byte, []uint32, 
 
 	byteLen := int(uintsCount) * sizeOfUint32
 	if len(data) < byteLen {
-		return nil, nil, errors.New(fmt.Sprintf("not enough data: expected %d bytes, got %d", byteLen, len(data)))
+		return nil, nil, fmt.Errorf("not enough data: expected %d bytes, got %d", byteLen, len(data))
 	}
 
-	compressed := util.CastAsUint32(data[:byteLen])
+	compressed = copyAsUints32(data[:byteLen], compressed)
 	data = data[byteLen:]
 
 	count := int(compressed[0])
@@ -97,14 +97,16 @@ func CompressDeltaBitpackUint64(dst []byte, values, buf []uint64) []byte {
 	}
 
 	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(buf)))
-	dst = util.CopyUints64(buf, dst)
+	for _, v := range buf {
+		dst = binary.LittleEndian.AppendUint64(dst, v)
+	}
 
 	return dst
 }
 
-func DecompressDeltaBitpackUint64(data []byte, buf []uint64) ([]byte, []uint64, error) {
+func DecompressDeltaBitpackUint64(data []byte, buf []uint64, compressed []uint64) ([]byte, []uint64, error) {
 	if len(data) < 4 {
-		return nil, nil, errors.New(fmt.Sprintf("not enough data. slice len %d", len(data)))
+		return nil, nil, fmt.Errorf("not enough data. slice len %d", len(data))
 	}
 
 	uintsCount := binary.LittleEndian.Uint32(data[:4])
@@ -112,10 +114,11 @@ func DecompressDeltaBitpackUint64(data []byte, buf []uint64) ([]byte, []uint64, 
 
 	byteLen := int(uintsCount) * 8
 	if len(data) < byteLen {
-		return nil, nil, errors.New(fmt.Sprintf("not enough data: expected %d bytes, got %d", byteLen, len(data)))
+		return nil, nil, fmt.Errorf("not enough data: expected %d bytes, got %d", byteLen, len(data))
 	}
 
-	compressed := util.CastAsUint64(data)
+	compressed = copyAsUints64(data[:byteLen], compressed)
+	data = data[byteLen:]
 
 	count := int(compressed[0])
 	if count == 0 {
@@ -143,4 +146,22 @@ func DecompressDeltaBitpackUint64(data []byte, buf []uint64) ([]byte, []uint64, 
 	}
 
 	return data, buf, nil
+}
+
+func copyAsUints32(src []byte, dst []uint32) []uint32 {
+	dst = dst[:0]
+	for len(src) != 0 {
+		dst = append(dst, binary.LittleEndian.Uint32(src))
+		src = src[sizeOfUint32:]
+	}
+	return dst
+}
+
+func copyAsUints64(src []byte, dst []uint64) []uint64 {
+	dst = dst[:0]
+	for len(src) != 0 {
+		dst = append(dst, binary.LittleEndian.Uint64(src))
+		src = src[8:]
+	}
+	return dst
 }

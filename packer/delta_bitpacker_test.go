@@ -57,7 +57,8 @@ func TestCompressDeltaBitpackUint32(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			compressed := CompressDeltaBitpackUint32([]byte{}, tc.values, []uint32{})
-			_, decompressed, err := DecompressDeltaBitpackUint32(compressed, []uint32{})
+			tmp := make([]uint32, 0, len(compressed)/sizeOfUint32)
+			_, decompressed, err := DecompressDeltaBitpackUint32(compressed, []uint32{}, tmp)
 			require.NoError(t, err)
 			if len(tc.values) > 0 {
 				require.Equal(t, tc.values, decompressed)
@@ -118,7 +119,8 @@ func TestCompressDeltaBitpackUint64(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			compressed := CompressDeltaBitpackUint64([]byte{}, tc.values, []uint64{})
-			_, decompressed, err := DecompressDeltaBitpackUint64(compressed, []uint64{})
+			tmp := make([]uint64, 0, len(compressed)/8)
+			_, decompressed, err := DecompressDeltaBitpackUint64(compressed, []uint64{}, tmp)
 			require.NoError(t, err)
 			if len(tc.values) > 0 {
 				require.Equal(t, tc.values, decompressed)

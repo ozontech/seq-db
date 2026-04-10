@@ -7,27 +7,37 @@ import (
 	"github.com/ozontech/seq-db/storage"
 )
 
+// UnpackBuffer keeps intermediate temporary buffers for decoding. Used only for a single fraction.
 type UnpackBuffer struct {
-	lids         []uint32
+	lids         []uint32 // temp buffer (varints only) for decoding lids
 	offsets      []uint32
-	decompressed []uint32
+	decompressed []uint32 // temp buffer (bitpack only) for decompressed data
+	compressed   []uint32 // temp buffer (bitpack only) for compressed data (intcomp works with uint32 slices)
 }
 
-func (b *UnpackBuffer) Reset() {
-	if b.lids == nil {
-		b.lids = make([]uint32, 0, 128)
-	} else {
-		b.lids = b.lids[:0]
-	}
+func (b *UnpackBuffer) Reset(fracVer config.BinaryDataVersion) {
 	if b.offsets == nil {
 		b.offsets = make([]uint32, 0, 8)
 	} else {
 		b.offsets = b.offsets[:0]
 	}
-	if b.decompressed == nil {
-		b.decompressed = make([]uint32, 0, consts.LIDBlockCap)
+	if fracVer >= config.BinaryDataV3 {
+		if b.decompressed == nil {
+			b.decompressed = make([]uint32, 0, consts.LIDBlockCap)
+		} else {
+			b.decompressed = b.decompressed[:0]
+		}
+		if b.compressed == nil {
+			b.compressed = make([]uint32, 0, consts.LIDBlockCap)
+		} else {
+			b.compressed = b.compressed[:0]
+		}
 	} else {
-		b.decompressed = b.decompressed[:0]
+		if b.lids == nil {
+			b.lids = make([]uint32, 0, 128)
+		} else {
+			b.lids = b.lids[:0]
+		}
 	}
 }
 

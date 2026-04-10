@@ -45,7 +45,7 @@ func (b *Block) GetSizeBytes() int {
 }
 
 func (b *Block) Unpack(data []byte, fracVer config.BinaryDataVersion, buf *UnpackBuffer) error {
-	buf.Reset()
+	buf.Reset(fracVer)
 
 	if fracVer >= config.BinaryDataV3 {
 		return b.unpackBitpack(data, buf)
@@ -65,13 +65,13 @@ func (b *Block) unpackBitpack(data []byte, buf *UnpackBuffer) error {
 	var err error
 	var values []uint32
 
-	data, values, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressed)
+	data, values, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressed, buf.compressed)
 	if err != nil {
 		return err
 	}
 	b.Offsets = append([]uint32{}, values...)
 
-	data, values, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressed)
+	data, values, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressed, buf.compressed)
 	if err != nil {
 		return err
 	}
