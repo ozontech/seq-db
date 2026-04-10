@@ -2,6 +2,8 @@ package frac
 
 import (
 	"context"
+	"math"
+	"slices"
 
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -29,6 +31,8 @@ type activeDataProvider struct {
 	docsReader    *storage.DocsReader
 
 	idsIndex *activeIDsIndex
+
+	skipMaskProvider skipMaskProvider
 }
 
 func (dp *activeDataProvider) release() {
@@ -75,9 +79,12 @@ func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	res := make([][]byte, len(ids))
 
 	indexes := []activeFetchIndex{{
-		blocksOffsets: dp.blocksOffsets,
-		docsPositions: dp.docsPositions,
-		docsReader:    dp.docsReader,
+		blocksOffsets:    dp.blocksOffsets,
+		docsPositions:    dp.docsPositions,
+		idsToLids:        dp.idsToLids,
+		docsReader:       dp.docsReader,
+		skipMaskProvider: dp.skipMaskProvider,
+		fracName:         dp.info.Name(),
 	}}
 
 	for _, fi := range indexes {
@@ -117,6 +124,8 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	indexes := []activeSearchIndex{{
 		activeIDsIndex:   dp.getIDsIndex(),
 		activeTokenIndex: dp.getTokenIndex(),
+		skipMaskProvider: dp.skipMaskProvider,
+		fracName:         dp.info.Name(),
 	}}
 	m.Stop()
 
@@ -178,6 +187,35 @@ func (p *activeIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 type activeSearchIndex struct {
 	*activeIDsIndex
 	*activeTokenIndex
+	skipMaskProvider skipMaskProvider
+	fracName         string
+}
+
+func (si *activeSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
+	// active fraction doesn't meet min and max lid
+	minLID, maxLID = uint32(0), uint32(math.MaxUint32)
+
+	iterator, has, err := si.skipMaskProvider.GetIDsIteratorByFrac(si.fracName, minLID, maxLID, reverse)
+	if err != nil {
+		return nil, false, err
+	}
+
+	res := make([]uint32, 0)
+	for {
+		// traverse iterator to inverse and sort lids
+		lid := iterator.Next()
+		if lid.IsNull() {
+			break
+		}
+		if inversed, ok := si.activeIDsIndex.inverser.Inverse(lid.Unpack()); ok {
+			res = append(res, uint32(inversed))
+		}
+	}
+
+	// we need to sort inversed values since they may be out of order after replay of active fraction
+	slices.Sort(res)
+
+	return node.NewStatic(res, reverse), has, nil
 }
 
 type activeTokenIndex struct {
@@ -221,21 +259,57 @@ func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint
 }
 
 type activeFetchIndex struct {
-	blocksOffsets []uint64
-	docsPositions *DocsPositions
-	docsReader    *storage.DocsReader
+	blocksOffsets    []uint64
+	docsPositions    *DocsPositions
+	idsToLids        *ActiveLIDs
+	docsReader       *storage.DocsReader
+	skipMaskProvider skipMaskProvider
+	fracName         string
 }
 
 func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return di.blocksOffsets[num]
 }
 
-func (di *activeFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
+func (di *activeFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
 	docsPos := make([]seq.DocPos, len(ids))
 	for i, id := range ids {
 		docsPos[i] = di.docsPositions.GetSync(id)
 	}
-	return docsPos
+
+	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
+	skipLIDsIterator, has, err := di.skipMaskProvider.GetIDsIteratorByFrac(di.fracName, minLID, maxLID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if !has {
+		return docsPos, nil
+	}
+
+	allLids := make([]uint32, len(ids))
+	for i, id := range ids {
+		if lid, ok := di.idsToLids.Get(id); ok {
+			allLids[i] = uint32(lid)
+		}
+	}
+
+	skipLIDs := make(map[uint32]struct{})
+	for {
+		lid := skipLIDsIterator.Next()
+		if lid.IsNull() {
+			break
+		}
+		skipLIDs[lid.Unpack()] = struct{}{}
+	}
+
+	for i, lid := range allLids {
+		if _, ok := skipLIDs[lid]; ok {
+			docsPos[i] = seq.DocPosNotFound
+		}
+	}
+
+	return docsPos, nil
 }
 
 func (di *activeFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {

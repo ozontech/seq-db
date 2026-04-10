@@ -1,4 +1,4 @@
-package filtermanager
+package skipmaskmanager
 
 import "sort"
 

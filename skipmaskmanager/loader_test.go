@@ -1,4 +1,4 @@
-package filtermanager
+package skipmaskmanager
 
 import (
 	"os"
@@ -18,9 +18,9 @@ func TestLoader(t *testing.T) {
 		multipleBlocksLIDs = append(multipleBlocksLIDs, seq.LID(i))
 	}
 
-	rawDocsFilter := marshalDocsFilter(nil, &DocsFilterBinIn{LIDs: multipleBlocksLIDs})
-	filePath := filepath.Join(t.TempDir(), "some.filter")
-	err := os.WriteFile(filePath, rawDocsFilter, 0o644)
+	rawSkipMask := marshalSkipMask(nil, &SkipMaskBinIn{LIDs: multipleBlocksLIDs})
+	filePath := filepath.Join(t.TempDir(), "some.skipmask")
+	err := os.WriteFile(filePath, rawSkipMask, 0o644)
 	require.NoError(t, err)
 
 	loader, err := newLoader(filePath, cache.NewCache[[]lidsBlockHeader](nil, nil))

@@ -22,6 +22,11 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
+type skipMaskProvider interface {
+	GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
+	RemoveFrac(fracName string)
+}
+
 type sealedDataProvider struct {
 	ctx    context.Context
 	info   *common.Info
@@ -42,6 +47,8 @@ type sealedDataProvider struct {
 	// fractionTypeLabel can be either 'sealed' or 'remote'.
 	// This value is used in metrics to distinguish between operations over local and remote fractions.
 	fractionTypeLabel string
+
+	skipMaskProvider skipMaskProvider
 }
 
 func (dp *sealedDataProvider) getIDsIndex() *sealedIDsIndex {
@@ -54,9 +61,11 @@ func (dp *sealedDataProvider) getIDsIndex() *sealedIDsIndex {
 
 func (dp *sealedDataProvider) getFetchIndex() *sealedFetchIndex {
 	return &sealedFetchIndex{
-		idsIndex:      dp.getIDsIndex(),
-		docsReader:    dp.docsReader,
-		blocksOffsets: dp.blocksOffsets,
+		fracName:         dp.info.Name(),
+		idsIndex:         dp.getIDsIndex(),
+		docsReader:       dp.docsReader,
+		blocksOffsets:    dp.blocksOffsets,
+		skipMaskProvider: dp.skipMaskProvider,
 	}
 }
 
@@ -74,6 +83,7 @@ func (dp *sealedDataProvider) getSearchIndex() *sealedSearchIndex {
 	return &sealedSearchIndex{
 		sealedIDsIndex:   dp.getIDsIndex(),
 		sealedTokenIndex: dp.getTokenIndex(),
+		skipMaskProvider: dp.skipMaskProvider,
 	}
 }
 
@@ -259,17 +269,56 @@ func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 }
 
 type sealedFetchIndex struct {
-	idsIndex      *sealedIDsIndex
-	docsReader    *storage.DocsReader
-	blocksOffsets []uint64
+	fracName         string
+	idsIndex         *sealedIDsIndex
+	docsReader       *storage.DocsReader
+	blocksOffsets    []uint64
+	skipMaskProvider skipMaskProvider
 }
 
 func (fi *sealedFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return fi.blocksOffsets[num]
 }
 
-func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) []seq.DocPos {
-	return fi.getDocPosByLIDs(fi.findLIDs(ids))
+func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
+	allLids := fi.findLIDs(ids)
+
+	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
+	if len(allLids) > 0 {
+		// allLids can be not sorted
+		minVal, maxVal := allLids[0], allLids[0]
+		for i := 1; i < len(allLids); i++ {
+			minVal = min(minVal, allLids[i])
+			maxVal = max(maxVal, allLids[i])
+		}
+		minLID, maxLID = uint32(minVal), uint32(maxVal)
+	}
+
+	skipLIDsIterator, has, err := fi.skipMaskProvider.GetIDsIteratorByFrac(fi.fracName, minLID, maxLID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if !has {
+		return fi.getDocPosByLIDs(allLids), nil
+	}
+
+	skipLIDs := make(map[uint32]struct{})
+	for {
+		lid := skipLIDsIterator.Next()
+		if lid.IsNull() {
+			break
+		}
+		skipLIDs[lid.Unpack()] = struct{}{}
+	}
+
+	for i, lid := range allLids {
+		if _, ok := skipLIDs[uint32(lid)]; ok {
+			allLids[i] = 0
+		}
+	}
+
+	return fi.getDocPosByLIDs(allLids), nil
 }
 
 func (fi *sealedFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
@@ -324,4 +373,9 @@ func (fi *sealedFetchIndex) getDocPosByLIDs(localIDs []seq.LID) []seq.DocPos {
 type sealedSearchIndex struct {
 	*sealedIDsIndex
 	*sealedTokenIndex
+	skipMaskProvider skipMaskProvider
+}
+
+func (si *sealedSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
+	return si.skipMaskProvider.GetIDsIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 }

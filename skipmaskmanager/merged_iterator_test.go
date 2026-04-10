@@ -1,4 +1,4 @@
-package filtermanager
+package skipmaskmanager
 
 import (
 	"fmt"
@@ -69,7 +69,7 @@ func (it *testIteratorDesc) Next() node.LID {
 }
 
 func (it *testIteratorDesc) NextGeq(nextID node.LID) node.LID {
-	return node.NullLID() // TODO: ???
+	return node.NullLID()
 }
 
 type testIteratorAsc struct {
@@ -87,7 +87,7 @@ func (it *testIteratorAsc) Next() node.LID {
 
 	lid := it.lids[0]
 	it.lids = it.lids[1:]
-	return node.NewAscLID(lid) // TODO: ???
+	return node.NewAscLID(lid)
 }
 
 func (it *testIteratorAsc) NextGeq(nextID node.LID) node.LID {

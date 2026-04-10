@@ -55,6 +55,8 @@ type Remote struct {
 
 	s3cli       *s3.Client
 	readLimiter *storage.ReadLimiter
+
+	skipMaskProvider skipMaskProvider
 }
 
 func NewRemote(
@@ -66,6 +68,7 @@ func NewRemote(
 	info *common.Info,
 	config *Config,
 	s3cli *s3.Client,
+	skipMaskProvider skipMaskProvider,
 ) *Remote {
 	f := &Remote{
 		ctx: ctx,
@@ -81,6 +84,8 @@ func NewRemote(
 		Config:       config,
 
 		s3cli: s3cli,
+
+		skipMaskProvider: skipMaskProvider,
 	}
 
 	// Fast path if fraction-info cache exists AND it has valid index size.
@@ -170,6 +175,7 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 			&f.blocksData.IDsTable,
 			f.info.BinaryDataVer,
 		),
+		skipMaskProvider: f.skipMaskProvider,
 	}, nil
 }
 
@@ -201,6 +207,8 @@ func (f *Remote) Suicide() {
 			zap.Error(err),
 		)
 	}
+
+	f.skipMaskProvider.RemoveFrac(f.info.Name())
 }
 
 func (f *Remote) String() string {

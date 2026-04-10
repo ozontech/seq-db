@@ -17,6 +17,7 @@ import (
 	"github.com/ozontech/seq-db/mappingprovider"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/skipmaskmanager"
 	"github.com/ozontech/seq-db/tests/common"
 )
 
@@ -67,11 +68,16 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 	dataDir := common.GetTestTmpDir(t)
 	common.RecreateDir(dataDir)
 
+	mappingProvider, err := mappingprovider.New("", mappingprovider.WithMapping(seq.TestMapping))
+	assert.NoError(t, err)
+
+	skipMaskManager := skipmaskmanager.New(t.Context(), skipmaskmanager.Config{}, nil, mappingProvider)
+
 	fm, stop, err := fracmanager.New(t.Context(), &fracmanager.Config{
 		FracSize:  500,
 		TotalSize: 5000,
 		DataDir:   dataDir,
-	}, nil)
+	}, nil, skipMaskManager)
 	assert.NoError(t, err)
 
 	config := APIConfig{
@@ -91,9 +97,6 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 			LogThreshold: 0,
 		},
 	}
-
-	mappingProvider, err := mappingprovider.New("", mappingprovider.WithMapping(seq.TestMapping))
-	assert.NoError(t, err)
 
 	g := NewGrpcV1(config, fm, mappingProvider)
 

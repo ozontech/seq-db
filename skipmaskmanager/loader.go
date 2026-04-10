@@ -1,9 +1,8 @@
-package filtermanager
+package skipmaskmanager
 
 import (
 	"encoding/binary"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"os"
 
@@ -22,13 +21,10 @@ type loader struct {
 }
 
 func newLoader(filePath string, headersCache *cache.Cache[[]lidsBlockHeader]) (*loader, error) {
-	hash := fnv.New32a()
-	hash.Write([]byte(filterNameFromPath(filePath) + fracNameFromFilePath(filePath)))
-
 	return &loader{
 		filePath:     filePath,
 		headersCache: headersCache,
-		cashKey:      hash.Sum32(),
+		cashKey:      hashFilePath(filePath),
 	}, nil
 }
 
@@ -69,7 +65,7 @@ func (l *loader) loadHeaders() ([]lidsBlockHeader, error) {
 		return nil, fmt.Errorf("can't read headers from disk: n=0")
 	}
 
-	version := docsFilterBinVersion(numBuf[0])
+	version := skipMaskBinVersion(numBuf[0])
 	if _, ok := availableVersions[version]; !ok {
 		return nil, fmt.Errorf("invalid LIDs binary version: %d", version)
 	}
@@ -148,7 +144,7 @@ func (l *loader) loadBlock(index int) ([]uint32, error) {
 func (l *loader) release() error {
 	if l.file != nil {
 		if err := l.file.Close(); err != nil {
-			logger.Error("can't close filter file", zap.Error(err))
+			logger.Error("can't close skip mask file", zap.Error(err))
 			return err
 		}
 		l.file = nil
