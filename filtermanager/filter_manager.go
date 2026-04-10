@@ -13,10 +13,12 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
@@ -32,6 +34,8 @@ const (
 
 const (
 	defaultMaintenanceInterval = 30 * time.Second
+	defaultCacheCleanInterval  = 10 * time.Millisecond
+	defaultCacheGCDelay        = 1 * time.Second
 )
 
 type MappingProvider interface {
@@ -60,6 +64,12 @@ type FilterManager struct {
 	maintenanceWG       *sync.WaitGroup
 	maintenanceInterval time.Duration
 	maintenanceStop     context.CancelFunc
+
+	cacheCleanInterval time.Duration
+	cacheGCDelay       time.Duration
+
+	headersCache        *cache.Cache[[]lidsBlockHeader]
+	headersCacheCleaner *cache.Cleaner
 }
 
 func New(
@@ -80,6 +90,8 @@ func New(
 		filtersMap[f.Hash()] = f
 	}
 
+	cacheCleaner := cache.NewCleaner(cfg.CacheSizeLimit, nil)
+
 	return &FilterManager{
 		ctx:                 ctx,
 		config:              cfg,
@@ -89,6 +101,10 @@ func New(
 		mp:                  mp,
 		rateLimit:           make(chan struct{}, workers),
 		maintenanceInterval: defaultMaintenanceInterval,
+		cacheCleanInterval:  defaultCacheCleanInterval,
+		cacheGCDelay:        defaultCacheGCDelay,
+		headersCache:        cache.NewCache[[]lidsBlockHeader](cacheCleaner, nil),
+		headersCacheCleaner: cacheCleaner,
 	}
 }
 
@@ -109,6 +125,8 @@ func (fm *FilterManager) Start(ctx context.Context, fracs fracmanager.List) {
 	fm.maintenanceStop = cancel
 	fm.startMaintenance(ctx)
 
+	go fm.cacheCleanLoop()
+
 	mapping := fm.mp.GetMapping()
 
 	go func() {
@@ -127,6 +145,32 @@ func (fm *FilterManager) Start(ctx context.Context, fracs fracmanager.List) {
 func (fm *FilterManager) Stop() {
 	fm.maintenanceStop()
 	fm.maintenanceWG.Wait()
+}
+
+func (fm *FilterManager) GetHideFlagIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, error) {
+	fm.fracsMu.RLock()
+	defer fm.fracsMu.RUnlock()
+
+	fracFiles, has := fm.fracs[fracName]
+	if !has {
+		return &EmptyIterator{}, nil
+	}
+
+	iterators := make([]node.Node, 0, len(fracFiles))
+	for _, f := range fracFiles {
+		loader, err := newLoader(f, fm.headersCache)
+		if err != nil {
+			logger.Error("can't open filtered lids file", zap.String("path", f), zap.Error(err))
+			return nil, err
+		}
+		if reverse {
+			iterators = append(iterators, (*IteratorAsc)(NewIterator(loader, minLID, maxLID)))
+		} else {
+			iterators = append(iterators, (*IteratorDesc)(NewIterator(loader, minLID, maxLID)))
+		}
+	}
+
+	return NewNMergedIterators(iterators), nil
 }
 
 // RefreshFrac replaces frac's filter files with newly found results. Used after active frac is sealed.
@@ -370,6 +414,25 @@ func (fm *FilterManager) startMaintenance(ctx context.Context) {
 			fm.checkDiskUsage()
 		})
 	})
+}
+
+func (fm *FilterManager) cacheCleanLoop() {
+	runs := 0
+	gcRunsCount := int(fm.cacheGCDelay / fm.cacheCleanInterval)
+
+	for {
+		runs++
+		fm.headersCacheCleaner.Cleanup(&cache.CleanStat{})
+		fm.headersCacheCleaner.Rotate()
+
+		if runs >= gcRunsCount {
+			runs = 0
+			fm.headersCacheCleaner.CleanEmptyGenerations()
+			fm.headersCacheCleaner.ReleaseBuckets()
+		}
+
+		time.Sleep(fm.cacheCleanInterval)
+	}
 }
 
 func (fm *FilterManager) checkDiskUsage() {
