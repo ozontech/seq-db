@@ -312,6 +312,13 @@ func (f *Sealed) Search(ctx context.Context, params processor.SearchParams) (*se
 	return dp.Search(params)
 }
 
+func (f *Sealed) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.FindLIDs(ids)
+}
+
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 	f.load()
 	return &sealedDataProvider{

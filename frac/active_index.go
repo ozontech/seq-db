@@ -25,6 +25,7 @@ type activeDataProvider struct {
 
 	blocksOffsets []uint64
 	docsPositions *DocsPositions
+	idsToLids     *ActiveLIDs
 	docsReader    *storage.DocsReader
 
 	idsIndex *activeIDsIndex
@@ -133,6 +134,16 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	res.IDs.ApplyHint(dp.info.Name())
 	t.Stop()
 
+	return res, nil
+}
+
+func (dp *activeDataProvider) FindLIDs(ids []seq.ID) ([]seq.LID, error) {
+	res := make([]seq.LID, 0, len(ids))
+	for _, id := range ids {
+		if lid, ok := dp.idsToLids.Get(id); ok {
+			res = append(res, lid)
+		}
+	}
 	return res, nil
 }
 

@@ -21,6 +21,7 @@ type Fraction interface {
 	Contains(mid seq.MID) bool
 	Fetch(context.Context, []seq.ID) ([][]byte, error)
 	Search(context.Context, processor.SearchParams) (*seq.QPR, error)
+	FindLIDs(context.Context, []seq.ID) ([]seq.LID, error)
 }
 
 var (
