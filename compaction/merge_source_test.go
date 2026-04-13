@@ -2,32 +2,24 @@ package compaction
 
 import (
 	"cmp"
+	"fmt"
 	"iter"
+	"math/rand"
 	"slices"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/stretchr/testify/require"
 )
 
-// mockSealingSource is a test implementation of sealing.Source.
-//
-// IDs must be provided in descending order (MID DESC, RID DESC); the mock
-// automatically prepends the system ID when iterating, matching the contract
-// expected by MergeSource.ID().
-//
-// Fields maps field name → token value → list of 1-based LIDs.
-// Fields and tokens are yielded in sorted order.
 type mockSealingSource struct {
-	ids    []seq.ID
-	pos    []seq.DocPos
-	blocks []uint64
-	// docsOnDisk is the total compressed size of the .docs file,
-	// used by MergeSource to adjust block offsets across sources.
+	ids        []seq.ID
+	pos        []seq.DocPos
+	blocks     []uint64
 	docsOnDisk uint64
-	// fields maps field → token → lids (1-based).
-	fields map[string]map[string][]uint32
+	fields     map[string]map[string][]uint32
 }
 
 func (m *mockSealingSource) Info() *common.Info {
@@ -222,8 +214,9 @@ func TestMergeSource(t *testing.T) {
 
 		// Ensure correctness of lids remapping
 		// 	-----------------
-		// 	seq.MID 6 5 3 2 1
-		// 	seq.LID 1 2 3 4 5
+		// 	seq.MID       6 5 | 3 2 1
+		//  seq.LID (old) 1 2 | 1 2 3
+		// 	seq.LID (new) 1 2 | 3 4 5
 		// 	-----------------
 		require.Equal(t,
 			[][]uint32{
@@ -251,4 +244,89 @@ func TestMergeSource(t *testing.T) {
 		require.Equal(t, merged.DocsOnDisk, finfo.DocsOnDisk+sinfo.DocsOnDisk)
 		require.Equal(t, merged.DocsRaw, finfo.DocsRaw+sinfo.DocsRaw)
 	})
+}
+
+func BenchmarkMergeSource(b *testing.B) {
+	const (
+		numSources    = 4
+		docsPerSource = 512_000
+
+		// Total pairs of (field, token) will be
+		// [numFields] * [numTokens].
+		numFields = 512
+		numTokens = 16384
+	)
+
+	rng := rand.New(rand.NewSource(42))
+
+	fieldNames := make([]string, numFields)
+	for i := range fieldNames {
+		fieldNames[i] = fmt.Sprintf("field-%d", i)
+	}
+
+	tokenNames := make([]string, numTokens)
+	for i := range tokenNames {
+		tokenNames[i] = fmt.Sprintf("token-%d", i)
+	}
+
+	makeSource := func(midOffset seq.MID) Source {
+		ids := make([]seq.ID, docsPerSource)
+		pos := make([]seq.DocPos, docsPerSource)
+
+		for j := range ids {
+			// IDs must be in descending MID order within each source.
+			ids[j] = seq.ID{MID: midOffset + seq.MID(docsPerSource-j)}
+			pos[j] = seq.PackDocPos(0, uint64(j*64))
+		}
+
+		// Assign each lid to a random (field, token) pair from the vocabulary
+		// so that total lids per source equals [docsPerSource].
+		fields := make(map[string]map[string][]uint32)
+		for lid := uint32(1); lid <= uint32(docsPerSource); lid++ {
+			field := fieldNames[rng.Intn(numFields)]
+			token := tokenNames[rng.Intn(numTokens)]
+
+			if fields[field] == nil {
+				fields[field] = make(map[string][]uint32)
+			}
+
+			fields[field][token] = append(fields[field][token], lid)
+		}
+
+		for _, tokens := range fields {
+			for tok, lids := range tokens {
+				slices.Sort(lids)
+				tokens[tok] = lids
+			}
+		}
+
+		return &mockSealingSource{
+			ids:        ids,
+			pos:        pos,
+			blocks:     []uint64{0},
+			docsOnDisk: docsPerSource * 64,
+			fields:     fields,
+		}
+	}
+
+	sources := make([]Source, numSources)
+	for i := range sources {
+		sources[i] = makeSource(seq.MID(i * docsPerSource))
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for b.Loop() {
+		ms := NewMergeSource("bench", sources)
+
+		ms.BlockOffsets()
+		for range ms.ID() {
+		}
+
+		for _, tokIt := range ms.TokenTriplet() {
+			for range tokIt {
+			}
+		}
+	}
 }

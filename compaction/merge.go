@@ -4,25 +4,20 @@ import (
 	"errors"
 	"os"
 
+	"github.com/alecthomas/units"
+	"go.uber.org/zap"
+
+	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/indexwriter"
+	"github.com/ozontech/seq-db/logger"
 )
 
-func Merge(filename string, srcs ...Source) (*sealed.PreloadedData, error) {
+func Merge(filename string, params common.SealParams, srcs ...Source) (*sealed.PreloadedData, error) {
+	writer := indexwriter.New(params)
 	src := NewMergeSource(filename, srcs)
-
-	// FIXME(dkharms): [common.SealParams] must be passed into [Merge] function.
-	writer := indexwriter.New(common.SealParams{
-		IDsZstdLevel:           3,
-		LIDsZstdLevel:          3,
-		TokenListZstdLevel:     3,
-		DocsPositionsZstdLevel: 3,
-		TokenTableZstdLevel:    3,
-		DocBlocksZstdLevel:     3,
-		DocBlockSize:           3,
-	})
 
 	if err := createAndWrite(
 		filename+consts.OffsetsTmpFileSuffix,
@@ -142,19 +137,32 @@ func createAndWriteBoth(
 	return os.Rename(tmpPath2, finalPath2)
 }
 
-// FIXME(dkharms): Create buffered writer for file.
 func mergeDocs(filename string, srcs ...Source) error {
 	return createAndWrite(
 		filename+consts.DocsTmpFileSuffix,
 		filename+consts.DocsFileSuffix,
 		func(f *os.File) error {
+			w := bytespool.AcquireWriterSize(f, int(units.MiB))
+
+			defer func() {
+				if err := w.Flush(); err != nil {
+					logger.Error(
+						"cannot flush compacted .docs file",
+						zap.Error(err),
+						zap.String("fraction", filename),
+					)
+				}
+				bytespool.ReleaseWriter(w)
+			}()
+
 			for _, src := range srcs {
 				for block := range src.DocBlock() {
-					if _, err := f.Write(block); err != nil {
+					if _, err := w.Write(block); err != nil {
 						return err
 					}
 				}
 			}
+
 			return nil
 		},
 	)

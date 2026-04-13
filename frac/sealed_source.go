@@ -102,13 +102,13 @@ func (s *SealedSource) tokensForField(field string) iter.Seq2[[]byte, []uint32] 
 	lidsTable := s.f.blocksData.LIDsTable
 	tokenTable := s.tokenTableLoader.Load()
 
-	var lidsbuf []uint32
+	var lidsBuf []uint32
 	return func(yield func([]byte, []uint32) bool) {
 		for _, entry := range tokenTable[field].Entries {
 			block := s.tokenBlockLoader.Load(entry.BlockIndex)
 
 			for tid := entry.StartTID; tid < entry.StartTID+entry.ValCount; tid++ {
-				lidsbuf = lidsbuf[:0]
+				lidsBuf = lidsBuf[:0]
 
 				tokenVal := block.GetToken(entry.GetIndexInTokensBlock(tid))
 				firstBlock := lidsTable.GetFirstBlockIndexForTID(tid)
@@ -122,10 +122,10 @@ func (s *SealedSource) tokensForField(field string) iter.Seq2[[]byte, []uint32] 
 					}
 
 					chunkIdx := lidsTable.GetChunkIndex(bi, tid)
-					lidsbuf = append(lidsbuf, lidBlock.LIDs[lidBlock.Offsets[chunkIdx]:lidBlock.Offsets[chunkIdx+1]]...)
+					lidsBuf = append(lidsBuf, lidBlock.LIDs[lidBlock.Offsets[chunkIdx]:lidBlock.Offsets[chunkIdx+1]]...)
 				}
 
-				if !yield(tokenVal, lidsbuf) {
+				if !yield(tokenVal, lidsBuf) {
 					return
 				}
 			}
