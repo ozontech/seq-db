@@ -38,3 +38,44 @@ func TestParsePipeFieldsExcept(t *testing.T) {
 	test(`* | fields except "_\\message*"`, `* | fields except "_\\message\*"`)
 	test(`* | fields except k8s_namespace`, `* | fields except k8s_namespace`)
 }
+
+func TestParsePipeStats(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test("service:my-service | stats count by (service)", "service:my-service | stats count by (service)")
+	test("service:my-service | stats sum(level) by (service)", "service:my-service | stats sum(level) by (service)")
+	test("service:my-service | stats count by (service) interval(1m)", "service:my-service | stats count by (service) interval(1m)")
+	test("service:my-service | stats min(response_time) by (service)", "service:my-service | stats min(response_time) by (service)")
+	test("service:my-service | stats max(response_time) by (service)", "service:my-service | stats max(response_time) by (service)")
+	test("service:my-service | stats avg(response_time) by (service)", "service:my-service | stats avg(response_time) by (service)")
+	test("service:my-service | stats unique by (service)", "service:my-service | stats unique by (service)")
+	test("service:my-service | stats unique_count by (service)", "service:my-service | stats unique_count by (service)")
+}
+
+func TestParsePipeStatsMultiple(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test("service:my-service | stats count by (service), sum(level) by (service)", "service:my-service | stats count by (service), sum(level) by (service)")
+	test("service:my-service | stats count by (service) interval(1m), sum(level) by (service) interval(1m)", "service:my-service | stats count by (service) interval(1m), sum(level) by (service) interval(1m)")
+}
+
+func TestParsePipeStatsQuantile(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test("service:my-service | stats quantile(response_time, 0.5, 0.95) by (service)", "service:my-service | stats quantile(response_time, 0.5, 0.95) by (service)")
+}

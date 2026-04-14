@@ -33,9 +33,30 @@ func (g *grpcV1) StartAsyncSearch(
 		return nil, status.Error(codes.InvalidArgument, "can't serve empty request: fill aggs, hist or withDocs")
 	}
 
-	aggs, err := convertAggsQuery(r.Aggs)
+	statsAggs, err := ExtractStatsPipes(r.GetQuery().GetQuery())
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.InvalidArgument, "failed to parse stats pipe: %v", err)
+	}
+
+	hasAggsParam := len(r.Aggs) > 0
+	hasStatsPipe := len(statsAggs) > 0
+
+	if hasAggsParam && hasStatsPipe {
+		return nil, status.Error(codes.InvalidArgument,
+			"aggregation can be specified either via 'aggs' parameter or 'stats' pipe, not both")
+	}
+
+	var aggs []search.AggQuery
+	if hasStatsPipe {
+		aggs, err = ConvertStatsPipesToAggs(statsAggs)
+		if err != nil {
+			return nil, err
+		}
+	} else if hasAggsParam {
+		aggs, err = convertAggsQuery(r.Aggs)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var histInterval time.Duration

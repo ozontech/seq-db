@@ -21,6 +21,7 @@ import (
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/querytracer"
@@ -245,7 +246,26 @@ func (g *grpcV1) doSearch(
 		Order:       req.Order.MustDocsOrder(),
 	}
 
-	if len(req.Aggs) > 0 {
+	statsAggs, err := ExtractStatsPipes(req.Query.Query)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to parse stats pipe: %v", err)
+	}
+
+	hasAggsParam := len(req.Aggs) > 0
+	hasStatsPipe := len(statsAggs) > 0
+
+	if hasAggsParam && hasStatsPipe {
+		return nil, status.Error(codes.InvalidArgument,
+			"aggregation can be specified either via 'aggs' parameter or 'stats' pipe, not both")
+	}
+
+	if hasStatsPipe {
+		aggs, err := ConvertStatsPipesToAggs(statsAggs)
+		if err != nil {
+			return nil, err
+		}
+		proxyReq.AggQ = aggs
+	} else if hasAggsParam {
 		aggs, err := convertAggsQuery(req.Aggs)
 		if err != nil {
 			return nil, err
@@ -452,4 +472,120 @@ func shouldFailPartialResponse(ctx context.Context) bool {
 
 func shouldHaveResponse(code seqproxyapi.ErrorCode) bool {
 	return code == seqproxyapi.ErrorCode_ERROR_CODE_NO || code == seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE
+}
+
+func ExtractStatsPipes(query string) ([]parser.StatsAgg, error) {
+	if query == "" {
+		return nil, nil
+	}
+
+	seqql, err := parser.ParseSeqQL(query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []parser.StatsAgg
+	for _, pipe := range seqql.Pipes {
+		statsPipe, ok := pipe.(*parser.PipeStats)
+		if !ok {
+			continue
+		}
+		result = append(result, statsPipe.Aggs...)
+	}
+	return result, nil
+}
+
+func ConvertStatsPipesToAggs(statsAggs []parser.StatsAgg) ([]search.AggQuery, error) {
+	var result []search.AggQuery
+	for _, agg := range statsAggs {
+		aggFunc, err := convertFuncToSeqAggFunc(agg.Func)
+		if err != nil {
+			return nil, err
+		}
+
+		searchAgg := search.AggQuery{
+			Field:     agg.Field,
+			GroupBy:   agg.GroupBy,
+			Func:      aggFunc,
+			Quantiles: agg.Quantiles,
+		}
+
+		if agg.Interval != "" {
+			interval, err := util.ParseDuration(agg.Interval)
+			if err != nil {
+				return nil, status.Errorf(
+					codes.InvalidArgument,
+					"failed to parse 'interval': %v",
+					err,
+				)
+			}
+			searchAgg.Interval = seq.MID(interval.Nanoseconds())
+		}
+
+		if err := validateSearchAgg(&searchAgg); err != nil {
+			return nil, err
+		}
+
+		result = append(result, searchAgg)
+	}
+	return result, nil
+}
+
+func convertFuncToSeqAggFunc(funcName string) (seq.AggFunc, error) {
+	switch funcName {
+	case "count":
+		return seq.AggFuncCount, nil
+	case "sum":
+		return seq.AggFuncSum, nil
+	case "min":
+		return seq.AggFuncMin, nil
+	case "max":
+		return seq.AggFuncMax, nil
+	case "avg":
+		return seq.AggFuncAvg, nil
+	case "quantile":
+		return seq.AggFuncQuantile, nil
+	case "unique":
+		return seq.AggFuncUnique, nil
+	case "unique_count":
+		return seq.AggFuncUniqueCount, nil
+	default:
+		return 0, status.Errorf(codes.InvalidArgument, "unknown aggregation function: %s", funcName)
+	}
+}
+
+func validateSearchAgg(agg *search.AggQuery) error {
+	switch agg.Func {
+	case seq.AggFuncUnique, seq.AggFuncUniqueCount:
+		if agg.GroupBy == "" {
+			return status.Error(codes.InvalidArgument, "'groupBy' must be set for unique/unique_count")
+		}
+		if agg.Interval != 0 {
+			return status.Error(
+				codes.InvalidArgument,
+				"'unique' and 'unique_count' aggregations do not support timeseries",
+			)
+		}
+	case seq.AggFuncQuantile:
+		if agg.Field == "" {
+			return status.Error(codes.InvalidArgument, "'field' must be set for quantile")
+		}
+		if len(agg.Quantiles) == 0 {
+			return status.Error(codes.InvalidArgument, "quantile aggregation must contain at least one quantile")
+		}
+		for _, q := range agg.Quantiles {
+			if q < 0 || q > 1 {
+				return status.Error(codes.InvalidArgument, "quantile must be between 0 and 1")
+			}
+		}
+	case seq.AggFuncCount:
+		if agg.GroupBy == "" && agg.Field == "" {
+			return status.Error(codes.InvalidArgument, "'groupBy' or 'field' must be set for count")
+		}
+	case seq.AggFuncSum, seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncAvg:
+		if agg.Field == "" {
+			return status.Errorf(codes.InvalidArgument, "'field' must be set for %s", agg.Func.String())
+		}
+	}
+	return nil
 }
