@@ -271,7 +271,7 @@ func (s *IndexSealer) indexBlocks(src Source) iter.Seq[indexBlock] {
 		// SECTION 6: LIDs Section
 		statsLIDs := startStats()
 		s.lidsTable.StartBlockIndex = blocksCounter
-		for block := range bb.BuildLIDsBlocks(src.TokenLIDs(), consts.LIDBlockCap) {
+		for block := range bb.BuildLIDsBlocks(src.TokenLIDs(), s.params.LIDBlockSize) {
 			if !push(s.packLIDsBlock(block), &statsLIDs) {
 				return
 			}

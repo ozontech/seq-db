@@ -5,6 +5,7 @@ type Config struct {
 
 	SkipSortDocs bool
 	KeepMetaFile bool
+	LIDBlockSize int
 }
 
 type SearchConfig struct {

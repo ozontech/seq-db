@@ -344,6 +344,7 @@ func seal(active *Active) (*Sealed, error) {
 		TokenTableZstdLevel:    1,
 		DocBlocksZstdLevel:     1,
 		DocBlockSize:           128 * int(units.KiB),
+		LIDBlockSize:           512,
 	}
 	activeSealingSource, err := NewActiveSealingSource(active, sealParams)
 	if err != nil {

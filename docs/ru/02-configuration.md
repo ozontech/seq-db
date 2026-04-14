@@ -104,12 +104,13 @@ id: configuration
 
 Настройки уровня сжатия для различных типов данных.
 
-| Параметр | Тип | Значение по умолчанию | Описание |
-|----------|-----|----------------------|-----------|
-| `compression.docs_zstd_compression_level` | int | `1` | Уровень сжатия для документов |
-| `compression.metas_zstd_compression_level` | int | `1` | Уровень сжатия для метаданных |
-| `compression.sealed_zstd_compression_level` | int | `3` | Уровень сжатия для запечатанных фракций |
-| `compression.doc_block_zstd_compression_level` | int | `3` | Уровень сжатия для блоков документов |
+| Параметр                                       | Тип | Значение по умолчанию | Описание                                |
+|------------------------------------------------|-----|-----------------------|-----------------------------------------|
+| `compression.docs_zstd_compression_level`      | int | `1`                   | Уровень сжатия для документов           |
+| `compression.metas_zstd_compression_level`     | int | `1`                   | Уровень сжатия для метаданных           |
+| `compression.sealed_zstd_compression_level`    | int | `3`                   | Уровень сжатия для запечатанных фракций |
+| `compression.doc_block_zstd_compression_level` | int | `3`                   | Уровень сжатия для блоков документов    |
+| `compression.lid_block_size`                   | int | `64KiB`               | Максимальное количество лидов в блоках  |
 
 ## Конфигурация индексирования
 

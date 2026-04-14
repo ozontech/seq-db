@@ -86,6 +86,18 @@ limits:
 			env:       map[string]string{"SEQDB_OFFLOADING_QUEUE_SIZE_PERCENT": "50"},
 			expectErr: false,
 		},
+		{
+			name:      "Invalid compression.lid_block_size",
+			cfg:       baseCfg,
+			env:       map[string]string{"SEQDB_COMPRESSION_LID_BLOCK_SIZE": "-1KiB"},
+			expectErr: true,
+		},
+		{
+			name:      "Valid compression.lid_block_size",
+			cfg:       baseCfg,
+			env:       map[string]string{"SEQDB_COMPRESSION_LID_BLOCK_SIZE": "8KiB"},
+			expectErr: false,
+		},
 	}
 
 	for _, tt := range tests {

@@ -266,6 +266,7 @@ func startStore(
 			SealParams: common.SealParams{
 				IDsZstdLevel:           cfg.Compression.SealedZstdCompressionLevel,
 				LIDsZstdLevel:          cfg.Compression.SealedZstdCompressionLevel,
+				LIDBlockSize:           int(cfg.Compression.LIDBlockSize),
 				TokenListZstdLevel:     cfg.Compression.SealedZstdCompressionLevel,
 				DocsPositionsZstdLevel: cfg.Compression.SealedZstdCompressionLevel,
 				TokenTableZstdLevel:    cfg.Compression.SealedZstdCompressionLevel,
@@ -283,6 +284,7 @@ func startStore(
 				},
 				SkipSortDocs: !cfg.DocsSorting.Enabled,
 				KeepMetaFile: false,
+				LIDBlockSize: int(cfg.Compression.LIDBlockSize),
 			},
 			OffloadingEnabled:    cfg.Offloading.Enabled,
 			OffloadingRetention:  cfg.Offloading.Retention,

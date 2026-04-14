@@ -104,12 +104,13 @@ Resource allocation settings.
 
 Compression level settings for various data types.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `compression.docs_zstd_compression_level` | int | `1` | Zstandard compression level for documents |
-| `compression.metas_zstd_compression_level` | int | `1` | Zstandard compression level for metadata |
-| `compression.sealed_zstd_compression_level` | int | `3` | Zstandard compression level for sealed fractions |
-| `compression.doc_block_zstd_compression_level` | int | `3` | Zstandard compression level for document blocks |
+| Field                                          | Type | Default | Description                                      |
+|------------------------------------------------|------|---------|--------------------------------------------------|
+| `compression.docs_zstd_compression_level`      | int | `1`     | Zstandard compression level for documents        |
+| `compression.metas_zstd_compression_level`     | int | `1`     | Zstandard compression level for metadata         |
+| `compression.sealed_zstd_compression_level`    | int | `3`     | Zstandard compression level for sealed fractions |
+| `compression.doc_block_zstd_compression_level` | int | `3`     | Zstandard compression level for document blocks  |
+| `compression.lid_block_size`                   | int | `64KiB` | Max lids (postings) saved per LIDs block         |
 
 ## Indexing Configuration
 

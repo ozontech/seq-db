@@ -200,6 +200,8 @@ type Config struct {
 		MetasZstdCompressionLevel    int `config:"metas_zstd_compression_level" default:"1"`
 		SealedZstdCompressionLevel   int `config:"sealed_zstd_compression_level" default:"3"`
 		DocBlockZstdCompressionLevel int `config:"doc_block_zstd_compression_level" default:"3"`
+		// LIDBlockSize sets max lids (postings) saved per LIDs block.
+		LIDBlockSize Bytes `config:"lid_block_size" default:"64KiB"`
 	} `config:"compression"`
 
 	Indexing struct {
