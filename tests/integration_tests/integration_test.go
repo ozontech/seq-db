@@ -31,6 +31,7 @@ import (
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/skipmaskmanager"
 	"github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tests/setup"
 	"github.com/ozontech/seq-db/tests/suites"
@@ -1750,4 +1751,92 @@ func (s *IntegrationTestSuite) TestPaginationWithOffsetId() {
 		r.Equal(totalDocs, len(fetchedIDs), "total doc IDs count does not match")
 		r.Equal(totalDocs, len(fetchedDocs), "count of unique docs does not match")
 	}
+}
+
+func (s *IntegrationTestSuite) TestSkipMaskManager() {
+	t := s.T()
+	r := require.New(t)
+
+	cfg := *s.Config
+	env := setup.NewTestingEnv(&cfg)
+
+	docs := []string{
+		`{"service":"visible", "message":"doc1"}`,
+		`{"service":"hidden", "message":"doc2"}`,
+		`{"service":"visible", "message":"doc3"}`,
+		`{"service":"hidden", "message":"doc4"}`,
+	}
+	setup.Bulk(t, env.IngestorBulkAddr(), docs)
+	env.WaitIdle()
+	env.SealAll()
+
+	// bulk docs one more time to have sealed and active fracs
+	setup.Bulk(t, env.IngestorBulkAddr(), docs)
+
+	// save hidden doc ids to test fetch later
+	qpr, _, _, err := env.Search(`service:hidden`, 10, setup.WithTotal(true))
+	r.NoError(err)
+	hiddenDocIDs := qpr.IDs.IDs()
+
+	env.WaitIdle()
+	env.StopAll()
+
+	cfg.SkipMaskParams = []skipmaskmanager.SkipMaskParams{
+		{
+			Query: "service:hidden",
+			From:  0,
+			To:    seq.TimeToMID(time.Now()),
+		},
+	}
+	env = setup.NewTestingEnv(&cfg)
+	defer env.StopAll()
+
+	var checkSkipMasksStatus = func(stores setup.Stores) bool {
+		for _, ss := range stores {
+			for _, s := range ss {
+				if !s.SkipMaskManager.IsDone() {
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	// wait for skip masks processing
+	r.Eventually(func() bool {
+		return checkSkipMasksStatus(env.HotStores) && checkSkipMasksStatus(env.ColdStores)
+	}, 5*time.Second, 100*time.Millisecond)
+
+	// test search
+
+	qpr, _, _, err = env.Search(`service:hidden`, 10, setup.WithTotal(true))
+	r.NoError(err)
+	r.Equal(uint64(0), qpr.Total)
+
+	qpr, _, _, err = env.Search(`service:*`, 10, setup.WithTotal(true))
+	r.NoError(err)
+	r.Equal(uint64(4), qpr.Total)
+
+	// test fetch
+
+	fetchedDocs, err := env.Fetch(hiddenDocIDs)
+	r.NoError(err)
+	r.Len(fetchedDocs, len(hiddenDocIDs))
+	for _, doc := range fetchedDocs {
+		r.Len(doc, 0) // fetch hiddenID returns nothing
+	}
+
+	// refresh frac
+
+	env.WaitIdle()
+	env.SealAll()
+
+	// wait for skip masks processing
+	r.Eventually(func() bool {
+		return checkSkipMasksStatus(env.HotStores) && checkSkipMasksStatus(env.ColdStores)
+	}, 5*time.Second, 100*time.Millisecond)
+
+	qpr, _, _, err = env.Search(`service:hidden`, 10, setup.WithTotal(true))
+	r.NoError(err)
+	r.Equal(uint64(0), qpr.Total)
 }

@@ -126,6 +126,20 @@ func (c *Cache[V]) Cleanup() uint64 {
 	return totalFreed
 }
 
+func (c *Cache[V]) Evict(key uint32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	e, ok := c.payload[key]
+	if !ok {
+		// no key in cache
+		return
+	}
+
+	delete(c.payload, key)
+	e.deleted = true
+}
+
 // Recreates the payload map. If len is too small, fraction is probably out of date and useless
 func (c *Cache[V]) recreatePayload() {
 	if c.maxPayloadSize < recreateThreshold { // not large enough

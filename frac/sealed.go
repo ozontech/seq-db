@@ -51,6 +51,8 @@ type Sealed struct {
 
 	// shit for testing
 	PartialSuicideMode PSD
+
+	skipMaskProvider skipMaskProvider
 }
 
 type PSD int // emulates hard shutdown on different stages of fraction deletion, used for tests
@@ -68,6 +70,7 @@ func NewSealed(
 	docsCache *cache.Cache[[]byte],
 	info *common.Info,
 	config *Config,
+	skipMaskProvider skipMaskProvider,
 ) *Sealed {
 	f := &Sealed{
 		loadMu: &sync.RWMutex{},
@@ -81,6 +84,8 @@ func NewSealed(
 		Config:       config,
 
 		PartialSuicideMode: Off,
+
+		skipMaskProvider: skipMaskProvider,
 	}
 
 	// fast path if fraction-info cache exists AND it has valid index size
@@ -130,6 +135,7 @@ func NewSealedPreloaded(
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
 	config *Config,
+	skipMaskProvider skipMaskProvider,
 ) *Sealed {
 	f := &Sealed{
 		blocksData: preloaded.BlocksData,
@@ -144,6 +150,8 @@ func NewSealedPreloaded(
 		info:         preloaded.Info,
 		BaseFileName: baseFile,
 		Config:       config,
+
+		skipMaskProvider: skipMaskProvider,
 	}
 
 	// put the token table built during sealing into the cache of the sealed fraction
@@ -292,6 +300,8 @@ func (f *Sealed) Suicide() {
 			zap.Error(err),
 		)
 	}
+
+	f.skipMaskProvider.RemoveFrac(f.info.Name())
 }
 
 func (f *Sealed) String() string {
@@ -310,6 +320,13 @@ func (f *Sealed) Search(ctx context.Context, params processor.SearchParams) (*se
 	defer dp.release()
 
 	return dp.Search(params)
+}
+
+func (f *Sealed) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.FindLIDs(ids)
 }
 
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
@@ -336,6 +353,8 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 			&f.blocksData.IDsTable,
 			f.info.BinaryDataVer,
 		),
+
+		skipMaskProvider: f.skipMaskProvider,
 	}
 }
 
