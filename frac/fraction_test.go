@@ -2311,9 +2311,6 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 		nil,
 		s.config,
 		testSkipMaskProvider{},
-	)
-		s.config)
-		s.config,
 		false,
 	)
 
@@ -2390,9 +2387,6 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			s.config,
 			s3cli,
 			testSkipMaskProvider{},
-		)
-			s3cli)
-			s3cli,
 			false,
 		)
 

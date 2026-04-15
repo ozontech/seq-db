@@ -98,11 +98,9 @@ func NewRemote(
 		BaseFileName: baseFile,
 		Config:       config,
 
-		s3cli: s3cli,
-
+		s3cli:            s3cli,
 		skipMaskProvider: skipMaskProvider,
-		s3cli: s3cli,
-		s3cli:    s3cli,
+
 		IsLegacy: isLegacy,
 	}
 
