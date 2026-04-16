@@ -196,7 +196,7 @@ func (src *ActiveSealingSource) postingsForField(field string) iter.Seq2[TokenPo
 		for _, tid := range src.fieldTid[field] {
 			token := src.tokens[tid]
 
-			lids := src.lids[tid].GetLIDs(src.mids, src.rids)
+			lids := src.lids[tid].SortedLIDsUnsafe()
 			lidsbuf = slices.Grow(lidsbuf[:0], len(lids))
 
 			for _, lid := range lids {
