@@ -11,7 +11,6 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
-	"github.com/ozontech/seq-db/util"
 	"github.com/ozontech/seq-db/zstd"
 )
 
@@ -37,8 +36,6 @@ type IndexSealer struct {
 	idsTable   seqids.Table
 	lidsTable  lids.Table
 	tokenTable token.Table
-
-	lastErr error
 }
 
 func NewIndexSealer(params common.SealParams) *IndexSealer {
@@ -93,7 +90,11 @@ func (s *IndexSealer) WriteIDFile(ws io.WriteSeeker, src Source) error {
 	}
 	defer w.release()
 
-	for block := range seqBlockID(src.ID(), consts.IDsPerBlock) {
+	for block, err := range seqBlockID(src.ID(), consts.IDsPerBlock) {
+		if err != nil {
+			return err
+		}
+
 		if err := w.writeBlock(btypeMid, s.packMIDsBlock(block)); err != nil {
 			return err
 		}
@@ -141,15 +142,16 @@ func (s *IndexSealer) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 		})
 	}
 
-	for block, fieldsTables := range bb.BuildTokenBlocks(src.TokenTriplet(), accumulate, consts.RegularBlockSize) {
-		if err := tw.writeBlock(btypeToken, s.packTokenBlock(block)); err != nil {
+	for pair, err := range bb.BuildTokenBlocks(src.TokenTriplet(), accumulate, consts.RegularBlockSize) {
+		if err != nil {
 			return err
 		}
-		allFieldsTables = append(allFieldsTables, fieldsTables...)
-	}
 
-	if s.lastErr = util.CollapseErrors([]error{src.LastError(), bb.LastError()}); s.lastErr != nil {
-		return s.lastErr
+		if err := tw.writeBlock(btypeToken, s.packTokenBlock(pair.First)); err != nil {
+			return err
+		}
+
+		allFieldsTables = append(allFieldsTables, pair.Second...)
 	}
 
 	if err := s.finalizeLIDFile(lw, lidacc); err != nil {

@@ -22,6 +22,13 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
+type (
+	Document        = util.Pair[seq.ID, []byte]
+	TokenPosting    = util.Pair[[]byte, []uint32]
+	DocLocation     = util.Pair[seq.ID, seq.DocPos]
+	IndexedDocBlock = util.Pair[[]byte, []seq.DocPos]
+)
+
 type ActiveSealingSource struct {
 	params common.SealParams // Sealing parameters
 
@@ -44,8 +51,6 @@ type ActiveSealingSource struct {
 	docPosMap    map[seq.ID]seq.DocPos // Original document positions
 	docPosSorted []seq.DocPos          // Document positions after sorting
 	docsReader   *storage.DocsReader   // Document storage reader
-
-	lastErr error // Last error
 }
 
 func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSealingSource, error) {
@@ -111,26 +116,30 @@ func sortFields(tl *TokenList) ([]string, map[string][]uint32) {
 	return fields, fieldTid
 }
 
-func (src *ActiveSealingSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
-	return func(yield func(seq.ID, seq.DocPos) bool) {
+func (src *ActiveSealingSource) ID() iter.Seq2[DocLocation, error] {
+	return func(yield func(DocLocation, error) bool) {
 		mids := src.mids.vals
 		rids := src.rids.vals
 
 		// System ID and DocPos are not stored in `src.sortedLIDs`.
 		// However we do have to yield them to preserve 1-baseed indexing for ids.
-		if !yield(seq.SystemID, seq.SystemDocPos) {
+		dloc := DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}
+		if !yield(dloc, nil) {
 			return
 		}
 
 		for i, lid := range src.sortedLIDs {
-			id := seq.ID{
-				MID: seq.MID(mids[lid]),
-				RID: seq.RID(rids[lid]),
+			dloc := DocLocation{
+				First: seq.ID{
+					MID: seq.MID(mids[lid]),
+					RID: seq.RID(rids[lid]),
+				},
 			}
 
 			// Documents were not sorted previously.
 			if len(src.docPosSorted) == 0 {
-				if !yield(id, src.docPosMap[id]) {
+				dloc.Second = src.docPosMap[dloc.First]
+				if !yield(dloc, nil) {
 					return
 				}
 				continue
@@ -138,7 +147,8 @@ func (src *ActiveSealingSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
 
 			// `i` in range [0; len(src.sortedLIDs))
 			// but lids indexes are 1-based.
-			if !yield(id, src.docPosSorted[i+1]) {
+			dloc.Second = src.docPosSorted[i+1]
+			if !yield(dloc, nil) {
 				return
 			}
 		}
@@ -147,10 +157,6 @@ func (src *ActiveSealingSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
 
 func (src *ActiveSealingSource) BlockOffsets() []uint64 {
 	return src.blocksOffsets
-}
-
-func (src *ActiveSealingSource) LastError() error {
-	return src.lastErr
 }
 
 func (src *ActiveSealingSource) prepareInfo() {
@@ -174,19 +180,19 @@ func (src *ActiveSealingSource) Info() *common.Info {
 	return src.info
 }
 
-func (src *ActiveSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint32]] {
-	return func(yield func(string, iter.Seq2[[]byte, []uint32]) bool) {
+func (src *ActiveSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
+	return func(yield func(string, iter.Seq2[TokenPosting, error]) bool) {
 		for _, field := range src.fields {
-			if !yield(field, src.tokensForField(field)) {
+			if !yield(field, src.postingsForField(field)) {
 				return
 			}
 		}
 	}
 }
 
-func (src *ActiveSealingSource) tokensForField(field string) iter.Seq2[[]byte, []uint32] {
+func (src *ActiveSealingSource) postingsForField(field string) iter.Seq2[TokenPosting, error] {
 	var lidsbuf []uint32
-	return func(yield func([]byte, []uint32) bool) {
+	return func(yield func(TokenPosting, error) bool) {
 		for _, tid := range src.fieldTid[field] {
 			token := src.tokens[tid]
 
@@ -197,7 +203,8 @@ func (src *ActiveSealingSource) tokensForField(field string) iter.Seq2[[]byte, [
 				lidsbuf = append(lidsbuf, src.oldToNewLIDs[lid])
 			}
 
-			if !yield(token, lidsbuf) {
+			tpost := TokenPosting{First: token, Second: lidsbuf}
+			if !yield(tpost, nil) {
 				return
 			}
 		}
@@ -214,24 +221,34 @@ func makeInverser(sortedLIDs []uint32) []uint32 {
 
 // Docs returns an iterator for documents with their IDs.
 // Handles duplicate IDs (for nested indexes).
-func (src *ActiveSealingSource) Docs() iter.Seq2[seq.ID, []byte] {
-	src.lastErr = nil
-	return func(yield func(seq.ID, []byte) bool) {
+func (src *ActiveSealingSource) Docs() iter.Seq2[Document, error] {
+	return func(yield func(Document, error) bool) {
 		var (
-			prev   seq.ID
-			curDoc []byte
+			curdoc []byte
+			prev   seq.ID = seq.SystemID
 		)
 
-		for id, pos := range src.ID() {
-			if id == seq.SystemID {
-				curDoc = nil // reserved system document (no payload)
-			} else if id != prev {
-				if curDoc, src.lastErr = src.doc(pos); src.lastErr != nil {
+		for dloc, err := range src.ID() {
+			if err != nil {
+				yield(Document{}, err)
+				return
+			}
+
+			id, pos := dloc.First, dloc.Second
+
+			if id != prev {
+				xcurdoc, xerr := src.doc(pos)
+				if xerr != nil {
+					yield(Document{}, xerr)
 					return
 				}
+				curdoc = xcurdoc
 			}
+
 			prev = id
-			if !yield(id, curDoc) {
+			doc := Document{First: id, Second: curdoc}
+
+			if !yield(doc, nil) {
 				return
 			}
 		}
@@ -244,13 +261,17 @@ func (src *ActiveSealingSource) doc(pos seq.DocPos) ([]byte, error) {
 	blockOffset := src.blocksOffsets[blockIndex]
 
 	var doc []byte
-	err := src.docsReader.ReadDocsFunc(blockOffset, []uint64{docOffset}, func(b []byte) error {
-		doc = b
-		return nil
-	})
+	err := src.docsReader.ReadDocsFunc(
+		blockOffset, []uint64{docOffset},
+		func(b []byte) error {
+			doc = b
+			return nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
+
 	return doc, nil
 }
 
@@ -274,10 +295,10 @@ func (src *ActiveSealingSource) SortDocs() error {
 
 	// Write blocks and get new offsets and positions
 	blocksOffsets, positions, err := src.writeDocs(blocks, bw)
-
-	if err := util.CollapseErrors([]error{src.lastErr, err}); err != nil {
+	if err != nil {
 		return err
 	}
+
 	if err := bw.Flush(); err != nil {
 		return err
 	}
@@ -296,12 +317,15 @@ func (src *ActiveSealingSource) SortDocs() error {
 	if err := sdocsFile.Sync(); err != nil {
 		return err
 	}
+
 	if err := sdocsFile.Close(); err != nil {
 		return err
 	}
+
 	if err := os.Rename(sdocsFile.Name(), src.info.Path+consts.SdocsFileSuffix); err != nil {
 		return err
 	}
+
 	if err := util.SyncPath(filepath.Dir(src.info.Path)); err != nil {
 		return err
 	}
@@ -322,32 +346,39 @@ func (src *ActiveSealingSource) SortDocs() error {
 
 // writeDocs compresses and writes document blocks, calculating new offsets
 // and collecting document positions.
-func (src *ActiveSealingSource) writeDocs(blocks iter.Seq2[[]byte, []seq.DocPos], w io.Writer) ([]uint64, []seq.DocPos, error) {
+func (src *ActiveSealingSource) writeDocs(blocks iter.Seq2[IndexedDocBlock, error], w io.Writer) ([]uint64, []seq.DocPos, error) {
 	offset := 0
 	buf := make([]byte, 0)
 	blocksOffsets := make([]uint64, 0)
 	allPositions := make([]seq.DocPos, 0, len(src.mids.vals))
 
 	// Process each document block
-	for block, positions := range blocks {
-		allPositions = append(allPositions, positions...)
+	for docBlock, err := range blocks {
+		if err != nil {
+			return nil, nil, err
+		}
+
+		allPositions = append(allPositions, docBlock.Second...)
 		blocksOffsets = append(blocksOffsets, uint64(offset))
 
 		// Compress document block
-		buf = storage.CompressDocBlock(block, buf[:0], src.params.DocBlocksZstdLevel)
+		buf = storage.CompressDocBlock(docBlock.First, buf[:0], src.params.DocBlocksZstdLevel)
 		if _, err := w.Write(buf); err != nil {
 			return nil, nil, err
 		}
+
 		offset += len(buf)
 	}
+
 	return blocksOffsets, allPositions, nil
 }
 
 // docBlocks groups documents into fixed-size blocks.
 // Returns an iterator for blocks and corresponding document positions.
-func docBlocks(docs iter.Seq2[seq.ID, []byte], blockSize int) iter.Seq2[[]byte, []seq.DocPos] {
-	return func(yield func([]byte, []seq.DocPos) bool) {
+func docBlocks(docs iter.Seq2[Document, error], blockSize int) iter.Seq2[IndexedDocBlock, error] {
+	return func(yield func(IndexedDocBlock, error) bool) {
 		const defaultBlockSize = 128 * units.KiB
+
 		if blockSize <= 0 {
 			blockSize = int(defaultBlockSize)
 			logger.Warn("document block size not specified", zap.Int("default_size", blockSize))
@@ -357,24 +388,34 @@ func docBlocks(docs iter.Seq2[seq.ID, []byte], blockSize int) iter.Seq2[[]byte, 
 			prev  seq.ID
 			index uint32 // Current block index
 		)
+
 		pos := make([]seq.DocPos, 0)
 		buf := make([]byte, 0, blockSize)
 
 		// Iterate through documents
-		for id, doc := range docs {
+		for doc, err := range docs {
+			if err != nil {
+				yield(IndexedDocBlock{}, err)
+				return
+			}
+
+			id, doc := doc.First, doc.Second
 			if id == prev {
 				// Duplicate IDs (for nested indexes) - store document once,
 				// but create positions for each LID
 				pos = append(pos, seq.PackDocPos(index, uint64(len(buf))))
 				continue
 			}
+
 			prev = id
 
 			// If block is full, yield it
 			if len(buf) >= blockSize {
-				if !yield(buf, pos) {
+				docBlock := IndexedDocBlock{First: buf, Second: pos}
+				if !yield(docBlock, nil) {
 					return
 				}
+
 				index++
 				buf = buf[:0]
 				pos = pos[:0]
@@ -387,6 +428,8 @@ func docBlocks(docs iter.Seq2[seq.ID, []byte], blockSize int) iter.Seq2[[]byte, 
 			buf = binary.LittleEndian.AppendUint32(buf, uint32(len(doc)))
 			buf = append(buf, doc...)
 		}
-		yield(buf, pos)
+
+		docBlock := IndexedDocBlock{First: buf, Second: pos}
+		yield(docBlock, nil)
 	}
 }

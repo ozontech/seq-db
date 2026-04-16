@@ -13,6 +13,11 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
+type (
+	DocLocation  = util.Pair[seq.ID, seq.DocPos]
+	TokenPosting = util.Pair[[]byte, []uint32]
+)
+
 // Source interface defines the contract for data sources that can be sealed.
 // Provides access to all necessary data components for index creation
 type Source interface {
@@ -21,7 +26,7 @@ type Source interface {
 
 	// ID returns an iterator over stored document identifiers paired with
 	// their positions, in descending [seq.ID] order.
-	ID() iter.Seq2[seq.ID, seq.DocPos]
+	ID() iter.Seq2[DocLocation, error]
 
 	// BlockOffsets returns byte offsets to each document block
 	// within this source's `.docs` file.
@@ -30,60 +35,7 @@ type Source interface {
 	// TokenTriplet iterates over fields in lexicographic order.
 	// For each field, it yields tokens (lexicographically sorted)
 	// paired with the local document ID list for that token.
-	TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint32]]
-
-	// LastError returns the last error encountered during iteration,
-	// or nil if no error occurred.
-	LastError() error
-}
-
-func syncAndClose(f *os.File) error {
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
-}
-
-func createAndWrite(tmpPath, finalPath string, write func(*os.File) error) error {
-	f, err := os.Create(tmpPath)
-	if err != nil {
-		return err
-	}
-
-	if err := errors.Join(write(f), syncAndClose(f)); err != nil {
-		return err
-	}
-
-	return os.Rename(tmpPath, finalPath)
-}
-
-func createAndWriteBoth(
-	tmpPath1, finalPath1,
-	tmpPath2, finalPath2 string,
-	write func(*os.File, *os.File) error,
-) error {
-	f1, err := os.Create(tmpPath1)
-	if err != nil {
-		return err
-	}
-
-	f2, err := os.Create(tmpPath2)
-	if err != nil {
-		f1.Close()
-		return err
-	}
-
-	writeErr := write(f1, f2)
-	if err := errors.Join(writeErr, syncAndClose(f1), syncAndClose(f2)); err != nil {
-		return err
-	}
-
-	if err := os.Rename(tmpPath1, finalPath1); err != nil {
-		return err
-	}
-
-	return os.Rename(tmpPath2, finalPath2)
+	TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]]
 }
 
 // Seal writes five index files (.info, .token, .offsets, .id, .lid) for the fraction
@@ -161,4 +113,56 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	}
 
 	return preloaded, nil
+}
+
+func syncAndClose(f *os.File) error {
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+func createAndWrite(
+	tmp, final string,
+	write func(*os.File) error,
+) error {
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+
+	if err := errors.Join(write(f), syncAndClose(f)); err != nil {
+		return err
+	}
+
+	return os.Rename(tmp, final)
+}
+
+func createAndWriteBoth(
+	tmpa, finala,
+	tmpb, finalb string,
+	write func(*os.File, *os.File) error,
+) error {
+	a, err := os.Create(tmpa)
+	if err != nil {
+		return err
+	}
+
+	b, err := os.Create(tmpb)
+	if err != nil {
+		a.Close()
+		return err
+	}
+
+	writeErr := write(a, b)
+	if err := errors.Join(writeErr, syncAndClose(a), syncAndClose(b)); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpa, finala); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpb, finalb)
 }

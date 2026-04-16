@@ -8,7 +8,11 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
-	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
+)
+
+type (
+	TokenBlock = util.Pair[tokensSealBlock, []token.FieldTable]
 )
 
 // tokensExt represents the token ID range contained in a block.
@@ -45,28 +49,13 @@ type idsSealBlock struct {
 
 // blocksBuilder constructs sealed blocks from various data sources.
 // Provides error tracking and consistency validation during block construction.
-type blocksBuilder struct {
-	lastErr error // Last error encountered during processing
-}
-
-// LastError returns the last error encountered during block processing.
-func (bb *blocksBuilder) LastError() error {
-	return bb.lastErr
-}
+type blocksBuilder struct{}
 
 func (bb *blocksBuilder) BuildTokenBlocks(
-	it iter.Seq2[string, iter.Seq2[[]byte, []uint32]],
+	it iter.Seq2[string, iter.Seq2[TokenPosting, error]],
 	accumulate func([]uint32) error, blockCapacity int,
-) iter.Seq2[tokensSealBlock, []token.FieldTable] {
-	return func(yield func(tokensSealBlock, []token.FieldTable) bool) {
-		accumulate := func(lids []uint32) error {
-			if err := accumulate(lids); err != nil {
-				bb.lastErr = err
-				return err
-			}
-			return nil
-		}
-
+) iter.Seq2[TokenBlock, error] {
+	return func(yield func(TokenBlock, error) bool) {
 		var (
 			block     tokensSealBlock
 			blockIdx  uint32
@@ -97,7 +86,8 @@ func (bb *blocksBuilder) BuildTokenBlocks(
 			emitFieldEntry()
 			block.ext.maxTID = currentTID
 
-			if !yield(block, pendingTable) {
+			pair := TokenBlock{First: block, Second: pendingTable}
+			if !yield(pair, nil) {
 				return false
 			}
 
@@ -121,7 +111,13 @@ func (bb *blocksBuilder) BuildTokenBlocks(
 			fieldName = field
 			fieldEntryStartTID = currentTID + 1
 
-			for tok, lids := range tokIt {
+			for pair, err := range tokIt {
+				if err != nil {
+					yield(TokenBlock{}, err)
+					return
+				}
+
+				tok, tlids := pair.First, pair.Second
 				tokenSize := int(unsafe.Sizeof(uint32(0))) + len(tok)
 
 				if blockSize > 0 && blockSize+tokenSize > blockCapacity {
@@ -134,8 +130,8 @@ func (bb *blocksBuilder) BuildTokenBlocks(
 				block.payload.Payload = binary.LittleEndian.AppendUint32(block.payload.Payload, uint32(len(tok)))
 				block.payload.Payload = append(block.payload.Payload, tok...)
 
-				if err := accumulate(lids); err != nil {
-					bb.lastErr = err
+				if err := accumulate(tlids); err != nil {
+					yield(TokenBlock{}, err)
 					return
 				}
 
@@ -174,17 +170,23 @@ func newTokenTableEntry(
 
 // seqBlockID accumulates scalar (ID, position) pairs into sealed ID blocks.
 // A new block is yielded every `blockCapacity` IDs.
-func seqBlockID(ids iter.Seq2[seq.ID, seq.DocPos], blockCapacity int) iter.Seq[idsSealBlock] {
-	return func(yield func(idsSealBlock) bool) {
+func seqBlockID(ids iter.Seq2[DocLocation, error], blockCapacity int) iter.Seq2[idsSealBlock, error] {
+	return func(yield func(idsSealBlock, error) bool) {
 		var block idsSealBlock
 
-		for id, pos := range ids {
+		for pair, err := range ids {
+			if err != nil {
+				yield(idsSealBlock{}, err)
+				return
+			}
+
+			id, pos := pair.First, pair.Second
 			block.mids.Values = append(block.mids.Values, uint64(id.MID))
 			block.rids.Values = append(block.rids.Values, uint64(id.RID))
 			block.params.Values = append(block.params.Values, uint64(pos))
 
 			if len(block.mids.Values) == blockCapacity {
-				if !yield(block) {
+				if !yield(block, nil) {
 					return
 				}
 
@@ -195,7 +197,7 @@ func seqBlockID(ids iter.Seq2[seq.ID, seq.DocPos], blockCapacity int) iter.Seq[i
 		}
 
 		if len(block.mids.Values) > 0 {
-			yield(block)
+			yield(block, nil)
 		}
 	}
 }

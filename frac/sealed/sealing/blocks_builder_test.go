@@ -24,28 +24,16 @@ type mockSource struct {
 	pos           []seq.DocPos
 	tokenLIDs     [][]uint32
 	blocksOffsets []uint64
-	lastError     error
 }
 
 func (m *mockSource) Info() *common.Info { return &m.info }
 
-func (m *mockSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint32]] {
-	return func(yield func(string, iter.Seq2[[]byte, []uint32]) bool) {
+func (m *mockSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
+	return func(yield func(string, iter.Seq2[TokenPosting, error]) bool) {
 		start := 0
 		for i, field := range m.fields {
 			end := int(m.fieldMaxTIDs[i])
-			tokenStart, tokenEnd := start, end
-			if !yield(field, func(yield func([]byte, []uint32) bool) {
-				for j := tokenStart; j < tokenEnd; j++ {
-					var lidsbuf []uint32
-					if j < len(m.tokenLIDs) {
-						lidsbuf = m.tokenLIDs[j]
-					}
-					if !yield(m.tokens[j], lidsbuf) {
-						return
-					}
-				}
-			}) {
+			if !yield(field, m.tokensForField(start, end)) {
 				return
 			}
 			start = end
@@ -53,24 +41,25 @@ func (m *mockSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint32
 	}
 }
 
-func (m *mockSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
-	return func(yield func(seq.ID, seq.DocPos) bool) {
-		for i, id := range m.ids {
-			if !yield(id, m.pos[i]) {
+func (m *mockSource) tokensForField(start, end int) iter.Seq2[TokenPosting, error] {
+	return func(yield func(TokenPosting, error) bool) {
+		for j := start; j < end; j++ {
+			var lidsbuf []uint32
+			if j < len(m.tokenLIDs) {
+				lidsbuf = m.tokenLIDs[j]
+			}
+			pair := TokenPosting{First: m.tokens[j], Second: lidsbuf}
+			if !yield(pair, nil) {
 				return
 			}
 		}
 	}
 }
 
-func (m *mockSource) TokenAndLIDs() iter.Seq2[[]byte, []uint32] {
-	return func(yield func([]byte, []uint32) bool) {
-		for i, token := range m.tokens {
-			var lidsbuf []uint32
-			if i < len(m.tokenLIDs) {
-				lidsbuf = m.tokenLIDs[i]
-			}
-			if !yield(token, lidsbuf) {
+func (m *mockSource) ID() iter.Seq2[DocLocation, error] {
+	return func(yield func(DocLocation, error) bool) {
+		for i, id := range m.ids {
+			if !yield(DocLocation{First: id, Second: m.pos[i]}, nil) {
 				return
 			}
 		}
@@ -78,7 +67,6 @@ func (m *mockSource) TokenAndLIDs() iter.Seq2[[]byte, []uint32] {
 }
 
 func (m *mockSource) BlockOffsets() []uint64 { return m.blocksOffsets }
-func (m *mockSource) LastError() error       { return m.lastError }
 
 func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	src := mockSource{
@@ -150,11 +138,13 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	blockIndex := 0
 
 	allFieldsTables := []token.FieldTable{}
-	for result, fieldsTables := range tokenBlocks {
-		assert.Equal(t, expectedSizes[blockIndex], result.payload.Len())
-		for i := range result.payload.Len() {
+	for pair, err := range tokenBlocks {
+		assert.NoError(t, err)
+		block, fieldsTables := pair.First, pair.Second
+		assert.Equal(t, expectedSizes[blockIndex], block.payload.Len())
+		for i := range block.payload.Len() {
 			tid++
-			assert.Equal(t, src.tokens[tid-1], result.payload.GetToken(i))
+			assert.Equal(t, src.tokens[tid-1], block.payload.GetToken(i))
 		}
 		allFieldsTables = append(allFieldsTables, fieldsTables...)
 		blockIndex++
@@ -323,10 +313,13 @@ func TestBlocksBuilder_IDsBlocks(t *testing.T) {
 	i := 0
 	ids := []seq.ID{}
 	pos := []seq.DocPos{}
-	for block := range seqBlockID(src.ID(), 3) {
+	for block, err := range seqBlockID(src.ID(), 3) {
+		assert.NoError(t, err)
+
 		assert.Equal(t, expectedSizes[i], len(block.mids.Values))
 		assert.Equal(t, expectedSizes[i], len(block.rids.Values))
 		assert.Equal(t, expectedSizes[i], len(block.params.Values))
+
 		i++
 		j := 0
 		for _, mid := range block.mids.Values {
