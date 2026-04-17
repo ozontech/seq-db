@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"iter"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -43,10 +44,11 @@ type ActiveSealingSource struct {
 	mids *UInt64s // MIDs
 	rids *UInt64s // RIDs
 
-	fields   []string            // Sorted field names
-	fieldTid map[string][]uint32 // Each field contains sorted TIDs based on token value
-	tokens   [][]byte            // Tokens (values) by TID
-	lids     []*TokenLIDs        // LID lists for each token
+	fields    []string   // Sorted field names
+	fieldTids [][]uint32 // Each field contains sorted TIDs based on token value
+
+	tokens [][]byte     // Tokens (values) by TID
+	lids   []*TokenLIDs // LID lists for each token
 
 	docPosMap    map[seq.ID]seq.DocPos // Original document positions
 	docPosSorted []seq.DocPos          // Document positions after sorting
@@ -57,7 +59,7 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 	info := *active.info // copy
 
 	sortedLIDs := active.GetAllDocuments()
-	fields, fieldTid := sortFields(active.TokenList)
+	fields, fieldTids := sortFields(active.TokenList)
 
 	src := ActiveSealingSource{
 		params: params,
@@ -71,10 +73,10 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 		mids: active.MIDs,
 		rids: active.RIDs,
 
-		fields:   fields,
-		fieldTid: fieldTid,
-		tokens:   active.TokenList.tidToVal,
-		lids:     active.TokenList.tidToLIDs,
+		fields:    fields,
+		fieldTids: fieldTids,
+		tokens:    active.TokenList.tidToVal,
+		lids:      active.TokenList.tidToLIDs,
 
 		docPosMap:     active.DocsPositions.idToPos,
 		blocksOffsets: active.DocBlocks.vals,
@@ -94,26 +96,24 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 	return &src, nil
 }
 
-func sortFields(tl *TokenList) ([]string, map[string][]uint32) {
-	fields := make([]string, 0, len(tl.FieldTIDs))
-	fieldTid := make(map[string][]uint32, len(tl.FieldTIDs))
+func sortFields(tl *TokenList) ([]string, [][]uint32) {
+	fields := slices.Collect(maps.Keys(tl.FieldTIDs))
+	slices.Sort(fields)
 
-	for field, tids := range tl.FieldTIDs {
-		fields = append(fields, field)
-
+	fieldTids := make([][]uint32, len(tl.FieldTIDs))
+	for i, field := range fields {
 		// Make a copy because this memory is shared
 		// with concurrent readers (user search queries).
-		cp := slices.Clone(tids)
+		cp := slices.Clone(tl.FieldTIDs[field])
 
 		slices.SortFunc(cp, func(i, j uint32) int {
 			return bytes.Compare(tl.tidToVal[i], tl.tidToVal[j])
 		})
 
-		fieldTid[field] = cp
+		fieldTids[i] = cp
 	}
 
-	slices.Sort(fields)
-	return fields, fieldTid
+	return fields, fieldTids
 }
 
 func (src *ActiveSealingSource) ID() iter.Seq2[DocLocation, error] {
@@ -182,18 +182,18 @@ func (src *ActiveSealingSource) Info() *common.Info {
 
 func (src *ActiveSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
 	return func(yield func(string, iter.Seq2[TokenPosting, error]) bool) {
-		for _, field := range src.fields {
-			if !yield(field, src.postingsForField(field)) {
+		for idx, field := range src.fields {
+			if !yield(field, src.postingsForField(field, idx)) {
 				return
 			}
 		}
 	}
 }
 
-func (src *ActiveSealingSource) postingsForField(field string) iter.Seq2[TokenPosting, error] {
+func (src *ActiveSealingSource) postingsForField(field string, idx int) iter.Seq2[TokenPosting, error] {
 	var lidsbuf []uint32
 	return func(yield func(TokenPosting, error) bool) {
-		for _, tid := range src.fieldTid[field] {
+		for _, tid := range src.fieldTids[idx] {
 			token := src.tokens[tid]
 
 			lids := src.lids[tid].SortedLIDsUnsafe()
