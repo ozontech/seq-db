@@ -62,6 +62,10 @@ func (f *testFakeFrac) Search(context.Context, processor.SearchParams) (*seq.QPR
 	return f.qpr, nil
 }
 
+func (f *testFakeFrac) FindLIDs(context.Context, []seq.ID) ([]seq.LID, error) {
+	return []seq.LID{}, nil
+}
+
 func newFakeFrac(from, to seq.MID, qpr *seq.QPR) *testFakeFrac {
 	return &testFakeFrac{
 		info:      &common.Info{From: from, To: to, DocsTotal: 1},

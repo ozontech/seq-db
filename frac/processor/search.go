@@ -39,6 +39,7 @@ type tokenIndex interface {
 type searchIndex interface {
 	tokenIndex
 	idsIndex
+	GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
 }
 
 type LIDsIter interface {
@@ -111,6 +112,19 @@ func IndexSearch(
 
 			return aggs, nil
 		}
+	}
+
+	m = sw.Start("get_skip_lids")
+	skipLIDs, hasSkipLIDs, err := index.GetSkipLIDs(minLID, maxLID, params.Order.IsReverse())
+	m.Stop()
+	if err != nil {
+		return nil, err
+	}
+
+	if hasSkipLIDs {
+		m = sw.Start("eval_skip_lids")
+		evalTree = evalSkipLIDs(evalTree, skipLIDs, stats)
+		m.Stop()
 	}
 
 	var evalTreeIter func(need int, out lidsBuf) LIDsIter
