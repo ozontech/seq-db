@@ -50,12 +50,14 @@ type LIDsIter interface {
 var lidsBufPool = sync.Pool{
 	New: func() any {
 		return lidsBuf{
-			lids: make([]node.LID, 0, maxLIDBufCap),
+			// Currently, we drain up to 4k lids from eval tree, but with proper batching enabled
+			// we can get as much as whole LID block can have (currently, 64k lids)
+			lids: make([]node.LID, 0, consts.LIDBlockCap),
 		}
 	},
 }
 
-const maxLIDBufCap = 4096
+const maxLidsToDrain = 4096
 
 func IndexSearch(
 	ctx context.Context,
@@ -257,7 +259,7 @@ func iterateEvalTree(
 			need = math.MaxUint32
 		}
 		// limit how much we drain from eval tree for one-by-one flow. ignored for batched flow
-		need = min(need, maxLIDBufCap)
+		need = min(need, maxLidsToDrain)
 
 		timerEval.Start()
 		lidBatch := evalTree(need, buf)
