@@ -2098,7 +2098,7 @@ type SeqProxyApiClient interface {
 	DeleteAsyncSearch(ctx context.Context, in *DeleteAsyncSearchRequest, opts ...grpc.CallOption) (*DeleteAsyncSearchResponse, error)
 	// Fetch list of async searches.
 	GetAsyncSearchesList(ctx context.Context, in *GetAsyncSearchesListRequest, opts ...grpc.CallOption) (*GetAsyncSearchesListResponse, error)
-	OnePhaseSearch(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponse, error)
+	OnePhaseSearch(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*ComplexSearchResponse, error)
 }
 
 type seqProxyApiClient struct {
@@ -2272,8 +2272,8 @@ func (c *seqProxyApiClient) GetAsyncSearchesList(ctx context.Context, in *GetAsy
 	return out, nil
 }
 
-func (c *seqProxyApiClient) OnePhaseSearch(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponse, error) {
-	out := new(SearchResponse)
+func (c *seqProxyApiClient) OnePhaseSearch(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*ComplexSearchResponse, error) {
+	out := new(ComplexSearchResponse)
 	err := c.cc.Invoke(ctx, "/seqproxyapi.v1.SeqProxyApi/OnePhaseSearch", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -2313,7 +2313,7 @@ type SeqProxyApiServer interface {
 	DeleteAsyncSearch(context.Context, *DeleteAsyncSearchRequest) (*DeleteAsyncSearchResponse, error)
 	// Fetch list of async searches.
 	GetAsyncSearchesList(context.Context, *GetAsyncSearchesListRequest) (*GetAsyncSearchesListResponse, error)
-	OnePhaseSearch(context.Context, *SearchRequest) (*SearchResponse, error)
+	OnePhaseSearch(context.Context, *SearchRequest) (*ComplexSearchResponse, error)
 	mustEmbedUnimplementedSeqProxyApiServer()
 }
 
@@ -2360,7 +2360,7 @@ func (UnimplementedSeqProxyApiServer) DeleteAsyncSearch(context.Context, *Delete
 func (UnimplementedSeqProxyApiServer) GetAsyncSearchesList(context.Context, *GetAsyncSearchesListRequest) (*GetAsyncSearchesListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAsyncSearchesList not implemented")
 }
-func (UnimplementedSeqProxyApiServer) OnePhaseSearch(context.Context, *SearchRequest) (*SearchResponse, error) {
+func (UnimplementedSeqProxyApiServer) OnePhaseSearch(context.Context, *SearchRequest) (*ComplexSearchResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method OnePhaseSearch not implemented")
 }
 func (UnimplementedSeqProxyApiServer) mustEmbedUnimplementedSeqProxyApiServer() {}

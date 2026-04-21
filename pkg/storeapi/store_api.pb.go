@@ -250,6 +250,70 @@ func (AsyncSearchStatus) EnumDescriptor() ([]byte, []int) {
 	return file_storeapi_store_api_proto_rawDescGZIP(), []int{3}
 }
 
+type DataType int32
+
+const (
+	DataType_BYTES        DataType = 0
+	DataType_RAW_DOCUMENT DataType = 1
+	DataType_STRING       DataType = 2
+	DataType_UINT32       DataType = 3
+	DataType_UINT64       DataType = 4
+	DataType_INT32        DataType = 5
+	DataType_INT64        DataType = 6
+	DataType_FLOAT64      DataType = 7 // TODO: array data types: StringArray, Uin64Array, Float64Array etc.
+)
+
+// Enum value maps for DataType.
+var (
+	DataType_name = map[int32]string{
+		0: "BYTES",
+		1: "RAW_DOCUMENT",
+		2: "STRING",
+		3: "UINT32",
+		4: "UINT64",
+		5: "INT32",
+		6: "INT64",
+		7: "FLOAT64",
+	}
+	DataType_value = map[string]int32{
+		"BYTES":        0,
+		"RAW_DOCUMENT": 1,
+		"STRING":       2,
+		"UINT32":       3,
+		"UINT64":       4,
+		"INT32":        5,
+		"INT64":        6,
+		"FLOAT64":      7,
+	}
+)
+
+func (x DataType) Enum() *DataType {
+	p := new(DataType)
+	*p = x
+	return p
+}
+
+func (x DataType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DataType) Descriptor() protoreflect.EnumDescriptor {
+	return file_storeapi_store_api_proto_enumTypes[4].Descriptor()
+}
+
+func (DataType) Type() protoreflect.EnumType {
+	return &file_storeapi_store_api_proto_enumTypes[4]
+}
+
+func (x DataType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DataType.Descriptor instead.
+func (DataType) EnumDescriptor() ([]byte, []int) {
+	return file_storeapi_store_api_proto_rawDescGZIP(), []int{4}
+}
+
 type BulkRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Count         int64                  `protobuf:"varint,1,opt,name=count,proto3" json:"count,omitempty"`
@@ -1806,8 +1870,8 @@ func (x *StatusResponse) GetOldestTime() *timestamppb.Timestamp {
 type OnePhaseSearchRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Query         string                 `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
-	From          int64                  `protobuf:"varint,2,opt,name=from,proto3" json:"from,omitempty"`
-	To            int64                  `protobuf:"varint,3,opt,name=to,proto3" json:"to,omitempty"`
+	From          *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
+	To            *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=to,proto3" json:"to,omitempty"`
 	Size          int64                  `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
 	Offset        int64                  `protobuf:"varint,5,opt,name=offset,proto3" json:"offset,omitempty"`
 	Explain       bool                   `protobuf:"varint,6,opt,name=explain,proto3" json:"explain,omitempty"`
@@ -1856,18 +1920,18 @@ func (x *OnePhaseSearchRequest) GetQuery() string {
 	return ""
 }
 
-func (x *OnePhaseSearchRequest) GetFrom() int64 {
+func (x *OnePhaseSearchRequest) GetFrom() *timestamppb.Timestamp {
 	if x != nil {
 		return x.From
 	}
-	return 0
+	return nil
 }
 
-func (x *OnePhaseSearchRequest) GetTo() int64 {
+func (x *OnePhaseSearchRequest) GetTo() *timestamppb.Timestamp {
 	if x != nil {
 		return x.To
 	}
-	return 0
+	return nil
 }
 
 func (x *OnePhaseSearchRequest) GetSize() int64 {
@@ -1924,7 +1988,7 @@ type OnePhaseSearchResponse struct {
 	// Types that are valid to be assigned to ResponseType:
 	//
 	//	*OnePhaseSearchResponse_Header
-	//	*OnePhaseSearchResponse_Document
+	//	*OnePhaseSearchResponse_Batch
 	ResponseType  isOnePhaseSearchResponse_ResponseType `protobuf_oneof:"ResponseType"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1976,10 +2040,10 @@ func (x *OnePhaseSearchResponse) GetHeader() *Header {
 	return nil
 }
 
-func (x *OnePhaseSearchResponse) GetDocument() *Document {
+func (x *OnePhaseSearchResponse) GetBatch() *RecordsBatch {
 	if x != nil {
-		if x, ok := x.ResponseType.(*OnePhaseSearchResponse_Document); ok {
-			return x.Document
+		if x, ok := x.ResponseType.(*OnePhaseSearchResponse_Batch); ok {
+			return x.Batch
 		}
 	}
 	return nil
@@ -1993,71 +2057,25 @@ type OnePhaseSearchResponse_Header struct {
 	Header *Header `protobuf:"bytes,1,opt,name=header,proto3,oneof"`
 }
 
-type OnePhaseSearchResponse_Document struct {
-	Document *Document `protobuf:"bytes,2,opt,name=document,proto3,oneof"`
+type OnePhaseSearchResponse_Batch struct {
+	Batch *RecordsBatch `protobuf:"bytes,2,opt,name=batch,proto3,oneof"`
 }
 
 func (*OnePhaseSearchResponse_Header) isOnePhaseSearchResponse_ResponseType() {}
 
-func (*OnePhaseSearchResponse_Document) isOnePhaseSearchResponse_ResponseType() {}
-
-type Document struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Data          *BinaryData            `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Document) Reset() {
-	*x = Document{}
-	mi := &file_storeapi_store_api_proto_msgTypes[24]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Document) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Document) ProtoMessage() {}
-
-func (x *Document) ProtoReflect() protoreflect.Message {
-	mi := &file_storeapi_store_api_proto_msgTypes[24]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Document.ProtoReflect.Descriptor instead.
-func (*Document) Descriptor() ([]byte, []int) {
-	return file_storeapi_store_api_proto_rawDescGZIP(), []int{24}
-}
-
-func (x *Document) GetData() *BinaryData {
-	if x != nil {
-		return x.Data
-	}
-	return nil
-}
+func (*OnePhaseSearchResponse_Batch) isOnePhaseSearchResponse_ResponseType() {}
 
 type Header struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Total         uint64                 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
-	Errors        []string               `protobuf:"bytes,2,rep,name=errors,proto3" json:"errors,omitempty"`
-	Code          SearchErrorCode        `protobuf:"varint,3,opt,name=code,proto3,enum=api.SearchErrorCode" json:"code,omitempty"`
-	Explain       *ExplainEntry          `protobuf:"bytes,4,opt,name=explain,proto3,oneof" json:"explain,omitempty"`
+	Metadata      *Metadata              `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Typing        []*Typing              `protobuf:"bytes,2,rep,name=typing,proto3" json:"typing,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Header) Reset() {
 	*x = Header{}
-	mi := &file_storeapi_store_api_proto_msgTypes[25]
+	mi := &file_storeapi_store_api_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2069,7 +2087,7 @@ func (x *Header) String() string {
 func (*Header) ProtoMessage() {}
 
 func (x *Header) ProtoReflect() protoreflect.Message {
-	mi := &file_storeapi_store_api_proto_msgTypes[25]
+	mi := &file_storeapi_store_api_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2082,33 +2100,227 @@ func (x *Header) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Header.ProtoReflect.Descriptor instead.
 func (*Header) Descriptor() ([]byte, []int) {
+	return file_storeapi_store_api_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *Header) GetMetadata() *Metadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *Header) GetTyping() []*Typing {
+	if x != nil {
+		return x.Typing
+	}
+	return nil
+}
+
+type Metadata struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Total         uint64                 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
+	Code          SearchErrorCode        `protobuf:"varint,2,opt,name=code,proto3,enum=api.SearchErrorCode" json:"code,omitempty"`
+	Errors        []string               `protobuf:"bytes,3,rep,name=errors,proto3" json:"errors,omitempty"`
+	Explain       *ExplainEntry          `protobuf:"bytes,4,opt,name=explain,proto3,oneof" json:"explain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Metadata) Reset() {
+	*x = Metadata{}
+	mi := &file_storeapi_store_api_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Metadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Metadata) ProtoMessage() {}
+
+func (x *Metadata) ProtoReflect() protoreflect.Message {
+	mi := &file_storeapi_store_api_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Metadata.ProtoReflect.Descriptor instead.
+func (*Metadata) Descriptor() ([]byte, []int) {
 	return file_storeapi_store_api_proto_rawDescGZIP(), []int{25}
 }
 
-func (x *Header) GetTotal() uint64 {
+func (x *Metadata) GetTotal() uint64 {
 	if x != nil {
 		return x.Total
 	}
 	return 0
 }
 
-func (x *Header) GetErrors() []string {
-	if x != nil {
-		return x.Errors
-	}
-	return nil
-}
-
-func (x *Header) GetCode() SearchErrorCode {
+func (x *Metadata) GetCode() SearchErrorCode {
 	if x != nil {
 		return x.Code
 	}
 	return SearchErrorCode_NO_ERROR
 }
 
-func (x *Header) GetExplain() *ExplainEntry {
+func (x *Metadata) GetErrors() []string {
+	if x != nil {
+		return x.Errors
+	}
+	return nil
+}
+
+func (x *Metadata) GetExplain() *ExplainEntry {
 	if x != nil {
 		return x.Explain
+	}
+	return nil
+}
+
+type Typing struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Title         string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Type          DataType               `protobuf:"varint,2,opt,name=type,proto3,enum=api.DataType" json:"type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Typing) Reset() {
+	*x = Typing{}
+	mi := &file_storeapi_store_api_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Typing) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Typing) ProtoMessage() {}
+
+func (x *Typing) ProtoReflect() protoreflect.Message {
+	mi := &file_storeapi_store_api_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Typing.ProtoReflect.Descriptor instead.
+func (*Typing) Descriptor() ([]byte, []int) {
+	return file_storeapi_store_api_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *Typing) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Typing) GetType() DataType {
+	if x != nil {
+		return x.Type
+	}
+	return DataType_BYTES
+}
+
+type RecordsBatch struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Records       []*Record              `protobuf:"bytes,1,rep,name=records,proto3" json:"records,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecordsBatch) Reset() {
+	*x = RecordsBatch{}
+	mi := &file_storeapi_store_api_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordsBatch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordsBatch) ProtoMessage() {}
+
+func (x *RecordsBatch) ProtoReflect() protoreflect.Message {
+	mi := &file_storeapi_store_api_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordsBatch.ProtoReflect.Descriptor instead.
+func (*RecordsBatch) Descriptor() ([]byte, []int) {
+	return file_storeapi_store_api_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *RecordsBatch) GetRecords() []*Record {
+	if x != nil {
+		return x.Records
+	}
+	return nil
+}
+
+type Record struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RawData       [][]byte               `protobuf:"bytes,1,rep,name=raw_data,json=rawData,proto3" json:"raw_data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Record) Reset() {
+	*x = Record{}
+	mi := &file_storeapi_store_api_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Record) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Record) ProtoMessage() {}
+
+func (x *Record) ProtoReflect() protoreflect.Message {
+	mi := &file_storeapi_store_api_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Record.ProtoReflect.Descriptor instead.
+func (*Record) Descriptor() ([]byte, []int) {
+	return file_storeapi_store_api_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *Record) GetRawData() [][]byte {
+	if x != nil {
+		return x.RawData
 	}
 	return nil
 }
@@ -2123,7 +2335,7 @@ type SearchResponse_Id struct {
 
 func (x *SearchResponse_Id) Reset() {
 	*x = SearchResponse_Id{}
-	mi := &file_storeapi_store_api_proto_msgTypes[26]
+	mi := &file_storeapi_store_api_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2135,7 +2347,7 @@ func (x *SearchResponse_Id) String() string {
 func (*SearchResponse_Id) ProtoMessage() {}
 
 func (x *SearchResponse_Id) ProtoReflect() protoreflect.Message {
-	mi := &file_storeapi_store_api_proto_msgTypes[26]
+	mi := &file_storeapi_store_api_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2175,7 +2387,7 @@ type SearchResponse_IdWithHint struct {
 
 func (x *SearchResponse_IdWithHint) Reset() {
 	*x = SearchResponse_IdWithHint{}
-	mi := &file_storeapi_store_api_proto_msgTypes[27]
+	mi := &file_storeapi_store_api_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2187,7 +2399,7 @@ func (x *SearchResponse_IdWithHint) String() string {
 func (*SearchResponse_IdWithHint) ProtoMessage() {}
 
 func (x *SearchResponse_IdWithHint) ProtoReflect() protoreflect.Message {
-	mi := &file_storeapi_store_api_proto_msgTypes[27]
+	mi := &file_storeapi_store_api_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2232,7 +2444,7 @@ type SearchResponse_Histogram struct {
 
 func (x *SearchResponse_Histogram) Reset() {
 	*x = SearchResponse_Histogram{}
-	mi := &file_storeapi_store_api_proto_msgTypes[28]
+	mi := &file_storeapi_store_api_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2244,7 +2456,7 @@ func (x *SearchResponse_Histogram) String() string {
 func (*SearchResponse_Histogram) ProtoMessage() {}
 
 func (x *SearchResponse_Histogram) ProtoReflect() protoreflect.Message {
-	mi := &file_storeapi_store_api_proto_msgTypes[28]
+	mi := &file_storeapi_store_api_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2320,7 +2532,7 @@ type SearchResponse_Bin struct {
 
 func (x *SearchResponse_Bin) Reset() {
 	*x = SearchResponse_Bin{}
-	mi := &file_storeapi_store_api_proto_msgTypes[29]
+	mi := &file_storeapi_store_api_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2332,7 +2544,7 @@ func (x *SearchResponse_Bin) String() string {
 func (*SearchResponse_Bin) ProtoMessage() {}
 
 func (x *SearchResponse_Bin) ProtoReflect() protoreflect.Message {
-	mi := &file_storeapi_store_api_proto_msgTypes[29]
+	mi := &file_storeapi_store_api_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2391,7 +2603,7 @@ type SearchResponse_Agg struct {
 
 func (x *SearchResponse_Agg) Reset() {
 	*x = SearchResponse_Agg{}
-	mi := &file_storeapi_store_api_proto_msgTypes[30]
+	mi := &file_storeapi_store_api_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2403,7 +2615,7 @@ func (x *SearchResponse_Agg) String() string {
 func (*SearchResponse_Agg) ProtoMessage() {}
 
 func (x *SearchResponse_Agg) ProtoReflect() protoreflect.Message {
-	mi := &file_storeapi_store_api_proto_msgTypes[30]
+	mi := &file_storeapi_store_api_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2765,46 +2977,62 @@ var file_storeapi_store_api_proto_rawDesc = string([]byte{
 	0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65,
 	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2e, 0x54, 0x69, 0x6d, 0x65, 0x73, 0x74,
 	0x61, 0x6d, 0x70, 0x52, 0x0a, 0x6f, 0x6c, 0x64, 0x65, 0x73, 0x74, 0x54, 0x69, 0x6d, 0x65, 0x22,
-	0xad, 0x02, 0x0a, 0x15, 0x4f, 0x6e, 0x65, 0x50, 0x68, 0x61, 0x73, 0x65, 0x53, 0x65, 0x61, 0x72,
+	0xe5, 0x02, 0x0a, 0x15, 0x4f, 0x6e, 0x65, 0x50, 0x68, 0x61, 0x73, 0x65, 0x53, 0x65, 0x61, 0x72,
 	0x63, 0x68, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x71, 0x75, 0x65,
 	0x72, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x71, 0x75, 0x65, 0x72, 0x79, 0x12,
-	0x12, 0x0a, 0x04, 0x66, 0x72, 0x6f, 0x6d, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x52, 0x04, 0x66,
-	0x72, 0x6f, 0x6d, 0x12, 0x0e, 0x0a, 0x02, 0x74, 0x6f, 0x18, 0x03, 0x20, 0x01, 0x28, 0x03, 0x52,
-	0x02, 0x74, 0x6f, 0x12, 0x12, 0x0a, 0x04, 0x73, 0x69, 0x7a, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28,
-	0x03, 0x52, 0x04, 0x73, 0x69, 0x7a, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65,
-	0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x03, 0x52, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x12,
-	0x18, 0x0a, 0x07, 0x65, 0x78, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x18, 0x06, 0x20, 0x01, 0x28, 0x08,
-	0x52, 0x07, 0x65, 0x78, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x12, 0x1d, 0x0a, 0x0a, 0x77, 0x69, 0x74,
-	0x68, 0x5f, 0x74, 0x6f, 0x74, 0x61, 0x6c, 0x18, 0x07, 0x20, 0x01, 0x28, 0x08, 0x52, 0x09, 0x77,
-	0x69, 0x74, 0x68, 0x54, 0x6f, 0x74, 0x61, 0x6c, 0x12, 0x20, 0x0a, 0x05, 0x6f, 0x72, 0x64, 0x65,
-	0x72, 0x18, 0x08, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x0a, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x4f, 0x72,
-	0x64, 0x65, 0x72, 0x52, 0x05, 0x6f, 0x72, 0x64, 0x65, 0x72, 0x12, 0x1b, 0x0a, 0x09, 0x6f, 0x66,
-	0x66, 0x73, 0x65, 0x74, 0x5f, 0x69, 0x64, 0x18, 0x09, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x6f,
-	0x66, 0x66, 0x73, 0x65, 0x74, 0x49, 0x64, 0x12, 0x36, 0x0a, 0x0d, 0x66, 0x69, 0x65, 0x6c, 0x64,
-	0x73, 0x5f, 0x66, 0x69, 0x6c, 0x74, 0x65, 0x72, 0x18, 0x0a, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x11,
-	0x2e, 0x61, 0x70, 0x69, 0x2e, 0x46, 0x69, 0x65, 0x6c, 0x64, 0x73, 0x46, 0x69, 0x6c, 0x74, 0x65,
-	0x72, 0x52, 0x0c, 0x66, 0x69, 0x65, 0x6c, 0x64, 0x73, 0x46, 0x69, 0x6c, 0x74, 0x65, 0x72, 0x22,
-	0x7c, 0x0a, 0x16, 0x4f, 0x6e, 0x65, 0x50, 0x68, 0x61, 0x73, 0x65, 0x53, 0x65, 0x61, 0x72, 0x63,
-	0x68, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x25, 0x0a, 0x06, 0x68, 0x65, 0x61,
-	0x64, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0b, 0x2e, 0x61, 0x70, 0x69, 0x2e,
-	0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x48, 0x00, 0x52, 0x06, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72,
-	0x12, 0x2b, 0x0a, 0x08, 0x64, 0x6f, 0x63, 0x75, 0x6d, 0x65, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01,
-	0x28, 0x0b, 0x32, 0x0d, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x44, 0x6f, 0x63, 0x75, 0x6d, 0x65, 0x6e,
-	0x74, 0x48, 0x00, 0x52, 0x08, 0x64, 0x6f, 0x63, 0x75, 0x6d, 0x65, 0x6e, 0x74, 0x42, 0x0e, 0x0a,
-	0x0c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x54, 0x79, 0x70, 0x65, 0x22, 0x2f, 0x0a,
-	0x08, 0x44, 0x6f, 0x63, 0x75, 0x6d, 0x65, 0x6e, 0x74, 0x12, 0x23, 0x0a, 0x04, 0x64, 0x61, 0x74,
-	0x61, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0f, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x42, 0x69,
-	0x6e, 0x61, 0x72, 0x79, 0x44, 0x61, 0x74, 0x61, 0x52, 0x04, 0x64, 0x61, 0x74, 0x61, 0x22, 0x9e,
-	0x01, 0x0a, 0x06, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x12, 0x14, 0x0a, 0x05, 0x74, 0x6f, 0x74,
-	0x61, 0x6c, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x74, 0x6f, 0x74, 0x61, 0x6c, 0x12,
-	0x16, 0x0a, 0x06, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x09, 0x52,
-	0x06, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x73, 0x12, 0x28, 0x0a, 0x04, 0x63, 0x6f, 0x64, 0x65, 0x18,
-	0x03, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x14, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x53, 0x65, 0x61, 0x72,
-	0x63, 0x68, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x43, 0x6f, 0x64, 0x65, 0x52, 0x04, 0x63, 0x6f, 0x64,
-	0x65, 0x12, 0x30, 0x0a, 0x07, 0x65, 0x78, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x18, 0x04, 0x20, 0x01,
-	0x28, 0x0b, 0x32, 0x11, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x45, 0x78, 0x70, 0x6c, 0x61, 0x69, 0x6e,
-	0x45, 0x6e, 0x74, 0x72, 0x79, 0x48, 0x00, 0x52, 0x07, 0x65, 0x78, 0x70, 0x6c, 0x61, 0x69, 0x6e,
-	0x88, 0x01, 0x01, 0x42, 0x0a, 0x0a, 0x08, 0x5f, 0x65, 0x78, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x2a,
+	0x2e, 0x0a, 0x04, 0x66, 0x72, 0x6f, 0x6d, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e,
+	0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2e,
+	0x54, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x52, 0x04, 0x66, 0x72, 0x6f, 0x6d, 0x12,
+	0x2a, 0x0a, 0x02, 0x74, 0x6f, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x67, 0x6f,
+	0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2e, 0x54, 0x69,
+	0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x52, 0x02, 0x74, 0x6f, 0x12, 0x12, 0x0a, 0x04, 0x73,
+	0x69, 0x7a, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x03, 0x52, 0x04, 0x73, 0x69, 0x7a, 0x65, 0x12,
+	0x16, 0x0a, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x03, 0x52,
+	0x06, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x12, 0x18, 0x0a, 0x07, 0x65, 0x78, 0x70, 0x6c, 0x61,
+	0x69, 0x6e, 0x18, 0x06, 0x20, 0x01, 0x28, 0x08, 0x52, 0x07, 0x65, 0x78, 0x70, 0x6c, 0x61, 0x69,
+	0x6e, 0x12, 0x1d, 0x0a, 0x0a, 0x77, 0x69, 0x74, 0x68, 0x5f, 0x74, 0x6f, 0x74, 0x61, 0x6c, 0x18,
+	0x07, 0x20, 0x01, 0x28, 0x08, 0x52, 0x09, 0x77, 0x69, 0x74, 0x68, 0x54, 0x6f, 0x74, 0x61, 0x6c,
+	0x12, 0x20, 0x0a, 0x05, 0x6f, 0x72, 0x64, 0x65, 0x72, 0x18, 0x08, 0x20, 0x01, 0x28, 0x0e, 0x32,
+	0x0a, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x4f, 0x72, 0x64, 0x65, 0x72, 0x52, 0x05, 0x6f, 0x72, 0x64,
+	0x65, 0x72, 0x12, 0x1b, 0x0a, 0x09, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x5f, 0x69, 0x64, 0x18,
+	0x09, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x49, 0x64, 0x12,
+	0x36, 0x0a, 0x0d, 0x66, 0x69, 0x65, 0x6c, 0x64, 0x73, 0x5f, 0x66, 0x69, 0x6c, 0x74, 0x65, 0x72,
+	0x18, 0x0a, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x11, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x46, 0x69, 0x65,
+	0x6c, 0x64, 0x73, 0x46, 0x69, 0x6c, 0x74, 0x65, 0x72, 0x52, 0x0c, 0x66, 0x69, 0x65, 0x6c, 0x64,
+	0x73, 0x46, 0x69, 0x6c, 0x74, 0x65, 0x72, 0x22, 0x7a, 0x0a, 0x16, 0x4f, 0x6e, 0x65, 0x50, 0x68,
+	0x61, 0x73, 0x65, 0x53, 0x65, 0x61, 0x72, 0x63, 0x68, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
+	0x65, 0x12, 0x25, 0x0a, 0x06, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x0b, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x48, 0x00,
+	0x52, 0x06, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x12, 0x29, 0x0a, 0x05, 0x62, 0x61, 0x74, 0x63,
+	0x68, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x11, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x52, 0x65,
+	0x63, 0x6f, 0x72, 0x64, 0x73, 0x42, 0x61, 0x74, 0x63, 0x68, 0x48, 0x00, 0x52, 0x05, 0x62, 0x61,
+	0x74, 0x63, 0x68, 0x42, 0x0e, 0x0a, 0x0c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x54,
+	0x79, 0x70, 0x65, 0x22, 0x58, 0x0a, 0x06, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x12, 0x29, 0x0a,
+	0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32,
+	0x0d, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x52, 0x08,
+	0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x12, 0x23, 0x0a, 0x06, 0x74, 0x79, 0x70, 0x69,
+	0x6e, 0x67, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x0b, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x54,
+	0x79, 0x70, 0x69, 0x6e, 0x67, 0x52, 0x06, 0x74, 0x79, 0x70, 0x69, 0x6e, 0x67, 0x22, 0xa0, 0x01,
+	0x0a, 0x08, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x12, 0x14, 0x0a, 0x05, 0x74, 0x6f,
+	0x74, 0x61, 0x6c, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x74, 0x6f, 0x74, 0x61, 0x6c,
+	0x12, 0x28, 0x0a, 0x04, 0x63, 0x6f, 0x64, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x14,
+	0x2e, 0x61, 0x70, 0x69, 0x2e, 0x53, 0x65, 0x61, 0x72, 0x63, 0x68, 0x45, 0x72, 0x72, 0x6f, 0x72,
+	0x43, 0x6f, 0x64, 0x65, 0x52, 0x04, 0x63, 0x6f, 0x64, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x65, 0x72,
+	0x72, 0x6f, 0x72, 0x73, 0x18, 0x03, 0x20, 0x03, 0x28, 0x09, 0x52, 0x06, 0x65, 0x72, 0x72, 0x6f,
+	0x72, 0x73, 0x12, 0x30, 0x0a, 0x07, 0x65, 0x78, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x18, 0x04, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x11, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x45, 0x78, 0x70, 0x6c, 0x61, 0x69,
+	0x6e, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x48, 0x00, 0x52, 0x07, 0x65, 0x78, 0x70, 0x6c, 0x61, 0x69,
+	0x6e, 0x88, 0x01, 0x01, 0x42, 0x0a, 0x0a, 0x08, 0x5f, 0x65, 0x78, 0x70, 0x6c, 0x61, 0x69, 0x6e,
+	0x22, 0x41, 0x0a, 0x06, 0x54, 0x79, 0x70, 0x69, 0x6e, 0x67, 0x12, 0x14, 0x0a, 0x05, 0x74, 0x69,
+	0x74, 0x6c, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x74, 0x69, 0x74, 0x6c, 0x65,
+	0x12, 0x21, 0x0a, 0x04, 0x74, 0x79, 0x70, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x0d,
+	0x2e, 0x61, 0x70, 0x69, 0x2e, 0x44, 0x61, 0x74, 0x61, 0x54, 0x79, 0x70, 0x65, 0x52, 0x04, 0x74,
+	0x79, 0x70, 0x65, 0x22, 0x35, 0x0a, 0x0c, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x73, 0x42, 0x61,
+	0x74, 0x63, 0x68, 0x12, 0x25, 0x0a, 0x07, 0x72, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x73, 0x18, 0x01,
+	0x20, 0x03, 0x28, 0x0b, 0x32, 0x0b, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x52, 0x65, 0x63, 0x6f, 0x72,
+	0x64, 0x52, 0x07, 0x72, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x73, 0x22, 0x23, 0x0a, 0x06, 0x52, 0x65,
+	0x63, 0x6f, 0x72, 0x64, 0x12, 0x19, 0x0a, 0x08, 0x72, 0x61, 0x77, 0x5f, 0x64, 0x61, 0x74, 0x61,
+	0x18, 0x01, 0x20, 0x03, 0x28, 0x0c, 0x52, 0x07, 0x72, 0x61, 0x77, 0x44, 0x61, 0x74, 0x61, 0x2a,
 	0xac, 0x01, 0x0a, 0x07, 0x41, 0x67, 0x67, 0x46, 0x75, 0x6e, 0x63, 0x12, 0x12, 0x0a, 0x0e, 0x41,
 	0x47, 0x47, 0x5f, 0x46, 0x55, 0x4e, 0x43, 0x5f, 0x43, 0x4f, 0x55, 0x4e, 0x54, 0x10, 0x00, 0x12,
 	0x10, 0x0a, 0x0c, 0x41, 0x47, 0x47, 0x5f, 0x46, 0x55, 0x4e, 0x43, 0x5f, 0x53, 0x55, 0x4d, 0x10,
@@ -2841,7 +3069,14 @@ var file_storeapi_store_api_proto_rawDesc = string([]byte{
 	0x65, 0x10, 0x01, 0x12, 0x1d, 0x0a, 0x19, 0x41, 0x73, 0x79, 0x6e, 0x63, 0x53, 0x65, 0x61, 0x72,
 	0x63, 0x68, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x43, 0x61, 0x6e, 0x63, 0x65, 0x6c, 0x65, 0x64,
 	0x10, 0x02, 0x12, 0x1a, 0x0a, 0x16, 0x41, 0x73, 0x79, 0x6e, 0x63, 0x53, 0x65, 0x61, 0x72, 0x63,
-	0x68, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x10, 0x03, 0x32, 0xeb,
+	0x68, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x10, 0x03, 0x2a, 0x6e,
+	0x0a, 0x08, 0x44, 0x61, 0x74, 0x61, 0x54, 0x79, 0x70, 0x65, 0x12, 0x09, 0x0a, 0x05, 0x42, 0x59,
+	0x54, 0x45, 0x53, 0x10, 0x00, 0x12, 0x10, 0x0a, 0x0c, 0x52, 0x41, 0x57, 0x5f, 0x44, 0x4f, 0x43,
+	0x55, 0x4d, 0x45, 0x4e, 0x54, 0x10, 0x01, 0x12, 0x0a, 0x0a, 0x06, 0x53, 0x54, 0x52, 0x49, 0x4e,
+	0x47, 0x10, 0x02, 0x12, 0x0a, 0x0a, 0x06, 0x55, 0x49, 0x4e, 0x54, 0x33, 0x32, 0x10, 0x03, 0x12,
+	0x0a, 0x0a, 0x06, 0x55, 0x49, 0x4e, 0x54, 0x36, 0x34, 0x10, 0x04, 0x12, 0x09, 0x0a, 0x05, 0x49,
+	0x4e, 0x54, 0x33, 0x32, 0x10, 0x05, 0x12, 0x09, 0x0a, 0x05, 0x49, 0x4e, 0x54, 0x36, 0x34, 0x10,
+	0x06, 0x12, 0x0b, 0x0a, 0x07, 0x46, 0x4c, 0x4f, 0x41, 0x54, 0x36, 0x34, 0x10, 0x07, 0x32, 0xeb,
 	0x05, 0x0a, 0x08, 0x53, 0x74, 0x6f, 0x72, 0x65, 0x41, 0x70, 0x69, 0x12, 0x32, 0x0a, 0x04, 0x42,
 	0x75, 0x6c, 0x6b, 0x12, 0x10, 0x2e, 0x61, 0x70, 0x69, 0x2e, 0x42, 0x75, 0x6c, 0x6b, 0x52, 0x65,
 	0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x16, 0x2e, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70,
@@ -2907,126 +3142,135 @@ func file_storeapi_store_api_proto_rawDescGZIP() []byte {
 	return file_storeapi_store_api_proto_rawDescData
 }
 
-var file_storeapi_store_api_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_storeapi_store_api_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_storeapi_store_api_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_storeapi_store_api_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_storeapi_store_api_proto_goTypes = []any{
 	(AggFunc)(0),                           // 0: api.AggFunc
 	(Order)(0),                             // 1: api.Order
 	(SearchErrorCode)(0),                   // 2: api.SearchErrorCode
 	(AsyncSearchStatus)(0),                 // 3: api.AsyncSearchStatus
-	(*BulkRequest)(nil),                    // 4: api.BulkRequest
-	(*BinaryData)(nil),                     // 5: api.BinaryData
-	(*AggQuery)(nil),                       // 6: api.AggQuery
-	(*SearchRequest)(nil),                  // 7: api.SearchRequest
-	(*SearchResponse)(nil),                 // 8: api.SearchResponse
-	(*ExplainEntry)(nil),                   // 9: api.ExplainEntry
-	(*StartAsyncSearchRequest)(nil),        // 10: api.StartAsyncSearchRequest
-	(*StartAsyncSearchResponse)(nil),       // 11: api.StartAsyncSearchResponse
-	(*FetchAsyncSearchResultRequest)(nil),  // 12: api.FetchAsyncSearchResultRequest
-	(*FetchAsyncSearchResultResponse)(nil), // 13: api.FetchAsyncSearchResultResponse
-	(*CancelAsyncSearchRequest)(nil),       // 14: api.CancelAsyncSearchRequest
-	(*CancelAsyncSearchResponse)(nil),      // 15: api.CancelAsyncSearchResponse
-	(*DeleteAsyncSearchRequest)(nil),       // 16: api.DeleteAsyncSearchRequest
-	(*DeleteAsyncSearchResponse)(nil),      // 17: api.DeleteAsyncSearchResponse
-	(*GetAsyncSearchesListRequest)(nil),    // 18: api.GetAsyncSearchesListRequest
-	(*GetAsyncSearchesListResponse)(nil),   // 19: api.GetAsyncSearchesListResponse
-	(*AsyncSearchesListItem)(nil),          // 20: api.AsyncSearchesListItem
-	(*IdWithHint)(nil),                     // 21: api.IdWithHint
-	(*FieldsFilter)(nil),                   // 22: api.FieldsFilter
-	(*FetchRequest)(nil),                   // 23: api.FetchRequest
-	(*StatusRequest)(nil),                  // 24: api.StatusRequest
-	(*StatusResponse)(nil),                 // 25: api.StatusResponse
-	(*OnePhaseSearchRequest)(nil),          // 26: api.OnePhaseSearchRequest
-	(*OnePhaseSearchResponse)(nil),         // 27: api.OnePhaseSearchResponse
-	(*Document)(nil),                       // 28: api.Document
+	(DataType)(0),                          // 4: api.DataType
+	(*BulkRequest)(nil),                    // 5: api.BulkRequest
+	(*BinaryData)(nil),                     // 6: api.BinaryData
+	(*AggQuery)(nil),                       // 7: api.AggQuery
+	(*SearchRequest)(nil),                  // 8: api.SearchRequest
+	(*SearchResponse)(nil),                 // 9: api.SearchResponse
+	(*ExplainEntry)(nil),                   // 10: api.ExplainEntry
+	(*StartAsyncSearchRequest)(nil),        // 11: api.StartAsyncSearchRequest
+	(*StartAsyncSearchResponse)(nil),       // 12: api.StartAsyncSearchResponse
+	(*FetchAsyncSearchResultRequest)(nil),  // 13: api.FetchAsyncSearchResultRequest
+	(*FetchAsyncSearchResultResponse)(nil), // 14: api.FetchAsyncSearchResultResponse
+	(*CancelAsyncSearchRequest)(nil),       // 15: api.CancelAsyncSearchRequest
+	(*CancelAsyncSearchResponse)(nil),      // 16: api.CancelAsyncSearchResponse
+	(*DeleteAsyncSearchRequest)(nil),       // 17: api.DeleteAsyncSearchRequest
+	(*DeleteAsyncSearchResponse)(nil),      // 18: api.DeleteAsyncSearchResponse
+	(*GetAsyncSearchesListRequest)(nil),    // 19: api.GetAsyncSearchesListRequest
+	(*GetAsyncSearchesListResponse)(nil),   // 20: api.GetAsyncSearchesListResponse
+	(*AsyncSearchesListItem)(nil),          // 21: api.AsyncSearchesListItem
+	(*IdWithHint)(nil),                     // 22: api.IdWithHint
+	(*FieldsFilter)(nil),                   // 23: api.FieldsFilter
+	(*FetchRequest)(nil),                   // 24: api.FetchRequest
+	(*StatusRequest)(nil),                  // 25: api.StatusRequest
+	(*StatusResponse)(nil),                 // 26: api.StatusResponse
+	(*OnePhaseSearchRequest)(nil),          // 27: api.OnePhaseSearchRequest
+	(*OnePhaseSearchResponse)(nil),         // 28: api.OnePhaseSearchResponse
 	(*Header)(nil),                         // 29: api.Header
-	(*SearchResponse_Id)(nil),              // 30: api.SearchResponse.Id
-	(*SearchResponse_IdWithHint)(nil),      // 31: api.SearchResponse.IdWithHint
-	(*SearchResponse_Histogram)(nil),       // 32: api.SearchResponse.Histogram
-	(*SearchResponse_Bin)(nil),             // 33: api.SearchResponse.Bin
-	(*SearchResponse_Agg)(nil),             // 34: api.SearchResponse.Agg
-	nil,                                    // 35: api.SearchResponse.HistogramEntry
-	nil,                                    // 36: api.SearchResponse.Agg.AggEntry
-	nil,                                    // 37: api.SearchResponse.Agg.AggHistogramEntry
-	(*durationpb.Duration)(nil),            // 38: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil),          // 39: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),                  // 40: google.protobuf.Empty
+	(*Metadata)(nil),                       // 30: api.Metadata
+	(*Typing)(nil),                         // 31: api.Typing
+	(*RecordsBatch)(nil),                   // 32: api.RecordsBatch
+	(*Record)(nil),                         // 33: api.Record
+	(*SearchResponse_Id)(nil),              // 34: api.SearchResponse.Id
+	(*SearchResponse_IdWithHint)(nil),      // 35: api.SearchResponse.IdWithHint
+	(*SearchResponse_Histogram)(nil),       // 36: api.SearchResponse.Histogram
+	(*SearchResponse_Bin)(nil),             // 37: api.SearchResponse.Bin
+	(*SearchResponse_Agg)(nil),             // 38: api.SearchResponse.Agg
+	nil,                                    // 39: api.SearchResponse.HistogramEntry
+	nil,                                    // 40: api.SearchResponse.Agg.AggEntry
+	nil,                                    // 41: api.SearchResponse.Agg.AggHistogramEntry
+	(*durationpb.Duration)(nil),            // 42: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil),          // 43: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),                  // 44: google.protobuf.Empty
 }
 var file_storeapi_store_api_proto_depIdxs = []int32{
 	0,  // 0: api.AggQuery.func:type_name -> api.AggFunc
-	6,  // 1: api.SearchRequest.aggs:type_name -> api.AggQuery
+	7,  // 1: api.SearchRequest.aggs:type_name -> api.AggQuery
 	1,  // 2: api.SearchRequest.order:type_name -> api.Order
-	31, // 3: api.SearchResponse.id_sources:type_name -> api.SearchResponse.IdWithHint
-	35, // 4: api.SearchResponse.histogram:type_name -> api.SearchResponse.HistogramEntry
-	34, // 5: api.SearchResponse.aggs:type_name -> api.SearchResponse.Agg
+	35, // 3: api.SearchResponse.id_sources:type_name -> api.SearchResponse.IdWithHint
+	39, // 4: api.SearchResponse.histogram:type_name -> api.SearchResponse.HistogramEntry
+	38, // 5: api.SearchResponse.aggs:type_name -> api.SearchResponse.Agg
 	2,  // 6: api.SearchResponse.code:type_name -> api.SearchErrorCode
-	9,  // 7: api.SearchResponse.explain:type_name -> api.ExplainEntry
-	38, // 8: api.ExplainEntry.duration:type_name -> google.protobuf.Duration
-	9,  // 9: api.ExplainEntry.children:type_name -> api.ExplainEntry
-	38, // 10: api.StartAsyncSearchRequest.retention:type_name -> google.protobuf.Duration
-	6,  // 11: api.StartAsyncSearchRequest.aggs:type_name -> api.AggQuery
+	10, // 7: api.SearchResponse.explain:type_name -> api.ExplainEntry
+	42, // 8: api.ExplainEntry.duration:type_name -> google.protobuf.Duration
+	10, // 9: api.ExplainEntry.children:type_name -> api.ExplainEntry
+	42, // 10: api.StartAsyncSearchRequest.retention:type_name -> google.protobuf.Duration
+	7,  // 11: api.StartAsyncSearchRequest.aggs:type_name -> api.AggQuery
 	1,  // 12: api.FetchAsyncSearchResultRequest.order:type_name -> api.Order
 	3,  // 13: api.FetchAsyncSearchResultResponse.status:type_name -> api.AsyncSearchStatus
-	8,  // 14: api.FetchAsyncSearchResultResponse.response:type_name -> api.SearchResponse
-	39, // 15: api.FetchAsyncSearchResultResponse.started_at:type_name -> google.protobuf.Timestamp
-	39, // 16: api.FetchAsyncSearchResultResponse.expires_at:type_name -> google.protobuf.Timestamp
-	39, // 17: api.FetchAsyncSearchResultResponse.canceled_at:type_name -> google.protobuf.Timestamp
-	6,  // 18: api.FetchAsyncSearchResultResponse.aggs:type_name -> api.AggQuery
-	39, // 19: api.FetchAsyncSearchResultResponse.from:type_name -> google.protobuf.Timestamp
-	39, // 20: api.FetchAsyncSearchResultResponse.to:type_name -> google.protobuf.Timestamp
-	38, // 21: api.FetchAsyncSearchResultResponse.retention:type_name -> google.protobuf.Duration
+	9,  // 14: api.FetchAsyncSearchResultResponse.response:type_name -> api.SearchResponse
+	43, // 15: api.FetchAsyncSearchResultResponse.started_at:type_name -> google.protobuf.Timestamp
+	43, // 16: api.FetchAsyncSearchResultResponse.expires_at:type_name -> google.protobuf.Timestamp
+	43, // 17: api.FetchAsyncSearchResultResponse.canceled_at:type_name -> google.protobuf.Timestamp
+	7,  // 18: api.FetchAsyncSearchResultResponse.aggs:type_name -> api.AggQuery
+	43, // 19: api.FetchAsyncSearchResultResponse.from:type_name -> google.protobuf.Timestamp
+	43, // 20: api.FetchAsyncSearchResultResponse.to:type_name -> google.protobuf.Timestamp
+	42, // 21: api.FetchAsyncSearchResultResponse.retention:type_name -> google.protobuf.Duration
 	3,  // 22: api.GetAsyncSearchesListRequest.status:type_name -> api.AsyncSearchStatus
-	20, // 23: api.GetAsyncSearchesListResponse.searches:type_name -> api.AsyncSearchesListItem
+	21, // 23: api.GetAsyncSearchesListResponse.searches:type_name -> api.AsyncSearchesListItem
 	3,  // 24: api.AsyncSearchesListItem.status:type_name -> api.AsyncSearchStatus
-	39, // 25: api.AsyncSearchesListItem.started_at:type_name -> google.protobuf.Timestamp
-	39, // 26: api.AsyncSearchesListItem.expires_at:type_name -> google.protobuf.Timestamp
-	39, // 27: api.AsyncSearchesListItem.canceled_at:type_name -> google.protobuf.Timestamp
-	6,  // 28: api.AsyncSearchesListItem.aggs:type_name -> api.AggQuery
-	39, // 29: api.AsyncSearchesListItem.from:type_name -> google.protobuf.Timestamp
-	39, // 30: api.AsyncSearchesListItem.to:type_name -> google.protobuf.Timestamp
-	38, // 31: api.AsyncSearchesListItem.retention:type_name -> google.protobuf.Duration
-	21, // 32: api.FetchRequest.ids_with_hints:type_name -> api.IdWithHint
-	22, // 33: api.FetchRequest.fields_filter:type_name -> api.FieldsFilter
-	39, // 34: api.StatusResponse.oldest_time:type_name -> google.protobuf.Timestamp
-	1,  // 35: api.OnePhaseSearchRequest.order:type_name -> api.Order
-	22, // 36: api.OnePhaseSearchRequest.fields_filter:type_name -> api.FieldsFilter
-	29, // 37: api.OnePhaseSearchResponse.header:type_name -> api.Header
-	28, // 38: api.OnePhaseSearchResponse.document:type_name -> api.Document
-	5,  // 39: api.Document.data:type_name -> api.BinaryData
-	2,  // 40: api.Header.code:type_name -> api.SearchErrorCode
-	9,  // 41: api.Header.explain:type_name -> api.ExplainEntry
-	30, // 42: api.SearchResponse.IdWithHint.id:type_name -> api.SearchResponse.Id
-	39, // 43: api.SearchResponse.Bin.ts:type_name -> google.protobuf.Timestamp
-	32, // 44: api.SearchResponse.Bin.hist:type_name -> api.SearchResponse.Histogram
-	36, // 45: api.SearchResponse.Agg.agg:type_name -> api.SearchResponse.Agg.AggEntry
-	37, // 46: api.SearchResponse.Agg.agg_histogram:type_name -> api.SearchResponse.Agg.AggHistogramEntry
-	33, // 47: api.SearchResponse.Agg.timeseries:type_name -> api.SearchResponse.Bin
-	32, // 48: api.SearchResponse.Agg.AggHistogramEntry.value:type_name -> api.SearchResponse.Histogram
-	4,  // 49: api.StoreApi.Bulk:input_type -> api.BulkRequest
-	7,  // 50: api.StoreApi.Search:input_type -> api.SearchRequest
-	10, // 51: api.StoreApi.StartAsyncSearch:input_type -> api.StartAsyncSearchRequest
-	12, // 52: api.StoreApi.FetchAsyncSearchResult:input_type -> api.FetchAsyncSearchResultRequest
-	14, // 53: api.StoreApi.CancelAsyncSearch:input_type -> api.CancelAsyncSearchRequest
-	16, // 54: api.StoreApi.DeleteAsyncSearch:input_type -> api.DeleteAsyncSearchRequest
-	18, // 55: api.StoreApi.GetAsyncSearchesList:input_type -> api.GetAsyncSearchesListRequest
-	23, // 56: api.StoreApi.Fetch:input_type -> api.FetchRequest
-	24, // 57: api.StoreApi.Status:input_type -> api.StatusRequest
-	26, // 58: api.StoreApi.OnePhaseSearch:input_type -> api.OnePhaseSearchRequest
-	40, // 59: api.StoreApi.Bulk:output_type -> google.protobuf.Empty
-	8,  // 60: api.StoreApi.Search:output_type -> api.SearchResponse
-	11, // 61: api.StoreApi.StartAsyncSearch:output_type -> api.StartAsyncSearchResponse
-	13, // 62: api.StoreApi.FetchAsyncSearchResult:output_type -> api.FetchAsyncSearchResultResponse
-	15, // 63: api.StoreApi.CancelAsyncSearch:output_type -> api.CancelAsyncSearchResponse
-	17, // 64: api.StoreApi.DeleteAsyncSearch:output_type -> api.DeleteAsyncSearchResponse
-	19, // 65: api.StoreApi.GetAsyncSearchesList:output_type -> api.GetAsyncSearchesListResponse
-	5,  // 66: api.StoreApi.Fetch:output_type -> api.BinaryData
-	25, // 67: api.StoreApi.Status:output_type -> api.StatusResponse
-	27, // 68: api.StoreApi.OnePhaseSearch:output_type -> api.OnePhaseSearchResponse
-	59, // [59:69] is the sub-list for method output_type
-	49, // [49:59] is the sub-list for method input_type
-	49, // [49:49] is the sub-list for extension type_name
-	49, // [49:49] is the sub-list for extension extendee
-	0,  // [0:49] is the sub-list for field type_name
+	43, // 25: api.AsyncSearchesListItem.started_at:type_name -> google.protobuf.Timestamp
+	43, // 26: api.AsyncSearchesListItem.expires_at:type_name -> google.protobuf.Timestamp
+	43, // 27: api.AsyncSearchesListItem.canceled_at:type_name -> google.protobuf.Timestamp
+	7,  // 28: api.AsyncSearchesListItem.aggs:type_name -> api.AggQuery
+	43, // 29: api.AsyncSearchesListItem.from:type_name -> google.protobuf.Timestamp
+	43, // 30: api.AsyncSearchesListItem.to:type_name -> google.protobuf.Timestamp
+	42, // 31: api.AsyncSearchesListItem.retention:type_name -> google.protobuf.Duration
+	22, // 32: api.FetchRequest.ids_with_hints:type_name -> api.IdWithHint
+	23, // 33: api.FetchRequest.fields_filter:type_name -> api.FieldsFilter
+	43, // 34: api.StatusResponse.oldest_time:type_name -> google.protobuf.Timestamp
+	43, // 35: api.OnePhaseSearchRequest.from:type_name -> google.protobuf.Timestamp
+	43, // 36: api.OnePhaseSearchRequest.to:type_name -> google.protobuf.Timestamp
+	1,  // 37: api.OnePhaseSearchRequest.order:type_name -> api.Order
+	23, // 38: api.OnePhaseSearchRequest.fields_filter:type_name -> api.FieldsFilter
+	29, // 39: api.OnePhaseSearchResponse.header:type_name -> api.Header
+	32, // 40: api.OnePhaseSearchResponse.batch:type_name -> api.RecordsBatch
+	30, // 41: api.Header.metadata:type_name -> api.Metadata
+	31, // 42: api.Header.typing:type_name -> api.Typing
+	2,  // 43: api.Metadata.code:type_name -> api.SearchErrorCode
+	10, // 44: api.Metadata.explain:type_name -> api.ExplainEntry
+	4,  // 45: api.Typing.type:type_name -> api.DataType
+	33, // 46: api.RecordsBatch.records:type_name -> api.Record
+	34, // 47: api.SearchResponse.IdWithHint.id:type_name -> api.SearchResponse.Id
+	43, // 48: api.SearchResponse.Bin.ts:type_name -> google.protobuf.Timestamp
+	36, // 49: api.SearchResponse.Bin.hist:type_name -> api.SearchResponse.Histogram
+	40, // 50: api.SearchResponse.Agg.agg:type_name -> api.SearchResponse.Agg.AggEntry
+	41, // 51: api.SearchResponse.Agg.agg_histogram:type_name -> api.SearchResponse.Agg.AggHistogramEntry
+	37, // 52: api.SearchResponse.Agg.timeseries:type_name -> api.SearchResponse.Bin
+	36, // 53: api.SearchResponse.Agg.AggHistogramEntry.value:type_name -> api.SearchResponse.Histogram
+	5,  // 54: api.StoreApi.Bulk:input_type -> api.BulkRequest
+	8,  // 55: api.StoreApi.Search:input_type -> api.SearchRequest
+	11, // 56: api.StoreApi.StartAsyncSearch:input_type -> api.StartAsyncSearchRequest
+	13, // 57: api.StoreApi.FetchAsyncSearchResult:input_type -> api.FetchAsyncSearchResultRequest
+	15, // 58: api.StoreApi.CancelAsyncSearch:input_type -> api.CancelAsyncSearchRequest
+	17, // 59: api.StoreApi.DeleteAsyncSearch:input_type -> api.DeleteAsyncSearchRequest
+	19, // 60: api.StoreApi.GetAsyncSearchesList:input_type -> api.GetAsyncSearchesListRequest
+	24, // 61: api.StoreApi.Fetch:input_type -> api.FetchRequest
+	25, // 62: api.StoreApi.Status:input_type -> api.StatusRequest
+	27, // 63: api.StoreApi.OnePhaseSearch:input_type -> api.OnePhaseSearchRequest
+	44, // 64: api.StoreApi.Bulk:output_type -> google.protobuf.Empty
+	9,  // 65: api.StoreApi.Search:output_type -> api.SearchResponse
+	12, // 66: api.StoreApi.StartAsyncSearch:output_type -> api.StartAsyncSearchResponse
+	14, // 67: api.StoreApi.FetchAsyncSearchResult:output_type -> api.FetchAsyncSearchResultResponse
+	16, // 68: api.StoreApi.CancelAsyncSearch:output_type -> api.CancelAsyncSearchResponse
+	18, // 69: api.StoreApi.DeleteAsyncSearch:output_type -> api.DeleteAsyncSearchResponse
+	20, // 70: api.StoreApi.GetAsyncSearchesList:output_type -> api.GetAsyncSearchesListResponse
+	6,  // 71: api.StoreApi.Fetch:output_type -> api.BinaryData
+	26, // 72: api.StoreApi.Status:output_type -> api.StatusResponse
+	28, // 73: api.StoreApi.OnePhaseSearch:output_type -> api.OnePhaseSearchResponse
+	64, // [64:74] is the sub-list for method output_type
+	54, // [54:64] is the sub-list for method input_type
+	54, // [54:54] is the sub-list for extension type_name
+	54, // [54:54] is the sub-list for extension extendee
+	0,  // [0:54] is the sub-list for field type_name
 }
 
 func init() { file_storeapi_store_api_proto_init() }
@@ -3040,7 +3284,7 @@ func file_storeapi_store_api_proto_init() {
 	file_storeapi_store_api_proto_msgTypes[16].OneofWrappers = []any{}
 	file_storeapi_store_api_proto_msgTypes[23].OneofWrappers = []any{
 		(*OnePhaseSearchResponse_Header)(nil),
-		(*OnePhaseSearchResponse_Document)(nil),
+		(*OnePhaseSearchResponse_Batch)(nil),
 	}
 	file_storeapi_store_api_proto_msgTypes[25].OneofWrappers = []any{}
 	type x struct{}
@@ -3048,8 +3292,8 @@ func file_storeapi_store_api_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_storeapi_store_api_proto_rawDesc), len(file_storeapi_store_api_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   34,
+			NumEnums:      5,
+			NumMessages:   37,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

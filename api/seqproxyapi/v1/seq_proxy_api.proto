@@ -112,7 +112,7 @@ service SeqProxyApi {
     };
   }
 
-  rpc OnePhaseSearch(SearchRequest) returns (SearchResponse) {
+  rpc OnePhaseSearch(SearchRequest) returns (ComplexSearchResponse) {
     option (google.api.http) = {
       post: "/one-phase-search"
       body: "*"

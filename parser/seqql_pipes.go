@@ -95,7 +95,7 @@ func (p *PipeStats) DumpSeqQL(o *strings.Builder) {
 			o.WriteString("(")
 			o.WriteString(quoteTokenIfNeeded(agg.Field))
 			for _, q := range agg.Quantiles {
-				o.WriteString(fmt.Sprintf(", %v", q))
+				fmt.Fprintf(o, ", %v", q)
 			}
 			o.WriteString(")")
 		}

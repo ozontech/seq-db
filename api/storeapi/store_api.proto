@@ -270,8 +270,8 @@ message StatusResponse {
 
 message OnePhaseSearchRequest {
   string query = 1;
-  int64 from = 2;
-  int64 to = 3;
+  google.protobuf.Timestamp from = 2;
+  google.protobuf.Timestamp to = 3;
   int64 size = 4;
   int64 offset = 5;
   bool explain = 6;
@@ -284,17 +284,43 @@ message OnePhaseSearchRequest {
 message OnePhaseSearchResponse {
   oneof ResponseType {
     Header header = 1;
-    Document document = 2;
+    RecordsBatch batch = 2;
   }
 }
 
-message Document {
-  BinaryData data = 1;
+message Header {
+  Metadata metadata = 1;
+  repeated Typing typing = 2;
 }
 
-message Header {
+message Metadata {
   uint64 total = 1;
-  repeated string errors = 2;
-  SearchErrorCode code = 3;
+  SearchErrorCode code = 2;
+  repeated string errors = 3;
   optional ExplainEntry explain = 4;
+}
+
+enum DataType {
+  BYTES = 0;
+  RAW_DOCUMENT = 1;
+  STRING = 2;
+  UINT32 = 3;
+  UINT64 = 4;
+  INT32 = 5;
+  INT64 = 6;
+  FLOAT64 = 7;
+  // TODO: array data types: StringArray, Uin64Array, Float64Array etc.
+}
+
+message Typing {
+  string title = 1;
+  DataType type = 2;
+}
+
+message RecordsBatch {
+  repeated Record records = 1;
+}
+
+message Record {
+  repeated bytes raw_data = 1;
 }
