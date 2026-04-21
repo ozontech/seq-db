@@ -24,15 +24,8 @@ func (b *Block) getLIDs(i int) []uint32 {
 }
 
 func (b *Block) Pack(dst []byte, buf []uint32) []byte {
-	if b.IsLastLID {
-		dst = append(dst, 1)
-	} else {
-		dst = append(dst, 0)
-	}
-
 	dst = packer.CompressDeltaBitpackUint32(dst, b.Offsets, buf)
 	dst = packer.CompressDeltaBitpackUint32(dst, b.LIDs, buf)
-
 	return dst
 }
 
@@ -55,13 +48,6 @@ func (b *Block) Unpack(data []byte, fracVer config.BinaryDataVersion, buf *Unpac
 }
 
 func (b *Block) unpackBitpack(data []byte, buf *UnpackBuffer) error {
-	if data[0] == 1 {
-		b.IsLastLID = true
-	} else {
-		b.IsLastLID = false
-	}
-	data = data[1:]
-
 	var err error
 	var values []uint32
 
@@ -71,7 +57,7 @@ func (b *Block) unpackBitpack(data []byte, buf *UnpackBuffer) error {
 	}
 	b.Offsets = append([]uint32{}, values...)
 
-	data, values, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressed, buf.compressed)
+	_, values, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressed, buf.compressed)
 	if err != nil {
 		return err
 	}

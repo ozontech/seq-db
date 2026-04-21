@@ -36,7 +36,7 @@ func CompressDeltaBitpackUint32(dst []byte, values, buf []uint32) []byte {
 	return dst
 }
 
-func DecompressDeltaBitpackUint32(data []byte, buf []uint32, compressed []uint32) ([]byte, []uint32, error) {
+func DecompressDeltaBitpackUint32(data []byte, buf, compressed []uint32) ([]byte, []uint32, error) {
 	if len(data) < sizeOfUint32 {
 		return nil, nil, fmt.Errorf("not enough data. slice len %d", len(data))
 	}
@@ -104,7 +104,7 @@ func CompressDeltaBitpackUint64(dst []byte, values, buf []uint64) []byte {
 	return dst
 }
 
-func DecompressDeltaBitpackUint64(data []byte, buf []uint64, compressed []uint64) ([]byte, []uint64, error) {
+func DecompressDeltaBitpackUint64(data []byte, buf, compressed []uint64) ([]byte, []uint64, error) {
 	if len(data) < 4 {
 		return nil, nil, fmt.Errorf("not enough data. slice len %d", len(data))
 	}

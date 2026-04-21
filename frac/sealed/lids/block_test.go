@@ -16,44 +16,32 @@ func TestBlockPack(t *testing.T) {
 		name      string
 		lids      []uint32
 		offsets   []uint32
-		isLastLID bool
 		generator func() ([]uint32, []uint32)
 	}{
 		{
-			name:      "small_single_token",
-			lids:      generate(4),
-			offsets:   []uint32{0, 4},
-			isLastLID: true,
+			name:    "small_single_token",
+			lids:    generate(4),
+			offsets: []uint32{0, 4},
 		},
 		{
-			name:      "small_a_few_token",
-			lids:      generate(6),
-			offsets:   []uint32{0, 3, 6},
-			isLastLID: true,
+			name:    "small_a_few_token",
+			lids:    generate(6),
+			offsets: []uint32{0, 3, 6},
 		},
 		{
-			name:      "small_not_last_lid",
-			lids:      generate(3),
-			offsets:   []uint32{0, 3},
-			isLastLID: false,
+			name:    "small_single_lid",
+			lids:    []uint32{100},
+			offsets: []uint32{0, 1},
 		},
 		{
-			name:      "small_single_lid",
-			lids:      []uint32{100},
-			offsets:   []uint32{0, 1},
-			isLastLID: true,
+			name:    "small_big_lids",
+			lids:    []uint32{math.MaxUint32 - 100, math.MaxUint32 - 50, math.MaxUint32 - 10},
+			offsets: []uint32{0, 3},
 		},
 		{
-			name:      "small_big_lids",
-			lids:      []uint32{math.MaxUint32 - 100, math.MaxUint32 - 50, math.MaxUint32 - 10},
-			offsets:   []uint32{0, 3},
-			isLastLID: true,
-		},
-		{
-			name:      "small_few_tokens",
-			lids:      generate(8),
-			offsets:   []uint32{0, 3, 6, 8},
-			isLastLID: false,
+			name:    "small_few_tokens",
+			lids:    generate(8),
+			offsets: []uint32{0, 3, 6, 8},
 		},
 		{
 			name: "medium_many_tokens",
@@ -70,19 +58,6 @@ func TestBlockPack(t *testing.T) {
 				}
 				return lids, offsets
 			},
-			isLastLID: true,
-		},
-		{
-			name: "large_is_last_lid_false",
-			generator: func() ([]uint32, []uint32) {
-				lids := make([]uint32, 0, 200)
-				startLID := uint32(1000)
-				for i := 0; i < 200; i++ {
-					lids = append(lids, startLID+uint32(i*10))
-				}
-				return lids, []uint32{0, uint32(len(lids))}
-			},
-			isLastLID: false,
 		},
 		{
 			name: "large_many_tokens",
@@ -98,61 +73,51 @@ func TestBlockPack(t *testing.T) {
 				}
 				return lids, offsets
 			},
-			isLastLID: true,
 		},
 		{
-			name:      "medium_128_lids",
-			lids:      generate(128),
-			offsets:   []uint32{0, 128},
-			isLastLID: true,
+			name:    "medium_128_lids",
+			lids:    generate(128),
+			offsets: []uint32{0, 128},
 		},
 		{
-			name:      "medium_127_lids",
-			lids:      generate(127),
-			offsets:   []uint32{0, 127},
-			isLastLID: true,
+			name:    "medium_127_lids",
+			lids:    generate(127),
+			offsets: []uint32{0, 127},
 		},
 		{
-			name:      "medium_129_lids",
-			lids:      generate(129),
-			offsets:   []uint32{0, 129},
-			isLastLID: true,
+			name:    "medium_129_lids",
+			lids:    generate(129),
+			offsets: []uint32{0, 129},
 		},
 		{
-			name:      "medium_4k_lids",
-			lids:      generate(4096),
-			offsets:   []uint32{0, 4096},
-			isLastLID: true,
+			name:    "medium_4k_lids",
+			lids:    generate(4096),
+			offsets: []uint32{0, 4096},
 		},
 		{
-			name:      "medium_4k_minus_one_lids",
-			lids:      generate(4095),
-			offsets:   []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 4095},
-			isLastLID: true,
+			name:    "medium_4k_minus_one_lids",
+			lids:    generate(4095),
+			offsets: []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 4095},
 		},
 		{
-			name:      "medium_4k_plus_one_lids",
-			lids:      generate(4097),
-			offsets:   []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 4097},
-			isLastLID: true,
+			name:    "medium_4k_plus_one_lids",
+			lids:    generate(4097),
+			offsets: []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 4097},
 		},
 		{
-			name:      "medium_64k_lids",
-			lids:      generate(65536),
-			offsets:   []uint32{0, 65536},
-			isLastLID: false,
+			name:    "medium_64k_lids",
+			lids:    generate(65536),
+			offsets: []uint32{0, 65536},
 		},
 		{
-			name:      "medium_64k_minus_one_lids",
-			lids:      generate(65535),
-			offsets:   []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 65535},
-			isLastLID: true,
+			name:    "medium_64k_minus_one_lids",
+			lids:    generate(65535),
+			offsets: []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 65535},
 		},
 		{
-			name:      "medium_64k_plus_one_lids",
-			lids:      generate(65537),
-			offsets:   []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 65537},
-			isLastLID: false,
+			name:    "medium_64k_plus_one_lids",
+			lids:    generate(65537),
+			offsets: []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 65537},
 		},
 	}
 
@@ -169,9 +134,8 @@ func TestBlockPack(t *testing.T) {
 			}
 
 			block := &Block{
-				LIDs:      lids,
-				Offsets:   offsets,
-				IsLastLID: tc.isLastLID,
+				LIDs:    lids,
+				Offsets: offsets,
 			}
 
 			packed := block.Pack(nil, nil)
@@ -200,15 +164,13 @@ func generate(n int) []uint32 {
 func TestBlockPack_ReuseBuffer(t *testing.T) {
 	// Test that UnpackBuffer can be reused
 	block1 := &Block{
-		LIDs:      generate(64 * 1024),
-		Offsets:   []uint32{0, 3},
-		IsLastLID: true,
+		LIDs:    generate(64 * 1024),
+		Offsets: []uint32{0, 3},
 	}
 
 	block2 := &Block{
-		LIDs:      generate(64 * 1024),
-		Offsets:   []uint32{0, 4},
-		IsLastLID: true,
+		LIDs:    generate(64 * 1024),
+		Offsets: []uint32{0, 4},
 	}
 
 	buf1 := make([]uint32, 0, 64*1024)
@@ -234,9 +196,8 @@ func BenchmarkBlock_Pack(b *testing.B) {
 	lids := generate(64 * 1024)
 
 	block := &Block{
-		LIDs:      lids,
-		Offsets:   []uint32{0, 64 * 1024},
-		IsLastLID: true,
+		LIDs:    lids,
+		Offsets: []uint32{0, 64 * 1024},
 	}
 	tmp := make([]uint32, 0, 64*1024/4)
 
@@ -249,9 +210,8 @@ func BenchmarkBlock_Unpack(b *testing.B) {
 	lids := generate(64 * 1024)
 
 	block := &Block{
-		LIDs:      lids,
-		Offsets:   []uint32{0, 64 * 1024},
-		IsLastLID: true,
+		LIDs:    lids,
+		Offsets: []uint32{0, 64 * 1024},
 	}
 	packed := block.Pack(nil, nil)
 
