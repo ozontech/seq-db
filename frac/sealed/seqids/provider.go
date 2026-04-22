@@ -3,6 +3,7 @@ package seqids
 import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 )
@@ -51,6 +52,20 @@ func (p *Provider) MID(lid seq.LID) (seq.MID, error) {
 		return 0, err
 	}
 	return seq.MID(p.midCache.GetValByLID(uint32(lid))), nil
+}
+
+func (p *Provider) MIDs(lids []node.LID, out []seq.MID) ([]seq.MID, error) {
+	for _, lid := range lids {
+		rawLid := lid.Unpack()
+		blockIdx := p.table.GetIDBlockIndexByLID(rawLid)
+		if p.midCache.blockIndex != int(blockIdx) {
+			if err := p.fillMIDs(blockIdx, p.midCache); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, seq.MID(p.midCache.GetValByLID(rawLid)))
+	}
+	return out, nil
 }
 
 func (p *Provider) fillMIDs(blockIndex uint32, dst *unpackCache) error {
