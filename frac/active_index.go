@@ -167,8 +167,8 @@ func (p *activeIDsIndex) GetMID(lid seq.LID) seq.MID {
 	return seq.MID(p.mids[restoredLID])
 }
 
-func (p *activeIDsIndex) GetMIDs(lids []node.LID, out []seq.MID) []seq.MID {
-	for _, lid := range lids {
+func (p *activeIDsIndex) GetMIDs(lidsBatch []node.LID, out []seq.MID) []seq.MID {
+	for _, lid := range lidsBatch {
 		out = append(out, p.GetMID(lid.ToSeqLID()))
 	}
 	return out
@@ -179,8 +179,8 @@ func (p *activeIDsIndex) GetRID(lid seq.LID) seq.RID {
 	return seq.RID(p.rids[restoredLID])
 }
 
-func (p *activeIDsIndex) GetRIDs(lids []node.LID, out []seq.RID) []seq.RID {
-	for _, lid := range lids {
+func (p *activeIDsIndex) GetRIDs(lidsBatch []node.LID, out []seq.RID) []seq.RID {
+	for _, lid := range lidsBatch {
 		out = append(out, p.GetRID(lid.ToSeqLID()))
 	}
 	return out

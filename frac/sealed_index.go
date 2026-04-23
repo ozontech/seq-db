@@ -150,10 +150,10 @@ func (ii *sealedIDsIndex) GetMID(lid seq.LID) seq.MID {
 	return mid
 }
 
-func (ii *sealedIDsIndex) GetMIDs(lids []node.LID, out []seq.MID) []seq.MID {
-	mids, err := ii.provider.MIDs(lids, out)
+func (ii *sealedIDsIndex) GetMIDs(lidsBatch []node.LID, out []seq.MID) []seq.MID {
+	mids, err := ii.provider.MIDs(lidsBatch, out)
 	if err != nil {
-		logger.Panic("get mids error", zap.String("frac", ii.fracName), zap.Int("lids_count", len(lids)), zap.Error(err))
+		logger.Panic("get mids error", zap.String("frac", ii.fracName), zap.Int("lids_count", len(lidsBatch)), zap.Error(err))
 	}
 	return mids
 }
@@ -166,8 +166,8 @@ func (ii *sealedIDsIndex) GetRID(lid seq.LID) seq.RID {
 	return rid
 }
 
-func (ii *sealedIDsIndex) GetRIDs(lids []node.LID, out []seq.RID) []seq.RID {
-	for _, lid := range lids {
+func (ii *sealedIDsIndex) GetRIDs(lidsBatch []node.LID, out []seq.RID) []seq.RID {
+	for _, lid := range lidsBatch {
 		out = append(out, ii.GetRID(lid.ToSeqLID()))
 	}
 	return out
