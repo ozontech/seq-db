@@ -49,12 +49,23 @@ type LIDsIter interface {
 	Len() int
 }
 
-var lidsBufPool = sync.Pool{
+type searchBuffers struct {
+	lids lidsBuf
+	mids []seq.MID
+	rids []seq.RID
+}
+
+var searchBuffersPool = sync.Pool{
 	New: func() any {
-		return lidsBuf{
+		lidsBuf := lidsBuf{
+			lids: make([]node.LID, 0, consts.LIDBlockCap),
+		}
+		return searchBuffers{
 			// Currently, we drain up to 4k lids from eval tree, but with proper batching enabled
 			// we can get as much as whole LID block can have (currently, 64k lids)
-			lids: make([]node.LID, 0, consts.LIDBlockCap),
+			lids: lidsBuf,
+			mids: make([]seq.MID, 0, consts.LIDBlockCap),
+			rids: make([]seq.RID, 0, consts.LIDBlockCap),
 		}
 	},
 }
@@ -215,10 +226,11 @@ func iterateEvalTree(
 	total := 0
 	ids := seq.IDSources{}
 	var lastID seq.ID
-	buf := lidsBufPool.Get().(lidsBuf)
-	defer lidsBufPool.Put(buf)
-	mids := make([]seq.MID, 0, 4096)
-	rids := make([]seq.RID, 0, 4096)
+	buffers := searchBuffersPool.Get().(searchBuffers)
+	defer searchBuffersPool.Put(buffers)
+	mids := buffers.mids
+	rids := buffers.rids
+	lidsBuffer := buffers.lids
 
 	timerEval := sw.Timer("eval_tree_next")
 	timerMID := sw.Timer("get_mid")
@@ -245,14 +257,14 @@ func iterateEvalTree(
 		needLids = min(needLids, maxLidsToDrain)
 
 		timerEval.Start()
-		lidBatch := evalTree(needLids, buf)
+		lidBatch := evalTree(needLids, lidsBuffer)
 		timerEval.Stop()
 
 		if lidBatch.Len() == 0 {
 			break
 		}
 
-		lidsSlice := lidBatch.Lids(buf.lids)
+		lidsSlice := lidBatch.Lids(lidsBuffer.lids)
 
 		needMids := min(params.Limit-len(ids), len(lidsSlice))
 		if hasHist {
