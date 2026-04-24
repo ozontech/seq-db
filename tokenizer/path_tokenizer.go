@@ -33,15 +33,15 @@ func (t *PathTokenizer) Tokenize(tokens []MetaToken, name, value []byte, maxToke
 		maxTokenSize = t.defaultMaxTokenSize
 	}
 
-	if len(value) > maxTokenSize && !t.partialIndexing {
-		metric.SkippedIndexesPath.Inc()
-		metric.SkippedIndexesBytesPath.Add(float64(len(value)))
-		return tokens
+	if len(value) > maxTokenSize {
+		if !t.partialIndexing {
+			metric.SkippedIndexesPath.Inc()
+			metric.SkippedIndexesBytesPath.Add(float64(len(value)))
+			return tokens
+		}
+		metric.SkippedIndexesBytesPath.Add(float64(len(value) - maxTokenSize))
+		value = value[:maxTokenSize]
 	}
-
-	maxLength := min(len(value), maxTokenSize)
-	metric.SkippedIndexesBytesPath.Add(float64(len(value[maxLength:])))
-	value = value[:maxLength]
 
 	var i int
 

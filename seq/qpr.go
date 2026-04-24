@@ -569,7 +569,9 @@ func MergeQPRs(dst *QPR, qprs []*QPR, limit int, histInterval MID, order DocsOrd
 	}
 
 	ids, repetitionsCount := removeRepetitionsAdvanced(dst.IDs, dst.Histogram, histInterval)
-	metric.RepetitionsDocsTotal.Add(float64(repetitionsCount))
+	if repetitionsCount > 0 {
+		metric.RepetitionsDocsTotal.Add(float64(repetitionsCount))
+	}
 
 	// count only for queries with total
 	if dst.Total > 0 {

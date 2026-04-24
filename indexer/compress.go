@@ -36,13 +36,21 @@ func PutDocMetasCompressor(c *DocsMetasCompressor) {
 
 // CompressDocsAndMetas prepare docs and meta blocks for bulk insert.
 func (c *DocsMetasCompressor) CompressDocsAndMetas(docs, meta []byte) {
-	c.docsBuf = initBuf(c.docsBuf, len(docs))
-	c.metaBuf = initBuf(c.metaBuf, len(meta))
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	go func() { // compress docs block
+		c.docsBuf = initBuf(c.docsBuf, len(docs))
+		c.docsBuf = storage.CompressDocBlock(docs, c.docsBuf, c.docsCompressLevel)
+		wg.Done()
+	}()
 
-	// Compress docs block.
-	c.docsBuf = storage.CompressDocBlock(docs, c.docsBuf, c.docsCompressLevel)
-	// Compress metas block.
-	c.metaBuf = storage.CompressWalBlock(meta, c.metaBuf, c.metaCompressLevel)
+	go func() { // compress metas block
+		c.metaBuf = initBuf(c.metaBuf, len(meta))
+		c.metaBuf = storage.CompressWalBlock(meta, c.metaBuf, c.metaCompressLevel)
+		wg.Done()
+	}()
+
+	wg.Wait()
 
 	bulkSizeAfterCompression.Observe(float64(len(c.docsBuf) + len(c.metaBuf)))
 }
