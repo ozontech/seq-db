@@ -7,13 +7,16 @@ import (
 
 type fetchIndex interface {
 	GetBlocksOffsets(uint32) uint64
-	GetDocPos([]seq.ID) []seq.DocPos
+	GetDocPos([]seq.ID) ([]seq.DocPos, error)
 	ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error)
 }
 
 func IndexFetch(ids []seq.ID, sw *stopwatch.Stopwatch, fetchIndex fetchIndex, res [][]byte) error {
 	m := sw.Start("get_docs_pos")
-	docsPos := fetchIndex.GetDocPos(ids)
+	docsPos, err := fetchIndex.GetDocPos(ids)
+	if err != nil {
+		return err
+	}
 	blocks, offsets, index := seq.GroupDocsOffsets(docsPos)
 	m.Stop()
 

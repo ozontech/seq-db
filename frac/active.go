@@ -46,6 +46,7 @@ type Active struct {
 	TokenList *TokenList
 
 	DocsPositions *DocsPositions
+	IDsToLIDs     *ActiveLIDs
 
 	docsFile   *os.File
 	docsReader storage.DocsReader
@@ -59,6 +60,8 @@ type Active struct {
 
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
+
+	skipMaskProvider skipMaskProvider
 }
 
 const (
@@ -78,6 +81,7 @@ func NewActive(
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
 	cfg *Config,
+	skipMaskProvider skipMaskProvider,
 ) *Active {
 	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
 
@@ -86,6 +90,7 @@ func NewActive(
 	f := &Active{
 		TokenList:     NewActiveTokenList(config.IndexWorkers),
 		DocsPositions: NewSyncDocsPositions(),
+		IDsToLIDs:     NewActiveLIDs(),
 		MIDs:          NewIDs(),
 		RIDs:          NewIDs(),
 		DocBlocks:     NewIDs(),
@@ -106,6 +111,8 @@ func NewActive(
 		BaseFileName: baseFileName,
 		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), metaSize),
 		Config:       cfg,
+
+		skipMaskProvider: skipMaskProvider,
 	}
 
 	// use of 0 as keys in maps is prohibited – it's system key, so add first element
@@ -385,6 +392,17 @@ func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*se
 	return dp.Search(params)
 }
 
+func (f *Active) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		return nil, nil
+	}
+
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.FindLIDs(ids)
+}
+
 func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 	return &activeDataProvider{
 		ctx:    ctx,
@@ -397,7 +415,10 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 
 		blocksOffsets: f.DocBlocks.GetVals(),
 		docsPositions: f.DocsPositions,
+		idsToLids:     f.IDsToLIDs,
 		docsReader:    &f.docsReader,
+
+		skipMaskProvider: f.skipMaskProvider,
 	}
 }
 
