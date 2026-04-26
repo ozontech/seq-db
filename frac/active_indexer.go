@@ -161,6 +161,10 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 		lids := active.AppendIDs(collector.IDs)
 		m.Stop()
 
+		m = sw.Start("active_lids_map_set")
+		active.IDsToLIDs.SetMultiple(collector.IDs, lids)
+		m.Stop()
+
 		m = sw.Start("token_list_append")
 		tokenLIDsPlaces := collector.PrepareTokenLIDsPlaces()
 		active.TokenList.Append(collector.TokensValues, collector.FieldsLengths, tokenLIDsPlaces)

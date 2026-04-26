@@ -281,7 +281,7 @@ func (as *AsyncSearcher) storeSearchInfoLocked(id string, info asyncSearchInfo) 
 		panic(err)
 	}
 	fpath := path.Join(as.config.DataDir, id+asyncSearchExtInfo)
-	mustWriteFileAtomic(fpath, b)
+	util.MustWriteFileAtomic(fpath, b, 0o666, asyncSearchTmpFile)
 	info.infoSize.Store(int64(len(b)))
 	as.requests[id] = info
 }
@@ -328,7 +328,7 @@ func (as *AsyncSearcher) doSearch(id string, fracs fracmanager.List) {
 	logger.Info("starting async search request",
 		zap.String("id", id),
 		zap.Any("query", info.Request.Query),
-		zap.Duration("interval", time.Duration(info.Request.Params.To-info.Request.Params.From)*time.Millisecond),
+		zap.Object("params", info.Request.Params),
 	)
 
 	// AST can be nil in case of restarts.
@@ -420,7 +420,7 @@ func (as *AsyncSearcher) processFrac(f frac.Fraction, info asyncSearchInfo) (err
 
 		name := getQPRFilename(info.Request.ID, f.Info().Name())
 		fpath := path.Join(as.config.DataDir, name)
-		mustWriteFileAtomic(fpath, rawQPR)
+		util.MustWriteFileAtomic(fpath, rawQPR, 0o666, asyncSearchTmpFile)
 
 		info.qprsSize.Add(int64(len(rawQPR)))
 		return nil
@@ -465,7 +465,7 @@ func (as *AsyncSearcher) findQPRs(id string) ([]string, error) {
 		files = append(files, path.Join(as.config.DataDir, name))
 		return nil
 	}
-	if err := visitFilesWithExt(des, asyncSearchExtQPR, appendQPRInfoFile); err != nil {
+	if err := util.VisitFilesWithExt(des, asyncSearchExtQPR, appendQPRInfoFile); err != nil {
 		return nil, err
 	}
 	return files, nil
@@ -490,7 +490,7 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 		areQPRsMerged[requestID] = true
 		return nil
 	}
-	if err := visitFilesWithExt(des, asyncSearchExtMergedQPR, loadMergedQPRsInfo); err != nil {
+	if err := util.VisitFilesWithExt(des, asyncSearchExtMergedQPR, loadMergedQPRsInfo); err != nil {
 		return nil, err
 	}
 
@@ -510,7 +510,7 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 		anyRemove = true
 		return nil
 	}
-	if err := visitFilesWithExt(des, asyncSearchExtQPR, removeMergedQPRs); err != nil {
+	if err := util.VisitFilesWithExt(des, asyncSearchExtQPR, removeMergedQPRs); err != nil {
 		return nil, err
 	}
 
@@ -522,11 +522,11 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 		anyRemove = true
 		return nil
 	}
-	if err := visitFilesWithExt(des, asyncSearchTmpFile, removeTmpFiles); err != nil {
+	if err := util.VisitFilesWithExt(des, asyncSearchTmpFile, removeTmpFiles); err != nil {
 		return nil, err
 	}
 	if anyRemove {
-		mustFsyncFile(dataDir)
+		util.MustFsyncFile(dataDir)
 	}
 
 	qprsDuByID := make(map[string]int)
@@ -592,7 +592,7 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 		requests[requestID] = info
 		return nil
 	}
-	if err := visitFilesWithExt(des, asyncSearchExtInfo, loadInfos); err != nil {
+	if err := util.VisitFilesWithExt(des, asyncSearchExtInfo, loadInfos); err != nil {
 		return nil, err
 	}
 	return requests, nil
@@ -807,7 +807,7 @@ func (as *AsyncSearcher) mergeQPRs(job mergeJob) {
 	storeMQPR := func(compressed []byte) error {
 		sizeAfter = len(compressed)
 		mqprPath := path.Join(as.config.DataDir, job.ID+asyncSearchExtMergedQPR)
-		mustWriteFileAtomic(mqprPath, compressed)
+		util.MustWriteFileAtomic(mqprPath, compressed, 0o666, asyncSearchTmpFile)
 		return nil
 	}
 	if err := compressQPR(&qpr, storeMQPR); err != nil {
@@ -1025,66 +1025,4 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 	})
 
 	return items
-}
-
-func mustWriteFileAtomic(fpath string, data []byte) {
-	fpathTmp := fpath + asyncSearchTmpFile
-
-	f, err := os.Create(fpathTmp)
-	if err != nil {
-		logger.Fatal("can't create file", zap.Error(err))
-	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			logger.Fatal("can't close file", zap.Error(err))
-		}
-	}()
-
-	if _, err := f.Write(data); err != nil {
-		logger.Fatal("can't write to file", zap.Error(err))
-	}
-
-	if err := f.Sync(); err != nil {
-		logger.Fatal("can't sync file", zap.Error(err))
-	}
-
-	if err := os.Rename(fpathTmp, fpath); err != nil {
-		logger.Fatal("can't rename file", zap.Error(err))
-	}
-
-	absFpath, err := filepath.Abs(fpath)
-	if err != nil {
-		logger.Fatal("can't get absolute path", zap.String("path", fpath), zap.Error(err))
-	}
-	dir := path.Dir(absFpath)
-	mustFsyncFile(dir)
-}
-
-func mustFsyncFile(fpath string) {
-	dirFile, err := os.Open(fpath)
-	if err != nil {
-		logger.Fatal("can't open dir", zap.Error(err))
-	}
-	if err := dirFile.Sync(); err != nil {
-		logger.Fatal("can't sync dir", zap.Error(err))
-	}
-	if err := dirFile.Close(); err != nil {
-		logger.Fatal("can't close dir", zap.Error(err))
-	}
-}
-
-func visitFilesWithExt(des []os.DirEntry, ext string, cb func(name string) error) error {
-	for _, de := range des {
-		if de.IsDir() {
-			continue
-		}
-		name := de.Name()
-		if path.Ext(name) != ext {
-			continue
-		}
-		if err := cb(name); err != nil {
-			return err
-		}
-	}
-	return nil
 }
