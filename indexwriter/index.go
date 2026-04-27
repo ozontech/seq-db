@@ -96,11 +96,7 @@ func (s *IndexWriter) WriteOffsetsFile(ws io.WriteSeeker, src Source) error {
 	}
 	defer w.release()
 
-	offsets := sealed.BlockOffsets{
-		IDsTotal: src.Info().DocsTotal + 1,
-		Offsets:  src.BlockOffsets(),
-	}
-
+	offsets := sealed.BlockOffsets{Offsets: src.BlockOffsets()}
 	if err := w.writeBlock(blockTypeOffset, s.packBlocksOffsetsBlock(offsets)); err != nil {
 		return err
 	}
@@ -218,6 +214,7 @@ func (s *IndexWriter) newIndexBlockZSTD(raw []byte, level int) indexBlock {
 
 // packInfoBlock packs fraction information into an index block.
 func (s *IndexWriter) packInfoBlock(block sealed.BlockInfo) indexBlock {
+	s.idsTable.IDsTotal = block.Info.DocsTotal + 1 // Increment by one for [seq.SystemID]
 	s.buf1 = block.Pack(s.buf1[:0])
 	return newIndexBlock(s.buf1) // Info block is typically small, no compression
 }
@@ -242,10 +239,6 @@ func (s *IndexWriter) packTokenTableBlock(tokenTableBlock token.TableBlock) inde
 
 // packBlocksOffsetsBlock packs document block offsets into a compressed index block.
 func (s *IndexWriter) packBlocksOffsetsBlock(block sealed.BlockOffsets) indexBlock {
-	// Update IDs table for PreloadedData
-	s.idsTable.IDsTotal = block.IDsTotal                  // Total number of IDs
-	s.idsTable.IDBlocksTotal = uint32(len(block.Offsets)) // Number of ID blocks
-
 	// Packing block
 	s.buf1 = block.Pack(s.buf1[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.DocsPositionsZstdLevel)

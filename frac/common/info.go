@@ -25,11 +25,11 @@ type Info struct {
 	Path          string                   `json:"name"`
 	Ver           string                   `json:"ver"`
 	BinaryDataVer config.BinaryDataVersion `json:"binary_data_ver"`
-	DocsTotal     uint32                   `json:"docs_total"`
-	DocsOnDisk    uint64                   `json:"docs_on_disk"`  // how much compressed docs data is stored on disk
-	DocsRaw       uint64                   `json:"docs_raw"`      // how much raw docs data is appended
-	MetaOnDisk    uint64                   `json:"meta_on_disk"`  // how much compressed metadata is stored on disk
-	IndexOnDisk   uint64                   `json:"index_on_disk"` // how much compressed index data is stored on disk
+	DocsTotal     uint32                   `json:"docs_total"`    // How many LIDs fraction has.
+	DocsOnDisk    uint64                   `json:"docs_on_disk"`  // How much compressed docs data is stored on disk.
+	DocsRaw       uint64                   `json:"docs_raw"`      // How much raw docs data is appended.
+	MetaOnDisk    uint64                   `json:"meta_on_disk"`  // How much compressed metadata is stored on disk.
+	IndexOnDisk   uint64                   `json:"index_on_disk"` // How much compressed index data is stored on disk.
 
 	ConstRegularBlockSize int `json:"const_regular_block_size"`
 	ConstIDsPerBlock      int `json:"const_ids_per_block"`
