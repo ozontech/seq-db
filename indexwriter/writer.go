@@ -1,4 +1,4 @@
-package sealing
+package indexwriter
 
 import (
 	"bytes"
@@ -73,7 +73,7 @@ func newWriter(ws io.WriteSeeker) (*writer, error) {
 }
 
 func (w *writer) writeBlock(btype string, block indexBlock) error {
-	header, payload := block.Bin(int64(w.pos))
+	header, payload := block.bin(int64(w.pos))
 	if _, err := w.wpayload.Write(payload); err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (w *writer) writeBlock(btype string, block indexBlock) error {
 }
 
 func (w *writer) writeEmptyBlock() error {
-	header, _ := indexBlock{}.Bin(int64(w.pos))
+	header, _ := indexBlock{}.bin(int64(w.pos))
 	w.wheader.Write(header)
 	return nil
 }

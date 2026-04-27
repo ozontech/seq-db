@@ -2,41 +2,19 @@ package sealing
 
 import (
 	"errors"
-	"iter"
 	"os"
 	"path/filepath"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
-	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/indexwriter"
 	"github.com/ozontech/seq-db/util"
 )
 
-type (
-	DocLocation  = util.Pair[seq.ID, seq.DocPos]
-	TokenPosting = util.Pair[[]byte, []uint32]
-)
-
-// Source interface defines the contract for data sources that can be sealed.
-// Provides access to all necessary data components for index creation
-type Source interface {
-	// Info returns metadata describing this source.
-	Info() *common.Info
-
-	// ID returns an iterator over stored document identifiers paired with
-	// their positions, in descending [seq.ID] order.
-	ID() iter.Seq2[DocLocation, error]
-
-	// BlockOffsets returns byte offsets to each document block
-	// within this source's `.docs` file.
-	BlockOffsets() []uint64
-
-	// TokenTriplet iterates over fields in lexicographic order.
-	// For each field, it yields tokens (lexicographically sorted)
-	// paired with the local document ID list for that token.
-	TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]]
-}
+// Source defines the contract for data sources that can be sealed.
+// Provides access to all necessary data components for index creation.
+type Source = indexwriter.Source
 
 // Seal writes five index files (.info, .token, .offsets, .id, .lid) for the fraction
 // and returns PreloadedData for fast initialization of the sealed fraction.
@@ -47,12 +25,11 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 		return nil, errors.New("sealing of an empty active fraction is not supported")
 	}
 
-	sealer := NewIndexSealer(params)
-
+	w := indexwriter.New(params)
 	if err := createAndWrite(
 		info.Path+consts.OffsetsTmpFileSuffix,
 		info.Path+consts.OffsetsFileSuffix,
-		func(f *os.File) error { return sealer.WriteOffsetsFile(f, src) },
+		func(f *os.File) error { return w.WriteOffsetsFile(f, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -60,7 +37,7 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	if err := createAndWrite(
 		info.Path+consts.IDTmpFileSuffix,
 		info.Path+consts.IDFileSuffix,
-		func(f *os.File) error { return sealer.WriteIDFile(f, src) },
+		func(f *os.File) error { return w.WriteIDFile(f, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -68,7 +45,7 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	if err := createAndWriteBoth(
 		info.Path+consts.TokenTmpFileSuffix, info.Path+consts.TokenFileSuffix,
 		info.Path+consts.LIDTmpFileSuffix, info.Path+consts.LIDFileSuffix,
-		func(tokenF, lidF *os.File) error { return sealer.WriteTokenTriplet(tokenF, lidF, src) },
+		func(tokenF, lidF *os.File) error { return w.WriteTokenTriplet(tokenF, lidF, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -76,7 +53,7 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	if err := createAndWrite(
 		info.Path+consts.InfoTmpFileSuffix,
 		info.Path+consts.InfoFileSuffix,
-		func(f *os.File) error { return sealer.WriteInfoFile(f, src) },
+		func(f *os.File) error { return w.WriteInfoFile(f, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -100,13 +77,13 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	}
 
 	info.IndexOnDisk = totalSize
-	lidsTable := sealer.LIDsTable()
+	lidsTable := w.LIDsTable()
 
 	preloaded := &sealed.PreloadedData{
 		Info:       info,
-		TokenTable: sealer.TokenTable(),
+		TokenTable: w.TokenTable(),
 		BlocksData: sealed.BlocksData{
-			IDsTable:      sealer.IDsTable(),
+			IDsTable:      w.IDsTable(),
 			LIDsTable:     &lidsTable,
 			BlocksOffsets: src.BlockOffsets(),
 		},
@@ -123,10 +100,7 @@ func syncAndClose(f *os.File) error {
 	return f.Close()
 }
 
-func createAndWrite(
-	tmp, final string,
-	write func(*os.File) error,
-) error {
+func createAndWrite(tmp, final string, write func(*os.File) error) error {
 	f, err := os.Create(tmp)
 	if err != nil {
 		return err
@@ -140,16 +114,16 @@ func createAndWrite(
 }
 
 func createAndWriteBoth(
-	tmpa, finala,
-	tmpb, finalb string,
+	atmp, afinal,
+	btmp, bfinal string,
 	write func(*os.File, *os.File) error,
 ) error {
-	a, err := os.Create(tmpa)
+	a, err := os.Create(atmp)
 	if err != nil {
 		return err
 	}
 
-	b, err := os.Create(tmpb)
+	b, err := os.Create(btmp)
 	if err != nil {
 		a.Close()
 		return err
@@ -160,9 +134,9 @@ func createAndWriteBoth(
 		return err
 	}
 
-	if err := os.Rename(tmpa, finala); err != nil {
+	if err := os.Rename(atmp, afinal); err != nil {
 		return err
 	}
 
-	return os.Rename(tmpb, finalb)
+	return os.Rename(btmp, bfinal)
 }
