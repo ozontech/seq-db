@@ -141,7 +141,6 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	defer lw.release()
 
 	var (
-		bb              blockbuilder.BlocksBuilder
 		allFieldsTables []token.FieldTable
 	)
 
@@ -152,7 +151,7 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 		},
 	)
 
-	for pair, err := range bb.BuildTokenBlocks(src.TokenTriplet(), lidAccumulator.Add, consts.RegularBlockSize) {
+	for pair, err := range blockbuilder.BuildTokenBlocks(src.TokenTriplet(), accumulate, consts.RegularBlockSize) {
 		if err != nil {
 			return err
 		}

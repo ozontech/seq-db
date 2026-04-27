@@ -50,10 +50,7 @@ type IdsSealBlock struct {
 	Params seqids.BlockParams
 }
 
-// BlocksBuilder constructs sealed blocks from various data sources.
-type BlocksBuilder struct{}
-
-func (bb *BlocksBuilder) BuildTokenBlocks(
+func BuildTokenBlocks(
 	it iter.Seq2[string, iter.Seq2[TokenPosting, error]],
 	accumulate func([]uint32) error, blockCapacity int,
 ) iter.Seq2[TokenBlock, error] {
