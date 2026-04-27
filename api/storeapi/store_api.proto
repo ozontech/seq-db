@@ -254,6 +254,9 @@ message FetchRequest {
   bool explain = 3;
   repeated IdWithHint ids_with_hints = 4;
   FieldsFilter fields_filter = 5;
+  // if true, skip masks will be evaluated
+  // set to false in fetch after search since ids are already skipped
+  bool evalSkipMasks = 6;
 }
 
 message StatusRequest {}

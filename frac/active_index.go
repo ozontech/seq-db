@@ -68,7 +68,7 @@ func (dp *activeDataProvider) getTokenIndex() *activeTokenIndex {
 	}
 }
 
-func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
+func (dp *activeDataProvider) Fetch(ids []seq.ID, evalSkipMasks bool) ([][]byte, error) {
 	sw := stopwatch.New()
 
 	defer sw.Export(
@@ -88,7 +88,7 @@ func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	}}
 
 	for _, fi := range indexes {
-		if err := processor.IndexFetch(ids, sw, &fi, res); err != nil {
+		if err := processor.IndexFetch(ids, evalSkipMasks, sw, &fi, res); err != nil {
 			return nil, err
 		}
 	}
@@ -271,10 +271,14 @@ func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return di.blocksOffsets[num]
 }
 
-func (di *activeFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
+func (di *activeFetchIndex) GetDocPos(ids []seq.ID, evalSkipMasks bool) ([]seq.DocPos, error) {
 	docsPos := make([]seq.DocPos, len(ids))
 	for i, id := range ids {
 		docsPos[i] = di.docsPositions.GetSync(id)
+	}
+
+	if !evalSkipMasks {
+		return docsPos, nil
 	}
 
 	minLID, maxLID := uint32(0), uint32(math.MaxUint32)

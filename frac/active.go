@@ -393,7 +393,7 @@ func (f *Active) String() string {
 	return fracToString(f, "active")
 }
 
-func (f *Active) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+func (f *Active) Fetch(ctx context.Context, ids []seq.ID, evalSkipMasks bool) ([][]byte, error) {
 	if f.Info().DocsTotal == 0 { // it is empty active fraction state
 		return nil, nil
 	}
@@ -401,7 +401,7 @@ func (f *Active) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
 	dp := f.createDataProvider(ctx)
 	defer dp.release()
 
-	return dp.Fetch(ids)
+	return dp.Fetch(ids, evalSkipMasks)
 }
 
 func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {

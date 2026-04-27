@@ -91,7 +91,7 @@ func (dp *sealedDataProvider) release() {
 	dp.idsProvider.Release()
 }
 
-func (dp *sealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
+func (dp *sealedDataProvider) Fetch(ids []seq.ID, evalSkipMasks bool) ([][]byte, error) {
 	sw := stopwatch.New()
 
 	defer sw.Export(
@@ -100,7 +100,7 @@ func (dp *sealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	)
 
 	res := make([][]byte, len(ids))
-	if err := processor.IndexFetch(ids, sw, dp.getFetchIndex(), res); err != nil {
+	if err := processor.IndexFetch(ids, evalSkipMasks, sw, dp.getFetchIndex(), res); err != nil {
 		return nil, err
 	}
 
@@ -280,8 +280,12 @@ func (fi *sealedFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return fi.blocksOffsets[num]
 }
 
-func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
+func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID, evalSkipMasks bool) ([]seq.DocPos, error) {
 	allLids := fi.findLIDs(ids)
+
+	if !evalSkipMasks {
+		return fi.getDocPosByLIDs(allLids), nil
+	}
 
 	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
 	if len(allLids) > 0 {

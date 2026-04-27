@@ -1653,7 +1653,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 				qprIDs := qpr.IDs.IDs()
 				totalIDsScrolled += len(qprIDs)
 
-				docs, err := s.fraction.Fetch(context.Background(), qprIDs)
+				docs, err := s.fraction.Fetch(context.Background(), qprIDs, false)
 				s.Require().NoError(err, "fetch failed for order=%v", order)
 
 				for j, doc := range docs {
@@ -1962,7 +1962,7 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 		s.Require().NoError(err, "search failed for query with order=%v", order)
 		s.Require().Equal(len(expectedIndexes), qpr.IDs.Len(), "doc count doesn't match")
 
-		docs, err := s.fraction.Fetch(context.Background(), qpr.IDs.IDs())
+		docs, err := s.fraction.Fetch(context.Background(), qpr.IDs.IDs(), false)
 		s.Require().NoError(err, "failed to fetch docs")
 
 		if order.IsReverse() {

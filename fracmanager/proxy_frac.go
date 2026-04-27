@@ -58,10 +58,10 @@ func (p *fractionProxy) Contains(mid seq.MID) bool {
 	return p.impl.Contains(mid)
 }
 
-func (p *fractionProxy) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+func (p *fractionProxy) Fetch(ctx context.Context, ids []seq.ID, evalSkipMasks bool) ([][]byte, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.impl.Fetch(ctx, ids)
+	return p.impl.Fetch(ctx, ids, evalSkipMasks)
 }
 
 func (p *fractionProxy) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
@@ -187,7 +187,7 @@ func (emptyFraction) Contains(mid seq.MID) bool {
 	return false
 }
 
-func (emptyFraction) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+func (emptyFraction) Fetch(ctx context.Context, ids []seq.ID, evalSkipMasks bool) ([][]byte, error) {
 	return nil, nil
 }
 
