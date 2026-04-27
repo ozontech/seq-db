@@ -42,27 +42,27 @@ func (m *mockSealingSource) BlockOffsets() []uint64 {
 	return m.blocks
 }
 
-func (m *mockSealingSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
-	return func(yield func(seq.ID, seq.DocPos) bool) {
-		if !yield(seq.SystemID, seq.SystemDocPos) {
+func (m *mockSealingSource) ID() iter.Seq2[DocLocation, error] {
+	return func(yield func(DocLocation, error) bool) {
+		if !yield(DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}, nil) {
 			return
 		}
 		for i, id := range m.ids {
-			if !yield(id, m.pos[i]) {
+			if !yield(DocLocation{First: id, Second: m.pos[i]}, nil) {
 				return
 			}
 		}
 	}
 }
 
-func (m *mockSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint32]] {
+func (m *mockSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
 	fieldNames := make([]string, 0, len(m.fields))
 	for f := range m.fields {
 		fieldNames = append(fieldNames, f)
 	}
 	slices.Sort(fieldNames)
 
-	return func(yield func(string, iter.Seq2[[]byte, []uint32]) bool) {
+	return func(yield func(string, iter.Seq2[TokenPosting, error]) bool) {
 		for _, field := range fieldNames {
 			tokens := make([]string, 0, len(m.fields[field]))
 			for t := range m.fields[field] {
@@ -70,9 +70,9 @@ func (m *mockSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, [
 			}
 			slices.Sort(tokens)
 
-			if !yield(field, func(yield func([]byte, []uint32) bool) {
+			if !yield(field, func(yield func(TokenPosting, error) bool) {
 				for _, tok := range tokens {
-					if !yield([]byte(tok), m.fields[field][tok]) {
+					if !yield(TokenPosting{First: []byte(tok), Second: m.fields[field][tok]}, nil) {
 						return
 					}
 				}
@@ -83,9 +83,9 @@ func (m *mockSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, [
 	}
 }
 
-func (m *mockSealingSource) DocBlock() iter.Seq[[]byte] {
-	return func(yield func([]byte) bool) {
-		if !yield(nil) {
+func (m *mockSealingSource) DocBlock() iter.Seq2[DocBlockLocation, error] {
+	return func(yield func(DocBlockLocation, error) bool) {
+		if !yield(DocBlockLocation{}, nil) {
 			return
 		}
 	}
@@ -156,9 +156,10 @@ func TestMergeSource(t *testing.T) {
 			docpos []seq.DocPos
 		)
 
-		for id, dp := range source.ID() {
-			ids = append(ids, id)
-			docpos = append(docpos, dp)
+		for loc, err := range source.ID() {
+			require.NoError(t, err)
+			ids = append(ids, loc.First)
+			docpos = append(docpos, loc.Second)
 		}
 
 		require.Equal(t,
@@ -197,9 +198,10 @@ func TestMergeSource(t *testing.T) {
 		for field, fieldIt := range source.TokenTriplet() {
 			fields = append(fields, field)
 
-			for token, lidsbuf := range fieldIt {
-				tokens = append(tokens, token)
-				lids = append(lids, slices.Clone(lidsbuf))
+			for posting, err := range fieldIt {
+				require.NoError(t, err)
+				tokens = append(tokens, posting.First)
+				lids = append(lids, slices.Clone(posting.Second))
 			}
 		}
 

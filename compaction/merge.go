@@ -4,15 +4,10 @@ import (
 	"errors"
 	"os"
 
-	"github.com/alecthomas/units"
-	"go.uber.org/zap"
-
-	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/indexwriter"
-	"github.com/ozontech/seq-db/logger"
 )
 
 func Merge(filename string, params common.SealParams, srcs ...Source) (*sealed.PreloadedData, error) {
@@ -88,6 +83,33 @@ func Merge(filename string, params common.SealParams, srcs ...Source) (*sealed.P
 	return preloaded, nil
 }
 
+func mergeDocs(filename string, srcs ...Source) error {
+	return createAndWrite(
+		filename+consts.DocsTmpFileSuffix,
+		filename+consts.DocsFileSuffix,
+		func(f *os.File) error {
+			var docsSize uint64
+
+			for _, src := range srcs {
+				for loc, err := range src.DocBlock() {
+					if err != nil {
+						return err
+					}
+
+					payload, offset := loc.First, loc.Second
+					if _, err := f.WriteAt(payload, int64(offset+docsSize)); err != nil {
+						return err
+					}
+				}
+
+				docsSize += src.Info().DocsOnDisk
+			}
+
+			return nil
+		},
+	)
+}
+
 func syncAndClose(f *os.File) error {
 	if err := f.Sync(); err != nil {
 		f.Close()
@@ -96,8 +118,11 @@ func syncAndClose(f *os.File) error {
 	return f.Close()
 }
 
-func createAndWrite(tmpPath, finalPath string, write func(*os.File) error) error {
-	f, err := os.Create(tmpPath)
+func createAndWrite(
+	tmp, final string,
+	write func(*os.File) error,
+) error {
+	f, err := os.Create(tmp)
 	if err != nil {
 		return err
 	}
@@ -106,64 +131,33 @@ func createAndWrite(tmpPath, finalPath string, write func(*os.File) error) error
 		return err
 	}
 
-	return os.Rename(tmpPath, finalPath)
+	return os.Rename(tmp, final)
 }
 
 func createAndWriteBoth(
-	tmpPath1, finalPath1,
-	tmpPath2, finalPath2 string,
+	atmp, afinal,
+	btmp, bfinal string,
 	write func(*os.File, *os.File) error,
 ) error {
-	f1, err := os.Create(tmpPath1)
+	a, err := os.Create(atmp)
 	if err != nil {
 		return err
 	}
 
-	f2, err := os.Create(tmpPath2)
+	b, err := os.Create(btmp)
 	if err != nil {
-		f1.Close()
+		a.Close()
 		return err
 	}
 
-	writeErr := write(f1, f2)
-	if err := errors.Join(writeErr, syncAndClose(f1), syncAndClose(f2)); err != nil {
+	writeErr := write(a, b)
+	if err := errors.Join(writeErr, syncAndClose(a), syncAndClose(b)); err != nil {
 		return err
 	}
 
-	if err := os.Rename(tmpPath1, finalPath1); err != nil {
+	if err := os.Rename(atmp, afinal); err != nil {
 		return err
 	}
 
-	return os.Rename(tmpPath2, finalPath2)
-}
-
-func mergeDocs(filename string, srcs ...Source) error {
-	return createAndWrite(
-		filename+consts.DocsTmpFileSuffix,
-		filename+consts.DocsFileSuffix,
-		func(f *os.File) error {
-			w := bytespool.AcquireWriterSize(f, int(units.MiB))
-
-			defer func() {
-				if err := w.Flush(); err != nil {
-					logger.Error(
-						"cannot flush compacted .docs file",
-						zap.Error(err),
-						zap.String("fraction", filename),
-					)
-				}
-				bytespool.ReleaseWriter(w)
-			}()
-
-			for _, src := range srcs {
-				for block := range src.DocBlock() {
-					if _, err := w.Write(block); err != nil {
-						return err
-					}
-				}
-			}
-
-			return nil
-		},
-	)
+	return os.Rename(btmp, bfinal)
 }

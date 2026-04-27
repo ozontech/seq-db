@@ -4,13 +4,17 @@ import (
 	"iter"
 	"slices"
 
+	"github.com/ozontech/seq-db/blockbuilder"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/util"
 )
+
+type DocBlockLocation = util.Pair[[]byte, uint64]
 
 // SealedSource implements [indexwriter.Source] for a sealed fraction.
 // Used as input to [compaction.MergeSource] when compacting multiple fractions.
@@ -22,8 +26,6 @@ type SealedSource struct {
 
 	tokenBlockLoader *token.BlockLoader
 	tokenTableLoader *token.TableLoader
-
-	lastErr error
 }
 
 func NewSealedSource(f *Sealed) *SealedSource {
@@ -52,35 +54,35 @@ func (s *SealedSource) BlockOffsets() []uint64 {
 	return s.f.blocksData.BlocksOffsets
 }
 
-func (s *SealedSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
-	return func(yield func(seq.ID, seq.DocPos) bool) {
+func (s *SealedSource) ID() iter.Seq2[blockbuilder.DocLocation, error] {
+	return func(yield func(blockbuilder.DocLocation, error) bool) {
 		for lid := uint32(0); lid < s.f.blocksData.IDsTable.IDsTotal; lid++ {
 			mid, err := s.idsProvider.MID(seq.LID(lid))
 			if err != nil {
-				s.lastErr = err
+				yield(blockbuilder.DocLocation{}, err)
 				return
 			}
 
 			rid, err := s.idsProvider.RID(seq.LID(lid))
 			if err != nil {
-				s.lastErr = err
+				yield(blockbuilder.DocLocation{}, err)
 				return
 			}
 
 			pos, err := s.idsProvider.DocPos(seq.LID(lid))
 			if err != nil {
-				s.lastErr = err
+				yield(blockbuilder.DocLocation{}, err)
 				return
 			}
 
-			if !yield(seq.ID{MID: mid, RID: rid}, pos) {
+			if !yield(blockbuilder.DocLocation{First: seq.ID{MID: mid, RID: rid}, Second: pos}, nil) {
 				return
 			}
 		}
 	}
 }
 
-func (s *SealedSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint32]] {
+func (s *SealedSource) TokenTriplet() iter.Seq2[string, iter.Seq2[blockbuilder.TokenPosting, error]] {
 	tokenTable := s.tokenTableLoader.Load()
 
 	fields := make([]string, 0, len(tokenTable))
@@ -89,21 +91,21 @@ func (s *SealedSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint
 	}
 
 	slices.Sort(fields)
-	return func(yield func(string, iter.Seq2[[]byte, []uint32]) bool) {
+	return func(yield func(string, iter.Seq2[blockbuilder.TokenPosting, error]) bool) {
 		for _, field := range fields {
-			if !yield(field, s.tokensForField(field)) {
+			if !yield(field, s.postingsForField(field)) {
 				return
 			}
 		}
 	}
 }
 
-func (s *SealedSource) tokensForField(field string) iter.Seq2[[]byte, []uint32] {
+func (s *SealedSource) postingsForField(field string) iter.Seq2[blockbuilder.TokenPosting, error] {
 	lidsTable := s.f.blocksData.LIDsTable
 	tokenTable := s.tokenTableLoader.Load()
 
 	var lidsBuf []uint32
-	return func(yield func([]byte, []uint32) bool) {
+	return func(yield func(blockbuilder.TokenPosting, error) bool) {
 		for _, entry := range tokenTable[field].Entries {
 			block := s.tokenBlockLoader.Load(entry.BlockIndex)
 
@@ -117,7 +119,7 @@ func (s *SealedSource) tokensForField(field string) iter.Seq2[[]byte, []uint32] 
 				for bi := firstBlock; bi <= lastBlock; bi++ {
 					lidBlock, err := s.lidsLoader.GetLIDsBlock(bi)
 					if err != nil {
-						s.lastErr = err
+						yield(blockbuilder.TokenPosting{}, err)
 						return
 					}
 
@@ -125,7 +127,7 @@ func (s *SealedSource) tokensForField(field string) iter.Seq2[[]byte, []uint32] 
 					lidsBuf = append(lidsBuf, lidBlock.LIDs[lidBlock.Offsets[chunkIdx]:lidBlock.Offsets[chunkIdx+1]]...)
 				}
 
-				if !yield(tokenVal, lidsBuf) {
+				if !yield(blockbuilder.TokenPosting{First: tokenVal, Second: lidsBuf}, nil) {
 					return
 				}
 			}
@@ -133,8 +135,8 @@ func (s *SealedSource) tokensForField(field string) iter.Seq2[[]byte, []uint32] 
 	}
 }
 
-func (s *SealedSource) DocBlock() iter.Seq[[]byte] {
-	return func(yield func([]byte) bool) {
+func (s *SealedSource) DocBlock() iter.Seq2[DocBlockLocation, error] {
+	return func(yield func(DocBlockLocation, error) bool) {
 		// We do not want to cache payload of DocBlock because
 		// it will just pollute cache and cause unnecessary evictions.
 		r := storage.NewDocBlocksReader(s.f.readLimiter, s.f.docsFile)
@@ -144,17 +146,14 @@ func (s *SealedSource) DocBlock() iter.Seq[[]byte] {
 			// Caller of [SealedSource.DocBlock] will decide whether it requires decompressed data.
 			payload, _, err := r.ReadDocBlock(int64(offset))
 			if err != nil {
-				s.lastErr = err
+				yield(DocBlockLocation{}, err)
 				return
 			}
 
-			if !yield(payload) {
+			loc := DocBlockLocation{First: payload, Second: offset}
+			if !yield(loc, nil) {
 				return
 			}
 		}
 	}
-}
-
-func (s *SealedSource) LastError() error {
-	return s.lastErr
 }

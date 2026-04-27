@@ -5,25 +5,39 @@ import (
 	"iter"
 	"math"
 	"slices"
+	"sync"
 
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/indexwriter"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
+)
+
+type (
+	Document         = util.Pair[seq.ID, []byte]
+	DocBlockLocation = util.Pair[[]byte, uint64]
+	TokenPosting     = util.Pair[[]byte, []uint32]
+	DocLocation      = util.Pair[seq.ID, seq.DocPos]
+	IndexedDocBlock  = util.Pair[[]byte, []seq.DocPos]
 )
 
 type Source interface {
 	indexwriter.Source
-	DocBlock() iter.Seq[[]byte]
+	DocBlock() iter.Seq2[DocBlockLocation, error]
 }
 
 type MergeSource struct {
 	filename string
+
 	info     *common.Info
+	infoOnce sync.Once
 
 	// sources is a slice of [sealing.Source]
 	// which provide view into underlying fractions.
 	sources []Source
 
+	offsets     []uint64
+	offsetsOnce sync.Once
 	// docBlockCount is populated during [MergeSource.BlockOffsets] call.
 	// This slice is used for changing block indexes in [seq.DocPos].
 	docBlockCount []int
@@ -60,42 +74,47 @@ func NewMergeSource(filename string, sources []Source) *MergeSource {
 }
 
 func (s *MergeSource) Info() *common.Info {
-	for i := range s.sources {
-		sinfo := s.sources[i].Info()
+	s.infoOnce.Do(func() {
+		for i := range s.sources {
+			sinfo := s.sources[i].Info()
 
-		s.info.DocsRaw += sinfo.DocsRaw
-		s.info.DocsTotal += sinfo.DocsTotal
-		s.info.DocsOnDisk += sinfo.DocsOnDisk
+			s.info.DocsRaw += sinfo.DocsRaw
+			s.info.DocsTotal += sinfo.DocsTotal
+			s.info.DocsOnDisk += sinfo.DocsOnDisk
 
-		// NOTE(dkharms): [IndexOnDisk] is calculated later.
-	}
+			// NOTE(dkharms): [IndexOnDisk] is calculated later.
+		}
 
-	s.info.From = s.from
-	s.info.To = s.to
+		s.info.From = s.from
+		s.info.To = s.to
+	})
 
 	return s.info
 }
 
 func (s *MergeSource) BlockOffsets() []uint64 {
-	var (
-		docsSize uint64
-		offsets  []uint64
-	)
+	s.offsetsOnce.Do(func() {
+		var (
+			docsSize uint64
+			offsets  []uint64
+		)
 
-	// Initially s.docBlockCount
-	s.docBlockCount = append(s.docBlockCount, 0)
-	for i := 0; i < len(s.sources); i++ {
-		for _, offset := range s.sources[i].BlockOffsets() {
-			offsets = append(offsets, uint64(offset)+docsSize)
+		s.docBlockCount = append(s.docBlockCount, 0)
+		for i := 0; i < len(s.sources); i++ {
+			for _, offset := range s.sources[i].BlockOffsets() {
+				offsets = append(offsets, uint64(offset)+docsSize)
+			}
+			docsSize += s.sources[i].Info().DocsOnDisk
+			s.docBlockCount = append(s.docBlockCount, len(offsets))
 		}
-		docsSize += s.sources[i].Info().DocsOnDisk
-		s.docBlockCount = append(s.docBlockCount, len(offsets))
-	}
 
-	return offsets
+		s.offsets = offsets
+	})
+
+	return s.offsets
 }
 
-func (s *MergeSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
+func (s *MergeSource) ID() iter.Seq2[DocLocation, error] {
 	// TODO(dkharms): For now, I will use stupid-simple linear scan for k-way merge.
 	//
 	// Its time complexity O(k*n) so it's not efficient enough if we compare it
@@ -106,18 +125,23 @@ func (s *MergeSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
 	// and it is around log(k) vs 2*log(k).
 
 	type cursor struct {
-		next func() (seq.ID, seq.DocPos, bool)
+		next func() (DocLocation, error, bool)
 		stop func()
 
-		id     seq.ID
-		docPos seq.DocPos
+		loc    DocLocation
 		lidOld uint32
 
 		ok bool
 	}
 
-	return func(yield func(seq.ID, seq.DocPos) bool) {
+	return func(yield func(DocLocation, error) bool) {
 		var cursors []cursor
+
+		defer func() {
+			for _, c := range cursors {
+				c.stop()
+			}
+		}()
 
 		for i := range s.sources {
 			src := s.sources[i]
@@ -126,24 +150,23 @@ func (s *MergeSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
 			// Skip [seq.SystemID] and [seq.SystemDocPos].
 			_, _, _ = next()
 
-			id, docpos, ok := next()
+			loc, err, ok := next()
 			cursors = append(cursors, cursor{
 				next: next, stop: stop,
-				id: id, docPos: docpos, lidOld: 1,
-				ok: ok,
+				loc: loc, lidOld: 1,
+				ok: ok && err == nil,
 			})
-		}
 
-		defer func() {
-			for _, c := range cursors {
-				c.stop()
+			if err != nil {
+				yield(DocLocation{}, err)
+				return
 			}
-		}()
+		}
 
 		lid := uint32(1)
 		// We've previosly dropped [seq.SystemID] from
 		// iterators however we do have to emit one such id.
-		if !yield(seq.SystemID, seq.SystemDocPos) {
+		if !yield(DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}, nil) {
 			return
 		}
 
@@ -159,8 +182,8 @@ func (s *MergeSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
 					continue
 				}
 
-				if seq.Less(id, c.id) {
-					id = c.id
+				if seq.Less(id, c.loc.First) {
+					id = c.loc.First
 					idx = i
 				}
 			}
@@ -172,20 +195,27 @@ func (s *MergeSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
 			}
 
 			c := cursors[idx]
-			minid, mindocpos, oldlid := c.id, c.docPos, c.lidOld
+			minid, oldlid := c.loc.First, c.lidOld
 
-			blockIdx, offset := mindocpos.Unpack()
-			mindocpos = seq.PackDocPos(uint32(s.docBlockCount[idx]+int(blockIdx)), offset)
+			blockIdx, offset := c.loc.Second.Unpack()
+			mindocpos := seq.PackDocPos(uint32(s.docBlockCount[idx]+int(blockIdx)), offset)
 
-			if !yield(minid, mindocpos) {
+			if !yield(DocLocation{First: minid, Second: mindocpos}, nil) {
 				return
 			}
 
 			// Rename lid from picked cursor to the new value.
 			s.lidMapping[idx][oldlid] = lid
 
-			c.id, c.docPos, c.ok = c.next()
+			var err error
+			c.loc, err, c.ok = c.next()
 			c.lidOld += 1
+
+			if err != nil {
+				cursors[idx] = c
+				yield(DocLocation{}, err)
+				return
+			}
 
 			s.from = min(s.from, minid.MID)
 			s.to = max(s.to, minid.MID)
@@ -196,7 +226,7 @@ func (s *MergeSource) ID() iter.Seq2[seq.ID, seq.DocPos] {
 	}
 }
 
-func (s *MergeSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint32]] {
+func (s *MergeSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
 	// TODO(dkharms): For now, I will use stupid-simple linear scan for k-way merge.
 	//
 	// Its time complexity O(k*n) so it's not efficient enough if we compare it
@@ -207,11 +237,11 @@ func (s *MergeSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint3
 	// and it is around log(k) vs 2*log(k).
 
 	type cursor struct {
-		next func() (string, iter.Seq2[[]byte, []uint32], bool)
+		next func() (string, iter.Seq2[TokenPosting, error], bool)
 		stop func()
 
 		field string
-		tokIt iter.Seq2[[]byte, []uint32]
+		tokIt iter.Seq2[TokenPosting, error]
 
 		ok bool
 	}
@@ -239,7 +269,7 @@ func (s *MergeSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint3
 		return field, set
 	}
 
-	return func(yield func(string, iter.Seq2[[]byte, []uint32]) bool) {
+	return func(yield func(string, iter.Seq2[TokenPosting, error]) bool) {
 		var cursors []cursor
 
 		for i := range s.sources {
@@ -269,7 +299,7 @@ func (s *MergeSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint3
 
 			var (
 				idxs  []int
-				iters []iter.Seq2[[]byte, []uint32]
+				iters []iter.Seq2[TokenPosting, error]
 			)
 
 			for i, c := range cursors {
@@ -296,15 +326,14 @@ func (s *MergeSource) TokenTriplet() iter.Seq2[string, iter.Seq2[[]byte, []uint3
 }
 
 func (s *MergeSource) tokensForField(
-	idxs []int, iters []iter.Seq2[[]byte, []uint32],
-) iter.Seq2[[]byte, []uint32] {
+	idxs []int, iters []iter.Seq2[TokenPosting, error],
+) iter.Seq2[TokenPosting, error] {
 	type cursor struct {
-		next func() ([]byte, []uint32, bool)
+		next func() (TokenPosting, error, bool)
 		stop func()
 
-		idx   int
-		token []byte
-		lids  []uint32
+		idx     int
+		posting TokenPosting
 
 		ok bool
 	}
@@ -321,13 +350,13 @@ func (s *MergeSource) tokensForField(
 			}
 
 			if !set {
-				token = c.token
+				token = c.posting.First
 				set = true
 				continue
 			}
 
-			if bytes.Compare(c.token, token) < 0 {
-				token = c.token
+			if bytes.Compare(c.posting.First, token) < 0 {
+				token = c.posting.First
 			}
 		}
 
@@ -338,24 +367,30 @@ func (s *MergeSource) tokensForField(
 	// all calls within current field.
 	var lidRenamed []uint32
 
-	return func(yield func([]byte, []uint32) bool) {
+	return func(yield func(TokenPosting, error) bool) {
 		var cursors []cursor
-
-		for i := range iters {
-			next, stop := iter.Pull2(iters[i])
-			token, lids, ok := next()
-			cursors = append(cursors, cursor{
-				next: next, stop: stop,
-				idx: idxs[i], token: token, lids: lids,
-				ok: ok,
-			})
-		}
 
 		defer func() {
 			for _, c := range cursors {
 				c.stop()
 			}
 		}()
+
+		for i := range iters {
+			next, stop := iter.Pull2(iters[i])
+			posting, err, ok := next()
+
+			cursors = append(cursors, cursor{
+				next: next, stop: stop,
+				idx: idxs[i], posting: posting,
+				ok: ok && err == nil,
+			})
+
+			if err != nil {
+				yield(TokenPosting{}, err)
+				return
+			}
+		}
 
 		for {
 			token, ok := minimal(cursors)
@@ -365,28 +400,32 @@ func (s *MergeSource) tokensForField(
 
 			// Collect and remap lids from all cursors at this token, then advance them.
 			for i, c := range cursors {
-				if !c.ok || !bytes.Equal(c.token, token) {
+				if !c.ok || !bytes.Equal(c.posting.First, token) {
 					continue
 				}
 
-				for _, lid := range c.lids {
+				for _, lid := range c.posting.Second {
 					lidRenamed = append(lidRenamed, s.lidMapping[c.idx][lid])
 				}
 
-				c.token, c.lids, c.ok = c.next()
+				var err error
+				c.posting, err, c.ok = c.next()
+
+				if err != nil {
+					cursors[i] = c
+					yield(TokenPosting{}, err)
+					return
+				}
+
 				cursors[i] = c
 			}
 
 			slices.Sort(lidRenamed)
-			if !yield(token, lidRenamed) {
+			if !yield(TokenPosting{First: token, Second: lidRenamed}, nil) {
 				return
 			}
 
 			lidRenamed = lidRenamed[:0]
 		}
 	}
-}
-
-func (s *MergeSource) LastError() error {
-	return nil
 }
