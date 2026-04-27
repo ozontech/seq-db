@@ -16,55 +16,6 @@ import (
 // Provides access to all necessary data components for index creation.
 type Source = indexwriter.Source
 
-func syncAndClose(f *os.File) error {
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
-}
-
-func createAndWrite(tmpPath, finalPath string, write func(*os.File) error) error {
-	f, err := os.Create(tmpPath)
-	if err != nil {
-		return err
-	}
-
-	if err := errors.Join(write(f), syncAndClose(f)); err != nil {
-		return err
-	}
-
-	return os.Rename(tmpPath, finalPath)
-}
-
-func createAndWriteBoth(
-	tmpPath1, finalPath1,
-	tmpPath2, finalPath2 string,
-	write func(*os.File, *os.File) error,
-) error {
-	f1, err := os.Create(tmpPath1)
-	if err != nil {
-		return err
-	}
-
-	f2, err := os.Create(tmpPath2)
-	if err != nil {
-		f1.Close()
-		return err
-	}
-
-	writeErr := write(f1, f2)
-	if err := errors.Join(writeErr, syncAndClose(f1), syncAndClose(f2)); err != nil {
-		return err
-	}
-
-	if err := os.Rename(tmpPath1, finalPath1); err != nil {
-		return err
-	}
-
-	return os.Rename(tmpPath2, finalPath2)
-}
-
 // Seal writes five index files (.info, .token, .offsets, .id, .lid) for the fraction
 // and returns PreloadedData for fast initialization of the sealed fraction.
 func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
@@ -140,4 +91,53 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	}
 
 	return preloaded, nil
+}
+
+func syncAndClose(f *os.File) error {
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+func createAndWrite(tmp, final string, write func(*os.File) error) error {
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+
+	if err := errors.Join(write(f), syncAndClose(f)); err != nil {
+		return err
+	}
+
+	return os.Rename(tmp, final)
+}
+
+func createAndWriteBoth(
+	atmp, afinal,
+	btmp, bfinal string,
+	write func(*os.File, *os.File) error,
+) error {
+	a, err := os.Create(atmp)
+	if err != nil {
+		return err
+	}
+
+	b, err := os.Create(btmp)
+	if err != nil {
+		a.Close()
+		return err
+	}
+
+	writeErr := write(a, b)
+	if err := errors.Join(writeErr, syncAndClose(a), syncAndClose(b)); err != nil {
+		return err
+	}
+
+	if err := os.Rename(atmp, afinal); err != nil {
+		return err
+	}
+
+	return os.Rename(btmp, bfinal)
 }
