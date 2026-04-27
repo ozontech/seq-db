@@ -245,6 +245,11 @@ func TestMergeSource(t *testing.T) {
 		require.Equal(t, merged.DocsTotal, finfo.DocsTotal+sinfo.DocsTotal)
 		require.Equal(t, merged.DocsOnDisk, finfo.DocsOnDisk+sinfo.DocsOnDisk)
 		require.Equal(t, merged.DocsRaw, finfo.DocsRaw+sinfo.DocsRaw)
+
+		// Validate correctness of distribution.
+		require.NotNil(t, merged.Distribution)
+		require.True(t, merged.IsIntersecting(finfo.From, finfo.To))
+		require.True(t, merged.IsIntersecting(sinfo.From, sinfo.To))
 	})
 }
 

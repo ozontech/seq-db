@@ -82,6 +82,13 @@ func (s *Info) BuildDistribution(mids []uint64) {
 	}
 }
 
+func (s *Info) AddMID(mid uint64) {
+	if s.Distribution == nil {
+		return
+	}
+	s.Distribution.Add(seq.MID(mid))
+}
+
 func (s *Info) InitEmptyDistribution() bool {
 	from := s.From.Time()
 	creationTime := time.UnixMilli(int64(s.CreationTime))

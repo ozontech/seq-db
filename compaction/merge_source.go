@@ -3,7 +3,6 @@ package compaction
 import (
 	"bytes"
 	"iter"
-	"math"
 	"slices"
 	"sync"
 
@@ -48,8 +47,6 @@ type MergeSource struct {
 	// i-th index of [lidMapping] correponds to i-th fraction.
 	// j-th index of i-th [lidMapping] corresponds to rename of j-th lid.
 	lidMapping [][]uint32
-
-	from, to seq.MID
 }
 
 func NewMergeSource(filename string, sources []Source) *MergeSource {
@@ -59,18 +56,34 @@ func NewMergeSource(filename string, sources []Source) *MergeSource {
 		lidmapping[i] = make([]uint32, src.Info().DocsTotal+1)
 	}
 
-	info := common.NewInfo(filename, 0, 0)
-	info.SealingTime = info.CreationTime
-
-	return &MergeSource{
-		info:     info,
-		filename: filename,
-
+	s := &MergeSource{
+		filename:   filename,
 		sources:    sources,
 		lidMapping: lidmapping,
-
-		from: math.MaxUint64, to: 0,
 	}
+
+	s.info = s.prepareInfo()
+	return s
+}
+
+func (s *MergeSource) prepareInfo() *common.Info {
+	info := common.NewInfo(s.filename, 0, 0)
+
+	var (
+		from seq.MID = seq.MaxID.MID
+		to   seq.MID = seq.MinID.MID
+	)
+
+	for _, src := range s.sources {
+		from = min(from, src.Info().From)
+		to = max(to, src.Info().To)
+	}
+
+	info.From, info.To = from, to
+	info.SealingTime = info.CreationTime
+
+	info.InitEmptyDistribution()
+	return info
 }
 
 func (s *MergeSource) Info() *common.Info {
@@ -84,9 +97,6 @@ func (s *MergeSource) Info() *common.Info {
 
 			// NOTE(dkharms): [IndexOnDisk] is calculated later.
 		}
-
-		s.info.From = s.from
-		s.info.To = s.to
 	})
 
 	return s.info
@@ -195,7 +205,9 @@ func (s *MergeSource) ID() iter.Seq2[DocLocation, error] {
 			}
 
 			c := cursors[idx]
+
 			minid, oldlid := c.loc.First, c.lidOld
+			s.info.AddMID(uint64(minid.MID))
 
 			blockIdx, offset := c.loc.Second.Unpack()
 			mindocpos := seq.PackDocPos(uint32(s.docBlockCount[idx]+int(blockIdx)), offset)
@@ -216,9 +228,6 @@ func (s *MergeSource) ID() iter.Seq2[DocLocation, error] {
 				yield(DocLocation{}, err)
 				return
 			}
-
-			s.from = min(s.from, minid.MID)
-			s.to = max(s.to, minid.MID)
 
 			lid += 1
 			cursors[idx] = c
