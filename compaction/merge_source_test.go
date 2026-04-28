@@ -44,11 +44,14 @@ func (m *mockSealingSource) BlockOffsets() []uint64 {
 
 func (m *mockSealingSource) ID() iter.Seq2[DocLocation, error] {
 	return func(yield func(DocLocation, error) bool) {
-		if !yield(DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}, nil) {
+		docloc := DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}
+		if !yield(docloc, nil) {
 			return
 		}
+
 		for i, id := range m.ids {
-			if !yield(DocLocation{First: id, Second: m.pos[i]}, nil) {
+			docloc = DocLocation{First: id, Second: m.pos[i]}
+			if !yield(docloc, nil) {
 				return
 			}
 		}
@@ -56,27 +59,36 @@ func (m *mockSealingSource) ID() iter.Seq2[DocLocation, error] {
 }
 
 func (m *mockSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
-	fieldNames := make([]string, 0, len(m.fields))
+	fields := make([]string, 0, len(m.fields))
 	for f := range m.fields {
-		fieldNames = append(fieldNames, f)
+		fields = append(fields, f)
 	}
-	slices.Sort(fieldNames)
 
+	slices.Sort(fields)
 	return func(yield func(string, iter.Seq2[TokenPosting, error]) bool) {
-		for _, field := range fieldNames {
-			tokens := make([]string, 0, len(m.fields[field]))
-			for t := range m.fields[field] {
-				tokens = append(tokens, t)
+		for _, field := range fields {
+			if !yield(field, m.postingsForField(field)) {
+				return
 			}
-			slices.Sort(tokens)
+		}
+	}
+}
 
-			if !yield(field, func(yield func(TokenPosting, error) bool) {
-				for _, tok := range tokens {
-					if !yield(TokenPosting{First: []byte(tok), Second: m.fields[field][tok]}, nil) {
-						return
-					}
-				}
-			}) {
+func (m *mockSealingSource) postingsForField(field string) iter.Seq2[TokenPosting, error] {
+	return func(yield func(TokenPosting, error) bool) {
+		tokens := make([]string, 0, len(m.fields[field]))
+		for t := range m.fields[field] {
+			tokens = append(tokens, t)
+		}
+
+		slices.Sort(tokens)
+		for _, tok := range tokens {
+			posting := TokenPosting{
+				First:  []byte(tok),
+				Second: m.fields[field][tok],
+			}
+
+			if !yield(posting, nil) {
 				return
 			}
 		}
@@ -165,10 +177,10 @@ func TestMergeSource(t *testing.T) {
 		require.Equal(t,
 			[]seq.ID{
 				seq.SystemID,
-				// seq.ID from the second source
+				// [seq.ID] from the second source.
 				{MID: 6},
 				{MID: 5},
-				// seq.ID from the first source
+				// [seq.ID] from the first source.
 				{MID: 3},
 				{MID: 2},
 				{MID: 1},
@@ -179,9 +191,9 @@ func TestMergeSource(t *testing.T) {
 		require.Equal(t,
 			[]seq.DocPos{
 				seq.SystemDocPos,
-				// seq.DocPos from the second source
+				// [seq.DocPos] from the second source.
 				seq.PackDocPos(1, 0), seq.PackDocPos(1, 2048),
-				// seq.DocPos from the first source
+				// [seq.DocPos] from the first source.
 				seq.PackDocPos(0, 0), seq.PackDocPos(0, 1024), seq.PackDocPos(0, 2048),
 			},
 			docpos,
@@ -205,28 +217,28 @@ func TestMergeSource(t *testing.T) {
 			}
 		}
 
-		// Both sources have the same and the only field
+		// Both sources have the same and the only field.
 		require.Equal(t, []string{"level"}, fields)
 
-		// Ensure tokens are sorted in ascending order
+		// Ensure tokens are sorted in ascending order.
 		require.Equal(t,
 			[][]byte{[]byte("debug"), []byte("error"), []byte("info")},
 			tokens,
 		)
 
-		// Ensure correctness of lids remapping
-		// 	-----------------
+		// Ensure correctness of lids remapping:
+		// 	-------------------------
 		// 	seq.MID       6 5 | 3 2 1
 		//  seq.LID (old) 1 2 | 1 2 3
 		// 	seq.LID (new) 1 2 | 3 4 5
-		// 	-----------------
+		// 	-------------------------
 		require.Equal(t,
 			[][]uint32{
-				// Sequence of [seq.LID] for token `debug`
+				// Sequence of [seq.LID] for token `debug`.
 				{1},
-				// Sequence of [seq.LID] for token `error`
+				// Sequence of [seq.LID] for token `error`.
 				{3, 5},
-				// Sequence of [seq.LID] for token `info`
+				// Sequence of [seq.LID] for token `info`.
 				{2, 4, 5},
 			},
 			lids,
@@ -250,6 +262,7 @@ func TestMergeSource(t *testing.T) {
 		require.NotNil(t, merged.Distribution)
 		require.True(t, merged.IsIntersecting(finfo.From, finfo.To))
 		require.True(t, merged.IsIntersecting(sinfo.From, sinfo.To))
+		require.True(t, merged.IsIntersecting(min(finfo.From, sinfo.From), max(finfo.To, sinfo.To)))
 	})
 }
 
@@ -258,7 +271,7 @@ func BenchmarkMergeSource(b *testing.B) {
 		numSources    = 4
 		docsPerSource = 512_000
 
-		// Total pairs of (field, token) will be
+		// Total count of pairs of (field, token) will be
 		// [numFields] * [numTokens].
 		numFields = 512
 		numTokens = 16384

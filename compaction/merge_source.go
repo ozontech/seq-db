@@ -28,15 +28,16 @@ type Source interface {
 type MergeSource struct {
 	filename string
 
-	info     *common.Info
-	infoOnce sync.Once
-
 	// sources is a slice of [sealing.Source]
 	// which provide view into underlying fractions.
 	sources []Source
 
+	info     *common.Info
+	infoOnce sync.Once
+
 	offsets     []uint64
 	offsetsOnce sync.Once
+
 	// docBlockCount is populated during [MergeSource.BlockOffsets] call.
 	// This slice is used for changing block indexes in [seq.DocPos].
 	docBlockCount []int
@@ -50,16 +51,20 @@ type MergeSource struct {
 }
 
 func NewMergeSource(filename string, sources []Source) *MergeSource {
-	lidmapping := make([][]uint32, len(sources))
+	lidMapping := make([][]uint32, len(sources))
 
 	for i, src := range sources {
-		lidmapping[i] = make([]uint32, src.Info().DocsTotal+1)
+		lidMapping[i] = make(
+			[]uint32,
+			// Increment for [seq.SystemID].
+			src.Info().DocsTotal+1,
+		)
 	}
 
 	s := &MergeSource{
 		filename:   filename,
 		sources:    sources,
-		lidMapping: lidmapping,
+		lidMapping: lidMapping,
 	}
 
 	s.info = s.prepareInfo()
@@ -206,18 +211,18 @@ func (s *MergeSource) ID() iter.Seq2[DocLocation, error] {
 
 			c := cursors[idx]
 
-			minid, oldlid := c.loc.First, c.lidOld
-			s.info.AddMID(uint64(minid.MID))
+			minID, lidOld := c.loc.First, c.lidOld
+			s.info.AddMID(uint64(minID.MID))
 
 			blockIdx, offset := c.loc.Second.Unpack()
-			mindocpos := seq.PackDocPos(uint32(s.docBlockCount[idx]+int(blockIdx)), offset)
+			minDocPos := seq.PackDocPos(uint32(s.docBlockCount[idx]+int(blockIdx)), offset)
 
-			if !yield(DocLocation{First: minid, Second: mindocpos}, nil) {
+			if !yield(DocLocation{First: minID, Second: minDocPos}, nil) {
 				return
 			}
 
 			// Rename lid from picked cursor to the new value.
-			s.lidMapping[idx][oldlid] = lid
+			s.lidMapping[idx][lidOld] = lid
 
 			var err error
 			c.loc, err, c.ok = c.next()
@@ -320,7 +325,7 @@ func (s *MergeSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, e
 				iters = append(iters, c.tokIt)
 			}
 
-			if !yield(field, s.tokensForField(idxs, iters)) {
+			if !yield(field, s.postingsForField(idxs, iters)) {
 				return
 			}
 
@@ -334,7 +339,7 @@ func (s *MergeSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, e
 	}
 }
 
-func (s *MergeSource) tokensForField(
+func (s *MergeSource) postingsForField(
 	idxs []int, iters []iter.Seq2[TokenPosting, error],
 ) iter.Seq2[TokenPosting, error] {
 	type cursor struct {

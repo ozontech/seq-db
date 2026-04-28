@@ -89,7 +89,6 @@ func mergeDocs(filename string, srcs ...Source) error {
 		filename+consts.DocsFileSuffix,
 		func(f *os.File) error {
 			var docsSize uint64
-
 			for _, src := range srcs {
 				for loc, err := range src.DocBlock() {
 					if err != nil {

@@ -4,11 +4,11 @@ import (
 	"iter"
 	"slices"
 
-	"github.com/ozontech/seq-db/blockbuilder"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
+	"github.com/ozontech/seq-db/indexwriter"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
@@ -29,7 +29,7 @@ type SealedSource struct {
 }
 
 func NewSealedSource(f *Sealed) *SealedSource {
-	f.load()
+	f.init(true)
 	return &SealedSource{
 		f: f,
 		idsProvider: seqids.NewProvider(
@@ -42,7 +42,7 @@ func NewSealedSource(f *Sealed) *SealedSource {
 		),
 		lidsLoader:       lids.NewLoader(&f.lidReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.tokenReader, f.indexCache.TokenTable),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.IsLegacy, &f.tokenReader, f.indexCache.TokenTable),
 	}
 }
 
@@ -54,35 +54,35 @@ func (s *SealedSource) BlockOffsets() []uint64 {
 	return s.f.blocksData.BlocksOffsets
 }
 
-func (s *SealedSource) ID() iter.Seq2[blockbuilder.DocLocation, error] {
-	return func(yield func(blockbuilder.DocLocation, error) bool) {
+func (s *SealedSource) ID() iter.Seq2[indexwriter.DocLocation, error] {
+	return func(yield func(indexwriter.DocLocation, error) bool) {
 		for lid := uint32(0); lid < s.f.blocksData.IDsTable.IDsTotal; lid++ {
 			mid, err := s.idsProvider.MID(seq.LID(lid))
 			if err != nil {
-				yield(blockbuilder.DocLocation{}, err)
+				yield(indexwriter.DocLocation{}, err)
 				return
 			}
 
 			rid, err := s.idsProvider.RID(seq.LID(lid))
 			if err != nil {
-				yield(blockbuilder.DocLocation{}, err)
+				yield(indexwriter.DocLocation{}, err)
 				return
 			}
 
 			pos, err := s.idsProvider.DocPos(seq.LID(lid))
 			if err != nil {
-				yield(blockbuilder.DocLocation{}, err)
+				yield(indexwriter.DocLocation{}, err)
 				return
 			}
 
-			if !yield(blockbuilder.DocLocation{First: seq.ID{MID: mid, RID: rid}, Second: pos}, nil) {
+			if !yield(indexwriter.DocLocation{First: seq.ID{MID: mid, RID: rid}, Second: pos}, nil) {
 				return
 			}
 		}
 	}
 }
 
-func (s *SealedSource) TokenTriplet() iter.Seq2[string, iter.Seq2[blockbuilder.TokenPosting, error]] {
+func (s *SealedSource) TokenTriplet() iter.Seq2[string, iter.Seq2[indexwriter.TokenPosting, error]] {
 	tokenTable := s.tokenTableLoader.Load()
 
 	fields := make([]string, 0, len(tokenTable))
@@ -91,7 +91,7 @@ func (s *SealedSource) TokenTriplet() iter.Seq2[string, iter.Seq2[blockbuilder.T
 	}
 
 	slices.Sort(fields)
-	return func(yield func(string, iter.Seq2[blockbuilder.TokenPosting, error]) bool) {
+	return func(yield func(string, iter.Seq2[indexwriter.TokenPosting, error]) bool) {
 		for _, field := range fields {
 			if !yield(field, s.postingsForField(field)) {
 				return
@@ -100,12 +100,12 @@ func (s *SealedSource) TokenTriplet() iter.Seq2[string, iter.Seq2[blockbuilder.T
 	}
 }
 
-func (s *SealedSource) postingsForField(field string) iter.Seq2[blockbuilder.TokenPosting, error] {
+func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.TokenPosting, error] {
 	lidsTable := s.f.blocksData.LIDsTable
 	tokenTable := s.tokenTableLoader.Load()
 
 	var lidsBuf []uint32
-	return func(yield func(blockbuilder.TokenPosting, error) bool) {
+	return func(yield func(indexwriter.TokenPosting, error) bool) {
 		for _, entry := range tokenTable[field].Entries {
 			block := s.tokenBlockLoader.Load(entry.BlockIndex)
 
@@ -119,7 +119,7 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[blockbuilder.Tok
 				for bi := firstBlock; bi <= lastBlock; bi++ {
 					lidBlock, err := s.lidsLoader.GetLIDsBlock(bi)
 					if err != nil {
-						yield(blockbuilder.TokenPosting{}, err)
+						yield(indexwriter.TokenPosting{}, err)
 						return
 					}
 
@@ -127,7 +127,7 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[blockbuilder.Tok
 					lidsBuf = append(lidsBuf, lidBlock.LIDs[lidBlock.Offsets[chunkIdx]:lidBlock.Offsets[chunkIdx+1]]...)
 				}
 
-				if !yield(blockbuilder.TokenPosting{First: tokenVal, Second: lidsBuf}, nil) {
+				if !yield(indexwriter.TokenPosting{First: tokenVal, Second: lidsBuf}, nil) {
 					return
 				}
 			}
