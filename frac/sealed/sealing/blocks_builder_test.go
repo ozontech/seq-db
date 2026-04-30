@@ -114,18 +114,22 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	const blockSize = 24
 	const lidBlockCap = 3
 
-	var bb blocksBuilder
-	lidAccum := newLIDBlocksAccumulator(lidBlockCap)
 	var lidBlocks []lidsSealBlock
+	lidAccumulator := newLIDAccumulator(
+		lidBlockCap,
+		func(block lidsSealBlock) error {
+			block.payload.LIDs = slices.Clone(block.payload.LIDs)
+			block.payload.Offsets = slices.Clone(block.payload.Offsets)
+			lidBlocks = append(lidBlocks, block)
+			return nil
+		},
+	)
+
+	var bb blocksBuilder
 	tokenBlocks := bb.BuildTokenBlocks(
 		src.TokenTriplet(),
 		func(lids []uint32) error {
-			return lidAccum.Add(lids, func(block lidsSealBlock) error {
-				block.payload.LIDs = slices.Clone(block.payload.LIDs)
-				block.payload.Offsets = slices.Clone(block.payload.Offsets)
-				lidBlocks = append(lidBlocks, block)
-				return nil
-			})
+			return lidAccumulator.Add(lids)
 		},
 		blockSize,
 	)
@@ -245,11 +249,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 		},
 	}
 	assert.Equal(t, actualTokenTable.FieldsTables, expectedTokenTable.FieldsTables)
-
-	finalBlock := lidAccum.Flush()
-	finalBlock.payload.LIDs = slices.Clone(finalBlock.payload.LIDs)
-	finalBlock.payload.Offsets = slices.Clone(finalBlock.payload.Offsets)
-	lidBlocks = append(lidBlocks, finalBlock)
+	assert.NoError(t, lidAccumulator.Finalize())
 
 	expectedLIDBlocks := []lidsSealBlock{
 		{

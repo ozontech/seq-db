@@ -105,13 +105,13 @@ func (bb *blocksBuilder) BuildTokenBlocks(
 		}
 
 		block.ext.minTID = 1
-		for field, tokIt := range it {
+		for field, tokenIterator := range it {
 			emitFieldEntry()
 
 			fieldName = field
 			fieldEntryStartTID = currentTID + 1
 
-			for pair, err := range tokIt {
+			for pair, err := range tokenIterator {
 				if err != nil {
 					yield(TokenBlock{}, err)
 					return
@@ -202,8 +202,9 @@ func seqBlockID(ids iter.Seq2[DocLocation, error], blockCapacity int) iter.Seq2[
 	}
 }
 
-type lidBlocksAcc struct {
+type lidAccumulator struct {
 	blockCapacity int
+	onBlock       func(lidsSealBlock) error
 
 	currentTID   uint32
 	currentBlock lidsSealBlock
@@ -212,8 +213,14 @@ type lidBlocksAcc struct {
 	isContinued  bool
 }
 
-func newLIDBlocksAccumulator(blockCapacity int) *lidBlocksAcc {
-	a := &lidBlocksAcc{blockCapacity: blockCapacity}
+func newLIDAccumulator(
+	blockCapacity int,
+	onBlock func(lidsSealBlock) error,
+) *lidAccumulator {
+	a := &lidAccumulator{
+		blockCapacity: blockCapacity,
+		onBlock:       onBlock,
+	}
 
 	a.currentBlock.ext.minTID = 1
 	a.currentBlock.payload = lids.Block{
@@ -229,12 +236,12 @@ func newLIDBlocksAccumulator(blockCapacity int) *lidBlocksAcc {
 // For each block that fills up, `onBlock` is called immediately
 // before the backing arrays are reset, so `onBlock` may read the
 // block data but must not retain references to it.
-func (a *lidBlocksAcc) Add(lidsbuf []uint32, onBlock func(lidsSealBlock) error) error {
+func (a *lidAccumulator) Add(lidsbuf []uint32) error {
 	a.currentTID++
 
 	for _, lid := range lidsbuf {
 		if len(a.currentBlock.payload.LIDs) == a.blockCapacity {
-			if err := onBlock(a.finalizeBlock()); err != nil {
+			if err := a.onBlock(a.finalizeBlock()); err != nil {
 				return err
 			}
 
@@ -257,11 +264,11 @@ func (a *lidBlocksAcc) Add(lidsbuf []uint32, onBlock func(lidsSealBlock) error) 
 	return nil
 }
 
-func (a *lidBlocksAcc) Flush() lidsSealBlock {
-	return a.finalizeBlock()
+func (a *lidAccumulator) Finalize() error {
+	return a.onBlock(a.finalizeBlock())
 }
 
-func (a *lidBlocksAcc) finalizeBlock() lidsSealBlock {
+func (a *lidAccumulator) finalizeBlock() lidsSealBlock {
 	if !a.isEndOfToken {
 		a.currentBlock.payload.Offsets = append(
 			a.currentBlock.payload.Offsets,

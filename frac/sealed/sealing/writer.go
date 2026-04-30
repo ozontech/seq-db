@@ -16,15 +16,17 @@ import (
 const prefixSize = 16
 
 const (
-	btypeInfo       = "info"
-	btypeOffset     = "offset"
-	btypeToken      = "token"
-	btypeTokenTable = "token-table"
-	btypeMid        = "mid"
-	btypeRid        = "rid"
-	btypeDocPos     = "doc-pos"
-	btypeLid        = "lid"
-	btypeBlackhole  = "blackhole"
+	blockTypeInfo   = "info"
+	blockTypeOffset = "offset"
+
+	blockTypeToken      = "token"
+	blockTypeTokenTable = "token-table"
+
+	blockTypeMID    = "mid"
+	blockTypeRID    = "rid"
+	blockTypeDocPos = "doc-pos"
+
+	blockTypeLID = "lid"
 )
 
 // writer writes blocks incrementally to a single file using the
@@ -76,18 +78,22 @@ func (w *writer) writeBlock(btype string, block indexBlock) error {
 		return err
 	}
 
-	if btype != btypeBlackhole {
-		w.stats[btype] = blockstat{
-			count:      w.stats[btype].count + 1,
-			raw:        w.stats[btype].raw + int(block.rawLen),
-			compressed: w.stats[btype].compressed + len(block.payload),
-			header:     w.stats[btype].header + len(header),
-		}
+	w.stats[btype] = blockstat{
+		count:      w.stats[btype].count + 1,
+		raw:        w.stats[btype].raw + int(block.rawLen),
+		compressed: w.stats[btype].compressed + len(block.payload),
+		header:     w.stats[btype].header + len(header),
 	}
 
 	w.wheader.Write(header)
 	w.pos += len(payload)
 
+	return nil
+}
+
+func (w *writer) writeEmptyBlock() error {
+	header, _ := indexBlock{}.Bin(int64(w.pos))
+	w.wheader.Write(header)
 	return nil
 }
 

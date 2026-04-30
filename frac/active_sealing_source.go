@@ -45,7 +45,7 @@ type ActiveSealingSource struct {
 	rids *UInt64s // RIDs
 
 	fields    []string   // Sorted field names
-	fieldTids [][]uint32 // Each field contains sorted TIDs based on token value
+	fieldTIDs [][]uint32 // Each field contains sorted TIDs based on token value
 
 	tokens [][]byte     // Tokens (values) by TID
 	lids   []*TokenLIDs // LID lists for each token
@@ -59,7 +59,7 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 	info := *active.info // copy
 
 	sortedLIDs := active.GetAllDocuments()
-	fields, fieldTids := sortFields(active.TokenList)
+	fields, fieldTIDs := sortFields(active.TokenList)
 
 	src := ActiveSealingSource{
 		params: params,
@@ -74,7 +74,7 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 		rids: active.RIDs,
 
 		fields:    fields,
-		fieldTids: fieldTids,
+		fieldTIDs: fieldTIDs,
 		tokens:    active.TokenList.tidToVal,
 		lids:      active.TokenList.tidToLIDs,
 
@@ -100,7 +100,7 @@ func sortFields(tl *TokenList) ([]string, [][]uint32) {
 	fields := slices.Collect(maps.Keys(tl.FieldTIDs))
 	slices.Sort(fields)
 
-	fieldTids := make([][]uint32, len(tl.FieldTIDs))
+	fieldTIDs := make([][]uint32, len(tl.FieldTIDs))
 	for i, field := range fields {
 		// Make a copy because this memory is shared
 		// with concurrent readers (user search queries).
@@ -110,10 +110,10 @@ func sortFields(tl *TokenList) ([]string, [][]uint32) {
 			return bytes.Compare(tl.tidToVal[i], tl.tidToVal[j])
 		})
 
-		fieldTids[i] = cp
+		fieldTIDs[i] = cp
 	}
 
-	return fields, fieldTids
+	return fields, fieldTIDs
 }
 
 func (src *ActiveSealingSource) ID() iter.Seq2[DocLocation, error] {
@@ -122,7 +122,7 @@ func (src *ActiveSealingSource) ID() iter.Seq2[DocLocation, error] {
 		rids := src.rids.vals
 
 		// System ID and DocPos are not stored in `src.sortedLIDs`.
-		// However we do have to yield them to preserve 1-baseed indexing for ids.
+		// However we do have to yield them to preserve 1-based indexing for ids.
 		dloc := DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}
 		if !yield(dloc, nil) {
 			return
@@ -193,7 +193,7 @@ func (src *ActiveSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[Token
 func (src *ActiveSealingSource) postingsForField(field string, idx int) iter.Seq2[TokenPosting, error] {
 	var lidsbuf []uint32
 	return func(yield func(TokenPosting, error) bool) {
-		for _, tid := range src.fieldTids[idx] {
+		for _, tid := range src.fieldTIDs[idx] {
 			token := src.tokens[tid]
 
 			lids := src.lids[tid].SortedLIDsUnsafe()

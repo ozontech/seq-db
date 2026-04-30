@@ -41,7 +41,7 @@ func (l *LegacyLoader) Load(blocksData *sealed.BlocksData, info *common.Info, re
 		logger.Fatal("legacy load ids error", zap.Error(err))
 	}
 
-	blocksData.LIDsTable, err = l.loadLIDs()
+	blocksData.LIDsTable, err = l.loadLIDsTable()
 	if err != nil {
 		logger.Fatal("legacy load lids error", zap.Error(err))
 	}
@@ -126,8 +126,8 @@ func (l *LegacyLoader) loadIDs(fracVersion config.BinaryDataVersion) (seqids.Tab
 	return table, offsets.Offsets, nil
 }
 
-// loadLIDs scans LID block headers, recording the absolute start index for lids.Table.
-func (l *LegacyLoader) loadLIDs() (*lids.Table, error) {
+// loadLIDsTable scans LID block headers, recording the absolute start index for lids.Table.
+func (l *LegacyLoader) loadLIDsTable() (*lids.Table, error) {
 	startIndex := l.blockIndex // absolute index of first LID block in .index
 
 	var (
