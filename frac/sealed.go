@@ -109,40 +109,89 @@ func NewSealed(
 		return f
 	}
 
-	f.openInfo()
-	f.info = loadInfo(f.infoReader)
+	if !isLegacy {
+		f.openInfo()
+		f.info = loadInfo(f.infoReader)
+	} else {
+		f.openInfoLegacy()
+		f.info = loadInfo(f.legacyReader)
+	}
+
 	f.info.IndexOnDisk = computeIndexOnDisk(f.BaseFileName, f.IsLegacy)
+	return f
+}
+
+func NewSealedPreloaded(
+	baseFile string,
+	preloaded *sealed.PreloadedData,
+	rl *storage.ReadLimiter,
+	indexCache *IndexCache,
+	docsCache *cache.Cache[[]byte],
+	config *Config,
+	skipMaskProvider skipMaskProvider,
+) *Sealed {
+	f := &Sealed{
+		blocksData: preloaded.BlocksData,
+		docsCache:  docsCache,
+		indexCache: indexCache,
+
+		loadMu:   &sync.RWMutex{},
+		isLoaded: true,
+
+		readLimiter: rl,
+
+		info:         preloaded.Info,
+		BaseFileName: baseFile,
+		Config:       config,
+
+		skipMaskProvider: skipMaskProvider,
+	}
+
+	// Put token table built during sealing into the cache.
+	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
+		return preloaded.TokenTable, preloaded.TokenTable.Size()
+	})
+
+	f.openDocs()
+	f.openIndex()
+
+	docsCountK := float64(f.info.DocsTotal) / 1000
+	logger.Info("sealed fraction created from active",
+		zap.String("frac", f.info.Name()),
+		util.ZapMsTsAsESTimeStr("creation_time", f.info.CreationTime),
+		zap.String("from", f.info.From.String()),
+		zap.String("to", f.info.To.String()),
+		util.ZapFloat64WithPrec("docs_k", docsCountK, 1),
+	)
+
+	f.info.MetaOnDisk = 0
 
 	return f
 }
 
-func (f *Sealed) openInfo() {
-	if f.IsLegacy {
-		if f.legacyFile != nil {
-			return
-		}
-
-		name := f.BaseFileName + consts.IndexFileSuffix
-		file, err := os.Open(name)
-		if err != nil {
-			logger.Fatal(
-				"can't open legacy index file",
-				zap.String("file", name),
-				zap.Error(err),
-			)
-		}
-
-		f.legacyFile = file
-		f.legacyReader = storage.NewIndexReader(
-			f.readLimiter, file.Name(),
-			file, f.indexCache.InfoRegistry,
-		)
-
-		// infoReader is used by [loadInfo]
-		f.infoReader = f.legacyReader
+func (f *Sealed) openInfoLegacy() {
+	if f.legacyFile != nil {
 		return
 	}
 
+	name := f.BaseFileName + consts.IndexFileSuffix
+	file, err := os.Open(name)
+	if err != nil {
+		logger.Fatal(
+			"can't open legacy index file",
+			zap.String("file", name),
+			zap.Error(err),
+		)
+	}
+
+	f.legacyFile = file
+	f.legacyReader = storage.NewIndexReader(
+		f.readLimiter, file.Name(),
+		file, f.indexCache.LegacyRegistry,
+	)
+}
+
+func (f *Sealed) openInfo() {
 	if f.infoFile != nil {
 		return
 	}
@@ -165,11 +214,14 @@ func (f *Sealed) openInfo() {
 }
 
 func (f *Sealed) openIndex() {
-	f.openInfo()
 	if f.IsLegacy {
+		// We have exactly one `.index` file for legacy sealed fractions.
+		// So opening only this file is sufficient.
+		f.openInfoLegacy()
 		return
 	}
 
+	f.openInfo()
 	if f.tokenFile == nil {
 		name := f.BaseFileName + consts.TokenFileSuffix
 		file, err := os.Open(name)
@@ -238,54 +290,6 @@ func (f *Sealed) openDocs() {
 	}
 
 	f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
-}
-
-func NewSealedPreloaded(
-	baseFile string,
-	preloaded *sealed.PreloadedData,
-	rl *storage.ReadLimiter,
-	indexCache *IndexCache,
-	docsCache *cache.Cache[[]byte],
-	config *Config,
-	skipMaskProvider skipMaskProvider,
-) *Sealed {
-	f := &Sealed{
-		blocksData: preloaded.BlocksData,
-		docsCache:  docsCache,
-		indexCache: indexCache,
-
-		loadMu:   &sync.RWMutex{},
-		isLoaded: true,
-
-		readLimiter: rl,
-
-		info:         preloaded.Info,
-		BaseFileName: baseFile,
-		Config:       config,
-
-		skipMaskProvider: skipMaskProvider,
-	}
-
-	// Put token table built during sealing into the cache.
-	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
-		return preloaded.TokenTable, preloaded.TokenTable.Size()
-	})
-
-	f.openDocs()
-	f.openIndex()
-
-	docsCountK := float64(f.info.DocsTotal) / 1000
-	logger.Info("sealed fraction created from active",
-		zap.String("frac", f.info.Name()),
-		util.ZapMsTsAsESTimeStr("creation_time", f.info.CreationTime),
-		zap.String("from", f.info.From.String()),
-		zap.String("to", f.info.To.String()),
-		util.ZapFloat64WithPrec("docs_k", docsCountK, 1),
-	)
-
-	f.info.MetaOnDisk = 0
-
-	return f
 }
 
 func (f *Sealed) load() {
