@@ -233,13 +233,18 @@ func (l *Loader) loadIDsTable(r storage.IndexReader, idsTotal uint32, fracVersio
 		IDsTotal:        idsTotal,
 	}
 
-	for blockIdx := uint32(0); ; {
-		header, err := r.GetBlockHeader(blockIdx)
+	blocksCount, err := r.BlocksCount()
+	if err != nil {
+		logger.Fatal(
+			"cannot get block count",
+			zap.Error(err),
+		)
+	}
+
+	for blockIdx := 0; blockIdx < blocksCount; blockIdx += 3 {
+		header, err := r.GetBlockHeader(uint32(blockIdx))
 		if err != nil {
 			logger.Fatal("error reading id block header", zap.Error(err))
-		}
-		if header.Len() == 0 { // separator
-			break
 		}
 
 		var mid seq.MID
@@ -255,7 +260,6 @@ func (l *Loader) loadIDsTable(r storage.IndexReader, idsTotal uint32, fracVersio
 		})
 
 		table.IDBlocksTotal++
-		blockIdx += 3 // skip RIDs and Pos blocks
 	}
 
 	return table
@@ -269,14 +273,18 @@ func (l *Loader) loadLIDsTable(r storage.IndexReader) (*lids.Table, error) {
 		isContinued []bool
 	)
 
-	for blockIdx := uint32(0); ; blockIdx++ {
-		header, err := r.GetBlockHeader(blockIdx)
+	blocksCount, err := r.BlocksCount()
+	if err != nil {
+		logger.Fatal(
+			"cannot get block count",
+			zap.Error(err),
+		)
+	}
+
+	for blockIdx := 0; blockIdx < blocksCount; blockIdx++ {
+		header, err := r.GetBlockHeader(uint32(blockIdx))
 		if err != nil {
 			return nil, err
-		}
-
-		if header.Len() == 0 {
-			break
 		}
 
 		ext2 := header.GetExt2()

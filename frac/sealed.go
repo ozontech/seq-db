@@ -507,7 +507,7 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		lidsTable:        f.blocksData.LIDsTable,
 		lidsLoader:       lids.NewLoader(lidReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, tokenReader, f.indexCache.TokenTable),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.IsLegacy, tokenReader, f.indexCache.TokenTable),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
