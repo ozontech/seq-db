@@ -50,7 +50,6 @@ type Sealed struct {
 	idFile      *os.File
 	lidFile     *os.File
 
-	infoReader    storage.IndexReader
 	tokenReader   storage.IndexReader
 	offsetsReader storage.IndexReader
 	idReader      storage.IndexReader
@@ -539,26 +538,35 @@ func (f *Sealed) IsIntersecting(from, to seq.MID) bool {
 func loadInfoLegacy(infoReader storage.IndexReader) *common.Info {
 	block, _, err := infoReader.ReadIndexBlock(0, nil)
 	if err != nil {
-		logger.Fatal("error reading info block", zap.Error(err))
+		logger.Fatal("cannot read info block", zap.Error(err))
 	}
 
 	var bi sealed.BlockInfo
 	if err := bi.Unpack(block); err != nil {
-		logger.Fatal("error unpacking info block", zap.Error(err))
+		logger.Fatal("cannot unpack info block", zap.Error(err))
 	}
 
 	return bi.Info
 }
 
-func loadInfo(r io.Reader) *common.Info {
-	block, err := io.ReadAll(r)
+func loadInfo(r interface {
+	io.ReaderAt
+	Stat() (os.FileInfo, error)
+},
+) *common.Info {
+	stat, err := r.Stat()
 	if err != nil {
-		logger.Fatal("error reading info block", zap.Error(err))
+		logger.Fatal("cannot stat info file", zap.Error(err))
+	}
+
+	block := make([]byte, stat.Size())
+	if _, err := r.ReadAt(block, io.SeekStart); err != nil {
+		logger.Fatal("cannot read info block", zap.Error(err))
 	}
 
 	var bi sealed.BlockInfo
 	if err := bi.Unpack(block); err != nil {
-		logger.Fatal("error unpacking info block", zap.Error(err))
+		logger.Fatal("cannot unpack info block", zap.Error(err))
 	}
 
 	return bi.Info

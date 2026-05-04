@@ -1,7 +1,6 @@
 package sealing
 
 import (
-	"fmt"
 	"io"
 
 	"github.com/ozontech/seq-db/consts"
@@ -195,7 +194,6 @@ func (s *IndexSealer) finalizeTokenFile(w *writer, allFieldsTables []token.Field
 
 func (s *IndexSealer) WriteInfoFile(ws io.Writer, src Source) error {
 	block := sealed.BlockInfo{Info: src.Info()}
-	fmt.Printf("s.packInfoBlock(block).payload: %s\n", s.packInfoBlock(block).payload)
 	_, err := ws.Write(s.packInfoBlock(block).payload)
 	return err
 }
