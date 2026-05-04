@@ -83,9 +83,9 @@ func NewActive(
 	cfg *Config,
 	skipMaskProvider skipMaskProvider,
 ) *Active {
-	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
+	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, cfg.SkipFsync)
 
-	metaFile, writer, metaReader, walReader, metaSize := mustOpenMetaWriter(baseFileName, readLimiter, docsFile, docsStats)
+	metaFile, writer, metaReader, walReader, metaSize := mustOpenMetaWriter(baseFileName, readLimiter, docsFile, docsStats, cfg.SkipFsync)
 
 	f := &Active{
 		TokenList:     NewActiveTokenList(config.IndexWorkers),
@@ -128,24 +128,25 @@ func mustOpenMetaWriter(
 	baseFileName string,
 	readLimiter *storage.ReadLimiter,
 	docsFile *os.File,
-	docsStats os.FileInfo) (*os.File, *ActiveWriter, *storage.DocBlocksReader, *storage.WalReader, uint64) {
+	docsStats os.FileInfo,
+	skipFsync bool) (*os.File, *ActiveWriter, *storage.DocBlocksReader, *storage.WalReader, uint64) {
 	legacyMetaFileName := baseFileName + consts.MetaFileSuffix
 
 	if _, err := os.Stat(legacyMetaFileName); err == nil {
 		// .meta file exists
-		metaFile, metaStats := mustOpenFile(legacyMetaFileName, config.SkipFsync)
+		metaFile, metaStats := mustOpenFile(legacyMetaFileName, skipFsync)
 		metaSize := uint64(metaStats.Size())
 		metaReader := storage.NewDocBlocksReader(readLimiter, metaFile)
-		writer := NewActiveWriterLegacy(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
+		writer := NewActiveWriterLegacy(docsFile, metaFile, docsStats.Size(), metaStats.Size(), skipFsync)
 		logger.Info("using legacy meta file format", zap.String("fraction", baseFileName))
 		return metaFile, writer, &metaReader, nil, metaSize
 	}
 
 	logger.Info("using new WAL format", zap.String("fraction", baseFileName))
 	walFileName := baseFileName + consts.WalFileSuffix
-	metaFile, metaStats := mustOpenFile(walFileName, config.SkipFsync)
+	metaFile, metaStats := mustOpenFile(walFileName, skipFsync)
 	metaSize := uint64(metaStats.Size())
-	writer := NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
+	writer := NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), skipFsync)
 	walReader, err := storage.NewWalReader(readLimiter, metaFile, baseFileName)
 	if err != nil {
 		logger.Fatal("failed to initialize WAL reader", zap.String("fraction", baseFileName), zap.Error(err))

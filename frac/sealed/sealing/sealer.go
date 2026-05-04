@@ -59,9 +59,11 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 		return nil, err
 	}
 
-	// Ensure data is flushed to disk
-	if err := indexFile.Sync(); err != nil {
-		return nil, err
+	if !params.SkipFsync {
+		// Ensure data is flushed to disk
+		if err := indexFile.Sync(); err != nil {
+			return nil, err
+		}
 	}
 
 	// Get final file size for metadata
@@ -81,8 +83,10 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 		return nil, err
 	}
 
-	// Ensure directory metadata is synced to disk
-	util.MustSyncPath(filepath.Dir(info.Path))
+	if !params.SkipFsync {
+		// Ensure directory metadata is synced to disk
+		util.MustSyncPath(filepath.Dir(info.Path))
+	}
 
 	// Build preloaded data structure for fast query access
 	lidsTable := indexSealer.LIDsTable()

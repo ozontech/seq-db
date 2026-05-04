@@ -5,6 +5,7 @@ type Config struct {
 
 	SkipSortDocs bool
 	KeepMetaFile bool
+	SkipFsync    bool
 }
 
 type SearchConfig struct {

@@ -57,6 +57,7 @@ type ActiveSealingSource struct {
 	blocksOffsets []uint64              // Document block offsets
 	docsReader    *storage.DocsReader   // Document storage reader
 	lastErr       error                 // Last error
+	skipFsync     bool
 }
 
 // NewActiveSealingSource creates a new data source for sealing
@@ -87,6 +88,7 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 		docPosMap:     active.DocsPositions.idToPos,
 		blocksOffsets: active.DocBlocks.vals,
 		docsReader:    &active.sortReader,
+		skipFsync:     active.Config.SkipFsync,
 	}
 
 	src.prepareInfo()
@@ -371,9 +373,10 @@ func (src *ActiveSealingSource) SortDocs() error {
 	}
 	src.info.DocsOnDisk = uint64(stat.Size())
 
-	// Synchronize and rename file
-	if err := sdocsFile.Sync(); err != nil {
-		return err
+	if !src.skipFsync {
+		if err := sdocsFile.Sync(); err != nil {
+			return err
+		}
 	}
 	if err := sdocsFile.Close(); err != nil {
 		return err
@@ -381,8 +384,10 @@ func (src *ActiveSealingSource) SortDocs() error {
 	if err := os.Rename(sdocsFile.Name(), src.info.Path+consts.SdocsFileSuffix); err != nil {
 		return err
 	}
-	if err := util.SyncPath(filepath.Dir(src.info.Path)); err != nil {
-		return err
+	if !src.skipFsync {
+		if err := util.SyncPath(filepath.Dir(src.info.Path)); err != nil {
+			return err
+		}
 	}
 
 	// Log compression statistics
