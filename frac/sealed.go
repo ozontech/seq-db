@@ -55,11 +55,11 @@ type Sealed struct {
 	idReader      storage.IndexReader
 	lidReader     storage.IndexReader
 
+	blocksData sealed.BlocksData
 	indexCache *IndexCache
 
-	loadMu     *sync.RWMutex
-	isLoaded   bool
-	blocksData sealed.BlocksData
+	initMu   *sync.RWMutex
+	isInited bool
 
 	readLimiter *storage.ReadLimiter
 
@@ -88,7 +88,7 @@ func NewSealed(
 	isLegacy bool,
 ) *Sealed {
 	f := &Sealed{
-		loadMu: &sync.RWMutex{},
+		initMu: &sync.RWMutex{},
 
 		readLimiter: readLimiter,
 		docsCache:   docsCache,
@@ -109,15 +109,9 @@ func NewSealed(
 		return f
 	}
 
-	if !isLegacy {
-		f.openInfo()
-		f.info = loadInfo(f.infoReader)
-	} else {
-		f.openInfoLegacy()
-		f.info = loadInfo(f.legacyReader)
-	}
-
+	f.loadInfo()
 	f.info.IndexOnDisk = computeIndexOnDisk(f.BaseFileName, f.IsLegacy)
+
 	return f
 }
 
@@ -135,8 +129,8 @@ func NewSealedPreloaded(
 		docsCache:  docsCache,
 		indexCache: indexCache,
 
-		loadMu:   &sync.RWMutex{},
-		isLoaded: true,
+		initMu:   &sync.RWMutex{},
+		isInited: true,
 
 		readLimiter: rl,
 
@@ -152,9 +146,6 @@ func NewSealedPreloaded(
 		return preloaded.TokenTable, preloaded.TokenTable.Size()
 	})
 
-	f.openDocs()
-	f.openIndex()
-
 	docsCountK := float64(f.info.DocsTotal) / 1000
 	logger.Info("sealed fraction created from active",
 		zap.String("frac", f.info.Name()),
@@ -165,7 +156,6 @@ func NewSealedPreloaded(
 	)
 
 	f.info.MetaOnDisk = 0
-
 	return f
 }
 
@@ -292,20 +282,31 @@ func (f *Sealed) openDocs() {
 	f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
 }
 
-func (f *Sealed) load() {
-	f.loadMu.Lock()
-	defer f.loadMu.Unlock()
-
-	if f.isLoaded {
+func (f *Sealed) loadInfo() {
+	if f.IsLegacy {
+		f.openInfoLegacy()
+		f.info = loadInfo(f.legacyReader)
 		return
 	}
+
+	f.openInfo()
+	f.info = loadInfo(f.infoReader)
+}
+
+func (f *Sealed) init(full bool) {
+	f.initMu.Lock()
+	defer f.initMu.Unlock()
 
 	f.openDocs()
 	f.openIndex()
 
+	if f.isInited || !full {
+		return
+	}
+
 	if f.IsLegacy {
 		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.legacyReader)
-		f.isLoaded = true
+		f.isInited = true
 		return
 	}
 
@@ -317,15 +318,12 @@ func (f *Sealed) load() {
 		LID:     f.lidReader,
 	})
 
-	f.isLoaded = true
+	f.isInited = true
 }
 
 // Offload saves all index files and docs to remote storage.
 func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
-	f.loadMu.Lock()
-	f.openDocs()
-	f.openIndex()
-	f.loadMu.Unlock()
+	f.init(false)
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return u.Upload(gctx, f.docsFile) })
@@ -356,6 +354,8 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) 
 }
 
 func (f *Sealed) Release() {
+	f.init(false)
+
 	indexFiles := []*os.File{
 		f.docsFile,
 		f.infoFile,
@@ -390,7 +390,6 @@ func (f *Sealed) Release() {
 
 func (f *Sealed) Suicide() {
 	f.Release()
-
 	// Rename docs atomically first — this commits the intent to delete.
 	oldPath := f.BaseFileName + consts.DocsFileSuffix
 	newPath := f.BaseFileName + consts.DocsDelFileSuffix
@@ -490,7 +489,7 @@ func (f *Sealed) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) 
 }
 
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
-	f.load()
+	f.init(true)
 
 	tokenReader := &f.tokenReader
 	lidReader := &f.lidReader
