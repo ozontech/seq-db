@@ -63,8 +63,8 @@ type Remote struct {
 
 	indexCache *IndexCache
 
-	loadMu     *sync.RWMutex
-	isLoaded   bool
+	initMu     *sync.RWMutex
+	isInited   bool
 	blocksData sealed.BlocksData
 
 	s3cli       *s3.Client
@@ -88,7 +88,7 @@ func NewRemote(
 	f := &Remote{
 		ctx: ctx,
 
-		loadMu: &sync.RWMutex{},
+		initMu: &sync.RWMutex{},
 
 		readLimiter: readLimiter,
 		docsCache:   docsCache,
@@ -116,7 +116,7 @@ func NewRemote(
 	// I wrote a small proposal on how we can reduce impact of such events.
 	// https://github.com/ozontech/seq-db/issues/92
 
-	if err := f.openInfo(); err != nil {
+	if err := f.loadInfo(); err != nil {
 		logger.Error(
 			"cannot open info file: any subsequent operation will fail",
 			zap.String("fraction", filepath.Base(f.BaseFileName)),
@@ -124,7 +124,6 @@ func NewRemote(
 		)
 	}
 
-	f.info = loadInfo(f.infoReader)
 	return f
 }
 
@@ -163,7 +162,7 @@ func (f *Remote) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) 
 }
 
 func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, error) {
-	if err := f.load(); err != nil {
+	if err := f.init(); err != nil {
 		logger.Error(
 			"will create empty data provider: cannot load remote fraction",
 			zap.String("fraction", f.Info().Name()),
@@ -217,6 +216,8 @@ func (f *Remote) IsIntersecting(from, to seq.MID) bool {
 }
 
 func (f *Remote) Suicide() {
+	// FIXME(dkharms): We need to rename `.remote` file to `._remote` to commit deletion intent.
+	// Now, we might have fraction leaks in S3 storage since [Suicide] is not atomic.
 	util.MustRemoveFileByPath(f.BaseFileName + consts.RemoteFractionSuffix)
 
 	f.docsCache.Release()
@@ -251,13 +252,27 @@ func (f *Remote) String() string {
 	return fracToString(f, "remote")
 }
 
-func (f *Remote) load() error {
-	f.loadMu.Lock()
-	defer f.loadMu.Unlock()
+func (f *Remote) loadInfo() error {
+	if f.IsLegacy {
+		if err := f.openInfoLegacy(); err != nil {
+			return err
+		}
+		f.info = loadInfo(f.legacyReader)
 
-	if f.isLoaded {
 		return nil
 	}
+
+	if err := f.openInfo(); err != nil {
+		return err
+	}
+	f.info = loadInfo(f.infoReader)
+
+	return nil
+}
+
+func (f *Remote) init() error {
+	f.initMu.Lock()
+	defer f.initMu.Unlock()
 
 	if err := f.openDocs(); err != nil {
 		return err
@@ -267,9 +282,13 @@ func (f *Remote) load() error {
 		return err
 	}
 
+	if f.isInited {
+		return nil
+	}
+
 	if f.IsLegacy {
 		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.legacyReader)
-		f.isLoaded = true
+		f.isInited = true
 		return nil
 	}
 
@@ -281,29 +300,25 @@ func (f *Remote) load() error {
 		LID:     f.lidReader,
 	})
 
-	f.isLoaded = true
+	f.isInited = true
 	return nil
 }
 
-func (f *Remote) openInfo() error {
-	if f.IsLegacy {
-		if f.legacyFile != nil {
-			return nil
-		}
-
-		indexName := filepath.Base(f.BaseFileName) + consts.IndexFileSuffix
-		f.legacyFile = s3.NewReader(f.ctx, f.s3cli, indexName)
-
-		f.legacyReader = storage.NewIndexReader(
-			f.readLimiter, indexName,
-			f.legacyFile, f.indexCache.InfoRegistry,
-		)
-
-		// infoReader is used by [loadInfo]
-		f.infoReader = f.legacyReader
+func (f *Remote) openInfoLegacy() error {
+	if f.legacyFile != nil {
 		return nil
 	}
 
+	return f.openRemoteFile(consts.IndexFileSuffix, func(file storage.ImmutableFile) {
+		f.legacyFile = file
+		f.legacyReader = storage.NewIndexReader(
+			f.readLimiter, file.Name(),
+			file, f.indexCache.LegacyRegistry,
+		)
+	})
+}
+
+func (f *Remote) openInfo() error {
 	if f.infoFile != nil {
 		return nil
 	}
