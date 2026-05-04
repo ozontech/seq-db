@@ -158,7 +158,6 @@ func (l *LegacyLoader) loadLIDsTable() (*lids.Table, error) {
 
 // IndexReaders holds one IndexReader per split index file.
 type IndexReaders struct {
-	Info    storage.IndexReader
 	Token   storage.IndexReader
 	Offsets storage.IndexReader
 	ID      storage.IndexReader

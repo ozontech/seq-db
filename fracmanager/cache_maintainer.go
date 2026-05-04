@@ -146,7 +146,6 @@ func (cm *CacheMaintainer) CreateIndexCache() *frac.IndexCache {
 		LegacyRegistry: newCache[[]byte](cm, indexName),
 
 		// Each index file gets its own registry cache (they all use key=1 internally).
-		InfoRegistry:    newCache[[]byte](cm, indexName),
 		TokenRegistry:   newCache[[]byte](cm, indexName),
 		OffsetsRegistry: newCache[[]byte](cm, indexName),
 		IDRegistry:      newCache[[]byte](cm, indexName),

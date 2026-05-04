@@ -3,6 +3,7 @@ package frac
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -197,10 +198,6 @@ func (f *Sealed) openInfo() {
 	}
 
 	f.infoFile = file
-	f.infoReader = storage.NewIndexReader(
-		f.readLimiter, file.Name(),
-		file, f.indexCache.InfoRegistry,
-	)
 }
 
 func (f *Sealed) openIndex() {
@@ -285,12 +282,12 @@ func (f *Sealed) openDocs() {
 func (f *Sealed) loadInfo() {
 	if f.IsLegacy {
 		f.openInfoLegacy()
-		f.info = loadInfo(f.legacyReader)
+		f.info = loadInfoLegacy(f.legacyReader)
 		return
 	}
 
 	f.openInfo()
-	f.info = loadInfo(f.infoReader)
+	f.info = loadInfo(f.infoFile)
 }
 
 func (f *Sealed) init(full bool) {
@@ -311,7 +308,6 @@ func (f *Sealed) init(full bool) {
 	}
 
 	(&Loader{}).Load(&f.blocksData, f.info, IndexReaders{
-		Info:    f.infoReader,
 		Token:   f.tokenReader,
 		Offsets: f.offsetsReader,
 		ID:      f.idReader,
@@ -540,8 +536,22 @@ func (f *Sealed) IsIntersecting(from, to seq.MID) bool {
 	return f.info.IsIntersecting(from, to)
 }
 
-func loadInfo(infoReader storage.IndexReader) *common.Info {
+func loadInfoLegacy(infoReader storage.IndexReader) *common.Info {
 	block, _, err := infoReader.ReadIndexBlock(0, nil)
+	if err != nil {
+		logger.Fatal("error reading info block", zap.Error(err))
+	}
+
+	var bi sealed.BlockInfo
+	if err := bi.Unpack(block); err != nil {
+		logger.Fatal("error unpacking info block", zap.Error(err))
+	}
+
+	return bi.Info
+}
+
+func loadInfo(r io.Reader) *common.Info {
+	block, err := io.ReadAll(r)
 	if err != nil {
 		logger.Fatal("error reading info block", zap.Error(err))
 	}
