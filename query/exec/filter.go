@@ -7,6 +7,8 @@ import (
 )
 
 type FilterExpr[T any] interface {
+	// TODO: maybe we need to pass Record or RecordVals here
+	// TODO: filter for json data (to filter unindexed fields)
 	Eval(T) bool
 }
 

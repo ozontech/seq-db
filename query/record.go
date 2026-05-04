@@ -5,13 +5,13 @@ import (
 	"fmt"
 )
 
-type RecordType byte
+// type RecordType byte
 
-// TODO: do we need it? only AggState?
-const (
-	RecordTypeDocument RecordType = iota
-	RecordTypeAggregation
-)
+// // TODO: do we need it? only AggState?
+// const (
+// 	RecordTypeDocument RecordType = iota
+// 	RecordTypeAggregation
+// )
 
 // executors make use of val's index, executor's parameters has colIdx field
 type Record struct {
@@ -58,6 +58,10 @@ func NewRecordVals(dataType DataType, rawData []byte) *RecordVals {
 	}
 }
 
+func (rv *RecordVals) RawData() []byte {
+	return rv.rawData
+}
+
 func (rv *RecordVals) Decoded() any {
 	if rv.decoded == nil {
 		rv.ensureDecoded()
@@ -77,6 +81,6 @@ func (rv *RecordVals) ensureDecoded() {
 	case DataTypeUint64:
 		rv.decoded = binary.LittleEndian.Uint64(rv.rawData)
 	default:
-		panic(fmt.Errorf("unknown data type")) // TODO: ???
+		panic(fmt.Errorf("unknown data type")) // TODO: error handling
 	}
 }

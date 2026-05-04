@@ -1,8 +1,9 @@
 package query
 
 type RecordProducer interface {
-	// TODO: Next() (*Record, metadata) // где в мете ошибка + какая-нибудь дополнительная инфа
+	// TODO: Next() (*Record, metadata) // meta has error plus some additional info
 	Next() (*Record, bool) // TODO: record as interface (???)
+	// TODO: we need a method to release all the resources down the producer call stack
 }
 
 type BatchedRecordProducer interface {
