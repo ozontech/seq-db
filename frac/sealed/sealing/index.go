@@ -75,11 +75,6 @@ func (s *IndexSealer) WriteOffsetsFile(ws io.WriteSeeker, src Source) error {
 		return err
 	}
 
-	// Emit trailing separator.
-	if err := w.writeEmptyBlock(); err != nil {
-		return err
-	}
-
 	return w.finalize()
 }
 
@@ -106,11 +101,6 @@ func (s *IndexSealer) WriteIDFile(ws io.WriteSeeker, src Source) error {
 		if err := w.writeBlock(blockTypeDocPos, s.packPosBlock(block)); err != nil {
 			return err
 		}
-	}
-
-	// Emit trailing separator.
-	if err := w.writeEmptyBlock(); err != nil {
-		return err
 	}
 
 	return w.finalize()
@@ -165,11 +155,6 @@ func (s *IndexSealer) finalizeLIDFile(w *writer, lidAccumulator *lidAccumulator)
 		return err
 	}
 
-	// Emit trailing separator.
-	if err := w.writeEmptyBlock(); err != nil {
-		return err
-	}
-
 	return w.finalize()
 }
 
@@ -181,11 +166,6 @@ func (s *IndexSealer) finalizeTokenFile(w *writer, allFieldsTables []token.Field
 
 	tokenTableBlock := token.TableBlock{FieldsTables: collapseOrderedFieldsTables(allFieldsTables)}
 	if err := w.writeBlock(blockTypeTokenTable, s.packTokenTableBlock(tokenTableBlock)); err != nil {
-		return err
-	}
-
-	// Emit trailing separator.
-	if err := w.writeEmptyBlock(); err != nil {
 		return err
 	}
 

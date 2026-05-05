@@ -107,3 +107,15 @@ func (r *IndexReader) ReadIndexBlock(blockIndex uint32, dst []byte) ([]byte, uin
 
 	return dst, uint64(n), err
 }
+
+func (r *IndexReader) BlocksCount() (int, error) {
+	registry, err := r.cache.GetWithError(1, func() ([]byte, int, error) {
+		data, err := r.readRegistry()
+		return data, cap(data), err
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return len(registry) / IndexBlockHeaderSize, nil
+}
