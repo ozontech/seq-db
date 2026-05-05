@@ -11,7 +11,6 @@ func newIndexCache() *IndexCache {
 	return &IndexCache{
 		LegacyRegistry: cache.NewCache[[]byte](nil, nil),
 
-		InfoRegistry:    cache.NewCache[[]byte](nil, nil),
 		TokenRegistry:   cache.NewCache[[]byte](nil, nil),
 		OffsetsRegistry: cache.NewCache[[]byte](nil, nil),
 		IDRegistry:      cache.NewCache[[]byte](nil, nil),
@@ -32,7 +31,6 @@ type IndexCache struct {
 	LegacyRegistry *cache.Cache[[]byte]
 
 	// Per-file registry caches (each IndexReader needs its own).
-	InfoRegistry    *cache.Cache[[]byte]
 	TokenRegistry   *cache.Cache[[]byte]
 	OffsetsRegistry *cache.Cache[[]byte]
 	IDRegistry      *cache.Cache[[]byte]
@@ -52,7 +50,6 @@ type IndexCache struct {
 func (s *IndexCache) Release() {
 	s.LegacyRegistry.Release()
 
-	s.InfoRegistry.Release()
 	s.TokenRegistry.Release()
 	s.OffsetsRegistry.Release()
 	s.IDRegistry.Release()

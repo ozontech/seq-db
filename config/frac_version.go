@@ -13,7 +13,10 @@ const (
 	BinaryDataV2
 
 	// BinariDataV3 - `.index` file is split across several files
-	// storing specific sections: `.info`, `.offsets`, `.tokens`, `.ids`, `.lids`
+	// storing specific sections: `.info`, `.offsets`, `.tokens`, `.ids`, `.lids`.
+	//
+	// Also in this version we've changed the binary layout of section storing
+	// info block. As a result we store info as a plain JSON without additional registry.
 	BinaryDataV3
 )
 

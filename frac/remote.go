@@ -55,7 +55,6 @@ type Remote struct {
 	idFile      storage.ImmutableFile
 	lidFile     storage.ImmutableFile
 
-	infoReader    storage.IndexReader
 	tokenReader   storage.IndexReader
 	offsetsReader storage.IndexReader
 	idReader      storage.IndexReader
@@ -192,7 +191,7 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		lidsTable:        f.blocksData.LIDsTable,
 		lidsLoader:       lids.NewLoader(lidReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, tokenReader, f.indexCache.TokenTable),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.IsLegacy, tokenReader, f.indexCache.TokenTable),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
@@ -257,16 +256,16 @@ func (f *Remote) loadInfo() error {
 		if err := f.openInfoLegacy(); err != nil {
 			return err
 		}
-		f.info = loadInfo(f.legacyReader)
 
+		f.info = loadInfoLegacy(f.legacyReader)
 		return nil
 	}
 
 	if err := f.openInfo(); err != nil {
 		return err
 	}
-	f.info = loadInfo(f.infoReader)
 
+	f.info = loadInfo(f.infoFile)
 	return nil
 }
 
@@ -293,7 +292,6 @@ func (f *Remote) init() error {
 	}
 
 	(&Loader{}).Load(&f.blocksData, f.info, IndexReaders{
-		Info:    f.infoReader,
 		Token:   f.tokenReader,
 		Offsets: f.offsetsReader,
 		ID:      f.idReader,
@@ -323,13 +321,12 @@ func (f *Remote) openInfo() error {
 		return nil
 	}
 
-	return f.openRemoteFile(consts.InfoFileSuffix, func(file storage.ImmutableFile) {
-		f.infoFile = file
-		f.infoReader = storage.NewIndexReader(
-			f.readLimiter, file.Name(),
-			file, f.indexCache.InfoRegistry,
-		)
-	})
+	return f.openRemoteFile(
+		consts.InfoFileSuffix,
+		func(file storage.ImmutableFile) {
+			f.infoFile = file
+		},
+	)
 }
 
 func (f *Remote) openIndex() error {
@@ -342,49 +339,61 @@ func (f *Remote) openIndex() error {
 	}
 
 	if f.tokenFile == nil {
-		if err := f.openRemoteFile(consts.TokenFileSuffix, func(file storage.ImmutableFile) {
-			f.tokenFile = file
-			f.tokenReader = storage.NewIndexReader(
-				f.readLimiter, file.Name(),
-				file, f.indexCache.TokenRegistry,
-			)
-		}); err != nil {
+		if err := f.openRemoteFile(
+			consts.TokenFileSuffix,
+			func(file storage.ImmutableFile) {
+				f.tokenFile = file
+				f.tokenReader = storage.NewIndexReader(
+					f.readLimiter, file.Name(),
+					file, f.indexCache.TokenRegistry,
+				)
+			},
+		); err != nil {
 			return err
 		}
 	}
 
 	if f.offsetsFile == nil {
-		if err := f.openRemoteFile(consts.OffsetsFileSuffix, func(file storage.ImmutableFile) {
-			f.offsetsFile = file
-			f.offsetsReader = storage.NewIndexReader(
-				f.readLimiter, file.Name(),
-				file, f.indexCache.OffsetsRegistry,
-			)
-		}); err != nil {
+		if err := f.openRemoteFile(
+			consts.OffsetsFileSuffix,
+			func(file storage.ImmutableFile) {
+				f.offsetsFile = file
+				f.offsetsReader = storage.NewIndexReader(
+					f.readLimiter, file.Name(),
+					file, f.indexCache.OffsetsRegistry,
+				)
+			},
+		); err != nil {
 			return err
 		}
 	}
 
 	if f.idFile == nil {
-		if err := f.openRemoteFile(consts.IDFileSuffix, func(file storage.ImmutableFile) {
-			f.idFile = file
-			f.idReader = storage.NewIndexReader(
-				f.readLimiter, file.Name(),
-				file, f.indexCache.IDRegistry,
-			)
-		}); err != nil {
+		if err := f.openRemoteFile(
+			consts.IDFileSuffix,
+			func(file storage.ImmutableFile) {
+				f.idFile = file
+				f.idReader = storage.NewIndexReader(
+					f.readLimiter, file.Name(),
+					file, f.indexCache.IDRegistry,
+				)
+			},
+		); err != nil {
 			return err
 		}
 	}
 
 	if f.lidFile == nil {
-		if err := f.openRemoteFile(consts.LIDFileSuffix, func(file storage.ImmutableFile) {
-			f.lidFile = file
-			f.lidReader = storage.NewIndexReader(
-				f.readLimiter, file.Name(),
-				file, f.indexCache.LIDRegistry,
-			)
-		}); err != nil {
+		if err := f.openRemoteFile(
+			consts.LIDFileSuffix,
+			func(file storage.ImmutableFile) {
+				f.lidFile = file
+				f.lidReader = storage.NewIndexReader(
+					f.readLimiter, file.Name(),
+					file, f.indexCache.LIDRegistry,
+				)
+			},
+		); err != nil {
 			return err
 		}
 	}

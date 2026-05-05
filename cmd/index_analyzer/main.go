@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -117,13 +118,12 @@ func analyzeIndex(
 	defer tokenFile.Close()
 	defer lidFile.Close()
 
-	infoReader := storage.NewIndexReader(rl, infoFile.Name(), infoFile, indexCache.InfoRegistry)
 	tokenReader := storage.NewIndexReader(rl, tokenFile.Name(), tokenFile, indexCache.TokenRegistry)
 	lidReader := storage.NewIndexReader(rl, lidFile.Name(), lidFile, indexCache.LIDRegistry)
 
 	// --- Info ---
 	var blockIndex uint32
-	infoData, _, err := infoReader.ReadIndexBlock(0, nil)
+	infoData, err := io.ReadAll(infoFile)
 	if err != nil {
 		logger.Fatal("error reading info block", zap.String("file", infoFile.Name()), zap.Error(err))
 	}
