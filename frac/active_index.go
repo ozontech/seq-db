@@ -282,12 +282,12 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.Doc
 	}
 
 	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
-	skipLIDsIterator, has, err := di.skipMaskProvider.GetIDsIteratorByFrac(di.fracName, minLID, maxLID, false)
+	skipLIDsBitmap, err := di.skipMaskProvider.GetIDsBitmapByFrac(di.fracName, minLID, maxLID)
 	if err != nil {
 		return nil, err
 	}
 
-	if !has {
+	if skipLIDsBitmap == nil {
 		return docsPos, nil
 	}
 
@@ -298,17 +298,8 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.Doc
 		}
 	}
 
-	skipLIDs := make(map[uint32]struct{})
-	for {
-		lid := skipLIDsIterator.Next()
-		if lid.IsNull() {
-			break
-		}
-		skipLIDs[lid.Unpack()] = struct{}{}
-	}
-
 	for i, lid := range allLids {
-		if _, ok := skipLIDs[lid]; ok {
+		if skipLIDsBitmap.Contains(uint32(lid)) {
 			docsPos[i] = seq.DocPosNotFound
 		}
 	}

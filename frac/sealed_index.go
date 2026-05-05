@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/RoaringBitmap/roaring"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/frac/common"
@@ -24,6 +25,7 @@ import (
 
 type skipMaskProvider interface {
 	GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
+	GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error)
 	RemoveFrac(fracName string)
 }
 
@@ -298,26 +300,17 @@ func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.Doc
 		minLID, maxLID = uint32(minVal), uint32(maxVal)
 	}
 
-	skipLIDsIterator, has, err := fi.skipMaskProvider.GetIDsIteratorByFrac(fi.fracName, minLID, maxLID, false)
+	skipLIDsBitmap, err := fi.skipMaskProvider.GetIDsBitmapByFrac(fi.fracName, minLID, maxLID)
 	if err != nil {
 		return nil, err
 	}
 
-	if !has {
+	if skipLIDsBitmap == nil {
 		return fi.getDocPosByLIDs(allLids), nil
 	}
 
-	skipLIDs := make(map[uint32]struct{})
-	for {
-		lid := skipLIDsIterator.Next()
-		if lid.IsNull() {
-			break
-		}
-		skipLIDs[lid.Unpack()] = struct{}{}
-	}
-
 	for i, lid := range allLids {
-		if _, ok := skipLIDs[uint32(lid)]; ok {
+		if skipLIDsBitmap.Contains(uint32(lid)) {
 			allLids[i] = 0
 		}
 	}

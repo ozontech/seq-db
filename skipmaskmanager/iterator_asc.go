@@ -10,7 +10,7 @@ import (
 type IteratorAsc Iterator
 
 func (it *IteratorAsc) String() string {
-	return "HIDE_FLAG_ITERATOR_ASC"
+	return "SKIP_MASK_ITERATOR_ASC"
 }
 
 func (it *IteratorAsc) Next() node.LID {
@@ -57,12 +57,15 @@ func (it *IteratorAsc) loadNextLIDsBlock() {
 		return
 	}
 
-	block, err := it.loader.loadBlock(it.blockIndex)
+	lids := make([]uint32, 0, it.loader.headers[it.blockIndex].Length)
+	err := it.loader.loadBlock(it.blockIndex, func(lid uint32) {
+		lids = append(lids, lid)
+	})
 	if err != nil {
 		logger.Panic("error loading LIDs block", zap.Error(err))
 	}
 
-	it.lids = block
+	it.lids = lids
 	it.needTryNextBlock()
 }
 
