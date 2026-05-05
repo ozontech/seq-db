@@ -3,6 +3,7 @@ package frac
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -49,17 +50,16 @@ type Sealed struct {
 	idFile      *os.File
 	lidFile     *os.File
 
-	infoReader    storage.IndexReader
 	tokenReader   storage.IndexReader
 	offsetsReader storage.IndexReader
 	idReader      storage.IndexReader
 	lidReader     storage.IndexReader
 
+	blocksData sealed.BlocksData
 	indexCache *IndexCache
 
-	loadMu     *sync.RWMutex
-	isLoaded   bool
-	blocksData sealed.BlocksData
+	initMu   *sync.RWMutex
+	isInited bool
 
 	readLimiter *storage.ReadLimiter
 
@@ -88,7 +88,7 @@ func NewSealed(
 	isLegacy bool,
 ) *Sealed {
 	f := &Sealed{
-		loadMu: &sync.RWMutex{},
+		initMu: &sync.RWMutex{},
 
 		readLimiter: readLimiter,
 		docsCache:   docsCache,
@@ -109,40 +109,79 @@ func NewSealed(
 		return f
 	}
 
-	f.openInfo()
-	f.info = loadInfo(f.infoReader)
+	f.loadInfo()
 	f.info.IndexOnDisk = computeIndexOnDisk(f.BaseFileName, f.IsLegacy)
 
 	return f
 }
 
-func (f *Sealed) openInfo() {
-	if f.IsLegacy {
-		if f.legacyFile != nil {
-			return
-		}
+func NewSealedPreloaded(
+	baseFile string,
+	preloaded *sealed.PreloadedData,
+	rl *storage.ReadLimiter,
+	indexCache *IndexCache,
+	docsCache *cache.Cache[[]byte],
+	config *Config,
+	skipMaskProvider skipMaskProvider,
+) *Sealed {
+	f := &Sealed{
+		blocksData: preloaded.BlocksData,
+		docsCache:  docsCache,
+		indexCache: indexCache,
 
-		name := f.BaseFileName + consts.IndexFileSuffix
-		file, err := os.Open(name)
-		if err != nil {
-			logger.Fatal(
-				"can't open legacy index file",
-				zap.String("file", name),
-				zap.Error(err),
-			)
-		}
+		initMu:   &sync.RWMutex{},
+		isInited: true,
 
-		f.legacyFile = file
-		f.legacyReader = storage.NewIndexReader(
-			f.readLimiter, file.Name(),
-			file, f.indexCache.InfoRegistry,
-		)
+		readLimiter: rl,
 
-		// infoReader is used by [loadInfo]
-		f.infoReader = f.legacyReader
+		info:         preloaded.Info,
+		BaseFileName: baseFile,
+		Config:       config,
+
+		skipMaskProvider: skipMaskProvider,
+	}
+
+	// Put token table built during sealing into the cache.
+	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
+		return preloaded.TokenTable, preloaded.TokenTable.Size()
+	})
+
+	docsCountK := float64(f.info.DocsTotal) / 1000
+	logger.Info("sealed fraction created from active",
+		zap.String("frac", f.info.Name()),
+		util.ZapMsTsAsESTimeStr("creation_time", f.info.CreationTime),
+		zap.String("from", f.info.From.String()),
+		zap.String("to", f.info.To.String()),
+		util.ZapFloat64WithPrec("docs_k", docsCountK, 1),
+	)
+
+	f.info.MetaOnDisk = 0
+	return f
+}
+
+func (f *Sealed) openInfoLegacy() {
+	if f.legacyFile != nil {
 		return
 	}
 
+	name := f.BaseFileName + consts.IndexFileSuffix
+	file, err := os.Open(name)
+	if err != nil {
+		logger.Fatal(
+			"can't open legacy index file",
+			zap.String("file", name),
+			zap.Error(err),
+		)
+	}
+
+	f.legacyFile = file
+	f.legacyReader = storage.NewIndexReader(
+		f.readLimiter, file.Name(),
+		file, f.indexCache.LegacyRegistry,
+	)
+}
+
+func (f *Sealed) openInfo() {
 	if f.infoFile != nil {
 		return
 	}
@@ -158,18 +197,17 @@ func (f *Sealed) openInfo() {
 	}
 
 	f.infoFile = file
-	f.infoReader = storage.NewIndexReader(
-		f.readLimiter, file.Name(),
-		file, f.indexCache.InfoRegistry,
-	)
 }
 
 func (f *Sealed) openIndex() {
-	f.openInfo()
 	if f.IsLegacy {
+		// We have exactly one `.index` file for legacy sealed fractions.
+		// So opening only this file is sufficient.
+		f.openInfoLegacy()
 		return
 	}
 
+	f.openInfo()
 	if f.tokenFile == nil {
 		name := f.BaseFileName + consts.TokenFileSuffix
 		file, err := os.Open(name)
@@ -240,88 +278,47 @@ func (f *Sealed) openDocs() {
 	f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
 }
 
-func NewSealedPreloaded(
-	baseFile string,
-	preloaded *sealed.PreloadedData,
-	rl *storage.ReadLimiter,
-	indexCache *IndexCache,
-	docsCache *cache.Cache[[]byte],
-	config *Config,
-	skipMaskProvider skipMaskProvider,
-) *Sealed {
-	f := &Sealed{
-		blocksData: preloaded.BlocksData,
-		docsCache:  docsCache,
-		indexCache: indexCache,
-
-		loadMu:   &sync.RWMutex{},
-		isLoaded: true,
-
-		readLimiter: rl,
-
-		info:         preloaded.Info,
-		BaseFileName: baseFile,
-		Config:       config,
-
-		skipMaskProvider: skipMaskProvider,
-	}
-
-	// Put token table built during sealing into the cache.
-	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
-		return preloaded.TokenTable, preloaded.TokenTable.Size()
-	})
-
-	f.openDocs()
-	f.openIndex()
-
-	docsCountK := float64(f.info.DocsTotal) / 1000
-	logger.Info("sealed fraction created from active",
-		zap.String("frac", f.info.Name()),
-		util.ZapMsTsAsESTimeStr("creation_time", f.info.CreationTime),
-		zap.String("from", f.info.From.String()),
-		zap.String("to", f.info.To.String()),
-		util.ZapFloat64WithPrec("docs_k", docsCountK, 1),
-	)
-
-	f.info.MetaOnDisk = 0
-
-	return f
-}
-
-func (f *Sealed) load() {
-	f.loadMu.Lock()
-	defer f.loadMu.Unlock()
-
-	if f.isLoaded {
+func (f *Sealed) loadInfo() {
+	if f.IsLegacy {
+		f.openInfoLegacy()
+		f.info = loadInfoLegacy(f.legacyReader)
 		return
 	}
 
+	f.openInfo()
+	f.info = loadInfo(f.infoFile)
+}
+
+func (f *Sealed) init(full bool) {
+	f.initMu.Lock()
+	defer f.initMu.Unlock()
+
 	f.openDocs()
 	f.openIndex()
 
+	if f.isInited || !full {
+		return
+	}
+
 	if f.IsLegacy {
 		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.legacyReader)
-		f.isLoaded = true
+		f.isInited = true
 		return
 	}
 
 	(&Loader{}).Load(&f.blocksData, f.info, IndexReaders{
-		Info:    f.infoReader,
 		Token:   f.tokenReader,
 		Offsets: f.offsetsReader,
 		ID:      f.idReader,
 		LID:     f.lidReader,
 	})
 
-	f.isLoaded = true
+	f.isInited = true
 }
 
 // Offload saves all index files and docs to remote storage.
 func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
-	f.loadMu.Lock()
-	f.openDocs()
-	f.openIndex()
-	f.loadMu.Unlock()
+	f.init(false)
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return u.Upload(gctx, f.docsFile) })
@@ -352,6 +349,8 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) 
 }
 
 func (f *Sealed) Release() {
+	f.init(false)
+
 	indexFiles := []*os.File{
 		f.docsFile,
 		f.infoFile,
@@ -386,7 +385,6 @@ func (f *Sealed) Release() {
 
 func (f *Sealed) Suicide() {
 	f.Release()
-
 	// Rename docs atomically first — this commits the intent to delete.
 	oldPath := f.BaseFileName + consts.DocsFileSuffix
 	newPath := f.BaseFileName + consts.DocsDelFileSuffix
@@ -486,7 +484,7 @@ func (f *Sealed) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) 
 }
 
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
-	f.load()
+	f.init(true)
 
 	tokenReader := &f.tokenReader
 	lidReader := &f.lidReader
@@ -509,7 +507,7 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		lidsTable:        f.blocksData.LIDsTable,
 		lidsLoader:       lids.NewLoader(lidReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, tokenReader, f.indexCache.TokenTable),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.IsLegacy, tokenReader, f.indexCache.TokenTable),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
@@ -537,15 +535,38 @@ func (f *Sealed) IsIntersecting(from, to seq.MID) bool {
 	return f.info.IsIntersecting(from, to)
 }
 
-func loadInfo(infoReader storage.IndexReader) *common.Info {
+func loadInfoLegacy(infoReader storage.IndexReader) *common.Info {
 	block, _, err := infoReader.ReadIndexBlock(0, nil)
 	if err != nil {
-		logger.Fatal("error reading info block", zap.Error(err))
+		logger.Fatal("cannot read info block", zap.Error(err))
 	}
 
 	var bi sealed.BlockInfo
 	if err := bi.Unpack(block); err != nil {
-		logger.Fatal("error unpacking info block", zap.Error(err))
+		logger.Fatal("cannot unpack info block", zap.Error(err))
+	}
+
+	return bi.Info
+}
+
+func loadInfo(r interface {
+	io.ReaderAt
+	Stat() (os.FileInfo, error)
+},
+) *common.Info {
+	stat, err := r.Stat()
+	if err != nil {
+		logger.Fatal("cannot stat info file", zap.Error(err))
+	}
+
+	block := make([]byte, stat.Size())
+	if _, err := r.ReadAt(block, io.SeekStart); err != nil {
+		logger.Fatal("cannot read info block", zap.Error(err))
+	}
+
+	var bi sealed.BlockInfo
+	if err := bi.Unpack(block); err != nil {
+		logger.Fatal("cannot unpack info block", zap.Error(err))
 	}
 
 	return bi.Info

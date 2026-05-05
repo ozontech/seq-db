@@ -16,10 +16,7 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
-	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
-	"github.com/ozontech/seq-db/frac/sealed/seqids"
-	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
@@ -353,28 +350,17 @@ func seal(active *Active) (*Sealed, error) {
 	if err != nil {
 		return nil, err
 	}
-	indexCache := &IndexCache{
-		MIDs:            cache.NewCache[[]byte](nil, nil),
-		RIDs:            cache.NewCache[seqids.BlockRIDs](nil, nil),
-		Params:          cache.NewCache[seqids.BlockParams](nil, nil),
-		LIDs:            cache.NewCache[*lids.Block](nil, nil),
-		Tokens:          cache.NewCache[*token.Block](nil, nil),
-		TokenTable:      cache.NewCache[token.Table](nil, nil),
-		InfoRegistry:    cache.NewCache[[]byte](nil, nil),
-		TokenRegistry:   cache.NewCache[[]byte](nil, nil),
-		OffsetsRegistry: cache.NewCache[[]byte](nil, nil),
-		IDRegistry:      cache.NewCache[[]byte](nil, nil),
-		LIDRegistry:     cache.NewCache[[]byte](nil, nil),
-	}
+
 	sealed := NewSealedPreloaded(
 		active.BaseFileName,
 		preloaded,
 		storage.NewReadLimiter(1, nil),
-		indexCache,
+		newIndexCache(),
 		cache.NewCache[[]byte](nil, nil),
 		&Config{},
 		testSkipMaskProvider{},
 	)
+
 	active.Release()
 	return sealed, nil
 }
