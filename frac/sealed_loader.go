@@ -41,7 +41,7 @@ func (l *LegacyLoader) Load(blocksData *sealed.BlocksData, info *common.Info, re
 		logger.Fatal("legacy load ids error", zap.Error(err))
 	}
 
-	blocksData.LIDsTable, err = l.loadLIDs()
+	blocksData.LIDsTable, err = l.loadLIDsTable()
 	if err != nil {
 		logger.Fatal("legacy load lids error", zap.Error(err))
 	}
@@ -126,8 +126,8 @@ func (l *LegacyLoader) loadIDs(fracVersion config.BinaryDataVersion) (seqids.Tab
 	return table, offsets.Offsets, nil
 }
 
-// loadLIDs scans LID block headers, recording the absolute start index for lids.Table.
-func (l *LegacyLoader) loadLIDs() (*lids.Table, error) {
+// loadLIDsTable scans LID block headers, recording the absolute start index for lids.Table.
+func (l *LegacyLoader) loadLIDsTable() (*lids.Table, error) {
 	startIndex := l.blockIndex // absolute index of first LID block in .index
 
 	var (
@@ -158,7 +158,6 @@ func (l *LegacyLoader) loadLIDs() (*lids.Table, error) {
 
 // IndexReaders holds one IndexReader per split index file.
 type IndexReaders struct {
-	Info    storage.IndexReader
 	Token   storage.IndexReader
 	Offsets storage.IndexReader
 	ID      storage.IndexReader
@@ -234,13 +233,18 @@ func (l *Loader) loadIDsTable(r storage.IndexReader, idsTotal uint32, fracVersio
 		IDsTotal:        idsTotal,
 	}
 
-	for blockIdx := uint32(0); ; {
-		header, err := r.GetBlockHeader(blockIdx)
+	blocksCount, err := r.BlocksCount()
+	if err != nil {
+		logger.Fatal(
+			"cannot get block count",
+			zap.Error(err),
+		)
+	}
+
+	for blockIdx := 0; blockIdx < blocksCount; blockIdx += 3 {
+		header, err := r.GetBlockHeader(uint32(blockIdx))
 		if err != nil {
 			logger.Fatal("error reading id block header", zap.Error(err))
-		}
-		if header.Len() == 0 { // separator
-			break
 		}
 
 		var mid seq.MID
@@ -256,7 +260,6 @@ func (l *Loader) loadIDsTable(r storage.IndexReader, idsTotal uint32, fracVersio
 		})
 
 		table.IDBlocksTotal++
-		blockIdx += 3 // skip RIDs and Pos blocks
 	}
 
 	return table
@@ -270,14 +273,18 @@ func (l *Loader) loadLIDsTable(r storage.IndexReader) (*lids.Table, error) {
 		isContinued []bool
 	)
 
-	for blockIdx := uint32(0); ; blockIdx++ {
-		header, err := r.GetBlockHeader(blockIdx)
+	blocksCount, err := r.BlocksCount()
+	if err != nil {
+		logger.Fatal(
+			"cannot get block count",
+			zap.Error(err),
+		)
+	}
+
+	for blockIdx := 0; blockIdx < blocksCount; blockIdx++ {
+		header, err := r.GetBlockHeader(uint32(blockIdx))
 		if err != nil {
 			return nil, err
-		}
-
-		if header.Len() == 0 {
-			break
 		}
 
 		ext2 := header.GetExt2()

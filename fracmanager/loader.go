@@ -139,7 +139,7 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 		case fracStageSealed:
 			locals = append(locals, l.loadSealed(manifest, loadedInfoCache))
 		case fracStageRemote:
-			// TODO(dkharms): Drop this compatibility check.
+			// TODO(dkharms): Drop this check once we store `Info` for remote fractions locally.
 
 			indexName := filepath.Base(manifest.basePath) + consts.IndexFileSuffix
 			hasIndex, err := l.provider.s3cli.Exists(ctx, indexName)
