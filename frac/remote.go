@@ -330,12 +330,12 @@ func (f *Remote) openInfo() error {
 }
 
 func (f *Remote) openIndex() error {
-	if err := f.openInfo(); err != nil {
-		return err
+	if f.IsLegacy {
+		return f.openInfoLegacy()
 	}
 
-	if f.IsLegacy {
-		return nil
+	if err := f.openInfo(); err != nil {
+		return err
 	}
 
 	if f.tokenFile == nil {
