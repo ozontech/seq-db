@@ -122,6 +122,7 @@ func NewRemote(
 			zap.Error(err),
 		)
 	}
+	f.computeIndexSize()
 
 	return f
 }
@@ -457,4 +458,43 @@ func (f *Remote) openDocs() error {
 	}
 
 	return fmt.Errorf("missing %q and %q files", consts.DocsFileSuffix, consts.SdocsFileSuffix)
+}
+
+func (f *Remote) computeIndexSize() {
+	if err := f.openIndex(); err != nil {
+		logger.Error(
+			"cannot open index file",
+			zap.Error(err),
+		)
+		return
+	}
+
+	files := []storage.ImmutableFile{
+		f.infoFile,
+		f.tokenFile,
+		f.offsetsFile,
+		f.idFile,
+		f.lidFile,
+	}
+
+	if f.IsLegacy {
+		files = []storage.ImmutableFile{
+			f.legacyFile,
+		}
+	}
+
+	f.info.IndexOnDisk = 0
+	for _, file := range files {
+		st, err := file.Stat()
+		if err != nil {
+			logger.Error(
+				"can't stat index file",
+				zap.String("file", file.Name()),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		f.info.IndexOnDisk += uint64(st.Size())
+	}
 }

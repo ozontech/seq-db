@@ -110,7 +110,7 @@ func NewSealed(
 	}
 
 	f.loadInfo()
-	f.info.IndexOnDisk = computeIndexOnDisk(f.BaseFileName, f.IsLegacy)
+	f.computeIndexSize()
 
 	return f
 }
@@ -573,7 +573,7 @@ func loadInfo(r interface {
 }
 
 // computeIndexOnDisk returns the total on-disk size of index files for a local fraction.
-func computeIndexOnDisk(basePath string, isLegacy bool) uint64 {
+func (f *Sealed) computeIndexSize() {
 	suffixes := []string{
 		consts.InfoFileSuffix,
 		consts.TokenFileSuffix,
@@ -582,24 +582,23 @@ func computeIndexOnDisk(basePath string, isLegacy bool) uint64 {
 		consts.LIDFileSuffix,
 	}
 
-	if isLegacy {
+	if f.IsLegacy {
 		suffixes = []string{
 			consts.IndexFileSuffix,
 		}
 	}
 
-	var total int64
+	f.info.IndexOnDisk = 0
 	for _, suffix := range suffixes {
-		st, err := os.Stat(basePath + suffix)
+		st, err := os.Stat(f.info.Path + suffix)
 		if err != nil {
 			logger.Fatal(
 				"can't stat index file",
-				zap.String("file", basePath+suffix),
+				zap.String("file", f.info.Path+suffix),
 				zap.Error(err),
 			)
 		}
-		total += st.Size()
-	}
 
-	return uint64(total)
+		f.info.IndexOnDisk += uint64(st.Size())
+	}
 }
