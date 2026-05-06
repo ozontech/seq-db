@@ -59,8 +59,26 @@ const (
 	SdocsTmpFileSuffix = "._sdocs"
 	SdocsDelFileSuffix = ".sdocs.del"
 
+	InfoFileSuffix    = ".info"
+	InfoTmpFileSuffix = "._info"
+
+	TokenFileSuffix    = ".tokens"
+	TokenTmpFileSuffix = "._tokens"
+
+	OffsetsFileSuffix    = ".offsets"
+	OffsetsTmpFileSuffix = "._offsets"
+
+	IDFileSuffix    = ".ids"
+	IDTmpFileSuffix = "._ids"
+
+	LIDFileSuffix    = ".lids"
+	LIDTmpFileSuffix = "._lids"
+
+	// IndexFileSuffix is the legacy single-file index format (pre-split).
 	IndexFileSuffix    = ".index"
 	IndexTmpFileSuffix = "._index"
+	// TODO(dkharms): [IndexDelFileSuffix] is actually not necessary.
+	// We can remove it in the future releases.
 	IndexDelFileSuffix = ".index.del"
 
 	RemoteFractionSuffix = ".remote"
