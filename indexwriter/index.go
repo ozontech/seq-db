@@ -4,7 +4,6 @@ import (
 	"io"
 	"iter"
 
-	"github.com/ozontech/seq-db/blockbuilder"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
@@ -112,7 +111,7 @@ func (s *IndexWriter) WriteIDFile(ws io.WriteSeeker, src Source) error {
 	}
 	defer w.release()
 
-	for block, err := range blockbuilder.IDBlock(src.ID(), consts.IDsPerBlock) {
+	for block, err := range idBlock(src.ID(), consts.IDsPerBlock) {
 		if err != nil {
 			return err
 		}
@@ -146,15 +145,15 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	}
 	defer lw.release()
 
-	lidAccumulator := blockbuilder.NewLIDAccumulator(
+	lidAccumulator := newLIDAccumulator(
 		consts.LIDBlockCap,
-		func(block blockbuilder.LidsSealBlock) error {
+		func(block unpackedLIDBlock) error {
 			return lw.writeBlock(blockTypeLID, s.packLIDsBlock(block))
 		},
 	)
 
 	var allFieldsTables []token.FieldTable
-	for pair, err := range blockbuilder.TokenBlocks(src.TokenTriplet(), lidAccumulator.Add, consts.RegularBlockSize) {
+	for pair, err := range tokenBlock(src.TokenTriplet(), lidAccumulator.Add, consts.RegularBlockSize) {
 		if err != nil {
 			return err
 		}
@@ -173,7 +172,7 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	return s.finalizeTokenFile(tw, allFieldsTables)
 }
 
-func (s *IndexWriter) finalizeLIDFile(w *writer, lidAccumulator *blockbuilder.LIDAccumulator) error {
+func (s *IndexWriter) finalizeLIDFile(w *writer, lidAccumulator *lidAccumulator) error {
 	if err := lidAccumulator.Finalize(); err != nil {
 		return err
 	}
@@ -187,7 +186,7 @@ func (s *IndexWriter) finalizeTokenFile(w *writer, allFieldsTables []token.Field
 		return err
 	}
 
-	tokenTableBlock := token.TableBlock{FieldsTables: blockbuilder.CollapseOrderedFieldsTables(allFieldsTables)}
+	tokenTableBlock := token.TableBlock{FieldsTables: collapseOrderedFieldsTables(allFieldsTables)}
 	if err := w.writeBlock(blockTypeTokenTable, s.packTokenTableBlock(tokenTableBlock)); err != nil {
 		return err
 	}
@@ -220,11 +219,11 @@ func (s *IndexWriter) packInfoBlock(block sealed.BlockInfo) indexBlock {
 }
 
 // packTokenBlock packs token data into a compressed index block.
-func (s *IndexWriter) packTokenBlock(block blockbuilder.TokensSealBlock) indexBlock {
-	s.buf1 = block.Payload.Pack(s.buf1[:0]) // Pack token data
+func (s *IndexWriter) packTokenBlock(block unpackedTokenBlock) indexBlock {
+	s.buf1 = block.payload.Pack(s.buf1[:0]) // Pack token data
 	b := s.newIndexBlockZSTD(s.buf1, s.params.TokenListZstdLevel)
 	// Store TID range in extended metadata
-	b.ext1 = uint64(block.Ext.MaxTID)<<32 | uint64(block.Ext.MinTID)
+	b.ext1 = uint64(block.ext.maxTID)<<32 | uint64(block.ext.minTID)
 	return b
 }
 
@@ -250,19 +249,19 @@ func (s *IndexWriter) packBlocksOffsetsBlock(block sealed.BlockOffsets) indexBlo
 }
 
 // packMIDsBlock packs MIDs into a compressed index block.
-func (s *IndexWriter) packMIDsBlock(block blockbuilder.IdsSealBlock) indexBlock {
+func (s *IndexWriter) packMIDsBlock(block unpackedIDBlock) indexBlock {
 	// Get the last ID in the block (smallest due to descending order)
-	last := len(block.MIDs.Values) - 1
+	last := len(block.mids.Values) - 1
 
 	minID := seq.ID{
-		MID: seq.MID(block.MIDs.Values[last]),
-		RID: seq.RID(block.RIDs.Values[last]),
+		MID: seq.MID(block.mids.Values[last]),
+		RID: seq.RID(block.rids.Values[last]),
 	}
 
 	s.idsTable.MinBlockIDs = append(s.idsTable.MinBlockIDs, minID) // Store for PreloadedData
 
 	// Packing block
-	s.buf1 = block.MIDs.Pack(s.buf1[:0])
+	s.buf1 = block.mids.Pack(s.buf1[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.IDsZstdLevel)
 
 	// Store min MID and RID in extended metadata
@@ -273,38 +272,38 @@ func (s *IndexWriter) packMIDsBlock(block blockbuilder.IdsSealBlock) indexBlock 
 }
 
 // packRIDsBlock packs RIDs into a compressed index block.
-func (s *IndexWriter) packRIDsBlock(block blockbuilder.IdsSealBlock) indexBlock {
-	s.buf1 = block.RIDs.Pack(s.buf1[:0])
+func (s *IndexWriter) packRIDsBlock(block unpackedIDBlock) indexBlock {
+	s.buf1 = block.rids.Pack(s.buf1[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.IDsZstdLevel)
 	return b
 }
 
 // packPosBlock packs document positions into a compressed index block.
-func (s *IndexWriter) packPosBlock(block blockbuilder.IdsSealBlock) indexBlock {
-	s.buf1 = block.Params.Pack(s.buf1[:0])
+func (s *IndexWriter) packPosBlock(block unpackedIDBlock) indexBlock {
+	s.buf1 = block.params.Pack(s.buf1[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.IDsZstdLevel)
 	return b
 }
 
 // packLIDsBlock packs Local IDs (LIDs) into a compressed index block.
 // Also updates LIDs table for preloaded data access.
-func (s *IndexWriter) packLIDsBlock(block blockbuilder.LidsSealBlock) indexBlock {
+func (s *IndexWriter) packLIDsBlock(block unpackedLIDBlock) indexBlock {
 	var ext1 uint64
-	if block.Ext.IsContinued { // todo: Legacy continuation flag
+	if block.ext.isContinued { // todo: Legacy continuation flag
 		ext1 = 1
-		block.Ext.MinTID++ // Adjust for legacy format
+		block.ext.minTID++ // Adjust for legacy format
 	}
 
 	// Update LIDs table for PreloadedData
-	s.lidsTable.MinTIDs = append(s.lidsTable.MinTIDs, block.Ext.MinTID)
-	s.lidsTable.MaxTIDs = append(s.lidsTable.MaxTIDs, block.Ext.MaxTID)
-	s.lidsTable.IsContinued = append(s.lidsTable.IsContinued, block.Ext.IsContinued)
+	s.lidsTable.MinTIDs = append(s.lidsTable.MinTIDs, block.ext.minTID)
+	s.lidsTable.MaxTIDs = append(s.lidsTable.MaxTIDs, block.ext.maxTID)
+	s.lidsTable.IsContinued = append(s.lidsTable.IsContinued, block.ext.isContinued)
 
 	// Packing block
-	s.buf1 = block.Payload.Pack(s.buf1[:0])
+	s.buf1 = block.payload.Pack(s.buf1[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.LIDsZstdLevel)
 	b.ext1 = ext1                                                    // Legacy continuation flag
-	b.ext2 = uint64(block.Ext.MaxTID)<<32 | uint64(block.Ext.MinTID) // TID range
+	b.ext2 = uint64(block.ext.maxTID)<<32 | uint64(block.ext.minTID) // TID range
 
 	return b
 }
