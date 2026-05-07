@@ -104,23 +104,20 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	const blockSize = 24
 	const lidBlockCap = 3
 
-	var lidBlocks []lidsSealBlock
-	lidAccumulator := newLIDAccumulator(
+	var lidBlocks []LidsSealBlock
+	lidAccumulator := NewLIDAccumulator(
 		lidBlockCap,
-		func(block lidsSealBlock) error {
-			block.payload.LIDs = slices.Clone(block.payload.LIDs)
-			block.payload.Offsets = slices.Clone(block.payload.Offsets)
+		func(block LidsSealBlock) error {
+			block.Payload.LIDs = slices.Clone(block.Payload.LIDs)
+			block.Payload.Offsets = slices.Clone(block.Payload.Offsets)
 			lidBlocks = append(lidBlocks, block)
 			return nil
 		},
 	)
 
-	var bb blocksBuilder
-	tokenBlocks := bb.BuildTokenBlocks(
+	tokenBlocks := TokenBlocks(
 		src.TokenTriplet(),
-		func(lids []uint32) error {
-			return lidAccumulator.Add(lids)
-		},
+		lidAccumulator.Add,
 		blockSize,
 	)
 
@@ -303,7 +300,7 @@ func TestBlocksBuilder_IDsBlocks(t *testing.T) {
 	i := 0
 	ids := []seq.ID{}
 	pos := []seq.DocPos{}
-	for block, err := range SeqBlockID(src.ID(), 3) {
+	for block, err := range IDBlock(src.ID(), 3) {
 		assert.NoError(t, err)
 
 		assert.Equal(t, expectedSizes[i], len(block.MIDs.Values))
