@@ -1,4 +1,4 @@
-package blockbuilder
+package indexwriter
 
 import (
 	"iter"
@@ -104,18 +104,18 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	const blockSize = 24
 	const lidBlockCap = 3
 
-	var lidBlocks []LidsSealBlock
-	lidAccumulator := NewLIDAccumulator(
+	var lidBlocks []unpackedLIDBlock
+	lidAccumulator := newLIDAccumulator(
 		lidBlockCap,
-		func(block LidsSealBlock) error {
-			block.Payload.LIDs = slices.Clone(block.Payload.LIDs)
-			block.Payload.Offsets = slices.Clone(block.Payload.Offsets)
+		func(block unpackedLIDBlock) error {
+			block.payload.LIDs = slices.Clone(block.payload.LIDs)
+			block.payload.Offsets = slices.Clone(block.payload.Offsets)
 			lidBlocks = append(lidBlocks, block)
 			return nil
 		},
 	)
 
-	tokenBlocks := TokenBlocks(
+	tokenBlocksIter := tokenBlock(
 		src.TokenTriplet(),
 		lidAccumulator.Add,
 		blockSize,
@@ -129,19 +129,19 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	blockIndex := 0
 
 	allFieldsTables := []token.FieldTable{}
-	for pair, err := range tokenBlocks {
+	for pair, err := range tokenBlocksIter {
 		assert.NoError(t, err)
 		block, fieldsTables := pair.First, pair.Second
-		assert.Equal(t, expectedSizes[blockIndex], block.Payload.Len())
-		for i := range block.Payload.Len() {
+		assert.Equal(t, expectedSizes[blockIndex], block.payload.Len())
+		for i := range block.payload.Len() {
 			tid++
-			assert.Equal(t, src.tokens[tid-1], block.Payload.GetToken(i))
+			assert.Equal(t, src.tokens[tid-1], block.payload.GetToken(i))
 		}
 		allFieldsTables = append(allFieldsTables, fieldsTables...)
 		blockIndex++
 	}
 
-	actualTokenTable := token.TableBlock{FieldsTables: CollapseOrderedFieldsTables(allFieldsTables)}
+	actualTokenTable := token.TableBlock{FieldsTables: collapseOrderedFieldsTables(allFieldsTables)}
 	assert.Equal(t, tid, len(src.tokens))
 
 	expectedTokenTable := token.TableBlock{
@@ -238,30 +238,30 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	assert.Equal(t, actualTokenTable.FieldsTables, expectedTokenTable.FieldsTables)
 	assert.NoError(t, lidAccumulator.Finalize())
 
-	expectedLIDBlocks := []LidsSealBlock{
+	expectedLIDBlocks := []unpackedLIDBlock{
 		{
-			Ext:     LidsExt{MinTID: 1, MaxTID: 1, IsContinued: false},
-			Payload: lids.Block{LIDs: []uint32{10, 20, 30}, Offsets: []uint32{0, 3}, IsLastLID: false},
+			ext:     lidExt{minTID: 1, maxTID: 1, isContinued: false},
+			payload: lids.Block{LIDs: []uint32{10, 20, 30}, Offsets: []uint32{0, 3}, IsLastLID: false},
 		},
 		{
-			Ext:     LidsExt{MinTID: 1, MaxTID: 3, IsContinued: true},
-			Payload: lids.Block{LIDs: []uint32{40, 2, 3}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			ext:     lidExt{minTID: 1, maxTID: 3, isContinued: true},
+			payload: lids.Block{LIDs: []uint32{40, 2, 3}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
 		},
 		{
-			Ext:     LidsExt{MinTID: 4, MaxTID: 6, IsContinued: false},
-			Payload: lids.Block{LIDs: []uint32{4, 5, 6}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			ext:     lidExt{minTID: 4, maxTID: 6, isContinued: false},
+			payload: lids.Block{LIDs: []uint32{4, 5, 6}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
 		},
 		{
-			Ext:     LidsExt{MinTID: 7, MaxTID: 9, IsContinued: false},
-			Payload: lids.Block{LIDs: []uint32{7, 8, 9}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			ext:     lidExt{minTID: 7, maxTID: 9, isContinued: false},
+			payload: lids.Block{LIDs: []uint32{7, 8, 9}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
 		},
 		{
-			Ext:     LidsExt{MinTID: 10, MaxTID: 12, IsContinued: false},
-			Payload: lids.Block{LIDs: []uint32{10, 11, 12}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			ext:     lidExt{minTID: 10, maxTID: 12, isContinued: false},
+			payload: lids.Block{LIDs: []uint32{10, 11, 12}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
 		},
 		{
-			Ext:     LidsExt{MinTID: 13, MaxTID: 14, IsContinued: false},
-			Payload: lids.Block{LIDs: []uint32{13, 14}, Offsets: []uint32{0, 1, 2}, IsLastLID: true},
+			ext:     lidExt{minTID: 13, maxTID: 14, isContinued: false},
+			payload: lids.Block{LIDs: []uint32{13, 14}, Offsets: []uint32{0, 1, 2}, IsLastLID: true},
 		},
 	}
 	assert.Equal(t, expectedLIDBlocks, lidBlocks)
@@ -300,18 +300,18 @@ func TestBlocksBuilder_IDsBlocks(t *testing.T) {
 	i := 0
 	ids := []seq.ID{}
 	pos := []seq.DocPos{}
-	for block, err := range IDBlock(src.ID(), 3) {
+	for block, err := range idBlock(src.ID(), 3) {
 		assert.NoError(t, err)
 
-		assert.Equal(t, expectedSizes[i], len(block.MIDs.Values))
-		assert.Equal(t, expectedSizes[i], len(block.RIDs.Values))
-		assert.Equal(t, expectedSizes[i], len(block.Params.Values))
+		assert.Equal(t, expectedSizes[i], len(block.mids.Values))
+		assert.Equal(t, expectedSizes[i], len(block.rids.Values))
+		assert.Equal(t, expectedSizes[i], len(block.params.Values))
 
 		i++
 		j := 0
-		for _, mid := range block.MIDs.Values {
-			ids = append(ids, seq.ID{MID: seq.MID(mid), RID: seq.RID(block.RIDs.Values[j])})
-			pos = append(pos, seq.DocPos(block.Params.Values[j]))
+		for _, mid := range block.mids.Values {
+			ids = append(ids, seq.ID{MID: seq.MID(mid), RID: seq.RID(block.rids.Values[j])})
+			pos = append(pos, seq.DocPos(block.params.Values[j]))
 			j++
 		}
 	}
