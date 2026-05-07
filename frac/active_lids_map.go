@@ -2,6 +2,7 @@ package frac
 
 import (
 	"sync"
+	"unsafe"
 
 	"github.com/ozontech/seq-db/seq"
 )
@@ -25,6 +26,16 @@ func (al *ActiveLIDs) Get(id seq.ID) (seq.LID, bool) {
 
 	val, ok := al.idToLid[id]
 	return val, ok
+}
+
+func (al *ActiveLIDs) Size() int {
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+
+	const entrySize = int(unsafe.Sizeof(seq.ID{})) +
+		int(unsafe.Sizeof(seq.LID(0)))
+
+	return len(al.idToLid) * entrySize
 }
 
 func (al *ActiveLIDs) SetMultiple(ids []seq.ID, lids []uint32) {

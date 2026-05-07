@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"sync"
+	"unsafe"
 
 	"github.com/ozontech/seq-db/seq"
 
@@ -91,6 +92,32 @@ func NewActiveTokenList(workers int) *TokenList {
 
 	return tl
 }
+
+func (tl *TokenList) Size() int {
+	size := 0
+
+	tl.tidMu.RLock()
+	for _, val := range tl.tidToVal {
+		size += len(val)
+	}
+
+	for _, lids := range tl.tidToLIDs {
+		if lids != nil {
+			size += lids.Size()
+		}
+	}
+	tl.tidMu.RUnlock()
+
+	tl.fieldsMu.RLock()
+	for field, tids := range tl.FieldTIDs {
+		size += len(field) +
+			len(tids)*int(unsafe.Sizeof(uint32(0)))
+	}
+	tl.fieldsMu.RUnlock()
+
+	return size
+}
+
 func (tl *TokenList) Stop() {
 	for _, c := range tl.chList {
 		close(c)

@@ -56,7 +56,7 @@ test-deps:
 
 .PHONY: test
 test: test-deps
-	LOG_LEVEL=ERROR go test ./... -count 1
+	LOG_LEVEL=ERROR go test ./... -count 1 -v
 
 .bin-deps: export GOBIN := $(LOCAL_BIN)
 .bin-deps:
