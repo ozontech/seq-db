@@ -30,7 +30,7 @@ type (
 	IndexedDocBlock = util.Pair[[]byte, []seq.DocPos]
 )
 
-type ActiveSealingSource struct {
+type ActiveSource struct {
 	params common.SealParams // Sealing parameters
 
 	info    *common.Info // fraction Info
@@ -55,13 +55,13 @@ type ActiveSealingSource struct {
 	docsReader   *storage.DocsReader   // Document storage reader
 }
 
-func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSealingSource, error) {
+func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSource, error) {
 	info := *active.info // copy
 
 	sortedLIDs := active.GetAllDocuments()
 	fields, fieldTIDs := sortFields(active.TokenList)
 
-	src := ActiveSealingSource{
+	src := ActiveSource{
 		params: params,
 
 		info:    &info,
@@ -116,7 +116,7 @@ func sortFields(tl *TokenList) ([]string, [][]uint32) {
 	return fields, fieldTIDs
 }
 
-func (src *ActiveSealingSource) ID() iter.Seq2[DocLocation, error] {
+func (src *ActiveSource) ID() iter.Seq2[DocLocation, error] {
 	return func(yield func(DocLocation, error) bool) {
 		mids := src.mids.vals
 		rids := src.rids.vals
@@ -155,11 +155,11 @@ func (src *ActiveSealingSource) ID() iter.Seq2[DocLocation, error] {
 	}
 }
 
-func (src *ActiveSealingSource) BlockOffsets() []uint64 {
+func (src *ActiveSource) BlockOffsets() []uint64 {
 	return src.blocksOffsets
 }
 
-func (src *ActiveSealingSource) prepareInfo() {
+func (src *ActiveSource) prepareInfo() {
 	src.info.MetaOnDisk = 0
 	src.info.SealingTime = uint64(src.created.UnixMilli())
 	mids := src.mids.vals
@@ -170,17 +170,17 @@ func (src *ActiveSealingSource) prepareInfo() {
 	src.info.BuildDistribution(mids)
 }
 
-func (src *ActiveSealingSource) prepareLids() {
+func (src *ActiveSource) prepareLids() {
 	for _, tl := range src.lids[1:] {
 		tl.GetLIDs(src.mids, src.rids)
 	}
 }
 
-func (src *ActiveSealingSource) Info() *common.Info {
+func (src *ActiveSource) Info() *common.Info {
 	return src.info
 }
 
-func (src *ActiveSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
+func (src *ActiveSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
 	return func(yield func(string, iter.Seq2[TokenPosting, error]) bool) {
 		for idx, field := range src.fields {
 			if !yield(field, src.postingsForField(field, idx)) {
@@ -190,7 +190,7 @@ func (src *ActiveSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[Token
 	}
 }
 
-func (src *ActiveSealingSource) postingsForField(field string, idx int) iter.Seq2[TokenPosting, error] {
+func (src *ActiveSource) postingsForField(field string, idx int) iter.Seq2[TokenPosting, error] {
 	var lidsbuf []uint32
 	return func(yield func(TokenPosting, error) bool) {
 		for _, tid := range src.fieldTIDs[idx] {
@@ -221,7 +221,7 @@ func makeInverser(sortedLIDs []uint32) []uint32 {
 
 // Docs returns an iterator for documents with their IDs.
 // Handles duplicate IDs (for nested indexes).
-func (src *ActiveSealingSource) Docs() iter.Seq2[Document, error] {
+func (src *ActiveSource) Docs() iter.Seq2[Document, error] {
 	return func(yield func(Document, error) bool) {
 		var (
 			curdoc []byte
@@ -256,7 +256,7 @@ func (src *ActiveSealingSource) Docs() iter.Seq2[Document, error] {
 }
 
 // doc reads a document from storage by its position.
-func (src *ActiveSealingSource) doc(pos seq.DocPos) ([]byte, error) {
+func (src *ActiveSource) doc(pos seq.DocPos) ([]byte, error) {
 	blockIndex, docOffset := pos.Unpack()
 	blockOffset := src.blocksOffsets[blockIndex]
 
@@ -277,7 +277,7 @@ func (src *ActiveSealingSource) doc(pos seq.DocPos) ([]byte, error) {
 
 // SortDocs sorts documents and writes them in compressed form to disk.
 // Creates a temporary file that is then renamed to the final one.
-func (src *ActiveSealingSource) SortDocs() error {
+func (src *ActiveSource) SortDocs() error {
 	start := time.Now()
 	logger.Info("sorting docs...")
 
@@ -346,7 +346,7 @@ func (src *ActiveSealingSource) SortDocs() error {
 
 // writeDocs compresses and writes document blocks, calculating new offsets
 // and collecting document positions.
-func (src *ActiveSealingSource) writeDocs(blocks iter.Seq2[IndexedDocBlock, error], w io.Writer) ([]uint64, []seq.DocPos, error) {
+func (src *ActiveSource) writeDocs(blocks iter.Seq2[IndexedDocBlock, error], w io.Writer) ([]uint64, []seq.DocPos, error) {
 	offset := 0
 	buf := make([]byte, 0)
 	blocksOffsets := make([]uint64, 0)
