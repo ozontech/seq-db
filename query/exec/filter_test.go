@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/ozontech/seq-db/query"
 )
 
@@ -38,10 +39,24 @@ func TestFilterLt(t *testing.T) {
 	})
 }
 
-func testFilter(
+func TestDocumentFilter(t *testing.T) {
+	const (
+		field = "service"
+		cond  = "service-5"
+	)
+
+	filterExpr := NewDocFilter(field, NewEq[string](cond))
+
+	testFilter(t, 1, filterExpr, func(r *query.Record) bool {
+		field := r.Vals[1].Decoded().(*insaneJSON.Root).Dig(field)
+		return field.AsString() == cond
+	})
+}
+
+func testFilter[T any](
 	t *testing.T,
 	colIdx int,
-	filterExpr FilterExpr[uint32],
+	filterExpr FilterExpr[T],
 	wantFilterFunc func(*query.Record) bool,
 ) {
 	t.Helper()

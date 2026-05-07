@@ -3,15 +3,9 @@ package query
 import (
 	"encoding/binary"
 	"fmt"
+
+	insaneJSON "github.com/ozontech/insane-json"
 )
-
-// type RecordType byte
-
-// // TODO: do we need it? only AggState?
-// const (
-// 	RecordTypeDocument RecordType = iota
-// 	RecordTypeAggregation
-// )
 
 // executors make use of val's index, executor's parameters has colIdx field
 type Record struct {
@@ -74,6 +68,16 @@ func (rv *RecordVals) ensureDecoded() {
 	switch rv.Type {
 	case DataTypeBytes:
 		rv.decoded = rv.rawData
+	case DataTypeDocument:
+		root := insaneJSON.Spawn() // TODO: release root (???)
+		err := root.DecodeBytes(rv.rawData)
+		if err != nil {
+			panic(fmt.Errorf("error decoding document: %w", err)) // TODO: error handling
+		}
+		if !root.IsObject() {
+			panic(fmt.Errorf("document is not an object: %s", rv.rawData)) // TODO: error handling
+		}
+		rv.decoded = root
 	case DataTypeString:
 		rv.decoded = string(rv.rawData)
 	case DataTypeUint32:

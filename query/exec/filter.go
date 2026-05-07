@@ -3,12 +3,12 @@ package exec
 import (
 	"cmp"
 
+	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/ozontech/seq-db/query"
 )
 
 type FilterExpr[T any] interface {
 	// TODO: maybe we need to pass Record or RecordVals here
-	// TODO: filter for json data (to filter unindexed fields)
 	Eval(T) bool
 }
 
@@ -25,8 +25,9 @@ func NewFilter[T any](
 	expr FilterExpr[T],
 ) *Filter[T] {
 	return &Filter[T]{
-		input: input,
-		expr:  expr,
+		input:  input,
+		colIdx: colIdx,
+		expr:   expr,
 	}
 }
 
@@ -91,4 +92,24 @@ func NewLt[T cmp.Ordered](
 
 func (e *Lt[T]) Eval(other T) bool {
 	return other < e.pred
+}
+
+type DocFilter struct {
+	field  string
+	filter FilterExpr[string] // TODO: all types (???)
+}
+
+func NewDocFilter(
+	field string,
+	filter FilterExpr[string],
+) *DocFilter {
+	return &DocFilter{
+		field:  field,
+		filter: filter,
+	}
+}
+
+func (e *DocFilter) Eval(root *insaneJSON.Root) bool {
+	field := root.Dig(e.field)
+	return e.filter.Eval(field.AsString())
 }

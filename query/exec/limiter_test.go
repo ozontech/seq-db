@@ -2,6 +2,7 @@ package exec
 
 import (
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -58,6 +59,7 @@ func makeTestInputRecords(count int) []*query.Record {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
 				query.NewRecordVals(query.DataTypeUint32, Uint32ToBytes(uint32(i))),
+				query.NewRecordVals(query.DataTypeDocument, fmt.Appendf([]byte{}, `{"service":"service-%d"}`, i)),
 			},
 		})
 	}
