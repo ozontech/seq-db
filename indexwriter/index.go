@@ -13,7 +13,13 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/util"
 	"github.com/ozontech/seq-db/zstd"
+)
+
+type (
+	DocLocation  = util.Pair[seq.ID, seq.DocPos]
+	TokenPosting = util.Pair[[]byte, []uint32]
 )
 
 // Source defines the data required to write all index files for a fraction.
@@ -23,7 +29,7 @@ type Source interface {
 
 	// ID returns an iterator over stored document identifiers paired with
 	// their positions, in descending [seq.ID] order.
-	ID() iter.Seq2[blockbuilder.DocLocation, error]
+	ID() iter.Seq2[DocLocation, error]
 
 	// BlockOffsets returns byte offsets to each document block
 	// within this source's `.docs` file.
@@ -32,7 +38,7 @@ type Source interface {
 	// TokenTriplet iterates over fields in lexicographic order.
 	// For each field, it yields tokens (lexicographically sorted)
 	// paired with the local document ID list for that token.
-	TokenTriplet() iter.Seq2[string, iter.Seq2[blockbuilder.TokenPosting, error]]
+	TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]]
 }
 
 // indexBlock is one compressed (or not) block with its registry metadata.
@@ -106,7 +112,7 @@ func (s *IndexWriter) WriteIDFile(ws io.WriteSeeker, src Source) error {
 	}
 	defer w.release()
 
-	for block, err := range blockbuilder.SeqBlockID(src.ID(), consts.IDsPerBlock) {
+	for block, err := range blockbuilder.IDBlock(src.ID(), consts.IDsPerBlock) {
 		if err != nil {
 			return err
 		}
@@ -140,18 +146,15 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	}
 	defer lw.release()
 
-	var (
-		allFieldsTables []token.FieldTable
-	)
-
-	lidAccumulator := newLIDAccumulator(
+	lidAccumulator := blockbuilder.NewLIDAccumulator(
 		consts.LIDBlockCap,
-		func(block lidsSealBlock) error {
+		func(block blockbuilder.LidsSealBlock) error {
 			return lw.writeBlock(blockTypeLID, s.packLIDsBlock(block))
 		},
 	)
 
-	for pair, err := range blockbuilder.BuildTokenBlocks(src.TokenTriplet(), accumulate, consts.RegularBlockSize) {
+	var allFieldsTables []token.FieldTable
+	for pair, err := range blockbuilder.TokenBlocks(src.TokenTriplet(), lidAccumulator.Add, consts.RegularBlockSize) {
 		if err != nil {
 			return err
 		}
@@ -170,7 +173,7 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	return s.finalizeTokenFile(tw, allFieldsTables)
 }
 
-func (s *IndexSealer) finalizeLIDFile(w *writer, lidAccumulator *lidAccumulator) error {
+func (s *IndexWriter) finalizeLIDFile(w *writer, lidAccumulator *blockbuilder.LIDAccumulator) error {
 	if err := lidAccumulator.Finalize(); err != nil {
 		return err
 	}
@@ -184,7 +187,7 @@ func (s *IndexWriter) finalizeTokenFile(w *writer, allFieldsTables []token.Field
 		return err
 	}
 
-	tokenTableBlock := token.TableBlock{FieldsTables: collapseOrderedFieldsTables(allFieldsTables)}
+	tokenTableBlock := token.TableBlock{FieldsTables: blockbuilder.CollapseOrderedFieldsTables(allFieldsTables)}
 	if err := w.writeBlock(blockTypeTokenTable, s.packTokenTableBlock(tokenTableBlock)); err != nil {
 		return err
 	}
@@ -192,7 +195,7 @@ func (s *IndexWriter) finalizeTokenFile(w *writer, allFieldsTables []token.Field
 	return w.finalize()
 }
 
-func (s *IndexSealer) WriteInfoFile(ws io.Writer, src Source) error {
+func (s *IndexWriter) WriteInfoFile(ws io.Writer, src Source) error {
 	block := sealed.BlockInfo{Info: src.Info()}
 	_, err := ws.Write(s.packInfoBlock(block).payload)
 	return err

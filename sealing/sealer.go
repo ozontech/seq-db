@@ -25,12 +25,11 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 		return nil, errors.New("sealing of an empty active fraction is not supported")
 	}
 
-	writer := indexwriter.New(params)
-
+	w := indexwriter.New(params)
 	if err := createAndWrite(
 		info.Path+consts.OffsetsTmpFileSuffix,
 		info.Path+consts.OffsetsFileSuffix,
-		func(f *os.File) error { return writer.WriteOffsetsFile(f, src) },
+		func(f *os.File) error { return w.WriteOffsetsFile(f, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -38,7 +37,7 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	if err := createAndWrite(
 		info.Path+consts.IDTmpFileSuffix,
 		info.Path+consts.IDFileSuffix,
-		func(f *os.File) error { return writer.WriteIDFile(f, src) },
+		func(f *os.File) error { return w.WriteIDFile(f, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -46,7 +45,7 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	if err := createAndWriteBoth(
 		info.Path+consts.TokenTmpFileSuffix, info.Path+consts.TokenFileSuffix,
 		info.Path+consts.LIDTmpFileSuffix, info.Path+consts.LIDFileSuffix,
-		func(tokenF, lidF *os.File) error { return writer.WriteTokenTriplet(tokenF, lidF, src) },
+		func(tokenF, lidF *os.File) error { return w.WriteTokenTriplet(tokenF, lidF, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -54,7 +53,7 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	if err := createAndWrite(
 		info.Path+consts.InfoTmpFileSuffix,
 		info.Path+consts.InfoFileSuffix,
-		func(f *os.File) error { return writer.WriteInfoFile(f, src) },
+		func(f *os.File) error { return w.WriteInfoFile(f, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -78,13 +77,13 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	}
 
 	info.IndexOnDisk = totalSize
-	lidsTable := writer.LIDsTable()
+	lidsTable := w.LIDsTable()
 
 	preloaded := &sealed.PreloadedData{
 		Info:       info,
-		TokenTable: writer.TokenTable(),
+		TokenTable: w.TokenTable(),
 		BlocksData: sealed.BlocksData{
-			IDsTable:      writer.IDsTable(),
+			IDsTable:      w.IDsTable(),
 			LIDsTable:     &lidsTable,
 			BlocksOffsets: src.BlockOffsets(),
 		},

@@ -50,7 +50,7 @@ type IdsSealBlock struct {
 	Params seqids.BlockParams
 }
 
-func BuildTokenBlocks(
+func TokenBlocks(
 	it iter.Seq2[string, iter.Seq2[TokenPosting, error]],
 	accumulate func([]uint32) error, blockCapacity int,
 ) iter.Seq2[TokenBlock, error] {
@@ -167,9 +167,9 @@ func newTokenTableEntry(
 	}
 }
 
-// SeqBlockID accumulates scalar (ID, position) pairs into sealed ID blocks.
+// IDBlock accumulates scalar (ID, position) pairs into sealed ID blocks.
 // A new block is yielded every `blockCapacity` IDs.
-func SeqBlockID(ids iter.Seq2[DocLocation, error], blockCapacity int) iter.Seq2[IdsSealBlock, error] {
+func IDBlock(ids iter.Seq2[DocLocation, error], blockCapacity int) iter.Seq2[IdsSealBlock, error] {
 	return func(yield func(IdsSealBlock, error) bool) {
 		var block IdsSealBlock
 
@@ -199,82 +199,6 @@ func SeqBlockID(ids iter.Seq2[DocLocation, error], blockCapacity int) iter.Seq2[
 			yield(block, nil)
 		}
 	}
-}
-
-// LidBlocksAcc accumulates LIDs into sealed LID blocks.
-type LidBlocksAcc struct {
-	blockCapacity int
-
-	currentTID   uint32
-	currentBlock LidsSealBlock
-
-	isEndOfToken bool
-	isContinued  bool
-}
-
-func NewLIDBlocksAccumulator(blockCapacity int) *LidBlocksAcc {
-	a := &LidBlocksAcc{blockCapacity: blockCapacity}
-
-	a.currentBlock.Ext.MinTID = 1
-	a.currentBlock.Payload = lids.Block{
-		LIDs:    make([]uint32, 0, blockCapacity),
-		Offsets: []uint32{0},
-	}
-
-	return a
-}
-
-// Add processes LIDs of one token (must be called in TID order).
-//
-// For each block that fills up, `onBlock` is called immediately
-// before the backing arrays are reset, so `onBlock` may read the
-// block data but must not retain references to it.
-func (a *LidBlocksAcc) Add(lidsbuf []uint32, onBlock func(LidsSealBlock) error) error {
-	a.currentTID++
-
-	for _, lid := range lidsbuf {
-		if len(a.currentBlock.Payload.LIDs) == a.blockCapacity {
-			if err := onBlock(a.finalizeBlock()); err != nil {
-				return err
-			}
-
-			a.currentBlock.Ext.MinTID = a.currentTID
-			a.currentBlock.Payload.LIDs = a.currentBlock.Payload.LIDs[:0]
-			a.currentBlock.Payload.Offsets = a.currentBlock.Payload.Offsets[:1]
-		}
-
-		a.isEndOfToken = false
-		a.currentBlock.Ext.MaxTID = a.currentTID
-		a.currentBlock.Payload.LIDs = append(a.currentBlock.Payload.LIDs, lid)
-	}
-
-	a.isEndOfToken = true
-	a.currentBlock.Payload.Offsets = append(
-		a.currentBlock.Payload.Offsets,
-		uint32(len(a.currentBlock.Payload.LIDs)),
-	)
-
-	return nil
-}
-
-func (a *LidBlocksAcc) Flush() LidsSealBlock {
-	return a.finalizeBlock()
-}
-
-func (a *LidBlocksAcc) finalizeBlock() LidsSealBlock {
-	if !a.isEndOfToken {
-		a.currentBlock.Payload.Offsets = append(
-			a.currentBlock.Payload.Offsets,
-			uint32(len(a.currentBlock.Payload.LIDs)),
-		)
-	}
-
-	result := a.currentBlock
-	result.Payload.IsLastLID = a.isEndOfToken
-	result.Ext.IsContinued = a.isContinued
-
-	a.isContinued = !a.isEndOfToken
-	return result
 }
 
 // CollapseOrderedFieldsTables merges FieldTables with the same field name.
