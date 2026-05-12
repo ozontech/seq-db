@@ -41,13 +41,18 @@ func (tl *TokenLIDs) GetLIDs(mids, rids *UInt64s) []uint32 {
 	return tl.sorted
 }
 
+// SortedLIDs returns pre-merged LIDs.
+// Only safe to call after the fraction is frozen and lids queue was drained.
+func (tl *TokenLIDs) SortedLIDsUnsafe() []uint32 {
+	return tl.sorted
+}
+
 type SeqIDCmp struct {
 	mid []uint64
 	rid []uint64
 }
 
 func (c *SeqIDCmp) compare(a, b uint32) int {
-
 	midA, midB := c.mid[a], c.mid[b]
 
 	if midA > midB {

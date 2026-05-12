@@ -13,6 +13,8 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
+var _ Source = (*mockSource)(nil)
+
 type mockSource struct {
 	info          common.Info
 	tokens        [][]byte
@@ -22,71 +24,49 @@ type mockSource struct {
 	pos           []seq.DocPos
 	tokenLIDs     [][]uint32
 	blocksOffsets []uint64
-	lastError     error
 }
 
-func (m *mockSource) Info() common.Info { return m.info }
+func (m *mockSource) Info() *common.Info { return &m.info }
 
-func (m *mockSource) Fields() iter.Seq2[string, uint32] {
-	return func(yield func(string, uint32) bool) {
-		for i := range len(m.fields) {
-			if !yield(m.fields[i], m.fieldMaxTIDs[i]) {
+func (m *mockSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
+	return func(yield func(string, iter.Seq2[TokenPosting, error]) bool) {
+		start := 0
+		for i, field := range m.fields {
+			end := int(m.fieldMaxTIDs[i])
+			if !yield(field, m.tokensForField(start, end)) {
+				return
+			}
+			start = end
+		}
+	}
+}
+
+func (m *mockSource) tokensForField(start, end int) iter.Seq2[TokenPosting, error] {
+	return func(yield func(TokenPosting, error) bool) {
+		for j := start; j < end; j++ {
+			var lidsbuf []uint32
+			if j < len(m.tokenLIDs) {
+				lidsbuf = m.tokenLIDs[j]
+			}
+			pair := TokenPosting{First: m.tokens[j], Second: lidsbuf}
+			if !yield(pair, nil) {
 				return
 			}
 		}
 	}
 }
 
-func (m *mockSource) IDsBlocks(size int) iter.Seq2[[]seq.ID, []seq.DocPos] {
-	return func(yield func([]seq.ID, []seq.DocPos) bool) {
-		ids := make([]seq.ID, 0, size)
-		pos := make([]seq.DocPos, 0, size)
+func (m *mockSource) ID() iter.Seq2[DocLocation, error] {
+	return func(yield func(DocLocation, error) bool) {
 		for i, id := range m.ids {
-			if len(ids) == size {
-				if !yield(ids, pos) {
-					return
-				}
-				ids = ids[:0]
-				pos = pos[:0]
-			}
-			ids = append(ids, id)
-			pos = append(pos, m.pos[i])
-		}
-		yield(ids, pos)
-	}
-}
-
-func (m *mockSource) TokenBlocks(size int) iter.Seq[[][]byte] {
-	return func(yield func([][]byte) bool) {
-		block := [][]byte{}
-		blockSize := 0
-		for _, token := range m.tokens {
-			if blockSize >= size {
-				if !yield(block) {
-					return
-				}
-				blockSize = 0
-				block = block[:0]
-			}
-			block = append(block, token)
-			blockSize += len(token) + 4
-		}
-		yield(block)
-	}
-}
-
-func (m *mockSource) TokenLIDs() iter.Seq[[]uint32] {
-	return func(yield func([]uint32) bool) {
-		for _, lids := range m.tokenLIDs {
-			if !yield(lids) {
+			if !yield(DocLocation{First: id, Second: m.pos[i]}, nil) {
 				return
 			}
 		}
 	}
 }
 
-func (m *mockSource) BlocksOffsets() []uint64 { return m.blocksOffsets }
-func (m *mockSource) LastError() error        { return m.lastError }
+func (m *mockSource) BlockOffsets() []uint64 { return m.blocksOffsets }
 
 func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	src := mockSource{
@@ -112,13 +92,47 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 		},
 		fields:       []string{"f1", "f2", "f3", "f4", "f5", "f6"},
 		fieldMaxTIDs: []uint32{2, 7, 9, 12, 13, 14},
+		tokenLIDs: [][]uint32{
+			{10, 20, 30, 40}, // 1
+			{2},              // 2
+			{3},              // 3
+			{4},              // 4
+			{5},              // 5
+			{6},              // 6
+			{7},              // 7
+			{8},              // 8
+			{9},              // 9
+			{10},             // 10
+			{11},             // 11
+			{12},             // 12
+			{13},             // 13
+			{14},             // 14
+		},
 	}
 
 	// Block size in bytes.
 	const blockSize = 24
+	const lidBlockCap = 3
 
-	bb := blocksBuilder{}
-	tokenBlocks := bb.BuildTokenBlocks(src.TokenBlocks(blockSize), src.Fields())
+	var lidBlocks []lidsSealBlock
+	lidAccumulator := newLIDAccumulator(
+		lidBlockCap,
+		func(block lidsSealBlock) error {
+			block.payload.LIDs = slices.Clone(block.payload.LIDs)
+			block.payload.Offsets = slices.Clone(block.payload.Offsets)
+			lidBlocks = append(lidBlocks, block)
+			return nil
+		},
+	)
+
+	var bb blocksBuilder
+	tokenBlocks := bb.BuildTokenBlocks(
+		src.TokenTriplet(),
+		func(lids []uint32) error {
+			return lidAccumulator.Add(lids)
+		},
+		blockSize,
+	)
 
 	// In our test case, each token is 4 bytes long. Also for each token we use uint32 to encode the length.
 	// So 3 tokens take up exactly 24 bytes. And we expect all token blocks to contain 3 tokens except the last one.
@@ -128,7 +142,9 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	blockIndex := 0
 
 	allFieldsTables := []token.FieldTable{}
-	for block, fieldsTables := range tokenBlocks {
+	for pair, err := range tokenBlocks {
+		assert.NoError(t, err)
+		block, fieldsTables := pair.First, pair.Second
 		assert.Equal(t, expectedSizes[blockIndex], block.payload.Len())
 		for i := range block.payload.Len() {
 			tid++
@@ -149,7 +165,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 					{
 						StartIndex: 0,
 						StartTID:   1,
-						BlockIndex: 1,
+						BlockIndex: 0,
 						ValCount:   2,
 						MinVal:     "f1v1",
 						MaxVal:     "f1v2",
@@ -161,21 +177,21 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 					{
 						StartIndex: 2,
 						StartTID:   3,
-						BlockIndex: 1,
+						BlockIndex: 0,
 						ValCount:   1,
 						MinVal:     "f2v1",
 						MaxVal:     "f2v1",
 					}, {
 						StartIndex: 0,
 						StartTID:   4,
-						BlockIndex: 2,
+						BlockIndex: 1,
 						ValCount:   3,
 						MinVal:     "f2v2",
 						MaxVal:     "f2v4",
 					}, {
 						StartIndex: 0,
 						StartTID:   7,
-						BlockIndex: 3,
+						BlockIndex: 2,
 						ValCount:   1,
 						MinVal:     "f2v5",
 						MaxVal:     "f2v5",
@@ -187,7 +203,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 					{
 						StartIndex: 1,
 						StartTID:   8,
-						BlockIndex: 3,
+						BlockIndex: 2,
 						ValCount:   2,
 						MinVal:     "f3v1",
 						MaxVal:     "f3v2",
@@ -199,7 +215,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 					{
 						StartIndex: 0,
 						StartTID:   10,
-						BlockIndex: 4,
+						BlockIndex: 3,
 						ValCount:   3,
 						MinVal:     "f4v1",
 						MaxVal:     "f4v3",
@@ -211,7 +227,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 					{
 						StartIndex: 0,
 						StartTID:   13,
-						BlockIndex: 5,
+						BlockIndex: 4,
 						ValCount:   1,
 						MinVal:     "f5v1",
 						MaxVal:     "f5v1",
@@ -223,7 +239,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 					{
 						StartIndex: 1,
 						StartTID:   14,
-						BlockIndex: 5,
+						BlockIndex: 4,
 						ValCount:   1,
 						MinVal:     "f6v1",
 						MaxVal:     "f6v1",
@@ -233,6 +249,35 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 		},
 	}
 	assert.Equal(t, actualTokenTable.FieldsTables, expectedTokenTable.FieldsTables)
+	assert.NoError(t, lidAccumulator.Finalize())
+
+	expectedLIDBlocks := []lidsSealBlock{
+		{
+			ext:     lidsExt{minTID: 1, maxTID: 1, isContinued: false},
+			payload: lids.Block{LIDs: []uint32{10, 20, 30}, Offsets: []uint32{0, 3}, IsLastLID: false},
+		},
+		{
+			ext:     lidsExt{minTID: 1, maxTID: 3, isContinued: true},
+			payload: lids.Block{LIDs: []uint32{40, 2, 3}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+		},
+		{
+			ext:     lidsExt{minTID: 4, maxTID: 6, isContinued: false},
+			payload: lids.Block{LIDs: []uint32{4, 5, 6}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+		},
+		{
+			ext:     lidsExt{minTID: 7, maxTID: 9, isContinued: false},
+			payload: lids.Block{LIDs: []uint32{7, 8, 9}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+		},
+		{
+			ext:     lidsExt{minTID: 10, maxTID: 12, isContinued: false},
+			payload: lids.Block{LIDs: []uint32{10, 11, 12}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+		},
+		{
+			ext:     lidsExt{minTID: 13, maxTID: 14, isContinued: false},
+			payload: lids.Block{LIDs: []uint32{13, 14}, Offsets: []uint32{0, 1, 2}, IsLastLID: true},
+		},
+	}
+	assert.Equal(t, expectedLIDBlocks, lidBlocks)
 }
 
 func TestBlocksBuilder_IDsBlocks(t *testing.T) {
@@ -268,10 +313,13 @@ func TestBlocksBuilder_IDsBlocks(t *testing.T) {
 	i := 0
 	ids := []seq.ID{}
 	pos := []seq.DocPos{}
-	for block := range createIDsSealBlocks(src.IDsBlocks(3)) {
+	for block, err := range seqBlockID(src.ID(), 3) {
+		assert.NoError(t, err)
+
 		assert.Equal(t, expectedSizes[i], len(block.mids.Values))
 		assert.Equal(t, expectedSizes[i], len(block.rids.Values))
 		assert.Equal(t, expectedSizes[i], len(block.params.Values))
+
 		i++
 		j := 0
 		for _, mid := range block.mids.Values {
@@ -283,113 +331,4 @@ func TestBlocksBuilder_IDsBlocks(t *testing.T) {
 
 	assert.Equal(t, src.ids, ids)
 	assert.Equal(t, src.pos, pos)
-}
-
-func TestBlocksBuilder_BuildLIDsBlocks(t *testing.T) {
-	src := mockSource{
-		tokenLIDs: [][]uint32{
-			{
-				10, // block 1, tid 1
-				20, // block 1, tid 1
-				30, // block 1, tid 1
-
-				40, // block 2, tid 1
-			}, {
-				11, // block 2, tid 2
-				21, // block 2, tid 2
-
-				31, // block 3, tid 2
-				41, // block 3, tid 2
-			}, {
-				10, // block 3, tid 3
-
-				11, // block 4, tid 3
-				20, // block 4, tid 3
-				21, // block 4, tid 3
-
-			}, {
-				30, // block 5, tid 4
-				40, // block 5, tid 4
-				50, // block 5, tid 4
-
-				60, // block 6, tid 4
-			},
-		},
-	}
-
-	expected := []lidsSealBlock{{
-		ext: lidsExt{
-			minTID:      1,
-			maxTID:      1,
-			isContinued: false,
-		},
-		payload: lids.Block{
-			LIDs:      []uint32{10, 20, 30},
-			Offsets:   []uint32{0, 3},
-			IsLastLID: false,
-		},
-	}, {
-		ext: lidsExt{
-			minTID:      1,
-			maxTID:      2,
-			isContinued: true,
-		},
-		payload: lids.Block{
-			LIDs:      []uint32{40, 11, 21},
-			Offsets:   []uint32{0, 1, 3},
-			IsLastLID: false,
-		},
-	}, {
-		ext: lidsExt{
-			minTID:      2,
-			maxTID:      3,
-			isContinued: true,
-		},
-		payload: lids.Block{
-			LIDs:      []uint32{31, 41, 10},
-			Offsets:   []uint32{0, 2, 3},
-			IsLastLID: false,
-		},
-	}, {
-		ext: lidsExt{
-			minTID:      3,
-			maxTID:      3,
-			isContinued: true,
-		},
-		payload: lids.Block{
-			LIDs:      []uint32{11, 20, 21},
-			Offsets:   []uint32{0, 3},
-			IsLastLID: true,
-		},
-	}, {
-		ext: lidsExt{
-			minTID:      4,
-			maxTID:      4,
-			isContinued: false,
-		},
-		payload: lids.Block{
-			LIDs:      []uint32{30, 40, 50},
-			Offsets:   []uint32{0, 3},
-			IsLastLID: false,
-		},
-	}, {
-		ext: lidsExt{
-			minTID:      4,
-			maxTID:      4,
-			isContinued: true,
-		},
-		payload: lids.Block{
-			LIDs:      []uint32{60},
-			Offsets:   []uint32{0, 1},
-			IsLastLID: true,
-		}},
-	}
-	bb := blocksBuilder{}
-	blocks := []lidsSealBlock{}
-	for block := range bb.BuildLIDsBlocks(src.TokenLIDs(), 3) {
-		block.payload.LIDs = slices.Clone(block.payload.LIDs)       // copy lids
-		block.payload.Offsets = slices.Clone(block.payload.Offsets) // copy offsets
-		blocks = append(blocks, block)
-	}
-	assert.Equal(t, expected, blocks)
 }

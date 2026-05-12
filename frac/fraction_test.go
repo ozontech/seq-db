@@ -22,10 +22,7 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
-	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
-	"github.com/ozontech/seq-db/frac/sealed/seqids"
-	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
@@ -1837,11 +1834,11 @@ func (s *FractionTestSuite) TestFractionInfo() {
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
 	case *Sealed:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1600),
+		s.Require().True(info.IndexOnDisk > uint64(1300) && info.IndexOnDisk < uint64(1400),
 			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	case *Remote:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1550),
+		s.Require().True(info.IndexOnDisk > uint64(1300) && info.IndexOnDisk < uint64(1400),
 			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	default:
 		s.Require().Fail("unsupported fraction type")
@@ -2093,25 +2090,16 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
 	preloaded, err := sealing.Seal(activeSealingSource, s.sealParams)
 	s.Require().NoError(err, "Sealing failed")
 
-	indexCache := &IndexCache{
-		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
-		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
-		LIDs:       cache.NewCache[*lids.Block](nil, nil),
-		Tokens:     cache.NewCache[*token.Block](nil, nil),
-		TokenTable: cache.NewCache[token.Table](nil, nil),
-		Registry:   cache.NewCache[[]byte](nil, nil),
-	}
-
 	sealed := NewSealedPreloaded(
 		active.BaseFileName,
 		preloaded,
 		storage.NewReadLimiter(1, nil),
-		indexCache,
+		newIndexCache(),
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
 		testSkipMaskProvider{},
 	)
+
 	active.Release()
 	return sealed
 }
@@ -2284,25 +2272,17 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Seal
 	sealed := s.newSealed(bulks...)
 	sealed.Release()
 
-	indexCache := &IndexCache{
-		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
-		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
-		LIDs:       cache.NewCache[*lids.Block](nil, nil),
-		Tokens:     cache.NewCache[*token.Block](nil, nil),
-		TokenTable: cache.NewCache[token.Table](nil, nil),
-		Registry:   cache.NewCache[[]byte](nil, nil),
-	}
-
 	sealed = NewSealed(
 		sealed.BaseFileName,
 		storage.NewReadLimiter(1, nil),
-		indexCache,
+		newIndexCache(),
 		cache.NewCache[[]byte](nil, nil),
 		nil,
 		s.config,
 		testSkipMaskProvider{},
+		false,
 	)
+
 	s.fraction = sealed
 	return sealed
 }
@@ -2352,27 +2332,19 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 		s.Require().NoError(err, "offload failed")
 		s.Require().True(offloaded, "didn't offload frac")
 
-		indexCache := &IndexCache{
-			MIDs:       cache.NewCache[[]byte](nil, nil),
-			RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
-			Params:     cache.NewCache[seqids.BlockParams](nil, nil),
-			LIDs:       cache.NewCache[*lids.Block](nil, nil),
-			Tokens:     cache.NewCache[*token.Block](nil, nil),
-			TokenTable: cache.NewCache[token.Table](nil, nil),
-			Registry:   cache.NewCache[[]byte](nil, nil),
-		}
-
 		remoteFrac := NewRemote(
 			context.Background(),
 			sealed.BaseFileName,
 			storage.NewReadLimiter(1, nil),
-			indexCache,
+			newIndexCache(),
 			cache.NewCache[[]byte](nil, nil),
 			sealed.info,
 			s.config,
 			s3cli,
 			testSkipMaskProvider{},
+			false,
 		)
+
 		s.fraction = remoteFrac
 	}
 }
