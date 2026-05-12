@@ -32,6 +32,7 @@ import (
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/skipmaskmanager"
 	seqs3 "github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/storeapi"
 	testscommon "github.com/ozontech/seq-db/tests/common"
@@ -48,6 +49,7 @@ type TestingEnvConfig struct {
 	HotModeEnabled    bool
 	QueryRateLimit    *float64
 	FracManagerConfig *fracmanager.Config
+	SkipMaskParams    []skipmaskmanager.SkipMaskParams
 
 	Mapping        seq.Mapping
 	IndexAllFields bool
@@ -121,6 +123,9 @@ func (cfg *TestingEnvConfig) GetStoreConfig(replicaID string, cold bool) storeap
 				RequestsLimit:         0,
 				LogThreshold:          0,
 			},
+		},
+		SkipMaskManagerConfig: skipmaskmanager.Config{
+			DataDir: filepath.Join(cfg.DataDir, replicaID, "skipmasks"),
 		},
 	}
 }
@@ -275,7 +280,7 @@ func (cfg *TestingEnvConfig) MakeStores(
 			logger.Fatal("can't create mapping", zap.Error(err))
 		}
 
-		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider)
+		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider, cfg.SkipMaskParams)
 		if err != nil {
 			panic(err)
 		}

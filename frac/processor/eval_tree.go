@@ -88,6 +88,11 @@ func evalLeaf(
 	return node.BuildORTree(lidsTids), nil
 }
 
+func evalSkipLIDs(root, skipLIDsIterator node.Node, stats *searchStats) node.Node {
+	stats.NodesTotal++
+	return node.NewNAnd(skipLIDsIterator, root)
+}
+
 type Aggregator interface {
 	// Next iterates to count the next lid.
 	Next(lid node.LID) error

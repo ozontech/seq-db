@@ -10,14 +10,23 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
+var (
+	SystemMID    MID    = math.MaxUint64
+	SystemRID    RID    = math.MaxUint64
+	SystemID     ID     = ID{SystemMID, SystemRID}
+	SystemDocPos DocPos = DocPos(0)
+)
+
 type ID struct {
 	MID MID
 	RID RID
 }
 
-type MID uint64 // nanoseconds part of ID
-type RID uint64 // random part of ID
-type LID uint32 // local id for a fraction
+type (
+	MID uint64 // nanoseconds part of ID
+	RID uint64 // random part of ID
+	LID uint32 // local id for a fraction
+)
 
 func (m MID) Time() time.Time {
 	nanosPerSecond := uint64(time.Second)
@@ -100,7 +109,6 @@ func FromString(x string) (ID, error) {
 	}
 
 	rid, err := hex.DecodeString(x[17:])
-
 	if err != nil {
 		return id, err
 	}

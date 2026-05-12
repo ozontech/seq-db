@@ -2,7 +2,6 @@ package fracmanager
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -83,46 +82,5 @@ func (m *StateManager) save() error {
 	if err != nil {
 		return err
 	}
-	return atomicWrite(m.filePath, data, 0o644)
-}
-
-// atomicWrite safely writes data to file using atomic replacement pattern
-func atomicWrite(path string, data []byte, perm os.FileMode) error {
-	tmpPath := path + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-
-	defer func() {
-		if f != nil {
-			f.Close()
-		}
-		if err != nil {
-			os.Remove(tmpPath)
-		}
-	}()
-
-	if _, err = f.Write(data); err != nil {
-		return fmt.Errorf("write data: %w", err)
-	}
-
-	if err = f.Sync(); err != nil {
-		return fmt.Errorf("sync data: %w", err)
-	}
-
-	if err = f.Close(); err != nil {
-		return fmt.Errorf("close file: %w", err)
-	}
-	f = nil // mark as closed so defer doesn't close again
-
-	if err = os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("rename file: %w", err)
-	}
-
-	if err = util.SyncPath(filepath.Dir(path)); err != nil { // also sync parent directory
-		return fmt.Errorf("sync dir: %w", err)
-	}
-
-	return nil
+	return util.WriteFileAtomic(m.filePath, data, 0o644, ".txt")
 }

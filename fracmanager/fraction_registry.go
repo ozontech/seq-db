@@ -92,10 +92,12 @@ func (r *fractionRegistry) AllFractions() []frac.Fraction {
 // Stats returns current size statistics of the registry.
 func (r *fractionRegistry) Stats() registryStats {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
+	s := r.stats
+	i := r.active.instance.Info()
+	r.mu.RUnlock()
 
-	r.stats.active.Set(r.active.instance.Info())
-	return r.stats
+	s.active.Set(i)
+	return s
 }
 
 // OldestTotal returns the creation time of the oldest fraction in the registry.

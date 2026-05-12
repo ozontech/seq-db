@@ -13,7 +13,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
-
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"

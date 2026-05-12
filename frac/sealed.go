@@ -3,6 +3,7 @@ package frac
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -24,9 +25,7 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-var (
-	_ Fraction = (*Sealed)(nil)
-)
+var _ Fraction = (*Sealed)(nil)
 
 type Sealed struct {
 	Config *Config
@@ -39,18 +38,35 @@ type Sealed struct {
 	docsCache  *cache.Cache[[]byte]
 	docsReader storage.DocsReader
 
-	indexFile   *os.File
-	indexCache  *IndexCache
-	indexReader storage.IndexReader
+	// IsLegacy is true for fractions that use the old single .index file format.
+	IsLegacy     bool
+	legacyFile   *os.File
+	legacyReader storage.IndexReader
 
-	loadMu     *sync.RWMutex
-	isLoaded   bool
+	// Per-section index files and their readers (new split format only).
+	infoFile    *os.File
+	tokenFile   *os.File
+	offsetsFile *os.File
+	idFile      *os.File
+	lidFile     *os.File
+
+	tokenReader   storage.IndexReader
+	offsetsReader storage.IndexReader
+	idReader      storage.IndexReader
+	lidReader     storage.IndexReader
+
 	blocksData sealed.BlocksData
+	indexCache *IndexCache
+
+	initMu   *sync.RWMutex
+	isInited bool
 
 	readLimiter *storage.ReadLimiter
 
 	// shit for testing
 	PartialSuicideMode PSD
+
+	skipMaskProvider skipMaskProvider
 }
 
 type PSD int // emulates hard shutdown on different stages of fraction deletion, used for tests
@@ -68,59 +84,35 @@ func NewSealed(
 	docsCache *cache.Cache[[]byte],
 	info *common.Info,
 	config *Config,
+	skipMaskProvider skipMaskProvider,
+	isLegacy bool,
 ) *Sealed {
 	f := &Sealed{
-		loadMu: &sync.RWMutex{},
+		initMu: &sync.RWMutex{},
 
 		readLimiter: readLimiter,
 		docsCache:   docsCache,
 		indexCache:  indexCache,
 
+		IsLegacy:     isLegacy,
 		info:         info,
 		BaseFileName: baseFile,
 		Config:       config,
 
 		PartialSuicideMode: Off,
+
+		skipMaskProvider: skipMaskProvider,
 	}
 
-	// fast path if fraction-info cache exists AND it has valid index size
+	// Fast path: if info cache has valid index size, skip opening the info file now.
 	if info != nil && info.IndexOnDisk > 0 {
 		return f
 	}
 
-	f.openIndex()
-	f.info = loadHeader(f.indexFile, f.indexReader)
+	f.loadInfo()
+	f.computeIndexSize()
 
 	return f
-}
-
-func (f *Sealed) openIndex() {
-	if f.indexFile == nil {
-		var err error
-		name := f.BaseFileName + consts.IndexFileSuffix
-		f.indexFile, err = os.Open(name)
-		if err != nil {
-			logger.Fatal("can't open index file", zap.String("file", name), zap.Error(err))
-		}
-		f.indexReader = storage.NewIndexReader(f.readLimiter, f.indexFile.Name(), f.indexFile, f.indexCache.Registry)
-	}
-}
-
-func (f *Sealed) openDocs() {
-	if f.docsFile == nil {
-		var err error
-		f.docsFile, err = os.Open(f.BaseFileName + consts.SdocsFileSuffix) // try first open *.sdocs file
-		if err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				logger.Fatal("can't open sdocs file", zap.String("frac", f.BaseFileName), zap.Error(err))
-			}
-			f.docsFile, err = os.Open(f.BaseFileName + consts.DocsFileSuffix) // fallback to *.docs file
-			if err != nil {
-				logger.Fatal("can't open docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
-			}
-		}
-		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
-	}
 }
 
 func NewSealedPreloaded(
@@ -130,29 +122,29 @@ func NewSealedPreloaded(
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
 	config *Config,
+	skipMaskProvider skipMaskProvider,
 ) *Sealed {
 	f := &Sealed{
 		blocksData: preloaded.BlocksData,
 		docsCache:  docsCache,
 		indexCache: indexCache,
 
-		loadMu:   &sync.RWMutex{},
-		isLoaded: true,
+		initMu:   &sync.RWMutex{},
+		isInited: true,
 
 		readLimiter: rl,
 
 		info:         preloaded.Info,
 		BaseFileName: baseFile,
 		Config:       config,
+
+		skipMaskProvider: skipMaskProvider,
 	}
 
-	// put the token table built during sealing into the cache of the sealed fraction
+	// Put token table built during sealing into the cache.
 	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
 		return preloaded.TokenTable, preloaded.TokenTable.Size()
 	})
-
-	f.openDocs()
-	f.openIndex()
 
 	docsCountK := float64(f.info.DocsTotal) / 1000
 	logger.Info("sealed fraction created from active",
@@ -164,42 +156,188 @@ func NewSealedPreloaded(
 	)
 
 	f.info.MetaOnDisk = 0
-
 	return f
 }
 
-func (f *Sealed) load() {
-	f.loadMu.Lock()
-	defer f.loadMu.Unlock()
+func (f *Sealed) openInfoLegacy() {
+	if f.legacyFile != nil {
+		return
+	}
 
-	if !f.isLoaded {
+	name := f.BaseFileName + consts.IndexFileSuffix
+	file, err := os.Open(name)
+	if err != nil {
+		logger.Fatal(
+			"can't open legacy index file",
+			zap.String("file", name),
+			zap.Error(err),
+		)
+	}
 
-		f.openDocs()
-		f.openIndex()
+	f.legacyFile = file
+	f.legacyReader = storage.NewIndexReader(
+		f.readLimiter, file.Name(),
+		file, f.indexCache.LegacyRegistry,
+	)
+}
 
-		(&Loader{}).Load(&f.blocksData, f.info, &f.indexReader)
-		f.isLoaded = true
+func (f *Sealed) openInfo() {
+	if f.infoFile != nil {
+		return
+	}
+
+	name := f.BaseFileName + consts.InfoFileSuffix
+	file, err := os.Open(name)
+	if err != nil {
+		logger.Fatal(
+			"can't open info file",
+			zap.String("file", name),
+			zap.Error(err),
+		)
+	}
+
+	f.infoFile = file
+}
+
+func (f *Sealed) openIndex() {
+	if f.IsLegacy {
+		// We have exactly one `.index` file for legacy sealed fractions.
+		// So opening only this file is sufficient.
+		f.openInfoLegacy()
+		return
+	}
+
+	f.openInfo()
+	if f.tokenFile == nil {
+		name := f.BaseFileName + consts.TokenFileSuffix
+		file, err := os.Open(name)
+		if err != nil {
+			logger.Fatal("can't open token file", zap.String("file", name), zap.Error(err))
+		}
+		f.tokenFile = file
+		f.tokenReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.TokenRegistry)
+	}
+
+	if f.offsetsFile == nil {
+		name := f.BaseFileName + consts.OffsetsFileSuffix
+		file, err := os.Open(name)
+		if err != nil {
+			logger.Fatal("can't open offsets file", zap.String("file", name), zap.Error(err))
+		}
+		f.offsetsFile = file
+		f.offsetsReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.OffsetsRegistry)
+	}
+
+	if f.idFile == nil {
+		name := f.BaseFileName + consts.IDFileSuffix
+		file, err := os.Open(name)
+		if err != nil {
+			logger.Fatal("can't open id file", zap.String("file", name), zap.Error(err))
+		}
+		f.idFile = file
+		f.idReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.IDRegistry)
+	}
+
+	if f.lidFile == nil {
+		name := f.BaseFileName + consts.LIDFileSuffix
+		file, err := os.Open(name)
+		if err != nil {
+			logger.Fatal("can't open lid file", zap.String("file", name), zap.Error(err))
+		}
+		f.lidFile = file
+		f.lidReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.LIDRegistry)
 	}
 }
 
-// Offload saves `.docs` (or `.sdocs`) and `.index` files into remote storage.
-// It does not free any of the occupied memory (nor on disk nor in memory).
-func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
-	f.loadMu.Lock()
+func (f *Sealed) openDocs() {
+	if f.docsFile != nil {
+		return
+	}
+
+	var err error
+	f.docsFile, err = os.Open(f.BaseFileName + consts.SdocsFileSuffix)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			logger.Fatal(
+				"can't open sdocs file",
+				zap.String("frac", f.BaseFileName),
+				zap.Error(err),
+			)
+		}
+
+		f.docsFile, err = os.Open(f.BaseFileName + consts.DocsFileSuffix)
+		if err != nil {
+			logger.Fatal(
+				"can't open docs file",
+				zap.String("frac", f.BaseFileName),
+				zap.Error(err),
+			)
+		}
+	}
+
+	f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
+}
+
+func (f *Sealed) loadInfo() {
+	if f.IsLegacy {
+		f.openInfoLegacy()
+		f.info = loadInfoLegacy(f.legacyReader)
+		return
+	}
+
+	f.openInfo()
+	f.info = loadInfo(f.infoFile)
+}
+
+func (f *Sealed) init(full bool) {
+	f.initMu.Lock()
+	defer f.initMu.Unlock()
+
 	f.openDocs()
 	f.openIndex()
-	f.loadMu.Unlock()
+
+	if f.isInited || !full {
+		return
+	}
+
+	if f.IsLegacy {
+		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.legacyReader)
+		f.isInited = true
+		return
+	}
+
+	(&Loader{}).Load(&f.blocksData, f.info, IndexReaders{
+		Token:   f.tokenReader,
+		Offsets: f.offsetsReader,
+		ID:      f.idReader,
+		LID:     f.lidReader,
+	})
+
+	f.isInited = true
+}
+
+// Offload saves all index files and docs to remote storage.
+func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
+	f.init(false)
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return u.Upload(gctx, f.docsFile) })
-	g.Go(func() error { return u.Upload(gctx, f.indexFile) })
+
+	if f.IsLegacy {
+		g.Go(func() error { return u.Upload(gctx, f.legacyFile) })
+	} else {
+		g.Go(func() error { return u.Upload(gctx, f.infoFile) })
+		g.Go(func() error { return u.Upload(gctx, f.tokenFile) })
+		g.Go(func() error { return u.Upload(gctx, f.offsetsFile) })
+		g.Go(func() error { return u.Upload(gctx, f.idFile) })
+		g.Go(func() error { return u.Upload(gctx, f.lidFile) })
+	}
 
 	if err := g.Wait(); err != nil {
 		return true, err
 	}
 
 	remoteFracName := f.BaseFileName + consts.RemoteFractionSuffix
-
 	file, err := os.Create(remoteFracName)
 	if err != nil {
 		return true, err
@@ -211,15 +349,33 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) 
 }
 
 func (f *Sealed) Release() {
-	if f.docsFile != nil {
-		if err := f.docsFile.Close(); err != nil {
-			logger.Error("can't close docs file", zap.String("frac", f.BaseFileName), zap.Error(err))
+	f.init(false)
+
+	indexFiles := []*os.File{
+		f.docsFile,
+		f.infoFile,
+		f.tokenFile,
+		f.offsetsFile,
+		f.idFile,
+		f.lidFile,
+	}
+
+	if f.IsLegacy {
+		indexFiles = []*os.File{
+			f.docsFile,
+			f.legacyFile,
 		}
 	}
 
-	if f.indexFile != nil {
-		if err := f.indexFile.Close(); err != nil {
-			logger.Error("can't close index file", zap.String("frac", f.BaseFileName), zap.Error(err))
+	for _, file := range indexFiles {
+		if file != nil {
+			if err := file.Close(); err != nil {
+				logger.Error(
+					"can't close file",
+					zap.String("file", file.Name()),
+					zap.Error(err),
+				)
+			}
 		}
 	}
 
@@ -229,14 +385,14 @@ func (f *Sealed) Release() {
 
 func (f *Sealed) Suicide() {
 	f.Release()
-
-	// make some atomic magic, to be more stable on removing fractions
+	// Rename docs atomically first — this commits the intent to delete.
 	oldPath := f.BaseFileName + consts.DocsFileSuffix
 	newPath := f.BaseFileName + consts.DocsDelFileSuffix
 	if err := os.Rename(oldPath, newPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		logger.Error("can't rename docs file",
-			zap.String("old_path", oldPath),
-			zap.String("new_path", newPath),
+		logger.Error(
+			"can't rename docs file",
+			zap.String("old", oldPath),
+			zap.String("new", newPath),
 			zap.Error(err),
 		)
 	}
@@ -244,9 +400,10 @@ func (f *Sealed) Suicide() {
 	oldPath = f.BaseFileName + consts.SdocsFileSuffix
 	newPath = f.BaseFileName + consts.SdocsDelFileSuffix
 	if err := os.Rename(oldPath, newPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		logger.Error("can't rename sdocs file",
-			zap.String("old_path", oldPath),
-			zap.String("new_path", newPath),
+		logger.Error(
+			"can't rename sdocs file",
+			zap.String("old", oldPath),
+			zap.String("new", newPath),
 			zap.Error(err),
 		)
 	}
@@ -255,28 +412,35 @@ func (f *Sealed) Suicide() {
 		return
 	}
 
-	oldPath = f.BaseFileName + consts.IndexFileSuffix
-	newPath = f.BaseFileName + consts.IndexDelFileSuffix
-	if err := os.Rename(oldPath, newPath); err != nil {
-		logger.Error("can't rename index file",
-			zap.String("old_path", oldPath),
-			zap.String("new_path", newPath),
-			zap.Error(err),
-		)
+	// Delete all index files directly (they are regenerable; no atomic rename needed).
+	indexSuffixes := []string{
+		consts.InfoFileSuffix,
+		consts.TokenFileSuffix,
+		consts.OffsetsFileSuffix,
+		consts.IDFileSuffix,
+		consts.LIDFileSuffix,
 	}
 
-	rmPath := f.BaseFileName + consts.DocsDelFileSuffix
-	if err := os.Remove(rmPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		logger.Error("can't remove docs file",
-			zap.String("file", rmPath),
-			zap.Error(err),
-		)
+	if f.IsLegacy {
+		indexSuffixes = []string{
+			consts.IndexFileSuffix,
+		}
 	}
 
-	rmPath = f.BaseFileName + consts.SdocsDelFileSuffix
-	if err := os.Remove(rmPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		logger.Error("can't remove sdocs file",
-			zap.String("file", rmPath),
+	for _, suffix := range indexSuffixes {
+		if err := os.Remove(f.BaseFileName + suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
+			logger.Error(
+				"can't remove index file",
+				zap.String("file", f.BaseFileName+suffix),
+				zap.Error(err),
+			)
+		}
+	}
+
+	if err := os.Remove(f.BaseFileName + consts.DocsDelFileSuffix); err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Error(
+			"can't remove docs del file",
+			zap.String("frac", f.BaseFileName),
 			zap.Error(err),
 		)
 	}
@@ -285,13 +449,15 @@ func (f *Sealed) Suicide() {
 		return
 	}
 
-	rmPath = f.BaseFileName + consts.IndexDelFileSuffix
-	if err := os.Remove(rmPath); err != nil {
-		logger.Error("can't remove index file",
-			zap.String("file", rmPath),
+	if err := os.Remove(f.BaseFileName + consts.SdocsDelFileSuffix); err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Error(
+			"can't remove sdocs del file",
+			zap.String("frac", f.BaseFileName),
 			zap.Error(err),
 		)
 	}
+
+	f.skipMaskProvider.RemoveFrac(f.info.Name())
 }
 
 func (f *Sealed) String() string {
@@ -301,19 +467,35 @@ func (f *Sealed) String() string {
 func (f *Sealed) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
 	dp := f.createDataProvider(ctx)
 	defer dp.release()
-
 	return dp.Fetch(ids)
 }
 
 func (f *Sealed) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
 	dp := f.createDataProvider(ctx)
 	defer dp.release()
-
 	return dp.Search(params)
 }
 
+func (f *Sealed) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.FindLIDs(ids)
+}
+
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
-	f.load()
+	f.init(true)
+
+	tokenReader := &f.tokenReader
+	lidReader := &f.lidReader
+	idReader := &f.idReader
+
+	if f.IsLegacy {
+		tokenReader = &f.legacyReader
+		lidReader = &f.legacyReader
+		idReader = &f.legacyReader
+	}
+
 	return &sealedDataProvider{
 		ctx:               ctx,
 		fractionTypeLabel: "sealed",
@@ -323,19 +505,21 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		docsReader:       &f.docsReader,
 		blocksOffsets:    f.blocksData.BlocksOffsets,
 		lidsTable:        f.blocksData.LIDsTable,
-		lidsLoader:       lids.NewLoader(&f.indexReader, f.indexCache.LIDs),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.indexReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, &f.indexReader, f.indexCache.TokenTable),
+		lidsLoader:       lids.NewLoader(lidReader, f.indexCache.LIDs),
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, tokenReader, f.indexCache.Tokens),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.IsLegacy, tokenReader, f.indexCache.TokenTable),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
-			&f.indexReader,
+			idReader,
 			f.indexCache.MIDs,
 			f.indexCache.RIDs,
 			f.indexCache.Params,
 			&f.blocksData.IDsTable,
 			f.info.BinaryDataVer,
 		),
+
+		skipMaskProvider: f.skipMaskProvider,
 	}
 }
 
@@ -351,39 +535,70 @@ func (f *Sealed) IsIntersecting(from, to seq.MID) bool {
 	return f.info.IsIntersecting(from, to)
 }
 
-func loadHeader(
-	indexFile storage.ImmutableFile,
-	indexReader storage.IndexReader,
-) *common.Info {
-	block, _, err := indexReader.ReadIndexBlock(0, nil)
+func loadInfoLegacy(infoReader storage.IndexReader) *common.Info {
+	block, _, err := infoReader.ReadIndexBlock(0, nil)
 	if err != nil {
-		logger.Fatal(
-			"error reading info block from index",
-			zap.String("file", indexFile.Name()),
-			zap.Error(err),
-		)
+		logger.Fatal("cannot read info block", zap.Error(err))
 	}
 
 	var bi sealed.BlockInfo
 	if err := bi.Unpack(block); err != nil {
-		logger.Fatal(
-			"error unpacking info block",
-			zap.String("file", indexFile.Name()),
-			zap.Error(err),
-		)
+		logger.Fatal("cannot unpack info block", zap.Error(err))
 	}
-	info := bi.Info
 
-	// set index size
-	stat, err := indexFile.Stat()
+	return bi.Info
+}
+
+func loadInfo(r interface {
+	io.ReaderAt
+	Stat() (os.FileInfo, error)
+},
+) *common.Info {
+	stat, err := r.Stat()
 	if err != nil {
-		logger.Fatal(
-			"can't stat index file",
-			zap.String("file", indexFile.Name()),
-			zap.Error(err),
-		)
+		logger.Fatal("cannot stat info file", zap.Error(err))
 	}
 
-	info.IndexOnDisk = uint64(stat.Size())
-	return info
+	block := make([]byte, stat.Size())
+	if _, err := r.ReadAt(block, io.SeekStart); err != nil {
+		logger.Fatal("cannot read info block", zap.Error(err))
+	}
+
+	var bi sealed.BlockInfo
+	if err := bi.Unpack(block); err != nil {
+		logger.Fatal("cannot unpack info block", zap.Error(err))
+	}
+
+	return bi.Info
+}
+
+// computeIndexOnDisk returns the total on-disk size of index files for a local fraction.
+func (f *Sealed) computeIndexSize() {
+	suffixes := []string{
+		consts.InfoFileSuffix,
+		consts.TokenFileSuffix,
+		consts.OffsetsFileSuffix,
+		consts.IDFileSuffix,
+		consts.LIDFileSuffix,
+	}
+
+	if f.IsLegacy {
+		suffixes = []string{
+			consts.IndexFileSuffix,
+		}
+	}
+
+	f.info.IndexOnDisk = 0
+	for _, suffix := range suffixes {
+		st, err := os.Stat(f.info.Path + suffix)
+		if err != nil {
+			logger.Fatal(
+				"can't stat index file",
+				zap.String("file", f.info.Path+suffix),
+				zap.Error(err),
+			)
+		}
+
+		f.info.IndexOnDisk += uint64(st.Size())
+	}
 }

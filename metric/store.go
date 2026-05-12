@@ -60,6 +60,13 @@ var (
 		Help:      "Search request duration time (only successful searches)",
 		Buckets:   SecondsBuckets,
 	})
+	SearchQprMemSize = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "qpr_mem_size_bytes",
+		Help:      "QPR heap memory size in bytes",
+		Buckets:   prometheus.ExponentialBuckets(1024, 3, 21),
+	})
 
 	SearchRangesSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",

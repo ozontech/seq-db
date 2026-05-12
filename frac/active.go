@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -27,9 +26,7 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-var (
-	_ Fraction = (*Active)(nil)
-)
+var _ Fraction = (*Active)(nil)
 
 type Active struct {
 	Config *Config
@@ -47,6 +44,7 @@ type Active struct {
 	TokenList *TokenList
 
 	DocsPositions *DocsPositions
+	IDsToLIDs     *ActiveLIDs
 
 	docsFile   *os.File
 	docsReader storage.DocsReader
@@ -60,16 +58,8 @@ type Active struct {
 
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
-}
 
-const (
-	systemMID = math.MaxUint64
-	systemRID = math.MaxUint64
-)
-
-var systemSeqID = seq.ID{
-	MID: systemMID,
-	RID: systemRID,
+	skipMaskProvider skipMaskProvider
 }
 
 func NewActive(
@@ -79,6 +69,7 @@ func NewActive(
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
 	cfg *Config,
+	skipMaskProvider skipMaskProvider,
 ) *Active {
 	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
 
@@ -87,6 +78,7 @@ func NewActive(
 	f := &Active{
 		TokenList:     NewActiveTokenList(config.IndexWorkers),
 		DocsPositions: NewSyncDocsPositions(),
+		IDsToLIDs:     NewActiveLIDs(),
 		MIDs:          NewIDs(),
 		RIDs:          NewIDs(),
 		DocBlocks:     NewIDs(),
@@ -107,11 +99,13 @@ func NewActive(
 		BaseFileName: baseFileName,
 		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), metaSize),
 		Config:       cfg,
+
+		skipMaskProvider: skipMaskProvider,
 	}
 
 	// use of 0 as keys in maps is prohibited – it's system key, so add first element
-	f.MIDs.Append(systemMID)
-	f.RIDs.Append(systemRID)
+	f.MIDs.Append(uint64(seq.SystemMID))
+	f.RIDs.Append(uint64(seq.SystemRID))
 
 	logger.Info("active fraction created", zap.String("fraction", baseFileName))
 
@@ -122,7 +116,8 @@ func mustOpenMetaWriter(
 	baseFileName string,
 	readLimiter *storage.ReadLimiter,
 	docsFile *os.File,
-	docsStats os.FileInfo) (*os.File, *ActiveWriter, *storage.DocBlocksReader, *storage.WalReader, uint64) {
+	docsStats os.FileInfo,
+) (*os.File, *ActiveWriter, *storage.DocBlocksReader, *storage.WalReader, uint64) {
 	legacyMetaFileName := baseFileName + consts.MetaFileSuffix
 
 	if _, err := os.Stat(legacyMetaFileName); err == nil {
@@ -421,6 +416,17 @@ func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*se
 	return dp.Search(params)
 }
 
+func (f *Active) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		return nil, nil
+	}
+
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.FindLIDs(ids)
+}
+
 func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 	return &activeDataProvider{
 		ctx:    ctx,
@@ -433,7 +439,10 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 
 		blocksOffsets: f.DocBlocks.GetVals(),
 		docsPositions: f.DocsPositions,
+		idsToLids:     f.IDsToLIDs,
 		docsReader:    &f.docsReader,
+
+		skipMaskProvider: f.skipMaskProvider,
 	}
 }
 

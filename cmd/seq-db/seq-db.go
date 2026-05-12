@@ -33,6 +33,8 @@ import (
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
+	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/skipmaskmanager"
 	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/storeapi"
 	"github.com/ozontech/seq-db/tracing"
@@ -297,6 +299,7 @@ func startStore(
 				WorkersCount:          cfg.Resources.SearchWorkers,
 				MaxFractionHits:       cfg.Limits.FractionHits,
 				FractionsPerIteration: config.NumCPU,
+				MaxQprMemory:          int(cfg.Limits.QprMemoryUsage),
 				RequestsLimit:         uint64(cfg.Limits.SearchRequests),
 				LogThreshold:          cfg.SlowLogs.SearchThreshold,
 				Async: asyncsearcher.AsyncSearcherConfig{
@@ -315,10 +318,15 @@ func startStore(
 				From:  cfg.Filtering.From,
 			},
 		},
+		SkipMaskManagerConfig: skipmaskmanager.Config{
+			DataDir:        cfg.SkipMaskManager.DataDir,
+			Workers:        cfg.SkipMaskManager.Workers,
+			CacheSizeLimit: uint64(cfg.SkipMaskManager.CacheSize),
+		},
 	}
 
 	s3cli := initS3Client(cfg)
-	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp)
+	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp, skipMaskParamsFromCfg(cfg.SkipMaskManager.SkipMasks))
 	if err != nil {
 		logger.Fatal("initializing store", zap.Error(err))
 	}
@@ -359,4 +367,16 @@ func initS3Client(cfg config.Config) *s3.Client {
 
 func enableIndexingForAllFields(mappingPath string) bool {
 	return mappingPath == "auto"
+}
+
+func skipMaskParamsFromCfg(in []config.SkipMaskParams) []skipmaskmanager.SkipMaskParams {
+	out := make([]skipmaskmanager.SkipMaskParams, 0, len(in))
+	for _, f := range in {
+		out = append(out, skipmaskmanager.SkipMaskParams{
+			Query: f.Query,
+			From:  seq.TimeToMID(f.From),
+			To:    seq.TimeToMID(f.To),
+		})
+	}
+	return out
 }
