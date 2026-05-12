@@ -30,10 +30,10 @@ func (i indexBlock) Bin(pos int64) (storage.IndexBlockHeader, []byte) {
 type IndexSealer struct {
 	params common.SealParams
 
-	buf1    []byte
-	buf2    []byte
-	buf32   []uint32
-	buf64   []uint64
+	buf1  []byte
+	buf2  []byte
+	buf32 []uint32
+	buf64 []uint64
 
 	idsTable   seqids.Table
 	lidsTable  lids.Table
