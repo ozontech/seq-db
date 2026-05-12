@@ -21,7 +21,7 @@ func (b *UnpackBuffer) Reset(fracVer config.BinaryDataVersion) {
 	} else {
 		b.offsets = b.offsets[:0]
 	}
-	if fracVer >= config.BinaryDataV3 {
+	if fracVer >= config.BinaryDataV4 {
 		if b.decompressed == nil {
 			b.decompressed = make([]uint32, 0, consts.LIDBlockCap)
 		} else {

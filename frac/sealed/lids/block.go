@@ -40,7 +40,7 @@ func (b *Block) GetSizeBytes() int {
 func (b *Block) Unpack(data []byte, fracVer config.BinaryDataVersion, buf *UnpackBuffer) error {
 	buf.Reset(fracVer)
 
-	if fracVer >= config.BinaryDataV3 {
+	if fracVer >= config.BinaryDataV4 {
 		return b.unpackBitpack(data, buf)
 	}
 

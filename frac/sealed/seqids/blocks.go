@@ -21,7 +21,7 @@ func (b *BlockMIDs) Unpack(data []byte, fracVer config.BinaryDataVersion, cache 
 	var values []uint64
 	var err error
 
-	if fracVer >= config.BinaryDataV3 {
+	if fracVer >= config.BinaryDataV4 {
 		_, values, err = packer.DecompressDeltaBitpackUint64(data, cache.values, cache.tmp)
 		if err != nil {
 			return err
