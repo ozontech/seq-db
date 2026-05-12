@@ -48,6 +48,9 @@ const (
 
 	DefaultReplayWorkers = 2
 
+	// dir names
+	BrokenDir = ".broken"
+
 	// known extensions
 	MetaFileSuffix = ".meta"
 	WalFileSuffix  = ".wal"

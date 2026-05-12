@@ -14,10 +14,11 @@ import (
 )
 
 type WalRecord struct {
-	Data   WalBlock
-	Offset int64
-	Size   int64
-	Err    error
+	Data        WalBlock
+	Offset      int64
+	Size        int64
+	Corruptions uint64
+	Err         error
 }
 
 type WalReader struct {
@@ -60,12 +61,14 @@ func (r *WalReader) Entries() iter.Seq[WalRecord] {
 		offset := align(r.headerOffset)
 
 		var corruptionStart int64 = -1
+		var corruptions uint64
 		logCorruptionEnd := func(offset int64) {
 			if corruptionStart >= 0 {
 				logger.Error("WAL file corrupted",
 					zap.String("fraction", r.baseFileName),
 					zap.Int64("from", corruptionStart),
 					zap.Int64("to", offset))
+				corruptions++
 				corruptionStart = -1
 			}
 		}
@@ -80,7 +83,7 @@ func (r *WalReader) Entries() iter.Seq[WalRecord] {
 			n, err := r.limiter.ReadAt(r.reader, headerBuf, offset)
 
 			if err != nil && !errors.Is(err, io.EOF) {
-				yield(WalRecord{Offset: offset, Err: err})
+				yield(WalRecord{Offset: offset, Corruptions: corruptions, Err: err})
 				return
 			}
 
@@ -113,7 +116,7 @@ func (r *WalReader) Entries() iter.Seq[WalRecord] {
 			n, err = r.limiter.ReadAt(r.reader, blockBuf, offset)
 
 			if err != nil && !errors.Is(err, io.EOF) {
-				yield(WalRecord{Offset: offset, Err: err})
+				yield(WalRecord{Offset: offset, Corruptions: corruptions, Err: err})
 				return
 			}
 
@@ -134,9 +137,10 @@ func (r *WalReader) Entries() iter.Seq[WalRecord] {
 			logCorruptionEnd(offset)
 
 			entry := WalRecord{
-				Data:   mb,
-				Offset: offset,
-				Size:   blockLen,
+				Data:        mb,
+				Offset:      offset,
+				Size:        blockLen,
+				Corruptions: corruptions,
 			}
 
 			if !yield(entry) {
