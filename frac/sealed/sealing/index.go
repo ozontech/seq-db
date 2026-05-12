@@ -125,7 +125,7 @@ func (s *IndexSealer) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	)
 
 	lidAccumulator := newLIDAccumulator(
-		consts.LIDBlockCap,
+		s.params.LIDBlockSize,
 		func(block lidsSealBlock) error {
 			return lw.writeBlock(blockTypeLID, s.packLIDsBlock(block))
 		},

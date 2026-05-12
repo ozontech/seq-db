@@ -52,7 +52,7 @@ func NewInfo(filename string, docsOnDisk, metaOnDisk uint64) *Info {
 		CreationTime:          uint64(time.Now().UnixMilli()),
 		ConstIDsPerBlock:      consts.IDsPerBlock,
 		ConstRegularBlockSize: consts.RegularBlockSize,
-		ConstLIDBlockCap:      consts.LIDBlockCap,
+		ConstLIDBlockCap:      consts.DefaultLIDBlockCap,
 		DocsOnDisk:            docsOnDisk,
 		MetaOnDisk:            metaOnDisk,
 	}

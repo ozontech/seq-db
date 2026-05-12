@@ -11,9 +11,9 @@ const (
 	// DummyMID is used in aggregations when we do not need to build time series.
 	DummyMID = 0
 
-	IDsPerBlock      = int(4 * units.KiB)
-	LIDBlockCap      = int(64 * units.KiB)
-	RegularBlockSize = int(16 * units.KiB)
+	IDsPerBlock        = int(4 * units.KiB)
+	DefaultLIDBlockCap = int(64 * units.KiB)
+	RegularBlockSize   = int(16 * units.KiB)
 
 	DefaultMaintenanceDelay  = time.Second
 	DefaultCacheGCDelay      = 1 * time.Second

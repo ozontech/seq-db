@@ -58,7 +58,7 @@ func FillConfigWithDefault(config *Config) *Config {
 		config.SealParams.LIDsZstdLevel = zstdDefaultLevel
 	}
 	if config.SealParams.LIDBlockSize == 0 {
-		config.SealParams.LIDBlockSize = consts.LIDBlockCap
+		config.SealParams.LIDBlockSize = consts.DefaultLIDBlockCap
 	}
 	if config.SealParams.TokenListZstdLevel == 0 {
 		config.SealParams.TokenListZstdLevel = zstdDefaultLevel
