@@ -2,13 +2,17 @@ package sealing
 
 import (
 	"encoding/binary"
-	"errors"
 	"iter"
+	"unsafe"
 
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
-	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
+)
+
+type (
+	TokenBlock = util.Pair[tokensSealBlock, []token.FieldTable]
 )
 
 // tokensExt represents the token ID range contained in a block.
@@ -45,94 +49,110 @@ type idsSealBlock struct {
 
 // blocksBuilder constructs sealed blocks from various data sources.
 // Provides error tracking and consistency validation during block construction.
-type blocksBuilder struct {
-	lastErr error // Last error encountered during processing
-}
+type blocksBuilder struct{}
 
-// LastError returns the last error encountered during block processing.
-func (bb *blocksBuilder) LastError() error {
-	return bb.lastErr
-}
-
-// BuildTokenBlocks converts token batches into token blocks with field tables. The function creates an iterator
-// that returns token blocks and corresponding field tables describing which fields are covered by which tokens
-// in the block.
-//
-// Visualization of relationships between fields, tokens, and table entries:
-//
-// Field Ranges:    <-------f1----------><------f2-------><------------f3------------><----------f4---------->
-// Token Blocks:    [.t1.t2.t3.t4.][.t5.t6.t7.t8.][.t9....etc...][.............][.............][.............]
-// Field Entries:   {-----f1------}{-f1-}{---f2--}{--f2--}{-f3--}{------f3-----}{-f3-}{----f4-}{-----f4------}
-//
-// So we split field ranges into field entries - sub-ranges of fields aligned to block boundaries.
-// Each field table (token.FieldTable) links a field to a blocks and token ranges inside the blocks.
-//
-// Parameters:
-//   - tokenBatches: Iterator of token batches, where each batch becomes a separate block
-//   - fields: Iterator of [fieldName, maxTID] pairs for all fields in ascending TID order
-//
-// Returns: Iterator of [token block, field table for block] pairs, where field table contains
-// information about which fields and their ranges are represented in this block.
 func (bb *blocksBuilder) BuildTokenBlocks(
-	tokenBatches iter.Seq[[][]byte],
-	fields iter.Seq2[string, uint32],
-) iter.Seq2[tokensSealBlock, []token.FieldTable] {
-	return func(yield func(tokensSealBlock, []token.FieldTable) bool) {
-		// Create pull iterator for fields - convert Seq2 to a function that can be called on demand
-		getNextField, stop := iter.Pull2(fields)
-		defer stop()
-
+	it iter.Seq2[string, iter.Seq2[TokenPosting, error]],
+	accumulate func([]uint32) error, blockCapacity int,
+) iter.Seq2[TokenBlock, error] {
+	return func(yield func(TokenBlock, error) bool) {
 		var (
-			hasMore     bool
-			currentTID  uint32 = 1 // Current TID to process
-			fieldMaxTID uint32 = 0 // Maximum TID of current field (0 = field not yet selected)
-			fieldName   string     // Current field name
+			block     tokensSealBlock
+			blockIdx  uint32
+			blockSize int
 		)
 
-		// Iterate through all token blocks created from batches
-		for idx, block := range createTokensSealBlocks(tokenBatches) {
-			table := []token.FieldTable{}
-			// Process all TIDs in current block (from currentTID to block.ext.maxTID)
-			for currentTID <= block.ext.maxTID {
-				// If current field doesn't cover currentTID, get next field
-				// This happens when: 1) field not yet selected, 2) current field has ended
-				if fieldMaxTID < currentTID {
-					if fieldName, fieldMaxTID, hasMore = getNextField(); !hasMore {
-						bb.lastErr = errors.New("not enough fields to cover all TIDs")
+		var (
+			currentTID         uint32
+			pendingTable       []token.FieldTable
+			fieldName          string
+			fieldEntryStartTID uint32
+		)
+
+		emitFieldEntry := func() {
+			// Handle case when field does not have tokens.
+			if fieldName == "" || fieldEntryStartTID > currentTID {
+				return
+			}
+
+			entry := newTokenTableEntry(fieldEntryStartTID, currentTID, blockIdx, block)
+			pendingTable = append(pendingTable, token.FieldTable{
+				Field:   fieldName,
+				Entries: []*token.TableEntry{entry},
+			})
+		}
+
+		flushBlock := func() bool {
+			emitFieldEntry()
+			block.ext.maxTID = currentTID
+
+			pair := TokenBlock{First: block, Second: pendingTable}
+			if !yield(pair, nil) {
+				return false
+			}
+
+			block.payload.Payload = block.payload.Payload[:0]
+			block.payload.Offsets = block.payload.Offsets[:0]
+			block.ext.minTID = currentTID + 1
+
+			blockIdx++
+			blockSize = 0
+
+			pendingTable = pendingTable[:0]
+			fieldEntryStartTID = currentTID + 1
+
+			return true
+		}
+
+		block.ext.minTID = 1
+		for field, tokenIterator := range it {
+			emitFieldEntry()
+
+			fieldName = field
+			fieldEntryStartTID = currentTID + 1
+
+			for pair, err := range tokenIterator {
+				if err != nil {
+					yield(TokenBlock{}, err)
+					return
+				}
+
+				tok, tlids := pair.First, pair.Second
+				tokenSize := int(unsafe.Sizeof(uint32(0))) + len(tok)
+
+				if blockSize > 0 && blockSize+tokenSize > blockCapacity {
+					if !flushBlock() {
 						return
 					}
 				}
-				// Entry covers TIDs from currentTID to min(fieldMaxTID, block.ext.maxTID)
-				entry := createTokenTableEntry(currentTID, fieldMaxTID, idx, block)
-				table = append(table, token.FieldTable{Field: fieldName, Entries: []*token.TableEntry{entry}})
-				currentTID += entry.ValCount
-			}
 
-			if !yield(block, table) {
-				return // Consumer requested stop
+				block.payload.Offsets = append(block.payload.Offsets, uint32(len(block.payload.Payload)))
+				block.payload.Payload = binary.LittleEndian.AppendUint32(block.payload.Payload, uint32(len(tok)))
+				block.payload.Payload = append(block.payload.Payload, tok...)
+
+				if err := accumulate(tlids); err != nil {
+					yield(TokenBlock{}, err)
+					return
+				}
+
+				currentTID++
+				blockSize += tokenSize
 			}
 		}
 
-		// Verify consistency
-		if currentTID-1 != fieldMaxTID {
-			bb.lastErr = errors.New("fields and tokens not consistent")
-		} else if _, _, hasMore = getNextField(); hasMore {
-			bb.lastErr = errors.New("excess field after processing all blocks")
+		if blockSize > 0 {
+			flushBlock()
 		}
 	}
 }
 
-// createTokenTableEntry creates a token table entry for a field-block span.
-// Calculates the range of tokens belonging to a field within a specific block.
-// Parameters:
-//   - entryStartTID: Starting token ID for this entry
-//   - fieldMaxTID: Maximum token ID for the field
-//   - blockIndex: Index of the current token block
-//   - block: Current token block data
-func createTokenTableEntry(entryStartTID, fieldMaxTID, blockIndex uint32, block tokensSealBlock) *token.TableEntry {
+func newTokenTableEntry(
+	entryStartTID, entryEndTID uint32,
+	blockIndex uint32, block tokensSealBlock,
+) *token.TableEntry {
 	// Convert global TIDs to block-local indices
 	firstIndex := entryStartTID - block.ext.minTID
-	lastIndex := min(fieldMaxTID, block.ext.maxTID) - block.ext.minTID
+	lastIndex := entryEndTID - block.ext.minTID
 
 	// Extract min and max token values for the entry range
 	minVal := string(block.payload.GetToken(int(firstIndex)))
@@ -148,159 +168,118 @@ func createTokenTableEntry(entryStartTID, fieldMaxTID, blockIndex uint32, block 
 	}
 }
 
-// BuildLIDsBlocks constructs LID blocks from Token LID sequences.
-// Processes LIDs grouped by TID and creates optimally sized blocks:
-// - Splits large LID sequences across multiple blocks
-// - Tracks continuation status between blocks
-//
-// Parameters:
-//   - tokenLIDs: Sequence of LID arrays, one per TokenID, in TID order
-//   - blockCapacity: Maximum number of LIDs per block
-//
-// Returns:
-//   - iter.Seq[lidsSealBlock]: Sequence of sealed LID blocks
-func (bb *blocksBuilder) BuildLIDsBlocks(tokenLIDs iter.Seq[[]uint32], blockCapacity int) iter.Seq[lidsSealBlock] {
-	return func(yield func(lidsSealBlock) bool) {
-		if blockCapacity <= 0 {
-			bb.lastErr = errors.New("sealing: LID block size must be > 0")
-			return
-		}
-		var (
-			currentTID   uint32        // Current TID being processed
-			currentBlock lidsSealBlock // Current block under construction
-			isEndOfToken bool          // Flag for end of current token's LIDs
-			isContinued  bool          // Flag for block continuation
-		)
+// seqBlockID accumulates scalar (ID, position) pairs into sealed ID blocks.
+// A new block is yielded every `blockCapacity` IDs.
+func seqBlockID(ids iter.Seq2[DocLocation, error], blockCapacity int) iter.Seq2[idsSealBlock, error] {
+	return func(yield func(idsSealBlock, error) bool) {
+		var block idsSealBlock
 
-		// Initialize first block
-		currentBlock.ext.minTID = 1
-		currentBlock.payload = lids.Block{
-			LIDs:    make([]uint32, 0, blockCapacity), // Pre-allocate with capacity
-			Offsets: []uint32{0},                      // Start with initial offset
-		}
-
-		// finalizeBlock prepares and yields the current block
-		finalizeBlock := func() bool {
-			if !isEndOfToken {
-				// Add final offset for current token if not already done
-				currentBlock.payload.Offsets = append(currentBlock.payload.Offsets, uint32(len(currentBlock.payload.LIDs)))
+		for pair, err := range ids {
+			if err != nil {
+				yield(idsSealBlock{}, err)
+				return
 			}
-			currentBlock.payload.IsLastLID = isEndOfToken // TODO(eguguchkin): Remove legacy field
-			currentBlock.ext.isContinued = isContinued    // TODO(eguguchkin): Remove legacy field
-			isContinued = !isEndOfToken
-			return yield(currentBlock)
-		}
 
-		// Process LIDs for each TID
-		for lidsBatch := range tokenLIDs {
-			currentTID++
+			id, pos := pair.First, pair.Second
+			block.mids.Values = append(block.mids.Values, uint64(id.MID))
+			block.rids.Values = append(block.rids.Values, uint64(id.RID))
+			block.params.Values = append(block.params.Values, uint64(pos))
 
-			for _, lid := range lidsBatch {
-				// Check if block reached capacity
-				if len(currentBlock.payload.LIDs) == blockCapacity {
-					if !finalizeBlock() {
-						return
-					}
-					// Initialize new block
-					currentBlock.ext.minTID = currentTID
-					currentBlock.payload.LIDs = currentBlock.payload.LIDs[:0]
-					currentBlock.payload.Offsets = currentBlock.payload.Offsets[:1] // Reset to initial offset
+			if len(block.mids.Values) == blockCapacity {
+				if !yield(block, nil) {
+					return
 				}
 
-				isEndOfToken = false
-				currentBlock.ext.maxTID = currentTID
-				currentBlock.payload.LIDs = append(currentBlock.payload.LIDs, lid) // Add each LID to the block
+				block.mids.Values = block.mids.Values[:0]
+				block.rids.Values = block.rids.Values[:0]
+				block.params.Values = block.params.Values[:0]
 			}
-
-			// Store offset and mark end of current token
-			currentBlock.payload.Offsets = append(currentBlock.payload.Offsets, uint32(len(currentBlock.payload.LIDs)))
-			isEndOfToken = true
 		}
 
-		// Yield the final block
-		finalizeBlock()
-	}
-}
-
-// createIDsSealBlocks converts sequences of IDs and positions into sealed ID blocks.
-// Transforms raw ID sequences into optimized block format for storage:
-// - Processes IDs in batches for efficiency
-// - Maintains correlation between IDs and their positions
-// - Creates separate slices for MIDs, RIDs, and positions
-//
-// Parameters:
-//   - idsBatches: Sequence of ID batches with corresponding document positions
-//
-// Returns:
-//   - iter.Seq[idsSealBlock]: Sequence of sealed ID blocks
-func createIDsSealBlocks(idsBatches iter.Seq2[[]seq.ID, []seq.DocPos]) iter.Seq[idsSealBlock] {
-	return func(yield func(idsSealBlock) bool) {
-		block := idsSealBlock{}
-
-		// Process each batch of IDs and positions
-		for ids, positions := range idsBatches {
-			// Reset block arrays for new batch
-			block.mids.Values = block.mids.Values[:0]
-			block.rids.Values = block.rids.Values[:0]
-			block.params.Values = block.params.Values[:0]
-
-			// Convert each ID and position to storage format
-			for i, id := range ids {
-				block.mids.Values = append(block.mids.Values, uint64(id.MID))
-				block.rids.Values = append(block.rids.Values, uint64(id.RID))
-				block.params.Values = append(block.params.Values, uint64(positions[i]))
-			}
-
-			// Yield completed block
-			if !yield(block) {
-				return
-			}
+		if len(block.mids.Values) > 0 {
+			yield(block, nil)
 		}
 	}
 }
 
-// createTokensSealBlocks converts raw token sequences into sealed token blocks.
-// Transforms batches of tokens into optimized storage format:
-// - Merges a set of byte slices into a contiguous slice Payload and a slice of Offsets
-// - Tracks token ID ranges for indexing [MinTID, MaxTID]
+type lidAccumulator struct {
+	blockCapacity int
+	onBlock       func(lidsSealBlock) error
+
+	currentTID   uint32
+	currentBlock lidsSealBlock
+
+	isEndOfToken bool
+	isContinued  bool
+}
+
+func newLIDAccumulator(
+	blockCapacity int,
+	onBlock func(lidsSealBlock) error,
+) *lidAccumulator {
+	a := &lidAccumulator{
+		blockCapacity: blockCapacity,
+		onBlock:       onBlock,
+	}
+
+	a.currentBlock.ext.minTID = 1
+	a.currentBlock.payload = lids.Block{
+		LIDs:    make([]uint32, 0, blockCapacity),
+		Offsets: []uint32{0},
+	}
+
+	return a
+}
+
+// Add processes LIDs of one token (must be called in TID order).
 //
-// Parameters:
-//   - tokenBatches: Sequence of token batches to process
-//
-// Returns:
-//   - iter.Seq[uint32, tokensSealBlock]: Sequence of sealed token blocks with their indexes
-func createTokensSealBlocks(tokenBatches iter.Seq[[][]byte]) iter.Seq2[uint32, tokensSealBlock] {
-	return func(yield func(uint32, tokensSealBlock) bool) {
-		var (
-			idx        uint32          // 1-based block index
-			currentTID uint32          // Current token ID counter
-			block      tokensSealBlock // Current block under construction
+// For each block that fills up, `onBlock` is called immediately
+// before the backing arrays are reset, so `onBlock` may read the
+// block data but must not retain references to it.
+func (a *lidAccumulator) Add(lidsbuf []uint32) error {
+	a.currentTID++
+
+	for _, lid := range lidsbuf {
+		if len(a.currentBlock.payload.LIDs) == a.blockCapacity {
+			if err := a.onBlock(a.finalizeBlock()); err != nil {
+				return err
+			}
+
+			a.currentBlock.ext.minTID = a.currentTID
+			a.currentBlock.payload.LIDs = a.currentBlock.payload.LIDs[:0]
+			a.currentBlock.payload.Offsets = a.currentBlock.payload.Offsets[:1]
+		}
+
+		a.isEndOfToken = false
+		a.currentBlock.ext.maxTID = a.currentTID
+		a.currentBlock.payload.LIDs = append(a.currentBlock.payload.LIDs, lid)
+	}
+
+	a.isEndOfToken = true
+	a.currentBlock.payload.Offsets = append(
+		a.currentBlock.payload.Offsets,
+		uint32(len(a.currentBlock.payload.LIDs)),
+	)
+
+	return nil
+}
+
+func (a *lidAccumulator) Finalize() error {
+	return a.onBlock(a.finalizeBlock())
+}
+
+func (a *lidAccumulator) finalizeBlock() lidsSealBlock {
+	if !a.isEndOfToken {
+		a.currentBlock.payload.Offsets = append(
+			a.currentBlock.payload.Offsets,
+			uint32(len(a.currentBlock.payload.LIDs)),
 		)
-
-		// Process each batch of tokens
-		for tokens := range tokenBatches {
-			idx++
-			// Initialize new block
-			block.ext.minTID = currentTID + 1
-			block.payload.Payload = block.payload.Payload[:0]
-			block.payload.Offsets = block.payload.Offsets[:0]
-
-			// Process each token in current batch
-			for _, tokenData := range tokens {
-				currentTID++
-				// Store offset to current token
-				block.payload.Offsets = append(block.payload.Offsets, uint32(len(block.payload.Payload)))
-				// Store token length (little-endian) followed by token bytes
-				block.payload.Payload = binary.LittleEndian.AppendUint32(block.payload.Payload, uint32(len(tokenData)))
-				block.payload.Payload = append(block.payload.Payload, tokenData...)
-			}
-
-			block.ext.maxTID = currentTID
-
-			// Yield completed block
-			if !yield(idx, block) {
-				return
-			}
-		}
 	}
+
+	result := a.currentBlock
+	result.payload.IsLastLID = a.isEndOfToken
+	result.ext.isContinued = a.isContinued
+
+	a.isContinued = !a.isEndOfToken
+	return result
 }

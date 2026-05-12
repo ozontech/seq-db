@@ -6,6 +6,7 @@ package util
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -141,4 +142,22 @@ func VisitFilesWithExt(des []os.DirEntry, ext string, cb func(name string) error
 		}
 	}
 	return nil
+}
+
+// CopyFile copies a file (overwrites if already exists)
+func CopyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC, 0o666)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
 }
