@@ -6,7 +6,9 @@ import (
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/query"
+	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -62,7 +64,88 @@ func (s *FractionDataSource) scan() error {
 	if err != nil {
 		return err
 	}
+	if len(qpr.IDs) == 0 {
+		return nil
+	}
 	docs, err := s.frac.Fetch(s.Ctx(), qpr.IDs.IDs())
+	if err != nil {
+		return err
+	}
+
+	s.qpr = qpr
+	s.docs = docs
+
+	return nil
+}
+
+type SearcherDataSource struct {
+	ctx context.Context
+	tr  *querytracer.Tracer
+
+	searchParams processor.SearchParams // TODO: ???
+
+	fracManager *fracmanager.FracManager
+	searcher    *fracmanager.Searcher
+	fetcher     *fracmanager.Fetcher
+
+	qpr       *seq.QPR
+	docs      [][]byte
+	curDocIdx int
+}
+
+func NewSearcherDataSource(
+	ctx context.Context,
+	tr *querytracer.Tracer,
+	searchParams processor.SearchParams,
+	fracManager *fracmanager.FracManager,
+	searcher *fracmanager.Searcher,
+	fetcher *fracmanager.Fetcher,
+) *SearcherDataSource {
+	return &SearcherDataSource{
+		ctx:          ctx,
+		tr:           tr,
+		searchParams: searchParams,
+		fracManager:  fracManager,
+		searcher:     searcher,
+		fetcher:      fetcher,
+	}
+}
+
+func (s *SearcherDataSource) Next() (*query.Record, *query.Metadata) {
+	if len(s.docs) == 0 {
+		if err := s.scan(); err != nil {
+			return nil, &query.Metadata{Err: err}
+		}
+	}
+
+	if s.curDocIdx >= len(s.docs) {
+		return nil, nil
+	}
+
+	docRecord := makeDocumentRecord(s.qpr.IDs[s.curDocIdx].ID, s.docs[s.curDocIdx])
+	s.curDocIdx++
+
+	return docRecord, nil
+}
+
+func (s *SearcherDataSource) Ctx() context.Context {
+	if s.ctx == nil {
+		return context.Background()
+	}
+	return s.ctx
+}
+
+func (s *SearcherDataSource) scan() error {
+	qpr, err := s.searcher.SearchDocs(s.Ctx(), s.fracManager.Fractions(), s.searchParams, s.tr)
+	if err != nil {
+		return err
+	}
+
+	if len(qpr.IDs) == 0 {
+		return nil
+	}
+
+	docs, err := s.fetcher.FetchDocs(s.Ctx(), s.fracManager.Fractions(), qpr.IDs)
 	if err != nil {
 		return err
 	}

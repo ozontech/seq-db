@@ -10,9 +10,11 @@ import (
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/storeapi"
+	"github.com/ozontech/seq-db/query/exec"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
@@ -54,11 +56,106 @@ func (g *GrpcV1) doOnePhaseSearch(
 	statsAggs := extractStatsPipesFromQuery(req.Query)
 	hasAggs := len(statsAggs) > 0
 
+	useNewQueryEngine := true
+	if useNewQueryEngine {
+		return g.doOnePhaseSearchNewQueryEngine(ctx, req, stream)
+	}
+
 	if hasAggs {
 		return g.doOnePhaseSearchWithAggs(ctx, req, stream, statsAggs)
 	}
 
 	return g.doOnePhaseSearchDocs(ctx, req, stream)
+}
+
+func (g *GrpcV1) doOnePhaseSearchNewQueryEngine(
+	ctx context.Context,
+	req *storeapi.OnePhaseSearchRequest,
+	stream storeapi.StoreApi_OnePhaseSearchServer,
+) error {
+	tr := querytracer.New(req.Explain, "store/OnePhaseSearchDocs")
+
+	ast, err := g.parseQuery(req.Query)
+	if err != nil {
+		return fmt.Errorf("parseQuery error: %w", err)
+	}
+
+	from := seq.MillisToMID(uint64(seq.TimeToMID(req.From.AsTime())))
+	to := seq.MillisToMID(uint64(seq.TimeToMID(req.To.AsTime())))
+
+	searchParams := processor.SearchParams{
+		AST:       ast,
+		From:      from,
+		To:        to,
+		Limit:     int(req.Size + req.Offset),
+		WithTotal: req.WithTotal,
+		Order:     req.Order.MustDocsOrder(),
+	}
+
+	err = stream.Send(&storeapi.OnePhaseSearchResponse{
+		ResponseType: &storeapi.OnePhaseSearchResponse_Header{
+			Header: &storeapi.Header{
+				Metadata: &storeapi.Metadata{}, // TODO: fill metadata
+				Typing: []*storeapi.Typing{
+					// TODO: conditional typing
+					{Title: "mid", Type: storeapi.DataType_UINT64},
+					{Title: "rid", Type: storeapi.DataType_UINT64},
+					{Title: "data", Type: storeapi.DataType_RAW_DOCUMENT},
+				},
+			},
+		},
+	})
+	if err != nil {
+		if util.IsCancelled(ctx) {
+			logger.Info("one phase search request is canceled")
+			return nil
+		}
+		return fmt.Errorf("error sending header: %w", err)
+	}
+
+	dataSource := exec.NewSearcherDataSource(ctx, tr, searchParams, g.fracManager, g.searchData.searcher, g.fetchData.docFetcher)
+	// TODO: configurable executors
+	filter := exec.NewFilter(dataSource, 2, exec.NewDocFilter("message", exec.NewEq("dg guillotine 2")))
+	limiter := exec.NewLimiter(filter, 5)
+
+	producer := limiter
+	curRecord, curMeta := producer.Next()
+	for {
+		if curMeta != nil && curMeta.Err != nil {
+			return fmt.Errorf("producer.Next() error: %w", err)
+		}
+		if curRecord == nil {
+			break
+		}
+
+		err = stream.Send(&storeapi.OnePhaseSearchResponse{
+			ResponseType: &storeapi.OnePhaseSearchResponse_Batch{
+				Batch: &storeapi.RecordsBatch{
+					// TODO: batch
+					Records: []*storeapi.Record{
+						{
+							RawData: [][]byte{
+								curRecord.Vals[0].RawData(),
+								curRecord.Vals[1].RawData(),
+								curRecord.Vals[2].RawData(),
+							},
+						},
+					},
+				},
+			},
+		})
+		if err != nil {
+			if util.IsCancelled(ctx) {
+				logger.Info("one phase search request is canceled")
+				return nil
+			}
+			return fmt.Errorf("error sending fetched docs: %w", err)
+		}
+
+		curRecord, curMeta = producer.Next()
+	}
+
+	return nil
 }
 
 func (g *GrpcV1) doOnePhaseSearchDocs(
