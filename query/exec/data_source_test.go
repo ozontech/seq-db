@@ -64,7 +64,7 @@ func TestFractionDataSource(t *testing.T) {
 	limiter := NewLimiter(dataSource, limit)
 
 	outputData := make([]*query.Record, 0)
-	for r, has := limiter.Next(); has; r, has = limiter.Next() {
+	for r, _ := limiter.Next(); r != nil; r, _ = limiter.Next() {
 		outputData = append(outputData, r)
 	}
 

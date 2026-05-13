@@ -74,7 +74,7 @@ func testFilter[T any](
 	filter := NewFilter(&input, colIdx, filterExpr)
 
 	outputData := make([]*query.Record, 0)
-	for r, has := filter.Next(); has; r, has = filter.Next() {
+	for r, _ := filter.Next(); r != nil; r, _ = filter.Next() {
 		outputData = append(outputData, r)
 	}
 

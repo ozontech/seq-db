@@ -19,17 +19,20 @@ func NewLimiter(
 	}
 }
 
-func (l *Limiter) Next() (*query.Record, bool) {
+func (l *Limiter) Next() (*query.Record, *query.Metadata) {
 	if l.produced >= l.limit {
-		return nil, false
+		return nil, nil
 	}
 
-	r, has := l.input.Next()
-	if !has {
-		return nil, false
+	r, meta := l.input.Next()
+	if meta != nil {
+		return nil, meta
+	}
+	if r == nil {
+		return nil, nil
 	}
 
 	l.produced++
 
-	return r, true
+	return r, nil
 }

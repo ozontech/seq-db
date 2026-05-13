@@ -16,8 +16,9 @@ type FractionDataSource struct {
 	frac         frac.Fraction
 	searchParams processor.SearchParams
 
-	qpr      *seq.QPR
-	curIdIdx int
+	qpr       *seq.QPR
+	docs      [][]byte
+	curDocIdx int
 }
 
 func NewFractionDatasource(
@@ -32,23 +33,21 @@ func NewFractionDatasource(
 	}
 }
 
-func (s *FractionDataSource) Next() (*query.Record, bool) {
-	if s.qpr == nil {
-		s.scan()
+func (s *FractionDataSource) Next() (*query.Record, *query.Metadata) {
+	if len(s.docs) == 0 {
+		if err := s.scan(); err != nil {
+			return nil, &query.Metadata{Err: err}
+		}
 	}
 
-	if s.curIdIdx >= len(s.qpr.IDs) {
-		return nil, false
+	if s.curDocIdx >= len(s.docs) {
+		return nil, nil
 	}
 
-	curId := s.qpr.IDs[s.curIdIdx]
-	fetched, err := s.frac.Fetch(s.Ctx(), []seq.ID{curId.ID}) // TODO: fetch all ids in single request
-	if err != nil {
-		panic(err) // TODO: error handling
-	}
+	docRecord := makeDocumentRecord(s.qpr.IDs[s.curDocIdx].ID, s.docs[s.curDocIdx])
+	s.curDocIdx++
 
-	s.curIdIdx++
-	return makeDocumentRecord(curId.ID, fetched[0]), true
+	return docRecord, nil
 }
 
 func (s *FractionDataSource) Ctx() context.Context {
@@ -58,12 +57,20 @@ func (s *FractionDataSource) Ctx() context.Context {
 	return s.ctx
 }
 
-func (s *FractionDataSource) scan() {
+func (s *FractionDataSource) scan() error {
 	qpr, err := s.frac.Search(s.Ctx(), s.searchParams)
 	if err != nil {
-		panic(err) // TODO: error handling
+		return err
 	}
+	docs, err := s.frac.Fetch(s.Ctx(), qpr.IDs.IDs())
+	if err != nil {
+		return err
+	}
+
 	s.qpr = qpr
+	s.docs = docs
+
+	return nil
 }
 
 func makeDocumentRecord(id seq.ID, payload []byte) *query.Record {

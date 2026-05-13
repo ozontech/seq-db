@@ -29,7 +29,7 @@ func testLimiter(t *testing.T, limit uint32) {
 	limiter := NewLimiter(&input, limit)
 
 	outputData := make([]*query.Record, 0)
-	for r, has := limiter.Next(); has; r, has = limiter.Next() {
+	for r, _ := limiter.Next(); r != nil; r, _ = limiter.Next() {
 		outputData = append(outputData, r)
 	}
 
@@ -41,15 +41,15 @@ type testProducer struct {
 	cur  int
 }
 
-func (p *testProducer) Next() (*query.Record, bool) {
+func (p *testProducer) Next() (*query.Record, *query.Metadata) {
 	if p.cur >= len(p.data) {
-		return nil, false
+		return nil, nil
 	}
 
 	r := p.data[p.cur]
 	p.cur++
 
-	return r, true
+	return r, nil
 }
 
 func makeTestInputRecords(count int) []*query.Record {

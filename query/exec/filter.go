@@ -31,17 +31,19 @@ func NewFilter[T any](
 	}
 }
 
-func (f *Filter[T]) Next() (*query.Record, bool) {
+func (f *Filter[T]) Next() (*query.Record, *query.Metadata) {
 	for {
-		r, has := f.input.Next()
-		if !has {
-			return nil, false
+		r, meta := f.input.Next()
+		if meta != nil {
+			return nil, meta
+		}
+		if r == nil {
+			return nil, nil
 		}
 
-		// TODO: some comparisons don't need decoded data
 		passes := f.expr.Eval(r.Vals[f.colIdx].Decoded().(T))
 		if passes {
-			return r, true
+			return r, nil
 		}
 	}
 }
