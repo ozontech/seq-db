@@ -15,9 +15,11 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
-const DistributionMaxInterval = 24 * time.Hour
-const DistributionBucket = time.Minute
-const DistributionSpreadThreshold = 10 * time.Minute
+const (
+	DistributionMaxInterval     = 24 * time.Hour
+	DistributionBucket          = time.Minute
+	DistributionSpreadThreshold = 10 * time.Minute
+)
 
 type Info struct {
 	Path          string                   `json:"name"`

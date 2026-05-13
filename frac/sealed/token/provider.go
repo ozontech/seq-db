@@ -1,6 +1,7 @@
 package token
 
 import (
+	"math"
 	"sort"
 )
 
@@ -15,9 +16,9 @@ type Provider struct {
 
 func NewProvider(loader *BlockLoader, entries []*TableEntry) *Provider {
 	return &Provider{
-		loader:   loader,
-		entries:  entries,
-		curEntry: nil,
+		loader:        loader,
+		entries:       entries,
+		curBlockIndex: math.MaxUint32, // sentinel: no block loaded yet
 	}
 }
 
