@@ -17,15 +17,24 @@ const CacheKeyTable = 1
 
 type TableLoader struct {
 	fracName string
-	reader   *storage.IndexReader
-	cache    *cache.Cache[Table]
-	i        uint32
-	buf      []byte
+	isLegacy bool
+
+	reader *storage.IndexReader
+	cache  *cache.Cache[Table]
+
+	i   uint32
+	buf []byte
 }
 
-func NewTableLoader(fracName string, reader *storage.IndexReader, c *cache.Cache[Table]) *TableLoader {
+func NewTableLoader(
+	fracName string,
+	isLegacy bool,
+	reader *storage.IndexReader,
+	c *cache.Cache[Table],
+) *TableLoader {
 	return &TableLoader{
 		fracName: fracName,
+		isLegacy: isLegacy,
 		reader:   reader,
 		cache:    c,
 	}
@@ -33,10 +42,21 @@ func NewTableLoader(fracName string, reader *storage.IndexReader, c *cache.Cache
 
 func (l *TableLoader) Load() Table {
 	table, err := l.cache.GetWithError(CacheKeyTable, func() (Table, int, error) {
-		blocks, err := l.loadBlocks()
+		var (
+			blocks []TableBlock
+			err    error
+		)
+
+		if l.isLegacy {
+			blocks, err = l.loadBlocksLegacy()
+		} else {
+			blocks, err = l.loadBlocks()
+		}
+
 		if err != nil {
 			return nil, 0, err
 		}
+
 		table := TableFromBlocks(blocks)
 		return table, table.Size(), nil
 	})
@@ -45,11 +65,13 @@ func (l *TableLoader) Load() Table {
 			zap.String("frac", l.fracName),
 			zap.Error(err))
 	}
+
 	return table
 }
 
 func TableFromBlocks(blocks []TableBlock) Table {
 	table := make(Table)
+
 	for _, block := range blocks {
 		for _, ft := range block.FieldsTables {
 			fd, ok := table[ft.Field]
@@ -62,13 +84,16 @@ func TableFromBlocks(blocks []TableBlock) Table {
 			} else if minVal < fd.MinVal {
 				fd.MinVal = minVal
 			}
+
 			for _, e := range ft.Entries {
 				e.MinVal = ""
 				fd.Entries = append(fd.Entries, e)
 			}
+
 			table[ft.Field] = fd
 		}
 	}
+
 	return table
 }
 
@@ -88,11 +113,11 @@ func (l *TableLoader) readBlock() ([]byte, error) {
 	return block, err
 }
 
-func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
-	// todo: scan all headers in sealed_loader and remember startIndex for each sections
-	// todo: than use this startIndex to load sections on demand (do not scan every time)
-	l.i = 1
-	for h := l.readHeader(); h.Len() > 0; h = l.readHeader() { // skip actual token blocks, go for token table
+func (l *TableLoader) loadBlocksLegacy() ([]TableBlock, error) {
+	l.i = 1 // Skip info block immediately.
+
+	for h := l.readHeader(); h.Len() > 0; h = l.readHeader() {
+		// Skip token blocks, go for token table.
 	}
 
 	blocks := make([]TableBlock, 0)
@@ -104,6 +129,35 @@ func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
 		tb.Unpack(blockData)
 		blocks = append(blocks, tb)
 	}
+
+	return blocks, nil
+}
+
+func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
+	l.i = 0
+
+	blocksCount, err := l.reader.BlocksCount()
+	if err != nil {
+		return nil, err
+	}
+
+	for h := l.readHeader(); h.Len() > 0; h = l.readHeader() {
+		// Skip token blocks, go for token table.
+	}
+
+	var blocks []TableBlock
+	for l.i < uint32(blocksCount) {
+		data, err := l.readBlock()
+		if err != nil {
+			return nil, err
+		}
+
+		var tb TableBlock
+		tb.Unpack(data)
+
+		blocks = append(blocks, tb)
+	}
+
 	return blocks, nil
 }
 
