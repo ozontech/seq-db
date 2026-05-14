@@ -79,3 +79,55 @@ func TestParsePipeStatsQuantile(t *testing.T) {
 
 	test("service:my-service | stats quantile(response_time, 0.5, 0.95) by (service)", "service:my-service | stats quantile(response_time, 0.5, 0.95) by (service)")
 }
+
+func TestParsePipeFilter(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test(`service:my_service | filter field:"some value"`, `service:my_service | filter field:"some value"`)
+	test(`service:my_service | filter field:value`, `service:my_service | filter field:value`)
+}
+
+func TestParsePipeFilterErrors(t *testing.T) {
+	test := func(q string) {
+		t.Helper()
+		_, err := ParseSeqQL(q, nil)
+		require.Error(t, err)
+	}
+
+	test(`service:my_service | filter`)
+	test(`service:my_service | filter field`)
+	test(`service:my_service | filter :value`)
+	test(`service:my_service | filter a:1 | filter b:2`)
+}
+
+func TestParsePipeLimit(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test("service:my_service | limit 10", "service:my_service | limit 10")
+	test("service:my_service | limit 100", "service:my_service | limit 100")
+	test(`service:my_service | filter unindexed_field:"value" | limit 50`, `service:my_service | filter unindexed_field:value | limit 50`)
+}
+
+func TestParsePipeLimitErrors(t *testing.T) {
+	test := func(q string) {
+		t.Helper()
+		_, err := ParseSeqQL(q, nil)
+		require.Error(t, err)
+	}
+
+	test(`service:my_service | limit`)
+	test(`service:my_service | limit abc`)
+	test(`service:my_service | limit 0`)
+	test(`service:my_service | limit -1`)
+	test(`service:my_service | limit 10 | limit 20`)
+}

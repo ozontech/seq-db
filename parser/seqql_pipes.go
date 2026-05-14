@@ -12,8 +12,9 @@ type Pipe interface {
 }
 
 func parsePipes(lex *lexer) ([]Pipe, error) {
-	// Counter of 'fields' pipes.
 	fieldFilters := 0
+	filterPipes := 0
+	limitPipes := 0
 	var pipes []Pipe
 	for !lex.IsEnd() {
 		if !lex.IsKeyword("|") {
@@ -35,12 +36,32 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 				return nil, fmt.Errorf("parsing 'stats' pipe: %s", err)
 			}
 			pipes = append(pipes, p)
+		case lex.IsKeyword("filter"):
+			p, err := parsePipeFilter(lex)
+			if err != nil {
+				return nil, fmt.Errorf("parsing 'filter' pipe: %s", err)
+			}
+			pipes = append(pipes, p)
+			filterPipes++
+		case lex.IsKeyword("limit"):
+			p, err := parsePipeLimit(lex)
+			if err != nil {
+				return nil, fmt.Errorf("parsing 'limit' pipe: %s", err)
+			}
+			pipes = append(pipes, p)
+			limitPipes++
 		default:
 			return nil, fmt.Errorf("unknown pipe: %s", lex.Token)
 		}
 
 		if fieldFilters > 1 {
 			return nil, fmt.Errorf("multiple field filters is not allowed")
+		}
+		if filterPipes > 1 {
+			return nil, fmt.Errorf("multiple filter pipes is not allowed")
+		}
+		if limitPipes > 1 {
+			return nil, fmt.Errorf("multiple limit pipes is not allowed")
 		}
 	}
 	return pipes, nil
@@ -112,6 +133,26 @@ func (p *PipeStats) DumpSeqQL(o *strings.Builder) {
 	}
 }
 
+type FilterCondition struct {
+	Field string
+	Value string
+}
+
+type PipeFilter struct {
+	Condition FilterCondition
+}
+
+func (f *PipeFilter) Name() string {
+	return "filter"
+}
+
+func (f *PipeFilter) DumpSeqQL(o *strings.Builder) {
+	o.WriteString("filter ")
+	o.WriteString(quoteTokenIfNeeded(f.Condition.Field))
+	o.WriteString(":")
+	o.WriteString(quoteTokenIfNeeded(f.Condition.Value))
+}
+
 func parsePipeFields(lex *lexer) (*PipeFields, error) {
 	if !lex.IsKeyword("fields") {
 		return nil, fmt.Errorf("missing 'fields' keyword")
@@ -160,6 +201,80 @@ func parsePipeStats(lex *lexer) (*PipeStats, error) {
 	}
 
 	return &PipeStats{Aggs: aggs}, nil
+}
+
+func parsePipeFilter(lex *lexer) (*PipeFilter, error) {
+	if !lex.IsKeyword("filter") {
+		return nil, fmt.Errorf("missing 'filter' keyword")
+	}
+	lex.Next()
+
+	field, err := parseCompositeTokenReplaceWildcards(lex)
+	if err != nil {
+		return nil, fmt.Errorf("parsing field name: %s", err)
+	}
+	if field == "" {
+		return nil, fmt.Errorf("empty field name")
+	}
+
+	if !lex.IsKeyword(":") {
+		return nil, fmt.Errorf("missing ':' after %q", field)
+	}
+	lex.Next()
+
+	if lex.IsKeyword("") {
+		return nil, fmt.Errorf("missing filter value for field %q", field)
+	}
+
+	value, err := parseCompositeTokenReplaceWildcards(lex)
+	if err != nil {
+		return nil, fmt.Errorf("parsing filter value: %s", err)
+	}
+
+	return &PipeFilter{
+		Condition: FilterCondition{
+			Field: field,
+			Value: value,
+		},
+	}, nil
+}
+
+type PipeLimit struct {
+	Limit int
+}
+
+func (l *PipeLimit) Name() string {
+	return "limit"
+}
+
+func (l *PipeLimit) DumpSeqQL(o *strings.Builder) {
+	o.WriteString("limit ")
+	o.WriteString(strconv.Itoa(l.Limit))
+}
+
+func parsePipeLimit(lex *lexer) (*PipeLimit, error) {
+	if !lex.IsKeyword("limit") {
+		return nil, fmt.Errorf("missing 'limit' keyword")
+	}
+	lex.Next()
+
+	limitStr := lex.Token
+	if limitStr == "" {
+		return nil, fmt.Errorf("missing limit value")
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid limit value: %s", limitStr)
+	}
+
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be greater than 0, got %d", limit)
+	}
+
+	lex.Next()
+
+	return &PipeLimit{Limit: limit}, nil
 }
 
 func parseStatsAgg(lex *lexer) (StatsAgg, error) {
@@ -308,7 +423,7 @@ var reservedKeywords = uniqueTokens([]string{
 	"|",
 
 	// Pipe specific keywords.
-	"fields", "except", "stats", "by", "interval", "unique_count",
+	"fields", "except", "filter", "limit", "stats", "by", "interval", "unique_count",
 })
 
 func needQuoteToken(s string) bool {

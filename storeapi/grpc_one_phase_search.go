@@ -19,7 +19,6 @@ import (
 	"github.com/ozontech/seq-db/query/exec"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/tracing"
 	"github.com/ozontech/seq-db/util"
 )
@@ -55,25 +54,25 @@ func (g *GrpcV1) doOnePhaseSearch(
 	req *storeapi.OnePhaseSearchRequest,
 	stream storeapi.StoreApi_OnePhaseSearchServer,
 ) error {
-	statsAggs := extractStatsPipesFromQuery(req.Query)
-	hasAggs := len(statsAggs) > 0
-
-	useNewQueryEngine := true
-	if useNewQueryEngine {
-		return g.doOnePhaseSearchNewQueryEngine(ctx, req, stream)
+	seqql, err := parser.ParseSeqQL(req.Query, g.mappingProvider.GetMapping())
+	if err != nil {
+		return fmt.Errorf("parse query error: %w", err)
 	}
 
+	statsAggs := extractStatsPipesFromSeqQL(seqql)
+	hasAggs := len(statsAggs) > 0
 	if hasAggs {
 		return g.doOnePhaseSearchWithAggs(ctx, req, stream, statsAggs)
 	}
 
-	return g.doOnePhaseSearchDocs(ctx, req, stream)
+	return g.doOnePhaseSearchDocs(ctx, req, stream, seqql)
 }
 
-func (g *GrpcV1) doOnePhaseSearchNewQueryEngine(
+func (g *GrpcV1) doOnePhaseSearchDocs(
 	ctx context.Context,
 	req *storeapi.OnePhaseSearchRequest,
 	stream storeapi.StoreApi_OnePhaseSearchServer,
+	seqql parser.SeqQLQuery,
 ) error {
 	metric.SearchInFlightQueriesTotal.Inc()
 	defer metric.SearchInFlightQueriesTotal.Dec()
@@ -122,7 +121,7 @@ func (g *GrpcV1) doOnePhaseSearchNewQueryEngine(
 		return fmt.Errorf("error sending header: %w", err)
 	}
 
-	producer, err := g.buildProducer(ctx, req, tr)
+	producer, err := g.buildProducer(ctx, req, tr, seqql)
 
 	curRecord, curMeta := producer.Next()
 	for {
@@ -169,14 +168,10 @@ func (g *GrpcV1) buildProducer(
 	ctx context.Context,
 	req *storeapi.OnePhaseSearchRequest,
 	tr *querytracer.Tracer,
+	seqql parser.SeqQLQuery,
 ) (query.RecordProducer, error) {
-	ast, err := g.parseQuery(req.Query)
-	if err != nil {
-		return nil, fmt.Errorf("parseQuery error: %w", err)
-	}
-
 	searchParams := processor.SearchParams{
-		AST:       ast,
+		AST:       seqql.Root,
 		From:      seq.MillisToMID(uint64(seq.TimeToMID(req.From.AsTime()))),
 		To:        seq.MillisToMID(uint64(seq.TimeToMID(req.To.AsTime()))),
 		Limit:     int(req.Size + req.Offset),
@@ -187,105 +182,24 @@ func (g *GrpcV1) buildProducer(
 	var producer query.RecordProducer
 
 	dataSource := exec.NewSearcherDataSource(ctx, tr, searchParams, g.fracManager, g.searchData.searcher, g.fetchData.docFetcher)
-	// TODO: extract filter and limit parameters to seq-ql
-	filter := exec.NewFilter(dataSource, 2, exec.NewDocFilter("message", exec.NewEq("dg guillotine 2")))
-	limiter := exec.NewLimiter(filter, 5)
-	producer = limiter
+	producer = dataSource
+
+	for _, pipe := range seqql.Pipes {
+		switch p := pipe.(type) {
+		case *parser.PipeFilter:
+			producer = exec.NewFilter(producer, 2, exec.NewDocFilter(p.Condition.Field, exec.NewEq(p.Condition.Value)))
+		case *parser.PipeLimit:
+			producer = exec.NewLimiter(producer, uint32(p.Limit))
+		default:
+			continue
+		}
+	}
 
 	if req.FieldsFilter != nil && len(req.FieldsFilter.Fields) > 0 {
-		projector := exec.NewDocPrejector(limiter, 2, req.FieldsFilter)
-		producer = projector
+		producer = exec.NewDocPrejector(producer, 2, req.FieldsFilter)
 	}
 
 	return producer, nil
-}
-
-func (g *GrpcV1) doOnePhaseSearchDocs(
-	ctx context.Context,
-	req *storeapi.OnePhaseSearchRequest,
-	stream storeapi.StoreApi_OnePhaseSearchServer,
-) error {
-	tr := querytracer.New(req.Explain, "store/OnePhaseSearchDocs")
-	data, err := g.doSearch(ctx, &storeapi.SearchRequest{
-		Query:     req.Query,
-		From:      int64(seq.TimeToMID(req.From.AsTime())),
-		To:        int64(seq.TimeToMID(req.To.AsTime())),
-		Size:      req.Size,
-		Offset:    req.Offset,
-		Explain:   req.Explain,
-		WithTotal: req.WithTotal,
-		Order:     req.Order,
-		OffsetId:  req.OffsetId,
-	}, tr)
-	if err != nil {
-		return fmt.Errorf("search error: %w", err)
-	}
-
-	tr.Done()
-	if req.Explain && data != nil {
-		data.Explain = tracerSpanToExplainEntry(tr.ToSpan())
-	}
-
-	err = stream.Send(&storeapi.OnePhaseSearchResponse{
-		ResponseType: &storeapi.OnePhaseSearchResponse_Header{
-			Header: &storeapi.Header{
-				Metadata: &storeapi.Metadata{
-					Total:   data.Total,
-					Code:    data.Code,
-					Errors:  data.Errors,
-					Explain: data.Explain,
-				},
-				Typing: []*storeapi.Typing{
-					// TODO: conditional typing
-					{Title: "mid", Type: storeapi.DataType_UINT64},
-					{Title: "rid", Type: storeapi.DataType_UINT64},
-					{Title: "data", Type: storeapi.DataType_RAW_DOCUMENT},
-				},
-			},
-		},
-	})
-	if err != nil {
-		if util.IsCancelled(ctx) {
-			logger.Info("one phase search request is canceled")
-			return nil
-		}
-		return fmt.Errorf("error sending fetched docs: %w", err)
-	}
-
-	ids := make(seq.IDSources, 0, len(data.IdSources))
-	for _, id := range data.IdSources {
-		ids = append(ids, seq.IDSource{
-			ID:   seq.ID{MID: seq.MID(id.Id.Mid), RID: seq.RID(id.Id.Rid)},
-			Hint: id.Hint,
-		})
-	}
-
-	send := func(block []byte) error {
-		// TODO: get rid of hardcode
-		docBlock := storage.DocBlock(block)
-		return stream.Send(&storeapi.OnePhaseSearchResponse{
-			ResponseType: &storeapi.OnePhaseSearchResponse_Batch{
-				Batch: &storeapi.RecordsBatch{
-					// TODO: batch
-					Records: []*storeapi.Record{
-						{
-							RawData: [][]byte{
-								Uint64ToBytes(docBlock.GetExt1()),
-								Uint64ToBytes(docBlock.GetExt2()),
-								docBlock.Payload(),
-							},
-						},
-					},
-				},
-			},
-		})
-	}
-	err = g.doFetch(ctx, ids, req.FieldsFilter, req.Explain, send)
-	if err != nil {
-		return fmt.Errorf("fetch error: %w", err)
-	}
-
-	return nil
 }
 
 // TODO: bytes pool (???), varint (???)
@@ -394,16 +308,7 @@ func (g *GrpcV1) doOnePhaseSearchWithAggs(
 	return nil
 }
 
-func extractStatsPipesFromQuery(searchQuery string) []parser.StatsAgg {
-	if searchQuery == "" {
-		return nil
-	}
-
-	seqql, err := parser.ParseSeqQL(searchQuery, nil)
-	if err != nil {
-		return nil
-	}
-
+func extractStatsPipesFromSeqQL(seqql parser.SeqQLQuery) []parser.StatsAgg {
 	var result []parser.StatsAgg
 	for _, pipe := range seqql.Pipes {
 		statsPipe, ok := pipe.(*parser.PipeStats)
