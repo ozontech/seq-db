@@ -56,10 +56,11 @@ func makeTestInputRecords(count int) []*query.Record {
 	out := make([]*query.Record, 0, count)
 
 	for i := range count {
+		doc := fmt.Sprintf(`{"service":"service-%d","level":3,"k8s_pod":"pod-%d"}`, i, i)
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
 				query.NewRecordVals(query.DataTypeUint32, Uint32ToBytes(uint32(i))),
-				query.NewRecordVals(query.DataTypeDocument, fmt.Appendf([]byte{}, `{"service":"service-%d"}`, i)),
+				query.NewRecordVals(query.DataTypeDocument, []byte(doc)),
 			},
 		})
 	}

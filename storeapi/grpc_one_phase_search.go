@@ -12,8 +12,10 @@ import (
 
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/storeapi"
+	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/query/exec"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
@@ -73,26 +75,33 @@ func (g *GrpcV1) doOnePhaseSearchNewQueryEngine(
 	req *storeapi.OnePhaseSearchRequest,
 	stream storeapi.StoreApi_OnePhaseSearchServer,
 ) error {
+	metric.SearchInFlightQueriesTotal.Inc()
+	defer metric.SearchInFlightQueriesTotal.Dec()
+
+	inflightRequests := g.searchData.inflight.Inc()
+	defer g.searchData.inflight.Dec()
+
+	if inflightRequests > int64(g.config.Search.RequestsLimit) {
+		metric.RejectedRequests.WithLabelValues("search", "limit_exceeding").Inc()
+		return fmt.Errorf("too many search requests: %d > %d", inflightRequests, g.config.Search.RequestsLimit)
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	start := time.Now()
+
+	// in store mode hot we return error in case request wants data, that we've already rotated
+	// if g.config.StoreMode == StoreModeHot {
+	// 	if g.fracManager.Flags().IsCapacityExceeded() && g.earlierThanOldestFrac(uint64(req.From)) {
+	// 		metric.RejectedRequests.WithLabelValues("search", "old_data").Inc()
+	// 		return &storeapi.SearchResponse{Code: storeapi.SearchErrorCode_INGESTOR_QUERY_WANTS_OLD_DATA}, nil
+	// 	}
+	// }
+
 	tr := querytracer.New(req.Explain, "store/OnePhaseSearchDocs")
 
-	ast, err := g.parseQuery(req.Query)
-	if err != nil {
-		return fmt.Errorf("parseQuery error: %w", err)
-	}
-
-	from := seq.MillisToMID(uint64(seq.TimeToMID(req.From.AsTime())))
-	to := seq.MillisToMID(uint64(seq.TimeToMID(req.To.AsTime())))
-
-	searchParams := processor.SearchParams{
-		AST:       ast,
-		From:      from,
-		To:        to,
-		Limit:     int(req.Size + req.Offset),
-		WithTotal: req.WithTotal,
-		Order:     req.Order.MustDocsOrder(),
-	}
-
-	err = stream.Send(&storeapi.OnePhaseSearchResponse{
+	err := stream.Send(&storeapi.OnePhaseSearchResponse{
 		ResponseType: &storeapi.OnePhaseSearchResponse_Header{
 			Header: &storeapi.Header{
 				Metadata: &storeapi.Metadata{}, // TODO: fill metadata
@@ -113,12 +122,8 @@ func (g *GrpcV1) doOnePhaseSearchNewQueryEngine(
 		return fmt.Errorf("error sending header: %w", err)
 	}
 
-	dataSource := exec.NewSearcherDataSource(ctx, tr, searchParams, g.fracManager, g.searchData.searcher, g.fetchData.docFetcher)
-	// TODO: configurable executors
-	filter := exec.NewFilter(dataSource, 2, exec.NewDocFilter("message", exec.NewEq("dg guillotine 2")))
-	limiter := exec.NewLimiter(filter, 5)
+	producer, err := g.buildProducer(ctx, req, tr)
 
-	producer := limiter
 	curRecord, curMeta := producer.Next()
 	for {
 		if curMeta != nil && curMeta.Err != nil {
@@ -155,7 +160,44 @@ func (g *GrpcV1) doOnePhaseSearchNewQueryEngine(
 		curRecord, curMeta = producer.Next()
 	}
 
+	metric.SearchDurationSeconds.Observe(time.Since(start).Seconds())
+
 	return nil
+}
+
+func (g *GrpcV1) buildProducer(
+	ctx context.Context,
+	req *storeapi.OnePhaseSearchRequest,
+	tr *querytracer.Tracer,
+) (query.RecordProducer, error) {
+	ast, err := g.parseQuery(req.Query)
+	if err != nil {
+		return nil, fmt.Errorf("parseQuery error: %w", err)
+	}
+
+	searchParams := processor.SearchParams{
+		AST:       ast,
+		From:      seq.MillisToMID(uint64(seq.TimeToMID(req.From.AsTime()))),
+		To:        seq.MillisToMID(uint64(seq.TimeToMID(req.To.AsTime()))),
+		Limit:     int(req.Size + req.Offset),
+		WithTotal: req.WithTotal,
+		Order:     req.Order.MustDocsOrder(),
+	}
+
+	var producer query.RecordProducer
+
+	dataSource := exec.NewSearcherDataSource(ctx, tr, searchParams, g.fracManager, g.searchData.searcher, g.fetchData.docFetcher)
+	// TODO: extract filter and limit parameters to seq-ql
+	filter := exec.NewFilter(dataSource, 2, exec.NewDocFilter("message", exec.NewEq("dg guillotine 2")))
+	limiter := exec.NewLimiter(filter, 5)
+	producer = limiter
+
+	if req.FieldsFilter != nil && len(req.FieldsFilter.Fields) > 0 {
+		projector := exec.NewDocPrejector(limiter, 2, req.FieldsFilter)
+		producer = projector
+	}
+
+	return producer, nil
 }
 
 func (g *GrpcV1) doOnePhaseSearchDocs(
@@ -352,12 +394,12 @@ func (g *GrpcV1) doOnePhaseSearchWithAggs(
 	return nil
 }
 
-func extractStatsPipesFromQuery(query string) []parser.StatsAgg {
-	if query == "" {
+func extractStatsPipesFromQuery(searchQuery string) []parser.StatsAgg {
+	if searchQuery == "" {
 		return nil
 	}
 
-	seqql, err := parser.ParseSeqQL(query, nil)
+	seqql, err := parser.ParseSeqQL(searchQuery, nil)
 	if err != nil {
 		return nil
 	}
