@@ -11,6 +11,7 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/mappingprovider"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -33,6 +34,17 @@ type fakeDP struct {
 	qpr seq.QPR
 }
 
+type fakeFractionProvider fracmanager.List
+
+func (fp fakeFractionProvider) AcquireFraction(name string) (frac.Fraction, func(), bool) {
+	for _, f := range fp {
+		if f.Info().Name() == name {
+			return f, func() {}, true
+		}
+	}
+	return nil, func() {}, false
+}
+
 func TestAsyncSearcherMaintain(t *testing.T) {
 	r := require.New(t)
 
@@ -50,10 +62,11 @@ func TestAsyncSearcherMaintain(t *testing.T) {
 		Query:     "*",
 		Retention: time.Hour,
 	}
-	fracs := []frac.Fraction{
+
+	fracs := fracmanager.List{
 		&fakeFrac{info: common.Info{Path: "1"}},
 	}
-	r.NoError(as.StartSearch(req, fracs))
+	r.NoError(as.StartSearch(req, fracs.Names(), fakeFractionProvider(fracs)))
 
 	as.processWg.Wait()
 }

@@ -95,6 +95,10 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 	return &fm, stop, nil
 }
 
+func (fm *FracManager) AcquireFraction(name string) (frac.Fraction, func(), bool) {
+	return fm.lc.registry.AcquireFraction(name)
+}
+
 func (fm *FracManager) Fractions() List {
 	return fm.lc.registry.AllFractions()
 }
