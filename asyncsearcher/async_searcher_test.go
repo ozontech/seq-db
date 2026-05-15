@@ -26,7 +26,7 @@ func (f *fakeFrac) Info() *common.Info {
 	return &f.info
 }
 
-func (f *fakeFrac) IsIntersecting(from seq.MID, to seq.MID) bool {
+func (f *fakeFrac) IsIntersecting(from, to seq.MID) bool {
 	return true
 }
 
