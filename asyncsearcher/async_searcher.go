@@ -22,6 +22,7 @@ import (
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
@@ -73,6 +74,7 @@ type AsyncSearcherConfig struct {
 }
 
 type fractionAcquirer interface {
+	Fractions() fracmanager.List
 	AcquireFraction(name string) (_ frac.Fraction, release func(), ok bool)
 }
 
@@ -207,7 +209,7 @@ func (i *asyncSearchInfo) Status() AsyncSearchStatus {
 	return status
 }
 
-func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracNames []string, fracs fractionAcquirer) error {
+func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs fractionAcquirer) error {
 	if as.readOnly.Load() {
 		return fmt.Errorf("cannot start search on read-only mode")
 	}
@@ -238,6 +240,7 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracNames []string, f
 		return fmt.Errorf("retention time should be less than %s, got %s", maxRetention, r.Retention)
 	}
 
+	fracNames := fracs.Fractions().FilterInRange(r.Params.From, r.Params.To).Names()
 	if ok := as.saveSearchInfo(r, fracNames); !ok {
 		// Request was saved previously, skip it
 		return nil

@@ -26,6 +26,10 @@ func (f *fakeFrac) Info() *common.Info {
 	return &f.info
 }
 
+func (f *fakeFrac) IsIntersecting(from seq.MID, to seq.MID) bool {
+	return true
+}
+
 func (f *fakeFrac) Search(context.Context, processor.SearchParams) (*seq.QPR, error) {
 	return &f.dp.qpr, nil
 }
@@ -43,6 +47,10 @@ func (fp fakeFractionProvider) AcquireFraction(name string) (frac.Fraction, func
 		}
 	}
 	return nil, func() {}, false
+}
+
+func (fp fakeFractionProvider) Fractions() fracmanager.List {
+	return fracmanager.List(fp)
 }
 
 func TestAsyncSearcherMaintain(t *testing.T) {
@@ -63,10 +71,10 @@ func TestAsyncSearcherMaintain(t *testing.T) {
 		Retention: time.Hour,
 	}
 
-	fracs := fracmanager.List{
+	fracs := fakeFractionProvider{
 		&fakeFrac{info: common.Info{Path: "1"}},
 	}
-	r.NoError(as.StartSearch(req, fracs.Names(), fakeFractionProvider(fracs)))
+	r.NoError(as.StartSearch(req, fracs))
 
 	as.processWg.Wait()
 }
