@@ -4,6 +4,7 @@ import (
 	"cmp"
 
 	insaneJSON "github.com/ozontech/insane-json"
+
 	"github.com/ozontech/seq-db/query"
 )
 

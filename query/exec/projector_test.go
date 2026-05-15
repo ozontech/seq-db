@@ -37,7 +37,7 @@ func testDocProjector(t *testing.T, fieldsFilter *storeapi.FieldsFilter, wantDoc
 	inputData := makeTestInputRecords(2)
 	input := testProducer{data: inputData}
 
-	projector := NewDocPrejector(&input, 1, fieldsFilter)
+	projector := NewDocProjector(&input, 1, fieldsFilter)
 
 	outputData := make([]*query.Record, 0)
 	for r, _ := projector.Next(); r != nil; r, _ = projector.Next() {

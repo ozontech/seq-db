@@ -188,6 +188,12 @@ func (g *GrpcV1) buildProducer(
 		switch p := pipe.(type) {
 		case *parser.PipeFilter:
 			producer = exec.NewFilter(producer, 2, exec.NewDocFilter(p.Condition.Field, exec.NewEq(p.Condition.Value)))
+		case *parser.PipeSort:
+			order := exec.OrderAsc
+			if p.Order == "desc" {
+				order = exec.OrderDesc
+			}
+			producer = exec.NewDocSorter(producer, 2, p.Field, order)
 		case *parser.PipeLimit:
 			producer = exec.NewLimiter(producer, uint32(p.Limit))
 		default:
@@ -196,7 +202,7 @@ func (g *GrpcV1) buildProducer(
 	}
 
 	if req.FieldsFilter != nil && len(req.FieldsFilter.Fields) > 0 {
-		producer = exec.NewDocPrejector(producer, 2, req.FieldsFilter)
+		producer = exec.NewDocProjector(producer, 2, req.FieldsFilter)
 	}
 
 	return producer, nil

@@ -22,12 +22,13 @@ func (si *Ingestor) OnePhaseSearch(
 	sr *SearchRequest,
 	tr *querytracer.Tracer,
 ) (*seq.QPR, DocsIterator, AggsIterator, error) {
+	// TODO: handle consts.ErrIngestorQueryWantsOldData
 	searchStores := si.config.HotStores
 	if si.config.HotReadStores != nil && len(si.config.HotReadStores.Shards) > 0 {
 		searchStores = si.config.HotReadStores
 	}
 
-	host := searchStores.Shards[0][0] // TODO: handle multiple stores and shards
+	host := searchStores.Shards[0][0] // TODO: handle multiple stores and shards !!!
 
 	client, has := si.clients[host]
 	if !has {
@@ -77,6 +78,14 @@ func (si *Ingestor) OnePhaseSearch(
 	}
 
 	return qpr, &OnePhaseSearchDocsIterator{stream: stream, limit: sr.Size}, &OnePhaseSearchAggsIterator{stream: stream, limit: sr.Size}, nil
+}
+
+func (si *Ingestor) searchShardOnePhase() {
+	// TODO:
+}
+
+func (si *Ingestor) searchHostOnePhase() {
+	// TODO:
 }
 
 type OnePhaseSearchDocsIterator struct {

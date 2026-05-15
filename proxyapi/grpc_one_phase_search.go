@@ -61,11 +61,10 @@ func (g *grpcV1) OnePhaseSearch(ctx context.Context, req *seqproxyapi.SearchRequ
 
 	if hasAggs {
 		sResp.qpr.Aggs = convertAggsStreamToAggregationResults(aggsStream)
-		kek := aggregationArgsFromStatsAggs(statsAggs)
-		allAggs := sResp.qpr.Aggregate(kek)
+		allAggs := sResp.qpr.Aggregate(aggregationArgsFromStatsAggs(statsAggs))
 		resp.Aggs = makeProtoAggregation(allAggs)
 	} else {
-		resp.Docs = makeProtoDocsKek(sResp.docsStream)
+		resp.Docs = makeProtoDocsOnePhase(sResp.docsStream)
 	}
 
 	return resp, nil
@@ -96,7 +95,7 @@ func convertAggsStreamToAggregationResults(aggs search.AggsIterator) []seq.Aggre
 	return result
 }
 
-func makeProtoDocsKek(docs search.DocsIterator) []*seqproxyapi.Document {
+func makeProtoDocsOnePhase(docs search.DocsIterator) []*seqproxyapi.Document {
 	// TODO: paginate (???)
 	respDocs := make([]*seqproxyapi.Document, 0)
 	for doc, err := docs.Next(); err == nil; doc, err = docs.Next() {

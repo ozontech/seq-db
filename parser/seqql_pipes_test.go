@@ -131,3 +131,29 @@ func TestParsePipeLimitErrors(t *testing.T) {
 	test(`service:my_service | limit -1`)
 	test(`service:my_service | limit 10 | limit 20`)
 }
+
+func TestParsePipeSort(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test("service:my_service | sort message asc", "service:my_service | sort message asc")
+	test("service:my_service | sort message desc", "service:my_service | sort message desc")
+	test("service:my_service | sort message", "service:my_service | sort message asc")
+	test(`service:my_service | filter unindexed_field:"value" | sort message asc | limit 10`, `service:my_service | filter unindexed_field:value | sort message asc | limit 10`)
+}
+
+func TestParsePipeSortErrors(t *testing.T) {
+	test := func(q string) {
+		t.Helper()
+		_, err := ParseSeqQL(q, nil)
+		require.Error(t, err)
+	}
+
+	test(`service:my_service | sort`)
+	test(`service:my_service | sort field invalid_order`)
+	test(`service:my_service | sort a:1 | sort b:2`)
+}

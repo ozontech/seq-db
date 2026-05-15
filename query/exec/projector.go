@@ -16,7 +16,7 @@ type DocProjector struct {
 	decoderBuf []byte
 }
 
-func NewDocPrejector(
+func NewDocProjector(
 	input query.RecordProducer,
 	colIdx int,
 	filter *storeapi.FieldsFilter,

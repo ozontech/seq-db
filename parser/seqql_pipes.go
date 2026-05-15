@@ -15,6 +15,7 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 	fieldFilters := 0
 	filterPipes := 0
 	limitPipes := 0
+	sortPipes := 0
 	var pipes []Pipe
 	for !lex.IsEnd() {
 		if !lex.IsKeyword("|") {
@@ -50,6 +51,13 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 			}
 			pipes = append(pipes, p)
 			limitPipes++
+		case lex.IsKeyword("sort"):
+			p, err := parsePipeSort(lex)
+			if err != nil {
+				return nil, fmt.Errorf("parsing 'sort' pipe: %s", err)
+			}
+			pipes = append(pipes, p)
+			sortPipes++
 		default:
 			return nil, fmt.Errorf("unknown pipe: %s", lex.Token)
 		}
@@ -62,6 +70,9 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 		}
 		if limitPipes > 1 {
 			return nil, fmt.Errorf("multiple limit pipes is not allowed")
+		}
+		if sortPipes > 1 {
+			return nil, fmt.Errorf("multiple sort pipes is not allowed")
 		}
 	}
 	return pipes, nil
@@ -277,6 +288,48 @@ func parsePipeLimit(lex *lexer) (*PipeLimit, error) {
 	return &PipeLimit{Limit: limit}, nil
 }
 
+type PipeSort struct {
+	Field string
+	Order string
+}
+
+func (s *PipeSort) Name() string {
+	return "sort"
+}
+
+func (s *PipeSort) DumpSeqQL(o *strings.Builder) {
+	o.WriteString("sort ")
+	o.WriteString(quoteTokenIfNeeded(s.Field))
+	o.WriteString(" ")
+	o.WriteString(s.Order)
+}
+
+func parsePipeSort(lex *lexer) (*PipeSort, error) {
+	if !lex.IsKeyword("sort") {
+		return nil, fmt.Errorf("missing 'sort' keyword")
+	}
+	lex.Next()
+
+	field, err := parseCompositeTokenReplaceWildcards(lex)
+	if err != nil {
+		return nil, fmt.Errorf("parsing field name: %s", err)
+	}
+	if field == "" {
+		return nil, fmt.Errorf("empty field name")
+	}
+
+	order := "asc"
+	if lex.IsKeywords("asc", "desc") {
+		order = lex.Token
+		lex.Next()
+	}
+
+	return &PipeSort{
+		Field: field,
+		Order: order,
+	}, nil
+}
+
 func parseStatsAgg(lex *lexer) (StatsAgg, error) {
 	var agg StatsAgg
 
@@ -423,7 +476,7 @@ var reservedKeywords = uniqueTokens([]string{
 	"|",
 
 	// Pipe specific keywords.
-	"fields", "except", "filter", "limit", "stats", "by", "interval", "unique_count",
+	"fields", "except", "filter", "limit", "sort", "stats", "by", "interval", "unique_count", "asc", "desc",
 })
 
 func needQuoteToken(s string) bool {
