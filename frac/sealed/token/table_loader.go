@@ -102,32 +102,34 @@ func TableFromBlocks(blocks []TableBlock) Table {
 	return table
 }
 
-func (l *TableLoader) readHeader() storage.IndexBlockHeader {
-	h, e := l.reader.GetBlockHeader(l.tableIndex)
+func (l *TableLoader) readHeader(idx uint32) storage.IndexBlockHeader {
+	h, e := l.reader.GetBlockHeader(idx)
 	if e != nil {
 		logger.Panic("error reading block header", zap.Error(e))
 	}
-	l.tableIndex++
 	return h
 }
 
-func (l *TableLoader) readBlock() ([]byte, error) {
-	block, _, err := l.reader.ReadIndexBlock(l.tableIndex, l.buf)
+func (l *TableLoader) readBlock(idx uint32) ([]byte, error) {
+	block, _, err := l.reader.ReadIndexBlock(idx, l.buf)
 	l.buf = block
-	l.tableIndex++
 	return block, err
 }
 
 func (l *TableLoader) loadBlocksLegacy() ([]TableBlock, error) {
 	blocks := make([]TableBlock, 0)
 
-	for blockData, err := l.readBlock(); len(blockData) > 0; blockData, err = l.readBlock() {
+	blockIndex := l.tableIndex
+	for blockData, err := l.readBlock(blockIndex); len(blockData) > 0; blockData, err = l.readBlock(blockIndex) {
 		if err != nil {
 			return nil, err
 		}
-		tb := TableBlock{}
+
+		var tb TableBlock
 		tb.Unpack(blockData)
+
 		blocks = append(blocks, tb)
+		blockIndex += 1
 	}
 
 	return blocks, nil
@@ -140,8 +142,8 @@ func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
 	}
 
 	var blocks []TableBlock
-	for l.tableIndex < uint32(blocksCount) {
-		data, err := l.readBlock()
+	for blockIndex := l.tableIndex; blockIndex < uint32(blocksCount); blockIndex++ {
+		data, err := l.readBlock(blockIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -161,11 +163,16 @@ func (l *TableLoader) advanceToTable() {
 		// 	- in legacy fractions we have following layout: [info][token][separator][token-table][...];
 		//	- in non-legacy fraction we have following layout: [token][separator][token-table];
 		// As you can see, it is safe to start from 0-th block in both cases.
-		l.tableIndex = 0
+		blockIndex := uint32(0)
 
-		for h := l.readHeader(); h.Len() > 0; h = l.readHeader() {
+		for h := l.readHeader(blockIndex); h.Len() > 0; h = l.readHeader(blockIndex) {
 			// Skip token blocks, go for token table.
+			blockIndex += 1
 		}
+
+		// We've stopped iterating on section separator.
+		// Therefore increment is required to reach index of actual token table.
+		l.tableIndex = blockIndex + 1
 	})
 }
 
