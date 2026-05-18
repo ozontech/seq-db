@@ -458,10 +458,10 @@ func (smm *SkipMaskManager) processSkipMask(skipMask *SkipMask, fracs fractionAc
 				defer func() { <-smm.rateLimit }()
 
 				f, release, ok := fracs.AcquireFraction(fracNameFromFilePath(name))
-				defer release()
 				if !ok { // skip missing fracs
 					return
 				}
+				defer release()
 
 				if err := smm.processFrac(f, skipMask); err != nil {
 					if errors.Is(err, context.Canceled) {

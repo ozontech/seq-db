@@ -397,8 +397,6 @@ func compressQPR(qpr *seq.QPR, cb func(compressed []byte) error) error {
 
 func (as *AsyncSearcher) acquireAndProcessFrac(fracInfo fracSearchState, searchInfo asyncSearchInfo, fracs fractionAcquirer) (err error) {
 	f, release, ok := fracs.AcquireFraction(fracInfo.Name)
-	defer release()
-
 	if !ok { // oldest fracs may already be removed
 		logger.Info(
 			"async search: skip missing fraction",
@@ -407,6 +405,7 @@ func (as *AsyncSearcher) acquireAndProcessFrac(fracInfo fracSearchState, searchI
 		)
 		return
 	}
+	defer release()
 	return as.processFrac(f, searchInfo)
 }
 
