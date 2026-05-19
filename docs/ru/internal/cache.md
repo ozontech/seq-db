@@ -186,12 +186,14 @@ Each metric is collected separately for each layer.
 - ReattemptsTotal - number of times access method had to reattempt due to entry
   invalidation
 - SizeOccupied - counter of size of the values added to cache on miss
+- EntriesOccupied - counter of entries added to cache on miss
 - SizeRead - counter of size of the values retrieved on hit
--	SizeReleased - counter of size of data we released
+- SizeReleased - counter of size of data we released
+- EntriesReleased - counter of entries removed from cache
 - MapsRecreated - counter of events we recreate cache maps
 
 As a rule, `TouchTotal = HitsTotal + MissTotal + PanicsTotal`.
-Also `TotalSize = SizeOccupied - SizeReleased`.
+Also `TotalSize = SizeOccupied - SizeReleased` and `TotalEntries = EntriesOccupied - EntriesReleased`.
 MissTotal and SizeOccupied are the metrics to optimize cache.
 HitsTotal and SizeRead are the metrics to optimize cache use.
 Rising WaitTotal means concurrent access to the same not-yet-cached value.

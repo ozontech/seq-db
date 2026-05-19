@@ -16,6 +16,8 @@ type CacheMaintainerMetrics struct {
 	SizeRead        *prometheus.CounterVec
 	SizeOccupied    *prometheus.CounterVec
 	SizeReleased    *prometheus.CounterVec
+	EntriesOccupied *prometheus.CounterVec
+	EntriesReleased *prometheus.CounterVec
 	MapsRecreated   *prometheus.CounterVec
 	MissLatency     *prometheus.CounterVec
 
@@ -37,6 +39,8 @@ func newDefaultCacheMetrics() *CacheMaintainerMetrics {
 		SizeRead:        cacheSizeRead,
 		SizeOccupied:    cacheSizeOccupied,
 		SizeReleased:    cacheSizeReleased,
+		EntriesOccupied: cacheEntriesOccupied,
+		EntriesReleased: cacheEntriesReleased,
 		MapsRecreated:   cacheMapsRecreated,
 		MissLatency:     cacheMissLatencySec,
 
@@ -59,6 +63,8 @@ func (m *CacheMaintainerMetrics) GetLayerMetrics(layerName string) *cache.Metric
 		SizeRead:        m.SizeRead.WithLabelValues(layerName),
 		SizeOccupied:    m.SizeOccupied.WithLabelValues(layerName),
 		SizeReleased:    m.SizeReleased.WithLabelValues(layerName),
+		EntriesOccupied: m.EntriesOccupied.WithLabelValues(layerName),
+		EntriesReleased: m.EntriesReleased.WithLabelValues(layerName),
 		MapsRecreated:   m.MapsRecreated.WithLabelValues(layerName),
 		MissLatency:     m.MissLatency.WithLabelValues(layerName),
 	}
