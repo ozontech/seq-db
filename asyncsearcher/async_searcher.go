@@ -73,7 +73,12 @@ type AsyncSearcherConfig struct {
 	MaxSizePerRequest int
 }
 
-func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracs fracmanager.List) *AsyncSearcher {
+type fractionAcquirer interface {
+	Fractions() fracmanager.List
+	AcquireFraction(name string) (_ frac.Fraction, release func(), ok bool)
+}
+
+func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracs fractionAcquirer) *AsyncSearcher {
 	if config.DataDir == "" {
 		logger.Fatal("can't start async searcher: DataDir is empty")
 	}
@@ -154,10 +159,10 @@ type asyncSearchInfo struct {
 	infoSize *atomic.Int64
 }
 
-func newAsyncSearchInfo(r AsyncSearchRequest, list fracmanager.List) asyncSearchInfo {
-	fracsToSearch := make([]fracSearchState, 0, len(list))
-	for _, f := range list {
-		fracsToSearch = append(fracsToSearch, fracSearchState{Name: f.Info().Name()})
+func newAsyncSearchInfo(r AsyncSearchRequest, fracNames []string) asyncSearchInfo {
+	fracsToSearch := make([]fracSearchState, 0, len(fracNames))
+	for _, name := range fracNames {
+		fracsToSearch = append(fracsToSearch, fracSearchState{Name: name})
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return asyncSearchInfo{
@@ -204,7 +209,7 @@ func (i *asyncSearchInfo) Status() AsyncSearchStatus {
 	return status
 }
 
-func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs fracmanager.List) error {
+func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs fractionAcquirer) error {
 	if as.readOnly.Load() {
 		return fmt.Errorf("cannot start search on read-only mode")
 	}
@@ -235,7 +240,8 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs fracmanager.Lis
 		return fmt.Errorf("retention time should be less than %s, got %s", maxRetention, r.Retention)
 	}
 
-	if ok := as.saveSearchInfo(r, fracs); !ok {
+	fracNames := fracs.Fractions().FilterInRange(r.Params.From, r.Params.To).Names()
+	if ok := as.saveSearchInfo(r, fracNames); !ok {
 		// Request was saved previously, skip it
 		return nil
 	}
@@ -245,13 +251,13 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracs fracmanager.Lis
 	return nil
 }
 
-func (as *AsyncSearcher) saveSearchInfo(r AsyncSearchRequest, fracs fracmanager.List) bool {
+func (as *AsyncSearcher) saveSearchInfo(r AsyncSearchRequest, fracNames []string) bool {
 	as.requestsMu.Lock()
 	defer as.requestsMu.Unlock()
 	if _, ok := as.requests[r.ID]; ok {
 		return false
 	}
-	info := newAsyncSearchInfo(r, fracs)
+	info := newAsyncSearchInfo(r, fracNames)
 	as.storeSearchInfoLocked(r.ID, info)
 	return true
 }
@@ -295,7 +301,7 @@ func (as *AsyncSearcher) createDataDir() {
 	})
 }
 
-func (as *AsyncSearcher) processRequest(asyncSearchID string, fracs fracmanager.List) {
+func (as *AsyncSearcher) processRequest(asyncSearchID string, fracs fractionAcquirer) {
 	defer as.processWg.Done()
 
 	as.rateLimit <- struct{}{}
@@ -305,7 +311,7 @@ func (as *AsyncSearcher) processRequest(asyncSearchID string, fracs fracmanager.
 	asyncSearchActiveSearches.Add(-1)
 }
 
-func (as *AsyncSearcher) doSearch(id string, fracs fracmanager.List) {
+func (as *AsyncSearcher) doSearch(id string, fracs fractionAcquirer) {
 	qprPaths, err := as.findQPRs(id)
 	if err != nil {
 		panic(fmt.Errorf("can't find QPRs for id %q: %s", id, err))
@@ -340,11 +346,6 @@ func (as *AsyncSearcher) doSearch(id string, fracs fracmanager.List) {
 		info.Request.Params.AST = ast.Root
 	}
 
-	fracsByName := make(map[string]frac.Fraction)
-	for _, f := range fracs {
-		fracsByName[f.Info().Name()] = f
-	}
-
 	for _, fracInfo := range info.Fractions {
 		if _, ok := processedFracs[fracInfo.Name]; ok {
 			continue
@@ -352,13 +353,7 @@ func (as *AsyncSearcher) doSearch(id string, fracs fracmanager.List) {
 		if as.shouldStopSearch(id) {
 			break
 		}
-
-		f, ok := fracsByName[fracInfo.Name]
-		if !ok { // oldest fracs may already be removed
-			logger.Info("async search: skip missing fraction", zap.String("id", id), zap.String("frac", fracInfo.Name))
-			continue
-		}
-		if err := as.processFrac(f, info); err != nil {
+		if err := as.acquireAndProcessFrac(fracInfo, info, fracs); err != nil {
 			as.updateSearchInfo(id, func(info *asyncSearchInfo) {
 				info.Error = err.Error()
 			})
@@ -398,6 +393,20 @@ func compressQPR(qpr *seq.QPR, cb func(compressed []byte) error) error {
 		return err
 	}
 	return nil
+}
+
+func (as *AsyncSearcher) acquireAndProcessFrac(fracInfo fracSearchState, searchInfo asyncSearchInfo, fracs fractionAcquirer) (err error) {
+	f, release, ok := fracs.AcquireFraction(fracInfo.Name)
+	if !ok { // oldest fracs may already be removed
+		logger.Info(
+			"async search: skip missing fraction",
+			zap.String("id", searchInfo.Request.ID),
+			zap.String("frac", fracInfo.Name),
+		)
+		return
+	}
+	defer release()
+	return as.processFrac(f, searchInfo)
 }
 
 func (as *AsyncSearcher) processFrac(f frac.Fraction, info asyncSearchInfo) (err error) {

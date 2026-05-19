@@ -34,6 +34,7 @@ type fractionRegistry struct {
 	muAll  sync.RWMutex    // protects active, all, and oldestTotal fields
 	active *activeProxy    // currently active writable fraction
 	all    []frac.Fraction // all fractions in creation order (read-only view)
+	allMap map[string]frac.Fraction
 }
 
 // NewFractionRegistry creates and initializes a new fraction registry instance.
@@ -80,6 +81,14 @@ func (r *fractionRegistry) Active() *activeProxy {
 	r.muAll.RLock()
 	defer r.muAll.RUnlock()
 	return r.active
+}
+
+func (r *fractionRegistry) AcquireFraction(name string) (frac.Fraction, func(), bool) {
+	r.muAll.RLock()
+	defer r.muAll.RUnlock()
+
+	f, ok := r.allMap[name]
+	return f, func() {}, ok
 }
 
 // AllFractions returns a read-only view of all fractions in creation order.
@@ -215,6 +224,7 @@ func (r *fractionRegistry) addActive(a *activeProxy) {
 
 	r.active = a
 	r.all = append(r.all, a.proxy)
+	r.allMap[a.instance.Info().Name()] = a.proxy
 }
 
 // trimAll removes the oldest fractions from the complete fractions list.
@@ -223,6 +233,9 @@ func (r *fractionRegistry) trimAll(count int) {
 	r.muAll.Lock()
 	defer r.muAll.Unlock()
 
+	for _, f := range r.all[:count] {
+		delete(r.allMap, f.Info().Name())
+	}
 	r.all = r.all[count:]
 	r.updateOldestTotal()
 }
@@ -439,26 +452,34 @@ func (r *fractionRegistry) removeFromOffloading(sealed *sealedProxy) {
 // Expensive O(n) operation used when direct list modification is insufficient.
 func (r *fractionRegistry) rebuildAllFractions() {
 	all := make([]frac.Fraction, 0, len(r.all))
+	allMap := make(map[string]frac.Fraction, len(r.all))
+
+	add := func(f frac.Fraction) {
+		all = append(all, f)
+		allMap[f.Info().Name()] = f
+	}
 
 	// collect fractions in correct chronological order: from oldest (remote) to newest (active)
 	for _, remote := range r.remotes {
-		all = append(all, remote.proxy)
+		add(remote.proxy)
 	}
 	for _, offloaded := range r.offloading {
-		all = append(all, offloaded.proxy)
+		add(offloaded.proxy)
 	}
 	for _, sealed := range r.sealed {
-		all = append(all, sealed.proxy)
+		add(sealed.proxy)
 	}
 	for _, active := range r.sealing {
-		all = append(all, active.proxy)
+		add(active.proxy)
 	}
-	all = append(all, r.active.proxy)
+
+	add(r.active.proxy)
 
 	r.muAll.Lock()
 	defer r.muAll.Unlock()
 
 	r.all = all
+	r.allMap = allMap
 	r.updateOldestTotal()
 }
 
