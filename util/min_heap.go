@@ -100,14 +100,14 @@ func (hw *heapWrapper[T]) Swap(i, j int) {
 }
 
 // Push is part of heap.Interface — adds a new element to the heap.
-func (hw *heapWrapper[T]) Push(x interface{}) {
+func (hw *heapWrapper[T]) Push(x any) {
 	item := x.(*heapItem[T])
 	item.index = len(hw.items)
 	hw.items = append(hw.items, item)
 }
 
 // Pop is part of heap.Interface — removes and returns the last element.
-func (hw *heapWrapper[T]) Pop() interface{} {
+func (hw *heapWrapper[T]) Pop() any {
 	old := hw.items
 	n := len(old) - 1
 	item := old[n]

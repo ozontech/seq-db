@@ -63,9 +63,11 @@ func (a *syncAppender) WaitWriteIdle() {
 	logger.Info("waiting fraction to stop write...", zap.String("name", a.BaseFileName))
 	a.wg.Wait()
 	waitTime := util.DurationToUnit(time.Since(start), "s")
-	logger.Info("write is stopped",
+	logger.Info(
+		"write is stopped",
 		zap.String("name", a.BaseFileName),
-		zap.Float64("time_wait_s", waitTime))
+		zap.Float64("time_wait_s", waitTime),
+	)
 }
 
 // Finalize marks the fraction as read-only and prevents new writes from starting after finalize.
