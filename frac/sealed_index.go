@@ -167,10 +167,11 @@ func (ii *sealedIDsIndex) GetRID(lid seq.LID) seq.RID {
 }
 
 func (ii *sealedIDsIndex) GetRIDs(lidsBatch []node.LID, out []seq.RID) []seq.RID {
-	for _, lid := range lidsBatch {
-		out = append(out, ii.GetRID(lid.ToSeqLID()))
+	rids, err := ii.provider.RIDs(lidsBatch, out)
+	if err != nil {
+		logger.Panic("get rid error", zap.String("frac", ii.fracName), zap.Int("lids_count", len(lidsBatch)), zap.Error(err))
 	}
-	return out
+	return rids
 }
 
 func (ii *sealedIDsIndex) docPos(lid seq.LID) seq.DocPos {

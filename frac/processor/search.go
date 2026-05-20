@@ -45,7 +45,7 @@ type searchIndex interface {
 }
 
 type LIDsIter interface {
-	Lids(out []node.LID) []node.LID
+	LIDs(out []node.LID) []node.LID
 	Len() int
 }
 
@@ -60,7 +60,7 @@ var searchBuffersPool = sync.Pool{
 		lidsBuf := lidsBuf{
 			lids: make([]node.LID, 0, consts.LIDBlockCap),
 		}
-		return searchBuffers{
+		return &searchBuffers{
 			// Currently, we drain up to 4k lids from eval tree, but with proper batching enabled
 			// we can get as much as whole LID block can have (currently, 64k lids)
 			lids: lidsBuf,
@@ -223,10 +223,13 @@ func iterateEvalTree(
 		hist = NewHistMap(params.From, params.To, params.HistInterval)
 	}
 
-	total := 0
-	ids := seq.IDSources{}
-	var lastID seq.ID
-	buffers := searchBuffersPool.Get().(searchBuffers)
+	var (
+		total  int
+		lastID seq.ID
+		ids    seq.IDSources
+	)
+
+	buffers := searchBuffersPool.Get().(*searchBuffers)
 	defer searchBuffersPool.Put(buffers)
 	mids := buffers.mids
 	rids := buffers.rids
@@ -234,8 +237,8 @@ func iterateEvalTree(
 
 	timerEval := sw.Timer("eval_tree_next")
 	timerMID := sw.Timer("get_mid")
-	filterMIDs := sw.Timer("filter_mids")
-	updateHist := sw.Timer("update_hist")
+	timerFilterMIDs := sw.Timer("filter_mids")
+	timerUpdateHist := sw.Timer("update_hist")
 	timerRID := sw.Timer("get_rid")
 	timerAgg := sw.Timer("agg_node_count")
 
@@ -264,7 +267,7 @@ func iterateEvalTree(
 			break
 		}
 
-		lidsSlice := lidBatch.Lids(lidsBuffer.lids)
+		lidsSlice := lidBatch.LIDs(lidsBuffer.lids)
 
 		needMids := min(params.Limit-len(ids), len(lidsSlice))
 		if hasHist {
@@ -275,15 +278,15 @@ func iterateEvalTree(
 		// Get MIDs
 		if needMids > 0 {
 			timerMID.Start()
-			mids = idsIndex.GetMIDs(lidsSlice[0:needMids], mids[:0])
+			mids = idsIndex.GetMIDs(lidsSlice[:needMids], mids[:0])
 			timerMID.Stop()
 		}
 
 		// Filter out-of-range MIDs (only for hists)
 		if hasHist {
-			filterMIDs.Start()
+			timerFilterMIDs.Start()
 			mids, lidsSlice = filterOutOfRangeMIDs(params, mids, lidsSlice)
-			filterMIDs.Stop()
+			timerFilterMIDs.Stop()
 		}
 
 		// Get RIDs
@@ -307,9 +310,9 @@ func iterateEvalTree(
 
 		// Update hist map
 		if hasHist {
-			updateHist.Start()
+			timerUpdateHist.Start()
 			hist.Update(mids)
-			updateHist.Stop()
+			timerUpdateHist.Stop()
 		}
 
 		// Update aggregators
@@ -390,7 +393,7 @@ func (b lidsBuf) Len() int {
 	return len(b.lids)
 }
 
-func (b lidsBuf) Lids(_ []node.LID) []node.LID {
+func (b lidsBuf) LIDs(_ []node.LID) []node.LID {
 	return b.lids
 }
 

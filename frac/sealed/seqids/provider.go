@@ -89,6 +89,22 @@ func (p *Provider) RID(lid seq.LID) (seq.RID, error) {
 	return seq.RID(p.ridCache.GetValByLID(uint32(lid))), nil
 }
 
+func (p *Provider) RIDs(lids []node.LID, out []seq.RID) ([]seq.RID, error) {
+	for _, lid := range lids {
+		rawLid := lid.Unpack()
+		blockIndex := p.table.GetIDBlockIndexByLID(rawLid)
+		if p.ridCache.blockIndex != int(blockIndex) {
+			if err := p.fillRIDs(blockIndex, p.ridCache); err != nil {
+				return nil, err
+			}
+		}
+
+		out = append(out, seq.RID(p.ridCache.GetValByLID(rawLid)))
+	}
+
+	return out, nil
+}
+
 func (p *Provider) fillRIDs(blockIndex uint32, dst *unpackCache) error {
 	if dst.blockIndex != int(blockIndex) {
 		block, err := p.loader.GetRIDsBlock(blockIndex)

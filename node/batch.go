@@ -32,7 +32,7 @@ func (b LIDBatch) Len() int {
 	return len(b.lids)
 }
 
-func (b LIDBatch) Lids(out []LID) []LID {
+func (b LIDBatch) LIDs(out []LID) []LID {
 	if b.desc {
 		for _, lid := range b.lids {
 			out = append(out, NewDescLID(lid))
