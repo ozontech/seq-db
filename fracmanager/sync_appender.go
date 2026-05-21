@@ -26,8 +26,8 @@ type syncAppender struct {
 	suspended bool // Temporarily suspended for writes
 }
 
-// Append adds documents to the active fraction
-func (a *syncAppender) Append(docs, meta []byte) error {
+// append adds documents to the active fraction
+func (a *syncAppender) append(docs, meta []byte) error {
 	a.mu.RLock()
 	if a.finalized {
 		a.mu.RUnlock()
@@ -43,22 +43,22 @@ func (a *syncAppender) Append(docs, meta []byte) error {
 	return a.refCountedActive.Append(docs, meta, &a.wg)
 }
 
-func (a *syncAppender) Suspended() bool {
+func (a *syncAppender) isSuspended() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	return a.suspended
 }
 
-func (a *syncAppender) Suspend(value bool) {
+func (a *syncAppender) suspend(value bool) {
 	a.mu.Lock()
 	a.suspended = value
 	a.mu.Unlock()
 }
 
-// WaitWriteIdle waits for all pending write operations to complete
+// waitWriteIdle waits for all pending write operations to complete
 // Used before sealing to ensure data consistency.
-func (a *syncAppender) WaitWriteIdle() {
+func (a *syncAppender) waitWriteIdle() {
 	start := time.Now()
 	logger.Info("waiting fraction to stop write...", zap.String("name", a.BaseFileName))
 	a.wg.Wait()
@@ -70,8 +70,8 @@ func (a *syncAppender) WaitWriteIdle() {
 	)
 }
 
-// Finalize marks the fraction as read-only and prevents new writes from starting after finalize.
-func (a *syncAppender) Finalize() error {
+// finalize marks the fraction as read-only and prevents new writes from starting after finalize.
+func (a *syncAppender) finalize() error {
 	a.mu.Lock()
 	if a.finalized {
 		a.mu.Unlock()
