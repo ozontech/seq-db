@@ -38,7 +38,9 @@ func TestFracInfoCache(t *testing.T) {
 	defer tearDown()
 
 	fillRotateAndCheck := func(names map[string]struct{}) {
-		appender := lc.registry.Appender()
+		time.Sleep(time.Millisecond * 10)
+
+		appender := lc.registry.appender()
 		appendDocsToActive(t, appender.Active, 10+rand.Intn(10))
 
 		wg := sync.WaitGroup{}
@@ -56,13 +58,13 @@ func TestFracInfoCache(t *testing.T) {
 	for range 10 {
 		fillRotateAndCheck(first)
 	}
-	halfSize := lc.registry.Stats().TotalSizeOnDiskLocal()
+	halfSize := lc.registry.statistics().TotalSizeOnDiskLocal()
 
 	second := map[string]struct{}{}
 	for range 10 {
 		fillRotateAndCheck(second)
 	}
-	total := lc.registry.Stats().TotalSizeOnDiskLocal()
+	total := lc.registry.statistics().TotalSizeOnDiskLocal()
 
 	wg := sync.WaitGroup{}
 	lc.cleanLocal(total-halfSize, &wg)
@@ -86,7 +88,7 @@ func TestCapacityExceeded(t *testing.T) {
 	const fracsCount = 10
 
 	fillAndRotate := func() {
-		appender := lc.registry.Appender()
+		appender := lc.registry.appender()
 		appendDocsToActive(t, appender.Active, 10+rand.Intn(10))
 
 		wg := sync.WaitGroup{}
@@ -102,19 +104,19 @@ func TestCapacityExceeded(t *testing.T) {
 	}
 	assert.False(t, lc.flags.IsCapacityExceeded(), "there should be no deletions and the flag is false")
 
-	total := lc.registry.Stats().TotalSizeOnDiskLocal()
+	total := lc.registry.statistics().TotalSizeOnDiskLocal()
 
 	wg := sync.WaitGroup{}
 	lc.cleanLocal(total, &wg)
 	wg.Wait()
 
-	assert.Equal(t, fracsCount, lc.registry.Stats().sealed.count, "as much as was added, so much should be")
+	assert.Equal(t, fracsCount, lc.registry.statistics().sealed.count, "as much as was added, so much should be")
 	assert.False(t, lc.flags.IsCapacityExceeded(), "there should still be no deletions, and the flag is false")
 
 	lc.cleanLocal(total-1, &wg)
 	wg.Wait()
 
-	assert.Equal(t, fracsCount-1, lc.registry.Stats().sealed.count, "expect one less")
+	assert.Equal(t, fracsCount-1, lc.registry.statistics().sealed.count, "expect one less")
 	assert.True(t, lc.flags.IsCapacityExceeded(), "the flag must be true now")
 }
 
@@ -124,30 +126,30 @@ func TestOldestMetrics(t *testing.T) {
 
 	const fracsCount = 10
 	fillAndRotate := func() {
-		appender := lc.registry.Appender()
+		appender := lc.registry.appender()
 		appendDocsToActive(t, appender.Active, 10+rand.Intn(10))
 		wg := sync.WaitGroup{}
 		lc.rotate(0, &wg)
 		wg.Wait()
 	}
 
-	firstFracTime := lc.registry.Appender().Info().CreationTime
+	firstFracTime := lc.registry.appender().Info().CreationTime
 	for range fracsCount {
 		fillAndRotate()
 	}
 
 	// Check state after initial rotations
-	assert.Equal(t, firstFracTime, lc.registry.OldestTotal(), "should point to the very first fraction when all data is local")
-	assert.Equal(t, firstFracTime, lc.registry.OldestLocal(), "should point to the first fraction when nothing is offloaded")
+	assert.Equal(t, firstFracTime, lc.registry.oldestTotal(), "should point to the very first fraction when all data is local")
+	assert.Equal(t, firstFracTime, lc.registry.oldestLocal(), "should point to the first fraction when nothing is offloaded")
 
-	halfSize := lc.registry.Stats().TotalSizeOnDiskLocal()
+	halfSize := lc.registry.statistics().TotalSizeOnDiskLocal()
 
-	halfwayFracTime := lc.registry.Appender().Info().CreationTime
+	halfwayFracTime := lc.registry.appender().Info().CreationTime
 	for range fracsCount {
 		fillAndRotate()
 	}
 
-	total := lc.registry.Stats().TotalSizeOnDiskLocal()
+	total := lc.registry.statistics().TotalSizeOnDiskLocal()
 
 	wg := sync.WaitGroup{}
 	lc.offloadLocal(t.Context(), total-halfSize, 0, &wg)
@@ -155,8 +157,8 @@ func TestOldestMetrics(t *testing.T) {
 
 	// Check state after offloading
 	assert.NotEqual(t, firstFracTime, halfwayFracTime, "expect different creation times")
-	assert.Equal(t, firstFracTime, lc.registry.OldestTotal(), "should still reference the first fraction after offload")
-	assert.Equal(t, halfwayFracTime, lc.registry.OldestLocal(), "should point to the oldest remaining local fraction after offload")
+	assert.Equal(t, firstFracTime, lc.registry.oldestTotal(), "should still reference the first fraction after offload")
+	assert.Equal(t, halfwayFracTime, lc.registry.oldestLocal(), "should point to the oldest remaining local fraction after offload")
 }
 
 func TestPendingDestroy(t *testing.T) {
@@ -170,19 +172,19 @@ func TestPendingDestroy(t *testing.T) {
 	// appending docs to `fracsCount` fractions where the last is active and the rest are sealed
 	wg := sync.WaitGroup{}
 	for range fracsCount - 1 {
-		appendDocsToActive(t, lc.registry.Appender().Active, docsPerFrac)
+		appendDocsToActive(t, lc.registry.appender().Active, docsPerFrac)
 		lc.rotate(0, &wg)
 	}
-	appendDocsToActive(t, lc.registry.Appender().Active, docsPerFrac)
+	appendDocsToActive(t, lc.registry.appender().Active, docsPerFrac)
 
 	// wait sealing complete
 	wg.Wait()
 
 	// take all fracs to search
-	fractions1, release1 := lc.registry.AcquireAllFractions()
+	fractions1, release1 := lc.registry.acquireAllFractions()
 
 	// delete all sealing fracs
-	lc.cleanLocal(lc.registry.Appender().Info().FullSize(), &wg)
+	lc.cleanLocal(lc.registry.appender().Info().FullSize(), &wg)
 
 	var (
 		beforeRelease time.Time
@@ -220,7 +222,7 @@ func TestPendingDestroy(t *testing.T) {
 	cleanup.Wait()
 	assert.Less(t, beforeRelease, afterCleanup, "we expect cleanup to happen after release")
 
-	fractions2, release2 := lc.registry.AcquireAllFractions()
+	fractions2, release2 := lc.registry.acquireAllFractions()
 
 	assert.Len(t, fractions2, 1, "only one active fraction should remain")
 	singleName := fractions2[0].Info().Name()

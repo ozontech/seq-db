@@ -2,6 +2,7 @@ package fracmanager
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -42,7 +43,7 @@ func newLifecycleManager(
 // Maintain performs periodic lifecycle management tasks.
 // It coordinates rotation, offloading, cleanup based on configuration.
 func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.WaitGroup) {
-	lc.registry.SuspendIfOverCapacity(cfg.SealingQueueLen, cfg.SuspendThreshold())
+	lc.registry.suspendIfOverCapacity(cfg.SealingQueueLen, cfg.SuspendThreshold())
 
 	lc.rotate(cfg.FracSize, wg)
 	if cfg.OffloadingEnabled {
@@ -68,7 +69,7 @@ func (lc *lifecycleManager) SyncInfoCache() {
 // rotate checks if active fraction needs rotation based on size limit.
 // Creates new active fraction and starts sealing the previous one.
 func (lc *lifecycleManager) rotate(maxSize uint64, wg *sync.WaitGroup) {
-	active, waitBeforeSealing, err := lc.registry.RotateIfFull(maxSize, lc.provider)
+	active, waitBeforeSealing, err := lc.registry.rotateIfFull(maxSize, lc.provider)
 	if err != nil {
 		logger.Fatal("active fraction rotation error", zap.Error(err))
 	}
@@ -89,7 +90,7 @@ func (lc *lifecycleManager) rotate(maxSize uint64, wg *sync.WaitGroup) {
 		}
 
 		lc.infoCache.Add(sealed.Info())
-		lc.registry.PromoteToSealed(active, sealed)
+		lc.registry.promoteToSealed(active, sealed)
 		active.Destroy()
 	}()
 }
@@ -97,7 +98,7 @@ func (lc *lifecycleManager) rotate(maxSize uint64, wg *sync.WaitGroup) {
 // offloadLocal starts offloading of local fractions to remote storage.
 // Selects fractions based on disk space usage and retention policy.
 func (lc *lifecycleManager) offloadLocal(ctx context.Context, sizeLimit uint64, retryDelay time.Duration, wg *sync.WaitGroup) {
-	toOffload, err := lc.registry.EvictLocalForOffload(sizeLimit)
+	toOffload, err := lc.registry.evictLocalForOffload(sizeLimit)
 	if err != nil {
 		logger.Fatal("error releasing old fractions:", zap.Error(err))
 	}
@@ -108,7 +109,7 @@ func (lc *lifecycleManager) offloadLocal(ctx context.Context, sizeLimit uint64, 
 
 			remote := lc.offloadWithRetry(ctx, frac.Sealed, retryDelay)
 
-			lc.registry.PromoteToRemote(frac, remote)
+			lc.registry.promoteToRemote(frac, remote)
 
 			if remote == nil {
 				lc.infoCache.Remove(frac.Info().Name())
@@ -181,7 +182,7 @@ func (lc *lifecycleManager) tryOffload(ctx context.Context, sealed *frac.Sealed)
 
 // cleanRemote deletes outdated remote fractions based on retention policy.
 func (lc *lifecycleManager) cleanRemote(retention time.Duration, wg *sync.WaitGroup) {
-	toDelete := lc.registry.EvictRemote(retention)
+	toDelete := lc.registry.evictRemote(retention)
 	wg.Add(len(toDelete))
 	for _, remote := range toDelete {
 		go func() {
@@ -194,10 +195,16 @@ func (lc *lifecycleManager) cleanRemote(retention time.Duration, wg *sync.WaitGr
 
 // cleanLocal deletes outdated local fractions when offloading is disabled.
 func (lc *lifecycleManager) cleanLocal(sizeLimit uint64, wg *sync.WaitGroup) {
-	toDelete, err := lc.registry.EvictLocalForDelete(sizeLimit)
+	toDelete, err := lc.registry.evictLocalForDelete(sizeLimit)
 	if err != nil {
 		logger.Fatal("error releasing old fractions:", zap.Error(err))
 	}
+
+	fmt.Printf("len(toDelete): %v\n", len(toDelete))
+	for _, f := range toDelete {
+		fmt.Printf("f.Info().Name(): %v\n", f.Info().Name())
+	}
+
 	if len(toDelete) > 0 && !lc.flags.IsCapacityExceeded() {
 		if err := lc.flags.setCapacityExceeded(true); err != nil {
 			logger.Fatal("can't set capacity_exceeded flag", zap.Error(err))
@@ -217,14 +224,14 @@ func (lc *lifecycleManager) cleanLocal(sizeLimit uint64, wg *sync.WaitGroup) {
 
 // updateOldestMetric updates the prometheus metric with oldest fraction timestamp.
 func (lc *lifecycleManager) updateOldestMetric() {
-	oldestFracTime.WithLabelValues("remote").Set((time.Duration(lc.registry.OldestTotal()) * time.Millisecond).Seconds())
-	oldestFracTime.WithLabelValues("local").Set((time.Duration(lc.registry.OldestLocal()) * time.Millisecond).Seconds())
+	oldestFracTime.WithLabelValues("remote").Set((time.Duration(lc.registry.oldestTotal()) * time.Millisecond).Seconds())
+	oldestFracTime.WithLabelValues("local").Set((time.Duration(lc.registry.oldestLocal()) * time.Millisecond).Seconds())
 }
 
 // removeOverflowed removes fractions from offloading queue that exceed size limit
 // Stops ongoing offloading tasks and cleans up both local and remote resources.
 func (lc *lifecycleManager) removeOverflowed(sizeLimit uint64, wg *sync.WaitGroup) {
-	evicted := lc.registry.EvictOverflowed(sizeLimit)
+	evicted := lc.registry.evictOverflowed(sizeLimit)
 	for _, sealed := range evicted {
 		wg.Add(1)
 		go func() {
