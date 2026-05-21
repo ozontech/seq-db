@@ -392,6 +392,7 @@ func (f *Sealed) Release() {
 
 func (f *Sealed) Suicide() {
 	f.Release()
+
 	// Rename docs atomically first — this commits the intent to delete.
 	oldPath := f.BaseFileName + consts.DocsFileSuffix
 	newPath := f.BaseFileName + consts.DocsDelFileSuffix
