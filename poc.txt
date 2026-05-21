@@ -1,0 +1,71 @@
+func PerformBinning(a *Active) []BinnedSource {
+    bins := make(map[time.Time][]seq.LID)
+    
+	for _, lid := range a.GetAllDocuments() {
+        id := (a.mids[lid], a.rids[lid])
+        bins[id.Time()] = append(bins[id.Time()], lid)
+	}
+
+    var sources map[time.Time]BinnedSource
+    for t, lids := range bins {
+        sources[t] = NewBinnedSource(lids)
+    }
+
+    if sort {
+        sortDocuments(sources, inIdOrder(a))
+    } else {
+        reorganizeDocuments(sources, inBlockOrder(a))
+    }
+
+    return sources
+}
+
+func inBlockOrder(a *Active) [][]seq.ID {
+    var blocks [][]seq.ID
+    for i := range a.mids {
+        id := (a.mids[i], a.rids[i])
+        dpos := s.DocPos(id)
+        blocks[dpos.Index] = append(blocks[dpos.Index], id)
+    }
+    return blocks
+}
+
+func inIdOrder(a *Active) []seq.ID {
+    var ids []seq.ID
+    for id := range a.ID() {
+        ids = append(ids, id)
+    }
+    return ids
+}
+
+func reorganizeDocuments(bins map[time.Time]BinnedSource, blocks [][]seq.ID) {
+    for blockIdx := range blocks {
+        ids := blocks[blockIdx]
+        
+        docPositions := buildDocPositions(ids)
+        docs := ReadDocuments(blockIdx, docPositions...)
+
+        for i := range docs {
+            id, doc := block[i], docs[i]
+            bins[id.Time()].Append(id, doc)
+        }
+    }
+    
+    for _, bin := range bins {
+        bin.Flush()
+    }
+}
+
+func sortDocuments(bins map[time.Time]BinnedSource, ids []seq.ID) {
+    docPositions := buildDocPositions(ids)
+    
+    for i, id := range ids {
+        (blockIdx, docPosition) := docPositions[i]
+        ReadDocuments(blockIdx, docPosition)
+        bins[id.Time()].Append(id, doc)
+    }
+
+    for _, bin := range bins {
+        bin.Flush()
+    }
+}

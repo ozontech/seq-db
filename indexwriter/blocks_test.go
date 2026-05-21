@@ -117,7 +117,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 
 	tokenBlocksIter := tokenBlock(
 		src.TokenTriplet(),
-		lidAccumulator.Add,
+		lidAccumulator.add,
 		blockSize,
 	)
 
@@ -236,7 +236,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 		},
 	}
 	assert.Equal(t, actualTokenTable.FieldsTables, expectedTokenTable.FieldsTables)
-	assert.NoError(t, lidAccumulator.Finalize())
+	assert.NoError(t, lidAccumulator.finalize())
 
 	expectedLIDBlocks := []unpackedLIDBlock{
 		{

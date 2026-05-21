@@ -469,10 +469,8 @@ func (f *Active) Release() {
 		util.RemoveFile(f.metaFile.Name())
 	}
 
-	if !f.Config.SkipSortDocs {
-		// we use sorted docs in sealed fraction so we can remove original docs of active fraction
-		util.RemoveFile(f.docsFile.Name())
-	}
+	// we use sorted docs in sealed fraction so we can remove original docs of active fraction
+	util.RemoveFile(f.docsFile.Name())
 }
 
 func (f *Active) Suicide() {

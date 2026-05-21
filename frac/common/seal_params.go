@@ -1,5 +1,7 @@
 package common
 
+import "time"
+
 type SealParams struct {
 	IDsZstdLevel           int
 	LIDsZstdLevel          int
@@ -9,4 +11,6 @@ type SealParams struct {
 
 	DocBlocksZstdLevel int // DocBlocksZstdLevel is the zstd compress level of each document block.
 	DocBlockSize       int // DocBlockSize is decompressed payload size of document block.
+
+	BinSize time.Duration // BinSize is the timestamp bin width for splitting active fractions on seal.
 }

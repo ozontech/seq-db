@@ -23,6 +23,7 @@ func NewDocsReader(limiter *ReadLimiter, reader io.ReaderAt, docsCache *cache.Ca
 func (r *DocsReader) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
 	bufSize := 0
 	res := make([][]byte, 0, len(docOffsets))
+
 	err := r.ReadDocsFunc(blockOffset, docOffsets, func(doc []byte) error {
 		bufSize += len(doc)
 		res = append(res, doc)
@@ -31,6 +32,7 @@ func (r *DocsReader) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte
 	if err != nil {
 		return nil, err
 	}
+
 	// copy so as not to keep the entire block in memory
 	buf := make([]byte, 0, bufSize)
 	for i, doc := range res {
@@ -38,6 +40,31 @@ func (r *DocsReader) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte
 		buf = append(buf, doc...)
 		res[i] = buf[pos:]
 	}
+
+	return res, nil
+}
+
+func (r *DocsReader) ReadDocsUncached(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
+	bufSize := 0
+	res := make([][]byte, 0, len(docOffsets))
+
+	err := r.ReadDocsFuncUncached(blockOffset, docOffsets, func(doc []byte) error {
+		bufSize += len(doc)
+		res = append(res, doc)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// copy so as not to keep the entire block in memory
+	buf := make([]byte, 0, bufSize)
+	for i, doc := range res {
+		pos := len(buf)
+		buf = append(buf, doc...)
+		res[i] = buf[pos:]
+	}
+
 	return res, nil
 }
 
@@ -51,6 +78,17 @@ func (r *DocsReader) ReadDocsFunc(blockOffset uint64, docOffsets []uint64, cb fu
 	})
 	if err != nil {
 		return err
+	}
+	return extractDocsFromBlockFunc(block, docOffsets, cb)
+}
+
+func (r *DocsReader) ReadDocsFuncUncached(
+	blockOffset uint64, docOffsets []uint64,
+	cb func([]byte) error,
+) error {
+	block, _, err := r.reader.ReadDocBlockPayload(int64(blockOffset))
+	if err != nil {
+		return fmt.Errorf("can't fetch doc at pos %d: %w", blockOffset, err)
 	}
 	return extractDocsFromBlockFunc(block, docOffsets, cb)
 }

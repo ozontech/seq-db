@@ -1,6 +1,7 @@
 package lids
 
 import (
+	"fmt"
 	"sort"
 
 	"go.uber.org/zap"
@@ -70,6 +71,8 @@ func (it *IteratorAsc) Next() node.LID {
 	i := len(it.lids) - 1
 	lid := it.lids[i]
 	it.lids = it.lids[:i]
+	fmt.Printf("lid: %v\n", lid)
+
 	return node.NewAscLID(lid)
 }
 

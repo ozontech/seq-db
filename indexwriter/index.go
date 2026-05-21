@@ -149,7 +149,7 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	)
 
 	var allFieldsTables []token.FieldTable
-	for pair, err := range tokenBlock(src.TokenTriplet(), lidAccumulator.Add, consts.RegularBlockSize) {
+	for pair, err := range tokenBlock(src.TokenTriplet(), lidAccumulator.add, consts.RegularBlockSize) {
 		if err != nil {
 			return err
 		}
@@ -169,7 +169,7 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 }
 
 func (s *IndexWriter) finalizeLIDFile(w *writer, lidAccumulator *lidAccumulator) error {
-	if err := lidAccumulator.Finalize(); err != nil {
+	if err := lidAccumulator.finalize(); err != nil {
 		return err
 	}
 

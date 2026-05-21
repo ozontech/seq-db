@@ -222,6 +222,9 @@ func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error)
 	field := parser.GetField(t)
 	searchStr := parser.GetHint(t)
 
+	fmt.Printf("field: %v\n", field)
+	fmt.Printf("searchStr: %v\n", searchStr)
+
 	tokenTable := ti.tokenTableLoader.Load()
 	entries := tokenTable.SelectEntries(field, searchStr)
 	if len(entries) == 0 {
@@ -234,6 +237,8 @@ func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error)
 	if err != nil {
 		return nil, fmt.Errorf("search error: %s field: %s, query: %s", err, field, searchStr)
 	}
+	fmt.Printf("tids: %v\n", tids)
+
 	return tids, nil
 }
 
