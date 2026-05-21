@@ -21,16 +21,17 @@ type fractionRegistry struct {
 
 	sealing    map[string]*syncAppender                 // fractions being sealed (0-5 typical)
 	sealed     PartitionedCollection[*refCountedSealed] // local sealed fractions (can be thousands)
+	compacting map[string]*refCountedSealed             // fractions participating in compaction
 	offloading PartitionedCollection[*refCountedSealed] // fractions being offloaded (0-5 typical)
 	remotes    PartitionedCollection[*refCountedRemote] // offloaded fractions (can be thousands)
 
 	stats registryStats // size statistics for monitoring
 
 	muAppender sync.RWMutex
-	appender   *syncAppender // currently active writable fraction
+	sappender  *syncAppender // currently active writable fraction
 
-	muAll sync.RWMutex
-	all   fractionsSnapshot // all fractions
+	muSnapshot sync.RWMutex
+	snapshot   fractionsSnapshot // all fractions
 }
 
 // NewFractionRegistry creates and initializes a new fraction registry instance.
@@ -51,10 +52,11 @@ func NewFractionRegistry(active *frac.Active, sealed []*frac.Sealed, remotes []*
 	}
 
 	reg := fractionRegistry{
-		appender: &syncAppender{refCountedActive: refCountedActive{Active: active}},
+		sappender: &syncAppender{refCountedActive: refCountedActive{Active: active}},
 
 		sealing:    map[string]*syncAppender{},
 		sealed:     NewPartitionedCollection(func(rcs *refCountedSealed) uint64 { return creationTime(rcs) }),
+		compacting: map[string]*refCountedSealed{},
 		offloading: NewPartitionedCollection(func(rcs *refCountedSealed) uint64 { return lastDocTime(rcs) }),
 		remotes:    NewPartitionedCollection(func(rcr *refCountedRemote) uint64 { return lastDocTime(rcr) }),
 	}
@@ -76,51 +78,51 @@ func NewFractionRegistry(active *frac.Active, sealed []*frac.Sealed, remotes []*
 	return &reg, nil
 }
 
-// Appender returns the currently active writable fraction.
-func (r *fractionRegistry) Appender() *syncAppender {
+// appender returns the currently active writable fraction.
+func (r *fractionRegistry) appender() *syncAppender {
 	r.muAppender.RLock()
 	defer r.muAppender.RUnlock()
-	return r.appender
+	return r.sappender
 }
 
-func (r *fractionRegistry) AcquireOneFraction(name string) (frac.Fraction, func(), bool) {
-	r.muAll.RLock()
-	defer r.muAll.RUnlock()
+func (r *fractionRegistry) acquireOneFraction(name string) (frac.Fraction, func(), bool) {
+	r.muSnapshot.RLock()
+	defer r.muSnapshot.RUnlock()
 
-	return r.all.AcquireOne(name)
+	return r.snapshot.AcquireOne(name)
 }
 
-// AcquireAllFractions returns a read-only view of all fractions
-func (r *fractionRegistry) AcquireAllFractions() ([]frac.Fraction, func()) {
-	r.muAll.RLock()
-	defer r.muAll.RUnlock()
+// acquireAllFractions returns a read-only view of all fractions
+func (r *fractionRegistry) acquireAllFractions() ([]frac.Fraction, func()) {
+	r.muSnapshot.RLock()
+	defer r.muSnapshot.RUnlock()
 
-	return r.all.AcquireAll()
+	return r.snapshot.AcquireAll()
 }
 
-// Stats returns current size statistics of the registry.
-func (r *fractionRegistry) Stats() registryStats {
+// statistics returns current size statistics of the registry.
+func (r *fractionRegistry) statistics() registryStats {
 	r.mu.RLock()
 	s := r.stats
-	i := r.appender.Info()
+	i := r.sappender.Info()
 	r.mu.RUnlock()
 
 	s.active.Set(i)
 	return s
 }
 
-// OldestTotal returns the creation time of the oldest fraction in the registry.
-func (r *fractionRegistry) OldestTotal() uint64 {
-	r.muAll.RLock()
-	defer r.muAll.RUnlock()
-	return r.all.oldestTotal
+// oldestTotal returns the creation time of the oldest fraction in the registry.
+func (r *fractionRegistry) oldestTotal() uint64 {
+	r.muSnapshot.RLock()
+	defer r.muSnapshot.RUnlock()
+	return r.snapshot.oldestTotal
 }
 
-// OldestLocal returns the creation time of the oldest local fraction in the registry.
-func (r *fractionRegistry) OldestLocal() uint64 {
-	r.muAll.RLock()
-	defer r.muAll.RUnlock()
-	return r.all.oldestLocal
+// oldestLocal returns the creation time of the oldest local fraction in the registry.
+func (r *fractionRegistry) oldestLocal() uint64 {
+	r.muSnapshot.RLock()
+	defer r.muSnapshot.RUnlock()
+	return r.snapshot.oldestLocal
 }
 
 type activeProvider interface {
@@ -131,39 +133,39 @@ func (r *fractionRegistry) setAppender(appender *syncAppender) {
 	r.muAppender.Lock()
 	defer r.muAppender.Unlock()
 
-	r.appender = appender
+	r.sappender = appender
 
-	r.muAll.Lock()
-	defer r.muAll.Unlock()
+	r.muSnapshot.Lock()
+	defer r.muSnapshot.Unlock()
 
-	r.all.AddActive(appender)
+	r.snapshot.AddActive(appender)
 }
 
-// RotateIfFull completes the current active fraction and starts a new one.
+// rotateIfFull completes the current active fraction and starts a new one.
 // Moves previous active fraction to sealing queue.
 // Should be called when the current active fraction reaches size limit and needs to be rotated
-func (r *fractionRegistry) RotateIfFull(maxSize uint64, ap activeProvider) (*refCountedActive, func(), error) {
+func (r *fractionRegistry) rotateIfFull(maxSize uint64, ap activeProvider) (*refCountedActive, func(), error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.appender.Info().DocsOnDisk <= maxSize {
+	if r.sappender.Info().DocsOnDisk <= maxSize {
 		return nil, nil, nil
 	}
 
-	old := r.appender
+	old := r.sappender
 
 	r.sealing[old.Info().Name()] = old
 
 	r.setAppender(&syncAppender{refCountedActive: refCountedActive{Active: ap.CreateActive()}})
 
-	if err := old.Finalize(); err != nil {
+	if err := old.finalize(); err != nil {
 		return nil, nil, err
 	}
 
 	curInfo := old.Info()
 	r.stats.sealing.Add(curInfo)
 
-	r.appender.Suspend(old.Suspended())
+	r.sappender.suspend(old.isSuspended())
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -172,7 +174,7 @@ func (r *fractionRegistry) RotateIfFull(maxSize uint64, ap activeProvider) (*ref
 	go func() {
 		defer wg.Done()
 
-		old.WaitWriteIdle() // can be long enough
+		old.waitWriteIdle() // can be long enough
 		finalInfo := old.Info()
 
 		r.mu.Lock()
@@ -187,11 +189,11 @@ func (r *fractionRegistry) RotateIfFull(maxSize uint64, ap activeProvider) (*ref
 	return &old.refCountedActive, wg.Wait, nil
 }
 
-func (r *fractionRegistry) SuspendIfOverCapacity(maxQueue, maxSize uint64) {
+func (r *fractionRegistry) suspendIfOverCapacity(maxQueue, maxSize uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	suspended := r.appender.Suspended()
+	suspended := r.sappender.isSuspended()
 
 	if maxQueue > 0 && r.stats.sealing.count >= int(maxQueue) {
 		if !suspended {
@@ -199,7 +201,7 @@ func (r *fractionRegistry) SuspendIfOverCapacity(maxQueue, maxSize uint64) {
 				zap.String("reason", "sealing queue size exceeded"),
 				zap.Uint64("limit", maxQueue),
 				zap.Int("queue_size", r.stats.sealing.count))
-			r.appender.Suspend(true)
+			r.sappender.suspend(true)
 		}
 		return
 	}
@@ -212,7 +214,7 @@ func (r *fractionRegistry) SuspendIfOverCapacity(maxQueue, maxSize uint64) {
 				zap.String("reason", "occupied space limit exceeded"),
 				zap.Float64("queue_size_limit_gb", util.Float64ToPrec(util.SizeToUnit(maxSize, "gb"), 2)),
 				zap.Float64("occupied_space_gb", util.Float64ToPrec(util.SizeToUnit(du, "gb"), 2)))
-			r.appender.Suspend(true)
+			r.sappender.suspend(true)
 		}
 		return
 	}
@@ -223,20 +225,21 @@ func (r *fractionRegistry) SuspendIfOverCapacity(maxQueue, maxSize uint64) {
 			zap.Float64("occupied_space_gb", util.Float64ToPrec(util.SizeToUnit(du, "gb"), 2)),
 			zap.Uint64("sealing_queue_size_limit", maxQueue),
 			zap.Int("queue_size", r.stats.sealing.count))
-		r.appender.Suspend(false)
+		r.sappender.suspend(false)
 	}
 }
 
 func (r *fractionRegistry) diskUsage() uint64 {
-	return r.appender.Info().FullSize() +
+	return r.sappender.Info().FullSize() +
 		r.stats.sealed.totalSizeOnDisk +
 		r.stats.sealing.totalSizeOnDisk +
+		r.stats.compacting.totalSizeOnDisk +
 		r.stats.offloading.totalSizeOnDisk
 }
 
-// EvictLocalForDelete removes oldest local fractions to free disk space.
+// evictLocalForDelete removes oldest local fractions to free disk space.
 // Returns evicted fractions or error if insufficient space is released.
-func (r *fractionRegistry) EvictLocalForDelete(sizeLimit uint64) (evicted []*refCountedSealed, err error) {
+func (r *fractionRegistry) evictLocalForDelete(sizeLimit uint64) (evicted []*refCountedSealed, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -249,9 +252,9 @@ func (r *fractionRegistry) EvictLocalForDelete(sizeLimit uint64) (evicted []*ref
 	return evicted, nil
 }
 
-// EvictLocalForOffload removes oldest local fractions to moves it to offloading queue.
+// evictLocalForOffload removes oldest local fractions to moves it to offloading queue.
 // Returns evicted fractions or error if insufficient space is released.
-func (r *fractionRegistry) EvictLocalForOffload(sizeLimit uint64) ([]*refCountedSealed, error) {
+func (r *fractionRegistry) evictLocalForOffload(sizeLimit uint64) ([]*refCountedSealed, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -272,16 +275,21 @@ func (r *fractionRegistry) evictLocal(sizeLimit uint64) ([]*refCountedSealed, er
 	var releasingSize uint64
 
 	// calculate total used disk space
-	totalUsedSize := r.stats.TotalSizeOnDiskLocal() + r.appender.Info().FullSize()
+	totalUsedSize := r.stats.TotalSizeOnDiskLocal() + r.sappender.Info().FullSize()
 
-	evicted := []*refCountedSealed{}
-
+	var evicted []*refCountedSealed
 	for r.sealed.Len() > 0 && totalUsedSize-releasingSize > sizeLimit {
 		for _, s := range r.sealed.GetByPartition(r.sealed.MinPartition()) {
+			if totalUsedSize-releasingSize <= sizeLimit {
+				break
+			}
+
 			info := s.Info()
 			releasingSize += info.FullSize()
+
 			r.stats.sealed.Sub(info)
 			r.sealed.Del(info.Name())
+
 			evicted = append(evicted, s)
 		}
 	}
@@ -296,10 +304,10 @@ func (r *fractionRegistry) evictLocal(sizeLimit uint64) ([]*refCountedSealed, er
 	return evicted, nil
 }
 
-// EvictRemote removes oldest remote fractions based on retention policy.
+// evictRemote removes oldest remote fractions based on retention policy.
 // Fractions older than retention period are permanently deleted.
 // Returns removed fractions or empty slice if nothing to remove.
-func (r *fractionRegistry) EvictRemote(retention time.Duration) []*refCountedRemote {
+func (r *fractionRegistry) evictRemote(retention time.Duration) []*refCountedRemote {
 	if retention == 0 {
 		return nil
 	}
@@ -322,9 +330,9 @@ func (r *fractionRegistry) EvictRemote(retention time.Duration) []*refCountedRem
 	return evicted
 }
 
-// EvictOverflowed removes oldest fractions from offloading queue when it exceeds size limit.
+// evictOverflowed removes oldest fractions from offloading queue when it exceeds size limit.
 // Used when offloading queue grows too large due to slow remote storage performance.
-func (r *fractionRegistry) EvictOverflowed(sizeLimit uint64) (evicted []*refCountedSealed) {
+func (r *fractionRegistry) evictOverflowed(sizeLimit uint64) (evicted []*refCountedSealed) {
 	if sizeLimit == 0 {
 		return nil
 	}
@@ -355,23 +363,43 @@ loop:
 	return evicted
 }
 
-// PromoteToSealed moves fractions from sealing to local queue when sealing completes.
-func (r *fractionRegistry) PromoteToSealed(active *refCountedActive, sealed *frac.Sealed) {
+// promoteToSealed moves fractions from sealing to local queue when sealing completes.
+func (r *fractionRegistry) promoteToSealed(active *refCountedActive, sealed ...*frac.Sealed) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.sealed.Add(sealed.Info().Name(), &refCountedSealed{Sealed: sealed})
-	r.stats.sealed.Add(sealed.Info())
-	r.stats.sealing.Sub(active.Info())
+	for _, f := range sealed {
+		info := f.Info()
+		r.sealed.Add(info.Name(), &refCountedSealed{Sealed: f})
+		r.stats.sealed.Add(info)
+	}
 
+	r.stats.sealing.Sub(active.Info())
 	delete(r.sealing, active.Info().Name())
 
 	r.rebuildSnapshot()
 }
 
-// PromoteToRemote moves fractions from offloading to remote queue when offloading completes.
+func (r *fractionRegistry) substituteWithSealed(produced *frac.Sealed, consumed ...*refCountedSealed) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, f := range consumed {
+		info := f.Info()
+		r.stats.compacting.Sub(info)
+		delete(r.compacting, info.Name())
+	}
+
+	info := produced.Info()
+	r.stats.sealed.Add(info)
+	r.sealed.Add(info.Name(), &refCountedSealed{Sealed: produced})
+
+	r.rebuildSnapshot()
+}
+
+// promoteToRemote moves fractions from offloading to remote queue when offloading completes.
 // Special case: handles fractions that don't require offloading (remote == nil).
-func (r *fractionRegistry) PromoteToRemote(sealed *refCountedSealed, remote *frac.Remote) {
+func (r *fractionRegistry) promoteToRemote(sealed *refCountedSealed, remote *frac.Remote) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -380,14 +408,60 @@ func (r *fractionRegistry) PromoteToRemote(sealed *refCountedSealed, remote *fra
 		r.stats.remotes.Add(remote.Info())
 	}
 
-	r.stats.offloading.Sub(sealed.Info())
 	r.offloading.Del(sealed.Info().Name())
+	r.stats.offloading.Sub(sealed.Info())
+
 	r.rebuildSnapshot()
+}
+
+func (r *fractionRegistry) sealedSnapshot() []*frac.Sealed {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make([]*frac.Sealed, 0, r.sealed.Len())
+	for s := range r.sealed.All() {
+		result = append(result, s.Sealed)
+	}
+
+	return result
+}
+
+func (r *fractionRegistry) claimForCompaction(names []string) ([]*refCountedSealed, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, name := range names {
+		// NOTE(dkharms): If offloading pressure is high on the oldest fractions,
+		// compaction may repeatedly fail to claim them and get into livelock.
+		if _, ok := r.sealed.Get(name); !ok {
+			return nil, fmt.Errorf(
+				"fraction %q is not available for compaction",
+				name,
+			)
+		}
+	}
+
+	claimed := make([]*refCountedSealed, 0, len(names))
+	for _, name := range names {
+		s, _ := r.sealed.Get(name)
+
+		r.sealed.Del(name)
+		r.stats.sealed.Sub(s.Info())
+
+		r.compacting[name] = s
+		r.stats.compacting.Add(s.Info())
+
+		claimed = append(claimed, s)
+	}
+
+	r.rebuildSnapshot()
+	return claimed, nil
 }
 
 // rebuildSnapshot reconstructs the all fractions list
 func (r *fractionRegistry) rebuildSnapshot() {
-	capacity := r.remotes.Len() + r.offloading.Len() + r.sealed.Len() + len(r.sealing) + 1
+	capacity := r.remotes.Len() + r.offloading.Len() +
+		r.sealed.Len() + len(r.compacting) + len(r.sealing) + 1
 
 	// allocate extra capacity to accommodate appender rotation that may occur during snapshot lifetime
 	all := newFractionsSnapshot(capacity + 1)
@@ -404,13 +478,18 @@ func (r *fractionRegistry) rebuildSnapshot() {
 		all.AddSealed(s)
 	}
 
+	for _, c := range r.compacting {
+		all.AddSealed(c)
+	}
+
 	for _, a := range r.sealing {
 		all.AddActive(a)
 	}
 
-	all.AddActive(r.appender)
+	all.AddActive(r.sappender)
 
-	r.muAll.Lock()
-	defer r.muAll.Unlock()
-	r.all = all
+	r.muSnapshot.Lock()
+	defer r.muSnapshot.Unlock()
+
+	r.snapshot = all
 }

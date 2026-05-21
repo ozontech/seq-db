@@ -3,7 +3,7 @@ package fracmanager
 import "sync"
 
 func (fm *FracManager) WaitIdleForTests() {
-	fm.lc.registry.Appender().WaitWriteIdle()
+	fm.lc.registry.appender().waitWriteIdle()
 }
 
 func (fm *FracManager) SealForcedForTests() {
