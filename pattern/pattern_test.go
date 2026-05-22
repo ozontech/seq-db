@@ -100,12 +100,12 @@ func (tp *simpleTokenProvider) Ordered() bool {
 	return tp.ordered
 }
 
-func (tp *simpleTokenProvider) FindContains(firstTID, lastTID uint32, needle []byte) ([]uint32, error) {
+func (tp *simpleTokenProvider) FindContains(needle []byte) ([]uint32, error) {
 	if len(needle) == 0 {
 		return nil, nil
 	}
 	var tids []uint32
-	for t := firstTID; t <= lastTID; t++ {
+	for t := tp.FirstTID(); t <= tp.LastTID(); t++ {
 		if bytes.Contains(tp.GetToken(t), needle) {
 			tids = append(tids, t)
 		}
