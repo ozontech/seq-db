@@ -62,28 +62,28 @@ func (b *Block) GetToken(index int) []byte {
 	return b.Payload[offset : offset+l]
 }
 
-func (b *Block) FindContains(from, to int, needle []byte) ([]int, error) {
-	indices := make([]int, 0)
+func (b *Block) contains(from, to int, needle []byte) ([]int, error) {
+	indexes := make([]int, 0)
 	for i := from; i <= to; i++ {
 		if bytes.Contains(b.GetToken(i), needle) {
-			indices = append(indices, i)
+			indexes = append(indexes, i)
 		}
 	}
-	return indices, nil
+	return indexes, nil
 }
 
-func (b *Block) FindToken(from, to int, searcher pattern.Searcher) ([]int, error) {
-	indices := make([]int, 0)
+func (b *Block) find(from, to int, searcher pattern.Searcher) ([]int, error) {
+	indexes := make([]int, 0)
 	for i := from; i <= to; i++ {
 		ok, err := searcher.Check(b.GetToken(i))
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			indices = append(indices, i)
+			indexes = append(indexes, i)
 		}
 	}
-	return indices, nil
+	return indexes, nil
 }
 
 // BlockLoader is responsible for Reading from disk, unpacking and caching tokens blocks.

@@ -392,6 +392,7 @@ func isNaNOrInf(f float64) bool {
 	return math.IsNaN(f) || math.IsInf(f, 0)
 }
 
+// isSimpleWildcardContains checks if this AST token is simple wildcard like 'foo:*bar*'
 func isSimpleWildcardContains(token parser.Token) (needle []byte, ok bool) {
 	lit, ok := token.(*parser.Literal)
 	if !ok || len(lit.Terms) != 3 {
