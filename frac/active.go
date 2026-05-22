@@ -2,8 +2,8 @@ package frac
 
 import (
 	"context"
+	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -26,9 +26,7 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-var (
-	_ Fraction = (*Active)(nil)
-)
+var _ Fraction = (*Active)(nil)
 
 type Active struct {
 	Config *Config
@@ -46,6 +44,7 @@ type Active struct {
 	TokenList *TokenList
 
 	DocsPositions *DocsPositions
+	IDsToLIDs     *ActiveLIDs
 
 	docsFile   *os.File
 	docsReader storage.DocsReader
@@ -59,16 +58,8 @@ type Active struct {
 
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
-}
 
-const (
-	systemMID = math.MaxUint64
-	systemRID = math.MaxUint64
-)
-
-var systemSeqID = seq.ID{
-	MID: systemMID,
-	RID: systemRID,
+	skipMaskProvider skipMaskProvider
 }
 
 func NewActive(
@@ -78,6 +69,7 @@ func NewActive(
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
 	cfg *Config,
+	skipMaskProvider skipMaskProvider,
 ) *Active {
 	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
 
@@ -86,6 +78,7 @@ func NewActive(
 	f := &Active{
 		TokenList:     NewActiveTokenList(config.IndexWorkers),
 		DocsPositions: NewSyncDocsPositions(),
+		IDsToLIDs:     NewActiveLIDs(),
 		MIDs:          NewIDs(),
 		RIDs:          NewIDs(),
 		DocBlocks:     NewIDs(),
@@ -106,11 +99,13 @@ func NewActive(
 		BaseFileName: baseFileName,
 		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), metaSize),
 		Config:       cfg,
+
+		skipMaskProvider: skipMaskProvider,
 	}
 
 	// use of 0 as keys in maps is prohibited – it's system key, so add first element
-	f.MIDs.Append(systemMID)
-	f.RIDs.Append(systemRID)
+	f.MIDs.Append(uint64(seq.SystemMID))
+	f.RIDs.Append(uint64(seq.SystemRID))
 
 	logger.Info("active fraction created", zap.String("fraction", baseFileName))
 
@@ -121,7 +116,8 @@ func mustOpenMetaWriter(
 	baseFileName string,
 	readLimiter *storage.ReadLimiter,
 	docsFile *os.File,
-	docsStats os.FileInfo) (*os.File, *ActiveWriter, *storage.DocBlocksReader, *storage.WalReader, uint64) {
+	docsStats os.FileInfo,
+) (*os.File, *ActiveWriter, *storage.DocBlocksReader, *storage.WalReader, uint64) {
 	legacyMetaFileName := baseFileName + consts.MetaFileSuffix
 
 	if _, err := os.Stat(legacyMetaFileName); err == nil {
@@ -181,6 +177,7 @@ func (f *Active) replayWalFile(ctx context.Context) error {
 
 	sw := stopwatch.New()
 	wg := sync.WaitGroup{}
+	var corruptions uint64
 
 	for entry := range f.walReader.Entries() {
 		// Check for context cancellation
@@ -193,6 +190,7 @@ func (f *Active) replayWalFile(ctx context.Context) error {
 		if entry.Err != nil {
 			return entry.Err
 		}
+		corruptions = entry.Corruptions
 
 		if uint64(entry.Offset) > next {
 			next += step
@@ -211,6 +209,15 @@ func (f *Active) replayWalFile(ctx context.Context) error {
 	}
 
 	wg.Wait()
+	if corruptions > 0 {
+		metric.WALCorruptionsTotal.Add(float64(corruptions))
+		if err := f.backupCorruptedFiles(); err != nil {
+			logger.Error("failed to copy a corrupted WAL file",
+				zap.String("name", f.info.Name()),
+				zap.Error(err),
+			)
+		}
+	}
 
 	tookSeconds := util.DurationToUnit(time.Since(t), "s")
 	throughputRaw := util.SizeToUnit(f.info.DocsRaw, "mb") / tookSeconds
@@ -223,6 +230,30 @@ func (f *Active) replayWalFile(ctx context.Context) error {
 		util.ZapFloat64WithPrec("throughput_raw_mb_sec", throughputRaw, 1),
 		util.ZapFloat64WithPrec("throughput_meta_mb_sec", throughputMeta, 1),
 	)
+	return nil
+}
+
+// backupCorruptedFiles saves wal and docs file in a directory with corrupted files for later analysis
+func (f *Active) backupCorruptedFiles() error {
+	brokenDir := filepath.Join(filepath.Dir(f.BaseFileName), consts.BrokenDir)
+	if err := os.MkdirAll(brokenDir, 0o777); err != nil {
+		return fmt.Errorf("create dir %s, err: %w", brokenDir, err)
+	}
+
+	fracName := filepath.Base(f.BaseFileName)
+
+	walSrc := f.BaseFileName + consts.WalFileSuffix
+	walDst := filepath.Join(brokenDir, fracName+consts.WalFileSuffix)
+	if err := util.CopyFile(walSrc, walDst); err != nil {
+		return fmt.Errorf("copy from %s to %s, err: %w", walSrc, walDst, err)
+	}
+
+	docSrc := f.BaseFileName + consts.DocsFileSuffix
+	docDst := filepath.Join(brokenDir, fracName+consts.DocsFileSuffix)
+	if err := util.CopyFile(docSrc, docDst); err != nil {
+		return fmt.Errorf("copy from %s to %s, err: %w", docSrc, docDst, err)
+	}
+
 	return nil
 }
 
@@ -385,6 +416,17 @@ func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*se
 	return dp.Search(params)
 }
 
+func (f *Active) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		return nil, nil
+	}
+
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.FindLIDs(ids)
+}
+
 func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 	return &activeDataProvider{
 		ctx:    ctx,
@@ -397,7 +439,10 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 
 		blocksOffsets: f.DocBlocks.GetVals(),
 		docsPositions: f.DocsPositions,
+		idsToLids:     f.IDsToLIDs,
 		docsReader:    &f.docsReader,
+
+		skipMaskProvider: f.skipMaskProvider,
 	}
 }
 

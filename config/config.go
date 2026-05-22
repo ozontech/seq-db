@@ -131,6 +131,9 @@ type Config struct {
 		// DocSize specifies maximum possible size for single document.
 		// Document larger than this threshold will be skipped.
 		DocSize Bytes `config:"doc_size" default:"128KiB"`
+		// QprMemoryUsage specifies maximum heap memory which a single QPR (query partial result)
+		// can use in either store or proxy.
+		QprMemoryUsage Bytes `config:"qpr_memory_usage" default:"0B"`
 
 		Aggregation struct {
 			// FieldTokens specifies maximum amount of unique field tokens
@@ -274,13 +277,14 @@ type Config struct {
 	} `config:"tracing"`
 
 	// Additional filtering options
-	Filtering struct {
-		// If a search query time range overlaps with the [from; to] range
-		// the search query will be `AND`-ed with an additional predicate with the provided query expression
-		Query string    `config:"query"`
-		From  time.Time `config:"from"`
-		To    time.Time `config:"to"`
-	} `config:"filtering"`
+	Filtering SkipMaskParams `config:"filtering"`
+
+	SkipMaskManager struct {
+		DataDir   string           `config:"data_dir"`
+		Workers   int              `config:"workers" default:"1"`
+		SkipMasks []SkipMaskParams `config:"skip_masks"`
+		CacheSize Bytes            `config:"cache_size" default:"100MiB"`
+	} `config:"skip_mask_manager"`
 
 	// Experimental provides flags
 	// For configuring experimental features.
@@ -290,6 +294,12 @@ type Config struct {
 		// If zero then there is no limit.
 		MaxRegexTokensCheck int `config:"max_regex_tokens_check" default:"0"`
 	} `config:"experimental"`
+}
+
+type SkipMaskParams struct {
+	Query string    `config:"query"`
+	From  time.Time `config:"from"`
+	To    time.Time `config:"to"`
 }
 
 type Bytes units.Base2Bytes

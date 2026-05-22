@@ -12,7 +12,7 @@ type TableEntry struct {
 }
 
 func (t *TableEntry) GetIndexInTokensBlock(tid uint32) int {
-	return int(t.StartIndex + tid - t.StartTID)
+	return int(t.StartIndex + (tid - t.StartTID))
 }
 
 func (t *TableEntry) getLastTID() uint32 {

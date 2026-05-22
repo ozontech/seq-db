@@ -13,34 +13,44 @@ import (
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/sealing"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 )
 
 const fileBasePattern = "seq-db-"
 
+type skipMaskProvider interface {
+	GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
+	RefreshFrac(frac frac.Fraction)
+	RemoveFrac(fracName string)
+}
+
 // fractionProvider is a factory for creating different types of fractions
 // Contains all necessary dependencies for creating and managing fractions
 type fractionProvider struct {
-	s3cli         *s3.Client           // Client for S3 storage operations
-	config        *Config              // Fraction manager configuration
-	cacheProvider *CacheMaintainer     // Cache provider for data access optimization
-	activeIndexer *frac.ActiveIndexer  // Indexer for active fractions
-	readLimiter   *storage.ReadLimiter // Read rate limiter
-	ulidEntropy   io.Reader            // Entropy source for ULID generation
+	s3cli            *s3.Client           // Client for S3 storage operations
+	config           *Config              // Fraction manager configuration
+	cacheProvider    *CacheMaintainer     // Cache provider for data access optimization
+	activeIndexer    *frac.ActiveIndexer  // Indexer for active fractions
+	readLimiter      *storage.ReadLimiter // Read rate limiter
+	ulidEntropy      io.Reader            // Entropy source for ULID generation
+	skipMaskProvider skipMaskProvider
 }
 
 func newFractionProvider(
 	cfg *Config, s3cli *s3.Client, cp *CacheMaintainer,
 	readLimiter *storage.ReadLimiter, indexer *frac.ActiveIndexer,
+	skipMaskProvider skipMaskProvider,
 ) *fractionProvider {
 	return &fractionProvider{
-		s3cli:         s3cli,
-		config:        cfg,
-		cacheProvider: cp,
-		activeIndexer: indexer,
-		readLimiter:   readLimiter,
-		ulidEntropy:   ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
+		s3cli:            s3cli,
+		config:           cfg,
+		cacheProvider:    cp,
+		activeIndexer:    indexer,
+		readLimiter:      readLimiter,
+		ulidEntropy:      ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0),
+		skipMaskProvider: skipMaskProvider,
 	}
 }
 
@@ -52,10 +62,11 @@ func (fp *fractionProvider) NewActive(name string) *frac.Active {
 		fp.cacheProvider.CreateDocBlockCache(),
 		fp.cacheProvider.CreateSortDocsCache(),
 		&fp.config.Fraction,
+		fp.skipMaskProvider,
 	)
 }
 
-func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *frac.Sealed {
+func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info, isLegacy bool) *frac.Sealed {
 	return frac.NewSealed(
 		name,
 		fp.readLimiter,
@@ -63,6 +74,8 @@ func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *fra
 		fp.cacheProvider.CreateDocBlockCache(),
 		cachedInfo, // Preloaded meta information
 		&fp.config.Fraction,
+		fp.skipMaskProvider,
+		isLegacy,
 	)
 }
 
@@ -74,10 +87,11 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *seale
 		fp.cacheProvider.CreateIndexCache(),
 		fp.cacheProvider.CreateDocBlockCache(),
 		&fp.config.Fraction,
+		fp.skipMaskProvider,
 	)
 }
 
-func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedInfo *common.Info) *frac.Remote {
+func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedInfo *common.Info, isLegacy bool) *frac.Remote {
 	return frac.NewRemote(
 		ctx,
 		name,
@@ -87,6 +101,8 @@ func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedIn
 		cachedInfo,
 		&fp.config.Fraction,
 		fp.s3cli,
+		fp.skipMaskProvider,
+		isLegacy,
 	)
 }
 
@@ -117,7 +133,9 @@ func (fp *fractionProvider) Seal(active *frac.Active) (*frac.Sealed, error) {
 		return nil, err
 	}
 
-	return fp.NewSealedPreloaded(active.BaseFileName, preloaded), nil
+	sealedFrac := fp.NewSealedPreloaded(active.BaseFileName, preloaded)
+	fp.skipMaskProvider.RefreshFrac(sealedFrac)
+	return sealedFrac, nil
 }
 
 // Offload uploads fraction to S3 storage and returns a remote fraction
@@ -127,9 +145,11 @@ func (fp *fractionProvider) Offload(ctx context.Context, f *frac.Sealed) (*frac.
 	if err != nil {
 		return nil, err
 	}
+
 	if !mustBeOffloaded {
 		return nil, nil
 	}
+
 	info := f.Info()
-	return fp.NewRemote(ctx, info.Path, info), nil
+	return fp.NewRemote(ctx, info.Path, info, f.IsLegacy), nil
 }

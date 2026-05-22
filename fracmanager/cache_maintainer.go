@@ -143,13 +143,22 @@ func (cm *CacheMaintainer) CreateSortDocsCache() *cache.Cache[[]byte] {
 
 func (cm *CacheMaintainer) CreateIndexCache() *frac.IndexCache {
 	return &frac.IndexCache{
-		MIDs:       newCache[[]byte](cm, midsName),
-		RIDs:       newCache[seqids.BlockRIDs](cm, ridsName),
-		Params:     newCache[seqids.BlockParams](cm, paramsName),
-		LIDs:       newCache[*lids.Block](cm, lidsName),
+		LegacyRegistry: newCache[[]byte](cm, indexName),
+
+		// Each index file gets its own registry cache (they all use key=1 internally).
+		TokenRegistry:   newCache[[]byte](cm, indexName),
+		OffsetsRegistry: newCache[[]byte](cm, indexName),
+		IDRegistry:      newCache[[]byte](cm, indexName),
+		LIDRegistry:     newCache[[]byte](cm, indexName),
+
+		MIDs:   newCache[[]byte](cm, midsName),
+		RIDs:   newCache[seqids.BlockRIDs](cm, ridsName),
+		Params: newCache[seqids.BlockParams](cm, paramsName),
+
 		Tokens:     newCache[*token.Block](cm, tokensName),
 		TokenTable: newCache[token.Table](cm, tokenTableName),
-		Registry:   newCache[[]byte](cm, indexName),
+
+		LIDs: newCache[*lids.Block](cm, lidsName),
 	}
 }
 

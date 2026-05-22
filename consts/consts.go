@@ -48,6 +48,9 @@ const (
 
 	DefaultReplayWorkers = 2
 
+	// dir names
+	BrokenDir = ".broken"
+
 	// known extensions
 	MetaFileSuffix = ".meta"
 	WalFileSuffix  = ".wal"
@@ -59,8 +62,26 @@ const (
 	SdocsTmpFileSuffix = "._sdocs"
 	SdocsDelFileSuffix = ".sdocs.del"
 
+	InfoFileSuffix    = ".info"
+	InfoTmpFileSuffix = "._info"
+
+	TokenFileSuffix    = ".tokens"
+	TokenTmpFileSuffix = "._tokens"
+
+	OffsetsFileSuffix    = ".offsets"
+	OffsetsTmpFileSuffix = "._offsets"
+
+	IDFileSuffix    = ".ids"
+	IDTmpFileSuffix = "._ids"
+
+	LIDFileSuffix    = ".lids"
+	LIDTmpFileSuffix = "._lids"
+
+	// IndexFileSuffix is the legacy single-file index format (pre-split).
 	IndexFileSuffix    = ".index"
 	IndexTmpFileSuffix = "._index"
+	// TODO(dkharms): [IndexDelFileSuffix] is actually not necessary.
+	// We can remove it in the future releases.
 	IndexDelFileSuffix = ".index.del"
 
 	RemoteFractionSuffix = ".remote"
@@ -89,4 +110,5 @@ var (
 	ErrTooManyGroupTokens        = errors.New("aggregation has too many group tokens")
 	ErrTooManyFractionTokens     = errors.New("aggregation has too many fraction tokens")
 	ErrTooManyFractionsHit       = errors.New("too many fractions hit")
+	ErrMemoryLimitExceeded       = errors.New("memory limit exceeded")
 )

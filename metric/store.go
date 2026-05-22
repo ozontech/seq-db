@@ -60,6 +60,13 @@ var (
 		Help:      "Search request duration time (only successful searches)",
 		Buckets:   SecondsBuckets,
 	})
+	SearchQprMemSize = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "search",
+		Name:      "qpr_mem_size_bytes",
+		Help:      "QPR heap memory size in bytes",
+		Buckets:   prometheus.ExponentialBuckets(1024, 3, 21),
+	})
 
 	SearchRangesSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_store",
@@ -115,6 +122,12 @@ var (
 		Subsystem: "common",
 		Name:      "panics_total",
 		Help:      "Number of panics in store",
+	})
+	WALCorruptionsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "storage",
+		Name:      "wal_corruptions_total",
+		Help:      "Number of detected WAL corruption ranges during replay",
 	})
 
 	skippedIndexes = promauto.NewCounterVec(prometheus.CounterOpts{
