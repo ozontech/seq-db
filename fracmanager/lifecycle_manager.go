@@ -2,7 +2,6 @@ package fracmanager
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -198,11 +197,6 @@ func (lc *lifecycleManager) cleanLocal(sizeLimit uint64, wg *sync.WaitGroup) {
 	toDelete, err := lc.registry.evictLocalForDelete(sizeLimit)
 	if err != nil {
 		logger.Fatal("error releasing old fractions:", zap.Error(err))
-	}
-
-	fmt.Printf("len(toDelete): %v\n", len(toDelete))
-	for _, f := range toDelete {
-		fmt.Printf("f.Info().Name(): %v\n", f.Info().Name())
 	}
 
 	if len(toDelete) > 0 && !lc.flags.IsCapacityExceeded() {
