@@ -3,6 +3,7 @@ package query
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 
 	insaneJSON "github.com/ozontech/insane-json"
 )
@@ -84,6 +85,12 @@ func (rv *RecordVals) ensureDecoded() {
 		rv.decoded = binary.LittleEndian.Uint32(rv.rawData)
 	case DataTypeUint64:
 		rv.decoded = binary.LittleEndian.Uint64(rv.rawData)
+	case DataTypeInt32:
+		rv.decoded = int32(binary.LittleEndian.Uint32(rv.rawData))
+	case DataTypeInt64:
+		rv.decoded = int64(binary.LittleEndian.Uint64(rv.rawData))
+	case DataTypeFloat64:
+		rv.decoded = math.Float64frombits(binary.LittleEndian.Uint64(rv.rawData))
 	default:
 		panic(fmt.Errorf("unknown data type")) // TODO: error handling
 	}

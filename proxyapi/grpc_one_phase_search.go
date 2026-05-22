@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"go.opencensus.io/trace"
@@ -16,6 +17,7 @@ import (
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
+	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -36,7 +38,7 @@ func (g *grpcV1) OnePhaseSearch(ctx context.Context, req *seqproxyapi.SearchRequ
 		WithTotal: req.WithTotal,
 		Order:     req.Order,
 	}
-	sResp, aggsStream, err := g.doOnePhaseSearch(ctx, proxyReq, true)
+	sResp, docsStream, aggsStream, err := g.doOnePhaseSearch(ctx, proxyReq, true)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +66,7 @@ func (g *grpcV1) OnePhaseSearch(ctx context.Context, req *seqproxyapi.SearchRequ
 		allAggs := sResp.qpr.Aggregate(aggregationArgsFromStatsAggs(statsAggs))
 		resp.Aggs = makeProtoAggregation(allAggs)
 	} else {
-		resp.Docs = makeProtoDocsOnePhase(sResp.docsStream)
+		resp.Docs = makeProtoDocsOnePhase(docsStream)
 	}
 
 	return resp, nil
@@ -95,16 +97,33 @@ func convertAggsStreamToAggregationResults(aggs search.AggsIterator) []seq.Aggre
 	return result
 }
 
-func makeProtoDocsOnePhase(docs search.DocsIterator) []*seqproxyapi.Document {
-	// TODO: paginate (???)
+func makeProtoDocsOnePhase(input query.RecordProducer) []*seqproxyapi.Document {
 	respDocs := make([]*seqproxyapi.Document, 0)
-	for doc, err := docs.Next(); err == nil; doc, err = docs.Next() {
+
+	for {
+		r, meta := input.Next()
+		if meta != nil {
+			if !errors.Is(meta.Err, io.EOF) {
+				// TODO: handle error
+				panic(fmt.Errorf("stream error: %w", meta.Err))
+			}
+			break
+		}
+		if r == nil {
+			break
+		}
+
+		docID := seq.ID{
+			MID: seq.MID(r.Vals[0].Decoded().(uint64)),
+			RID: seq.RID(r.Vals[1].Decoded().(uint64)),
+		}
 		respDocs = append(respDocs, &seqproxyapi.Document{
-			Id:   doc.ID.String(),
-			Data: doc.Data,
-			Time: timestamppb.New(doc.ID.MID.Time()),
+			Id:   docID.String(),
+			Data: r.Vals[2].RawData(),
+			Time: timestamppb.New(docID.MID.Time()),
 		})
 	}
+
 	return respDocs
 }
 
@@ -112,20 +131,20 @@ func (g *grpcV1) doOnePhaseSearch(
 	ctx context.Context,
 	req *seqproxyapi.ComplexSearchRequest,
 	shouldFetch bool,
-) (*proxySearchResponse, search.AggsIterator, error) {
+) (*proxySearchResponse, query.RecordProducer, search.AggsIterator, error) {
 	metric.SearchOverall.Add(1)
 
 	span := trace.FromContext(ctx)
 	defer span.End()
 
 	if req.Query == nil {
-		return nil, nil, status.Error(codes.InvalidArgument, "search query must be provided")
+		return nil, nil, nil, status.Error(codes.InvalidArgument, "search query must be provided")
 	}
 	if req.Query.From == nil || req.Query.To == nil {
-		return nil, nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
+		return nil, nil, nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
 	}
 	if req.Offset != 0 && req.OffsetId != "" {
-		return nil, nil, status.Error(codes.InvalidArgument, `only one of "offset" and "offset_id" must be provided`)
+		return nil, nil, nil, status.Error(codes.InvalidArgument, `only one of "offset" and "offset_id" must be provided`)
 	}
 
 	fromTime := req.Query.From.AsTime()
@@ -146,7 +165,7 @@ func (g *grpcV1) doOnePhaseSearch(
 
 	rlQuery := getSearchQueryFromGRPCReqForRateLimiter(req)
 	if !g.rateLimiter.Account(rlQuery) {
-		return nil, nil, status.Error(codes.ResourceExhausted, consts.ErrRequestWasRateLimited.Error())
+		return nil, nil, nil, status.Error(codes.ResourceExhausted, consts.ErrRequestWasRateLimited.Error())
 	}
 
 	proxyReq := &search.SearchRequest{
@@ -163,25 +182,25 @@ func (g *grpcV1) doOnePhaseSearch(
 	}
 
 	tr := querytracer.New(req.Query.Explain, "proxy/OnePhaseSearch")
+	// TODO: do we really need QPR here (???)
 	qpr, docsStream, aggsStream, err := g.searchIngestor.OnePhaseSearch(ctx, proxyReq, tr)
 	psr := &proxySearchResponse{
-		qpr:        qpr,
-		docsStream: docsStream,
+		qpr: qpr,
 	}
 
 	if e, ok := parseProxyError(err); ok {
 		psr.err = e
-		return psr, nil, nil
+		return psr, nil, nil, nil
 	}
 
 	if errors.Is(err, consts.ErrInvalidArgument) {
-		return nil, nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, nil, nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	if st, ok := status.FromError(err); ok {
 		// could not parse a query
 		if st.Code() == codes.InvalidArgument {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -191,24 +210,24 @@ func (g *grpcV1) doOnePhaseSearch(
 			Code:    seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE,
 			Message: err.Error(),
 		}
-		return psr, aggsStream, nil
+		return psr, docsStream, aggsStream, nil
 	}
 	if err = processSearchErrors(qpr, err); err != nil {
 		metric.SearchErrors.Inc()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	g.tryMirrorRequest(req)
 
-	return psr, aggsStream, nil
+	return psr, docsStream, aggsStream, nil
 }
 
-func extractStatsPipesFromQuery(query string) []parser.StatsAgg {
-	if query == "" {
+func extractStatsPipesFromQuery(q string) []parser.StatsAgg {
+	if q == "" {
 		return nil
 	}
 
-	seqql, err := parser.ParseSeqQL(query, nil)
+	seqql, err := parser.ParseSeqQL(q, nil)
 	if err != nil {
 		return nil
 	}

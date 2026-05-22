@@ -90,20 +90,24 @@ func (g *GrpcV1) doOnePhaseSearchDocs(
 
 	start := time.Now()
 
+	var errCode storeapi.SearchErrorCode
 	// in store mode hot we return error in case request wants data, that we've already rotated
-	// if g.config.StoreMode == StoreModeHot {
-	// 	if g.fracManager.Flags().IsCapacityExceeded() && g.earlierThanOldestFrac(uint64(req.From)) {
-	// 		metric.RejectedRequests.WithLabelValues("search", "old_data").Inc()
-	// 		return &storeapi.SearchResponse{Code: storeapi.SearchErrorCode_INGESTOR_QUERY_WANTS_OLD_DATA}, nil
-	// 	}
-	// }
+	if g.config.StoreMode == StoreModeHot {
+		if g.fracManager.Flags().IsCapacityExceeded() && g.earlierThanOldestFrac(uint64(seq.TimeToMID(req.From.AsTime()))) {
+			metric.RejectedRequests.WithLabelValues("search", "old_data").Inc()
+			errCode = storeapi.SearchErrorCode_INGESTOR_QUERY_WANTS_OLD_DATA
+		}
+	}
 
 	tr := querytracer.New(req.Explain, "store/OnePhaseSearchDocs")
 
 	err := stream.Send(&storeapi.OnePhaseSearchResponse{
 		ResponseType: &storeapi.OnePhaseSearchResponse_Header{
 			Header: &storeapi.Header{
-				Metadata: &storeapi.Metadata{}, // TODO: fill metadata
+				Metadata: &storeapi.Metadata{
+					// TODO: fill metadata
+					Code: errCode,
+				},
 				Typing: []*storeapi.Typing{
 					// TODO: conditional typing
 					{Title: "mid", Type: storeapi.DataType_UINT64},
@@ -119,6 +123,11 @@ func (g *GrpcV1) doOnePhaseSearchDocs(
 			return nil
 		}
 		return fmt.Errorf("error sending header: %w", err)
+	}
+
+	// exit if had errors
+	if errCode != storeapi.SearchErrorCode_NO_ERROR {
+		return nil
 	}
 
 	producer, err := g.buildProducer(ctx, req, tr, seqql)

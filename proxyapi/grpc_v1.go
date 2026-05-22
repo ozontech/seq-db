@@ -24,6 +24,7 @@ import (
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
+	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
@@ -38,7 +39,7 @@ type SearchIngestor interface {
 	CancelAsyncSearch(ctx context.Context, id string) error
 	DeleteAsyncSearch(ctx context.Context, id string) error
 	GetAsyncSearchesList(context.Context, search.GetAsyncSearchesListRequest) ([]*search.AsyncSearchesListItem, error)
-	OnePhaseSearch(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, search.AggsIterator, error)
+	OnePhaseSearch(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, query.RecordProducer, search.AggsIterator, error)
 }
 
 type MappingProvider interface {
@@ -474,12 +475,12 @@ func shouldHaveResponse(code seqproxyapi.ErrorCode) bool {
 	return code == seqproxyapi.ErrorCode_ERROR_CODE_NO || code == seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE
 }
 
-func ExtractStatsPipes(query string) ([]parser.StatsAgg, error) {
-	if query == "" {
+func ExtractStatsPipes(q string) ([]parser.StatsAgg, error) {
+	if q == "" {
 		return nil, nil
 	}
 
-	seqql, err := parser.ParseSeqQL(query, nil)
+	seqql, err := parser.ParseSeqQL(q, nil)
 	if err != nil {
 		return nil, err
 	}

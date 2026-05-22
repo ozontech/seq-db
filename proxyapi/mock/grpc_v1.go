@@ -14,6 +14,7 @@ import (
 
 	seqproxyapi "github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	search "github.com/ozontech/seq-db/proxy/search"
+	query "github.com/ozontech/seq-db/query"
 	querytracer "github.com/ozontech/seq-db/querytracer"
 	seq "github.com/ozontech/seq-db/seq"
 )
@@ -116,11 +117,11 @@ func (mr *MockSearchIngestorMockRecorder) GetAsyncSearchesList(arg0, arg1 interf
 }
 
 // OnePhaseSearch mocks base method.
-func (m *MockSearchIngestor) OnePhaseSearch(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, search.AggsIterator, error) {
+func (m *MockSearchIngestor) OnePhaseSearch(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, query.RecordProducer, search.AggsIterator, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "OnePhaseSearch", ctx, sr, tr)
 	ret0, _ := ret[0].(*seq.QPR)
-	ret1, _ := ret[1].(search.DocsIterator)
+	ret1, _ := ret[1].(query.RecordProducer)
 	ret2, _ := ret[2].(search.AggsIterator)
 	ret3, _ := ret[3].(error)
 	return ret0, ret1, ret2, ret3
