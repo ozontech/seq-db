@@ -24,14 +24,14 @@ build-image:
 
 .PHONY: build-debug
 build-debug:
-	CGO_ENABLED=0 \
-	go build -gcflags="all=-N -l" \
+	CGO_ENABLED=1 \
+	go build \
 		-o ${LOCAL_BIN}/${OS}-${ARCH}/ \
 		./cmd/...
 
 .PHONY: run
 run: build-debug
-	SEQDB_STORAGE_DATA_DIR=$(shell mktemp -d) \
+	SEQDB_STORAGE_DATA_DIR=data/ \
 	${LOCAL_BIN}/${OS}-${ARCH}/seq-db \
 		--mode=single \
 		--config=config.example.yaml

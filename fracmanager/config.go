@@ -66,6 +66,9 @@ func FillConfigWithDefault(config *Config) *Config {
 	if config.SealParams.TokenTableZstdLevel == 0 {
 		config.SealParams.TokenTableZstdLevel = zstdDefaultLevel
 	}
+	if config.SealParams.BinSize == 0 {
+		config.SealParams.BinSize = time.Minute
+	}
 	if config.ReplayWorkers == 0 {
 		config.ReplayWorkers = consts.DefaultReplayWorkers
 	}

@@ -255,5 +255,7 @@ func sealOnShutdown(active *frac.Active, provider *fractionProvider, minSealSize
 
 	if _, err := provider.Seal(active); err != nil {
 		logger.Error("error sealing on shutdown", zap.Error(err))
+		return
 	}
+	active.Release()
 }

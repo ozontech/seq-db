@@ -1,7 +1,6 @@
 package frac
 
 import (
-	"fmt"
 	"iter"
 	"slices"
 	"time"
@@ -283,12 +282,6 @@ func (b *BinnedSource) postingsForField(field string, idx int) iter.Seq2[TokenPo
 				if newLID := b.oldToNewLIDs[lid]; newLID != 0 {
 					lidsbuf = append(lidsbuf, newLID)
 				}
-			}
-
-			if field == "user_id" && string(token) == "10" {
-				fmt.Printf("field: %v\n", field)
-				fmt.Printf("token: %v\n", string(token))
-				fmt.Printf("lidsbuf: %v\n", lidsbuf)
 			}
 
 			if len(lidsbuf) == 0 {

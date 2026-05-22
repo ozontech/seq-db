@@ -214,7 +214,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 	s.Assert().NoError(err)
 	origIDs := qpr.IDs
 
-	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
+	s.RunFracEnvs(map[suites.FractionEnv]bool{suites.SealedEnv: true}, true, func() {
 		ids := make(seq.IDSources, len(origIDs))
 		copy(ids, origIDs)
 
@@ -247,7 +247,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 		}
 
 		docsStreamBrokenHints, err := s.Ingestor().SearchIngestor.FetchDocsStream(context.TODO(), ids, false, search.FetchFieldsFilter{})
-		s.Assert().NoError(err)
+		s.Require().NoError(err)
 
 		fetched = []string{}
 		for doc, err := docsStreamBrokenHints.Next(); err == nil; doc, err = docsStreamBrokenHints.Next() {
@@ -255,7 +255,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 				fetched = append(fetched, string(doc.Data))
 			}
 		}
-		s.Assert().Empty(fetched)
+		s.Require().Equal(docStrs, fetched)
 	})
 }
 

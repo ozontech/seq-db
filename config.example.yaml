@@ -7,8 +7,8 @@ address:
   debug: :9200
 
 storage:
-  frac_size: 16MiB
-  total_size: 1GiB
+  frac_size: 4MiB
+  total_size: 10GiB
 
 # For testing or developments purposes you can run MinIO S3 compatible object storage locally.
 #
@@ -22,6 +22,9 @@ offloading:
   bucket: remote-storage
   access_key: minioadmin
   secret_key: minioadmin
+
+limits:
+  query_rate: 32
 
 slow_logs:
   bulk_threshold: 100ms

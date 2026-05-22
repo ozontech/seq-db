@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -72,9 +73,12 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(l.config.ReplayWorkers)
 
-	sealed := make([]*frac.Sealed, len(actives)-1)
+	var (
+		mu     sync.Mutex
+		sealed []*frac.Sealed
+	)
 
-	for i, a := range actives[:len(actives)-1] {
+	for _, a := range actives[:len(actives)-1] {
 		g.Go(func() error {
 			// Replay operations from WAL to restore state
 			if err := a.Replay(ctx); err != nil {
@@ -86,11 +90,14 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 				return nil
 			}
 
-			s, err := l.provider.Seal(a)
+			fracs, err := l.provider.Seal(a)
 			if err != nil {
 				return err
 			}
-			sealed[i] = s
+
+			mu.Lock()
+			sealed = append(sealed, fracs...)
+			mu.Unlock()
 
 			return nil
 		})
@@ -103,15 +110,7 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 		return nil, nil, err
 	}
 
-	n := 0
-	for i, s := range sealed { // skip empty
-		if s != nil {
-			sealed[n] = sealed[i]
-			n++
-		}
-	}
-
-	return last, sealed[:n], nil
+	return last, sealed, nil
 }
 
 // discover discovers all fractions in filesystem

@@ -1,8 +1,6 @@
 package processor
 
 import (
-	"fmt"
-
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -22,21 +20,17 @@ func IndexFetch(ids []seq.ID, sw *stopwatch.Stopwatch, fetchIndex fetchIndex, re
 	blocks, offsets, index := seq.GroupDocsOffsets(docsPos)
 	m.Stop()
 
-	fmt.Printf("ids: %v\n", ids)
-	fmt.Printf("blocks: %v\n", blocks)
-	fmt.Printf("offsets: %v\n", offsets)
-
 	m = sw.Start("read_doc")
 	for i, docOffsets := range offsets {
 		docs, err := fetchIndex.ReadDocs(fetchIndex.GetBlocksOffsets(blocks[i]), docOffsets)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("docs: %v\n", docs)
 		for src, dst := range index[i] {
 			res[dst] = docs[src]
 		}
 	}
 	m.Stop()
+
 	return nil
 }

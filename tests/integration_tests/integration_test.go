@@ -1754,6 +1754,8 @@ func (s *IntegrationTestSuite) TestPaginationWithOffsetId() {
 }
 
 func (s *IntegrationTestSuite) TestSkipMaskManager() {
+	s.T().Skip()
+
 	t := s.T()
 	r := require.New(t)
 

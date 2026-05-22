@@ -126,32 +126,48 @@ func (fp *fractionProvider) CreateActive() *frac.Active {
 
 // Seal converts an active fraction to a sealed one
 // Process includes sorting, indexing, and data optimization for reading
-func (fp *fractionProvider) Seal(a *frac.Active) (*frac.Sealed, error) {
-	sealsTotal.Inc()
-	now := time.Now()
+func (fp *fractionProvider) Seal(a *frac.Active) ([]*frac.Sealed, error) {
+	fp.config.SealParams.BinSize = time.Minute
 
-	src, err := frac.NewActiveSealingSource(a, fp.config.SealParams)
-	if err != nil {
-		return nil, err
-	}
-	preloaded, err := sealing.Seal(src, fp.config.SealParams)
-	if err != nil {
-		return nil, err
-	}
-
-	s := fp.NewSealedPreloaded(a.BaseFileName, preloaded)
-	fp.skipMaskProvider.RefreshFrac(s)
-
-	sealingTime := time.Since(now)
-	sealsDoneSeconds.Observe(sealingTime.Seconds())
-
-	logger.Info(
-		"fraction sealed",
-		zap.String("fraction", filepath.Base(s.BaseFileName)),
-		zap.Float64("time_spent_s", util.DurationToUnit(sealingTime, "s")),
+	bins, err := frac.PerformTimestampBinning(
+		a, false, fp.config.SealParams,
+		func() string {
+			filePath := fileBasePattern + fp.nextFractionID()
+			return filepath.Join(fp.config.DataDir, filePath)
+		},
 	)
 
-	return s, nil
+	if err != nil {
+		return nil, err
+	}
+
+	fracs := make([]*frac.Sealed, 0, len(bins))
+	for _, b := range bins {
+		sealsTotal.Inc()
+
+		start := time.Now()
+		preloaded, err := sealing.Seal(b, fp.config.SealParams)
+		if err != nil {
+			return nil, err
+		}
+
+		sealingTime := time.Since(start)
+		sealsDoneSeconds.Observe(sealingTime.Seconds())
+
+		s := fp.NewSealedPreloaded(preloaded.Info.Path, preloaded)
+		fracs = append(fracs, s)
+
+		logger.Info(
+			"fraction sealed",
+			zap.String("fraction", filepath.Base(s.BaseFileName)),
+			zap.Float64("time_spent_s", util.DurationToUnit(sealingTime, "s")),
+		)
+	}
+
+	// FIXME(dkharms): Handle new fractions.
+	// fp.skipMaskProvider.RefreshFrac(s)
+
+	return fracs, nil
 }
 
 // Offload uploads fraction to S3 storage and returns a remote fraction

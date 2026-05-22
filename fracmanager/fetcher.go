@@ -142,6 +142,11 @@ func groupIDsByFraction(idsOrig seq.IDSources, fracsIn List) (List, [][]seq.ID) 
 	withHintsCnt := 0
 	hintMissesCnt := 0
 
+	names := make(map[string]struct{})
+	for _, f := range fracsOut {
+		names[f.Info().Name()] = struct{}{}
+	}
+
 	l := 0
 	// Here we group `IDs` by fractions. Each ID can have a `Hint` - a hint in which fraction it should be found.
 	// In this case, such an ID falls into only one single group of this fraction.
@@ -152,7 +157,9 @@ func groupIDsByFraction(idsOrig seq.IDSources, fracsIn List) (List, [][]seq.ID) 
 		fracName := f.Info().Name()
 
 		for _, id := range ids {
-			if id.Hint == "" {
+			_, ok := names[id.Hint]
+
+			if id.Hint == "" || !ok {
 				ids[i], i = id, i+1 // always check ids with empty hint for all fractions
 				if f.Contains(id.ID.MID) {
 					idsBuf = append(idsBuf, id.ID)
@@ -173,14 +180,17 @@ func groupIDsByFraction(idsOrig seq.IDSources, fracsIn List) (List, [][]seq.ID) 
 				hintMissesCnt++
 				continue
 			}
+
 			idsBuf = append(idsBuf, id.ID)
 		}
+
 		if len(idsBuf) > 0 {
 			fracsOut[l] = f
 			idsByFracs = append(idsByFracs, append([]seq.ID{}, idsBuf...))
 			fetcherIDsPerFraction.Observe(float64(len(idsBuf)))
 			l++
 		}
+
 		ids = ids[:i]
 	}
 
