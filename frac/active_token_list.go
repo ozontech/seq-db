@@ -40,12 +40,12 @@ func (tp *activeTokenProvider) GetToken(tid uint32) []byte {
 }
 
 // FindContains finds tids of tokens which contain a provided needle. From and to indices are specified inclusive.
-func (tp *activeTokenProvider) FindContains(firstTID, lastTID uint32, needle []byte) ([]uint32, error) {
+func (tp *activeTokenProvider) FindContains(needle []byte) ([]uint32, error) {
 	if len(needle) == 0 {
 		return nil, nil
 	}
 	var tids []uint32
-	for tid := firstTID; tid <= lastTID; tid++ {
+	for tid := tp.FirstTID(); tid <= tp.LastTID(); tid++ {
 		if bytes.Contains(tp.GetToken(tid), needle) {
 			tids = append(tids, tid)
 		}

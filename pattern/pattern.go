@@ -17,7 +17,7 @@ import (
 
 type tokenProvider interface {
 	GetToken(uint32) []byte
-	FindContains(firstTID uint32, lastTID uint32, needle []byte) ([]uint32, error)
+	FindContains(needle []byte) ([]uint32, error)
 	FindToken(searcher Searcher) ([]uint32, error)
 	FirstTID() uint32
 	LastTID() uint32
@@ -409,7 +409,7 @@ func Search(ctx context.Context, t parser.Token, tp tokenProvider) ([]uint32, er
 		return nil, ctx.Err()
 	}
 	if needle, ok := isSimpleWildcardContains(t); ok {
-		return tp.FindContains(tp.FirstTID(), tp.LastTID(), needle)
+		return tp.FindContains(needle)
 	}
 	s := newSearcher(t, tp)
 	return tp.FindToken(s)
