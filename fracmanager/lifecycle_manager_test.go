@@ -38,8 +38,6 @@ func TestFracInfoCache(t *testing.T) {
 	defer tearDown()
 
 	fillRotateAndCheck := func(names map[string]struct{}) {
-		time.Sleep(time.Millisecond * 10)
-
 		appender := lc.registry.appender()
 		appendDocsToActive(t, appender.Active, 10+rand.Intn(10))
 
