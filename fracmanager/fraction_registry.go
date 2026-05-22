@@ -280,10 +280,6 @@ func (r *fractionRegistry) evictLocal(sizeLimit uint64) ([]*refCountedSealed, er
 	var evicted []*refCountedSealed
 	for r.sealed.Len() > 0 && totalUsedSize-releasingSize > sizeLimit {
 		for _, s := range r.sealed.GetByPartition(r.sealed.MinPartition()) {
-			if totalUsedSize-releasingSize <= sizeLimit {
-				break
-			}
-
 			info := s.Info()
 			releasingSize += info.FullSize()
 
