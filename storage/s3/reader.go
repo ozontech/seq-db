@@ -15,9 +15,7 @@ import (
 	"github.com/ozontech/seq-db/storage"
 )
 
-var (
-	_ storage.ImmutableFile = (*reader)(nil)
-)
+var _ storage.ImmutableFile = (*reader)(nil)
 
 // reader is a wrapper around S3 client that provides basic IO functions.
 // Be aware that [reader] is not thread-safe.
@@ -64,7 +62,7 @@ func (r *reader) Read(p []byte) (int, error) {
 
 	if b != expected {
 		return 0, fmt.Errorf(
-			"s3: short copy occurred: written=%d but expected=%d",
+			"s3: short copy occurred: read=%d but expected=%d",
 			b, expected,
 		)
 	}
@@ -159,7 +157,6 @@ func (r *reader) Stat() (os.FileInfo, error) {
 		Bucket: aws.String(r.c.bucket),
 		Key:    aws.String(r.filename),
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf(
 			"s3: cannot stat file=%q: %w",
@@ -199,9 +196,7 @@ func (r *reader) getSize() (int64, error) {
 	return size, nil
 }
 
-var (
-	_ os.FileInfo = (*fileStat)(nil)
-)
+var _ os.FileInfo = (*fileStat)(nil)
 
 type fileStat struct {
 	name    string
