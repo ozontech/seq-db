@@ -31,12 +31,12 @@ func newLIDAccumulator(
 	return a
 }
 
-// Add processes LIDs of one token (must be called in TID order).
+// add processes LIDs of one token (must be called in TID order).
 //
 // For each block that fills up, `onBlock` is called immediately
 // before the backing arrays are reset, so `onBlock` may read the
 // block data but must not retain references to it.
-func (a *lidAccumulator) Add(lidsbuf []uint32) error {
+func (a *lidAccumulator) add(lidsbuf []uint32) error {
 	a.currentTID++
 
 	for _, lid := range lidsbuf {
@@ -64,7 +64,7 @@ func (a *lidAccumulator) Add(lidsbuf []uint32) error {
 	return nil
 }
 
-func (a *lidAccumulator) Finalize() error {
+func (a *lidAccumulator) finalize() error {
 	return a.onBlock(a.finalizeBlock())
 }
 

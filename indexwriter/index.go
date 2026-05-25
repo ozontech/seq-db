@@ -49,7 +49,7 @@ type indexBlock struct {
 	ext2    uint64
 }
 
-func (i indexBlock) Bin(pos int64) (storage.IndexBlockHeader, []byte) {
+func (i indexBlock) bin(pos int64) (storage.IndexBlockHeader, []byte) {
 	return storage.NewIndexBlockHeader(pos, i.ext1, i.ext2, uint32(len(i.payload)), i.rawLen, i.codec), i.payload
 }
 
@@ -153,7 +153,7 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	)
 
 	var allFieldsTables []token.FieldTable
-	for pair, err := range tokenBlock(src.TokenTriplet(), lidAccumulator.Add, consts.RegularBlockSize) {
+	for pair, err := range tokenBlock(src.TokenTriplet(), lidAccumulator.add, consts.RegularBlockSize) {
 		if err != nil {
 			return err
 		}
@@ -173,7 +173,7 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 }
 
 func (s *IndexWriter) finalizeLIDFile(w *writer, lidAccumulator *lidAccumulator) error {
-	if err := lidAccumulator.Finalize(); err != nil {
+	if err := lidAccumulator.finalize(); err != nil {
 		return err
 	}
 
