@@ -19,6 +19,7 @@ import (
 
 	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/buildinfo"
+	"github.com/ozontech/seq-db/compaction"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
@@ -289,6 +290,7 @@ func startStore(
 			OffloadingRetention:  cfg.Offloading.Retention,
 			OffloadingRetryDelay: cfg.Offloading.RetryDelay,
 			OffloadingQueueSize:  uint64(float64(cfg.Storage.TotalSize) * cfg.Offloading.QueueSizePercent / 100),
+			CompactionEnabled:    cfg.Compaction.Enabled,
 		},
 		API: storeapi.APIConfig{
 			StoreMode: configMode,
@@ -323,6 +325,20 @@ func startStore(
 			DataDir:        cfg.SkipMaskManager.DataDir,
 			Workers:        cfg.SkipMaskManager.Workers,
 			CacheSizeLimit: uint64(cfg.SkipMaskManager.CacheSize),
+		},
+		Compaction: compaction.Config{
+			Enabled: cfg.Compaction.Enabled,
+
+			MergeTrigger:    cfg.Compaction.STCS.MergeTrigger,
+			MergeFanIn:      cfg.Compaction.STCS.MergeFanIn,
+			MergeFanOutSize: uint64(cfg.Compaction.STCS.MergeFanOutSize),
+
+			BucketLowerbound: cfg.Compaction.STCS.BucketLowerbound,
+			BucketUpperbound: cfg.Compaction.STCS.BucketUpperbound,
+
+			Workers:      cfg.Compaction.Workers,
+			TimeWindow:   cfg.Compaction.TimeWindow,
+			TickInterval: cfg.Compaction.TickInterval,
 		},
 	}
 

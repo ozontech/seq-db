@@ -35,6 +35,7 @@ func Parse(path string) (Config, error) {
 	}
 
 	/* Set computed defaults if user did not override them */
+	c.Compaction.Workers = cmp.Or(c.Compaction.Workers, NumCPU)
 
 	c.Resources.ReaderWorkers = cmp.Or(c.Resources.ReaderWorkers, NumCPU)
 	c.Resources.SearchWorkers = cmp.Or(c.Resources.SearchWorkers, NumCPU)
@@ -59,7 +60,7 @@ type Config struct {
 		// DataDir is a path to a directory where fractions will be stored.
 		DataDir string `config:"data_dir"`
 		// FracSize specifies the maximum size of an active fraction before it gets sealed.
-		FracSize Bytes `config:"frac_size" default:"128MiB"`
+		FracSize Bytes `config:"frac_size" default:"16MiB"`
 		// TotalSize specifies upper bound of how much disk space can be occupied
 		// by sealed fractions before they get deleted (or offloaded).
 		TotalSize Bytes `config:"total_size" default:"1GiB"`
@@ -208,6 +209,20 @@ type Config struct {
 		SealedZstdCompressionLevel   int `config:"sealed_zstd_compression_level" default:"3"`
 		DocBlockZstdCompressionLevel int `config:"doc_block_zstd_compression_level" default:"3"`
 	} `config:"compression"`
+
+	Compaction struct {
+		STCS struct {
+			MergeTrigger     int     `config:"merge_trigger" default:"4"`
+			MergeFanIn       int     `config:"merge_fan_in" default:"32"`
+			MergeFanOutSize  Bytes   `config:"merge_fan_out_size" default:"512MiB"`
+			BucketLowerbound float64 `config:"bucket_lowerbound" default:"0.5"`
+			BucketUpperbound float64 `config:"bucket_upperbound" default:"1.5"`
+		} `config:"stcs"`
+		Enabled      bool          `config:"enabled"`
+		Workers      int           `config:"workers"`
+		TimeWindow   time.Duration `config:"time_window" default:"1h"`
+		TickInterval time.Duration `config:"tick_interval" default:"1s"`
+	} `config:"compaction"`
 
 	Indexing struct {
 		MaxTokenSize         int  `config:"max_token_size" default:"72"`

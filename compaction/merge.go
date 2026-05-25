@@ -11,13 +11,13 @@ import (
 )
 
 func Merge(filename string, params common.SealParams, srcs ...Source) (*sealed.PreloadedData, error) {
-	writer := indexwriter.New(params)
+	w := indexwriter.New(params)
 	src := NewMergeSource(filename, srcs)
 
 	if err := createAndWrite(
 		filename+consts.OffsetsTmpFileSuffix,
 		filename+consts.OffsetsFileSuffix,
-		func(f *os.File) error { return writer.WriteOffsetsFile(f, src) },
+		func(f *os.File) error { return w.WriteOffsetsFile(f, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -25,7 +25,7 @@ func Merge(filename string, params common.SealParams, srcs ...Source) (*sealed.P
 	if err := createAndWrite(
 		filename+consts.IDTmpFileSuffix,
 		filename+consts.IDFileSuffix,
-		func(f *os.File) error { return writer.WriteIDFile(f, src) },
+		func(f *os.File) error { return w.WriteIDFile(f, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func Merge(filename string, params common.SealParams, srcs ...Source) (*sealed.P
 		filename+consts.TokenFileSuffix,
 		filename+consts.LIDTmpFileSuffix,
 		filename+consts.LIDFileSuffix,
-		func(tf, lf *os.File) error { return writer.WriteTokenTriplet(tf, lf, src) },
+		func(tf, lf *os.File) error { return w.WriteTokenTriplet(tf, lf, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func Merge(filename string, params common.SealParams, srcs ...Source) (*sealed.P
 	if err := createAndWrite(
 		filename+consts.InfoTmpFileSuffix,
 		filename+consts.InfoFileSuffix,
-		func(f *os.File) error { return writer.WriteInfoFile(f, src) },
+		func(f *os.File) error { return w.WriteInfoFile(f, src) },
 	); err != nil {
 		return nil, err
 	}
@@ -69,13 +69,13 @@ func Merge(filename string, params common.SealParams, srcs ...Source) (*sealed.P
 		info.IndexOnDisk += uint64(st.Size())
 	}
 
-	lidsTable := writer.LIDsTable()
+	lidsTable := w.LIDsTable()
 	preloaded := &sealed.PreloadedData{
 		Info:       info,
-		TokenTable: writer.TokenTable(),
+		TokenTable: w.TokenTable(),
 		BlocksData: sealed.BlocksData{
 			LIDsTable:     &lidsTable,
-			IDsTable:      writer.IDsTable(),
+			IDsTable:      w.IDsTable(),
 			BlocksOffsets: src.BlockOffsets(),
 		},
 	}

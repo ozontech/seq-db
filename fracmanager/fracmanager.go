@@ -13,6 +13,7 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
@@ -116,6 +117,12 @@ func (cs *CompactionSnapshot) Destroy() {
 	}
 }
 
+func (fm *FracManager) FractionName() string {
+	filePath := fileBasePattern + fm.lc.provider.nextFractionID()
+	baseFilePath := filepath.Join(fm.lc.provider.config.DataDir, filePath)
+	return baseFilePath
+}
+
 func (fm *FracManager) SealedFractionsSnapshot() []*frac.Sealed {
 	return fm.lc.registry.sealedSnapshot()
 }
@@ -128,8 +135,11 @@ func (fm *FracManager) ClaimForCompaction(names []string) (*CompactionSnapshot, 
 	return &CompactionSnapshot{claimed: claimed}, nil
 }
 
-func (fm *FracManager) SubstituteWithSealed(produced *frac.Sealed, snapshot *CompactionSnapshot) {
-	fm.lc.registry.substituteWithSealed(produced, snapshot.claimed...)
+func (fm *FracManager) SubstituteWithSealed(produced *sealed.PreloadedData, snapshot *CompactionSnapshot) {
+	fm.lc.registry.substituteWithSealed(
+		fm.lc.provider.NewSealedPreloaded(produced.Info.Path, produced),
+		snapshot.claimed...,
+	)
 }
 
 func (fm *FracManager) AcquireFraction(name string) (frac.Fraction, func(), bool) {

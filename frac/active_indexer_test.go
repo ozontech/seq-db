@@ -1,4 +1,4 @@
-package frac
+package frac_test
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -76,20 +77,20 @@ func getTestProcessor() *indexer.Processor {
 
 func BenchmarkIndexer(b *testing.B) {
 	logger.SetLevel(zapcore.FatalLevel)
-	idx, stop := NewActiveIndexer(8, 8)
+	idx, stop := frac.NewActiveIndexer(8, 8)
 	defer stop()
 
 	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
 	readers := splitLogsToBulks(allLogs, 1000)
 	assert.NoError(b, err)
 
-	active := NewActive(
+	active := frac.NewActive(
 		filepath.Join(b.TempDir(), "test"),
 		idx,
 		storage.NewReadLimiter(1, nil),
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
-		&Config{},
+		&frac.Config{},
 		testSkipMaskProvider{},
 	)
 
