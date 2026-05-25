@@ -5,6 +5,7 @@ import (
 	"io"
 	"math/rand"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/RoaringBitmap/roaring/v2"
@@ -39,8 +40,10 @@ type fractionProvider struct {
 	cacheProvider    *CacheMaintainer     // Cache provider for data access optimization
 	activeIndexer    *frac.ActiveIndexer  // Indexer for active fractions
 	readLimiter      *storage.ReadLimiter // Read rate limiter
-	ulidEntropy      io.Reader            // Entropy source for ULID generation
 	skipMaskProvider skipMaskProvider
+
+	mu          sync.Mutex
+	ulidEntropy io.Reader // Entropy source for ULID generation
 }
 
 func newFractionProvider(
@@ -115,6 +118,8 @@ func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedIn
 // IMPORTANT: This method is not thread-safe. When used in concurrent environments,
 // external synchronization must be provided to avoid ID collisions
 func (fp *fractionProvider) nextFractionID() string {
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
 	return ulid.MustNew(ulid.Timestamp(time.Now()), fp.ulidEntropy).String()
 }
 
@@ -136,7 +141,21 @@ func (fp *fractionProvider) Seal(a *frac.Active) (*frac.Sealed, error) {
 	if err != nil {
 		return nil, err
 	}
-	preloaded, err := sealing.Seal(src, fp.config.SealParams)
+
+	params := fp.config.SealParams
+	// NOTE(dkharms): If compaction is enabled we do not want to waste CPU on compression.
+	//
+	// Sealed fractions will be picked up by compaction workers almost instantly,
+	// and that will trigger compression again.
+	if fp.config.CompactionEnabled {
+		params = common.SealParams{
+			DocBlocksZstdLevel: params.DocBlocksZstdLevel,
+			LIDBlockSize:       params.LIDBlockSize,
+			DocBlockSize:       params.DocBlockSize,
+		}
+	}
+
+	preloaded, err := sealing.Seal(src, params)
 	if err != nil {
 		return nil, err
 	}

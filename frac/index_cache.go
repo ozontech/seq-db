@@ -7,7 +7,7 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/token"
 )
 
-func newIndexCache() *IndexCache {
+func NewIndexCache() *IndexCache {
 	return &IndexCache{
 		LegacyRegistry: cache.NewCache[[]byte](nil, nil),
 
