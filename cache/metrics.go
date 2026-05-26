@@ -58,7 +58,7 @@ func (m *Metrics) reportMiss(size uint64, latencySec float64) {
 	}
 }
 
-func (m *Metrics) reportReleased(freedBytes uint64, freedEntries uint64) {
+func (m *Metrics) reportReleased(freedBytes, freedEntries uint64) {
 	if m != nil {
 		m.SizeReleased.Add(float64(freedBytes))
 		m.EntriesReleased.Add(float64(freedEntries))
