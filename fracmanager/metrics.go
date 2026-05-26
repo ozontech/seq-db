@@ -99,12 +99,6 @@ var (
 		Name:      "miss_size_bytes_total",
 		Help:      "Total size occupied in cache by layer in bytes",
 	}, []string{"layer"})
-	cacheEntriesOccupied = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "cache",
-		Name:      "miss_entries_total",
-		Help:      "Number of cache entries occupied by layer on miss",
-	}, []string{"layer"})
 	cacheMapsRecreated = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "cache",
