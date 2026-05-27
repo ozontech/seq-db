@@ -1,6 +1,8 @@
 package exec
 
 import (
+	"cmp"
+
 	insaneJSON "github.com/ozontech/insane-json"
 
 	"github.com/ozontech/seq-db/query"
@@ -76,11 +78,10 @@ func (m *Merger) Next() (*query.Record, *query.Metadata) {
 	leftVal := m.extractValue(m.curLeft)
 	rightVal := m.extractValue(m.curRight)
 
-	cmp := m.less(leftVal, rightVal)
-
-	chooseLeft := cmp <= 0
+	compared := m.less(leftVal, rightVal)
+	chooseLeft := compared <= 0
 	if m.order == OrderDesc {
-		chooseLeft = cmp >= 0
+		chooseLeft = compared >= 0
 	}
 
 	if chooseLeft {
@@ -122,59 +123,24 @@ func (m *Merger) extractValue(r *query.Record) any {
 }
 
 func createLessFunc() func(any, any) int {
-	// TODO: use m.dataType (???)
+	// TODO: make use of m.dataType (???)
 	return func(a, b any) int {
 		switch v := a.(type) {
 		case uint32:
-			if v == b.(uint32) {
-				return 0
-			}
-			if v < b.(uint32) {
-				return -1
-			}
-			return 1
+			return cmp.Compare(v, b.(uint32))
 		case uint64:
-			if v == b.(uint64) {
-				return 0
-			}
-			if v < b.(uint64) {
-				return -1
-			}
-			return 1
+			return cmp.Compare(v, b.(uint64))
 		case int32:
-			if v == b.(int32) {
-				return 0
-			}
-			if v < b.(int32) {
-				return -1
-			}
-			return 1
+			return cmp.Compare(v, b.(int32))
 		case int64:
-			if v == b.(int64) {
-				return 0
-			}
-			if v < b.(int64) {
-				return -1
-			}
-			return 1
+			return cmp.Compare(v, b.(int64))
 		case float64:
-			if v == b.(float64) {
-				return 0
-			}
-			if v < b.(float64) {
-				return -1
-			}
-			return 1
+			return cmp.Compare(v, b.(float64))
 		case string:
-			if v == b.(string) {
-				return 0
-			}
-			if v < b.(string) {
-				return -1
-			}
-			return 1
+			return cmp.Compare(v, b.(string))
+		default:
+			return 0 // TODO: ???
 		}
-		return 0
 	}
 }
 

@@ -117,14 +117,13 @@ func (mr *MockSearchIngestorMockRecorder) GetAsyncSearchesList(arg0, arg1 interf
 }
 
 // OnePhaseSearch mocks base method.
-func (m *MockSearchIngestor) OnePhaseSearch(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, query.RecordProducer, search.AggsIterator, error) {
+func (m *MockSearchIngestor) OnePhaseSearch(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, query.RecordProducer, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "OnePhaseSearch", ctx, sr, tr)
 	ret0, _ := ret[0].(*seq.QPR)
 	ret1, _ := ret[1].(query.RecordProducer)
-	ret2, _ := ret[2].(search.AggsIterator)
-	ret3, _ := ret[3].(error)
-	return ret0, ret1, ret2, ret3
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // OnePhaseSearch indicates an expected call of OnePhaseSearch.

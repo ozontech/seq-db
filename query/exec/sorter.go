@@ -16,11 +16,11 @@ const (
 	OrderDesc
 )
 
-// TODO: ???
 type ExecutorState byte
 
 const (
 	ExecutorStateReadingInput ExecutorState = iota
+	ExecutorStateProcessingData
 	ExecutorStateProducingOutput
 	ExecutorStateDone
 )
@@ -68,29 +68,32 @@ func (s *DocSorter) Next() (*query.Record, *query.Metadata) {
 			return nil, meta
 		}
 		if r == nil {
-			s.state = ExecutorStateProducingOutput
+			s.state = ExecutorStateProcessingData
 			break
 		}
 
 		s.sortingBuf = append(s.sortingBuf, r)
 	}
 
-	slices.SortFunc(s.sortingBuf, func(a, b *query.Record) int {
-		if a == nil || b == nil {
-			return 0 // TODO: ???
-		}
+	if s.state == ExecutorStateProcessingData {
+		slices.SortFunc(s.sortingBuf, func(a, b *query.Record) int {
+			if a == nil || b == nil {
+				return 0 // TODO: ???
+			}
 
-		aVal := a.Vals[s.colIdx].Decoded().(*insaneJSON.Root).Dig(s.field).AsString()
-		bVal := b.Vals[s.colIdx].Decoded().(*insaneJSON.Root).Dig(s.field).AsString()
+			aVal := a.Vals[s.colIdx].Decoded().(*insaneJSON.Root).Dig(s.field).AsString()
+			bVal := b.Vals[s.colIdx].Decoded().(*insaneJSON.Root).Dig(s.field).AsString()
 
-		if aVal == bVal {
-			return 0
-		}
-		if s.less(aVal, bVal) {
-			return -1
-		}
-		return 1
-	})
+			if aVal == bVal {
+				return 0
+			}
+			if s.less(aVal, bVal) {
+				return -1
+			}
+			return 1
+		})
+		s.state = ExecutorStateProducingOutput
+	}
 
 	if s.curIdx >= len(s.sortingBuf) {
 		s.state = ExecutorStateDone

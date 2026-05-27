@@ -30,6 +30,9 @@ func (g *grpcV1) OnePhaseSearch(ctx context.Context, req *seqproxyapi.SearchRequ
 		return nil, status.Error(codes.InvalidArgument, `"size" must be greater than 0`)
 	}
 
+	statsAggs := extractStatsPipesFromQuery(req.Query.Query)
+	hasAggs := len(statsAggs) > 0
+
 	proxyReq := &seqproxyapi.ComplexSearchRequest{
 		Query:     req.Query,
 		Size:      req.Size,
@@ -38,7 +41,18 @@ func (g *grpcV1) OnePhaseSearch(ctx context.Context, req *seqproxyapi.SearchRequ
 		WithTotal: req.WithTotal,
 		Order:     req.Order,
 	}
-	sResp, docsStream, aggsStream, err := g.doOnePhaseSearch(ctx, proxyReq, true)
+
+	if hasAggs {
+		proxyReq.Aggs = []*seqproxyapi.AggQuery{
+			{
+				Field:   statsAggs[0].Field,
+				GroupBy: statsAggs[0].GroupBy,
+				Func:    mustConvertStringToAggFunc(statsAggs[0].Func),
+			},
+		}
+	}
+
+	sResp, stream, err := g.doOnePhaseSearch(ctx, proxyReq, true)
 	if err != nil {
 		return nil, err
 	}
@@ -58,54 +72,53 @@ func (g *grpcV1) OnePhaseSearch(ctx context.Context, req *seqproxyapi.SearchRequ
 		}
 	}
 
-	statsAggs := extractStatsPipesFromQuery(req.Query.Query)
-	hasAggs := len(statsAggs) > 0
-
 	if hasAggs {
-		sResp.qpr.Aggs = convertAggsStreamToAggregationResults(aggsStream)
-		allAggs := sResp.qpr.Aggregate(aggregationArgsFromStatsAggs(statsAggs))
-		resp.Aggs = makeProtoAggregation(allAggs)
+		if resp.Aggs, err = makeProtoAggsOnePhase(stream); err != nil {
+			return nil, err
+		}
 	} else {
-		resp.Docs = makeProtoDocsOnePhase(docsStream)
+		if resp.Docs, err = makeProtoDocsOnePhase(stream); err != nil {
+			return nil, err
+		}
 	}
 
 	return resp, nil
 }
 
-func convertAggsStreamToAggregationResults(aggs search.AggsIterator) []seq.AggregatableSamples {
-	result := make([]seq.AggregatableSamples, 0)
-	to := make(map[seq.AggBin]*seq.SamplesContainer)
-	for agg, err := aggs.Next(); err == nil; agg, err = aggs.Next() {
-
-		tbin := seq.AggBin{
-			MID:   consts.DummyMID,
-			Token: agg.Label,
-		}
-
-		to[tbin] = &seq.SamplesContainer{
-			Min:       agg.Min,
-			Max:       agg.Max,
-			Sum:       agg.Sum,
-			Total:     int64(agg.Total),
-			NotExists: int64(agg.NotExists),
-		}
+func makeProtoAggsOnePhase(input query.RecordProducer) ([]*seqproxyapi.Aggregation, error) {
+	respAggs := []*seqproxyapi.Aggregation{
+		{Buckets: make([]*seqproxyapi.Aggregation_Bucket, 0)},
 	}
-	result = append(result, seq.AggregatableSamples{
-		SamplesByBin: to,
-		// NotExists:    int64(agg.NotExists),
-	})
-	return result
+
+	for {
+		r, meta := input.Next()
+		if meta != nil {
+			if !errors.Is(meta.Err, io.EOF) {
+				return nil, fmt.Errorf("read aggs stream error: %w", meta.Err)
+			}
+			break
+		}
+		if r == nil {
+			break
+		}
+
+		respAggs[0].Buckets = append(respAggs[0].Buckets, &seqproxyapi.Aggregation_Bucket{
+			Key:   r.Vals[0].Decoded().(string),
+			Value: r.Vals[1].Decoded().(float64),
+		})
+	}
+
+	return respAggs, nil
 }
 
-func makeProtoDocsOnePhase(input query.RecordProducer) []*seqproxyapi.Document {
+func makeProtoDocsOnePhase(input query.RecordProducer) ([]*seqproxyapi.Document, error) {
 	respDocs := make([]*seqproxyapi.Document, 0)
 
 	for {
 		r, meta := input.Next()
 		if meta != nil {
 			if !errors.Is(meta.Err, io.EOF) {
-				// TODO: handle error
-				panic(fmt.Errorf("stream error: %w", meta.Err))
+				return nil, fmt.Errorf("read docs stream error: %w", meta.Err)
 			}
 			break
 		}
@@ -124,27 +137,27 @@ func makeProtoDocsOnePhase(input query.RecordProducer) []*seqproxyapi.Document {
 		})
 	}
 
-	return respDocs
+	return respDocs, nil
 }
 
 func (g *grpcV1) doOnePhaseSearch(
 	ctx context.Context,
 	req *seqproxyapi.ComplexSearchRequest,
 	shouldFetch bool,
-) (*proxySearchResponse, query.RecordProducer, search.AggsIterator, error) {
+) (*proxySearchResponse, query.RecordProducer, error) {
 	metric.SearchOverall.Add(1)
 
 	span := trace.FromContext(ctx)
 	defer span.End()
 
 	if req.Query == nil {
-		return nil, nil, nil, status.Error(codes.InvalidArgument, "search query must be provided")
+		return nil, nil, status.Error(codes.InvalidArgument, "search query must be provided")
 	}
 	if req.Query.From == nil || req.Query.To == nil {
-		return nil, nil, nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
+		return nil, nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
 	}
 	if req.Offset != 0 && req.OffsetId != "" {
-		return nil, nil, nil, status.Error(codes.InvalidArgument, `only one of "offset" and "offset_id" must be provided`)
+		return nil, nil, status.Error(codes.InvalidArgument, `only one of "offset" and "offset_id" must be provided`)
 	}
 
 	fromTime := req.Query.From.AsTime()
@@ -165,7 +178,7 @@ func (g *grpcV1) doOnePhaseSearch(
 
 	rlQuery := getSearchQueryFromGRPCReqForRateLimiter(req)
 	if !g.rateLimiter.Account(rlQuery) {
-		return nil, nil, nil, status.Error(codes.ResourceExhausted, consts.ErrRequestWasRateLimited.Error())
+		return nil, nil, status.Error(codes.ResourceExhausted, consts.ErrRequestWasRateLimited.Error())
 	}
 
 	proxyReq := &search.SearchRequest{
@@ -181,26 +194,34 @@ func (g *grpcV1) doOnePhaseSearch(
 		Order:       req.Order.MustDocsOrder(),
 	}
 
+	if len(req.Aggs) > 0 {
+		aggs, err := convertAggsQuery(req.Aggs)
+		if err != nil {
+			return nil, nil, err
+		}
+		proxyReq.AggQ = aggs
+	}
+
 	tr := querytracer.New(req.Query.Explain, "proxy/OnePhaseSearch")
 	// TODO: do we really need QPR here (???)
-	qpr, docsStream, aggsStream, err := g.searchIngestor.OnePhaseSearch(ctx, proxyReq, tr)
+	qpr, stream, err := g.searchIngestor.OnePhaseSearch(ctx, proxyReq, tr)
 	psr := &proxySearchResponse{
 		qpr: qpr,
 	}
 
 	if e, ok := parseProxyError(err); ok {
 		psr.err = e
-		return psr, nil, nil, nil
+		return psr, nil, nil
 	}
 
 	if errors.Is(err, consts.ErrInvalidArgument) {
-		return nil, nil, nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	if st, ok := status.FromError(err); ok {
 		// could not parse a query
 		if st.Code() == codes.InvalidArgument {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -210,16 +231,16 @@ func (g *grpcV1) doOnePhaseSearch(
 			Code:    seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE,
 			Message: err.Error(),
 		}
-		return psr, docsStream, aggsStream, nil
+		return psr, stream, nil
 	}
 	if err = processSearchErrors(qpr, err); err != nil {
 		metric.SearchErrors.Inc()
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	g.tryMirrorRequest(req)
 
-	return psr, docsStream, aggsStream, nil
+	return psr, stream, nil
 }
 
 func extractStatsPipesFromQuery(q string) []parser.StatsAgg {
@@ -243,36 +264,24 @@ func extractStatsPipesFromQuery(q string) []parser.StatsAgg {
 	return result
 }
 
-func aggregationArgsFromStatsAggs(aggs []parser.StatsAgg) []seq.AggregateArgs {
-	args := make([]seq.AggregateArgs, len(aggs))
-	for i, agg := range aggs {
-		args[i] = seq.AggregateArgs{
-			Func:                 mustConvertStringToAggFunc(agg.Func),
-			Quantiles:            agg.Quantiles,
-			SkipWithoutTimestamp: agg.Interval != "",
-		}
-	}
-	return args
-}
-
-func mustConvertStringToAggFunc(funcName string) seq.AggFunc {
+func mustConvertStringToAggFunc(funcName string) seqproxyapi.AggFunc {
 	switch funcName {
 	case "count":
-		return seq.AggFuncCount
+		return seqproxyapi.AggFunc_AGG_FUNC_COUNT
 	case "sum":
-		return seq.AggFuncSum
+		return seqproxyapi.AggFunc_AGG_FUNC_SUM
 	case "min":
-		return seq.AggFuncMin
+		return seqproxyapi.AggFunc_AGG_FUNC_MIN
 	case "max":
-		return seq.AggFuncMax
+		return seqproxyapi.AggFunc_AGG_FUNC_MAX
 	case "avg":
-		return seq.AggFuncAvg
+		return seqproxyapi.AggFunc_AGG_FUNC_AVG
 	case "quantile":
-		return seq.AggFuncQuantile
+		return seqproxyapi.AggFunc_AGG_FUNC_QUANTILE
 	case "unique":
-		return seq.AggFuncUnique
+		return seqproxyapi.AggFunc_AGG_FUNC_UNIQUE
 	case "unique_count":
-		return seq.AggFuncUniqueCount
+		return seqproxyapi.AggFunc_AGG_FUNC_UNIQUE_COUNT
 	default:
 		panic(fmt.Errorf("unknown aggregation function: %s", funcName))
 	}

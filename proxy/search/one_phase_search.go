@@ -29,7 +29,7 @@ func (si *Ingestor) OnePhaseSearch(
 	ctx context.Context,
 	sr *SearchRequest,
 	tr *querytracer.Tracer,
-) (*seq.QPR, query.RecordProducer, AggsIterator, error) {
+) (*seq.QPR, query.RecordProducer, error) {
 	searchStores := si.config.HotStores
 	if si.config.HotReadStores != nil && len(si.config.HotReadStores.Shards) > 0 {
 		searchStores = si.config.HotReadStores
@@ -37,30 +37,30 @@ func (si *Ingestor) OnePhaseSearch(
 
 	var partialRespErr error
 
-	qprs, docs, aggs, err := si.searchStoresOnePhase(ctx, sr, searchStores, tr)
+	qprs, streams, err := si.searchStoresOnePhase(ctx, sr, searchStores, tr)
 	if err != nil {
 		switch {
 		case errors.Is(err, consts.ErrIngestorQueryWantsOldData):
 			if len(si.config.ReadStores.Shards) == 0 {
 				logger.Error("no cold stores, but hot mode is enabled, bad configuration of stores!")
-				return nil, nil, nil, err
+				return nil, nil, err
 			}
 			metric.SearchColdTotal.Inc()
-			qprs, docs, aggs, err = si.searchStoresOnePhase(ctx, sr, si.config.ReadStores, tr)
+			qprs, streams, err = si.searchStoresOnePhase(ctx, sr, si.config.ReadStores, tr)
 			if err != nil {
 				metric.SearchColdErrors.Add(1)
 				if errors.Is(err, consts.ErrPartialResponse) {
 					partialRespErr = err // consider partial response from cold stores as a result
 				} else {
 					// errors from both hot and cold stores, return error
-					return nil, nil, nil, err
+					return nil, nil, err
 				}
 			}
 		case errors.Is(err, consts.ErrPartialResponse):
 			partialRespErr = err // consider partial response from hot stores as a result
 		default:
 			// unexpected error on all hot replica sets (usually bad query)
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -71,10 +71,17 @@ func (si *Ingestor) OnePhaseSearch(
 	}
 	seq.MergeQPRs(resQpr, qprs, sr.Offset+sr.Size, sr.Interval, sr.Order)
 
-	mergedDocsStream := exec.NewNMergedProducers(docs, 0, "", query.DataTypeUint64, execOrderFromSeqOrder(sr.Order))
-	limiter := exec.NewLimiter(mergedDocsStream, uint32(sr.Size)) // TODO: offset
+	var mergedStream query.RecordProducer
 
-	return resQpr, limiter, aggs[0], partialRespErr
+	hasAggs := len(sr.AggQ) > 0 // TODO: check based on stats pipe
+	if hasAggs {
+		mergedStream = exec.NewDistributedAggregator(streams, sr.AggQ[0].Func) // TODO: multiple aggs (???)
+	} else {
+		mergedDocsStream := exec.NewNMergedProducers(streams, 0, "", query.DataTypeUint64, execOrderFromSeqOrder(sr.Order))
+		mergedStream = exec.NewLimiter(mergedDocsStream, uint32(sr.Size)) // TODO: offset
+	}
+
+	return resQpr, mergedStream, partialRespErr
 }
 
 func (si *Ingestor) searchStoresOnePhase(
@@ -82,12 +89,11 @@ func (si *Ingestor) searchStoresOnePhase(
 	sr *SearchRequest,
 	s *stores.Stores,
 	tr *querytracer.Tracer,
-) ([]*seq.QPR, []query.RecordProducer, []AggsIterator, error) {
+) ([]*seq.QPR, []query.RecordProducer, error) {
 	type ShardResponse struct {
-		QPR  *seq.QPR
-		Docs query.RecordProducer
-		Aggs AggsIterator
-		Err  error
+		QPR    *seq.QPR
+		Stream query.RecordProducer
+		Err    error
 	}
 
 	wg := sync.WaitGroup{}
@@ -99,12 +105,11 @@ func (si *Ingestor) searchStoresOnePhase(
 			defer wg.Done()
 			defer tr.Done()
 
-			qpr, docs, aggs, err := si.searchShardOnePhase(ctx, shard, sr, tr)
+			qpr, stream, err := si.searchShardOnePhase(ctx, shard, sr, tr)
 			respChan <- ShardResponse{
-				QPR:  qpr,
-				Docs: docs,
-				Aggs: aggs,
-				Err:  err,
+				QPR:    qpr,
+				Stream: stream,
+				Err:    err,
 			}
 		}(shard, searchShardTr)
 	}
@@ -115,36 +120,34 @@ func (si *Ingestor) searchStoresOnePhase(
 	}()
 
 	qprs := make([]*seq.QPR, 0, len(s.Shards))
-	docs := make([]query.RecordProducer, 0, len(s.Shards))
-	aggs := make([]AggsIterator, 0, len(s.Shards))
+	streams := make([]query.RecordProducer, 0, len(s.Shards))
 	var errs []error
 	for resp := range respChan {
 		if err := resp.Err; err != nil {
 			if errors.Is(err, consts.ErrIngestorQueryWantsOldData) {
 				// At least one hot store doesn't have such old data
-				return nil, nil, nil, err
+				return nil, nil, err
 			}
 			if errors.Is(err, consts.ErrTooManyFractionsHit) {
-				return nil, nil, nil, err
+				return nil, nil, err
 			}
 			errs = append(errs, err)
 			continue
 		}
 
 		qprs = append(qprs, resp.QPR)
-		docs = append(docs, resp.Docs)
-		aggs = append(aggs, resp.Aggs)
+		streams = append(streams, resp.Stream)
 	}
 
 	if err := util.DeduplicateErrors(errs); err != nil {
 		if len(qprs) != 0 {
 			// There are errors, but some Shards returned data, so provide it to user
-			return qprs, docs, aggs, fmt.Errorf("%w: %s", consts.ErrPartialResponse, err)
+			return qprs, streams, fmt.Errorf("%w: %s", consts.ErrPartialResponse, err)
 		}
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
-	return qprs, docs, aggs, nil
+	return qprs, streams, nil
 }
 
 func (si *Ingestor) searchShardOnePhase(
@@ -152,7 +155,7 @@ func (si *Ingestor) searchShardOnePhase(
 	hosts []string,
 	request *SearchRequest,
 	tr *querytracer.Tracer,
-) (*seq.QPR, query.RecordProducer, AggsIterator, error) {
+) (*seq.QPR, query.RecordProducer, error) {
 	var idx []int
 	if si.config.ShuffleReplicas {
 		idx = util.IdxShuffle(len(hosts))
@@ -164,18 +167,18 @@ func (si *Ingestor) searchShardOnePhase(
 	for i := range len(hosts) {
 		host := hosts[idx[i]]
 		tr.Printf("Making search request to %s", host)
-		qpr, docs, aggs, err := si.searchHostOnePhase(ctx, hosts[i], request, tr) // TODO:
+		qpr, stream, err := si.searchHostOnePhase(ctx, hosts[i], request, tr)
 		if err != nil {
 			if errors.Is(err, consts.ErrIngestorQueryWantsOldData) {
-				return nil, nil, nil, err
+				return nil, nil, err
 			}
 			errs = append(errs, err)
 			continue
 		}
-		return qpr, docs, aggs, nil
+		return qpr, stream, nil
 	}
 
-	return nil, nil, nil, util.DeduplicateErrors(errs)
+	return nil, nil, util.DeduplicateErrors(errs)
 }
 
 func (si *Ingestor) searchHostOnePhase(
@@ -183,10 +186,10 @@ func (si *Ingestor) searchHostOnePhase(
 	host string,
 	request *SearchRequest,
 	_ *querytracer.Tracer,
-) (*seq.QPR, query.RecordProducer, AggsIterator, error) {
+) (*seq.QPR, query.RecordProducer, error) {
 	client, has := si.clients[host]
 	if !has {
-		return nil, nil, nil, fmt.Errorf("can't fetch: no client for host %s", host)
+		return nil, nil, fmt.Errorf("can't fetch: no client for host %s", host)
 	}
 
 	fieldsFilter := tryParseFieldsFilter(string(request.Q))
@@ -211,22 +214,22 @@ func (si *Ingestor) searchHostOnePhase(
 		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
 	)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("can't open stream: %s", err.Error())
+		return nil, nil, fmt.Errorf("can't open stream: %s", err.Error())
 	}
 
 	msg, err := stream.Recv()
 	if err != nil {
-		return nil, nil, nil, nil
+		return nil, nil, err
 	}
 
 	header := msg.GetHeader()
 
 	if header == nil {
-		return nil, nil, nil, fmt.Errorf("can't read header")
+		return nil, nil, fmt.Errorf("can't read header")
 	}
 
 	if header.Metadata.Code == storeapi.SearchErrorCode_INGESTOR_QUERY_WANTS_OLD_DATA {
-		return nil, nil, nil, fmt.Errorf("hot store refuses: %w", consts.ErrIngestorQueryWantsOldData)
+		return nil, nil, fmt.Errorf("hot store refuses: %w", consts.ErrIngestorQueryWantsOldData)
 	}
 
 	errs := make([]seq.ErrorSource, 0, len(header.Metadata.Errors))
@@ -239,25 +242,22 @@ func (si *Ingestor) searchHostOnePhase(
 		Errors: errs,
 	}
 
-	return qpr,
-		&OnePhaseSearchDocsIterator{typing: header.Typing, stream: stream},
-		&OnePhaseSearchAggsIterator{stream: stream, limit: request.Size},
-		nil
+	return qpr, &OnePhaseSearchStreamIterator{typing: header.Typing, stream: stream}, nil
 }
 
 // TODO: move to executor (???)
-type OnePhaseSearchDocsIterator struct {
+type OnePhaseSearchStreamIterator struct {
 	typing []*storeapi.Typing
 	stream storeapi.StoreApi_OnePhaseSearchClient
 
 	curBatch []*storeapi.Record
 }
 
-func (it *OnePhaseSearchDocsIterator) Next() (*query.Record, *query.Metadata) {
+func (it *OnePhaseSearchStreamIterator) Next() (*query.Record, *query.Metadata) {
 	if len(it.curBatch) == 0 {
 		data, err := it.stream.Recv()
 		if errors.Is(err, io.EOF) {
-			return nil, &query.Metadata{Err: io.EOF}
+			return nil, nil
 		}
 		if err != nil {
 			return nil, &query.Metadata{Err: err}
@@ -273,61 +273,6 @@ func (it *OnePhaseSearchDocsIterator) Next() (*query.Record, *query.Metadata) {
 		recordVals = append(recordVals, query.NewRecordVals(query.DataType(it.typing[i].Type), rawData))
 	}
 	return query.NewRecord(recordVals), nil
-}
-
-type StreamingAgg struct {
-	Label     string
-	Min       float64
-	Max       float64
-	Sum       float64
-	Total     uint64
-	NotExists uint64
-}
-
-type AggsIterator interface {
-	Next() (StreamingAgg, error)
-}
-
-type OnePhaseSearchAggsIterator struct {
-	stream storeapi.StoreApi_OnePhaseSearchClient
-
-	curBatch []*storeapi.Record
-
-	fetched int
-	limit   int
-}
-
-func (it *OnePhaseSearchAggsIterator) Next() (StreamingAgg, error) {
-	if it.fetched >= it.limit {
-		return StreamingAgg{}, io.EOF
-	}
-
-	if len(it.curBatch) == 0 {
-		data, err := it.stream.Recv()
-		if errors.Is(err, io.EOF) {
-			return StreamingAgg{}, io.EOF
-		}
-		if err != nil {
-			return StreamingAgg{}, err
-		}
-		it.curBatch = data.GetBatch().Records
-	}
-
-	// TODO: get fields values from columns info
-
-	record := it.curBatch[0]
-	it.curBatch = it.curBatch[1:]
-
-	it.fetched++
-
-	return StreamingAgg{
-		Label:     string(record.RawData[0]),
-		Min:       Float64FromBytes(record.RawData[1]),
-		Max:       Float64FromBytes(record.RawData[2]),
-		Sum:       Float64FromBytes(record.RawData[3]),
-		Total:     binary.LittleEndian.Uint64(record.RawData[4]),
-		NotExists: binary.LittleEndian.Uint64(record.RawData[5]),
-	}, nil
 }
 
 func Float64FromBytes(in []byte) float64 {
