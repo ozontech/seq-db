@@ -41,7 +41,7 @@ func TestSTCS_Pick(t *testing.T) {
 	})
 
 	t.Run("requirement-not-met", func(t *testing.T) {
-		// Each fraction size is 10x the previous.
+		// Each Fraction size is 10x the previous.
 		// They land in different buckets and no bucket with [mergeTrigger] fractions exists.
 		require.Nil(t, s.Pick(makeFracs(100, 1000, 10000, 100000)))
 	})

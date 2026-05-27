@@ -10,7 +10,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/alecthomas/units"
-	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -31,13 +30,7 @@ type task struct {
 	bin        time.Time
 	filename   string
 	snapshot   *fracmanager.CompactionSnapshot
-	onComplete func(result, error)
-}
-
-type result struct {
-	filename string
-	consumed *fracmanager.CompactionSnapshot
-	produced *sealed.PreloadedData
+	onComplete func(*sealed.PreloadedData, error)
 }
 
 type planner struct {
@@ -96,7 +89,7 @@ func (p *planner) init() {
 				select {
 				case p.tasks <- task:
 				case <-time.NewTimer(time.Second).C:
-					// If all executor workers are busy for some long period
+					// If all executor workers are busy for some long period of time,
 					// we want to drop the task because it might contain stale decision.
 				}
 			}
@@ -117,7 +110,13 @@ func (p *planner) pick() (task, bool) {
 		return fnames
 	}
 
-	snapshot := p.fm.SealedFractionsSnapshot()
+	fractions := p.fm.SealedFractionsSnapshot()
+	snapshot := make([]fraction, len(fractions))
+
+	for i := range fractions {
+		snapshot[i] = fractions[i]
+	}
+
 	bins := p.distribute(compactionWindow, snapshot)
 	times := p.prioritize(bins)
 
@@ -160,7 +159,7 @@ func (p *planner) pick() (task, bool) {
 			filename: p.fm.FractionName(),
 			snapshot: csnapshot,
 
-			onComplete: func(r result, err error) {
+			onComplete: func(s *sealed.PreloadedData, err error) {
 				p.mu.Lock()
 				defer p.mu.Unlock()
 				delete(p.inflight, t)
@@ -174,7 +173,7 @@ func (p *planner) pick() (task, bool) {
 					return
 				}
 
-				if r.produced == nil {
+				if s == nil {
 					logger.Info(
 						"compaction did not produce fraction",
 						zap.Any("snapshot", csnapshot),
@@ -184,7 +183,7 @@ func (p *planner) pick() (task, bool) {
 
 				// TODO(dkharms): Is it fine to substitute and delete?
 				// We need somehow substitute and delete atomically.
-				p.fm.SubstituteWithSealed(r.produced, csnapshot)
+				p.fm.SubstituteWithSealed(s, csnapshot)
 				csnapshot.Destroy()
 			},
 		}, true
@@ -198,7 +197,7 @@ type timestampBin struct {
 	fracs []fraction
 }
 
-func (p *planner) distribute(window time.Duration, fracs []*frac.Sealed) map[time.Time]timestampBin {
+func (p *planner) distribute(window time.Duration, fracs []fraction) map[time.Time]timestampBin {
 	bins := make(map[time.Time]timestampBin)
 
 	for _, f := range fracs {

@@ -1,4 +1,4 @@
-package frac
+package frac_test
 
 import (
 	"fmt"
@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/indexer"
@@ -39,16 +40,16 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	fracPath := filepath.Join(tmpDir, "test_fraction")
 	defer testcommon.RemoveDir(fracPath)
 
-	activeIndexer, stop := NewActiveIndexer(numIndexWorkers, 1000)
+	activeIndexer, stop := frac.NewActiveIndexer(numIndexWorkers, 1000)
 	defer stop()
 
-	active := NewActive(
+	active := frac.NewActive(
 		fracPath,
 		activeIndexer,
 		storage.NewReadLimiter(numReaders/2, nil),
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
-		&Config{},
+		&frac.Config{},
 		testSkipMaskProvider{},
 	)
 
@@ -154,7 +155,7 @@ const (
 	kafka     = "kafka"
 )
 
-func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs []*testDoc, fromTime, toTime time.Time, mapping seq.Mapping) {
+func readTest(t *testing.T, fraction frac.Fraction, numReaders, numQueries int, docs []*testDoc, fromTime, toTime time.Time, mapping seq.Mapping) {
 	readersGroup, ctx := errgroup.WithContext(t.Context())
 
 	type queryFilter func(doc *testDoc) bool
@@ -332,7 +333,7 @@ func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.
 	return docs, bulks, fromTime, toTime
 }
 
-func seal(active *Active) (*Sealed, error) {
+func seal(active *frac.Active) (*frac.Sealed, error) {
 	sealParams := common.SealParams{
 		IDsZstdLevel:           1,
 		LIDsZstdLevel:          1,
@@ -342,7 +343,7 @@ func seal(active *Active) (*Sealed, error) {
 		DocBlocksZstdLevel:     1,
 		DocBlockSize:           128 * int(units.KiB),
 	}
-	activeSealingSource, err := NewActiveSealingSource(active, sealParams)
+	activeSealingSource, err := frac.NewActiveSealingSource(active, sealParams)
 	if err != nil {
 		return nil, err
 	}
@@ -351,13 +352,13 @@ func seal(active *Active) (*Sealed, error) {
 		return nil, err
 	}
 
-	sealed := NewSealedPreloaded(
+	sealed := frac.NewSealedPreloaded(
 		active.BaseFileName,
 		preloaded,
 		storage.NewReadLimiter(1, nil),
-		newIndexCache(),
+		frac.NewIndexCache(),
 		cache.NewCache[[]byte](nil, nil),
-		&Config{},
+		&frac.Config{},
 		testSkipMaskProvider{},
 	)
 

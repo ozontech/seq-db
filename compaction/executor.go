@@ -7,6 +7,7 @@ import (
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 )
 
@@ -43,7 +44,7 @@ func (e *Executor) init() {
 	}
 }
 
-func (e *Executor) compact(t task) (result, error) {
+func (e *Executor) compact(t task) (*sealed.PreloadedData, error) {
 	var (
 		names []string
 		srcs  []Source
@@ -60,30 +61,5 @@ func (e *Executor) compact(t task) (result, error) {
 	)
 
 	preloaded, err := Merge(t.filename, common.SealParams{}, srcs...)
-	return result{filename: t.filename, consumed: t.snapshot, produced: preloaded}, err
-}
-
-type noopexecutor struct{}
-
-func (noopexecutor) Compact(t task) (result, error) {
-	var (
-		sum   int
-		cnt   int
-		names []string
-	)
-
-	for _, f := range t.snapshot.Fractions() {
-		cnt += 1
-		sum += int(f.Info().IndexOnDisk)
-		names = append(names, f.Info().Name())
-	}
-
-	logger.Info(
-		"picked fractions",
-		zap.Any("names", names),
-		zap.Int("size", sum),
-		zap.Int("count", cnt),
-	)
-
-	return result{}, nil
+	return preloaded, err
 }
