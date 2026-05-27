@@ -23,7 +23,7 @@ type fraction interface {
 const (
 	// TODO(dkharms): Move this options to config.
 	compactionTick   = time.Second
-	compactionWindow = 24 * time.Hour
+	compactionWindow = time.Minute
 )
 
 type task struct {
@@ -201,15 +201,8 @@ func (p *planner) distribute(window time.Duration, fracs []fraction) map[time.Ti
 	bins := make(map[time.Time]timestampBin)
 
 	for _, f := range fracs {
-		from, to := f.Info().From.Time(), f.Info().To.Time()
-
-		// Do not handle fractions which have
-		// too wide date-range.
-		if to.Sub(from) > window {
-			continue
-		}
-
-		bin := from.Truncate(window)
+		ct := time.UnixMilli(int64(f.Info().CreationTime))
+		bin := ct.Truncate(window)
 		tb := bins[bin]
 
 		tb.t = bin
