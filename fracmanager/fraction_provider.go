@@ -5,6 +5,7 @@ import (
 	"io"
 	"math/rand"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -37,8 +38,10 @@ type fractionProvider struct {
 	cacheProvider    *CacheMaintainer     // Cache provider for data access optimization
 	activeIndexer    *frac.ActiveIndexer  // Indexer for active fractions
 	readLimiter      *storage.ReadLimiter // Read rate limiter
-	ulidEntropy      io.Reader            // Entropy source for ULID generation
 	skipMaskProvider skipMaskProvider
+
+	mu          sync.Mutex
+	ulidEntropy io.Reader // Entropy source for ULID generation
 }
 
 func newFractionProvider(
@@ -113,6 +116,8 @@ func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedIn
 // IMPORTANT: This method is not thread-safe. When used in concurrent environments,
 // external synchronization must be provided to avoid ID collisions
 func (fp *fractionProvider) nextFractionID() string {
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
 	return ulid.MustNew(ulid.Timestamp(time.Now()), fp.ulidEntropy).String()
 }
 
