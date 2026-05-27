@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/atomic"
 
+	"github.com/ozontech/seq-db/compaction"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
@@ -31,6 +32,7 @@ type Store struct {
 	fracManagerStop func()
 
 	SkipMaskManager *skipmaskmanager.SkipMaskManager
+	Executor        *compaction.Executor
 
 	isStopped atomic.Bool
 }
@@ -66,11 +68,13 @@ func NewStore(
 	}
 
 	skipMaskManager := skipmaskmanager.New(ctx, c.SkipMaskManagerConfig, skipMaskParams, mappingProvider)
-
 	fracManager, stop, err := fracmanager.New(ctx, &c.FracManager, s3cli, skipMaskManager)
 	if err != nil {
 		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
+
+	planner := compaction.NewPlanner(ctx, fracManager)
+	executor := compaction.NewExecutor(10, planner)
 
 	skipMaskManager.Start(fracManager)
 
@@ -82,6 +86,7 @@ func NewStore(
 		FracManager:     fracManager,
 		fracManagerStop: stop,
 		SkipMaskManager: skipMaskManager,
+		Executor:        executor,
 		isStopped:       atomic.Bool{},
 	}, nil
 }
@@ -107,6 +112,7 @@ func (s *Store) Stop() {
 	s.grpcServer.Stop(ctx)
 	s.fracManagerStop()
 	s.SkipMaskManager.Stop()
+	s.Executor.Close()
 
 	logger.Info("store stopped")
 }
