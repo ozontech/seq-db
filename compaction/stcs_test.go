@@ -1,15 +1,12 @@
 package compaction
 
 import (
-	"context"
 	"math"
 	"testing"
 
-	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
-	"github.com/ozontech/seq-db/frac/processor"
-	"github.com/ozontech/seq-db/seq"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ozontech/seq-db/frac/common"
 )
 
 type mockFraction struct {
@@ -20,28 +17,8 @@ func (m *mockFraction) Info() *common.Info {
 	return &common.Info{IndexOnDisk: m.indexOnDisk}
 }
 
-func (m *mockFraction) IsIntersecting(seq.MID, seq.MID) bool {
-	return false
-}
-
-func (m *mockFraction) Contains(seq.MID) bool {
-	return false
-}
-
-func (m *mockFraction) Fetch(context.Context, []seq.ID) ([][]byte, error) {
-	return nil, nil
-}
-
-func (m *mockFraction) Search(context.Context, processor.SearchParams) (*seq.QPR, error) {
-	return nil, nil
-}
-
-func (m *mockFraction) FindLIDs(context.Context, []seq.ID) ([]seq.LID, error) {
-	return nil, nil
-}
-
-func makeFracs(sizes ...uint64) []frac.Fraction {
-	out := make([]frac.Fraction, len(sizes))
+func makeFracs(sizes ...uint64) []fraction {
+	out := make([]fraction, len(sizes))
 	for i, s := range sizes {
 		out[i] = &mockFraction{indexOnDisk: s}
 	}

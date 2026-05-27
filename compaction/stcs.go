@@ -3,8 +3,6 @@ package compaction
 import (
 	"cmp"
 	"slices"
-
-	"github.com/ozontech/seq-db/frac"
 )
 
 type strategySTCS struct {
@@ -23,20 +21,20 @@ type strategySTCS struct {
 	bucketUpperbound float64
 }
 
-func (s strategySTCS) Pick(candidates []frac.Fraction) []frac.Fraction {
+func (s strategySTCS) Pick(candidates []fraction) []fraction {
 	if len(candidates) < s.mergeTrigger {
 		return nil
 	}
 
 	sorted := slices.Clone(candidates)
-	slices.SortFunc(sorted, func(a, b frac.Fraction) int {
+	slices.SortFunc(sorted, func(a, b fraction) int {
 		return cmp.Compare(a.Info().IndexOnDisk, b.Info().IndexOnDisk)
 	})
 
 	buckets := s.group(sorted)
 	// We are interested in buckets with the most amount of fractions.
 	// Usually, these are the lowest tiers where all freshly sealed fractions end up.
-	slices.SortFunc(buckets, func(x, y []frac.Fraction) int {
+	slices.SortFunc(buckets, func(x, y []fraction) int {
 		return -cmp.Compare(len(x), len(y))
 	})
 
@@ -54,11 +52,11 @@ func (s strategySTCS) Pick(candidates []frac.Fraction) []frac.Fraction {
 	return nil
 }
 
-func (s strategySTCS) group(sorted []frac.Fraction) [][]frac.Fraction {
+func (s strategySTCS) group(sorted []fraction) [][]fraction {
 	var (
 		sum     uint64
-		current []frac.Fraction
-		buckets [][]frac.Fraction
+		current []fraction
+		buckets [][]fraction
 	)
 
 	for _, f := range sorted {
@@ -83,7 +81,7 @@ func (s strategySTCS) group(sorted []frac.Fraction) [][]frac.Fraction {
 		}
 
 		buckets = append(buckets, current)
-		current = []frac.Fraction{f}
+		current = []fraction{f}
 		sum = size
 	}
 
@@ -94,7 +92,7 @@ func (s strategySTCS) group(sorted []frac.Fraction) [][]frac.Fraction {
 	return buckets
 }
 
-func (s strategySTCS) takeUntilSize(fracs []frac.Fraction) []frac.Fraction {
+func (s strategySTCS) takeUntilSize(fracs []fraction) []fraction {
 	var picked uint64
 
 	for i := range fracs {

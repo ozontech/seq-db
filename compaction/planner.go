@@ -11,10 +11,15 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 )
+
+type fraction interface {
+	Info() *common.Info
+}
 
 const (
 	// TODO(dkharms): Move this options to config.
@@ -104,7 +109,7 @@ func (p *planner) close() {
 }
 
 func (p *planner) pick() (task, bool) {
-	names := func(fracs []frac.Fraction) []string {
+	names := func(fracs []fraction) []string {
 		fnames := make([]string, len(fracs))
 		for i := range fracs {
 			fnames[i] = fracs[i].Info().Name()
@@ -190,7 +195,7 @@ func (p *planner) pick() (task, bool) {
 
 type timestampBin struct {
 	t     time.Time
-	fracs []frac.Fraction
+	fracs []fraction
 }
 
 func (p *planner) distribute(window time.Duration, fracs []*frac.Sealed) map[time.Time]timestampBin {
