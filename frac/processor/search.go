@@ -6,11 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
-	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
@@ -44,26 +41,18 @@ type searchIndex interface {
 	GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
 }
 
-type LIDsIter interface {
-	LIDs(out []node.LID) []node.LID
-	Len() int
-}
-
 type searchBuffers struct {
-	lids lidsBuf
+	lids []node.LID
 	mids []seq.MID
 	rids []seq.RID
 }
 
 var searchBuffersPool = sync.Pool{
 	New: func() any {
-		lidsBuf := lidsBuf{
-			lids: make([]node.LID, 0, consts.LIDBlockCap),
-		}
 		return &searchBuffers{
 			// Currently, we drain up to 4k lids from eval tree, but with proper batching enabled
 			// we can get as much as whole LID block can have (currently, 64k lids)
-			lids: lidsBuf,
+			lids: make([]node.LID, 0, consts.LIDBlockCap),
 			mids: make([]seq.MID, 0, consts.LIDBlockCap),
 			rids: make([]seq.RID, 0, consts.LIDBlockCap),
 		}
@@ -142,30 +131,8 @@ func IndexSearch(
 		m.Stop()
 	}
 
-	var evalTreeIter func(need int, out lidsBuf) LIDsIter
-	batchNode, ok := tryConvertToBatchedTree(evalTree)
-
-	if ok {
-		evalTreeIter = func(need int, _ lidsBuf) LIDsIter {
-			// batched flow: juts get a batch and return
-			return batchNode.NextBatch()
-		}
-	} else {
-		evalTreeIter = func(need int, buf lidsBuf) LIDsIter {
-			// iterator flow: buffer LIDs one by one and return a batch
-			for i := 0; i < need; i++ {
-				lid := evalTree.Next()
-				if lid.IsNull() {
-					break
-				}
-				buf = buf.append(lid)
-			}
-			return buf
-		}
-	}
-
 	m = sw.Start("iterate_eval_tree")
-	total, ids, histMap, aggs, err := iterateEvalTree(ctx, params, index, evalTreeIter, aggSupplier, sw)
+	total, ids, histMap, aggs, err := iterateEvalTree(ctx, params, index, evalTree, aggSupplier, sw)
 	m.Stop()
 
 	if err != nil {
@@ -207,11 +174,35 @@ func IndexSearch(
 	return qpr, nil
 }
 
+func batcher(evalTree node.Node, buf []node.LID) func(need int) []node.LID {
+	if batchNode, ok := tryConvertToBatchedTree(evalTree); ok {
+		return func(need int) []node.LID {
+			buf = batchNode.NextBatch().LIDs(buf[:0])
+			if len(buf) > need {
+				buf = buf[:need]
+			}
+			return buf
+		}
+	}
+
+	return func(need int) []node.LID {
+		buf = buf[:0]
+		for range min(maxLidsToDrain, need) {
+			lid := evalTree.Next()
+			if lid.IsNull() {
+				break
+			}
+			buf = append(buf, lid)
+		}
+		return buf
+	}
+}
+
 func iterateEvalTree(
 	ctx context.Context,
 	params SearchParams,
 	idsIndex idsIndex,
-	evalTree func(need int, buf lidsBuf) LIDsIter,
+	evalTree node.Node,
 	aggSupplier func() ([]Aggregator, error),
 	sw *stopwatch.Stopwatch,
 ) (int, seq.IDSources, HistMap, []Aggregator, error) {
@@ -233,11 +224,11 @@ func iterateEvalTree(
 	defer searchBuffersPool.Put(buffers)
 	mids := buffers.mids
 	rids := buffers.rids
-	lidsBuffer := buffers.lids
+
+	batchedEvalTree := batcher(evalTree, buffers.lids)
 
 	timerEval := sw.Timer("eval_tree_next")
 	timerMID := sw.Timer("get_mid")
-	timerFilterMIDs := sw.Timer("filter_mids")
 	timerUpdateHist := sw.Timer("update_hist")
 	timerRID := sw.Timer("get_rid")
 	timerAgg := sw.Timer("agg_node_count")
@@ -252,54 +243,43 @@ func iterateEvalTree(
 		if !needMore && !needScanAllRange {
 			break
 		}
-		needLids := params.Limit - len(ids)
+		needLIDs := params.Limit - len(ids)
 		if needScanAllRange {
-			needLids = math.MaxUint32
+			needLIDs = math.MaxUint32
 		}
-		// limit how much we drain from eval tree for one-by-one flow. ignored for batched flow
-		needLids = min(needLids, maxLidsToDrain)
 
 		timerEval.Start()
-		lidBatch := evalTree(needLids, lidsBuffer)
+		lidsSlice := batchedEvalTree(needLIDs)
 		timerEval.Stop()
 
-		if lidBatch.Len() == 0 {
+		if len(lidsSlice) == 0 {
 			break
 		}
 
-		lidsSlice := lidBatch.LIDs(lidsBuffer.lids)
-
-		needMids := min(params.Limit-len(ids), len(lidsSlice))
+		needMIDs := min(params.Limit-len(ids), len(lidsSlice))
 		if hasHist {
 			// need to fetch mids for all lids for hist
-			needMids = len(lidsSlice)
+			needMIDs = len(lidsSlice)
 		}
 
 		// Get MIDs
-		if needMids > 0 {
+		if needMIDs > 0 {
 			timerMID.Start()
-			mids = idsIndex.GetMIDs(lidsSlice[:needMids], mids[:0])
+			mids = idsIndex.GetMIDs(lidsSlice[:needMIDs], mids[:0])
 			timerMID.Stop()
-		}
-
-		// Filter out-of-range MIDs (only for hists)
-		if hasHist {
-			timerFilterMIDs.Start()
-			mids, lidsSlice = filterOutOfRangeMIDs(params, mids, lidsSlice)
-			timerFilterMIDs.Stop()
 		}
 
 		// Get RIDs
 		// compute number of ids we can get here, since some MIDs might have been filtered out
-		needIds := min(params.Limit-len(ids), len(lidsSlice))
-		if needIds > 0 {
+		needIDs := min(params.Limit-len(ids), len(lidsSlice))
+		if needIDs > 0 {
 			timerRID.Start()
-			rids = idsIndex.GetRIDs(lidsSlice[0:needIds], rids[:0])
+			rids = idsIndex.GetRIDs(lidsSlice[0:needIDs], rids[:0])
 			timerRID.Stop()
 		}
 
 		// Fill IDs for search
-		for i := 0; i < needIds; i++ {
+		for i := 0; i < needIDs; i++ {
 			id := seq.ID{MID: mids[i], RID: rids[i]}
 
 			if i == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
@@ -341,60 +321,6 @@ func iterateEvalTree(
 	}
 
 	return total, ids, hist, aggs, nil
-}
-
-func filterOutOfRangeMIDs(params SearchParams, mids []seq.MID, lidsSlice []node.LID) ([]seq.MID, []node.LID) {
-	// most of the time we will never filter out any MIDs, therefore it's faster just to loop through and exit
-	needFilter := false
-	for i := 0; i < len(mids); i++ {
-		// TODO(cheb0): filter with arrow?
-		if mids[i] < params.From || mids[i] > params.To {
-			needFilter = true
-			break
-		}
-	}
-
-	if needFilter {
-		writeIdx := 0
-		filteredOut := 0
-		for i := 0; i < len(mids); i++ {
-			if mids[i] < params.From || mids[i] > params.To {
-				logger.Error("MID value outside the query range",
-					zap.Time("from", params.From.Time()),
-					zap.Time("to", params.To.Time()),
-					zap.Time("mid", mids[i].Time()))
-				filteredOut++
-				continue
-			} else {
-				lidsSlice[writeIdx] = lidsSlice[i]
-				mids[writeIdx] = mids[i]
-				writeIdx++
-			}
-		}
-		lidsSlice = lidsSlice[0 : len(lidsSlice)-filteredOut]
-		mids = mids[0 : len(mids)-filteredOut]
-	}
-	return mids, lidsSlice
-}
-
-// lidsBuf maintains node.LID in slice as is (append order).
-// Used to drain batches of LIDs when eval tree doesn't support batching.
-type lidsBuf struct {
-	lids []node.LID
-}
-
-func (b lidsBuf) append(x node.LID) lidsBuf {
-	return lidsBuf{
-		lids: append(b.lids, x),
-	}
-}
-
-func (b lidsBuf) Len() int {
-	return len(b.lids)
-}
-
-func (b lidsBuf) LIDs(_ []node.LID) []node.LID {
-	return b.lids
 }
 
 func tryConvertToBatchedTree(evalTree node.Node) (node.BatchedNode, bool) {

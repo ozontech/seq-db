@@ -1,6 +1,10 @@
 package processor
 
-import "github.com/ozontech/seq-db/seq"
+import (
+	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/seq"
+	"go.uber.org/zap"
+)
 
 // HistMap is an optimized array-based map for histogram.
 type HistMap struct {
@@ -25,7 +29,11 @@ func NewHistMap(from, to seq.MID, intervalMillis uint64) HistMap {
 func (h *HistMap) Update(mids []seq.MID) {
 	// TODO(cheb0): unroll/vectorize/whatever when we optimize everything else
 	for _, mid := range mids {
-		bucketIndex := uint64(mid)/uint64(h.interval) - h.base
+		bucketIndex := int(uint64(mid)/uint64(h.interval) - h.base)
+		if bucketIndex < 0 || bucketIndex >= len(h.buckets) {
+			logger.Error("MID value outside the query range", zap.Time("mid", mid.Time()))
+			continue
+		}
 		h.buckets[bucketIndex]++
 	}
 }
