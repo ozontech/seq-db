@@ -35,6 +35,7 @@ func Parse(path string) (Config, error) {
 	}
 
 	/* Set computed defaults if user did not override them */
+	c.Compaction.Workers = cmp.Or(c.Compaction.Workers, NumCPU)
 
 	c.Resources.ReaderWorkers = cmp.Or(c.Resources.ReaderWorkers, NumCPU)
 	c.Resources.SearchWorkers = cmp.Or(c.Resources.SearchWorkers, NumCPU)
@@ -201,6 +202,19 @@ type Config struct {
 		SealedZstdCompressionLevel   int `config:"sealed_zstd_compression_level" default:"3"`
 		DocBlockZstdCompressionLevel int `config:"doc_block_zstd_compression_level" default:"3"`
 	} `config:"compression"`
+
+	Compaction struct {
+		STCS struct {
+			MergeTrigger     int     `config:"merge_trigger" default:"4"`
+			MergeFanIn       int     `config:"merge_fan_in" default:"32"`
+			MergeFanOutSize  Bytes   `config:"merge_fan_out_size" default:"512MiB"`
+			BucketLowerbound float64 `config:"bucket_lowerbound" default:"0.5"`
+			BucketUpperbound float64 `config:"bucket_upperbound" default:"1.5"`
+		} `config:"stcs"`
+		Workers      int           `config:"workers"`
+		TimeWindow   time.Duration `config:"time_window" default:"24h"`
+		TickInterval time.Duration `config:"tick_interval" default:"1s"`
+	} `config:"compaction"`
 
 	Indexing struct {
 		MaxTokenSize         int  `config:"max_token_size" default:"72"`

@@ -41,6 +41,7 @@ type StoreConfig struct {
 	API                   APIConfig
 	FracManager           fracmanager.Config
 	SkipMaskManagerConfig skipmaskmanager.Config
+	Compaction            compaction.Config
 }
 
 func (c *StoreConfig) setDefaults() error {
@@ -73,8 +74,8 @@ func NewStore(
 		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
 
-	planner := compaction.NewPlanner(ctx, fracManager)
-	executor := compaction.NewExecutor(10, planner)
+	planner := compaction.NewPlanner(ctx, fracManager, c.Compaction)
+	executor := compaction.NewExecutor(c.Compaction.Workers, c.FracManager.SealParams, planner)
 
 	skipMaskManager.Start(fracManager)
 
@@ -112,7 +113,7 @@ func (s *Store) Stop() {
 	s.grpcServer.Stop(ctx)
 	s.fracManagerStop()
 	s.SkipMaskManager.Stop()
-	s.Executor.Close()
+	s.Executor.Stop()
 
 	logger.Info("store stopped")
 }

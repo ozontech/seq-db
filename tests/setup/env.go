@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ozontech/seq-db/buildinfo"
+	"github.com/ozontech/seq-db/compaction"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -126,6 +127,18 @@ func (cfg *TestingEnvConfig) GetStoreConfig(replicaID string, cold bool) storeap
 		},
 		SkipMaskManagerConfig: skipmaskmanager.Config{
 			DataDir: filepath.Join(cfg.DataDir, replicaID, "skipmasks"),
+		},
+		Compaction: compaction.Config{
+			MergeTrigger:    4,
+			MergeFanIn:      32,
+			MergeFanOutSize: math.MaxUint64,
+
+			BucketLowerbound: 0.5,
+			BucketUpperbound: 1.5,
+
+			Workers:      4,
+			TimeWindow:   time.Hour * 24,
+			TickInterval: time.Second,
 		},
 	}
 }

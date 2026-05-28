@@ -9,22 +9,28 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/alecthomas/units"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 )
 
+type Config struct {
+	MergeTrigger    int
+	MergeFanIn      int
+	MergeFanOutSize uint64
+
+	BucketLowerbound float64
+	BucketUpperbound float64
+
+	Workers      int
+	TimeWindow   time.Duration
+	TickInterval time.Duration
+}
+
 type fraction interface {
 	Info() *common.Info
 }
-
-const (
-	// TODO(dkharms): Move this options to config.
-	compactionTick   = time.Second
-	compactionWindow = 24 * time.Hour
-)
 
 type task struct {
 	bin        time.Time
@@ -34,6 +40,8 @@ type task struct {
 }
 
 type planner struct {
+	cfg Config
+
 	wg   sync.WaitGroup
 	ctx  context.Context
 	done chan struct{}
@@ -49,8 +57,10 @@ type planner struct {
 	stats map[time.Time]int
 }
 
-func NewPlanner(ctx context.Context, fm *fracmanager.FracManager) *planner {
+func NewPlanner(ctx context.Context, fm *fracmanager.FracManager, cfg Config) *planner {
 	p := planner{
+		cfg: cfg,
+
 		ctx:  ctx,
 		done: make(chan struct{}),
 
@@ -68,7 +78,7 @@ func NewPlanner(ctx context.Context, fm *fracmanager.FracManager) *planner {
 
 func (p *planner) init() {
 	p.wg.Go(func() {
-		t := time.NewTicker(compactionTick)
+		t := time.NewTicker(p.cfg.TickInterval)
 
 		for {
 			select {
@@ -83,6 +93,7 @@ func (p *planner) init() {
 			case <-t.C:
 				task, ok := p.pick()
 				if !ok {
+					compactionSkipped.Inc()
 					continue
 				}
 
@@ -91,13 +102,14 @@ func (p *planner) init() {
 				case <-time.NewTimer(time.Second).C:
 					// If all executor workers are busy for some long period of time,
 					// we want to drop the task because it might contain stale decision.
+					compactionSkipped.Inc()
 				}
 			}
 		}
 	})
 }
 
-func (p *planner) close() {
+func (p *planner) stop() {
 	close(p.done)
 }
 
@@ -109,7 +121,8 @@ func (p *planner) pick() (task, bool) {
 		snapshot[i] = fractions[i]
 	}
 
-	bins := p.distribute(compactionWindow, snapshot)
+	bins := p.distribute(p.cfg.TimeWindow, snapshot)
+	compactionBinsTotal.Set(float64(len(bins)))
 	times := p.prioritize(bins)
 
 	p.mu.Lock()
@@ -123,13 +136,12 @@ func (p *planner) pick() (task, bool) {
 			continue
 		}
 
-		// TODO(dkharms): Move this options to config.
 		picked := strategySTCS{
-			mergeTrigger:     4,
-			mergeFanIn:       32,
-			mergeFanOutSize:  128 * uint64(units.MiB),
-			bucketLowerbound: 0.5,
-			bucketUpperbound: 1.5,
+			mergeTrigger:     p.cfg.MergeTrigger,
+			mergeFanIn:       p.cfg.MergeFanIn,
+			mergeFanOutSize:  p.cfg.MergeFanOutSize,
+			bucketLowerbound: p.cfg.BucketLowerbound,
+			bucketUpperbound: p.cfg.BucketUpperbound,
 		}.Pick(bins[t].fracs)
 
 		if len(picked) == 0 {
@@ -156,11 +168,14 @@ func (p *planner) pick() (task, bool) {
 				delete(p.inflight, t)
 
 				if err != nil {
+					compactionResultTotal.WithLabelValues("error").Inc()
+
 					logger.Error(
 						"failed to compact fractions",
 						zap.Error(err),
 						zap.Any("snapshot", names(csnapshot.Fractions())),
 					)
+
 					return
 				}
 
@@ -172,6 +187,7 @@ func (p *planner) pick() (task, bool) {
 					return
 				}
 
+				compactionResultTotal.WithLabelValues("success").Inc()
 				// TODO(dkharms): Is it fine to substitute and delete?
 				// We need somehow substitute and delete atomically.
 				p.fm.SubstituteWithSealed(s, csnapshot)

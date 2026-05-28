@@ -2,6 +2,7 @@ package compaction
 
 import (
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -12,20 +13,22 @@ import (
 )
 
 type Executor struct {
+	params common.SealParams
+
 	workers int
 	wg      sync.WaitGroup
-	p       *planner
+
+	p *planner
 }
 
-// FIXME(dkharms): I need to pass here [common.SealParams].
-func NewExecutor(workers int, p *planner) *Executor {
-	e := Executor{workers: workers, p: p}
+func NewExecutor(workers int, params common.SealParams, p *planner) *Executor {
+	e := Executor{workers: workers, p: p, params: params}
 	e.init()
 	return &e
 }
 
-func (e *Executor) Close() {
-	e.p.close()
+func (e *Executor) Stop() {
+	e.p.stop()
 	e.wg.Wait()
 }
 
@@ -33,7 +36,14 @@ func (e *Executor) init() {
 	for range e.workers {
 		e.wg.Go(func() {
 			for t := range e.p.tasks {
-				t.onComplete(e.compact(t))
+				compactionInflight.Inc()
+
+				start := time.Now()
+				result, err := e.compact(t)
+				compactionDurationSeconds.Observe(time.Since(start).Seconds())
+
+				t.onComplete(result, err)
+				compactionInflight.Dec()
 			}
 		})
 	}
@@ -48,6 +58,7 @@ func (e *Executor) compact(t task) (*sealed.PreloadedData, error) {
 	for _, f := range t.snapshot.Fractions() {
 		names = append(names, f.Info().Name())
 		srcs = append(srcs, frac.NewSealedSource(f))
+		compactionBytesTotal.Add(float64(f.Info().IndexOnDisk))
 	}
 
 	logger.Info(
@@ -56,6 +67,6 @@ func (e *Executor) compact(t task) (*sealed.PreloadedData, error) {
 		zap.Strings("names", names),
 	)
 
-	preloaded, err := Merge(t.filename, common.SealParams{}, srcs...)
+	preloaded, err := Merge(t.filename, e.params, srcs...)
 	return preloaded, err
 }
