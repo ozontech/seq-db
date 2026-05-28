@@ -471,10 +471,10 @@ func (f *Sealed) String() string {
 	return fracToString(f, "sealed")
 }
 
-func (f *Sealed) Fetch(ctx context.Context, ids []seq.ID, evalSkipMasks bool) ([][]byte, error) {
+func (f *Sealed) Fetch(ctx context.Context, ids []seq.ID, noSkipMasks bool) ([][]byte, error) {
 	dp := f.createDataProvider(ctx)
 	defer dp.release()
-	return dp.Fetch(ids, evalSkipMasks)
+	return dp.Fetch(ids, noSkipMasks)
 }
 
 func (f *Sealed) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {

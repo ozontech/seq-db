@@ -11,9 +11,9 @@ type fetchIndex interface {
 	ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error)
 }
 
-func IndexFetch(ids []seq.ID, evalSkipMasks bool, sw *stopwatch.Stopwatch, fetchIndex fetchIndex, res [][]byte) error {
+func IndexFetch(ids []seq.ID, noSkipMasks bool, sw *stopwatch.Stopwatch, fetchIndex fetchIndex, res [][]byte) error {
 	m := sw.Start("get_docs_pos")
-	docsPos, err := fetchIndex.GetDocPos(ids, evalSkipMasks)
+	docsPos, err := fetchIndex.GetDocPos(ids, noSkipMasks)
 	if err != nil {
 		return err
 	}

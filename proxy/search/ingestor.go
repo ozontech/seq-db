@@ -148,7 +148,7 @@ func (si *Ingestor) Search(
 		metric.DocumentsRequested.Observe(float64(len(ids)))
 
 		fieldsFilter := tryParseFieldsFilter(string(sr.Q))
-		docsStream, err = si.FetchDocsStream(ctx, ids, sr.Explain, false, fieldsFilter)
+		docsStream, err = si.FetchDocsStream(ctx, ids, sr.Explain, true, fieldsFilter)
 		if err != nil {
 			return nil, nil, 0, err
 		}
@@ -213,7 +213,7 @@ func paginateIDs(ids seq.IDSources, offset, size int) (seq.IDSources, int) {
 
 func (si *Ingestor) singleDocsStream(
 	ctx context.Context,
-	explain, evalSkipMasks bool,
+	explain, noSkipMasks bool,
 	source uint64,
 	ids []seq.IDSource,
 	fields FetchFieldsFilter,
@@ -228,7 +228,7 @@ func (si *Ingestor) singleDocsStream(
 		return nil, fmt.Errorf("can't fetch: no client for host %s", host)
 	}
 
-	stream, err := client.Fetch(ctx, si.makeFetchReq(ids, explain, evalSkipMasks, fields),
+	stream, err := client.Fetch(ctx, si.makeFetchReq(ids, explain, noSkipMasks, fields),
 		grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
 		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
 	)
@@ -295,13 +295,13 @@ type FetchFieldsFilter struct {
 func (si *Ingestor) FetchDocsStream(
 	ctx context.Context,
 	ids []seq.IDSource,
-	explain, evalSkipMasks bool,
+	explain, noSkipMasks bool,
 	ff FetchFieldsFilter,
 ) (DocsIterator, error) {
 	errs := make([]error, 0)
 	streams := make([]DocsIterator, 0)
 	for source, ids := range groupIDsBySource(ids) {
-		if stream, err := si.singleDocsStream(ctx, explain, evalSkipMasks, source, ids, ff); err != nil {
+		if stream, err := si.singleDocsStream(ctx, explain, noSkipMasks, source, ids, ff); err != nil {
 			metric.FetchErrors.Inc()
 			errs = append(errs, err)
 			logger.Error("fetch error", zap.Error(err), zap.String("store", si.clientBySource[source]))
@@ -336,7 +336,7 @@ type FetchRequest struct {
 func (si *Ingestor) Documents(ctx context.Context, r FetchRequest) (DocsIterator, error) {
 	metric.DocumentsRequested.Observe(float64(len(r.IDs)))
 	// todo: ***REMOVED*** we fetch from both stores hot and cold there; need fix that
-	docsStream, err := si.FetchDocsStream(ctx, expandIDsBySources(r.IDs, si.clientBySource), false, true, r.FieldsFilter)
+	docsStream, err := si.FetchDocsStream(ctx, expandIDsBySources(r.IDs, si.clientBySource), false, false, r.FieldsFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +361,7 @@ func (si *Ingestor) Document(ctx context.Context, id seq.ID, ff FetchFieldsFilte
 	return docs[0]
 }
 
-func (si *Ingestor) makeFetchReq(ids []seq.IDSource, explain, evalSkipMasks bool, ff FetchFieldsFilter) *storeapi.FetchRequest {
+func (si *Ingestor) makeFetchReq(ids []seq.IDSource, explain, noSkipMasks bool, ff FetchFieldsFilter) *storeapi.FetchRequest {
 	idsWithHints := make([]*storeapi.IdWithHint, 0, len(ids))
 	idsStr := make([]string, 0, len(ids))
 	if len(ids) > 0 {
@@ -390,7 +390,7 @@ func (si *Ingestor) makeFetchReq(ids []seq.IDSource, explain, evalSkipMasks bool
 			Fields:    ff.Fields,
 			AllowList: ff.AllowList,
 		},
-		EvalSkipMasks: evalSkipMasks,
+		NoSkipMasks: noSkipMasks,
 	}
 }
 

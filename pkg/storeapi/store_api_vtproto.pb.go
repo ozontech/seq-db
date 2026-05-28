@@ -648,7 +648,7 @@ func (m *FetchRequest) CloneVT() *FetchRequest {
 	r := new(FetchRequest)
 	r.Explain = m.Explain
 	r.FieldsFilter = m.FieldsFilter.CloneVT()
-	r.EvalSkipMasks = m.EvalSkipMasks
+	r.NoSkipMasks = m.NoSkipMasks
 	if rhs := m.Ids; rhs != nil {
 		tmpContainer := make([]string, len(rhs))
 		copy(tmpContainer, rhs)
@@ -1651,7 +1651,7 @@ func (this *FetchRequest) EqualVT(that *FetchRequest) bool {
 	if !this.FieldsFilter.EqualVT(that.FieldsFilter) {
 		return false
 	}
-	if this.EvalSkipMasks != that.EvalSkipMasks {
+	if this.NoSkipMasks != that.NoSkipMasks {
 		return false
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
@@ -3789,9 +3789,9 @@ func (m *FetchRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if m.EvalSkipMasks {
+	if m.NoSkipMasks {
 		i--
-		if m.EvalSkipMasks {
+		if m.NoSkipMasks {
 			dAtA[i] = 1
 		} else {
 			dAtA[i] = 0
@@ -5601,9 +5601,9 @@ func (m *FetchRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if m.EvalSkipMasks {
+	if m.NoSkipMasks {
 		i--
-		if m.EvalSkipMasks {
+		if m.NoSkipMasks {
 			dAtA[i] = 1
 		} else {
 			dAtA[i] = 0
@@ -6423,7 +6423,7 @@ func (m *FetchRequest) SizeVT() (n int) {
 		l = m.FieldsFilter.SizeVT()
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
-	if m.EvalSkipMasks {
+	if m.NoSkipMasks {
 		n += 2
 	}
 	n += len(m.unknownFields)
@@ -11088,7 +11088,7 @@ func (m *FetchRequest) UnmarshalVT(dAtA []byte) error {
 			iNdEx = postIndex
 		case 6:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field EvalSkipMasks", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field NoSkipMasks", wireType)
 			}
 			var v int
 			for shift := uint(0); ; shift += 7 {
@@ -11105,7 +11105,7 @@ func (m *FetchRequest) UnmarshalVT(dAtA []byte) error {
 					break
 				}
 			}
-			m.EvalSkipMasks = bool(v != 0)
+			m.NoSkipMasks = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -15996,7 +15996,7 @@ func (m *FetchRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 			iNdEx = postIndex
 		case 6:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field EvalSkipMasks", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field NoSkipMasks", wireType)
 			}
 			var v int
 			for shift := uint(0); ; shift += 7 {
@@ -16013,7 +16013,7 @@ func (m *FetchRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 					break
 				}
 			}
-			m.EvalSkipMasks = bool(v != 0)
+			m.NoSkipMasks = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

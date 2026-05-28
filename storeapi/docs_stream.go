@@ -20,14 +20,14 @@ type streamDocsBatch struct {
 }
 
 type docsStream struct {
-	ctx           context.Context
-	ids           seq.IDSources
-	totalIDs      int
-	fetcher       *fracmanager.Fetcher
-	fracs         fracmanager.List
-	out           chan streamDocsBatch
-	docsBuf       [][]byte
-	evalSkipMasks bool
+	ctx         context.Context
+	ids         seq.IDSources
+	totalIDs    int
+	fetcher     *fracmanager.Fetcher
+	fracs       fracmanager.List
+	out         chan streamDocsBatch
+	docsBuf     [][]byte
+	noSkipMasks bool
 }
 
 func (d *docsStream) Next() ([]byte, error) {
@@ -72,7 +72,7 @@ func (d *docsStream) batchLoader() {
 			d.ids = d.ids[l:]
 
 			// fetch chunk
-			docs, err := d.fetcher.FetchDocs(d.ctx, d.fracs, chunk, d.evalSkipMasks)
+			docs, err := d.fetcher.FetchDocs(d.ctx, d.fracs, chunk, d.noSkipMasks)
 
 			// first we send regardless of the error,
 			// the possible error will be handled at the destination.
@@ -120,16 +120,16 @@ func newDocsStream(
 	ids seq.IDSources,
 	fetcher *fracmanager.Fetcher,
 	fracs fracmanager.List,
-	evalSkipMasks bool,
+	noSkipMasks bool,
 ) *docsStream {
 	d := docsStream{
-		ctx:           ctx,
-		ids:           ids,
-		totalIDs:      len(ids),
-		fetcher:       fetcher,
-		fracs:         fracs,
-		out:           make(chan streamDocsBatch, 1), // buffered chan to async load the next batch while we are sending the prev batch to the client
-		evalSkipMasks: evalSkipMasks,
+		ctx:         ctx,
+		ids:         ids,
+		totalIDs:    len(ids),
+		fetcher:     fetcher,
+		fracs:       fracs,
+		out:         make(chan streamDocsBatch, 1), // buffered chan to async load the next batch while we are sending the prev batch to the client
+		noSkipMasks: noSkipMasks,
 	}
 
 	go func() {

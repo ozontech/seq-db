@@ -131,14 +131,14 @@ func (f *Remote) Contains(mid seq.MID) bool {
 	return f.info.IsIntersecting(mid, mid)
 }
 
-func (f *Remote) Fetch(ctx context.Context, ids []seq.ID, evalSkipMasks bool) ([][]byte, error) {
+func (f *Remote) Fetch(ctx context.Context, ids []seq.ID, noSkipMasks bool) ([][]byte, error) {
 	dp, err := f.createDataProvider(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer dp.release()
 
-	return dp.Fetch(ids, evalSkipMasks)
+	return dp.Fetch(ids, noSkipMasks)
 }
 
 func (f *Remote) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
