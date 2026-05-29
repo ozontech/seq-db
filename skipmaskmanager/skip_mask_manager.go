@@ -435,7 +435,7 @@ func (smm *SkipMaskManager) loadSkipMasks(fracNames []string) error {
 
 			// remove missed files
 			if _, ok := fracNamesSet[fracName]; !ok {
-				err := os.RemoveAll(path.Join(sm.dirPath, name))
+				err := os.Remove(path.Join(sm.dirPath, name))
 				if err != nil && !os.IsNotExist(err) {
 					return err
 				}
