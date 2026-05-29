@@ -37,12 +37,11 @@ func TestLoader(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.Equal(t, lidsToUint32s(multipleBlocksLIDs), resLIDs)
+	require.NoError(t, loader.release())
 
 	// test load to bitmap
 	bitmap := roaring.New()
 	err = loader.loadToBitmap(bitmap, 0, math.MaxUint32)
 	require.NoError(t, err)
 	require.Equal(t, lidsToUint32s(multipleBlocksLIDs), bitmap.ToArray())
-
-	require.NoError(t, loader.release())
 }

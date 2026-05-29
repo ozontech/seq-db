@@ -66,6 +66,8 @@ func TestIteratorAsc(t *testing.T) {
 				resLIDs = append(resLIDs, lid.Unpack())
 			}
 			require.Equal(t, tc.expected, resLIDs)
+
+			require.NoError(t, loader.release())
 		})
 	}
 }

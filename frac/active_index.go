@@ -191,13 +191,13 @@ type activeSearchIndex struct {
 	fracName         string
 }
 
-func (si *activeSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
+func (si *activeSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
 	// active fraction doesn't meet min and max lid
 	minLID, maxLID = uint32(0), uint32(math.MaxUint32)
 
-	iterator, has, err := si.skipMaskProvider.GetIDsIteratorByFrac(si.fracName, minLID, maxLID, reverse)
+	iterator, has, release, err := si.skipMaskProvider.GetIDsIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 	if err != nil {
-		return nil, false, err
+		return nil, false, release, err
 	}
 
 	res := make([]uint32, 0)
@@ -215,7 +215,7 @@ func (si *activeSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (n
 	// we need to sort inversed values since they may be out of order after replay of active fraction
 	slices.Sort(res)
 
-	return node.NewStatic(res, reverse), has, nil
+	return node.NewStatic(res, reverse), has, release, nil
 }
 
 type activeTokenIndex struct {

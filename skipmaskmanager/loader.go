@@ -2,6 +2,7 @@ package skipmaskmanager
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -137,7 +138,11 @@ func (l *loader) loadBlock(index int, add func(uint32)) error {
 	return nil
 }
 
-func (l *loader) loadToBitmap(bitmap *roaring.Bitmap, minLID, maxLID uint32) error {
+func (l *loader) loadToBitmap(bitmap *roaring.Bitmap, minLID, maxLID uint32) (err error) {
+	defer func() {
+		err = errors.Join(err, l.release())
+	}()
+
 	if err := l.ensureHeaders(); err != nil {
 		return err
 	}
@@ -155,11 +160,7 @@ func (l *loader) loadToBitmap(bitmap *roaring.Bitmap, minLID, maxLID uint32) err
 		}
 	}
 
-	if err := l.release(); err != nil {
-		return err
-	}
-
-	return nil
+	return
 }
 
 func (l *loader) ensureHeaders() error {

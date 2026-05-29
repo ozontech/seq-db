@@ -35,8 +35,8 @@ import (
 
 type testSkipMaskProvider struct{}
 
-func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
-	return node.NewStatic([]uint32{}, false), false, nil
+func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
+	return node.NewStatic([]uint32{}, false), false, func() error { return nil }, nil
 }
 func (testSkipMaskProvider) GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error) {
 	return nil, nil

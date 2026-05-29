@@ -24,9 +24,6 @@ func (it *IteratorDesc) Next() node.LID {
 
 	for len(it.lids) == 0 {
 		if !it.tryNextBlock {
-			if err := it.loader.release(); err != nil {
-				logger.Panic("error closing loader", zap.Error(err))
-			}
 			return node.NullLID()
 		}
 

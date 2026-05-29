@@ -24,7 +24,7 @@ import (
 )
 
 type skipMaskProvider interface {
-	GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
+	GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error)
 	GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error)
 	RemoveFrac(fracName string)
 }
@@ -373,6 +373,6 @@ type sealedSearchIndex struct {
 	skipMaskProvider skipMaskProvider
 }
 
-func (si *sealedSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
+func (si *sealedSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
 	return si.skipMaskProvider.GetIDsIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 }
