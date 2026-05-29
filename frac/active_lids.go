@@ -135,6 +135,18 @@ func mergeSorted(right, left []uint32, mids, rids []uint64) []uint32 {
 	return result
 }
 
+func (tl *TokenLIDs) Size() int {
+	tl.sortedMu.Lock()
+	sortedLen := len(tl.sorted)
+	tl.sortedMu.Unlock()
+
+	tl.queueMu.Lock()
+	queueLen := len(tl.queue)
+	tl.queueMu.Unlock()
+
+	return (sortedLen + queueLen) * 4
+}
+
 func (tl *TokenLIDs) PutLIDsInQueue(lids []uint32) int {
 	tl.queueMu.Lock()
 	defer tl.queueMu.Unlock()

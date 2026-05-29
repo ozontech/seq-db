@@ -2,6 +2,7 @@ package frac
 
 import (
 	"sync"
+	"unsafe"
 )
 
 type UInt64s struct {
@@ -46,4 +47,10 @@ func (l *UInt64s) Append(val uint64) uint32 {
 	defer l.mu.Unlock()
 
 	return l.append(val)
+}
+
+func (l *UInt64s) Size() int {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return len(l.vals) * int(unsafe.Sizeof(int64(0)))
 }

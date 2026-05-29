@@ -446,6 +446,15 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 	}
 }
 
+func (f *Active) MemSize() int {
+	return f.MIDs.Size() +
+		f.RIDs.Size() +
+		f.DocBlocks.Size() +
+		f.DocsPositions.Size() +
+		f.IDsToLIDs.Size() +
+		f.TokenList.Size()
+}
+
 func (f *Active) Info() *common.Info {
 	f.infoMu.RLock()
 	defer f.infoMu.RUnlock()

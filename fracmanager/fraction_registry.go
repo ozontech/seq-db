@@ -148,7 +148,7 @@ func (r *fractionRegistry) rotateIfFull(maxSize uint64, ap activeProvider) (*ref
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.sappender.Info().DocsOnDisk <= maxSize {
+	if uint64(r.sappender.MemSize()) <= maxSize {
 		return nil, nil, nil
 	}
 

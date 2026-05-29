@@ -2,6 +2,7 @@ package frac
 
 import (
 	"sync"
+	"unsafe"
 
 	"github.com/ozontech/seq-db/seq"
 )
@@ -30,6 +31,16 @@ func (dp *DocsPositions) GetSync(id seq.ID) seq.DocPos {
 	defer dp.mu.RUnlock()
 
 	return dp.Get(id)
+}
+
+func (dp *DocsPositions) Size() int {
+	dp.mu.RLock()
+	defer dp.mu.RUnlock()
+
+	const entrySize = int(unsafe.Sizeof(seq.ID{})) +
+		int(unsafe.Sizeof(seq.DocPos(0)))
+
+	return len(dp.idToPos) * entrySize
 }
 
 // SetMultiple returns a slice of added ids
