@@ -225,7 +225,7 @@ func (smm *SkipMaskManager) GetIDsIteratorByFrac(
 	return NewNMergedIterators(iterators), has, nil
 }
 
-// GetSkipMaskAsRoaringBitmap returns skip masks as roaring bitmap.
+// GetIDsBitmapByFrac returns skip masks as roaring bitmap.
 // Currently used in fetch resuests
 func (smm *SkipMaskManager) GetIDsBitmapByFrac(
 	fracName string,
@@ -239,18 +239,19 @@ func (smm *SkipMaskManager) GetIDsBitmapByFrac(
 		return nil, nil
 	}
 
-	bitmap := roaring.New()
-	mu := &sync.Mutex{}
+	bitmaps := make([]*roaring.Bitmap, len(fracFiles))
 	wg := &sync.WaitGroup{}
 	var loaderErr error
 
-	for _, f := range fracFiles {
+	for i, f := range fracFiles {
 		wg.Go(func() {
 			loader := newLoader(f, smm.headersCache)
-			if err := loader.loadToBitmap(bitmap, mu, minLID, maxLID); err != nil {
+			bitmap := roaring.New()
+			if err := loader.loadToBitmap(bitmap, minLID, maxLID); err != nil {
 				logger.Error("can't load skip mask to bitmap", zap.String("path", f), zap.Error(err))
 				loaderErr = err
 			}
+			bitmaps[i] = bitmap
 		})
 	}
 
@@ -260,7 +261,7 @@ func (smm *SkipMaskManager) GetIDsBitmapByFrac(
 		return nil, loaderErr
 	}
 
-	return bitmap, nil
+	return roaring.FastOr(bitmaps...), nil
 }
 
 // RefreshFrac recomputes skip mask files for a fraction after it has been sealed.

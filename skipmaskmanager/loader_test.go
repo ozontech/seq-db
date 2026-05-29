@@ -4,7 +4,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/RoaringBitmap/roaring"
@@ -41,8 +40,7 @@ func TestLoader(t *testing.T) {
 
 	// test load to bitmap
 	bitmap := roaring.New()
-	mu := &sync.Mutex{}
-	err = loader.loadToBitmap(bitmap, mu, 0, math.MaxUint32)
+	err = loader.loadToBitmap(bitmap, 0, math.MaxUint32)
 	require.NoError(t, err)
 	require.Equal(t, lidsToUint32s(multipleBlocksLIDs), bitmap.ToArray())
 

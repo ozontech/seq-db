@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
 
 	"github.com/RoaringBitmap/roaring"
 	"go.uber.org/zap"
@@ -138,7 +137,7 @@ func (l *loader) loadBlock(index int, add func(uint32)) error {
 	return nil
 }
 
-func (l *loader) loadToBitmap(bitmap *roaring.Bitmap, mu *sync.Mutex, minLID, maxLID uint32) error {
+func (l *loader) loadToBitmap(bitmap *roaring.Bitmap, minLID, maxLID uint32) error {
 	if err := l.ensureHeaders(); err != nil {
 		return err
 	}
@@ -149,9 +148,7 @@ func (l *loader) loadToBitmap(bitmap *roaring.Bitmap, mu *sync.Mutex, minLID, ma
 		}
 
 		err := l.loadBlock(i, func(lid uint32) {
-			mu.Lock()
 			bitmap.Add(lid)
-			mu.Unlock()
 		})
 		if err != nil {
 			return err
