@@ -44,7 +44,7 @@ func (s strategySTCS) Pick(candidates []fraction) []fraction {
 		}
 
 		fracs := bucket[:min(len(bucket), s.mergeFanIn)]
-		if picked := s.takeUntilSize(fracs); len(picked) > 0 {
+		if picked := s.takeUntilSize(fracs); len(picked) >= s.mergeTrigger {
 			return picked
 		}
 	}

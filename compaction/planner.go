@@ -102,14 +102,6 @@ func (p *planner) close() {
 }
 
 func (p *planner) pick() (task, bool) {
-	names := func(fracs []fraction) []string {
-		fnames := make([]string, len(fracs))
-		for i := range fracs {
-			fnames[i] = fracs[i].Info().Name()
-		}
-		return fnames
-	}
-
 	fractions := p.fm.SealedFractionsSnapshot()
 	snapshot := make([]fraction, len(fractions))
 
@@ -123,12 +115,11 @@ func (p *planner) pick() (task, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// NOTE(dkharms): This lock guards [inflight] map.
-	// Maybe I can find another way to signal from worker that time-bin is free?
-
 	for _, t := range times {
 		if _, ok := p.inflight[t]; ok {
-			// There is on-going compaction within this time-bin.
+			// NOTE(dkharms): Currently we allow only one on-going compaction
+			// per each time-bin however this might be not the best idea.
+			// So, I will revise it later.
 			continue
 		}
 
@@ -168,7 +159,7 @@ func (p *planner) pick() (task, bool) {
 					logger.Error(
 						"failed to compact fractions",
 						zap.Error(err),
-						zap.Any("snapshot", csnapshot),
+						zap.Any("snapshot", names(csnapshot.Fractions())),
 					)
 					return
 				}
@@ -176,7 +167,7 @@ func (p *planner) pick() (task, bool) {
 				if s == nil {
 					logger.Info(
 						"compaction did not produce fraction",
-						zap.Any("snapshot", csnapshot),
+						zap.Any("snapshot", names(csnapshot.Fractions())),
 					)
 					return
 				}
@@ -245,4 +236,12 @@ func (p *planner) prioritize(bins map[time.Time]timestampBin) []time.Time {
 	})
 
 	return ordered
+}
+
+func names[T interface{ Info() *common.Info }, S ~[]T](fracs S) []string {
+	fnames := make([]string, len(fracs))
+	for i := range fracs {
+		fnames[i] = fracs[i].Info().Name()
+	}
+	return fnames
 }

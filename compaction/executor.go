@@ -33,11 +33,6 @@ func (e *Executor) init() {
 	for range e.workers {
 		e.wg.Go(func() {
 			for t := range e.p.tasks {
-				logger.Info(
-					"got new compaction task",
-					zap.Time("bin", t.bin),
-					zap.Any("snapshot", t.snapshot),
-				)
 				t.onComplete(e.compact(t))
 			}
 		})
@@ -57,6 +52,7 @@ func (e *Executor) compact(t task) (*sealed.PreloadedData, error) {
 
 	logger.Info(
 		"compacting fractions",
+		zap.Time("bin", t.bin),
 		zap.Strings("names", names),
 	)
 
