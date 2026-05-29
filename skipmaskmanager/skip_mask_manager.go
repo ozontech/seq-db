@@ -44,6 +44,11 @@ type MappingProvider interface {
 	GetMapping() seq.Mapping
 }
 
+type fractionAcquirer interface {
+	Fractions() fracmanager.List
+	AcquireFraction(name string) (_ frac.Fraction, release func(), ok bool)
+}
+
 // Config holds configuration parameters for SkipMaskManager.
 type Config struct {
 	DataDir        string // Directory to store skip mask files
@@ -137,7 +142,7 @@ func New(
 //   - Begins asynchronous processing of all skip mask queries
 //
 // This method must be called before using the manager.
-func (smm *SkipMaskManager) Start(fracs fracmanager.List) {
+func (smm *SkipMaskManager) Start(fracs fractionAcquirer) {
 	smm.createDataDir()
 
 	err := smm.loadSkipMasks()
@@ -145,7 +150,7 @@ func (smm *SkipMaskManager) Start(fracs fracmanager.List) {
 		logger.Fatal("failed to load previous skip masks", zap.Error(err))
 	}
 
-	err = smm.buildQueue(fracs)
+	err = smm.buildQueue(fracs.Fractions())
 	if err != nil {
 		logger.Fatal("failed to build skip mask manager queue", zap.Error(err))
 	}
@@ -166,7 +171,7 @@ func (smm *SkipMaskManager) Start(fracs fracmanager.List) {
 			}
 			sm.ast = ast
 
-			smm.processSkipMask(sm, fracs.FilterInRange(sm.params.From, sm.params.To))
+			smm.processSkipMask(sm, fracs)
 		}
 	}()
 }
@@ -434,17 +439,7 @@ func (smm *SkipMaskManager) buildQueue(fracs fracmanager.List) error {
 // It processes each fraction with a .queue file, running search queries in parallel
 // (limited by the rate limiter). Each successful search writes results to a .skipmask
 // file. The skip mask status is set to Done when all fractions are processed.
-func (smm *SkipMaskManager) processSkipMask(skipMask *SkipMask, fracs fracmanager.List) {
-	if len(fracs) == 0 {
-		skipMask.setStatus(StatusDone)
-		return
-	}
-
-	fracsByName := make(map[string]frac.Fraction)
-	for _, f := range fracs {
-		fracsByName[f.Info().Name()] = f
-	}
-
+func (smm *SkipMaskManager) processSkipMask(skipMask *SkipMask, fracs fractionAcquirer) {
 	skipMaskDes, err := os.ReadDir(skipMask.dirPath)
 	if err != nil {
 		panic(fmt.Errorf("BUG: reading directory must be successful: %s", err))
@@ -453,11 +448,6 @@ func (smm *SkipMaskManager) processSkipMask(skipMask *SkipMask, fracs fracmanage
 	inProgress.Add(1)
 
 	processFracInQueue := func(name string) error {
-		f, ok := fracsByName[fracNameFromFilePath(name)]
-		if !ok { // skip missing fracs
-			return nil
-		}
-
 		select {
 		case <-smm.ctx.Done():
 			return nil
@@ -466,6 +456,13 @@ func (smm *SkipMaskManager) processSkipMask(skipMask *SkipMask, fracs fracmanage
 			go func() {
 				defer skipMask.processWg.Done()
 				defer func() { <-smm.rateLimit }()
+
+				f, release, ok := fracs.AcquireFraction(fracNameFromFilePath(name))
+				if !ok { // skip missing fracs
+					return
+				}
+				defer release()
+
 				if err := smm.processFrac(f, skipMask); err != nil {
 					if errors.Is(err, context.Canceled) {
 						logger.Info("skip mask manager refresh frac context cancelled")

@@ -3,6 +3,7 @@ package frac
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -279,14 +280,20 @@ func (f *Sealed) openDocs() {
 }
 
 func (f *Sealed) loadInfo() {
+	var err error
+
 	if f.IsLegacy {
 		f.openInfoLegacy()
-		f.info = loadInfoLegacy(f.legacyReader)
+		if f.info, err = loadInfoLegacy(f.legacyReader); err != nil {
+			logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+		}
 		return
 	}
 
 	f.openInfo()
-	f.info = loadInfo(f.infoFile)
+	if f.info, err = loadInfo(f.infoFile); err != nil {
+		logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+	}
 }
 
 func (f *Sealed) init(full bool) {
@@ -535,41 +542,41 @@ func (f *Sealed) IsIntersecting(from, to seq.MID) bool {
 	return f.info.IsIntersecting(from, to)
 }
 
-func loadInfoLegacy(infoReader storage.IndexReader) *common.Info {
+func loadInfoLegacy(infoReader storage.IndexReader) (*common.Info, error) {
 	block, _, err := infoReader.ReadIndexBlock(0, nil)
 	if err != nil {
-		logger.Fatal("cannot read info block", zap.Error(err))
+		return nil, fmt.Errorf("cannot read info block: %w", err)
 	}
 
 	var bi sealed.BlockInfo
 	if err := bi.Unpack(block); err != nil {
-		logger.Fatal("cannot unpack info block", zap.Error(err))
+		return nil, fmt.Errorf("cannot unpack info block: %w", err)
 	}
 
-	return bi.Info
+	return bi.Info, nil
 }
 
 func loadInfo(r interface {
 	io.ReaderAt
 	Stat() (os.FileInfo, error)
 },
-) *common.Info {
+) (*common.Info, error) {
 	stat, err := r.Stat()
 	if err != nil {
-		logger.Fatal("cannot stat info file", zap.Error(err))
+		return nil, fmt.Errorf("cannot stat info file: %w", err)
 	}
 
 	block := make([]byte, stat.Size())
 	if _, err := r.ReadAt(block, io.SeekStart); err != nil {
-		logger.Fatal("cannot read info block", zap.Error(err))
+		return nil, fmt.Errorf("cannot read info block: %w", err)
 	}
 
 	var bi sealed.BlockInfo
 	if err := bi.Unpack(block); err != nil {
-		logger.Fatal("cannot unpack info block", zap.Error(err))
+		return nil, fmt.Errorf("cannot unpack info block: %w", err)
 	}
 
-	return bi.Info
+	return bi.Info, nil
 }
 
 // computeIndexOnDisk returns the total on-disk size of index files for a local fraction.
