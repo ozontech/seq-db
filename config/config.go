@@ -70,6 +70,13 @@ type Config struct {
 		SealingQueueLen int `config:"sealing_queue_len" default:"10"`
 	} `config:"storage"`
 
+	Sealing struct {
+		Lids struct {
+			// BlockSize sets max lids (postings) saved per LIDs block.
+			BlockSize int `config:"block_size" default:"65536"`
+		} `config:"lids"`
+	} `config:"sealing"`
+
 	Cluster struct {
 		// WriteStores contains cold store instances which will be written to.
 		WriteStores []string `config:"write_stores"`
@@ -200,8 +207,6 @@ type Config struct {
 		MetasZstdCompressionLevel    int `config:"metas_zstd_compression_level" default:"1"`
 		SealedZstdCompressionLevel   int `config:"sealed_zstd_compression_level" default:"3"`
 		DocBlockZstdCompressionLevel int `config:"doc_block_zstd_compression_level" default:"3"`
-		// LIDBlockSize sets max lids (postings) saved per LIDs block.
-		LIDBlockSize Bytes `config:"lid_block_size" default:"64KiB"`
 	} `config:"compression"`
 
 	Indexing struct {

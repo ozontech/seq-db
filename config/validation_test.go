@@ -87,15 +87,15 @@ limits:
 			expectErr: false,
 		},
 		{
-			name:      "Invalid compression.lid_block_size",
+			name:      "Invalid sealing.lids.block_size",
 			cfg:       baseCfg,
-			env:       map[string]string{"SEQDB_COMPRESSION_LID_BLOCK_SIZE": "-1KiB"},
+			env:       map[string]string{"SEQDB_SEALING_LIDS_BLOCK_SIZE": "-1"},
 			expectErr: true,
 		},
 		{
-			name:      "Valid compression.lid_block_size",
+			name:      "Valid sealing.lids.block_size",
 			cfg:       baseCfg,
-			env:       map[string]string{"SEQDB_COMPRESSION_LID_BLOCK_SIZE": "8KiB"},
+			env:       map[string]string{"SEQDB_SEALING_LIDS_BLOCK_SIZE": "8192"},
 			expectErr: false,
 		},
 	}

@@ -102,9 +102,6 @@ func NewActive(
 
 		skipMaskProvider: skipMaskProvider,
 	}
-	if cfg.LIDBlockSize > 0 {
-		f.info.ConstLIDBlockCap = cfg.LIDBlockSize
-	}
 
 	// use of 0 as keys in maps is prohibited – it's system key, so add first element
 	f.MIDs.Append(uint64(seq.SystemMID))

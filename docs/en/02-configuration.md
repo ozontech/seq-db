@@ -110,7 +110,16 @@ Compression level settings for various data types.
 | `compression.metas_zstd_compression_level`     | int | `1`     | Zstandard compression level for metadata         |
 | `compression.sealed_zstd_compression_level`    | int | `3`     | Zstandard compression level for sealed fractions |
 | `compression.doc_block_zstd_compression_level` | int | `3`     | Zstandard compression level for document blocks  |
-| `compression.lid_block_size`                   | int | `64KiB` | Max lids (postings) saved per LIDs block         |
+
+## Sealing Configuration
+
+Settings for fraction sealing.
+
+### Lids
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `sealing.lids.block_size` | int | `65536` | Max lids (postings) saved per LIDs block |
 
 ## Indexing Configuration
 
