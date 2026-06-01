@@ -14,6 +14,7 @@ type Metrics struct {
 	SizeRead        prometheus.Counter
 	SizeOccupied    prometheus.Counter
 	SizeReleased    prometheus.Counter
+	EntriesReleased prometheus.Counter
 	MapsRecreated   prometheus.Counter
 	MissLatency     prometheus.Counter
 }
@@ -57,9 +58,10 @@ func (m *Metrics) reportMiss(size uint64, latencySec float64) {
 	}
 }
 
-func (m *Metrics) reportReleased(freed uint64) {
+func (m *Metrics) reportReleased(freedBytes, freedEntries uint64) {
 	if m != nil {
-		m.SizeReleased.Add(float64(freed))
+		m.SizeReleased.Add(float64(freedBytes))
+		m.EntriesReleased.Add(float64(freedEntries))
 	}
 }
 

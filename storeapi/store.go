@@ -72,7 +72,7 @@ func NewStore(
 		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
 
-	skipMaskManager.Start(fracManager.Fractions())
+	skipMaskManager.Start(fracManager)
 
 	return &Store{
 		Config: c,

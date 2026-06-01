@@ -3,6 +3,7 @@ package token
 import (
 	"encoding/binary"
 	"slices"
+	"sync"
 	"unsafe"
 
 	"go.uber.org/zap"
@@ -22,7 +23,9 @@ type TableLoader struct {
 	reader *storage.IndexReader
 	cache  *cache.Cache[Table]
 
-	i   uint32
+	once       sync.Once
+	tableIndex uint32
+
 	buf []byte
 }
 
@@ -46,6 +49,8 @@ func (l *TableLoader) Load() Table {
 			blocks []TableBlock
 			err    error
 		)
+
+		l.advanceToTable()
 
 		if l.isLegacy {
 			blocks, err = l.loadBlocksLegacy()
@@ -97,57 +102,48 @@ func TableFromBlocks(blocks []TableBlock) Table {
 	return table
 }
 
-func (l *TableLoader) readHeader() storage.IndexBlockHeader {
-	h, e := l.reader.GetBlockHeader(l.i)
+func (l *TableLoader) readHeader(idx uint32) storage.IndexBlockHeader {
+	h, e := l.reader.GetBlockHeader(idx)
 	if e != nil {
 		logger.Panic("error reading block header", zap.Error(e))
 	}
-	l.i++
 	return h
 }
 
-func (l *TableLoader) readBlock() ([]byte, error) {
-	block, _, err := l.reader.ReadIndexBlock(l.i, l.buf)
+func (l *TableLoader) readBlock(idx uint32) ([]byte, error) {
+	block, _, err := l.reader.ReadIndexBlock(idx, l.buf)
 	l.buf = block
-	l.i++
 	return block, err
 }
 
 func (l *TableLoader) loadBlocksLegacy() ([]TableBlock, error) {
-	l.i = 1 // Skip info block immediately.
-
-	for h := l.readHeader(); h.Len() > 0; h = l.readHeader() {
-		// Skip token blocks, go for token table.
-	}
-
 	blocks := make([]TableBlock, 0)
-	for blockData, err := l.readBlock(); len(blockData) > 0; blockData, err = l.readBlock() {
+
+	blockIndex := l.tableIndex
+	for blockData, err := l.readBlock(blockIndex); len(blockData) > 0; blockData, err = l.readBlock(blockIndex) {
 		if err != nil {
 			return nil, err
 		}
-		tb := TableBlock{}
+
+		var tb TableBlock
 		tb.Unpack(blockData)
+
 		blocks = append(blocks, tb)
+		blockIndex += 1
 	}
 
 	return blocks, nil
 }
 
 func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
-	l.i = 0
-
 	blocksCount, err := l.reader.BlocksCount()
 	if err != nil {
 		return nil, err
 	}
 
-	for h := l.readHeader(); h.Len() > 0; h = l.readHeader() {
-		// Skip token blocks, go for token table.
-	}
-
 	var blocks []TableBlock
-	for l.i < uint32(blocksCount) {
-		data, err := l.readBlock()
+	for blockIndex := l.tableIndex; blockIndex < uint32(blocksCount); blockIndex++ {
+		data, err := l.readBlock(blockIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -159,6 +155,25 @@ func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
 	}
 
 	return blocks, nil
+}
+
+func (l *TableLoader) advanceToTable() {
+	l.once.Do(func() {
+		// This is correct for both legacy and non-legacy sealed fractions:
+		// 	- in legacy fractions we have following layout: [info][token][separator][token-table][...];
+		//	- in non-legacy fraction we have following layout: [token][separator][token-table];
+		// As you can see, it is safe to start from 0-th block in both cases.
+		blockIndex := uint32(0)
+
+		for h := l.readHeader(blockIndex); h.Len() > 0; h = l.readHeader(blockIndex) {
+			// Skip token blocks, go for token table.
+			blockIndex += 1
+		}
+
+		// We've stopped iterating on section separator.
+		// Therefore increment is required to reach index of actual token table.
+		l.tableIndex = blockIndex + 1
+	})
 }
 
 // TableBlock represents how token.Table is stored on disk
