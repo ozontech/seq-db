@@ -31,17 +31,7 @@ func (g *GrpcV1) Fetch(req *storeapi.FetchRequest, stream storeapi.StoreApi_Fetc
 		span.AddAttributes(trace.BoolAttribute("explain", req.Explain))
 	}
 
-	ids, err := extractIDs(req)
-	if err != nil {
-		span.SetStatus(trace.Status{Code: 1, Message: err.Error()})
-		logger.Error("fetch error", zap.Error(err))
-		return fmt.Errorf("ids extract errors: %s", err.Error())
-	}
-
-	send := func(block []byte) error {
-		return stream.Send(&storeapi.BinaryData{Data: block})
-	}
-	err = g.doFetch(ctx, ids, req.FieldsFilter, req.Explain, send)
+	err := g.doFetch(ctx, req, stream)
 	if err != nil {
 		span.SetStatus(trace.Status{Code: 1, Message: err.Error()})
 		logger.Error("fetch error", zap.Error(err))
@@ -49,13 +39,7 @@ func (g *GrpcV1) Fetch(req *storeapi.FetchRequest, stream storeapi.StoreApi_Fetc
 	return err
 }
 
-func (g *GrpcV1) doFetch(
-	ctx context.Context,
-	ids seq.IDSources,
-	fieldsFilter *storeapi.FieldsFilter,
-	explain bool,
-	send func(block []byte) error,
-) error {
+func (g *GrpcV1) doFetch(ctx context.Context, req *storeapi.FetchRequest, stream storeapi.StoreApi_FetchServer) error {
 	metric.FetchInFlightQueriesTotal.Inc()
 	defer metric.FetchInFlightQueriesTotal.Dec()
 
@@ -63,6 +47,11 @@ func (g *GrpcV1) doFetch(
 	defer cancel()
 
 	start := time.Now()
+
+	ids, err := extractIDs(req)
+	if err != nil {
+		return fmt.Errorf("ids extract errors: %s", err.Error())
+	}
 
 	notFound := 0
 	docsFetched := 0
@@ -76,7 +65,7 @@ func (g *GrpcV1) doFetch(
 		buf  []byte
 	)
 
-	dp := acquireDocFieldsFilter(fieldsFilter)
+	dp := acquireDocFieldsFilter(req.FieldsFilter)
 	defer releaseDocFieldsFilter(dp)
 
 	fracs, release := g.fracManager.AcquireFractions()
@@ -108,7 +97,7 @@ func (g *GrpcV1) doFetch(
 		block.SetExt1(uint64(id.ID.MID))
 		block.SetExt2(uint64(id.ID.RID))
 
-		if err := send(block); err != nil {
+		if err := stream.Send(&storeapi.BinaryData{Data: block}); err != nil {
 			if util.IsCancelled(ctx) {
 				logger.Info("fetch request is canceled",
 					zap.Int("requested", len(ids)),
@@ -139,7 +128,7 @@ func (g *GrpcV1) doFetch(
 		)
 	}
 
-	if explain {
+	if req.Explain {
 		logger.Info("fetch result",
 			zap.Int("requested", len(ids)),
 			zap.Int("fetched", docsFetched),

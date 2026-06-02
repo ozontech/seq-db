@@ -203,10 +203,10 @@ func (g *grpcV1) doOnePhaseSearch(
 	}
 
 	tr := querytracer.New(req.Query.Explain, "proxy/OnePhaseSearch")
-	// TODO: do we really need QPR here (???)
-	qpr, stream, err := g.searchIngestor.OnePhaseSearch(ctx, proxyReq, tr)
+	stream, err := g.searchIngestor.OnePhaseSearch(ctx, proxyReq, tr)
+
 	psr := &proxySearchResponse{
-		qpr: qpr,
+		qpr: &seq.QPR{}, // TODO: do we really need QPR here (???)
 	}
 
 	if e, ok := parseProxyError(err); ok {
@@ -219,7 +219,7 @@ func (g *grpcV1) doOnePhaseSearch(
 	}
 
 	if st, ok := status.FromError(err); ok {
-		// could not parse a query
+		// could not parse the query
 		if st.Code() == codes.InvalidArgument {
 			return nil, nil, err
 		}
@@ -233,7 +233,7 @@ func (g *grpcV1) doOnePhaseSearch(
 		}
 		return psr, stream, nil
 	}
-	if err = processSearchErrors(qpr, err); err != nil {
+	if err = processSearchErrors(psr.qpr, err); err != nil {
 		metric.SearchErrors.Inc()
 		return nil, nil, err
 	}

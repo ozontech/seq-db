@@ -2,9 +2,7 @@ package storeapi
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
-	"math"
 	"time"
 
 	"go.opencensus.io/trace"
@@ -54,26 +52,6 @@ func (g *GrpcV1) doOnePhaseSearch(
 	req *storeapi.OnePhaseSearchRequest,
 	stream storeapi.StoreApi_OnePhaseSearchServer,
 ) error {
-	seqql, err := parser.ParseSeqQL(req.Query, g.mappingProvider.GetMapping())
-	if err != nil {
-		return fmt.Errorf("parse query error: %w", err)
-	}
-
-	statsAggs := extractStatsPipesFromSeqQL(seqql)
-	hasAggs := len(statsAggs) > 0
-	if hasAggs {
-		return g.doOnePhaseSearchWithAggs(ctx, req, stream, statsAggs)
-	}
-
-	return g.doOnePhaseSearchDocs(ctx, req, stream, seqql)
-}
-
-func (g *GrpcV1) doOnePhaseSearchDocs(
-	ctx context.Context,
-	req *storeapi.OnePhaseSearchRequest,
-	stream storeapi.StoreApi_OnePhaseSearchServer,
-	seqql parser.SeqQLQuery,
-) error {
 	metric.SearchInFlightQueriesTotal.Inc()
 	defer metric.SearchInFlightQueriesTotal.Dec()
 
@@ -101,19 +79,38 @@ func (g *GrpcV1) doOnePhaseSearchDocs(
 
 	tr := querytracer.New(req.Explain, "store/OnePhaseSearchDocs")
 
-	err := stream.Send(&storeapi.OnePhaseSearchResponse{
+	seqql, err := parser.ParseSeqQL(req.Query, g.mappingProvider.GetMapping())
+	if err != nil {
+		return fmt.Errorf("parse query error: %w", err)
+	}
+
+	statsAggs := extractStatsPipesFromSeqQL(seqql)
+
+	// TODO: conditional typing
+	typing := []*storeapi.Typing{
+		{Title: "mid", Type: storeapi.DataType_UINT64},
+		{Title: "rid", Type: storeapi.DataType_UINT64},
+		{Title: "data", Type: storeapi.DataType_RAW_DOCUMENT},
+	}
+	if len(statsAggs) > 0 {
+		typing = []*storeapi.Typing{
+			{Title: "token", Type: storeapi.DataType_STRING},
+			{Title: "min", Type: storeapi.DataType_FLOAT64},
+			{Title: "max", Type: storeapi.DataType_FLOAT64},
+			{Title: "sum", Type: storeapi.DataType_FLOAT64},
+			{Title: "total", Type: storeapi.DataType_UINT64},
+			{Title: "not_exists", Type: storeapi.DataType_UINT64},
+		}
+	}
+
+	err = stream.Send(&storeapi.OnePhaseSearchResponse{
 		ResponseType: &storeapi.OnePhaseSearchResponse_Header{
 			Header: &storeapi.Header{
 				Metadata: &storeapi.Metadata{
 					// TODO: fill metadata
 					Code: errCode,
 				},
-				Typing: []*storeapi.Typing{
-					// TODO: conditional typing
-					{Title: "mid", Type: storeapi.DataType_UINT64},
-					{Title: "rid", Type: storeapi.DataType_UINT64},
-					{Title: "data", Type: storeapi.DataType_RAW_DOCUMENT},
-				},
+				Typing: typing,
 			},
 		},
 	})
@@ -130,7 +127,10 @@ func (g *GrpcV1) doOnePhaseSearchDocs(
 		return nil
 	}
 
-	producer, err := g.buildProducer(ctx, req, tr, seqql)
+	producer, err := g.buildProducer(ctx, req, tr, seqql, statsAggs)
+	if err != nil {
+		return fmt.Errorf("can't biuld record producer: %w", err)
+	}
 
 	curRecord, curMeta := producer.Next()
 	for {
@@ -141,19 +141,15 @@ func (g *GrpcV1) doOnePhaseSearchDocs(
 			break
 		}
 
+		rawData := make([][]byte, len(curRecord.Vals))
+		for i, d := range curRecord.Vals {
+			rawData[i] = d.RawData()
+		}
+
 		err = stream.Send(&storeapi.OnePhaseSearchResponse{
 			ResponseType: &storeapi.OnePhaseSearchResponse_Batch{
 				Batch: &storeapi.RecordsBatch{
-					// TODO: batch
-					Records: []*storeapi.Record{
-						{
-							RawData: [][]byte{
-								curRecord.Vals[0].RawData(),
-								curRecord.Vals[1].RawData(),
-								curRecord.Vals[2].RawData(),
-							},
-						},
-					},
+					Records: []*storeapi.Record{{RawData: rawData}}, // TODO: batch
 				},
 			},
 		})
@@ -178,6 +174,7 @@ func (g *GrpcV1) buildProducer(
 	req *storeapi.OnePhaseSearchRequest,
 	tr *querytracer.Tracer,
 	seqql parser.SeqQLQuery,
+	statsAggs []parser.StatsAgg,
 ) (query.RecordProducer, error) {
 	searchParams := processor.SearchParams{
 		AST:       seqql.Root,
@@ -188,10 +185,28 @@ func (g *GrpcV1) buildProducer(
 		Order:     req.Order.MustDocsOrder(),
 	}
 
+	if len(statsAggs) > 0 {
+		// TODO: rewrite aggs parsing and validation
+		aggs, err := convertStatsAggsToStoreApiAgg(statsAggs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert stats aggs: %w", err)
+		}
+		aggQ, err := aggQueriesFromProto(aggs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert stats aggs: %w", err)
+		}
+		searchParams.AggQ = aggQ
+	}
+
 	var producer query.RecordProducer
 
 	dataSource := exec.NewSearcherDataSource(ctx, tr, searchParams, g.fracManager, g.searchData.searcher, g.fetchData.docFetcher)
 	producer = dataSource
+
+	if len(statsAggs) > 0 {
+		// TODO: combine aggs with another executors
+		return producer, nil
+	}
 
 	for _, pipe := range seqql.Pipes {
 		switch p := pipe.(type) {
@@ -215,112 +230,6 @@ func (g *GrpcV1) buildProducer(
 	}
 
 	return producer, nil
-}
-
-// TODO: bytes pool (???), varint (???)
-func Uint64ToBytes(val uint64) []byte {
-	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, val)
-	return b
-}
-
-func Float64ToBytes(val float64) []byte {
-	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, math.Float64bits(val))
-	return b
-}
-
-func (g *GrpcV1) doOnePhaseSearchWithAggs(
-	ctx context.Context,
-	req *storeapi.OnePhaseSearchRequest,
-	stream storeapi.StoreApi_OnePhaseSearchServer,
-	statsAggs []parser.StatsAgg,
-) error {
-	tr := querytracer.New(req.Explain, "store/OnePhaseSearchWithAggs")
-
-	aggQ, err := convertStatsAggsToStoreApiAgg(statsAggs)
-	if err != nil {
-		return fmt.Errorf("failed to convert stats aggs: %w", err)
-	}
-
-	data, err := g.doSearch(ctx, &storeapi.SearchRequest{
-		Query:     req.Query,
-		From:      int64(seq.TimeToMID(req.From.AsTime())),
-		To:        int64(seq.TimeToMID(req.To.AsTime())),
-		Size:      req.Size,
-		Offset:    req.Offset,
-		Explain:   req.Explain,
-		WithTotal: req.WithTotal,
-		Order:     req.Order,
-		OffsetId:  req.OffsetId,
-		Aggs:      aggQ,
-	}, tr)
-	if err != nil {
-		return fmt.Errorf("search error: %w", err)
-	}
-	tr.Done()
-
-	err = stream.Send(&storeapi.OnePhaseSearchResponse{
-		ResponseType: &storeapi.OnePhaseSearchResponse_Header{
-			Header: &storeapi.Header{
-				Metadata: &storeapi.Metadata{
-					Total:   data.Total,
-					Code:    data.Code,
-					Errors:  data.Errors,
-					Explain: data.Explain,
-				},
-				Typing: []*storeapi.Typing{
-					// TODO: conditional typing
-					{Title: "token", Type: storeapi.DataType_STRING},
-					{Title: "min", Type: storeapi.DataType_FLOAT64},
-					{Title: "max", Type: storeapi.DataType_FLOAT64},
-					{Title: "sum", Type: storeapi.DataType_FLOAT64},
-					{Title: "total", Type: storeapi.DataType_UINT64},
-					{Title: "not_exists", Type: storeapi.DataType_UINT64},
-				},
-			},
-		},
-	})
-	if err != nil {
-		if util.IsCancelled(ctx) {
-			logger.Info("one phase search request is canceled")
-			return nil
-		}
-		return fmt.Errorf("error sending aggs: %w", err)
-	}
-
-	for _, agg := range data.Aggs {
-		for _, bin := range agg.Timeseries {
-			err := stream.Send(&storeapi.OnePhaseSearchResponse{
-				ResponseType: &storeapi.OnePhaseSearchResponse_Batch{
-					Batch: &storeapi.RecordsBatch{
-						// TODO: batch
-						Records: []*storeapi.Record{
-							{
-								RawData: [][]byte{
-									[]byte(bin.Label),
-									Float64ToBytes(bin.Hist.Min),
-									Float64ToBytes(bin.Hist.Max),
-									Float64ToBytes(bin.Hist.Sum),
-									Uint64ToBytes(uint64(bin.Hist.Total)),
-									Uint64ToBytes(uint64(bin.Hist.NotExists)),
-								},
-							},
-						},
-					},
-				},
-			})
-			if err != nil {
-				if util.IsCancelled(ctx) {
-					logger.Info("one phase search request is canceled")
-					return nil
-				}
-				return fmt.Errorf("error sending aggs: %w", err)
-			}
-		}
-	}
-
-	return nil
 }
 
 func extractStatsPipesFromSeqQL(seqql parser.SeqQLQuery) []parser.StatsAgg {

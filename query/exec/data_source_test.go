@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -125,7 +126,10 @@ func setupFraction(t *testing.T, mapping seq.Mapping, bulks ...[]string) frac.Fr
 
 type testSkipMaskProvider struct{}
 
-func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
-	return node.NewStatic([]uint32{}, false), false, nil
+func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
+	return node.NewStatic([]uint32{}, false), false, func() error { return nil }, nil
+}
+func (testSkipMaskProvider) GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error) {
+	return nil, nil
 }
 func (testSkipMaskProvider) RemoveFrac(_ string) {}

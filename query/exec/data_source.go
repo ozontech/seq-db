@@ -3,10 +3,15 @@ package exec
 import (
 	"context"
 	"encoding/binary"
+	"errors"
+	"math"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
@@ -64,10 +69,20 @@ func (s *FractionDataSource) scan() error {
 	if err != nil {
 		return err
 	}
+
+	if len(qpr.Errors) > 0 {
+		var resErr error
+		for _, e := range qpr.Errors {
+			resErr = errors.Join(errors.New(e.ErrStr)) // TODO: ???
+		}
+		return resErr
+	}
+
 	if len(qpr.IDs) == 0 {
 		return nil
 	}
-	docs, err := s.frac.Fetch(s.Ctx(), qpr.IDs.IDs())
+
+	docs, err := s.frac.Fetch(s.Ctx(), qpr.IDs.IDs(), false)
 	if err != nil {
 		return err
 	}
@@ -83,14 +98,17 @@ type SearcherDataSource struct {
 	tr  *querytracer.Tracer
 
 	searchParams processor.SearchParams // TODO: ???
+	isAgg        bool
 
 	fracManager *fracmanager.FracManager
 	searcher    *fracmanager.Searcher
 	fetcher     *fracmanager.Fetcher
 
-	qpr       *seq.QPR
-	docs      [][]byte
-	curDocIdx int
+	qpr  *seq.QPR
+	docs [][]byte
+	aggs []*storeapi.SearchResponse_Agg // TODO: internal struct
+
+	curIdx int
 }
 
 func NewSearcherDataSource(
@@ -108,24 +126,57 @@ func NewSearcherDataSource(
 		fracManager:  fracManager,
 		searcher:     searcher,
 		fetcher:      fetcher,
+		isAgg:        len(searchParams.AggQ) > 0,
 	}
 }
 
 func (s *SearcherDataSource) Next() (*query.Record, *query.Metadata) {
+	// TODO: get rid of hardcode (???)
+	if s.isAgg {
+		return s.nextAgg()
+	} else {
+		return s.nextDoc()
+	}
+}
+
+func (s *SearcherDataSource) nextDoc() (*query.Record, *query.Metadata) {
 	if len(s.docs) == 0 {
 		if err := s.scan(); err != nil {
 			return nil, &query.Metadata{Err: err}
 		}
 	}
 
-	if s.curDocIdx >= len(s.docs) {
+	if s.curIdx >= len(s.docs) {
 		return nil, nil
 	}
 
-	docRecord := makeDocumentRecord(s.qpr.IDs[s.curDocIdx].ID, s.docs[s.curDocIdx])
-	s.curDocIdx++
+	record := makeDocumentRecord(s.qpr.IDs[s.curIdx].ID, s.docs[s.curIdx])
 
-	return docRecord, nil
+	s.curIdx++
+
+	return record, nil
+}
+
+func (s *SearcherDataSource) nextAgg() (*query.Record, *query.Metadata) {
+	if len(s.aggs) == 0 {
+		if err := s.scan(); err != nil {
+			return nil, &query.Metadata{Err: err}
+		}
+	}
+
+	if s.aggs[0] == nil {
+		return nil, nil
+	}
+
+	if s.curIdx >= len(s.aggs[0].Timeseries) {
+		return nil, nil
+	}
+
+	record := makeAggRecord(s.aggs[0].Timeseries[s.curIdx])
+
+	s.curIdx++
+
+	return record, nil
 }
 
 func (s *SearcherDataSource) Ctx() context.Context {
@@ -141,19 +192,68 @@ func (s *SearcherDataSource) scan() error {
 		return err
 	}
 
+	if len(qpr.Errors) > 0 {
+		var resErr error
+		for _, e := range qpr.Errors {
+			resErr = errors.Join(errors.New(e.ErrStr)) // TODO: ???
+		}
+		return resErr
+	}
+
+	s.qpr = qpr
+	s.aggs = buildAggs(qpr)
+
 	if len(qpr.IDs) == 0 {
 		return nil
 	}
 
-	docs, err := s.fetcher.FetchDocs(s.Ctx(), s.fracManager.Fractions(), qpr.IDs)
+	docs, err := s.fetcher.FetchDocs(s.Ctx(), s.fracManager.Fractions(), qpr.IDs, false)
 	if err != nil {
 		return err
 	}
-
-	s.qpr = qpr
 	s.docs = docs
 
 	return nil
+}
+
+func buildAggs(qpr *seq.QPR) []*storeapi.SearchResponse_Agg {
+	aggsBuf := make([]storeapi.SearchResponse_Agg, len(qpr.Aggs))
+	aggs := make([]*storeapi.SearchResponse_Agg, len(qpr.Aggs))
+
+	for i, fromAgg := range qpr.Aggs {
+		curAgg := &aggsBuf[i]
+
+		from := fromAgg.SamplesByBin
+		to := make(map[string]*storeapi.SearchResponse_Histogram, len(from))
+
+		for bin, hist := range from {
+			pbhist := &storeapi.SearchResponse_Histogram{
+				Min:       hist.Min,
+				Max:       hist.Max,
+				Sum:       hist.Sum,
+				Total:     hist.Total,
+				Samples:   hist.Samples,
+				NotExists: hist.NotExists,
+			}
+
+			curAgg.Timeseries = append(curAgg.Timeseries,
+				&storeapi.SearchResponse_Bin{
+					Label: bin.Token,
+					Ts:    timestamppb.New(bin.MID.Time()),
+					Hist:  pbhist,
+				},
+			)
+
+			to[bin.Token] = pbhist
+		}
+
+		curAgg.NotExists = fromAgg.NotExists
+		curAgg.AggHistogram = to
+
+		aggs[i] = curAgg
+	}
+
+	return aggs
 }
 
 func makeDocumentRecord(id seq.ID, payload []byte) *query.Record {
@@ -166,8 +266,27 @@ func makeDocumentRecord(id seq.ID, payload []byte) *query.Record {
 	}
 }
 
+func makeAggRecord(bin *storeapi.SearchResponse_Bin) *query.Record {
+	return &query.Record{
+		Vals: []*query.RecordVals{
+			query.NewRecordVals(query.DataTypeBytes, []byte(bin.Label)),
+			query.NewRecordVals(query.DataTypeFloat64, Float64ToBytes(bin.Hist.Min)),
+			query.NewRecordVals(query.DataTypeFloat64, Float64ToBytes(bin.Hist.Max)),
+			query.NewRecordVals(query.DataTypeFloat64, Float64ToBytes(bin.Hist.Sum)),
+			query.NewRecordVals(query.DataTypeUint64, Uint64ToBytes(uint64(bin.Hist.Total))),
+			query.NewRecordVals(query.DataTypeUint64, Uint64ToBytes(uint64(bin.Hist.NotExists))),
+		},
+	}
+}
+
 func Uint64ToBytes(val uint64) []byte {
 	b := make([]byte, 8)
 	binary.LittleEndian.PutUint64(b, val)
+	return b
+}
+
+func Float64ToBytes(val float64) []byte {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, math.Float64bits(val))
 	return b
 }
