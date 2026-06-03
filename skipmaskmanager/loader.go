@@ -2,10 +2,12 @@ package skipmaskmanager
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 
+	"github.com/RoaringBitmap/roaring"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
@@ -20,12 +22,12 @@ type loader struct {
 	cashKey      uint32
 }
 
-func newLoader(filePath string, headersCache *cache.Cache[[]lidsBlockHeader]) (*loader, error) {
+func newLoader(filePath string, headersCache *cache.Cache[[]lidsBlockHeader]) *loader {
 	return &loader{
 		filePath:     filePath,
 		headersCache: headersCache,
 		cashKey:      hashFilePath(filePath),
-	}, nil
+	}
 }
 
 func (l *loader) getFile() (*os.File, error) {
@@ -99,22 +101,18 @@ func (l *loader) loadHeaders() ([]lidsBlockHeader, error) {
 	return headers, nil
 }
 
-func (l *loader) loadBlock(index int) ([]uint32, error) {
-	if l.headers == nil {
-		headers, err := l.getHeaders()
-		if err != nil {
-			return nil, err
-		}
-		l.headers = headers
+func (l *loader) loadBlock(index int, add func(uint32)) error {
+	if err := l.ensureHeaders(); err != nil {
+		return err
 	}
 
 	if len(l.headers) < index+1 {
-		return nil, fmt.Errorf("can't load block: headers len=%d, index=%d", len(l.headers), index)
+		return fmt.Errorf("can't load block: headers len=%d, index=%d", len(l.headers), index)
 	}
 
 	file, err := l.getFile()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	header := l.headers[index]
@@ -122,23 +120,59 @@ func (l *loader) loadBlock(index int) ([]uint32, error) {
 	blockBuf := make([]byte, header.Size)
 	n, err := file.ReadAt(blockBuf, int64(header.Offset))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if n != len(blockBuf) {
-		return nil, fmt.Errorf("can't read lids block, read=%d, requested=%d", n, len(blockBuf))
+		return fmt.Errorf("can't read lids block, read=%d, requested=%d", n, len(blockBuf))
 	}
 
-	lids := make([]uint32, 0, header.Length)
-	lids, blockBuf, err = unmarshalLIDsBlock(lids, blockBuf, header)
+	blockBuf, err = unmarshalLIDsBlock(blockBuf, header, add)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if len(blockBuf) > 0 {
-		return nil, fmt.Errorf("unexpected tail when unmarshaling LIDs block")
+		return fmt.Errorf("unexpected tail when unmarshaling LIDs block")
 	}
 
-	return lids, nil
+	return nil
+}
+
+func (l *loader) loadToBitmap(bitmap *roaring.Bitmap, minLID, maxLID uint32) (err error) {
+	defer func() {
+		err = errors.Join(err, l.release())
+	}()
+
+	if err := l.ensureHeaders(); err != nil {
+		return err
+	}
+
+	for i, header := range l.headers {
+		if header.MaxLID < minLID || header.MinLID > maxLID {
+			continue
+		}
+
+		err := l.loadBlock(i, func(lid uint32) {
+			bitmap.Add(lid)
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return
+}
+
+func (l *loader) ensureHeaders() error {
+	if l.headers == nil {
+		headers, err := l.getHeaders()
+		if err != nil {
+			return err
+		}
+		l.headers = headers
+	}
+
+	return nil
 }
 
 func (l *loader) release() error {

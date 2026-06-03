@@ -13,7 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
@@ -202,22 +204,21 @@ func (smm *SkipMaskManager) GetIDsIteratorByFrac(
 	fracName string,
 	minLID, maxLID uint32,
 	reverse bool,
-) (node.Node, bool, error) {
+) (node.Node, bool, func() error, error) {
 	smm.fracsMu.RLock()
 	defer smm.fracsMu.RUnlock()
 
 	fracFiles, has := smm.fracs[fracName]
 	if !has {
-		return &EmptyIterator{}, has, nil
+		return &EmptyIterator{}, has, func() error { return nil }, nil
 	}
 
+	releaseFuncs := make([]func() error, len(fracFiles))
+
 	iterators := make([]node.Node, 0, len(fracFiles))
-	for _, f := range fracFiles {
-		loader, err := newLoader(f, smm.headersCache)
-		if err != nil {
-			logger.Error("can't open skip mask file", zap.String("path", f), zap.Error(err))
-			return nil, has, err
-		}
+	for i, f := range fracFiles {
+		loader := newLoader(f, smm.headersCache)
+		releaseFuncs[i] = loader.release
 		if reverse {
 			iterators = append(iterators, (*IteratorAsc)(NewIterator(loader, minLID, maxLID)))
 		} else {
@@ -225,7 +226,52 @@ func (smm *SkipMaskManager) GetIDsIteratorByFrac(
 		}
 	}
 
-	return NewNMergedIterators(iterators), has, nil
+	release := func() error {
+		var err error
+		for _, f := range releaseFuncs {
+			err = errors.Join(err, f())
+		}
+		return err
+	}
+
+	return NewNMergedIterators(iterators), has, release, nil
+}
+
+// GetIDsBitmapByFrac returns skip masks as roaring bitmap.
+// Currently used in fetch resuests
+func (smm *SkipMaskManager) GetIDsBitmapByFrac(
+	fracName string,
+	minLID, maxLID uint32,
+) (*roaring.Bitmap, error) {
+	smm.fracsMu.RLock()
+	defer smm.fracsMu.RUnlock()
+
+	fracFiles, has := smm.fracs[fracName]
+	if !has {
+		return nil, nil
+	}
+
+	bitmaps := make([]*roaring.Bitmap, len(fracFiles))
+	var eg errgroup.Group
+
+	for i, f := range fracFiles {
+		eg.Go(func() error {
+			loader := newLoader(f, smm.headersCache)
+			bitmap := roaring.New()
+			if err := loader.loadToBitmap(bitmap, minLID, maxLID); err != nil {
+				logger.Error("can't load skip mask to bitmap", zap.String("path", f), zap.Error(err))
+				return err
+			}
+			bitmaps[i] = bitmap
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	return roaring.FastOr(bitmaps...), nil
 }
 
 // RefreshFrac recomputes skip mask files for a fraction after it has been sealed.

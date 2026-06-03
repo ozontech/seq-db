@@ -3,6 +3,7 @@ package fracmanager
 import (
 	"testing"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/alecthomas/units"
 	"github.com/stretchr/testify/assert"
 
@@ -14,8 +15,11 @@ import (
 
 type testSkipMaskProvider struct{}
 
-func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
-	return node.NewStatic([]uint32{}, reverse), false, nil
+func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
+	return node.NewStatic([]uint32{}, reverse), false, func() error { return nil }, nil
+}
+func (testSkipMaskProvider) GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error) {
+	return nil, nil
 }
 func (testSkipMaskProvider) RefreshFrac(_ frac.Fraction) {}
 func (testSkipMaskProvider) RemoveFrac(_ string)         {}
