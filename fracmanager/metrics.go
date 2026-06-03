@@ -212,4 +212,11 @@ var (
 		Name:      "bytes_read_total",
 		Help:      "Number of bytes read from disk storage",
 	})
+
+	walCorruptionsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "storage",
+		Name:      "wal_corruptions_total",
+		Help:      "Number of WAL files with detected corruption during replay",
+	})
 )
