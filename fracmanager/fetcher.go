@@ -29,7 +29,7 @@ func NewFetcher(maxWorkersNum int) *Fetcher {
 	}
 }
 
-func (f *Fetcher) FetchDocs(ctx context.Context, fracs List, ids []seq.IDSource) ([][]byte, error) {
+func (f *Fetcher) FetchDocs(ctx context.Context, fracs List, ids []seq.IDSource, noSkipMasks bool) ([][]byte, error) {
 	sw := stopwatch.New()
 
 	m := sw.Start("fill_revers_pos")
@@ -44,7 +44,7 @@ func (f *Fetcher) FetchDocs(ctx context.Context, fracs List, ids []seq.IDSource)
 	m.Stop()
 
 	m = sw.Start("fetch_async")
-	docsByFracs, err := f.fetchDocsAsync(ctx, fracs, idsByFrac)
+	docsByFracs, err := f.fetchDocsAsync(ctx, fracs, idsByFrac, noSkipMasks)
 	m.Stop()
 
 	// arrange the result in the original order of ids
@@ -64,7 +64,7 @@ func (f *Fetcher) FetchDocs(ctx context.Context, fracs List, ids []seq.IDSource)
 	return result, err
 }
 
-func (f *Fetcher) fetchDocsAsync(ctx context.Context, fracs []frac.Fraction, idsByFrac [][]seq.ID) ([][][]byte, error) {
+func (f *Fetcher) fetchDocsAsync(ctx context.Context, fracs []frac.Fraction, idsByFrac [][]seq.ID, noSkipMasks bool) ([][][]byte, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -84,7 +84,7 @@ loop:
 			wg.Add(1)
 			go func() {
 				var fracErr error
-				if docs[i], fracErr = fracFetch(ctx, frac, idsByFrac[i]); fracErr != nil {
+				if docs[i], fracErr = fracFetch(ctx, frac, idsByFrac[i], noSkipMasks); fracErr != nil {
 					once.Do(func() {
 						err = fracErr
 						cancel()
@@ -105,13 +105,13 @@ loop:
 	return docs, nil
 }
 
-func fracFetch(ctx context.Context, f frac.Fraction, ids []seq.ID) (_ [][]byte, err error) {
+func fracFetch(ctx context.Context, f frac.Fraction, ids []seq.ID, noSkipMasks bool) (_ [][]byte, err error) {
 	defer func() {
 		if panicData := util.RecoverToError(recover(), metric.StorePanics); panicData != nil {
 			err = fmt.Errorf("internal error: fetch panicked on fraction %s, error=%w", f.Info().Name(), panicData)
 		}
 	}()
-	return f.Fetch(ctx, ids)
+	return f.Fetch(ctx, ids, noSkipMasks)
 }
 
 func sortIDs(idsOrig seq.IDSources) (seq.IDSources, seq.MID, seq.MID) {
