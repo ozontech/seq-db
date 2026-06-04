@@ -147,12 +147,13 @@ func New(
 func (smm *SkipMaskManager) Start(fracs fractionAcquirer) {
 	smm.createDataDir()
 
-	err := smm.loadSkipMasks()
+	allFracs := fracs.Fractions()
+	err := smm.loadSkipMasks(allFracs.Names())
 	if err != nil {
 		logger.Fatal("failed to load previous skip masks", zap.Error(err))
 	}
 
-	err = smm.buildQueue(fracs.Fractions())
+	err = smm.buildQueue(allFracs)
 	if err != nil {
 		logger.Fatal("failed to build skip mask manager queue", zap.Error(err))
 	}
@@ -334,7 +335,6 @@ func (smm *SkipMaskManager) RefreshFrac(fraction frac.Fraction) {
 // This should be called when a fraction is deleted from the system.
 // The removal is performed asynchronously in the background.
 func (smm *SkipMaskManager) RemoveFrac(fracName string) {
-	// TODO: we might want to have some kind of GC on startup to clean up missed files
 	smm.bgWG.Go(func() {
 		smm.fracsMu.RLock()
 		fracsFiles, has := smm.fracs[fracName]
@@ -386,10 +386,15 @@ func (smm *SkipMaskManager) addDoneFrac(fracName, fracPath string) {
 //   - Registers completed skip masks (.skipmask files)
 //
 // This allows the manager to resume processing after a restart.
-func (smm *SkipMaskManager) loadSkipMasks() error {
+func (smm *SkipMaskManager) loadSkipMasks(fracNames []string) error {
 	des, err := os.ReadDir(smm.config.DataDir)
 	if err != nil {
 		return err
+	}
+
+	fracNamesSet := make(map[string]struct{}, len(fracNames))
+	for _, fracName := range fracNames {
+		fracNamesSet[fracName] = struct{}{}
 	}
 
 	var anyRemove bool
@@ -400,7 +405,7 @@ func (smm *SkipMaskManager) loadSkipMasks() error {
 		}
 
 		if _, ok := smm.skipMasks[de.Name()]; !ok {
-			logger.Info("there is skip mask folder on disk, but not in config. need to delete it.")
+			logger.Info("found skip mask folder on disk, but not in config. remove it", zap.String("path", de.Name()))
 			err := os.RemoveAll(path.Join(smm.config.DataDir, de.Name()))
 			if err != nil && !os.IsNotExist(err) {
 				return err
@@ -424,13 +429,26 @@ func (smm *SkipMaskManager) loadSkipMasks() error {
 			if smde.IsDir() {
 				continue
 			}
+
 			name := smde.Name()
+			fracName := fracNameFromFilePath(name)
+
+			// remove missed files
+			if _, ok := fracNamesSet[fracName]; !ok {
+				err := os.Remove(path.Join(sm.dirPath, name))
+				if err != nil && !os.IsNotExist(err) {
+					return err
+				}
+				logger.Info("found missed skip mask file. remove it", zap.String("path", name))
+				anyRemove = true
+				continue
+			}
 
 			switch path.Ext(name) {
 			case fracInQueueExt:
 				hasFracsInQueue = true
 			case fracDoneExt:
-				smm.addDoneFrac(fracNameFromFilePath(name), path.Join(sm.dirPath, name))
+				smm.addDoneFrac(fracName, path.Join(sm.dirPath, name))
 			}
 		}
 
