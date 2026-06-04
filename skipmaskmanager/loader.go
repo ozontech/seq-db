@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/RoaringBitmap/roaring"
+	"github.com/RoaringBitmap/roaring/v2"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
