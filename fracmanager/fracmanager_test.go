@@ -3,7 +3,7 @@ package fracmanager
 import (
 	"testing"
 
-	"github.com/RoaringBitmap/roaring"
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/alecthomas/units"
 	"github.com/stretchr/testify/assert"
 

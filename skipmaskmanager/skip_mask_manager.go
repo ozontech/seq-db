@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RoaringBitmap/roaring"
+	"github.com/RoaringBitmap/roaring/v2"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
