@@ -5,6 +5,7 @@ import (
 	"iter"
 	"unsafe"
 
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -217,6 +218,9 @@ func newLIDAccumulator(
 	blockCapacity int,
 	onBlock func(lidsSealBlock) error,
 ) *lidAccumulator {
+	if blockCapacity == 0 {
+		blockCapacity = consts.DefaultLIDBlockCap
+	}
 	a := &lidAccumulator{
 		blockCapacity: blockCapacity,
 		onBlock:       onBlock,

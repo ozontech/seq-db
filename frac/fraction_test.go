@@ -98,6 +98,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		DocsPositionsZstdLevel: 1,
 		TokenTableZstdLevel:    1,
 		DocBlocksZstdLevel:     1,
+		LIDBlockSize:           512,
 		DocBlockSize:           128 * int(units.KiB),
 	}
 
@@ -1648,6 +1649,12 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		for _, ord := range orders {
 			histBuckets := make(map[string]uint64)
 			for _, doc := range testDocs {
+				if doc.timestamp.Before(fromTime) {
+					continue
+				}
+				if doc.timestamp.After(midTime) {
+					continue
+				}
 				if doc.service == "database" && doc.level == 3 {
 					bucketTime := doc.timestamp.Truncate(time.Second)
 					bucketKey := bucketTime.Format(time.RFC3339Nano)
@@ -1657,7 +1664,8 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 
 			searchParams := s.query(
 				"service:database AND level:3",
-				withTo(toTime.Format(time.RFC3339Nano)),
+				withFrom(fromTime.Format(time.RFC3339Nano)),
+				withTo(midTime.Format(time.RFC3339Nano)),
 				withHist(1000))
 			searchParams.Order = ord
 
@@ -1893,11 +1901,11 @@ func (s *FractionTestSuite) TestFractionInfo() {
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
 	case *Sealed:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1300) && info.IndexOnDisk < uint64(1400),
+		s.Require().True(info.IndexOnDisk > uint64(1300) && info.IndexOnDisk < uint64(1450),
 			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	case *Remote:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1300) && info.IndexOnDisk < uint64(1400),
+		s.Require().True(info.IndexOnDisk > uint64(1300) && info.IndexOnDisk < uint64(1450),
 			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	default:
 		s.Require().Fail("unsupported fraction type")

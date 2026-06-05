@@ -34,6 +34,7 @@ func setupS3Client(t testing.TB) (*s3.Client, func()) {
 
 func setupFractionProvider(t testing.TB, cfg *Config) (*fractionProvider, func()) {
 	cfg = setupDataDir(t, cfg)
+	cfg.SealParams.LIDBlockSize = int(64 * units.KB)
 	rl := storage.NewReadLimiter(1, nil)
 	s3cli, stopS3 := setupS3Client(t)
 	idx, stopIdx := frac.NewActiveIndexer(1, 1)
