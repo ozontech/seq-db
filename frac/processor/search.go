@@ -53,9 +53,9 @@ var searchBuffersPool = sync.Pool{
 		return &searchBuffers{
 			// Currently, we drain up to 4k lids from eval tree, but with proper batching enabled
 			// we can get as much as whole LID block can have (currently, 64k lids)
-			lids: make([]node.LID, 0, consts.LIDBlockCap),
-			mids: make([]seq.MID, 0, consts.LIDBlockCap),
-			rids: make([]seq.RID, 0, consts.LIDBlockCap),
+			lids: make([]node.LID, 0, consts.DefaultLIDBlockCap),
+			mids: make([]seq.MID, 0, consts.DefaultLIDBlockCap),
+			rids: make([]seq.RID, 0, consts.DefaultLIDBlockCap),
 		}
 	},
 }
