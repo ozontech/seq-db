@@ -68,7 +68,7 @@ func (dp *activeDataProvider) getTokenIndex() *activeTokenIndex {
 	}
 }
 
-func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
+func (dp *activeDataProvider) Fetch(ids []seq.ID, noSkipMasks bool) ([][]byte, error) {
 	sw := stopwatch.New()
 
 	defer sw.Export(
@@ -88,7 +88,7 @@ func (dp *activeDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	}}
 
 	for _, fi := range indexes {
-		if err := processor.IndexFetch(ids, sw, &fi, res); err != nil {
+		if err := processor.IndexFetch(ids, noSkipMasks, sw, &fi, res); err != nil {
 			return nil, err
 		}
 	}
@@ -167,9 +167,23 @@ func (p *activeIDsIndex) GetMID(lid seq.LID) seq.MID {
 	return seq.MID(p.mids[restoredLID])
 }
 
+func (p *activeIDsIndex) GetMIDs(lidsBatch []node.LID, out []seq.MID) []seq.MID {
+	for _, lid := range lidsBatch {
+		out = append(out, p.GetMID(lid.ToSeqLID()))
+	}
+	return out
+}
+
 func (p *activeIDsIndex) GetRID(lid seq.LID) seq.RID {
 	restoredLID := p.inverser.Revert(uint32(lid))
 	return seq.RID(p.rids[restoredLID])
+}
+
+func (p *activeIDsIndex) GetRIDs(lidsBatch []node.LID, out []seq.RID) []seq.RID {
+	for _, lid := range lidsBatch {
+		out = append(out, p.GetRID(lid.ToSeqLID()))
+	}
+	return out
 }
 
 func (p *activeIDsIndex) Len() int {
@@ -191,13 +205,13 @@ type activeSearchIndex struct {
 	fracName         string
 }
 
-func (si *activeSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
+func (si *activeSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
 	// active fraction doesn't meet min and max lid
 	minLID, maxLID = uint32(0), uint32(math.MaxUint32)
 
-	iterator, has, err := si.skipMaskProvider.GetIDsIteratorByFrac(si.fracName, minLID, maxLID, reverse)
+	iterator, has, release, err := si.skipMaskProvider.GetIDsIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 	if err != nil {
-		return nil, false, err
+		return nil, false, release, err
 	}
 
 	res := make([]uint32, 0)
@@ -215,7 +229,7 @@ func (si *activeSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (n
 	// we need to sort inversed values since they may be out of order after replay of active fraction
 	slices.Sort(res)
 
-	return node.NewStatic(res, reverse), has, nil
+	return node.NewStatic(res, reverse), has, release, nil
 }
 
 type activeTokenIndex struct {
@@ -271,19 +285,23 @@ func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return di.blocksOffsets[num]
 }
 
-func (di *activeFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
+func (di *activeFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.DocPos, error) {
 	docsPos := make([]seq.DocPos, len(ids))
 	for i, id := range ids {
 		docsPos[i] = di.docsPositions.GetSync(id)
 	}
 
+	if noSkipMasks {
+		return docsPos, nil
+	}
+
 	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
-	skipLIDsIterator, has, err := di.skipMaskProvider.GetIDsIteratorByFrac(di.fracName, minLID, maxLID, false)
+	skipLIDsBitmap, err := di.skipMaskProvider.GetIDsBitmapByFrac(di.fracName, minLID, maxLID)
 	if err != nil {
 		return nil, err
 	}
 
-	if !has {
+	if skipLIDsBitmap == nil {
 		return docsPos, nil
 	}
 
@@ -294,17 +312,8 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
 		}
 	}
 
-	skipLIDs := make(map[uint32]struct{})
-	for {
-		lid := skipLIDsIterator.Next()
-		if lid.IsNull() {
-			break
-		}
-		skipLIDs[lid.Unpack()] = struct{}{}
-	}
-
 	for i, lid := range allLids {
-		if _, ok := skipLIDs[lid]; ok {
+		if skipLIDsBitmap.Contains(uint32(lid)) {
 			docsPos[i] = seq.DocPosNotFound
 		}
 	}

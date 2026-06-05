@@ -471,10 +471,10 @@ func (f *Sealed) String() string {
 	return fracToString(f, "sealed")
 }
 
-func (f *Sealed) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+func (f *Sealed) Fetch(ctx context.Context, ids []seq.ID, noSkipMasks bool) ([][]byte, error) {
 	dp := f.createDataProvider(ctx)
 	defer dp.release()
-	return dp.Fetch(ids)
+	return dp.Fetch(ids, noSkipMasks)
 }
 
 func (f *Sealed) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
@@ -512,7 +512,7 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		docsReader:       &f.docsReader,
 		blocksOffsets:    f.blocksData.BlocksOffsets,
 		lidsTable:        f.blocksData.LIDsTable,
-		lidsLoader:       lids.NewLoader(lidReader, f.indexCache.LIDs),
+		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, lidReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, tokenReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.IsLegacy, tokenReader, f.indexCache.TokenTable),
 

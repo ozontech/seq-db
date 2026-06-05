@@ -53,8 +53,7 @@ func TestIteratorDesc(t *testing.T) {
 			err := os.WriteFile(filePath, rawSkipMask, 0o644)
 			require.NoError(t, err)
 
-			loader, err := newLoader(filePath, cache.NewCache[[]lidsBlockHeader](nil, nil))
-			require.NoError(t, err)
+			loader := newLoader(filePath, cache.NewCache[[]lidsBlockHeader](nil, nil))
 
 			iterator := (*IteratorDesc)(NewIterator(loader, tc.minLID, tc.maxLID))
 			resLIDs := make([]uint32, 0, len(tc.expected))
@@ -62,6 +61,8 @@ func TestIteratorDesc(t *testing.T) {
 				resLIDs = append(resLIDs, lid.Unpack())
 			}
 			require.Equal(t, tc.expected, resLIDs)
+
+			require.NoError(t, loader.release())
 		})
 	}
 }

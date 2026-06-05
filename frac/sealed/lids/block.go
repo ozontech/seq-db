@@ -1,10 +1,10 @@
 package lids
 
 import (
-	"encoding/binary"
 	"math"
 	"unsafe"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/packer"
 )
 
@@ -23,21 +23,9 @@ func (b *Block) getLIDs(i int) []uint32 {
 	return b.LIDs[b.Offsets[i]:b.Offsets[i+1]]
 }
 
-func (b *Block) Pack(dst []byte) []byte {
-	lastLID := int64(0)
-	last := b.getCount() - 1
-	for i := 0; i <= last; i++ {
-		for _, lid := range b.getLIDs(i) {
-			dst = binary.AppendVarint(dst, int64(lid)-lastLID)
-			lastLID = int64(lid)
-		}
-
-		if i < last || b.IsLastLID {
-			// when we add this value to prev we must get -1 (or math.MaxUint32 for uint32)
-			// it is the end-marker; see `Block.Unpack()`
-			dst = binary.AppendVarint(dst, -1-lastLID)
-		}
-	}
+func (b *Block) Pack(dst []byte, buf []uint32) []byte {
+	dst = packer.CompressDeltaBitpackUint32(dst, b.Offsets, buf)
+	dst = packer.CompressDeltaBitpackUint32(dst, b.LIDs, buf)
 	return dst
 }
 
@@ -49,13 +37,39 @@ func (b *Block) GetSizeBytes() int {
 	return blockSize + uint32Size*cap(b.LIDs) + uint32Size*cap(b.Offsets)
 }
 
-func (b *Block) Unpack(data []byte, buf *UnpackBuffer) error {
+func (b *Block) Unpack(data []byte, fracVer config.BinaryDataVersion, buf *UnpackBuffer) error {
+	buf.Reset(fracVer)
+
+	if fracVer >= config.BinaryDataV4 {
+		return b.unpackBitpack(data, buf)
+	}
+
+	return b.unpackVarint(data, buf)
+}
+
+func (b *Block) unpackBitpack(data []byte, buf *UnpackBuffer) error {
+	var err error
+	var values []uint32
+
+	data, values, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressed, buf.compressed)
+	if err != nil {
+		return err
+	}
+	b.Offsets = append([]uint32{}, values...)
+
+	_, values, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressed, buf.compressed)
+	if err != nil {
+		return err
+	}
+	b.LIDs = append([]uint32{}, values...)
+	return nil
+}
+
+func (b *Block) unpackVarint(data []byte, buf *UnpackBuffer) error {
 	var lid, offset uint32
 
 	b.IsLastLID = true
 
-	buf.lids = buf.lids[:0]
-	buf.offsets = buf.offsets[:0]
 	buf.offsets = append(buf.offsets, 0) // first offset is always zero
 
 	unpacker := packer.NewBytesUnpacker(data)

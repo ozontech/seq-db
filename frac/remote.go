@@ -131,14 +131,14 @@ func (f *Remote) Contains(mid seq.MID) bool {
 	return f.info.IsIntersecting(mid, mid)
 }
 
-func (f *Remote) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+func (f *Remote) Fetch(ctx context.Context, ids []seq.ID, noSkipMasks bool) ([][]byte, error) {
 	dp, err := f.createDataProvider(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer dp.release()
 
-	return dp.Fetch(ids)
+	return dp.Fetch(ids, noSkipMasks)
 }
 
 func (f *Remote) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
@@ -190,7 +190,7 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		docsReader:       &f.docsReader,
 		blocksOffsets:    f.blocksData.BlocksOffsets,
 		lidsTable:        f.blocksData.LIDsTable,
-		lidsLoader:       lids.NewLoader(lidReader, f.indexCache.LIDs),
+		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, lidReader, f.indexCache.LIDs),
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, tokenReader, f.indexCache.Tokens),
 		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.IsLegacy, tokenReader, f.indexCache.TokenTable),
 
