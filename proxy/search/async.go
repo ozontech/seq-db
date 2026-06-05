@@ -316,7 +316,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 	if size > 0 {
 		fieldsFilter := tryParseFieldsFilter(pr.Request.Query)
 		var err error
-		docsStream, err = si.FetchDocsStream(ctx, pr.QPR.IDs, false, fieldsFilter)
+		docsStream, err = si.FetchDocsStream(ctx, pr.QPR.IDs, false, false, fieldsFilter)
 		if err != nil {
 			return pr, nil, err
 		}

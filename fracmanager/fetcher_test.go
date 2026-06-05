@@ -31,7 +31,7 @@ func TestFetcher_ShouldFetchMultiFrac(t *testing.T) {
 		{ID: seq.SimpleID(30)},
 	}
 
-	docs, err := fetcher.FetchDocs(context.Background(), List{frac1, frac2, frac3}, fetchIDs)
+	docs, err := fetcher.FetchDocs(context.Background(), List{frac1, frac2, frac3}, fetchIDs, false)
 
 	assert.NoError(t, err)
 	assert.Equal(t, [][]byte{[]byte("doc1"), []byte("doc2"), []byte("doc4"), []byte("doc3")}, docs)
@@ -51,7 +51,7 @@ func TestFetcher_DocNotFound(t *testing.T) {
 		{ID: seq.SimpleID(20)},
 	}
 
-	docs, err := fetcher.FetchDocs(context.Background(), List{frac1}, fetchIDs)
+	docs, err := fetcher.FetchDocs(context.Background(), List{frac1}, fetchIDs, false)
 
 	assert.NoError(t, err)
 	assert.Len(t, docs, 2)
@@ -82,7 +82,7 @@ func TestFetcher_ShouldUseHints(t *testing.T) {
 		{ID: seq.SimpleID(10), Hint: frac1.Info().Name()},
 	}
 
-	docs, err := fetcher.FetchDocs(context.Background(), List{frac1, frac2, frac3}, fetchIDs)
+	docs, err := fetcher.FetchDocs(context.Background(), List{frac1, frac2, frac3}, fetchIDs, false)
 
 	assert.NoError(t, err)
 	assert.Equal(t, [][]byte{[]byte("apple"), []byte("pineapple"), []byte("orange")}, docs)
@@ -115,7 +115,7 @@ func TestFetcher_ShouldUseHints_MixedScenario(t *testing.T) {
 		{ID: seq.SimpleID(50)},
 	}
 
-	docs, err := fetcher.FetchDocs(context.Background(), List{frac1, frac2, frac3}, fetchIDs)
+	docs, err := fetcher.FetchDocs(context.Background(), List{frac1, frac2, frac3}, fetchIDs, false)
 
 	assert.NoError(t, err)
 	assert.Equal(t, [][]byte{[]byte("apple"), []byte("pineapple"), []byte("orange"), []byte("mango")}, docs)
@@ -148,7 +148,7 @@ func TestFetcher_OutOfRangeFractions(t *testing.T) {
 		{ID: seq.SimpleID(20)},
 	}
 
-	docs, err := fetcher.FetchDocs(context.Background(), List{frac1}, fetchIDs)
+	docs, err := fetcher.FetchDocs(context.Background(), List{frac1}, fetchIDs, false)
 
 	assert.NoError(t, err)
 	assert.Equal(t, [][]byte{[]byte("apple"), nil, []byte("banana"), nil}, docs)
@@ -170,7 +170,7 @@ func TestFetcher_FetchError(t *testing.T) {
 
 	fetchIDs := []seq.IDSource{{ID: seq.SimpleID(20)}}
 
-	_, err := fetcher.FetchDocs(context.Background(), List{frac1, frac2}, fetchIDs)
+	_, err := fetcher.FetchDocs(context.Background(), List{frac1, frac2}, fetchIDs, false)
 
 	assert.ErrorContains(t, err, "fetch failed")
 }
@@ -199,7 +199,7 @@ func TestFetcher_ContextCancellation(t *testing.T) {
 		{ID: seq.SimpleID(20)},
 	}
 
-	_, err := fetcher.FetchDocs(ctx, List{frac1, frac2, frac3, frac4}, ids)
+	_, err := fetcher.FetchDocs(ctx, List{frac1, frac2, frac3, frac4}, ids, false)
 
 	assert.Error(t, err)
 	assert.ErrorIs(t, context.Canceled, err)
