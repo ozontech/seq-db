@@ -46,8 +46,7 @@ func (g *GrpcV1) StartAsyncSearch(
 		Retention: r.Retention.AsDuration(),
 		WithDocs:  r.WithDocs,
 	}
-	fracs := g.fracManager.Fractions().FilterInRange(seq.MillisToMID(uint64(r.From)), seq.MillisToMID(uint64(r.To)))
-	if err := g.asyncSearcher.StartSearch(req, fracs); err != nil {
+	if err := g.asyncSearcher.StartSearch(req, g.fracManager); err != nil {
 		return nil, err
 	}
 

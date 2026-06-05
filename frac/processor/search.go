@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sync"
 	"time"
@@ -39,7 +40,7 @@ type tokenIndex interface {
 type searchIndex interface {
 	tokenIndex
 	idsIndex
-	GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
+	GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error)
 }
 
 type LIDsIter interface {
@@ -65,7 +66,7 @@ func IndexSearch(
 	index searchIndex,
 	aggLimits AggLimits,
 	sw *stopwatch.Stopwatch,
-) (*seq.QPR, error) {
+) (qpr *seq.QPR, err error) {
 	stats := &searchStats{}
 
 	m := sw.Start("get_lids_borders")
@@ -113,7 +114,10 @@ func IndexSearch(
 	}
 
 	m = sw.Start("get_skip_lids")
-	skipLIDs, hasSkipLIDs, err := index.GetSkipLIDs(minLID, maxLID, params.Order.IsReverse())
+	skipLIDs, hasSkipLIDs, release, err := index.GetSkipLIDs(minLID, maxLID, params.Order.IsReverse())
+	defer func() {
+		err = errors.Join(err, release())
+	}()
 	m.Stop()
 	if err != nil {
 		return nil, err
@@ -178,7 +182,7 @@ func IndexSearch(
 		total = 0
 	}
 
-	qpr := &seq.QPR{
+	qpr = &seq.QPR{
 		IDs:       ids,
 		Aggs:      aggsResult,
 		Total:     uint64(total),
