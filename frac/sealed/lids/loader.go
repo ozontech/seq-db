@@ -23,12 +23,12 @@ func (b *UnpackBuffer) Reset(fracVer config.BinaryDataVersion) {
 	}
 	if fracVer >= config.BinaryDataV4 {
 		if b.decompressed == nil {
-			b.decompressed = make([]uint32, 0, consts.LIDBlockCap)
+			b.decompressed = make([]uint32, 0, consts.DefaultLIDBlockCap)
 		} else {
 			b.decompressed = b.decompressed[:0]
 		}
 		if b.compressed == nil {
-			b.compressed = make([]uint32, 0, consts.LIDBlockCap)
+			b.compressed = make([]uint32, 0, consts.DefaultLIDBlockCap)
 		} else {
 			b.compressed = b.compressed[:0]
 		}
