@@ -266,6 +266,7 @@ func startStore(
 			SealParams: common.SealParams{
 				IDsZstdLevel:           cfg.Compression.SealedZstdCompressionLevel,
 				LIDsZstdLevel:          cfg.Compression.SealedZstdCompressionLevel,
+				LIDBlockSize:           cfg.Sealing.Lids.BlockSize,
 				TokenListZstdLevel:     cfg.Compression.SealedZstdCompressionLevel,
 				DocsPositionsZstdLevel: cfg.Compression.SealedZstdCompressionLevel,
 				TokenTableZstdLevel:    cfg.Compression.SealedZstdCompressionLevel,

@@ -70,6 +70,13 @@ type Config struct {
 		SealingQueueLen int `config:"sealing_queue_len" default:"10"`
 	} `config:"storage"`
 
+	Sealing struct {
+		Lids struct {
+			// BlockSize sets max lids (postings) saved per LIDs block.
+			BlockSize int `config:"block_size" default:"65536"`
+		} `config:"lids"`
+	} `config:"sealing"`
+
 	Cluster struct {
 		// WriteStores contains cold store instances which will be written to.
 		WriteStores []string `config:"write_stores"`

@@ -45,7 +45,7 @@ func NewIndexSealer(params common.SealParams) *IndexSealer {
 		params: params,
 		buf1:   make([]byte, 0, consts.RegularBlockSize),
 		buf2:   make([]byte, 0, consts.RegularBlockSize),
-		buf32:  make([]uint32, 0, consts.LIDBlockCap),
+		buf32:  make([]uint32, 0, consts.DefaultLIDBlockCap),
 		buf64:  make([]uint64, 0, consts.RegularBlockSize),
 	}
 }
@@ -129,7 +129,7 @@ func (s *IndexSealer) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	)
 
 	lidAccumulator := newLIDAccumulator(
-		consts.LIDBlockCap,
+		s.params.LIDBlockSize,
 		func(block lidsSealBlock) error {
 			return lw.writeBlock(blockTypeLID, s.packLIDsBlock(block))
 		},

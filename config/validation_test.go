@@ -86,6 +86,18 @@ limits:
 			env:       map[string]string{"SEQDB_OFFLOADING_QUEUE_SIZE_PERCENT": "50"},
 			expectErr: false,
 		},
+		{
+			name:      "Invalid sealing.lids.block_size",
+			cfg:       baseCfg,
+			env:       map[string]string{"SEQDB_SEALING_LIDS_BLOCK_SIZE": "-1"},
+			expectErr: true,
+		},
+		{
+			name:      "Valid sealing.lids.block_size",
+			cfg:       baseCfg,
+			env:       map[string]string{"SEQDB_SEALING_LIDS_BLOCK_SIZE": "8192"},
+			expectErr: false,
+		},
 	}
 
 	for _, tt := range tests {

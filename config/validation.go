@@ -68,6 +68,8 @@ func (c *Config) storeValidations() []validateFn {
 
 		inRange("compression.sealed_zstd_compression_level", -7, 22, c.Compression.SealedZstdCompressionLevel),
 		inRange("compression.doc_block_zstd_compression_level", -7, 22, c.Compression.DocBlockZstdCompressionLevel),
+		greaterThan("sealing.lids.block_size", 0, c.Sealing.Lids.BlockSize),
+		lessOrEqThan("sealing.lids.block_size", 65536, c.Sealing.Lids.BlockSize),
 		inRange("offloading.queue_size_percent", 0, 100, c.Offloading.QueueSizePercent),
 
 		greaterThan("experimental.max_regex_tokens_check", -1, c.Experimental.MaxRegexTokensCheck),
@@ -97,6 +99,18 @@ func notEmpty[T comparable](field string, v T) validateFn {
 func greaterThan[T cmp.Ordered](field string, base, v T) validateFn {
 	return func() error {
 		if v <= base {
+			return fmt.Errorf(
+				"field %q must be greater than %v",
+				field, base,
+			)
+		}
+		return nil
+	}
+}
+
+func lessOrEqThan[T cmp.Ordered](field string, base, v T) validateFn {
+	return func() error {
+		if v > base {
 			return fmt.Errorf(
 				"field %q must be greater than %v",
 				field, base,
