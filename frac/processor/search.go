@@ -39,7 +39,7 @@ type tokenIndex interface {
 type searchIndex interface {
 	tokenIndex
 	idsIndex
-	GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
+	GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error)
 }
 
 type searchBuffers struct {
