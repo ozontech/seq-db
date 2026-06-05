@@ -1,9 +1,10 @@
 package processor
 
 import (
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
-	"go.uber.org/zap"
 )
 
 // HistMap is an optimized array-based map for histogram.
