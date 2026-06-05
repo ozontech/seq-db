@@ -1593,6 +1593,12 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		for _, ord := range orders {
 			histBuckets := make(map[string]uint64)
 			for _, doc := range testDocs {
+				if doc.timestamp.Before(fromTime) {
+					continue
+				}
+				if doc.timestamp.After(midTime) {
+					continue
+				}
 				if doc.service == "database" && doc.level == 3 {
 					bucketTime := doc.timestamp.Truncate(time.Second)
 					bucketKey := bucketTime.Format(time.RFC3339Nano)
@@ -1602,7 +1608,8 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 
 			searchParams := s.query(
 				"service:database AND level:3",
-				withTo(toTime.Format(time.RFC3339Nano)),
+				withFrom(fromTime.Format(time.RFC3339Nano)),
+				withTo(midTime.Format(time.RFC3339Nano)),
 				withHist(1000))
 			searchParams.Order = ord
 
