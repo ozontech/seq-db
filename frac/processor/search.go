@@ -78,10 +78,6 @@ func IndexSearch(
 			return evalLeaf(index, token, sw, stats, minLID, maxLID, params.Order)
 		},
 	)
-	if err != nil {
-		return nil, err
-	}
-
 	m.Stop()
 
 	if err != nil {
@@ -133,7 +129,7 @@ func IndexSearch(
 	batchNode, ok := tryConvertToBatchedTree(evalTree)
 
 	if ok {
-		evalTreeIter = func(need int, _ lidsBuf) LIDsIter {
+		evalTreeIter = func(_ int, _ lidsBuf) LIDsIter {
 			// batched flow: juts get a batch and return
 			return batchNode.NextBatch()
 		}
