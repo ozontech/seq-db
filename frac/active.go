@@ -192,20 +192,22 @@ func (f *Active) replayWalFile(ctx context.Context) error {
 		}
 		corruptions = entry.Corruptions
 
-		if uint64(entry.Offset) > next {
-			next += step
-			progress := float64(uint64(entry.Offset)) / float64(f.info.MetaOnDisk) * 100
-			logger.Info("replaying batch, meta",
-				zap.String("name", f.info.Name()),
-				zap.Int64("from", entry.Offset),
-				zap.Int64("to", entry.Offset+entry.Size),
-				zap.Uint64("target", f.info.MetaOnDisk),
-				util.ZapFloat64WithPrec("progress_percentage", progress, 2),
-			)
-		}
+		if entry.ContainsData {
+			if uint64(entry.Offset) > next {
+				next += step
+				progress := float64(uint64(entry.Offset)) / float64(f.info.MetaOnDisk) * 100
+				logger.Info("replaying batch, meta",
+					zap.String("name", f.info.Name()),
+					zap.Int64("from", entry.Offset),
+					zap.Int64("to", entry.Offset+entry.Size),
+					zap.Uint64("target", f.info.MetaOnDisk),
+					util.ZapFloat64WithPrec("progress_percentage", progress, 2),
+				)
+			}
 
-		wg.Add(1)
-		f.indexer.Index(f, entry.Data, &wg, sw)
+			wg.Add(1)
+			f.indexer.Index(f, entry.Data, &wg, sw)
+		}
 	}
 
 	wg.Wait()
