@@ -3,6 +3,8 @@ package node
 import (
 	"fmt"
 	"math"
+
+	"github.com/ozontech/seq-db/seq"
 )
 
 const (
@@ -31,6 +33,14 @@ func NewDescLID(lid uint32) LID {
 		lid:  lid,
 		mask: descMask,
 	}
+}
+
+func NewDescZeroLID() LID {
+	return NewDescLID(0)
+}
+
+func NewAscZeroLID() LID {
+	return NewAscLID(math.MaxUint32)
 }
 
 // NewAscLID returns LIDs for asc sort order
@@ -87,6 +97,10 @@ func Min(left, right LID) LID {
 
 func (c LID) Unpack() uint32 {
 	return c.lid ^ c.mask
+}
+
+func (c LID) ToSeqLID() seq.LID {
+	return seq.LID(c.Unpack())
 }
 
 func (c LID) IsNull() bool {
