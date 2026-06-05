@@ -11,6 +11,14 @@ type Node interface {
 	NextGeq(nextID LID) LID
 }
 
+type BatchedNode interface {
+	fmt.Stringer
+	// NextBatch returns next batch. Returns nil when exhausted.
+	NextBatch() LIDBatch
+	// NextBatchGeq returns next batch (LIDs >= minLID). Returns nil when exhausted.
+	NextBatchGeq(nextLID LID) LIDBatch
+}
+
 type Sourced interface {
 	fmt.Stringer // for testing
 	// aggregation need source

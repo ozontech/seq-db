@@ -103,3 +103,36 @@ func (it *IteratorAsc) NextGeq(nextID node.LID) node.LID {
 		it.lids = it.lids[:0]
 	}
 }
+
+func (it *IteratorAsc) NextBatch() node.LIDBatch {
+	return it.NextBatchGeq(node.NewAscZeroLID())
+}
+
+func (it *IteratorAsc) NextBatchGeq(nextID node.LID) node.LIDBatch {
+	for {
+		for len(it.lids) == 0 {
+			if !it.tryNextBlock {
+				return node.NewAscBatch(nil)
+			}
+			it.loadNextLIDsBlock()
+			it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
+			it.counter.AddLIDsCount(len(it.lids))
+		}
+
+		// fast path: smallest remaining > nextID => skip entire block
+		// TODO(cheb0): We could also pass LID into narrowLIDsRange to perform block skipping once we add something like MinLID to LID block header
+		if it.lids[0] > nextID.Unpack() {
+			it.lids = it.lids[:0]
+			continue
+		}
+
+		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] > nextID.Unpack() }) - 1
+		if idx >= 0 {
+			batch := it.lids[:idx+1]
+			it.lids = it.lids[:0]
+			return node.NewAscBatch(batch)
+		}
+
+		it.lids = it.lids[:0]
+	}
+}
