@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/alecthomas/units"
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
@@ -34,8 +35,11 @@ import (
 
 type testSkipMaskProvider struct{}
 
-func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
-	return node.NewStatic([]uint32{}, false), false, nil
+func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
+	return node.NewStatic([]uint32{}, false), false, func() error { return nil }, nil
+}
+func (testSkipMaskProvider) GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error) {
+	return nil, nil
 }
 func (testSkipMaskProvider) RemoveFrac(_ string) {}
 
@@ -1708,7 +1712,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 				qprIDs := qpr.IDs.IDs()
 				totalIDsScrolled += len(qprIDs)
 
-				docs, err := s.fraction.Fetch(context.Background(), qprIDs)
+				docs, err := s.fraction.Fetch(context.Background(), qprIDs, false)
 				s.Require().NoError(err, "fetch failed for order=%v", order)
 
 				for j, doc := range docs {
@@ -2017,7 +2021,7 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 		s.Require().NoError(err, "search failed for query with order=%v", order)
 		s.Require().Equal(len(expectedIndexes), qpr.IDs.Len(), "doc count doesn't match")
 
-		docs, err := s.fraction.Fetch(context.Background(), qpr.IDs.IDs())
+		docs, err := s.fraction.Fetch(context.Background(), qpr.IDs.IDs(), false)
 		s.Require().NoError(err, "failed to fetch docs")
 
 		if order.IsReverse() {

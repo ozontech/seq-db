@@ -207,7 +207,9 @@ func unmarshalSkipMask(dst *SkipMaskBinOut, src []byte) (_ []byte, err error) {
 		return nil, fmt.Errorf("invalid skip mask binary version: %d", version)
 	}
 
-	dst.LIDs, src, err = unmarshalLIDsBlocks(dst.LIDs, src)
+	src, err = unmarshalLIDsBlocks(src, func(lid uint32) {
+		dst.LIDs = append(dst.LIDs, lid)
+	})
 	if err != nil {
 		return src, err
 	}
@@ -218,7 +220,7 @@ func unmarshalSkipMask(dst *SkipMaskBinOut, src []byte) (_ []byte, err error) {
 // unmarshalLIDsBlocks reads all LIDs blocks from the source data.
 // First reads the number of blocks, then parses each block header,
 // and finally decodes each block's data.
-func unmarshalLIDsBlocks(dst []uint32, src []byte) ([]uint32, []byte, error) {
+func unmarshalLIDsBlocks(src []byte, add func(uint32)) ([]byte, error) {
 	numberOfBlocks := binary.LittleEndian.Uint32(src)
 	src = src[sizeOfUint32:]
 
@@ -229,34 +231,34 @@ func unmarshalLIDsBlocks(dst []uint32, src []byte) ([]uint32, []byte, error) {
 		header := lidsBlockHeader{}
 		src, err = header.unmarshal(src)
 		if err != nil {
-			return dst, src, fmt.Errorf("can't unmarshal lids header: %s", err)
+			return src, fmt.Errorf("can't unmarshal lids header: %s", err)
 		}
 		headers = append(headers, header)
 	}
 
 	for i := range numberOfBlocks {
-		dst, src, err = unmarshalLIDsBlock(dst, src, headers[i])
+		src, err = unmarshalLIDsBlock(src, headers[i], add)
 		if err != nil {
-			return dst, src, err
+			return src, err
 		}
 	}
 
 	if len(src) > 0 {
-		return dst, src, fmt.Errorf("unexpected tail when unmarshaling LIDs blocks")
+		return src, fmt.Errorf("unexpected tail when unmarshaling LIDs blocks")
 	}
 
-	return dst, src, nil
+	return src, nil
 }
 
 // unmarshalLIDsBlock decodes a single LIDs block based on its header.
 // Handles both compressed (zstd) and uncompressed codec types.
-func unmarshalLIDsBlock(dst []uint32, src []byte, header lidsBlockHeader) ([]uint32, []byte, error) {
+func unmarshalLIDsBlock(src []byte, header lidsBlockHeader, add func(uint32)) ([]byte, error) {
 	if len(src) == 0 {
-		return dst, src, fmt.Errorf("empty LIDs block")
+		return src, fmt.Errorf("empty LIDs block")
 	}
 
 	if header.Size == 0 || int(header.Size) > len(src) {
-		return nil, src, fmt.Errorf("invalid LIDs block length %d; want %d", len(src), header.Size)
+		return src, fmt.Errorf("invalid LIDs block length %d; want %d", len(src), header.Size)
 	}
 
 	block := src[:header.Size]
@@ -270,39 +272,39 @@ func unmarshalLIDsBlock(dst []uint32, src []byte, header lidsBlockHeader) ([]uin
 		defer lidsBlockBufPool.Put(b)
 		b.B, err = zstd.Decompress(block, b.B)
 		if err != nil {
-			return dst, src, fmt.Errorf("can't decompress ids block: %s", err)
+			return src, fmt.Errorf("can't decompress ids block: %s", err)
 		}
-		dst, err = unmarshalLIDsDelta(dst, b.B, header)
+		err = unmarshalLIDsDelta(b.B, header, add)
 		if err != nil {
-			return dst, src, err
+			return src, err
 		}
-		return dst, src, nil
+		return src, nil
 	case lidsCodecDelta:
-		dst, err = unmarshalLIDsDelta(dst, block, header)
+		err = unmarshalLIDsDelta(block, header, add)
 		if err != nil {
-			return dst, src, err
+			return src, err
 		}
-		return dst, src, nil
+		return src, nil
 	default:
-		return dst, src, fmt.Errorf("unknown ids codec: %d", header.Codec)
+		return src, fmt.Errorf("unknown ids codec: %d", header.Codec)
 	}
 }
 
-func unmarshalLIDsDelta(dst []uint32, block []byte, header lidsBlockHeader) ([]uint32, error) {
+func unmarshalLIDsDelta(block []byte, header lidsBlockHeader, add func(uint32)) error {
 	prevLID := uint32(0)
 	for range header.Length {
 		v, n := binary.Varint(block)
 		block = block[n:]
 		lid := prevLID + uint32(v)
 		prevLID = lid
-		dst = append(dst, lid)
+		add(lid)
 	}
 
 	if len(block) > 0 {
-		return dst, fmt.Errorf("unexpected tail when unmarshaling LIDs block")
+		return fmt.Errorf("unexpected tail when unmarshaling LIDs block")
 	}
 
-	return dst, nil
+	return nil
 }
 
 // getCompressLevel returns the appropriate zstd compression level based on data size.

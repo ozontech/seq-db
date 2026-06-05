@@ -22,7 +22,7 @@ func NewNMergedIterators(iterators []node.Node) node.Node {
 type EmptyIterator struct{}
 
 func (it *EmptyIterator) String() string {
-	return "EMPTY_HIDE_FLAG_ITERATOR"
+	return "EMPTY_SKIP_MASK_ITERATOR"
 }
 
 func (it *EmptyIterator) Next() node.LID {
