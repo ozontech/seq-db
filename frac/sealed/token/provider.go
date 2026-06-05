@@ -3,6 +3,8 @@ package token
 import (
 	"math"
 	"sort"
+
+	"github.com/ozontech/seq-db/pattern"
 )
 
 type Provider struct {
@@ -55,4 +57,34 @@ func (tp *Provider) GetToken(tid uint32) []byte {
 	entry := tp.findEntry(tid)
 	block := tp.findBlock(entry.BlockIndex)
 	return block.GetToken(entry.GetIndexInTokensBlock(tid))
+}
+
+func (tp *Provider) FindContains(needle []byte) ([]uint32, error) {
+	return tp.findInBlocks(tp.FirstTID(), tp.LastTID(), func(b *Block, firstIndex, lastIndex int) ([]int, error) {
+		return b.contains(firstIndex, lastIndex, needle)
+	})
+}
+
+func (tp *Provider) FindToken(searcher pattern.Searcher) ([]uint32, error) {
+	return tp.findInBlocks(searcher.FirstTID(), searcher.LastTID(), func(b *Block, firstIndex, lastIndex int) ([]int, error) {
+		return b.find(firstIndex, lastIndex, searcher)
+	})
+}
+
+func (tp *Provider) findInBlocks(firstTID, lastTID uint32, search func(*Block, int, int) ([]int, error)) ([]uint32, error) {
+	var tids []uint32
+
+	for _, entry := range tp.entries {
+		block := tp.findBlock(entry.BlockIndex)
+		firstIndex, lastIndex := entry.narrowIndexes(firstTID, lastTID)
+		indexes, err := search(block, firstIndex, lastIndex)
+		if err != nil {
+			return nil, err
+		}
+		for _, idx := range indexes {
+			tid := entry.StartTID + uint32(idx-int(entry.StartIndex))
+			tids = append(tids, tid)
+		}
+	}
+	return tids, nil
 }

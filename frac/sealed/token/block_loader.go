@@ -1,6 +1,7 @@
 package token
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/pattern"
 	"github.com/ozontech/seq-db/storage"
 )
 
@@ -58,6 +60,30 @@ func (b *Block) GetToken(index int) []byte {
 	l := binary.LittleEndian.Uint32(b.Payload[offset:])
 	offset += sizeOfUint32 // skip val length
 	return b.Payload[offset : offset+l]
+}
+
+func (b *Block) contains(from, to int, needle []byte) ([]int, error) {
+	indexes := make([]int, 0)
+	for i := from; i <= to; i++ {
+		if bytes.Contains(b.GetToken(i), needle) {
+			indexes = append(indexes, i)
+		}
+	}
+	return indexes, nil
+}
+
+func (b *Block) find(from, to int, searcher pattern.Searcher) ([]int, error) {
+	indexes := make([]int, 0)
+	for i := from; i <= to; i++ {
+		ok, err := searcher.Check(b.GetToken(i))
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			indexes = append(indexes, i)
+		}
+	}
+	return indexes, nil
 }
 
 // BlockLoader is responsible for Reading from disk, unpacking and caching tokens blocks.
