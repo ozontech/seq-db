@@ -131,14 +131,14 @@ func (f *Remote) Contains(mid seq.MID) bool {
 	return f.info.IsIntersecting(mid, mid)
 }
 
-func (f *Remote) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+func (f *Remote) Fetch(ctx context.Context, ids []seq.ID, noSkipMasks bool) ([][]byte, error) {
 	dp, err := f.createDataProvider(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer dp.release()
 
-	return dp.Fetch(ids)
+	return dp.Fetch(ids, noSkipMasks)
 }
 
 func (f *Remote) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
@@ -253,12 +253,15 @@ func (f *Remote) String() string {
 }
 
 func (f *Remote) loadInfo() error {
+	var err error
+
 	if f.IsLegacy {
 		if err := f.openInfoLegacy(); err != nil {
 			return err
 		}
-
-		f.info = loadInfoLegacy(f.legacyReader)
+		if f.info, err = loadInfoLegacy(f.legacyReader); err != nil {
+			logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+		}
 		return nil
 	}
 
@@ -266,7 +269,9 @@ func (f *Remote) loadInfo() error {
 		return err
 	}
 
-	f.info = loadInfo(f.infoFile)
+	if f.info, err = loadInfo(f.infoFile); err != nil {
+		logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+	}
 	return nil
 }
 

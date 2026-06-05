@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sync"
 	"time"
@@ -67,7 +68,7 @@ func IndexSearch(
 	index searchIndex,
 	aggLimits AggLimits,
 	sw *stopwatch.Stopwatch,
-) (*seq.QPR, error) {
+) (qpr *seq.QPR, err error) {
 	stats := &searchStats{}
 
 	m := sw.Start("get_lids_borders")
@@ -80,10 +81,6 @@ func IndexSearch(
 			return evalLeaf(index, token, sw, stats, minLID, maxLID, params.Order)
 		},
 	)
-	if err != nil {
-		return nil, err
-	}
-
 	m.Stop()
 
 	if err != nil {
@@ -119,7 +116,10 @@ func IndexSearch(
 	}
 
 	m = sw.Start("get_skip_lids")
-	skipLIDs, hasSkipLIDs, err := index.GetSkipLIDs(minLID, maxLID, params.Order.IsReverse())
+	skipLIDs, hasSkipLIDs, release, err := index.GetSkipLIDs(minLID, maxLID, params.Order.IsReverse())
+	defer func() {
+		err = errors.Join(err, release())
+	}()
 	m.Stop()
 	if err != nil {
 		return nil, err
@@ -162,7 +162,7 @@ func IndexSearch(
 		total = 0
 	}
 
-	qpr := &seq.QPR{
+	qpr = &seq.QPR{
 		IDs:       ids,
 		Aggs:      aggsResult,
 		Total:     uint64(total),

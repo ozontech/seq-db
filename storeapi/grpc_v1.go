@@ -114,10 +114,7 @@ func NewGrpcV1(cfg APIConfig, fracManager *fracmanager.FracManager, mappingProvi
 		fetchData: fetchData{
 			docFetcher: fracmanager.NewFetcher(config.FetchWorkers),
 		},
-		asyncSearcher: asyncsearcher.MustStartAsync(
-			cfg.Search.Async, mappingProvider,
-			fracManager.Fractions(),
-		),
+		asyncSearcher: asyncsearcher.MustStartAsync(cfg.Search.Async, mappingProvider, fracManager),
 	}
 
 	return g

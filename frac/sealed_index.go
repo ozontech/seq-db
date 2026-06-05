@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/RoaringBitmap/roaring/v2"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/frac/common"
@@ -23,7 +24,8 @@ import (
 )
 
 type skipMaskProvider interface {
-	GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
+	GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error)
+	GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error)
 	RemoveFrac(fracName string)
 }
 
@@ -91,7 +93,7 @@ func (dp *sealedDataProvider) release() {
 	dp.idsProvider.Release()
 }
 
-func (dp *sealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
+func (dp *sealedDataProvider) Fetch(ids []seq.ID, noSkipMasks bool) ([][]byte, error) {
 	sw := stopwatch.New()
 
 	defer sw.Export(
@@ -100,7 +102,7 @@ func (dp *sealedDataProvider) Fetch(ids []seq.ID) ([][]byte, error) {
 	)
 
 	res := make([][]byte, len(ids))
-	if err := processor.IndexFetch(ids, sw, dp.getFetchIndex(), res); err != nil {
+	if err := processor.IndexFetch(ids, noSkipMasks, sw, dp.getFetchIndex(), res); err != nil {
 		return nil, err
 	}
 
@@ -296,8 +298,12 @@ func (fi *sealedFetchIndex) GetBlocksOffsets(num uint32) uint64 {
 	return fi.blocksOffsets[num]
 }
 
-func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
+func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.DocPos, error) {
 	allLids := fi.findLIDs(ids)
+
+	if noSkipMasks {
+		return fi.getDocPosByLIDs(allLids), nil
+	}
 
 	minLID, maxLID := uint32(0), uint32(math.MaxUint32)
 	if len(allLids) > 0 {
@@ -310,26 +316,17 @@ func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID) ([]seq.DocPos, error) {
 		minLID, maxLID = uint32(minVal), uint32(maxVal)
 	}
 
-	skipLIDsIterator, has, err := fi.skipMaskProvider.GetIDsIteratorByFrac(fi.fracName, minLID, maxLID, false)
+	skipLIDsBitmap, err := fi.skipMaskProvider.GetIDsBitmapByFrac(fi.fracName, minLID, maxLID)
 	if err != nil {
 		return nil, err
 	}
 
-	if !has {
+	if skipLIDsBitmap == nil {
 		return fi.getDocPosByLIDs(allLids), nil
 	}
 
-	skipLIDs := make(map[uint32]struct{})
-	for {
-		lid := skipLIDsIterator.Next()
-		if lid.IsNull() {
-			break
-		}
-		skipLIDs[lid.Unpack()] = struct{}{}
-	}
-
 	for i, lid := range allLids {
-		if _, ok := skipLIDs[uint32(lid)]; ok {
+		if skipLIDsBitmap.Contains(uint32(lid)) {
 			allLids[i] = 0
 		}
 	}
@@ -392,6 +389,6 @@ type sealedSearchIndex struct {
 	skipMaskProvider skipMaskProvider
 }
 
-func (si *sealedSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error) {
+func (si *sealedSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
 	return si.skipMaskProvider.GetIDsIteratorByFrac(si.fracName, minLID, maxLID, reverse)
 }

@@ -1,12 +1,12 @@
 syntax = "proto3";
 
-option go_package = "github.com/ozontech/seq-db/pkg/storeapi;storeapi";
-
 package api;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/ozontech/seq-db/pkg/storeapi;storeapi";
 
 service StoreApi {
   rpc Bulk(BulkRequest) returns (google.protobuf.Empty) {}
@@ -20,7 +20,7 @@ service StoreApi {
   rpc CancelAsyncSearch(CancelAsyncSearchRequest) returns (CancelAsyncSearchResponse) {}
 
   rpc DeleteAsyncSearch(DeleteAsyncSearchRequest) returns (DeleteAsyncSearchResponse) {}
-  
+
   rpc GetAsyncSearchesList(GetAsyncSearchesListRequest) returns (GetAsyncSearchesListResponse) {}
 
   rpc Fetch(FetchRequest) returns (stream BinaryData) {}
@@ -86,7 +86,7 @@ message SearchResponse {
   }
 
   message IdWithHint {
-    Id     id = 1;
+    Id id = 1;
     string hint = 3;
   }
 
@@ -187,7 +187,7 @@ message FetchAsyncSearchResultResponse {
 
   repeated AggQuery aggs = 9;
   int64 histogram_interval = 10;
-  
+
   string query = 11;
   google.protobuf.Timestamp from = 12;
   google.protobuf.Timestamp to = 13;
@@ -196,11 +196,11 @@ message FetchAsyncSearchResultResponse {
   int64 size = 16;
 }
 
-message CancelAsyncSearchRequest{
+message CancelAsyncSearchRequest {
   string search_id = 1;
 }
 
-message CancelAsyncSearchResponse{}
+message CancelAsyncSearchResponse {}
 
 message DeleteAsyncSearchRequest {
   string search_id = 1;
@@ -210,7 +210,7 @@ message DeleteAsyncSearchResponse {}
 
 message GetAsyncSearchesListRequest {
   optional AsyncSearchStatus status = 1;
-  repeated string ids = 2; 
+  repeated string ids = 2;
 }
 
 message GetAsyncSearchesListResponse {
@@ -229,7 +229,7 @@ message AsyncSearchesListItem {
 
   repeated AggQuery aggs = 9;
   int64 histogram_interval = 10;
-  
+
   string query = 11;
   google.protobuf.Timestamp from = 12;
   google.protobuf.Timestamp to = 13;
@@ -254,6 +254,9 @@ message FetchRequest {
   bool explain = 3;
   repeated IdWithHint ids_with_hints = 4;
   FieldsFilter fields_filter = 5;
+  // if false, skip masks will be evaluated
+  // set to true in fetch after search since ids are already skipped
+  bool noSkipMasks = 6;
 }
 
 message StatusRequest {}
