@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
@@ -237,7 +238,7 @@ func filterValid(ids []string, manifests map[string]*fracManifest) ([]*fracManif
 
 		switch manifest.Stage() {
 		case fracStageUnknown:
-			logger.Error("unknown fraction stage", zap.String("fraction", id), zap.Any("manifest", manifest))
+			logger.Error("unknown fraction stage", zap.Object("manifest", manifest))
 			fractionLoadErrors.Inc()
 			continue
 		case fracStageZombie:
@@ -338,4 +339,26 @@ func extractSuffix(filename string) string {
 		return ""
 	}
 	return filename[i:]
+}
+
+func (f *fracManifest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	enc.AddString("basePath", f.basePath)
+	enc.AddBool("hasDocs", f.hasDocs)
+	enc.AddBool("hasMeta", f.hasMeta)
+	enc.AddBool("hasWal", f.hasWal)
+	enc.AddBool("hasIndex", f.hasIndex)
+	enc.AddBool("hasSdocs", f.hasSdocs)
+	enc.AddBool("hasRemote", f.hasRemote)
+
+	enc.AddBool("hasInfo", f.hasInfo)
+	enc.AddBool("hasToken", f.hasToken)
+	enc.AddBool("hasOffsets", f.hasOffsets)
+	enc.AddBool("hasID", f.hasID)
+	enc.AddBool("hasLID", f.hasLID)
+
+	enc.AddBool("hasDocsDel", f.hasDocsDel)
+	enc.AddBool("hasSdocsDel", f.hasSdocsDel)
+	enc.AddBool("hasIndexDel", f.hasIndexDel)
+
+	return nil
 }

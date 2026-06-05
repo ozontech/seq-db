@@ -1,7 +1,6 @@
 package skipmaskmanager
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -46,7 +45,6 @@ func TestMergedIteratorReverse(t *testing.T) {
 		resLIDs = append(resLIDs, lid.Unpack())
 
 	}
-	fmt.Println(resLIDs)
 	require.Equal(t, []uint32{45, 33, 22, 15, 9, 8, 7, 5, 3, 2, 1}, resLIDs)
 }
 
@@ -55,7 +53,7 @@ type testIteratorDesc struct {
 }
 
 func (it *testIteratorDesc) String() string {
-	return "TEST_HIDE_FLAG_ITERATOR_DESC"
+	return "TEST_SKIP_MASK_ITERATOR_DESC"
 }
 
 func (it *testIteratorDesc) Next() node.LID {
@@ -77,7 +75,7 @@ type testIteratorAsc struct {
 }
 
 func (it *testIteratorAsc) String() string {
-	return "TEST_HIDE_FLAG_ITERATOR_ASC"
+	return "TEST_SKIP_MASK_ITERATOR_ASC"
 }
 
 func (it *testIteratorAsc) Next() node.LID {

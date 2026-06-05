@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/oklog/ulid/v2"
 
 	"github.com/ozontech/seq-db/frac"
@@ -21,7 +22,8 @@ import (
 const fileBasePattern = "seq-db-"
 
 type skipMaskProvider interface {
-	GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
+	GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error)
+	GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error)
 	RefreshFrac(frac frac.Fraction)
 	RemoveFrac(fracName string)
 }

@@ -10,7 +10,7 @@ import (
 type IteratorDesc Iterator
 
 func (it *IteratorDesc) String() string {
-	return "HIDE_FLAG_ITERATOR_DESC"
+	return "SKIP_MASK_ITERATOR_DESC"
 }
 
 func (it *IteratorDesc) Next() node.LID {
@@ -24,9 +24,6 @@ func (it *IteratorDesc) Next() node.LID {
 
 	for len(it.lids) == 0 {
 		if !it.tryNextBlock {
-			if err := it.loader.release(); err != nil {
-				logger.Panic("error closing loader", zap.Error(err))
-			}
 			return node.NullLID()
 		}
 
@@ -55,12 +52,15 @@ func (it *IteratorDesc) loadNextLIDsBlock() {
 		return
 	}
 
-	block, err := it.loader.loadBlock(it.blockIndex)
+	lids := make([]uint32, 0, it.loader.headers[it.blockIndex].Length)
+	err := it.loader.loadBlock(it.blockIndex, func(lid uint32) {
+		lids = append(lids, lid)
+	})
 	if err != nil {
 		logger.Panic("error loading LIDs block", zap.Error(err))
 	}
 
-	it.lids = block
+	it.lids = lids
 	it.needTryNextBlock()
 }
 

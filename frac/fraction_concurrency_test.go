@@ -228,7 +228,7 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 					return fmt.Errorf("search failed: %w", err)
 				}
 
-				fetchedResult, err := fraction.Fetch(ctx, qpr.IDs.IDs())
+				fetchedResult, err := fraction.Fetch(ctx, qpr.IDs.IDs(), false)
 				if err != nil {
 					return fmt.Errorf("fetch failed: %w", err)
 				}
