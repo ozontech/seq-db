@@ -2,14 +2,13 @@ package processor
 
 import (
 	"context"
+	"errors"
 	"math"
+	"sync"
 	"time"
-
-	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
-	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
@@ -25,7 +24,9 @@ type idsIndex interface {
 	// LessOrEqual checks if seq.ID in LID position less or equal searched seq.ID, i.e. seqID(lid) <= id
 	LessOrEqual(lid seq.LID, id seq.ID) bool
 	GetMID(seq.LID) seq.MID
+	GetMIDs(lids []node.LID, out []seq.MID) []seq.MID
 	GetRID(seq.LID) seq.RID
+	GetRIDs(lids []node.LID, out []seq.RID) []seq.RID
 	Len() int
 }
 
@@ -38,8 +39,28 @@ type tokenIndex interface {
 type searchIndex interface {
 	tokenIndex
 	idsIndex
-	GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, error)
+	GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error)
 }
+
+type searchBuffers struct {
+	lids []node.LID
+	mids []seq.MID
+	rids []seq.RID
+}
+
+var searchBuffersPool = sync.Pool{
+	New: func() any {
+		return &searchBuffers{
+			// Currently, we drain up to 4k lids from eval tree, but with proper batching enabled
+			// we can get as much as whole LID block can have (currently, 64k lids)
+			lids: make([]node.LID, 0, consts.LIDBlockCap),
+			mids: make([]seq.MID, 0, consts.LIDBlockCap),
+			rids: make([]seq.RID, 0, consts.LIDBlockCap),
+		}
+	},
+}
+
+const maxLidsToDrain = 4096
 
 func IndexSearch(
 	ctx context.Context,
@@ -47,7 +68,7 @@ func IndexSearch(
 	index searchIndex,
 	aggLimits AggLimits,
 	sw *stopwatch.Stopwatch,
-) (*seq.QPR, error) {
+) (qpr *seq.QPR, err error) {
 	stats := &searchStats{}
 
 	m := sw.Start("get_lids_borders")
@@ -95,7 +116,10 @@ func IndexSearch(
 	}
 
 	m = sw.Start("get_skip_lids")
-	skipLIDs, hasSkipLIDs, err := index.GetSkipLIDs(minLID, maxLID, params.Order.IsReverse())
+	skipLIDs, hasSkipLIDs, release, err := index.GetSkipLIDs(minLID, maxLID, params.Order.IsReverse())
+	defer func() {
+		err = errors.Join(err, release())
+	}()
 	m.Stop()
 	if err != nil {
 		return nil, err
@@ -108,7 +132,7 @@ func IndexSearch(
 	}
 
 	m = sw.Start("iterate_eval_tree")
-	total, ids, histogram, aggs, err := iterateEvalTree(ctx, params, index, evalTree, aggSupplier, sw)
+	total, ids, histMap, aggs, err := iterateEvalTree(ctx, params, index, evalTree, aggSupplier, sw)
 	m.Stop()
 
 	if err != nil {
@@ -138,11 +162,11 @@ func IndexSearch(
 		total = 0
 	}
 
-	qpr := &seq.QPR{
+	qpr = &seq.QPR{
 		IDs:       ids,
 		Aggs:      aggsResult,
 		Total:     uint64(total),
-		Histogram: convertHistToMap(params, histogram),
+		Histogram: histMap.ToMap(),
 	}
 
 	stats.UpdateMetrics()
@@ -150,20 +174,28 @@ func IndexSearch(
 	return qpr, nil
 }
 
-func convertHistToMap(params SearchParams, hist []uint64) map[seq.MID]uint64 {
-	if len(hist) == 0 {
-		return nil
-	}
-	res := make(map[seq.MID]uint64, len(hist))
-	histIntervalMID := seq.MillisToMID(params.HistInterval)
-	bucket := params.From - params.From%histIntervalMID
-	for _, cnt := range hist {
-		if cnt > 0 {
-			res[bucket] = cnt
+func batcher(evalTree node.Node, buf []node.LID) func(need int) []node.LID {
+	if batchNode, ok := tryConvertToBatchedTree(evalTree); ok {
+		return func(need int) []node.LID {
+			buf = batchNode.NextBatch().LIDs(buf[:0])
+			if len(buf) > need {
+				buf = buf[:need]
+			}
+			return buf
 		}
-		bucket += histIntervalMID
 	}
-	return res
+
+	return func(need int) []node.LID {
+		buf = buf[:0]
+		for range min(maxLidsToDrain, need) {
+			lid := evalTree.Next()
+			if lid.IsNull() {
+				break
+			}
+			buf = append(buf, lid)
+		}
+		return buf
+	}
 }
 
 func iterateEvalTree(
@@ -173,107 +205,133 @@ func iterateEvalTree(
 	evalTree node.Node,
 	aggSupplier func() ([]Aggregator, error),
 	sw *stopwatch.Stopwatch,
-) (int, seq.IDSources, []uint64, []Aggregator, error) {
+) (int, seq.IDSources, HistMap, []Aggregator, error) {
 	hasHist := params.HasHist()
 	needScanAllRange := params.IsScanAllRequest()
 
-	var (
-		histBase     uint64
-		histogram    []uint64
-		histInterval seq.MID
-	)
+	var hist HistMap
 	if hasHist {
-		histInterval = seq.MillisToMID(params.HistInterval)
-		histBase = uint64(params.From) / uint64(histInterval)
-		histSize := uint64(params.To)/uint64(histInterval) - histBase + 1
-		histogram = make([]uint64, histSize)
+		hist = NewHistMap(params.From, params.To, params.HistInterval)
 	}
 
-	total := 0
-	ids := seq.IDSources{}
-	var lastID seq.ID
+	var (
+		total  int
+		lastID seq.ID
+		ids    seq.IDSources
+	)
+
+	buffers := searchBuffersPool.Get().(*searchBuffers)
+	defer searchBuffersPool.Put(buffers)
+	mids := buffers.mids
+	rids := buffers.rids
+
+	batchedEvalTree := batcher(evalTree, buffers.lids)
 
 	timerEval := sw.Timer("eval_tree_next")
 	timerMID := sw.Timer("get_mid")
+	timerUpdateHist := sw.Timer("update_hist")
 	timerRID := sw.Timer("get_rid")
 	timerAgg := sw.Timer("agg_node_count")
 
 	var aggs []Aggregator
-
-	for i := 0; ; i++ {
-		if i&1023 == 0 && util.IsCancelled(ctx) {
-			return total, ids, histogram, aggs, ctx.Err()
+	for {
+		if util.IsCancelled(ctx) {
+			return total, ids, hist, aggs, ctx.Err()
 		}
 
 		needMore := len(ids) < params.Limit
 		if !needMore && !needScanAllRange {
 			break
 		}
+		needLIDs := params.Limit - len(ids)
+		if needScanAllRange {
+			needLIDs = math.MaxUint32
+		}
 
 		timerEval.Start()
-		lid := evalTree.Next()
+		lidsSlice := batchedEvalTree(needLIDs)
 		timerEval.Stop()
 
-		if lid.IsNull() {
+		if len(lidsSlice) == 0 {
 			break
 		}
-		rawLid := lid.Unpack()
 
-		if needMore || hasHist {
-			timerMID.Start()
-			mid := idsIndex.GetMID(seq.LID(rawLid))
-			timerMID.Stop()
-
-			if hasHist {
-				if mid < params.From || mid > params.To {
-					logger.Error("MID value outside the query range",
-						zap.Time("from", params.From.Time()),
-						zap.Time("to", params.To.Time()),
-						zap.Time("mid", mid.Time()))
-					continue
-				}
-				bucketIndex := uint64(mid)/uint64(histInterval) - histBase
-				histogram[bucketIndex]++
-			}
-
-			if needMore {
-				timerRID.Start()
-				rid := idsIndex.GetRID(seq.LID(rawLid))
-				timerRID.Stop()
-
-				id := seq.ID{MID: mid, RID: rid}
-
-				if total == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
-					ids = append(ids, seq.IDSource{ID: id})
-				}
-				lastID = id
-			}
+		needMIDs := min(params.Limit-len(ids), len(lidsSlice))
+		if hasHist {
+			// need to fetch mids for all lids for hist
+			needMIDs = len(lidsSlice)
 		}
 
-		total++ // increment found counter, use aggNode, calculate histogram and collect ids only if id in borders
+		// Get MIDs
+		if needMIDs > 0 {
+			timerMID.Start()
+			mids = idsIndex.GetMIDs(lidsSlice[:needMIDs], mids[:0])
+			timerMID.Stop()
+		}
 
+		// Get RIDs
+		// compute number of ids we can get here, since some MIDs might have been filtered out
+		needIDs := min(params.Limit-len(ids), len(lidsSlice))
+		if needIDs > 0 {
+			timerRID.Start()
+			rids = idsIndex.GetRIDs(lidsSlice[0:needIDs], rids[:0])
+			timerRID.Stop()
+		}
+
+		// Fill IDs for search
+		for i := 0; i < needIDs; i++ {
+			id := seq.ID{MID: mids[i], RID: rids[i]}
+
+			if i == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
+				ids = append(ids, seq.IDSource{ID: id})
+			}
+			lastID = id
+		}
+
+		// Update hist map
+		if hasHist {
+			timerUpdateHist.Start()
+			hist.Update(mids)
+			timerUpdateHist.Stop()
+		}
+
+		// Update aggregators
 		if params.HasAgg() {
 			if aggs == nil {
 				var err error
-				aggs, err = aggSupplier()
+				aggs, err = aggSupplier() // sw timer is activated inside aggSupplier
 				if err != nil {
-					return total, ids, histogram, nil, err
+					return total, ids, hist, nil, err
 				}
 			}
 
 			timerAgg.Start()
 			for i := range aggs {
-				if err := aggs[i].Next(lid); err != nil {
-					timerAgg.Stop()
-					return total, ids, histogram, aggs, err
+				for _, lid := range lidsSlice {
+					if err := aggs[i].Next(lid); err != nil {
+						timerAgg.Stop()
+						return total, ids, hist, aggs, err
+					}
 				}
 			}
 			timerAgg.Stop()
 		}
 
+		total += len(lidsSlice)
 	}
 
-	return total, ids, histogram, aggs, nil
+	return total, ids, hist, aggs, nil
+}
+
+func tryConvertToBatchedTree(evalTree node.Node) (node.BatchedNode, bool) {
+	switch it := evalTree.(type) {
+	case *lids.IteratorDesc:
+		return it, true
+	case *lids.IteratorAsc:
+		return it, true
+	default:
+		return nil, false
+	}
 }
 
 // getLIDsBorders return min and max LID borders (including) for search
