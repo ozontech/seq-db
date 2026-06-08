@@ -95,3 +95,7 @@ func (s *registryStats) SetMetrics() {
 	s.offloading.SetMetrics(dataSizeTotal, "offloading")
 	s.remotes.SetMetrics(dataSizeTotal, "remotes")
 }
+
+func (s registryStats) TotalSizeOnDiskLocal() uint64 {
+	return s.sealing.totalSizeOnDisk + s.sealed.totalSizeOnDisk
+}

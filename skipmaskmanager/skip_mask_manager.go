@@ -47,7 +47,7 @@ type MappingProvider interface {
 }
 
 type fractionAcquirer interface {
-	Fractions() fracmanager.List
+	AcquireFractions() (fracmanager.List, func())
 	AcquireFraction(name string) (_ frac.Fraction, release func(), ok bool)
 }
 
@@ -144,17 +144,17 @@ func New(
 //   - Begins asynchronous processing of all skip mask queries
 //
 // This method must be called before using the manager.
-func (smm *SkipMaskManager) Start(fracs fractionAcquirer) {
+func (smm *SkipMaskManager) Start(fracProvider fractionAcquirer) {
 	smm.createDataDir()
 
-	allFracs := fracs.Fractions()
-	err := smm.loadSkipMasks(allFracs.Names())
-	if err != nil {
+	allFracs, release := fracProvider.AcquireFractions()
+	defer release()
+
+	if err := smm.loadSkipMasks(allFracs.Names()); err != nil {
 		logger.Fatal("failed to load previous skip masks", zap.Error(err))
 	}
 
-	err = smm.buildQueue(allFracs)
-	if err != nil {
+	if err := smm.buildQueue(allFracs); err != nil {
 		logger.Fatal("failed to build skip mask manager queue", zap.Error(err))
 	}
 
@@ -174,7 +174,7 @@ func (smm *SkipMaskManager) Start(fracs fractionAcquirer) {
 			}
 			sm.ast = ast
 
-			smm.processSkipMask(sm, fracs)
+			smm.processSkipMask(sm, fracProvider)
 		}
 	}()
 }
@@ -503,7 +503,7 @@ func (smm *SkipMaskManager) buildQueue(fracs fracmanager.List) error {
 // It processes each fraction with a .queue file, running search queries in parallel
 // (limited by the rate limiter). Each successful search writes results to a .skipmask
 // file. The skip mask status is set to Done when all fractions are processed.
-func (smm *SkipMaskManager) processSkipMask(skipMask *SkipMask, fracs fractionAcquirer) {
+func (smm *SkipMaskManager) processSkipMask(skipMask *SkipMask, fracProvider fractionAcquirer) {
 	skipMaskDes, err := os.ReadDir(skipMask.dirPath)
 	if err != nil {
 		panic(fmt.Errorf("BUG: reading directory must be successful: %s", err))
@@ -521,7 +521,7 @@ func (smm *SkipMaskManager) processSkipMask(skipMask *SkipMask, fracs fractionAc
 				defer skipMask.processWg.Done()
 				defer func() { <-smm.rateLimit }()
 
-				f, release, ok := fracs.AcquireFraction(fracNameFromFilePath(name))
+				f, release, ok := fracProvider.AcquireFraction(fracNameFromFilePath(name))
 				if !ok { // skip missing fracs
 					return
 				}
