@@ -40,7 +40,7 @@ func (c *PartitionedCollection[T]) Add(key string, obj T) {
 	c.byKey[key] = obj
 }
 
-// Delete removes an object from the collection by its key.
+// Del removes an object from the collection by its key.
 // Does nothing if the key doesn't exist.
 func (c *PartitionedCollection[T]) Del(key string) {
 	obj, ok := c.byKey[key]
@@ -101,17 +101,4 @@ func (c *PartitionedCollection[T]) All() iter.Seq[T] {
 // Len returns the number of objects in the collection.
 func (c *PartitionedCollection[T]) Len() int {
 	return len(c.byKey)
-}
-
-// GetAllPartitions returns a map of all partitions in the collection.
-func (c *PartitionedCollection[T]) GetAllPartitions() map[uint64][]T {
-	result := make(map[uint64][]T, len(c.byPartition))
-	for partitionID, objects := range c.byPartition {
-		partition := make([]T, 0, len(objects))
-		for _, obj := range objects {
-			partition = append(partition, obj)
-		}
-		result[partitionID] = partition
-	}
-	return result
 }
