@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/alecthomas/units"
+
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/indexer"
