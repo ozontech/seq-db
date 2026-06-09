@@ -30,23 +30,22 @@ func (t *TextTokenizer) Tokenize(tokens []MetaToken, name, value []byte, maxFiel
 		maxFieldValueLength = t.defaultMaxFieldValueLength
 	}
 
-	if len(value) > maxFieldValueLength && !t.partialIndexing {
-		metric.SkippedIndexesText.Inc()
-		metric.SkippedIndexesBytesText.Add(float64(len(value)))
-		return tokens
-	}
-
 	if len(value) == 0 {
 		tokens = append(tokens, MetaToken{Key: name, Value: value})
 		return tokens
 	}
 
-	maxLength := min(len(value), maxFieldValueLength)
+	if len(value) > maxFieldValueLength {
+		if !t.partialIndexing {
+			metric.SkippedIndexesText.Inc()
+			metric.SkippedIndexesBytesText.Add(float64(len(value)))
+			return tokens
+		}
+		metric.SkippedIndexesBytesText.Add(float64(len(value) - maxFieldValueLength))
+		value = value[:maxFieldValueLength]
+	}
 
-	metric.SkippedIndexesBytesText.Add(float64(len(value[maxLength:])))
-	value = value[:maxLength]
 	k := 0
-
 	hasUpper := false
 	asciiOnly := true
 	// Loop over the string looking for tokens.

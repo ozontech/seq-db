@@ -23,15 +23,15 @@ func (t *KeywordTokenizer) Tokenize(tokens []MetaToken, name, value []byte, maxT
 		maxTokenSize = t.defaultMaxTokenSize
 	}
 
-	if len(value) > maxTokenSize && !t.partialIndexing {
-		metric.SkippedIndexesKeyword.Inc()
-		metric.SkippedIndexesBytesKeyword.Add(float64(len(value)))
-		return tokens
+	if len(value) > maxTokenSize {
+		if !t.partialIndexing {
+			metric.SkippedIndexesKeyword.Inc()
+			metric.SkippedIndexesBytesKeyword.Add(float64(len(value)))
+			return tokens
+		}
+		metric.SkippedIndexesBytesKeyword.Add(float64(len(value) - maxTokenSize))
+		value = value[:maxTokenSize]
 	}
-
-	maxLength := min(len(value), maxTokenSize)
-	metric.SkippedIndexesBytesKeyword.Add(float64(len(value[maxLength:])))
-	value = value[:maxLength]
 
 	tokens = append(tokens, MetaToken{
 		Key:   name,
