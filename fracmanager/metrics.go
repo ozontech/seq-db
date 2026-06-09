@@ -213,7 +213,7 @@ var (
 		Help:      "Number of bytes read from disk storage",
 	})
 
-	walCorruptionsTotal = promauto.NewCounter(prometheus.CounterOpts{
+	walCorruptionsTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "storage",
 		Name:      "wal_corruptions_total",
