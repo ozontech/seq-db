@@ -212,7 +212,6 @@ func (f *Active) replayWalFile(ctx context.Context) error {
 
 	wg.Wait()
 	if corruptions > 0 {
-		metric.WALCorruptionsTotal.Add(float64(corruptions))
 		if err := f.backupCorruptedFiles(); err != nil {
 			logger.Error("failed to copy a corrupted WAL file",
 				zap.String("name", f.info.Name()),
@@ -238,7 +237,7 @@ func (f *Active) replayWalFile(ctx context.Context) error {
 // backupCorruptedFiles saves wal and docs file in a directory with corrupted files for later analysis
 func (f *Active) backupCorruptedFiles() error {
 	brokenDir := filepath.Join(filepath.Dir(f.BaseFileName), consts.BrokenDir)
-	if err := os.MkdirAll(brokenDir, 0o777); err != nil {
+	if err := os.MkdirAll(brokenDir, 0o777); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("create dir %s, err: %w", brokenDir, err)
 	}
 

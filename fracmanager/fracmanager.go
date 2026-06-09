@@ -2,7 +2,9 @@ package fracmanager
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,7 +67,7 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 	wg := sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(ctx)
 
-	startStatsWorker(ctx, registry, &wg)
+	startStatsWorker(ctx, cfg, registry, &wg)
 	startMaintWorker(ctx, cfg, &fm, &wg)
 	startCacheWorker(ctx, cfg, cache, &wg)
 
@@ -159,7 +161,7 @@ func startCacheWorker(ctx context.Context, cfg *Config, cache *CacheMaintainer, 
 }
 
 // startStatsWorker starts periodic statistics collection and reporting
-func startStatsWorker(ctx context.Context, reg *fractionRegistry, wg *sync.WaitGroup) {
+func startStatsWorker(ctx context.Context, cfg *Config, reg *fractionRegistry, wg *sync.WaitGroup) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -170,9 +172,28 @@ func startStatsWorker(ctx context.Context, reg *fractionRegistry, wg *sync.WaitG
 			stats := reg.Stats()
 			stats.Log()        // Log statistics
 			stats.SetMetrics() // Update Prometheus metrics
+
+			corruptions := countDocsFiles(filepath.Join(cfg.DataDir, consts.BrokenDir))
+			walCorruptionsTotal.Add(float64(corruptions))
 		})
 		logger.Info("stats loop is stopped")
 	}()
+}
+
+func countDocsFiles(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		logger.Error("error reading directory", zap.Error(err))
+		return 0
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), consts.DocsFileSuffix) {
+			count++
+		}
+	}
+	return count
 }
 
 // startMaintWorker starts periodic fraction maintenance operations
