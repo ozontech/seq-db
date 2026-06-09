@@ -123,12 +123,6 @@ var (
 		Name:      "panics_total",
 		Help:      "Number of panics in store",
 	})
-	WALCorruptionsTotal = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "seq_db_store",
-		Subsystem: "storage",
-		Name:      "wal_corruptions_total",
-		Help:      "Number of detected WAL corruption ranges during replay",
-	})
 
 	skippedIndexes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
