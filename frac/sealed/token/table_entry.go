@@ -34,6 +34,18 @@ func (t *TableEntry) narrowIndexes(firstTID, lastTID uint32) (int, int) {
 	return firstIndex, lastIndex
 }
 
+func (t *TableEntry) checkTIDsInBlock(firstTID, lastTID uint32) bool {
+	if lastTID < t.StartTID {
+		return false
+	}
+
+	if firstTID > t.getLastTID() {
+		return false
+	}
+
+	return true
+}
+
 func (t *TableEntry) checkTIDInBlock(tid uint32) bool {
 	if tid < t.StartTID {
 		return false

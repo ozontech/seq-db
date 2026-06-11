@@ -75,6 +75,10 @@ func (tp *Provider) findInBlocks(firstTID, lastTID uint32, search func(*Block, i
 	var tids []uint32
 
 	for _, entry := range tp.entries {
+		if !entry.checkTIDsInBlock(firstTID, lastTID) {
+			continue
+		}
+
 		block := tp.findBlock(entry.BlockIndex)
 		firstIndex, lastIndex := entry.narrowIndexes(firstTID, lastTID)
 		indexes, err := search(block, firstIndex, lastIndex)
