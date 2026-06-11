@@ -14,5 +14,6 @@ type SealParams struct {
 
 	LIDBlockSize   int
 	TokenBlockSize int
+	TokenFreqThreshold int // TokenFreqThreshold Min lids count to store frequency for a token.
 	DocBlockSize   int // DocBlockSize is decompressed payload size of document block.
 }

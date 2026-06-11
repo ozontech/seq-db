@@ -274,6 +274,7 @@ func startStore(
 				TokenTableZstdLevel:    cfg.Compression.SealedZstdCompressionLevel,
 				DocBlocksZstdLevel:     cfg.Compression.DocBlockZstdCompressionLevel,
 				DocBlockSize:           int(cfg.DocsSorting.DocBlockSize),
+				TokenFreqThreshold:     cfg.Sealing.Tokens.FreqThreshold,
 			},
 			Fraction: frac.Config{
 				Search: frac.SearchConfig{
