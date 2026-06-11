@@ -36,18 +36,18 @@ func TestSTCS_Pick(t *testing.T) {
 
 	t.Run("not-enough-candidates", func(t *testing.T) {
 		for n := range s.mergeTrigger {
-			require.Nil(t, s.Pick(makeFracs(make([]uint64, n)...)))
+			require.Len(t, s.Pick(makeFracs(make([]uint64, n)...)).fracs, 0)
 		}
 	})
 
 	t.Run("requirement-not-met", func(t *testing.T) {
 		// Each Fraction size is 10x the previous.
 		// They land in different buckets and no bucket with [mergeTrigger] fractions exists.
-		require.Nil(t, s.Pick(makeFracs(100, 1000, 10000, 100000)))
+		require.Len(t, s.Pick(makeFracs(100, 1000, 10000, 100000)).fracs, 0)
 	})
 
 	t.Run("one-bucket", func(t *testing.T) {
-		require.Len(t, s.Pick(makeFracs(1000, 1000, 1000, 1000)), 4)
+		require.Len(t, s.Pick(makeFracs(1000, 1000, 1000, 1000)).fracs, 4)
 	})
 
 	t.Run("largest-bucket", func(t *testing.T) {
@@ -56,7 +56,7 @@ func TestSTCS_Pick(t *testing.T) {
 			100000, 100000, 100000, 100000, 100000, // Will take this bucket.
 		))
 
-		require.Len(t, b, 5)
+		require.Len(t, b.fracs, 5)
 		for _, f := range b.fracs {
 			require.Equal(t, uint64(100000), f.Info().IndexOnDisk)
 		}
@@ -69,6 +69,6 @@ func TestSTCS_Pick(t *testing.T) {
 			sizes[i] = 5000
 		}
 
-		require.Len(t, s.Pick(makeFracs(sizes...)), s.mergeFanIn)
+		require.Len(t, s.Pick(makeFracs(sizes...)).fracs, s.mergeFanIn)
 	})
 }
