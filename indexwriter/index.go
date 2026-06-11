@@ -158,7 +158,7 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	)
 
 	var allFieldsTables []token.FieldTable
-	for pair, err := range tokenBlock(src.TokenTriplets(), lidAccumulator.add, consts.RegularBlockSize) {
+	for pair, err := range tokenBlock(src.TokenTriplets(), lidAccumulator.add, consts.RegularBlockSize, s.params.TokenFreqThreshold) {
 		if err != nil {
 			return err
 		}
@@ -231,7 +231,7 @@ func (s *IndexWriter) packInfoBlock(block sealed.BlockInfo) indexBlock {
 
 // packTokenBlock packs token data into a compressed index block.
 func (s *IndexWriter) packTokenBlock(block unpackedTokenBlock) indexBlock {
-	s.buf1 = block.payload.Pack(s.buf1[:0]) // Pack token data
+	s.buf1 = block.payload.Pack(s.buf1[:0], s.buf32[:0]) // Pack token data
 	b := s.newIndexBlockZSTD(s.buf1, s.params.TokenListZstdLevel)
 	// Store TID range in extended metadata
 	b.ext1 = uint64(block.ext.maxTID)<<32 | uint64(block.ext.minTID)

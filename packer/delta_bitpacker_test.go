@@ -7,6 +7,68 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCompressDeltaBitpackUint16(t *testing.T) {
+	testCases := []struct {
+		name   string
+		values []uint16
+	}{
+		{
+			name:   "empty",
+			values: []uint16{},
+		},
+		{
+			name:   "small_single_value",
+			values: []uint16{1},
+		},
+		{
+			name:   "small_few_values",
+			values: []uint16{1, 4, 7, 8, 10},
+		},
+		{
+			name:   "small_127_values",
+			values: generateUint16(127),
+		},
+		{
+			name:   "small_128",
+			values: generateUint16(128),
+		},
+		{
+			name:   "small_129",
+			values: generateUint16(129),
+		},
+		{
+			name:   "midium_4k",
+			values: generateUint16(4096),
+		},
+		{
+			name:   "midium_4k_more",
+			values: generateUint16(4105),
+		},
+		{
+			name:   "midium_64k",
+			values: generateUint16(64 * 1024),
+		},
+		{
+			name:   "midium_64k_more",
+			values: generateUint16(64*1024 + 34),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			compressed := CompressDeltaBitpackUint16([]byte{}, tc.values, []uint32{})
+			tmp := make([]uint32, 0, len(compressed)/sizeOfUint32)
+			_, decompressed, err := DecompressDeltaBitpackUint16(compressed, []uint16{}, tmp)
+			require.NoError(t, err)
+			if len(tc.values) > 0 {
+				require.Equal(t, tc.values, decompressed)
+			} else {
+				require.Equal(t, 0, len(decompressed))
+			}
+		})
+	}
+}
+
 func TestCompressDeltaBitpackUint32(t *testing.T) {
 	testCases := []struct {
 		name   string
@@ -129,6 +191,16 @@ func TestCompressDeltaBitpackUint64(t *testing.T) {
 			}
 		})
 	}
+}
+
+func generateUint16(n int) []uint16 {
+	v := make([]uint16, n)
+	last := uint16(100)
+	for i := range v {
+		v[i] = last
+		last += uint16(1 + rand.Intn(5))
+	}
+	return v
 }
 
 func generateUint32(n int) []uint32 {

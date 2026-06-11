@@ -15,4 +15,5 @@ type SealParams struct {
 	LIDBlockSize        int
 	LIDsBitmapThreshold int // LIDsBitmapThreshold is the minimum number of LIDs in the lid list to serialize as bitmap.
 	DocBlockSize        int // DocBlockSize is decompressed payload size of document block.
+	TokenFreqThreshold  int // TokenFreqThreshold Min lids count to store frequency for a token.
 }

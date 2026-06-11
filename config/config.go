@@ -80,6 +80,12 @@ type Config struct {
 			// while smaller lists use delta encoding.
 			BitmapThreshold int `config:"bitmap_threshold" default:"65536"`
 		} `config:"lids"`
+
+		Tokens struct {
+			// FreqThreshold specifies minimum number of lids (postings) a token should have
+			// so that frequency for that token will be stored inside token blocks.
+			FreqThreshold int `config:"freq_threshold" default:"50"`
+		} `config:"tokens"`
 	} `config:"sealing"`
 
 	Cluster struct {

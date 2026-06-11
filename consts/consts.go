@@ -23,6 +23,7 @@ const (
 
 	DefaultBulkRequestsLimit   = 32
 	DefaultSearchRequestsLimit = 32
+	DefaultTokenFreqThreshold  = 50
 
 	BulkMaxTries = 3
 

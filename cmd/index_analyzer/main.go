@@ -147,13 +147,14 @@ func analyzeIndex(
 	}
 
 	tokens := [][]byte{}
+	tokenUnpackBuf := &token.UnpackBuffer{}
 	for {
 		data := readTokenBlock()
 		if len(data) == 0 { // empty block - section separator
 			break
 		}
 		block := token.Block{}
-		if err := block.Unpack(data); err != nil {
+		if err := block.Unpack(data, b.Info.BinaryDataVer, tokenUnpackBuf); err != nil {
 			logger.Fatal("error unpacking tokens", zap.Error(err))
 		}
 		for i := range block.Len() {
@@ -189,6 +190,7 @@ func analyzeIndex(
 	lidsUniq := map[[16]byte]int{}
 	lidsLens := make([]int, len(tokens))
 	tokenLIDs := []uint32{}
+	lidUnpackBuf := &lids.UnpackBuffer{}
 	for {
 		data := readLIDBlock()
 		if len(data) == 0 { // empty block - section separator
@@ -196,7 +198,7 @@ func analyzeIndex(
 		}
 
 		block := &lids.Block{}
-		if err := block.Unpack(data, ver, &lids.UnpackBuffer{}); err != nil {
+		if err := block.Unpack(data, ver, lidUnpackBuf); err != nil {
 			logger.Fatal("error unpacking lids block", zap.Error(err))
 		}
 

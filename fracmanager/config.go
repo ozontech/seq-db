@@ -74,6 +74,9 @@ func FillConfigWithDefault(config *Config) *Config {
 	if config.SealParams.LIDsBitmapThreshold == 0 {
 		config.SealParams.LIDsBitmapThreshold = consts.DefaultLIDBlockCap
 	}
+	if config.SealParams.TokenFreqThreshold == 0 {
+		config.SealParams.TokenFreqThreshold = consts.DefaultTokenFreqThreshold
+	}
 	if config.ReplayWorkers == 0 {
 		config.ReplayWorkers = consts.DefaultReplayWorkers
 	}

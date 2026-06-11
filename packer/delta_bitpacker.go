@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sync"
 	"unsafe"
 
 	"github.com/ronanh/intcomp"
@@ -12,6 +13,12 @@ import (
 const (
 	sizeOfUint32 = int(unsafe.Sizeof(uint32(0)))
 )
+
+var uint32Pool = sync.Pool{
+	New: func() any {
+		return make([]uint32, 0, 16*1024)
+	},
+}
 
 // CompressDeltaBitpackUint32 works on top of intcomp library. intcomp can only compress slices which are multiple of 128, but
 // this function supports slices of any length. Residual part is always less than 128 numbers and is not delta encoded,
@@ -33,6 +40,19 @@ func CompressDeltaBitpackUint32(dst []byte, values, buf []uint32) []byte {
 		dst = binary.LittleEndian.AppendUint32(dst, v)
 	}
 
+	return dst
+}
+
+// CompressDeltaBitpackUint16 uses a temporary buffer to copy and cast values from uint16 to uint32 so it's a bit slower than CompressDeltaBitpackUint32.
+func CompressDeltaBitpackUint16(dst []byte, values []uint16, buf []uint32) []byte {
+	uint32Values, _ := uint32Pool.Get().([]uint32)
+	uint32Values = uint32Values[:0]
+
+	for _, i := range values {
+		uint32Values = append(uint32Values, uint32(i))
+	}
+	dst = CompressDeltaBitpackUint32(dst, uint32Values, buf)
+	uint32Pool.Put(uint32Values)
 	return dst
 }
 
@@ -79,6 +99,26 @@ func DecompressDeltaBitpackUint32(data []byte, buf, compressed []uint32) ([]byte
 	}
 
 	return data, buf, nil
+}
+
+// DecompressDeltaBitpackUint16 works on top of DecompressDeltaBitpackUint32 so it's a bit slower
+func DecompressDeltaBitpackUint16(data []byte, buf []uint16, compressed []uint32) ([]byte, []uint16, error) {
+	uint32Values, _ := uint32Pool.Get().([]uint32)
+	uint32Values = uint32Values[:0]
+
+	var (
+		values []uint32
+		err    error
+	)
+
+	data, values, err = DecompressDeltaBitpackUint32(data, uint32Values, compressed)
+
+	for _, i := range values {
+		buf = append(buf, uint16(i))
+	}
+	uint32Pool.Put(uint32Values)
+
+	return data, buf, err
 }
 
 // CompressDeltaBitpackUint64 works on top of intcomp library. intcomp can only compress uint64 slices which are multiple of 256, but
