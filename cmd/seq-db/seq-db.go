@@ -268,6 +268,7 @@ func startStore(
 				IDsZstdLevel:           cfg.Compression.SealedZstdCompressionLevel,
 				LIDsZstdLevel:          cfg.Compression.SealedZstdCompressionLevel,
 				LIDBlockSize:           cfg.Sealing.Lids.BlockSize,
+				TokenBlockSize:         int(cfg.Sealing.Tokens.BlockSize),
 				TokenListZstdLevel:     cfg.Compression.SealedZstdCompressionLevel,
 				DocsPositionsZstdLevel: cfg.Compression.SealedZstdCompressionLevel,
 				TokenTableZstdLevel:    cfg.Compression.SealedZstdCompressionLevel,

@@ -20,6 +20,10 @@ type Source = indexwriter.Source
 // and returns PreloadedData for fast initialization of the sealed fraction.
 func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	info := src.Info()
+	info.ConstRegularBlockSize = params.TokenBlockSize
+	if info.ConstRegularBlockSize == 0 {
+		info.ConstRegularBlockSize = consts.RegularBlockSize
+	}
 
 	if info.To == 0 {
 		return nil, errors.New("sealing of an empty active fraction is not supported")
