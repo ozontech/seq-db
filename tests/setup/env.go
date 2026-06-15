@@ -573,6 +573,12 @@ func WithOrder(o seq.DocsOrder) SearchOption {
 	}
 }
 
+func WithDownsample(downsample uint32) SearchOption {
+	return func(sr *search.SearchRequest) {
+		sr.Downsample = downsample
+	}
+}
+
 func (t *TestingEnv) Search(q string, size int, options ...SearchOption) (*seq.QPR, [][]byte, time.Duration, error) {
 	sr := &search.SearchRequest{
 		Explain:     false,

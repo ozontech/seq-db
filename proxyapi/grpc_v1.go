@@ -242,6 +242,7 @@ func (g *grpcV1) doSearch(
 		WithTotal:   req.WithTotal,
 		ShouldFetch: shouldFetch,
 		Order:       req.Order.MustDocsOrder(),
+		Downsample:  req.Downsample,
 	}
 
 	if len(req.Aggs) > 0 {

@@ -186,6 +186,7 @@ func (g *GrpcV1) doSearch(
 		WithTotal:    req.WithTotal,
 		Order:        req.Order.MustDocsOrder(),
 		OffsetId:     offsetId,
+		Downsample:   req.Downsample,
 	}
 
 	searchTr := tr.NewChild("search iteratively")

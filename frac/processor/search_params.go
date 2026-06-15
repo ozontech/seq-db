@@ -47,6 +47,8 @@ type SearchParams struct {
 
 	WithTotal bool
 	Order     seq.DocsOrder
+
+	Downsample uint32
 }
 
 func (p SearchParams) MarshalLogObject(enc zapcore.ObjectEncoder) error {

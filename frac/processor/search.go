@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -43,9 +44,10 @@ type searchIndex interface {
 }
 
 type searchBuffers struct {
-	lids []node.LID
-	mids []seq.MID
-	rids []seq.RID
+	mids    []seq.MID
+	rids    []seq.RID
+	lids    []node.LID
+	sampled []node.LID
 }
 
 var searchBuffersPool = sync.Pool{
@@ -222,8 +224,10 @@ func iterateEvalTree(
 
 	buffers := searchBuffersPool.Get().(*searchBuffers)
 	defer searchBuffersPool.Put(buffers)
+
 	mids := buffers.mids
 	rids := buffers.rids
+	sampled := buffers.sampled
 
 	batchedEvalTree := batcher(evalTree, buffers.lids)
 
@@ -244,7 +248,10 @@ func iterateEvalTree(
 			break
 		}
 		needLIDs := params.Limit - len(ids)
-		if needScanAllRange {
+
+		// if full range scan is required OR downsampling is active,
+		// we must fetch as many LIDs as possible in one batch.
+		if needScanAllRange || params.Downsample > 1 {
 			needLIDs = math.MaxUint32
 		}
 
@@ -256,43 +263,48 @@ func iterateEvalTree(
 			break
 		}
 
-		needMIDs := min(params.Limit-len(ids), len(lidsSlice))
-		if hasHist {
-			// need to fetch mids for all lids for hist
-			needMIDs = len(lidsSlice)
-		}
+		mids = mids[:0]
 
-		// Get MIDs
-		if needMIDs > 0 {
+		if hasHist {
+			// when histogram is needed, retrieve MIDs for ALL LIDs in the batch
 			timerMID.Start()
-			mids = idsIndex.GetMIDs(lidsSlice[:needMIDs], mids[:0])
+			mids = idsIndex.GetMIDs(lidsSlice, mids)
 			timerMID.Stop()
-		}
 
-		// Get RIDs
-		// compute number of ids we can get here, since some MIDs might have been filtered out
-		needIDs := min(params.Limit-len(ids), len(lidsSlice))
-		if needIDs > 0 {
-			timerRID.Start()
-			rids = idsIndex.GetRIDs(lidsSlice[0:needIDs], rids[:0])
-			timerRID.Stop()
-		}
-
-		// Fill IDs for search
-		for i := 0; i < needIDs; i++ {
-			id := seq.ID{MID: mids[i], RID: rids[i]}
-
-			if i == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
-				ids = append(ids, seq.IDSource{ID: id})
-			}
-			lastID = id
-		}
-
-		// Update hist map
-		if hasHist {
 			timerUpdateHist.Start()
 			hist.Update(mids)
 			timerUpdateHist.Stop()
+
+			sampled, mids = sampleLIDsWithMIDs(lidsSlice, mids, sampled[:0], params.Downsample)
+		} else {
+			sampled = sampleLIDs(lidsSlice, sampled[:0], params.Downsample)
+		}
+
+		// trim sampled slice to respect the remaining limit
+		if params.Limit-len(ids) < len(sampled) {
+			sampled = sampled[:params.Limit-len(ids)]
+		}
+
+		if len(sampled) > 0 {
+			if len(mids) == 0 {
+				// if we don't already have MIDs (i.e., no histogram case), fetch them now
+				timerMID.Start()
+				mids = idsIndex.GetMIDs(sampled, mids)
+				timerMID.Stop()
+			}
+
+			timerRID.Start()
+			rids = idsIndex.GetRIDs(sampled, rids[:0])
+			timerRID.Stop()
+
+			// Fill IDs for search
+			for i := range sampled {
+				id := seq.ID{MID: mids[i], RID: rids[i]}
+				if i == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
+					ids = append(ids, seq.IDSource{ID: id})
+				}
+				lastID = id
+			}
 		}
 
 		// Update aggregators
@@ -321,6 +333,33 @@ func iterateEvalTree(
 	}
 
 	return total, ids, hist, aggs, nil
+}
+
+func sampleLIDs(in, out []node.LID, k uint32) []node.LID {
+	if k <= 1 { // 0 or 1 -> no sample
+		return in
+	}
+	for _, lid := range in {
+		if rand.N(k) == 0 {
+			out = append(out, lid)
+		}
+	}
+	return out
+}
+
+func sampleLIDsWithMIDs(in []node.LID, mids []seq.MID, out []node.LID, k uint32) ([]node.LID, []seq.MID) {
+	if k <= 1 { // 0 or 1 -> no sample
+		return in, mids
+	}
+	i := 0
+	for j, lid := range in {
+		if rand.N(k) == 0 {
+			out = append(out, lid)
+			mids[i] = mids[j]
+			i++
+		}
+	}
+	return out, mids[:i]
 }
 
 func tryConvertToBatchedTree(evalTree node.Node) (node.BatchedNode, bool) {

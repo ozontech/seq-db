@@ -20,12 +20,13 @@ func (g *grpcV1) Search(
 	}
 
 	proxyReq := &seqproxyapi.ComplexSearchRequest{
-		Query:     req.Query,
-		Size:      req.Size,
-		Offset:    req.Offset,
-		OffsetId:  req.OffsetId,
-		WithTotal: req.WithTotal,
-		Order:     req.Order,
+		Query:      req.Query,
+		Size:       req.Size,
+		Offset:     req.Offset,
+		OffsetId:   req.OffsetId,
+		WithTotal:  req.WithTotal,
+		Order:      req.Order,
+		Downsample: req.Downsample,
 	}
 	sResp, err := g.doSearch(ctx, proxyReq, true, nil)
 	if err != nil {
