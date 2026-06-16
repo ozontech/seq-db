@@ -200,10 +200,19 @@ func analyzeIndex(
 			logger.Fatal("error unpacking lids block", zap.Error(err))
 		}
 
-		last := len(block.Offsets) - 2
-		for i := 0; i <= last; i++ {
-			tokenLIDs = append(tokenLIDs, block.LIDs[block.Offsets[i]:block.Offsets[i+1]]...)
-			if i < last || block.IsLastLID { // the end of token lids
+		listsCount := block.GetCount()
+		for i := 0; i < listsCount; i++ {
+			lidsBatch := block.GetLIDs(i)
+			iter := lidsBatch.Iter()
+			for {
+				lid, ok := iter.Next()
+				if !ok {
+					break
+				}
+				tokenLIDs = append(tokenLIDs, lid)
+			}
+
+			if i < listsCount || block.IsLastLID() { // the end of token lids
 				lidsTotal += len(tokenLIDs)
 				lidsLens[tid] = len(tokenLIDs)
 				lidsUniq[getLIDsHash(tokenLIDs)] = len(tokenLIDs)

@@ -241,27 +241,27 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	expectedLIDBlocks := []unpackedLIDBlock{
 		{
 			ext:     lidExt{minTID: 1, maxTID: 1, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{10, 20, 30}, Offsets: []uint32{0, 3}, IsLastLID: false},
+			payload: lids.UnpackedBlock{LIDs: []uint32{10, 20, 30}, Offsets: []uint32{0, 3}, IsLastLID: false},
 		},
 		{
 			ext:     lidExt{minTID: 1, maxTID: 3, isContinued: true},
-			payload: lids.Block{LIDs: []uint32{40, 2, 3}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			payload: lids.UnpackedBlock{LIDs: []uint32{40, 2, 3}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
 		},
 		{
 			ext:     lidExt{minTID: 4, maxTID: 6, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{4, 5, 6}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			payload: lids.UnpackedBlock{LIDs: []uint32{4, 5, 6}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
 		},
 		{
 			ext:     lidExt{minTID: 7, maxTID: 9, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{7, 8, 9}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			payload: lids.UnpackedBlock{LIDs: []uint32{7, 8, 9}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
 		},
 		{
 			ext:     lidExt{minTID: 10, maxTID: 12, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{10, 11, 12}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			payload: lids.UnpackedBlock{LIDs: []uint32{10, 11, 12}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
 		},
 		{
 			ext:     lidExt{minTID: 13, maxTID: 14, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{13, 14}, Offsets: []uint32{0, 1, 2}, IsLastLID: true},
+			payload: lids.UnpackedBlock{LIDs: []uint32{13, 14}, Offsets: []uint32{0, 1, 2}, IsLastLID: true},
 		},
 	}
 	assert.Equal(t, expectedLIDBlocks, lidBlocks)

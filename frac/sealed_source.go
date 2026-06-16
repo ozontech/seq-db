@@ -124,7 +124,7 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 					}
 
 					chunkIdx := lidsTable.GetChunkIndex(bi, tid)
-					lidsBuf = append(lidsBuf, lidBlock.GetLIDs(chunkIdx)...)
+					lidsBuf = lidBlock.CopyLIDs(chunkIdx, lidsBuf)
 				}
 
 				if !yield(indexwriter.TokenLIDs{First: tokenVal, Second: lidsBuf}, nil) {

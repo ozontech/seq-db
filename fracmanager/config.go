@@ -71,6 +71,9 @@ func FillConfigWithDefault(config *Config) *Config {
 	if config.SealParams.TokenTableZstdLevel == 0 {
 		config.SealParams.TokenTableZstdLevel = zstdDefaultLevel
 	}
+	if config.SealParams.LIDsBitmapThreshold == 0 {
+		config.SealParams.LIDsBitmapThreshold = consts.DefaultLIDBlockCap
+	}
 	if config.ReplayWorkers == 0 {
 		config.ReplayWorkers = consts.DefaultReplayWorkers
 	}

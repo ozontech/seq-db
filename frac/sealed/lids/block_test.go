@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/node"
 )
 
 func TestBlockPack(t *testing.T) {
@@ -44,12 +45,12 @@ func TestBlockPack(t *testing.T) {
 			offsets: []uint32{0, 3, 6, 8},
 		},
 		{
-			name: "medium_many_tokens",
+			name: "large_delta_encoded",
 			generator: func() ([]uint32, []uint32) {
 				lids := make([]uint32, 0)
 				offsets := []uint32{0}
 				startLID := uint32(100)
-				for i := 0; i < 10; i++ {
+				for i := 0; i < 100; i++ {
 					for j := 0; j < 3; j++ {
 						lids = append(lids, startLID+uint32(i*10+j))
 					}
@@ -90,17 +91,32 @@ func TestBlockPack(t *testing.T) {
 			offsets: []uint32{0, 129},
 		},
 		{
-			name:    "medium_4k_lids",
+			name:    "medium_4k_bitmap_and_small_list",
+			lids:    generate(4096),
+			offsets: []uint32{0, 4093, 4096},
+		},
+		{
+			name:    "medium_4k_small_list_and_bitmap",
+			lids:    generate(4096),
+			offsets: []uint32{0, 3, 4096},
+		},
+		{
+			name:    "medium_4k_hybrid",
+			lids:    generate(4096),
+			offsets: []uint32{0, 1000, 1005, 1010, 2000, 2100, 2103, 2106, 2107, 3000, 3500, 3505, 4096},
+		},
+		{
+			name:    "medium_4k",
 			lids:    generate(4096),
 			offsets: []uint32{0, 4096},
 		},
 		{
-			name:    "medium_4k_minus_one_lids",
+			name:    "medium_4095",
 			lids:    generate(4095),
 			offsets: []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 4095},
 		},
 		{
-			name:    "medium_4k_plus_one_lids",
+			name:    "medium_4097",
 			lids:    generate(4097),
 			offsets: []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 4097},
 		},
@@ -123,31 +139,96 @@ func TestBlockPack(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var lids []uint32
+			var lidsIn []uint32
 			var offsets []uint32
 
 			if tc.generator != nil {
-				lids, offsets = tc.generator()
+				lidsIn, offsets = tc.generator()
 			} else {
-				lids = tc.lids
+				lidsIn = tc.lids
 				offsets = tc.offsets
 			}
 
-			block := &Block{
-				LIDs:    lids,
+			block := &UnpackedBlock{
+				LIDs:    lidsIn,
 				Offsets: offsets,
 			}
 
-			packed := block.Pack(nil, nil)
+			packer := NewBlockPacker()
+			packer.LidsBitmapThreshold = 25
+
+			packed := packer.Pack(block, nil)
 			require.NotEmpty(t, packed)
 
-			unpacked := &Block{}
 			buf := &UnpackBuffer{}
-			err := unpacked.Unpack(packed, config.CurrentFracVersion, buf)
+			var unpacked Block
+			require.NoError(t, unpacked.Unpack(packed, config.CurrentFracVersion, buf))
 
-			require.NoError(t, err)
-			assert.EqualExportedValues(t, block, unpacked)
+			assertListsEqual(t, block, &unpacked)
 		})
+	}
+}
+
+func TestBlockPack_VariableMixed(t *testing.T) {
+	small := generate(10)
+	large := generate(30)
+	block := &UnpackedBlock{
+		LIDs:    append(append([]uint32{}, small...), large...),
+		Offsets: []uint32{0, uint32(len(small)), uint32(len(small) + len(large))},
+	}
+
+	packed := NewBlockPacker().Pack(block, nil)
+
+	buf := &UnpackBuffer{}
+	var ub Block
+	require.NoError(t, ub.Unpack(packed, config.CurrentFracVersion, buf))
+	assert.Equal(t, 2, ub.GetCount())
+	assert.Equal(t, small, ToArray(ub.GetLIDs(0)))
+	assert.Equal(t, large, ToArray(ub.GetLIDs(1)))
+}
+
+func ToArray(b node.LIDBatch) []uint32 {
+	if b.IsEmpty() {
+		return nil
+	}
+	out := make([]uint32, 0, b.Len())
+	for _, lid := range b.CopyLIDs(true, nil) {
+		out = append(out, lid.Unpack())
+	}
+	return out
+}
+
+func TestBlockPack_ReuseBuffer(t *testing.T) {
+	block1 := &UnpackedBlock{
+		LIDs:    generate(64 * 1024),
+		Offsets: []uint32{0, 3},
+	}
+
+	block2 := &UnpackedBlock{
+		LIDs:    generate(64 * 1024),
+		Offsets: []uint32{0, 4},
+	}
+
+	packer := NewBlockPacker()
+	packed1 := packer.Pack(block1, nil)
+	packed2 := packer.Pack(block2, nil)
+
+	buf2 := &UnpackBuffer{}
+
+	var unpacked1, unpacked2 Block
+	require.NoError(t, unpacked1.Unpack(packed1, config.CurrentFracVersion, buf2))
+	require.NoError(t, unpacked2.Unpack(packed2, config.CurrentFracVersion, buf2))
+
+	assertListsEqual(t, block1, &unpacked1)
+	assertListsEqual(t, block2, &unpacked2)
+}
+
+func assertListsEqual(t *testing.T, src *UnpackedBlock, blk *Block) {
+	t.Helper()
+	require.Equal(t, len(src.Offsets)-1, blk.GetCount())
+	for i := 0; i < blk.GetCount(); i++ {
+		want := src.LIDs[src.Offsets[i]:src.Offsets[i+1]]
+		assert.Equal(t, want, ToArray(blk.GetLIDs(i)))
 	}
 }
 
@@ -161,66 +242,34 @@ func generate(n int) []uint32 {
 	return v
 }
 
-func TestBlockPack_ReuseBuffer(t *testing.T) {
-	// Test that UnpackBuffer can be reused
-	block1 := &Block{
-		LIDs:    generate(64 * 1024),
-		Offsets: []uint32{0, 3},
-	}
-
-	block2 := &Block{
-		LIDs:    generate(64 * 1024),
-		Offsets: []uint32{0, 4},
-	}
-
-	buf1 := make([]uint32, 0, 64*1024)
-	packed1 := block1.Pack(nil, buf1)
-
-	buf1 = buf1[:0]
-	packed2 := block2.Pack(nil, buf1)
-
-	buf2 := &UnpackBuffer{}
-
-	unpacked1 := &Block{}
-	err := unpacked1.Unpack(packed1, config.CurrentFracVersion, buf2)
-	require.NoError(t, err)
-	assert.Equal(t, block1.LIDs, unpacked1.LIDs)
-
-	unpacked2 := &Block{}
-	err = unpacked2.Unpack(packed2, config.CurrentFracVersion, buf2)
-	require.NoError(t, err)
-	assert.Equal(t, block2.LIDs, unpacked2.LIDs)
-}
-
 func BenchmarkBlock_Pack(b *testing.B) {
-	lids := generate(64 * 1024)
+	lidsIn := generate(64 * 1024)
 
-	block := &Block{
-		LIDs:    lids,
+	block := &UnpackedBlock{
+		LIDs:    lidsIn,
 		Offsets: []uint32{0, 64 * 1024},
 	}
-	tmp := make([]uint32, 0, 64*1024/4)
+	packer := NewBlockPacker()
 
 	for b.Loop() {
-		block.Pack(nil, tmp)
+		packer.Pack(block, nil)
 	}
 }
 
 func BenchmarkBlock_Unpack(b *testing.B) {
-	lids := generate(64 * 1024)
+	lidsIn := generate(64 * 1024)
 
-	block := &Block{
-		LIDs:    lids,
+	block := &UnpackedBlock{
+		LIDs:    lidsIn,
 		Offsets: []uint32{0, 64 * 1024},
 	}
-	packed := block.Pack(nil, nil)
+	packed := NewBlockPacker().Pack(block, nil)
 
 	buf := &UnpackBuffer{}
-	unpacked := &Block{}
 
 	b.ResetTimer()
 	for b.Loop() {
-		err := unpacked.Unpack(packed, config.CurrentFracVersion, buf)
-		assert.NoError(b, err)
+		var ub Block
+		assert.NoError(b, ub.Unpack(packed, config.CurrentFracVersion, buf))
 	}
 }

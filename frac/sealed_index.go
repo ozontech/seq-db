@@ -264,12 +264,12 @@ func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 	if order.IsReverse() {
 		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetLastBlockIndexForTID(tid) }
 		getLIDsIterator = func(startIndex uint32, tid uint32) node.Node {
-			return (*lids.IteratorAsc)(lids.NewLIDsCursor(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
+			return lids.NewIteratorAsc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID)
 		}
 	} else {
 		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetFirstBlockIndexForTID(tid) }
 		getLIDsIterator = func(startIndex uint32, tid uint32) node.Node {
-			return (*lids.IteratorDesc)(lids.NewLIDsCursor(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
+			return lids.NewIteratorDesc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID)
 		}
 	}
 

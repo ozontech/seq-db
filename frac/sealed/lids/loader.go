@@ -80,10 +80,8 @@ func (l *Loader) readLIDsBlock(blockIndex uint32) (*Block, error) {
 	}
 
 	block := &Block{}
-	err = block.Unpack(l.blockBuf, l.fracVer, l.unpackBuf)
-	if err != nil {
+	if err := block.Unpack(l.blockBuf, l.fracVer, l.unpackBuf); err != nil {
 		return nil, err
 	}
-
-	return block, err
+	return block, nil
 }
