@@ -300,6 +300,8 @@ type Config struct {
 		// Specify how many tokens can be checked using regular expressions.
 		// If zero then there is no limit.
 		MaxRegexTokensCheck int `config:"max_regex_tokens_check" default:"0"`
+		// EnableOnePhaseSearch enanles experimental one phase search method that supports new query engine.
+		EnableOnePhaseSearch bool `config:"enable_one_phase_search"`
 	} `config:"experimental"`
 }
 

@@ -111,4 +111,5 @@ var (
 	ErrTooManyFractionTokens     = errors.New("aggregation has too many fraction tokens")
 	ErrTooManyFractionsHit       = errors.New("too many fractions hit")
 	ErrMemoryLimitExceeded       = errors.New("memory limit exceeded")
+	ErrResourceDisabled          = errors.New("resource is disabled")
 )

@@ -187,6 +187,7 @@ func startProxy(
 			EsVersion:                         cfg.API.ESVersion,
 			GatewayAddr:                       cfg.Address.GRPC,
 			AsyncSearchMaxDocumentsPerRequest: cfg.AsyncSearch.MaxDocumentsPerRequest,
+			EnableOnePhaseSearch:              cfg.Experimental.EnableOnePhaseSearch,
 		},
 		Search: search.Config{
 			HotStores:       hotStores,
@@ -317,6 +318,9 @@ func startStore(
 				Query: cfg.Filtering.Query,
 				To:    cfg.Filtering.To,
 				From:  cfg.Filtering.From,
+			},
+			OnePhaseSearch: storeapi.OnePhaseSearchConfig{
+				Enabled: cfg.Experimental.EnableOnePhaseSearch,
 			},
 		},
 		SkipMaskManagerConfig: skipmaskmanager.Config{

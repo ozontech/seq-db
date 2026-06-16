@@ -23,6 +23,10 @@ import (
 )
 
 func (g *grpcV1) OnePhaseSearch(ctx context.Context, req *seqproxyapi.SearchRequest) (*seqproxyapi.ComplexSearchResponse, error) {
+	if !g.config.EnableOnePhaseSearch {
+		return nil, status.Error(codes.Unimplemented, "OnePhaseSearch method is disabled")
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, g.config.SearchTimeout)
 	defer cancel()
 
@@ -56,6 +60,8 @@ func (g *grpcV1) OnePhaseSearch(ctx context.Context, req *seqproxyapi.SearchRequ
 	if err != nil {
 		return nil, err
 	}
+
+	defer stream.Release()
 
 	resp := &seqproxyapi.ComplexSearchResponse{
 		Total: int64(sResp.qpr.Total),

@@ -50,12 +50,17 @@ type FilterConfig struct {
 	To    time.Time `config:"to"`
 }
 
+type OnePhaseSearchConfig struct {
+	Enabled bool
+}
+
 type APIConfig struct {
-	StoreMode string
-	Bulk      BulkConfig
-	Search    SearchConfig
-	Fetch     FetchConfig
-	Filter    FilterConfig
+	StoreMode      string
+	Bulk           BulkConfig
+	Search         SearchConfig
+	Fetch          FetchConfig
+	Filter         FilterConfig
+	OnePhaseSearch OnePhaseSearchConfig
 }
 
 func (c *APIConfig) setDefaults() error {

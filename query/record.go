@@ -64,6 +64,8 @@ func (rv *RecordVals) Decoded() any {
 	return rv.decoded
 }
 
+// TODO: release method (???)
+
 func (rv *RecordVals) ensureDecoded() {
 	// TODO: all types
 	switch rv.Type {
@@ -92,6 +94,6 @@ func (rv *RecordVals) ensureDecoded() {
 	case DataTypeFloat64:
 		rv.decoded = math.Float64frombits(binary.LittleEndian.Uint64(rv.rawData))
 	default:
-		panic(fmt.Errorf("unknown data type")) // TODO: error handling
+		panic("unknown data type")
 	}
 }

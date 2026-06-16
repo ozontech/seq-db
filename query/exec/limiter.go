@@ -36,3 +36,7 @@ func (l *Limiter) Next() (*query.Record, *query.Metadata) {
 
 	return r, nil
 }
+
+func (l *Limiter) Release() {
+	l.input.Release()
+}

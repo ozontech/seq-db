@@ -2,8 +2,7 @@ package query
 
 type RecordProducer interface {
 	Next() (*Record, *Metadata)
-	// TODO: we need a method to release all the resources down the producer call stack
-	// Release()
+	Release()
 }
 
 type Metadata struct {

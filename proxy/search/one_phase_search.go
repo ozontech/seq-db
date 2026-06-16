@@ -121,6 +121,9 @@ func (si *Ingestor) searchStoresOnePhase(
 			if errors.Is(err, consts.ErrTooManyFractionsHit) {
 				return nil, err
 			}
+			if errors.Is(err, consts.ErrResourceDisabled) {
+				return nil, err
+			}
 			errs = append(errs, err)
 			continue
 		}
@@ -232,6 +235,8 @@ func (si *Ingestor) searchHostOnePhase(
 		return nil, fmt.Errorf("store forbids search request: %w", consts.ErrMemoryLimitExceeded)
 	case storeapi.SearchErrorCode_TOO_MANY_FRACTIONS_HIT:
 		return nil, fmt.Errorf("store forbids request: %w", consts.ErrTooManyFractionsHit)
+	case storeapi.SearchErrorCode_DISABLED:
+		return nil, fmt.Errorf("store forbids request: %w", consts.ErrResourceDisabled)
 	}
 
 	return &OnePhaseSearchStreamIterator{typing: header.Typing, stream: stream}, nil
@@ -265,6 +270,11 @@ func (it *OnePhaseSearchStreamIterator) Next() (*query.Record, *query.Metadata) 
 		recordVals = append(recordVals, query.NewRecordVals(query.DataType(it.typing[i].Type), rawData))
 	}
 	return query.NewRecord(recordVals), nil
+}
+
+func (it *OnePhaseSearchStreamIterator) Release() {
+	// stream is cancelled via closing the context.
+	// maybe we can use this method in a bi-directional streaming case.
 }
 
 func Float64FromBytes(in []byte) float64 {

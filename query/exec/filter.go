@@ -49,6 +49,11 @@ func (f *Filter[T]) Next() (*query.Record, *query.Metadata) {
 	}
 }
 
+func (f *Filter[T]) Release() {
+	// TODO: release insane json objects (???)
+	f.input.Release()
+}
+
 type Eq[T comparable] struct {
 	pred T
 }

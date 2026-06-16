@@ -52,6 +52,8 @@ func (p *testProducer) Next() (*query.Record, *query.Metadata) {
 	return r, nil
 }
 
+func (p *testProducer) Release() {}
+
 func makeTestInputRecords(count int) []*query.Record {
 	out := make([]*query.Record, 0, count)
 

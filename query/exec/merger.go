@@ -95,6 +95,13 @@ func (m *Merger) Next() (*query.Record, *query.Metadata) {
 	return r, nil
 }
 
+func (m *Merger) Release() {
+	// TODO: release insane json objects (???)
+
+	m.left.Release()
+	m.right.Release()
+}
+
 func (m *Merger) extractValue(r *query.Record) any {
 	val := r.Vals[m.colIdx]
 	decoded := val.Decoded()
@@ -171,3 +178,5 @@ type emptyRecordProducer struct{}
 func (e *emptyRecordProducer) Next() (*query.Record, *query.Metadata) {
 	return nil, nil
 }
+
+func (e *emptyRecordProducer) Release() {}

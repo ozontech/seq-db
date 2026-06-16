@@ -25,6 +25,22 @@ func (g *GrpcV1) OnePhaseSearch(
 	req *storeapi.OnePhaseSearchRequest,
 	stream storeapi.StoreApi_OnePhaseSearchServer,
 ) error {
+	if !g.config.OnePhaseSearch.Enabled {
+		err := stream.Send(&storeapi.OnePhaseSearchResponse{
+			ResponseType: &storeapi.OnePhaseSearchResponse_Header{
+				Header: &storeapi.Header{
+					Metadata: &storeapi.Metadata{
+						Code: storeapi.SearchErrorCode_DISABLED,
+					},
+				},
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("error sending header: %w", err)
+		}
+		return nil
+	}
+
 	ctx, span := tracing.StartSpan(stream.Context(), "store-server/OnePhaseSearch")
 	defer span.End()
 
@@ -131,6 +147,8 @@ func (g *GrpcV1) doOnePhaseSearch(
 	if err != nil {
 		return fmt.Errorf("can't biuld record producer: %w", err)
 	}
+
+	defer producer.Release()
 
 	curRecord, curMeta := producer.Next()
 	for {

@@ -63,6 +63,11 @@ func (p *DocProjector) Next() (*query.Record, *query.Metadata) {
 	return p.makeRecordWithNewVals(r, decoder.Encode(p.decoderBuf[:0])), nil
 }
 
+func (p *DocProjector) Release() {
+	// TODO: release insane json objects (???)
+	p.input.Release()
+}
+
 func (p *DocProjector) makeRecordWithNewVals(old *query.Record, newRawData []byte) *query.Record {
 	newRecordVals := make([]*query.RecordVals, len(old.Vals))
 	for i := range len(old.Vals) {

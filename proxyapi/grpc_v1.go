@@ -95,6 +95,8 @@ func processSearchErrors(qpr *seq.QPR, err error) error {
 	switch {
 	case errors.Is(err, consts.ErrIngestorQueryWantsOldData):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, consts.ErrResourceDisabled):
+		return status.Error(codes.Unimplemented, err.Error())
 	case err != nil:
 		return status.Error(codes.Internal, err.Error())
 	default:

@@ -57,6 +57,10 @@ func (s *FractionDataSource) Next() (*query.Record, *query.Metadata) {
 	return docRecord, nil
 }
 
+func (s *FractionDataSource) Release() {
+	// TODO:
+}
+
 func (s *FractionDataSource) Ctx() context.Context {
 	if s.ctx == nil {
 		return context.Background()
@@ -73,7 +77,7 @@ func (s *FractionDataSource) scan() error {
 	if len(qpr.Errors) > 0 {
 		var resErr error
 		for _, e := range qpr.Errors {
-			resErr = errors.Join(errors.New(e.ErrStr)) // TODO: ???
+			resErr = errors.Join(errors.New(e.ErrStr))
 		}
 		return resErr
 	}
@@ -131,12 +135,15 @@ func NewSearcherDataSource(
 }
 
 func (s *SearcherDataSource) Next() (*query.Record, *query.Metadata) {
-	// TODO: get rid of hardcode (???)
 	if s.isAgg {
 		return s.nextAgg()
 	} else {
 		return s.nextDoc()
 	}
+}
+
+func (s *SearcherDataSource) Release() {
+	// TODO:
 }
 
 func (s *SearcherDataSource) nextDoc() (*query.Record, *query.Metadata) {
@@ -187,7 +194,10 @@ func (s *SearcherDataSource) Ctx() context.Context {
 }
 
 func (s *SearcherDataSource) scan() error {
-	qpr, err := s.searcher.SearchDocs(s.Ctx(), s.fracManager.Fractions(), s.searchParams, s.tr)
+	fracs, release := s.fracManager.AcquireFractions()
+	defer release()
+
+	qpr, err := s.searcher.SearchDocs(s.Ctx(), fracs, s.searchParams, s.tr)
 	if err != nil {
 		return err
 	}
@@ -195,7 +205,7 @@ func (s *SearcherDataSource) scan() error {
 	if len(qpr.Errors) > 0 {
 		var resErr error
 		for _, e := range qpr.Errors {
-			resErr = errors.Join(errors.New(e.ErrStr)) // TODO: ???
+			resErr = errors.Join(errors.New(e.ErrStr))
 		}
 		return resErr
 	}
@@ -207,7 +217,7 @@ func (s *SearcherDataSource) scan() error {
 		return nil
 	}
 
-	docs, err := s.fetcher.FetchDocs(s.Ctx(), s.fracManager.Fractions(), qpr.IDs, false)
+	docs, err := s.fetcher.FetchDocs(s.Ctx(), fracs, qpr.IDs, false)
 	if err != nil {
 		return err
 	}

@@ -119,6 +119,12 @@ func (a *DistributedAggregator) Next() (*query.Record, *query.Metadata) {
 	return r, nil
 }
 
+func (a *DistributedAggregator) Release() {
+	for _, i := range a.inputs {
+		i.Release()
+	}
+}
+
 func sortBuckets(aggFunc seq.AggFunc, buckets []*query.Record) {
 	sortByValueDescNameAsc := func(left, right *query.Record) int {
 		return cmp.Or(

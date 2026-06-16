@@ -105,3 +105,8 @@ func (s *DocSorter) Next() (*query.Record, *query.Metadata) {
 
 	return r, nil
 }
+
+func (s *DocSorter) Release() {
+	// TODO: release insane json objects (???)
+	s.input.Release()
+}

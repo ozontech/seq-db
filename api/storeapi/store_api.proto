@@ -147,6 +147,7 @@ enum SearchErrorCode {
   TOO_MANY_FRACTION_TOKENS = 6;
   TOO_MANY_FIELD_VALUES = 7;
   MEMORY_LIMIT_EXCEEDED = 8;
+  DISABLED = 9;
 }
 
 message StartAsyncSearchRequest {
@@ -247,10 +248,10 @@ message IdWithHint {
 }
 
 message FieldsFilter {
-    repeated string fields = 1;
-    // see seqproxyapi.FetchRequest.FieldsFilter.allow_list for details.
-    bool allow_list = 2;
-  }
+  repeated string fields = 1;
+  // see seqproxyapi.FetchRequest.FieldsFilter.allow_list for details.
+  bool allow_list = 2;
+}
 
 message FetchRequest {
   repeated string ids = 1;
