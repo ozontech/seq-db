@@ -1,44 +1,61 @@
 package lids
 
 import (
-	"sort"
-
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/node"
 )
 
-type IteratorDesc Cursor
+type IteratorDesc struct {
+	Cursor
+	it node.Iter
+}
+
+func NewIteratorDesc(
+	table *Table,
+	loader *Loader,
+	startIndex uint32,
+	tid uint32,
+	counter Counter,
+	minLID, maxLID uint32,
+) *IteratorDesc {
+	it := &IteratorDesc{
+		Cursor: *NewLIDsCursor(table, loader, startIndex, tid, counter, minLID, maxLID),
+	}
+	it.it = it.batch.Iter()
+	return it
+}
 
 func (*IteratorDesc) String() string {
 	return "LIDS_DESC"
 }
 
-// narrowLIDsRange cuts LIDs between from and to. Returns new lids and tryNextBlock flag
-func (it *IteratorDesc) narrowLIDsRange(lids []uint32, tryNextBlock bool) ([]uint32, bool) {
-	first := lids[0]
-	if it.maxLID < first { // fast path: out-of-bounds 1
-		return nil, false // stop reading blocks
+// narrowLIDsRange cuts LIDs between minLID and maxLID. Returns updated tryNextBlock flag.
+func (it *IteratorDesc) narrowLIDsRange(tryNextBlock bool) bool {
+	if it.batch.IsEmpty() {
+		return tryNextBlock
 	}
 
-	last := lids[len(lids)-1]
-	if it.minLID > last { // fast path: out-of-bounds 2; allowed to continue reading blocks
-		return nil, tryNextBlock
+	first := it.batch.Min()
+	if it.maxLID < first {
+		it.batch = node.EmptyBatch()
+		return false
 	}
 
-	if it.minLID > first {
-		left := sort.Search(len(lids), func(i int) bool { return lids[i] >= it.minLID })
-		lids = lids[left:]
+	last := it.batch.Max()
+	if it.minLID > last {
+		it.batch = node.EmptyBatch()
+		return tryNextBlock
 	}
 
-	if it.maxLID <= last {
-		right := sort.Search(len(lids), func(i int) bool { return lids[i] > it.maxLID })
-		lids = lids[:right]
+	lastBlock := it.maxLID < last
+	it.batch = it.batch.Narrow(it.minLID, it.maxLID)
+	if lastBlock {
 		tryNextBlock = false
 	}
 
-	return lids, tryNextBlock
+	return tryNextBlock
 }
 
 func (it *IteratorDesc) loadNextLIDsBlock() {
@@ -47,96 +64,46 @@ func (it *IteratorDesc) loadNextLIDsBlock() {
 		logger.Panic("error loading LIDs block", zap.Error(err))
 	}
 
-	if block.getCount() != int(it.table.GetChunksCount(it.blockIndex)) {
+	if block.GetCount() != int(it.table.GetChunksCount(it.blockIndex)) {
 		logger.Panic("unexpected LIDs count")
 	}
 
-	it.lids = block.getLIDs(it.table.GetChunkIndex(it.blockIndex, it.tid))
-	it.tryNextBlock = it.table.HasTIDInNextBlock(it.blockIndex, it.tid)
+	it.batch = block.GetLIDs(it.table.GetChunkIndex(it.blockIndex, it.tid))
+	it.counter.AddLIDsCount(it.batch.Len())
+	tryNextBlock := it.table.HasTIDInNextBlock(it.blockIndex, it.tid)
+	it.tryNextBlock = it.narrowLIDsRange(tryNextBlock)
+	it.it = it.batch.Iter()
 	it.blockIndex++
 }
 
+func (it *IteratorDesc) discardBlock() {
+	it.batch = node.EmptyBatch()
+	it.it = it.batch.Iter()
+}
+
 func (it *IteratorDesc) Next() node.LID {
-	for len(it.lids) == 0 {
+	for {
+		v, ok := it.it.Next()
+		if ok {
+			return node.NewDescLID(v)
+		}
 		if !it.tryNextBlock {
 			return node.NullLID()
 		}
-
-		it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
-		it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
-		it.counter.AddLIDsCount(len(it.lids)) // inc loaded LIDs count
+		it.loadNextLIDsBlock()
 	}
-
-	lid := it.lids[0]
-	it.lids = it.lids[1:]
-	return node.NewDescLID(lid)
 }
 
 // NextGeq finds next greater or equal
 func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
 	for {
-		for len(it.lids) == 0 {
-			if !it.tryNextBlock {
-				return node.NullLID()
-			}
-
-			it.loadNextLIDsBlock() // last chunk in block but not last for tid; need load next block
-			it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
-			it.counter.AddLIDsCount(len(it.lids)) // inc loaded LIDs count
+		v, ok := it.it.NextGeq(nextID.Unpack())
+		if ok {
+			return node.NewDescLID(v)
 		}
-
-		// fast path: last LID < nextID => skip the entire block
-		// TODO(cheb0): We could also pass LID into narrowLIDsRange to perform block skipping once we add something like MinLID to LID block header
-		if nextID.Unpack() > it.lids[len(it.lids)-1] {
-			it.lids = it.lids[:0]
-			continue
+		if !it.tryNextBlock {
+			return node.NullLID()
 		}
-
-		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] >= nextID.Unpack() })
-		if idx < len(it.lids) {
-			it.lids = it.lids[idx:]
-			lid := it.lids[0]
-			it.lids = it.lids[1:]
-			return node.NewDescLID(lid)
-		}
-
-		it.lids = it.lids[:0]
-	}
-}
-
-func (it *IteratorDesc) NextBatch() node.LIDBatch {
-	return it.NextBatchGeq(node.NewDescZeroLID())
-}
-
-func (it *IteratorDesc) NextBatchGeq(nextID node.LID) node.LIDBatch {
-	for {
-		for len(it.lids) == 0 {
-			if !it.tryNextBlock {
-				return node.NewDescBatch(nil)
-			}
-			it.loadNextLIDsBlock()
-			it.lids, it.tryNextBlock = it.narrowLIDsRange(it.lids, it.tryNextBlock)
-			it.counter.AddLIDsCount(len(it.lids))
-		}
-		last := it.lids[len(it.lids)-1]
-		if nextID.Unpack() > last {
-			it.lids = it.lids[:0]
-			continue
-		}
-
-		// fast path: last LID < nextLID => skip the entire block
-		if nextID.Unpack() > it.lids[len(it.lids)-1] {
-			it.lids = it.lids[:0]
-			continue
-		}
-
-		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] >= nextID.Unpack() })
-		if idx < len(it.lids) {
-			batch := it.lids[idx:len(it.lids)]
-			it.lids = it.lids[:0]
-			return node.NewDescBatch(batch)
-		}
-
-		it.lids = it.lids[:0]
+		it.loadNextLIDsBlock()
 	}
 }

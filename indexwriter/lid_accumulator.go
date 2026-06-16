@@ -1,7 +1,11 @@
 package indexwriter
 
-import "github.com/ozontech/seq-db/frac/sealed/lids"
+import (
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+)
 
+// lidAccumulator accumulates LIDs into blocks of fixed capacity.
+// It implements the add function that receives []uint32 directly.
 type lidAccumulator struct {
 	blockCapacity int
 	onBlock       func(unpackedLIDBlock) error
@@ -23,7 +27,7 @@ func newLIDAccumulator(
 	}
 
 	a.currentBlock.ext.minTID = 1
-	a.currentBlock.payload = lids.Block{
+	a.currentBlock.payload = lids.UnpackedBlock{
 		LIDs:    make([]uint32, 0, blockCapacity),
 		Offsets: []uint32{0},
 	}

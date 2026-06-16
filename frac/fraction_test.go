@@ -104,6 +104,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		DocBlocksZstdLevel:     1,
 		LIDBlockSize:           512,
 		DocBlockSize:           128 * int(units.KiB),
+		LidsBitmapThreshold:    25,
 	}
 
 	var err error
@@ -1377,6 +1378,18 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			name: "complex AND+OR",
 			query: "(service:gateway OR service:proxy OR service:scheduler) AND " +
 				"(message:request OR message:failed) AND level:[1 to 3]",
+			filter: func(doc *testDoc) bool {
+				return (doc.service == gateway || doc.service == proxy || doc.service == "scheduler") &&
+					(strings.Contains(doc.message, "request") || strings.Contains(doc.message, "failed")) &&
+					(doc.level >= 1 && doc.level <= 3)
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name: "complex AND+OR",
+			query: "(service:gateway OR service:proxy OR service:scheduler) AND " +
+				"(message:request OR message:failed) AND (level:1 OR level:2 OR level:3)",
 			filter: func(doc *testDoc) bool {
 				return (doc.service == gateway || doc.service == proxy || doc.service == "scheduler") &&
 					(strings.Contains(doc.message, "request") || strings.Contains(doc.message, "failed")) &&

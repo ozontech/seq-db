@@ -75,6 +75,10 @@ type Config struct {
 		Lids struct {
 			// BlockSize sets max lids (postings) saved per LIDs block.
 			BlockSize int `config:"block_size" default:"65536"`
+			// BitmapThreshold specifies minimum number of LIDs in the lid list
+			// which are serialized as bitmap. Lists with more elements use bitmap encoding,
+			// while smaller lists use delta encoding.
+			BitmapThreshold int `config:"bitmap_threshold" default:"65536"`
 		} `config:"lids"`
 	} `config:"sealing"`
 

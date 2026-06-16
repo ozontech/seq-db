@@ -105,6 +105,7 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 	tokenTable := s.tokenTableLoader.Load()
 
 	var lidsBuf []uint32
+
 	return func(yield func(indexwriter.TokenPosting, error) bool) {
 		for _, entry := range tokenTable[field].Entries {
 			block := s.tokenBlockLoader.Load(entry.BlockIndex)
@@ -124,7 +125,7 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 					}
 
 					chunkIdx := lidsTable.GetChunkIndex(bi, tid)
-					lidsBuf = append(lidsBuf, lidBlock.LIDs[lidBlock.Offsets[chunkIdx]:lidBlock.Offsets[chunkIdx+1]]...)
+					lidsBuf = lidBlock.CopyLIDs(chunkIdx, lidsBuf)
 				}
 
 				if !yield(indexwriter.TokenPosting{First: tokenVal, Second: lidsBuf}, nil) {

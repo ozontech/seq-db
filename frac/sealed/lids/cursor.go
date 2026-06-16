@@ -1,5 +1,7 @@
 package lids
 
+import "github.com/ozontech/seq-db/node"
+
 type Counter interface {
 	AddLIDsCount(int)
 }
@@ -15,7 +17,7 @@ type Cursor struct {
 	blockIndex   uint32
 	tryNextBlock bool
 
-	lids []uint32
+	batch node.LIDBatch
 
 	counter Counter
 }
@@ -38,6 +40,7 @@ func NewLIDsCursor(
 		tid:          tid,
 		blockIndex:   startIndex,
 		tryNextBlock: true,
+		batch:        node.EmptyBatch(),
 
 		counter: counter,
 	}

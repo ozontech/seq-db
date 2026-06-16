@@ -56,10 +56,10 @@ func (i indexBlock) bin(pos int64) (storage.IndexBlockHeader, []byte) {
 type IndexWriter struct {
 	params common.SealParams
 
-	buf1  []byte
-	buf2  []byte
-	buf32 []uint32
-	buf64 []uint64
+	buf1       []byte
+	buf2       []byte
+	buf64      []uint64
+	lidsPacker *lids.BlockPacker
 
 	idsTable   seqids.Table
 	lidsTable  lids.Table
@@ -67,12 +67,13 @@ type IndexWriter struct {
 }
 
 func New(params common.SealParams) *IndexWriter {
+	lidsPacker := lids.NewBlockPackerWithThreshold(params.LidsBitmapThreshold)
 	return &IndexWriter{
-		params: params,
-		buf1:   make([]byte, 0, consts.RegularBlockSize),
-		buf2:   make([]byte, 0, consts.RegularBlockSize),
-		buf32:  make([]uint32, 0, consts.DefaultLIDBlockCap),
-		buf64:  make([]uint64, 0, consts.RegularBlockSize),
+		params:     params,
+		buf1:       make([]byte, 0, consts.RegularBlockSize),
+		buf2:       make([]byte, 0, consts.RegularBlockSize),
+		buf64:      make([]uint64, 0, consts.RegularBlockSize),
+		lidsPacker: lidsPacker,
 	}
 }
 
@@ -302,7 +303,7 @@ func (s *IndexWriter) packLIDsBlock(block unpackedLIDBlock) indexBlock {
 	s.lidsTable.IsContinued = append(s.lidsTable.IsContinued, block.ext.isContinued)
 
 	// Packing block
-	s.buf1 = block.payload.Pack(s.buf1[:0], s.buf32[:0])
+	s.buf1 = s.lidsPacker.Pack(&block.payload, s.buf1[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.LIDsZstdLevel)
 	b.ext1 = ext1                                                    // Legacy continuation flag
 	b.ext2 = uint64(block.ext.maxTID)<<32 | uint64(block.ext.minTID) // TID range
