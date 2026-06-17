@@ -31,6 +31,7 @@ import (
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
+	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/skipmaskmanager"
 	seqs3 "github.com/ozontech/seq-db/storage/s3"
@@ -50,6 +51,8 @@ type TestingEnvConfig struct {
 	QueryRateLimit    *float64
 	FracManagerConfig *fracmanager.Config
 	SkipMaskParams    []skipmaskmanager.SkipMaskParams
+
+	EnableOnePhaseSearch bool
 
 	Mapping        seq.Mapping
 	IndexAllFields bool
@@ -122,6 +125,9 @@ func (cfg *TestingEnvConfig) GetStoreConfig(replicaID string, cold bool) storeap
 				FractionsPerIteration: runtime.GOMAXPROCS(0),
 				RequestsLimit:         0,
 				LogThreshold:          0,
+			},
+			OnePhaseSearch: storeapi.OnePhaseSearchConfig{
+				Enabled: cfg.EnableOnePhaseSearch,
 			},
 		},
 		SkipMaskManagerConfig: skipmaskmanager.Config{
@@ -343,11 +349,12 @@ func MakeIngestors(cfg *TestingEnvConfig, hot, cold [][]string) []*Ingestor {
 		proxyIngestor, err := proxyapi.NewIngestor(
 			proxyapi.IngestorConfig{
 				API: proxyapi.APIConfig{
-					SearchTimeout:  10 * time.Minute, // long enough for debugging purposes with a debugger
-					ExportTimeout:  10 * time.Minute, // the same (debugging purposes)
-					QueryRateLimit: 0,
-					EsVersion:      "test",
-					GatewayAddr:    grpcLis.Addr().String(),
+					SearchTimeout:        10 * time.Minute, // long enough for debugging purposes with a debugger
+					ExportTimeout:        10 * time.Minute, // the same (debugging purposes)
+					QueryRateLimit:       0,
+					EsVersion:            "test",
+					GatewayAddr:          grpcLis.Addr().String(),
+					EnableOnePhaseSearch: cfg.EnableOnePhaseSearch,
 				},
 				Bulk: bulk.IngestorConfig{
 					HotStores:   hotStores,
@@ -606,4 +613,52 @@ func (t *TestingEnv) Fetch(ids []seq.ID) ([][]byte, error) {
 		return nil, err
 	}
 	return search.ReadAll(stream), nil
+}
+
+func (t *TestingEnv) OnePhaseSearch(q string, size int, options ...SearchOption) ([]string, error) {
+	sr := &search.SearchRequest{
+		Explain:     false,
+		Q:           []byte(q),
+		Offset:      0,
+		Size:        size,
+		From:        0,
+		To:          math.MaxUint64,
+		WithTotal:   true,
+		ShouldFetch: true,
+		Order:       seq.DocsOrderDesc,
+	}
+
+	for _, option := range options {
+		option(sr)
+	}
+
+	producer, err := t.Ingestor().SearchIngestor.OnePhaseSearch(context.Background(), sr, nil)
+
+	return readRecordProducer(producer, len(sr.AggQ) > 0), err
+}
+
+func readRecordProducer(producer query.RecordProducer, isAggs bool) []string {
+	if producer == nil {
+		return nil
+	}
+
+	res := make([]string, 0)
+
+	for {
+		r, meta := producer.Next()
+		if meta != nil {
+			break
+		}
+		if r == nil {
+			break
+		}
+
+		if isAggs {
+			res = append(res, fmt.Sprintf(`{"label":%q, "value":%.2f}`, string(r.Vals[0].RawData()), r.Vals[1].Decoded().(float64)))
+		} else {
+			res = append(res, string(r.Vals[2].RawData()))
+		}
+	}
+
+	return res
 }

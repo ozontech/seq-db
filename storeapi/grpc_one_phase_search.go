@@ -8,6 +8,7 @@ import (
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -204,12 +205,7 @@ func (g *GrpcV1) buildProducer(
 	}
 
 	if len(statsAggs) > 0 {
-		// TODO: rewrite aggs parsing and validation
-		aggs, err := convertStatsAggsToStoreApiAgg(statsAggs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert stats aggs: %w", err)
-		}
-		aggQ, err := aggQueriesFromProto(aggs)
+		aggQ, err := convertStatsAggsToAggQueries(statsAggs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert stats aggs: %w", err)
 		}
@@ -262,54 +258,93 @@ func extractStatsPipesFromSeqQL(seqql parser.SeqQLQuery) []parser.StatsAgg {
 	return result
 }
 
-func convertStatsAggsToStoreApiAgg(statsAggs []parser.StatsAgg) ([]*storeapi.AggQuery, error) {
-	result := make([]*storeapi.AggQuery, 0, len(statsAggs))
+func convertStatsAggsToAggQueries(statsAggs []parser.StatsAgg) ([]processor.AggQuery, error) {
+	aggQs := make([]processor.AggQuery, 0, len(statsAggs))
 
 	for _, agg := range statsAggs {
-		aggFunc, err := convertStringToAggFunc(agg.Func)
+		aggQ, err := convertStatsAggToAggQuery(agg)
 		if err != nil {
 			return nil, err
 		}
-
-		procAgg := &storeapi.AggQuery{
-			Field:     agg.Field,
-			GroupBy:   agg.GroupBy,
-			Func:      aggFunc,
-			Quantiles: agg.Quantiles,
-		}
-
-		if agg.Interval != "" {
-			interval, err := util.ParseDuration(agg.Interval)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse interval: %w", err)
-			}
-			procAgg.Interval = interval.Nanoseconds()
-		}
-
-		result = append(result, procAgg)
+		aggQs = append(aggQs, aggQ)
 	}
 
-	return result, nil
+	return aggQs, nil
 }
 
-func convertStringToAggFunc(funcName string) (storeapi.AggFunc, error) {
+func convertStatsAggToAggQuery(statsAgg parser.StatsAgg) (processor.AggQuery, error) {
+	aggFunc, err := convertStringToAggFunc(statsAgg.Func)
+	if err != nil {
+		return processor.AggQuery{}, err
+	}
+
+	// 'groupBy' is required for Count and Unique.
+	if statsAgg.GroupBy == "" && (aggFunc == seq.AggFuncCount || aggFunc == seq.AggFuncUnique) {
+		return processor.AggQuery{}, fmt.Errorf("%w: groupBy is required for %s func", consts.ErrInvalidAggQuery, aggFunc)
+	}
+
+	// 'field' is required for stat functions like sum, avg, max and min.
+	if statsAgg.Field == "" && aggFunc != seq.AggFuncCount && aggFunc != seq.AggFuncUnique {
+		return processor.AggQuery{}, fmt.Errorf("%w: field is required for %s func", consts.ErrInvalidAggQuery, aggFunc)
+	}
+
+	// Check 'quantiles' is not empty for Quantile func.
+	if len(statsAgg.Quantiles) == 0 && aggFunc == seq.AggFuncQuantile {
+		return processor.AggQuery{}, fmt.Errorf("%w: expect an argument for Quantile func", consts.ErrInvalidAggQuery)
+	}
+
+	var field *parser.Literal
+	if statsAgg.Field != "" {
+		field = &parser.Literal{
+			Field: statsAgg.Field,
+			Terms: searchAll,
+		}
+	}
+
+	var groupBy *parser.Literal
+	if statsAgg.GroupBy != "" {
+		groupBy = &parser.Literal{
+			Field: statsAgg.GroupBy,
+			Terms: searchAll,
+		}
+	}
+
+	procAgg := processor.AggQuery{
+		Field:     field,
+		GroupBy:   groupBy,
+		Func:      aggFunc,
+		Quantiles: statsAgg.Quantiles,
+	}
+
+	if statsAgg.Interval != "" {
+		interval, err := util.ParseDuration(statsAgg.Interval)
+		if err != nil {
+			return processor.AggQuery{}, fmt.Errorf("failed to parse interval: %w", err)
+		}
+		procAgg.Interval = interval.Nanoseconds()
+	}
+
+	return procAgg, nil
+}
+
+func convertStringToAggFunc(funcName string) (seq.AggFunc, error) {
 	switch funcName {
 	case "count":
-		return storeapi.AggFunc_AGG_FUNC_COUNT, nil
+		return seq.AggFuncCount, nil
 	case "sum":
-		return storeapi.AggFunc_AGG_FUNC_SUM, nil
+		return seq.AggFuncSum, nil
 	case "min":
-		return storeapi.AggFunc_AGG_FUNC_MIN, nil
+		return seq.AggFuncMin, nil
 	case "max":
-		return storeapi.AggFunc_AGG_FUNC_MAX, nil
+		return seq.AggFuncMax, nil
 	case "avg":
-		return storeapi.AggFunc_AGG_FUNC_AVG, nil
+		return seq.AggFuncAvg, nil
 	case "quantile":
-		return storeapi.AggFunc_AGG_FUNC_QUANTILE, nil
+		return seq.AggFuncQuantile, nil
 	case "unique":
-		return storeapi.AggFunc_AGG_FUNC_UNIQUE, nil
+		return seq.AggFuncUnique, nil
 	case "unique_count":
-		return storeapi.AggFunc_AGG_FUNC_UNIQUE_COUNT, nil
+		return seq.AggFuncUniqueCount, nil
 	default:
 		return 0, fmt.Errorf("unknown aggregation function: %s", funcName)
 	}

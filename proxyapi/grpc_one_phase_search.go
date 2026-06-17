@@ -64,7 +64,6 @@ func (g *grpcV1) OnePhaseSearch(ctx context.Context, req *seqproxyapi.SearchRequ
 	defer stream.Release()
 
 	resp := &seqproxyapi.ComplexSearchResponse{
-		Total: int64(sResp.qpr.Total),
 		Error: &seqproxyapi.Error{
 			Code: seqproxyapi.ErrorCode_ERROR_CODE_NO,
 		},
@@ -211,9 +210,7 @@ func (g *grpcV1) doOnePhaseSearch(
 	tr := querytracer.New(req.Query.Explain, "proxy/OnePhaseSearch")
 	stream, err := g.searchIngestor.OnePhaseSearch(ctx, proxyReq, tr)
 
-	psr := &proxySearchResponse{
-		qpr: &seq.QPR{}, // TODO: do we really need QPR here (???)
-	}
+	psr := &proxySearchResponse{}
 
 	if e, ok := parseProxyError(err); ok {
 		psr.err = e
@@ -239,7 +236,7 @@ func (g *grpcV1) doOnePhaseSearch(
 		}
 		return psr, stream, nil
 	}
-	if err = processSearchErrors(psr.qpr, err); err != nil {
+	if err = processSearchErrors(&seq.QPR{}, err); err != nil {
 		metric.SearchErrors.Inc()
 		return nil, nil, err
 	}

@@ -1840,3 +1840,111 @@ func (s *IntegrationTestSuite) TestSkipMaskManager() {
 	r.NoError(err)
 	r.Equal(uint64(0), qpr.Total)
 }
+
+func (s *IntegrationTestSuite) TestOnePhaseSearch() {
+	t := s.T()
+	r := require.New(t)
+
+	cfg := *s.Config
+	cfg.EnableOnePhaseSearch = true
+	env := setup.NewTestingEnv(&cfg)
+
+	getNextTs := getAutoTsGenerator(time.Now(), -time.Nanosecond)
+
+	toBulk := []string{
+		fmt.Sprintf(`{"ts":%q, "level":3, "service":"service1", "unindexed":"1", "sorted":"1"}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q, "level":6, "service":"service1", "unindexed":"1", "sorted":"2"}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q, "level":3, "service":"service2", "unindexed":"2", "sorted":"3"}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q, "level":3, "service":"service3", "unindexed":"3", "sorted":"4"}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q, "level":3, "service":"service4", "unindexed":"4", "sorted":"5"}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q, "level":6, "service":"service4", "unindexed":"4", "sorted":"6"}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q, "level":6, "service":"service4", "unindexed":"4", "sorted":"7"}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q, "level":6, "service":"service5", "unindexed":"5", "sorted":"8"}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q, "level":3, "service":"service5", "unindexed":"5", "sorted":"9"}`, getNextTs()),
+	}
+	setup.Bulk(t, env.IngestorBulkAddr(), toBulk)
+	env.WaitIdle()
+
+	type testCase struct {
+		name     string
+		query    string
+		aggQ     *search.AggQuery
+		size     int
+		expected []string
+	}
+
+	cases := []testCase{
+		{
+			name:     "search all",
+			query:    `service:*`,
+			size:     100,
+			expected: toBulk,
+		},
+		{
+			name:     "limit",
+			query:    `service:* | limit 2`,
+			size:     100,
+			expected: toBulk[:2],
+		},
+		{
+			name:     "filter unindexed",
+			query:    `service:* | filter unindexed:4`,
+			size:     100,
+			expected: toBulk[4:7],
+		},
+		{
+			name:     "sort unindexed desc",
+			query:    `service:* | sort sorted desc`,
+			size:     100,
+			expected: newReversed(toBulk),
+		},
+		{
+			name:  "projection and limit",
+			query: `service:* | fields unindexed, service | limit 3`,
+			size:  100,
+			expected: []string{
+				`{"service":"service1","unindexed":"1"}`,
+				`{"service":"service1","unindexed":"1"}`,
+				`{"service":"service2","unindexed":"2"}`,
+			},
+		},
+		{
+			name:  "aggs",
+			query: `service:* | stats sum(level) by (service)`,
+			aggQ: &search.AggQuery{
+				GroupBy: "service",
+				Field:   "level",
+				Func:    seq.AggFuncSum,
+			},
+			size: 100,
+			expected: []string{
+				`{"label":"service4", "value":15.00}`,
+				`{"label":"service1", "value":9.00}`,
+				`{"label":"service5", "value":9.00}`,
+				`{"label":"service2", "value":3.00}`,
+				`{"label":"service3", "value":3.00}`,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var options []setup.SearchOption
+			if tc.aggQ != nil {
+				options = append(options, setup.WithAggQuery(*tc.aggQ))
+			}
+
+			found, err := env.OnePhaseSearch(tc.query, tc.size, options...)
+			r.NoError(err)
+			r.Equal(tc.expected, found)
+		})
+	}
+}
+
+func newReversed[T any](in []T) []T {
+	out := make([]T, 0, len(in))
+	for _, val := range slices.Backward(in) {
+		out = append(out, val)
+	}
+	return out
+}
