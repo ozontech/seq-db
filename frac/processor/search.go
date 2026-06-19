@@ -278,15 +278,14 @@ func iterateEvalTree(
 			}
 
 			if needIDs > 0 {
-				if needIDs < len(lidsBatch) { // trim sampled slice to respect the remaining limit
-					lidsBatch = lidsBatch[:needIDs]
-				}
+				needLIDs := min(needIDs, len(lidsBatch))
+
 				timerRID.Start()
-				rids = idsIndex.GetRIDs(lidsBatch, rids[:0])
+				rids = idsIndex.GetRIDs(lidsBatch[:needLIDs], rids[:0])
 				timerRID.Stop()
 
-				// Fill IDs for search
-				for i := range lidsBatch {
+				// fill IDs for search
+				for i := 0; i < needLIDs; i++ {
 					id := seq.ID{MID: mids[i], RID: rids[i]}
 					if i == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
 						ids = append(ids, seq.IDSource{ID: id})
