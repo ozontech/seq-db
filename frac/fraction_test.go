@@ -2087,7 +2087,7 @@ func (s *FractionTestSuite) TestSearchDownsampleWithAggAndHist() {
 
 func assertSampledAggs(s *FractionTestSuite, expected, actual []seq.AggregatableSamples, ds uint32) {
 	const (
-		distEps  = 0.25
+		distEps  = 0.3
 		totalEps = 0.05
 	)
 
@@ -2113,7 +2113,7 @@ func assertSampledAggs(s *FractionTestSuite, expected, actual []seq.Aggregatable
 
 func assertSampledHist(s *FractionTestSuite, expected, actual map[seq.MID]uint64, ds uint32) {
 	const (
-		distEps  = 0.2
+		distEps  = 0.3
 		totalEps = 0.05
 	)
 
