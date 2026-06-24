@@ -201,6 +201,9 @@ func (g *grpcV1) doSearch(
 
 	fromTime := req.Query.From.AsTime()
 	toTime := req.Query.To.AsTime()
+	if fromTime.After(toTime) {
+		return nil, status.Error(codes.InvalidArgument, `"from" timestamp must not be after "to" timestamp`)
+	}
 	if span.IsRecordingEvents() {
 		span.AddAttributes(
 			trace.StringAttribute("query", req.Query.Query),
