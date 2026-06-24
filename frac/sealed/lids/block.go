@@ -20,8 +20,10 @@ const (
 )
 
 type BlockPacker struct {
-	buf                 []uint32        // bitpack buffer (reusable across packing)
-	bmIndexes           []uint32        // bitmap indexes (reusable across packing)
+	buf                 []uint32 // bitpack buffer (reusable across packing)
+	bmIndexes           []uint32 // bitmap indexes (reusable across packing)
+	bitpackLIDs         []uint32
+	bitpackOffsets      []uint32
 	bm                  *roaring.Bitmap // reusable across packing
 	lidsBitmapThreshold int
 }
@@ -30,6 +32,8 @@ func NewBlockPacker() *BlockPacker {
 	return &BlockPacker{
 		bm:                  roaring.NewBitmap(),
 		buf:                 make([]uint32, 0, consts.DefaultLIDBlockCap),
+		bitpackLIDs:         make([]uint32, 0, consts.DefaultLIDBlockCap),
+		bitpackOffsets:      make([]uint32, 0, consts.DefaultLIDBlockCap),
 		bmIndexes:           make([]uint32, 0, consts.DefaultLIDBlockCap/10),
 		lidsBitmapThreshold: defaultLidsBitmapThreshold,
 	}
@@ -158,8 +162,8 @@ func (p *BlockPacker) Pack(b *UnpackedBlock, dst []byte) []byte {
 	)
 
 	if bmCount > 0 {
-		bitpackLIDs = make([]uint32, 0, len(b.LIDs))
-		bitpackOffsets = []uint32{0}
+		bitpackLIDs = p.bitpackLIDs[:0]
+		bitpackOffsets = p.bitpackOffsets[:0]
 		for i := 0; i < totalLists; i++ {
 			lids := b.LIDs[b.Offsets[i]:b.Offsets[i+1]]
 			if len(lids) >= p.lidsBitmapThreshold {
