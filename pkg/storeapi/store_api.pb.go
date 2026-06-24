@@ -447,7 +447,7 @@ type SearchRequest struct {
 	Aggs              []*AggQuery `protobuf:"bytes,12,rep,name=aggs,proto3" json:"aggs,omitempty"`
 	Order             Order       `protobuf:"varint,13,opt,name=order,proto3,enum=api.Order" json:"order,omitempty"`
 	OffsetId          string      `protobuf:"bytes,14,opt,name=offset_id,json=offsetId,proto3" json:"offset_id,omitempty"`
-	Downsample        uint32      `protobuf:"varint,15,opt,name=downsample,proto3" json:"downsample,omitempty"` // If set, returns roughly 1 in N documents, statistically.
+	Downsample        uint32      `protobuf:"varint,15,opt,name=downsample,proto3" json:"downsample,omitempty"` // If set, returns roughly 1 in N documents on a probabilistic basis
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }

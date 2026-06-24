@@ -8,10 +8,8 @@ import (
 	"net"
 	"path/filepath"
 	"runtime"
+	"testing"
 	"time"
-
-	"go.uber.org/atomic"
-	"go.uber.org/zap"
 
 	"github.com/alecthomas/units"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -19,6 +17,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
+	"go.uber.org/atomic"
+	"go.uber.org/zap"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
@@ -27,6 +28,7 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/mappingprovider"
 	"github.com/ozontech/seq-db/network/circuitbreaker"
+	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/proxy/stores"
@@ -345,7 +347,7 @@ func MakeIngestors(cfg *TestingEnvConfig, hot, cold [][]string) []*Ingestor {
 				API: proxyapi.APIConfig{
 					SearchTimeout:  10 * time.Minute, // long enough for debugging purposes with a debugger
 					ExportTimeout:  10 * time.Minute, // the same (debugging purposes)
-					QueryRateLimit: 0,
+					QueryRateLimit: 10000,            // todo: support no ratelimit if == 0
 					EsVersion:      "test",
 					GatewayAddr:    grpcLis.Addr().String(),
 				},
@@ -579,7 +581,7 @@ func WithDownsample(downsample uint32) SearchOption {
 	}
 }
 
-func (t *TestingEnv) Search(q string, size int, options ...SearchOption) (*seq.QPR, [][]byte, time.Duration, error) {
+func (t *TestingEnv) buildRequest(q string, size int, options ...SearchOption) *search.SearchRequest {
 	sr := &search.SearchRequest{
 		Explain:     false,
 		Q:           []byte(q),
@@ -591,10 +593,33 @@ func (t *TestingEnv) Search(q string, size int, options ...SearchOption) (*seq.Q
 		ShouldFetch: true,
 		Order:       seq.DocsOrderDesc,
 	}
-
 	for _, option := range options {
 		option(sr)
 	}
+	return sr
+}
+
+func (t *TestingEnv) HTTPSearch(tt *testing.T, q string, size int, options ...SearchOption) *seqproxyapi.SearchResponse {
+	sr := t.buildRequest(q, size, options...)
+
+	return SearchHTTP(tt, t.IngestorSearchAddr(), &seqproxyapi.SearchRequest{
+		Query: &seqproxyapi.SearchQuery{
+			Query:      string(sr.Q),
+			From:       timestamppb.New(sr.From.Time()),
+			To:         timestamppb.New(sr.To.Time()),
+			Explain:    sr.Explain,
+			Downsample: sr.Downsample,
+		},
+		Size:      int64(sr.Size),
+		Offset:    int64(sr.Offset),
+		WithTotal: sr.WithTotal,
+		Order:     seqproxyapi.Order(sr.Order),
+		OffsetId:  sr.OffsetId,
+	})
+}
+
+func (t *TestingEnv) Search(q string, size int, options ...SearchOption) (*seq.QPR, [][]byte, time.Duration, error) {
+	sr := t.buildRequest(q, size, options...)
 
 	var docs [][]byte
 	qpr, docsStream, duration, err := t.Ingestor().SearchIngestor.Search(context.Background(), sr, nil)

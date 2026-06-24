@@ -1371,21 +1371,21 @@ func (s *IntegrationTestSuite) TestDownsamplePropagation() {
 			opts = append(opts, setup.WithDownsample(*tc.downsample))
 		}
 
-		qpr, _, _, err := env.Search(`service:a`, math.MaxInt32, opts...)
-		r.NoError(err, "store search with %s should succeed", tc.name)
+		resp := env.HTTPSearch(t, `service:a`, math.MaxInt32, opts...)
+		r.Equal(seqproxyapi.ErrorCode_ERROR_CODE_NO, resp.Error.Code, "store search with %s should succeed", tc.name)
 
 		if tc.wantAll {
-			r.Equal(totalDocs, len(qpr.IDs), "store search %s: should return all %d docs", tc.name, totalDocs)
+			r.Equal(totalDocs, len(resp.Docs), "store search %s: should return all %d docs", tc.name, totalDocs)
 		} else {
-			r.Greater(len(qpr.IDs), 0, "store search %s: should return at least some results", tc.name)
+			r.Greater(len(resp.Docs), 0, "store search %s: should return at least some results", tc.name)
 			// downsample=N: expect approximately total/N docs with ±3% tolerance.
 			ds := int(*tc.downsample)
 			delta := float64(totalDocs/ds) * tolerancePercent
-			r.InDelta(totalDocs/ds, len(qpr.IDs), delta,
+			r.InDelta(totalDocs/ds, len(resp.Docs), delta,
 				"store search %s: should return ~%d docs", tc.name, totalDocs/ds)
 		}
 
-		r.Equal(uint64(totalDocs), qpr.Total,
+		r.Equal(int64(totalDocs), resp.Total,
 			"store search %s: Total should reflect full count (%d)", tc.name, totalDocs)
 	}
 }
