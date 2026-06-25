@@ -170,6 +170,7 @@ func (m *SearchQuery) CloneVT() *SearchQuery {
 	r.From = (*timestamppb.Timestamp)((*timestamppb1.Timestamp)(m.From).CloneVT())
 	r.To = (*timestamppb.Timestamp)((*timestamppb1.Timestamp)(m.To).CloneVT())
 	r.Explain = m.Explain
+	r.Downsample = m.Downsample
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
 		copy(r.unknownFields, m.unknownFields)
@@ -1075,6 +1076,9 @@ func (this *SearchQuery) EqualVT(that *SearchQuery) bool {
 		return false
 	}
 	if this.Explain != that.Explain {
+		return false
+	}
+	if this.Downsample != that.Downsample {
 		return false
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
@@ -3014,6 +3018,11 @@ func (m *SearchQuery) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Downsample != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Downsample))
+		i--
+		dAtA[i] = 0x28
 	}
 	if m.Explain {
 		i--
@@ -5283,6 +5292,11 @@ func (m *SearchQuery) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.Downsample != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Downsample))
+		i--
+		dAtA[i] = 0x28
+	}
 	if m.Explain {
 		i--
 		if m.Explain {
@@ -7344,6 +7358,9 @@ func (m *SearchQuery) SizeVT() (n int) {
 	if m.Explain {
 		n += 2
 	}
+	if m.Downsample != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.Downsample))
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -8960,6 +8977,25 @@ func (m *SearchQuery) UnmarshalVT(dAtA []byte) error {
 				}
 			}
 			m.Explain = bool(v != 0)
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Downsample", wireType)
+			}
+			m.Downsample = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Downsample |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -14422,6 +14458,25 @@ func (m *SearchQuery) UnmarshalVTUnsafe(dAtA []byte) error {
 				}
 			}
 			m.Explain = bool(v != 0)
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Downsample", wireType)
+			}
+			m.Downsample = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Downsample |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

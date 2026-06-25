@@ -121,6 +121,7 @@ func (m *SearchRequest) CloneVT() *SearchRequest {
 	r.AggregationFilter = m.AggregationFilter
 	r.Order = m.Order
 	r.OffsetId = m.OffsetId
+	r.Downsample = m.Downsample
 	if rhs := m.Aggs; rhs != nil {
 		tmpContainer := make([]*AggQuery, len(rhs))
 		for k, v := range rhs {
@@ -843,6 +844,9 @@ func (this *SearchRequest) EqualVT(that *SearchRequest) bool {
 		return false
 	}
 	if this.OffsetId != that.OffsetId {
+		return false
+	}
+	if this.Downsample != that.Downsample {
 		return false
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
@@ -2295,6 +2299,11 @@ func (m *SearchRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Downsample != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Downsample))
+		i--
+		dAtA[i] = 0x78
 	}
 	if len(m.OffsetId) > 0 {
 		i -= len(m.OffsetId)
@@ -4108,6 +4117,11 @@ func (m *SearchRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.Downsample != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Downsample))
+		i--
+		dAtA[i] = 0x78
+	}
 	if len(m.OffsetId) > 0 {
 		i -= len(m.OffsetId)
 		copy(dAtA[i:], m.OffsetId)
@@ -5845,6 +5859,9 @@ func (m *SearchRequest) SizeVT() (n int) {
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
+	if m.Downsample != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.Downsample))
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -7229,6 +7246,25 @@ func (m *SearchRequest) UnmarshalVT(dAtA []byte) error {
 			}
 			m.OffsetId = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 15:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Downsample", wireType)
+			}
+			m.Downsample = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Downsample |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -12056,6 +12092,25 @@ func (m *SearchRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 			}
 			m.OffsetId = stringValue
 			iNdEx = postIndex
+		case 15:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Downsample", wireType)
+			}
+			m.Downsample = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Downsample |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

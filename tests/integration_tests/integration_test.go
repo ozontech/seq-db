@@ -1316,6 +1316,85 @@ func TestBigWithReplicasIntegration(t *testing.T) {
 	suite.Run(t, dd)
 }
 
+func (s *IntegrationTestSuite) TestDownsamplePropagation() {
+	t := s.T()
+	r := require.New(t)
+
+	env := setup.NewTestingEnv(s.Config)
+	defer env.StopAll()
+
+	const (
+		docsPerBulk      = 200
+		tolerancePercent = 0.5
+	)
+
+	// Setup data with status field for aggregations.
+	bulksNum := getBulkIterationsNum(env)
+	totalDocs := docsPerBulk * bulksNum
+
+	origDocs := make([]string, docsPerBulk)
+	for j := 0; j < bulksNum; j++ {
+		baseIdx := j * docsPerBulk
+		for i := range origDocs {
+			origDocs[i] = fmt.Sprintf(`{"service":"a","id":%d,"status":%d}`, baseIdx+i, i%3)
+		}
+		setup.Bulk(t, env.IngestorBulkAddr(), origDocs)
+	}
+
+	type testCase struct {
+		name       string
+		downsample *uint32 // nil = option not passed
+		wantAll    bool    // expect all documents returned
+	}
+
+	cases := []testCase{{
+		name:       "no downsample option",
+		downsample: nil,
+		wantAll:    true,
+	}, {
+		name:       "downsample=0",
+		downsample: ptr[uint32](0),
+		wantAll:    true,
+	}, {
+		name:       "downsample=1",
+		downsample: ptr[uint32](1),
+		wantAll:    true,
+	}, {
+		name:       "downsample=10",
+		downsample: ptr[uint32](10),
+		wantAll:    false,
+	}}
+
+	for _, tc := range cases {
+		opts := []setup.SearchOption{setup.NoFetch(), setup.WithTotal(true)}
+		if tc.downsample != nil {
+			opts = append(opts, setup.WithDownsample(*tc.downsample))
+		}
+
+		resp := env.HTTPSearch(t, `service:a`, math.MaxInt32, opts...)
+		r.Equal(seqproxyapi.ErrorCode_ERROR_CODE_NO, resp.Error.Code, "store search with %s should succeed", tc.name)
+
+		if tc.wantAll {
+			r.Equal(totalDocs, len(resp.Docs), "store search %s: should return all %d docs", tc.name, totalDocs)
+		} else {
+			r.Greater(len(resp.Docs), 0, "store search %s: should return at least some results", tc.name)
+			// downsample=N: expect approximately total/N docs with ±3% tolerance.
+			ds := int(*tc.downsample)
+			delta := float64(totalDocs/ds) * tolerancePercent
+			r.InDelta(totalDocs/ds, len(resp.Docs), delta,
+				"store search %s: should return ~%d docs", tc.name, totalDocs/ds)
+		}
+
+		r.Equal(int64(totalDocs), resp.Total,
+			"store search %s: Total should reflect full count (%d)", tc.name, totalDocs)
+	}
+}
+
+// ptr returns a pointer to the given value.
+func ptr[T any](v T) *T {
+	return &v
+}
+
 func (s *IntegrationTestSuite) TestDocuments() {
 	n := 32
 	env, origDocs := s.envWithDummyDocs(n)

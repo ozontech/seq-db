@@ -28,21 +28,23 @@ type SearchRequest struct {
 	WithTotal   bool
 	ShouldFetch bool
 	Order       seq.DocsOrder
+	Downsample  uint32
 }
 
 func (sr *SearchRequest) GetAPISearchRequest() *storeapi.SearchRequest {
 	return &storeapi.SearchRequest{
-		Query:     util.ByteToStringUnsafe(sr.Q),
-		From:      int64(seq.MIDToMillis(sr.From)),
-		To:        int64(seq.MIDToMillis(sr.To)),
-		Size:      int64(sr.Size),
-		Offset:    int64(sr.Offset),
-		Interval:  int64(seq.MIDToMillis(sr.Interval)),
-		OffsetId:  sr.OffsetId,
-		Aggs:      convertToAggsQuery(sr.AggQ),
-		Explain:   sr.Explain,
-		WithTotal: sr.WithTotal,
-		Order:     storeapi.MustProtoOrder(sr.Order),
+		Query:      util.ByteToStringUnsafe(sr.Q),
+		From:       int64(seq.MIDToMillis(sr.From)),
+		To:         int64(seq.MIDToMillis(sr.To)),
+		Size:       int64(sr.Size),
+		Offset:     int64(sr.Offset),
+		Interval:   int64(seq.MIDToMillis(sr.Interval)),
+		OffsetId:   sr.OffsetId,
+		Aggs:       convertToAggsQuery(sr.AggQ),
+		Explain:    sr.Explain,
+		WithTotal:  sr.WithTotal,
+		Order:      storeapi.MustProtoOrder(sr.Order),
+		Downsample: sr.Downsample,
 	}
 }
 

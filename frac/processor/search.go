@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -43,9 +44,9 @@ type searchIndex interface {
 }
 
 type searchBuffers struct {
-	lids []node.LID
 	mids []seq.MID
 	rids []seq.RID
+	lids []node.LID
 }
 
 var searchBuffersPool = sync.Pool{
@@ -209,19 +210,20 @@ func iterateEvalTree(
 	hasHist := params.HasHist()
 	needScanAllRange := params.IsScanAllRequest()
 
-	var hist HistMap
-	if hasHist {
-		hist = NewHistMap(params.From, params.To, params.HistInterval)
-	}
-
 	var (
 		total  int
+		hist   HistMap
 		lastID seq.ID
 		ids    seq.IDSources
 	)
 
+	if hasHist {
+		hist = NewHistMap(params.From, params.To, params.HistInterval)
+	}
+
 	buffers := searchBuffersPool.Get().(*searchBuffers)
 	defer searchBuffersPool.Put(buffers)
+
 	mids := buffers.mids
 	rids := buffers.rids
 
@@ -229,9 +231,11 @@ func iterateEvalTree(
 
 	timerEval := sw.Timer("eval_tree_next")
 	timerMID := sw.Timer("get_mid")
-	timerUpdateHist := sw.Timer("update_hist")
+	timerHist := sw.Timer("update_hist")
 	timerRID := sw.Timer("get_rid")
 	timerAgg := sw.Timer("agg_node_count")
+
+	sample := sampler(params.Downsample)
 
 	var aggs []Aggregator
 	for {
@@ -239,88 +243,111 @@ func iterateEvalTree(
 			return total, ids, hist, aggs, ctx.Err()
 		}
 
-		needMore := len(ids) < params.Limit
-		if !needMore && !needScanAllRange {
+		needIDs := params.Limit - len(ids)
+		if needIDs < 1 && !needScanAllRange {
 			break
 		}
-		needLIDs := params.Limit - len(ids)
-		if needScanAllRange {
-			needLIDs = math.MaxUint32
+
+		maxBatchSize := needIDs
+		if needScanAllRange || params.Downsample > 1 {
+			// if full range scan is required OR downsampling is active,
+			// we must fetch as many LIDs as possible in one batch.
+			maxBatchSize = math.MaxUint32
 		}
 
 		timerEval.Start()
-		lidsSlice := batchedEvalTree(needLIDs)
+		lidsBatch := batchedEvalTree(maxBatchSize)
 		timerEval.Stop()
 
-		if len(lidsSlice) == 0 {
+		total += len(lidsBatch)
+
+		lidsBatch = sample(lidsBatch)
+
+		if len(lidsBatch) == 0 {
 			break
 		}
 
-		needMIDs := min(params.Limit-len(ids), len(lidsSlice))
-		if hasHist {
-			// need to fetch mids for all lids for hist
-			needMIDs = len(lidsSlice)
-		}
-
-		// Get MIDs
-		if needMIDs > 0 {
+		if hasHist || needIDs > 0 {
 			timerMID.Start()
-			mids = idsIndex.GetMIDs(lidsSlice[:needMIDs], mids[:0])
+			mids = idsIndex.GetMIDs(lidsBatch, mids[:0])
 			timerMID.Stop()
-		}
 
-		// Get RIDs
-		// compute number of ids we can get here, since some MIDs might have been filtered out
-		needIDs := min(params.Limit-len(ids), len(lidsSlice))
-		if needIDs > 0 {
-			timerRID.Start()
-			rids = idsIndex.GetRIDs(lidsSlice[0:needIDs], rids[:0])
-			timerRID.Stop()
-		}
-
-		// Fill IDs for search
-		for i := 0; i < needIDs; i++ {
-			id := seq.ID{MID: mids[i], RID: rids[i]}
-
-			if i == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
-				ids = append(ids, seq.IDSource{ID: id})
+			if hasHist {
+				timerHist.Start()
+				hist.Update(mids)
+				timerHist.Stop()
 			}
-			lastID = id
-		}
 
-		// Update hist map
-		if hasHist {
-			timerUpdateHist.Start()
-			hist.Update(mids)
-			timerUpdateHist.Stop()
+			if needIDs > 0 {
+				needLIDs := min(needIDs, len(lidsBatch))
+
+				timerRID.Start()
+				rids = idsIndex.GetRIDs(lidsBatch[:needLIDs], rids[:0])
+				timerRID.Stop()
+
+				// fill IDs for search
+				for i := 0; i < needLIDs; i++ {
+					id := seq.ID{MID: mids[i], RID: rids[i]}
+					if i == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
+						ids = append(ids, seq.IDSource{ID: id})
+					}
+					lastID = id
+				}
+			}
 		}
 
 		// Update aggregators
 		if params.HasAgg() {
-			if aggs == nil {
-				var err error
-				aggs, err = aggSupplier() // sw timer is activated inside aggSupplier
-				if err != nil {
-					return total, ids, hist, nil, err
-				}
+			var err error
+			if aggs, err = updateAggs(aggs, lidsBatch, aggSupplier, timerAgg); err != nil {
+				return total, ids, hist, aggs, err
 			}
-
-			timerAgg.Start()
-			for i := range aggs {
-				for _, lid := range lidsSlice {
-					if err := aggs[i].Next(lid); err != nil {
-						timerAgg.Stop()
-						return total, ids, hist, aggs, err
-					}
-				}
-			}
-			timerAgg.Stop()
 		}
-
-		total += len(lidsSlice)
 	}
 
 	return total, ids, hist, aggs, nil
+}
+
+func updateAggs(aggs []Aggregator, lidsSlice []node.LID, aggSupplier func() ([]Aggregator, error), timer *stopwatch.Timer) ([]Aggregator, error) {
+	if aggs == nil {
+		var err error
+		if aggs, err = aggSupplier(); err != nil { // sw timer is activated inside aggSupplier
+			return nil, err
+		}
+	}
+
+	timer.Start()
+	defer timer.Stop()
+
+	for i := range aggs {
+		for _, lid := range lidsSlice {
+			if err := aggs[i].Next(lid); err != nil {
+				return aggs, err
+			}
+		}
+	}
+	return aggs, nil
+}
+
+func sampler(n uint32) func(in []node.LID) []node.LID {
+	if n <= 1 { // 0 or 1 -> no sample
+		return func(in []node.LID) []node.LID {
+			return in
+		}
+	}
+
+	cnt := rand.Uint32N(n)
+	return func(in []node.LID) []node.LID {
+		i := 0
+		for _, lid := range in {
+			if cnt%n == 0 {
+				in[i] = lid
+				i++
+			}
+			cnt++
+		}
+		return in[:i]
+	}
 }
 
 func tryConvertToBatchedTree(evalTree node.Node) (node.BatchedNode, bool) {

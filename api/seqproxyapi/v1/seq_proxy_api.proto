@@ -6,6 +6,7 @@ package seqproxyapi.v1;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
+
 import "google/api/annotations.proto";
 
 // seq-db public api. Exposes APIs related to document querying.
@@ -167,6 +168,7 @@ message SearchQuery {
   google.protobuf.Timestamp from = 2; // Lower bound for search (inclusive).
   google.protobuf.Timestamp to = 3;   // Upper bound for search (inclusive).
   bool explain = 4;                   // Should request be explained (tracing will be provided with the result).
+  uint32 downsample = 5;              // If set, returns roughly 1 in N documents on a probabilistic basis
 }
 
 // Aggregation function used in request.
@@ -219,14 +221,14 @@ message SearchRequest {
 }
 
 message ComplexSearchRequest {
-  SearchQuery query = 1;        // Search query.
-  repeated AggQuery aggs = 2;   // List of aggregation queries.
-  optional HistQuery hist = 3;  // Histogram query.
-  int64 size = 4;               // Maximum number of documents to return.
-  int64 offset = 5;             // Search offset.
-  bool with_total = 6;          // Should total number of documents be returned in response.
-  Order order = 7;              // Document order ORDER_DESC/ORDER_ASC.
-  string offset_id = 8;         // ID offset for pagination.
+  SearchQuery query = 1;         // Search query.
+  repeated AggQuery aggs = 2;    // List of aggregation queries.
+  optional HistQuery hist = 3;   // Histogram query.
+  int64 size = 4;                // Maximum number of documents to return.
+  int64 offset = 5;              // Search offset.
+  bool with_total = 6;           // Should total number of documents be returned in response.
+  Order order = 7;               // Document order ORDER_DESC/ORDER_ASC.
+  string offset_id = 8;          // ID offset for pagination.
 }
 
 message SearchResponse {
