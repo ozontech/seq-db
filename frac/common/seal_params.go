@@ -10,4 +10,6 @@ type SealParams struct {
 	DocBlocksZstdLevel int // DocBlocksZstdLevel is the zstd compress level of each document block.
 	LIDBlockSize       int
 	DocBlockSize       int // DocBlockSize is decompressed payload size of document block.
+
+	SkipFsync bool
 }

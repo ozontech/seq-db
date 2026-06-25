@@ -57,12 +57,11 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 		return nil, err
 	}
 
-	if err := createAndWrite(
-		info.Path+consts.IDTmpFileSuffix,
-		info.Path+consts.IDFileSuffix,
-		func(f *os.File) error { return sealer.WriteIDFile(f, src) },
-	); err != nil {
-		return nil, err
+	if !params.SkipFsync {
+		// Ensure data is flushed to disk
+		if err := indexFile.Sync(); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := createAndWriteBoth(
@@ -99,8 +98,10 @@ func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 		totalSize += uint64(st.Size())
 	}
 
-	info.IndexOnDisk = totalSize
-	lidsTable := sealer.LIDsTable()
+	if !params.SkipFsync {
+		// Ensure directory metadata is synced to disk
+		util.MustSyncPath(filepath.Dir(info.Path))
+	}
 
 	preloaded := &sealed.PreloadedData{
 		Info:       info,

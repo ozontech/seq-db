@@ -272,6 +272,7 @@ func startStore(
 				TokenTableZstdLevel:    cfg.Compression.SealedZstdCompressionLevel,
 				DocBlocksZstdLevel:     cfg.Compression.DocBlockZstdCompressionLevel,
 				DocBlockSize:           int(cfg.DocsSorting.DocBlockSize),
+				SkipFsync:              cfg.Resources.SkipFsync,
 			},
 			Fraction: frac.Config{
 				Search: frac.SearchConfig{
@@ -284,6 +285,7 @@ func startStore(
 				},
 				SkipSortDocs: !cfg.DocsSorting.Enabled,
 				KeepMetaFile: false,
+				SkipFsync:    cfg.Resources.SkipFsync,
 			},
 			OffloadingEnabled:    cfg.Offloading.Enabled,
 			OffloadingRetention:  cfg.Offloading.Retention,

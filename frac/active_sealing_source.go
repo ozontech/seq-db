@@ -31,28 +31,24 @@ type (
 )
 
 type ActiveSealingSource struct {
-	params common.SealParams // Sealing parameters
-
-	info    *common.Info // fraction Info
-	created time.Time    // Creation time of the source
-
-	blocksOffsets []uint64 // Document block offsets
-
-	sortedLIDs   []uint32 // Sorted LIDs (Local ID)
-	oldToNewLIDs []uint32 // Mapping from old LIDs to new ones (after sorting)
-
-	mids *UInt64s // MIDs
-	rids *UInt64s // RIDs
-
-	fields    []string   // Sorted field names
-	fieldTIDs [][]uint32 // Each field contains sorted TIDs based on token value
-
-	tokens [][]byte     // Tokens (values) by TID
-	lids   []*TokenLIDs // LID lists for each token
-
-	docPosMap    map[seq.ID]seq.DocPos // Original document positions
-	docPosSorted []seq.DocPos          // Document positions after sorting
-	docsReader   *storage.DocsReader   // Document storage reader
+	params        common.SealParams     // Sealing parameters
+	info          *common.Info          // fraction Info
+	created       time.Time             // Creation time of the source
+	sortedLIDs    []uint32              // Sorted LIDs (Local ID)
+	oldToNewLIDs  []uint32              // Mapping from old LIDs to new ones (after sorting)
+	mids          *UInt64s              // MIDs
+	rids          *UInt64s              // RIDs
+	fields        []string              // Sorted field names
+	fieldsMaxTIDs []uint32              // Maximum TIDs for each field
+	tids          []uint32              // Sorted TIDs (Token ID)
+	tokens        [][]byte              // Tokens (values) by TID
+	lids          []*TokenLIDs          // LID lists for each token
+	docPosMap     map[seq.ID]seq.DocPos // Original document positions
+	docPosSorted  []seq.DocPos          // Document positions after sorting
+	blocksOffsets []uint64              // Document block offsets
+	docsReader    *storage.DocsReader   // Document storage reader
+	lastErr       error                 // Last error
+	skipFsync     bool
 }
 
 func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSealingSource, error) {
@@ -81,6 +77,7 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 		docPosMap:     active.DocsPositions.idToPos,
 		blocksOffsets: active.DocBlocks.vals,
 		docsReader:    &active.sortReader,
+		skipFsync:     active.Config.SkipFsync,
 	}
 
 	src.prepareInfo()
@@ -313,9 +310,10 @@ func (src *ActiveSealingSource) SortDocs() error {
 	}
 	src.info.DocsOnDisk = uint64(stat.Size())
 
-	// Synchronize and rename file
-	if err := sdocsFile.Sync(); err != nil {
-		return err
+	if !src.skipFsync {
+		if err := sdocsFile.Sync(); err != nil {
+			return err
+		}
 	}
 
 	if err := sdocsFile.Close(); err != nil {
@@ -325,9 +323,10 @@ func (src *ActiveSealingSource) SortDocs() error {
 	if err := os.Rename(sdocsFile.Name(), src.info.Path+consts.SdocsFileSuffix); err != nil {
 		return err
 	}
-
-	if err := util.SyncPath(filepath.Dir(src.info.Path)); err != nil {
-		return err
+	if !src.skipFsync {
+		if err := util.SyncPath(filepath.Dir(src.info.Path)); err != nil {
+			return err
+		}
 	}
 
 	// Log compression statistics
