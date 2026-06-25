@@ -1918,7 +1918,7 @@ func (s *FractionTestSuite) TestSearchDownsample() {
 		bulkSize      = 200
 		queryAll      = "message:*"
 		queryFiltered = "message:started"
-		eps           = 0.01
+		eps           = 0.05
 	)
 
 	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
@@ -1947,12 +1947,18 @@ func (s *FractionTestSuite) TestSearchDownsample() {
 	downsampleValues := []int{10, 20, 50, 100}
 
 	assertSampled := func(q string, ds int, total int) {
+		actSum := 0
+		actCnt := 0
 		query := s.query(q, append(baseOpts, withDownsample(uint32(ds)))...)
-		result, err := s.fraction.Search(context.Background(), *query)
-		s.Require().NoError(err, "search with downsample=%d should succeed", ds)
-		act := float64(result.IDs.Len())
-		exp := math.Ceil(float64(total) / float64(ds))
-		s.Require().InEpsilon(exp, act, eps, "sampled count (%d) should be ~ %d/%d (±%f%%)", int(act), total, ds, eps)
+		for range 100 {
+			result, err := s.fraction.Search(s.T().Context(), *query)
+			s.Require().NoError(err, "search with downsample=%d should succeed", ds)
+			actSum += result.IDs.Len()
+			actCnt++
+		}
+		act := float64(actSum) / float64(actCnt)
+		exp := float64(total) / float64(ds)
+		s.Require().InEpsilon(exp, act, eps, "sampled count (%.2f) should be ~ %d/%d (±%f%%)", act, total, ds, eps)
 	}
 
 	for _, ds := range downsampleValues {
@@ -1967,7 +1973,7 @@ func (s *FractionTestSuite) TestSearchDownsampleWithTotal() {
 	const (
 		totalDocs = 1000
 		bulkSize  = 200
-		eps       = 0.01
+		eps       = 0.05
 	)
 
 	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
@@ -1985,17 +1991,20 @@ func (s *FractionTestSuite) TestSearchDownsampleWithTotal() {
 				withDownsample(uint32(ds)),
 				withTotal(),
 			)
-			result, err := s.fraction.Search(context.Background(), *params)
-			s.Require().NoError(err, "search with downsample=%d failed", ds)
 
-			act := float64(result.IDs.Len())
-			exp := math.Ceil(float64(totalDocs) / float64(ds)) // with downsample=k, expect approximately totalDocs/k documents
+			actSum := 0
+			actCnt := 0
+			for range 100 {
+				result, err := s.fraction.Search(s.T().Context(), *params)
+				s.Require().NoError(err, "search with downsample=%d failed", ds)
+				s.Require().Equal(totalDocs, int(result.Total), "total should not be affected by downsample")
+				actSum += result.IDs.Len()
+				actCnt++
+			}
+			act := float64(actSum) / float64(actCnt)
+			exp := float64(totalDocs) / float64(ds) // with downsample=k, expect approximately totalDocs/k documents
+			s.Require().InEpsilon(exp, act, eps, "sampled docs (%.2f) should be ~ %d/%d (±%0.2f)", act, totalDocs, ds, eps)
 
-			s.Require().InEpsilon(exp, act, eps,
-				"sampled docs (%d) should be ~ %d/%d (±%0.2f)",
-				int(act), totalDocs, ds, eps)
-
-			s.Require().Equal(totalDocs, int(result.Total), "total should not be affected by downsample")
 		})
 	}
 }
