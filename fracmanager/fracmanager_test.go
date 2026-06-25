@@ -66,7 +66,7 @@ func TestSealingOnShutdown(t *testing.T) {
 	cfg, fm, stop := setupFracManager(t, cfg)
 	appendDocsToFracManager(t, fm, 10)
 
-	activeName := fm.lc.registry.all.fractions[0].Info().Name()
+	activeName := fm.lc.registry.snapshot.fractions[0].Info().Name()
 
 	stop()
 
@@ -74,7 +74,7 @@ func TestSealingOnShutdown(t *testing.T) {
 	cfg.MinSealFracSize = 1 // to ensure that the frac will be sealed on shutdown
 	cfg, fm, stop = setupFracManager(t, cfg)
 
-	allFractions := fm.lc.registry.all.fractions
+	allFractions := fm.lc.registry.snapshot.fractions
 	assert.Equal(t, 1, len(allFractions), "should have one fraction")
 	assert.Equal(t, activeName, allFractions[0].Info().Name(), "fraction should have the same name")
 	_, ok := allFractions[0].(*syncAppender)
@@ -84,7 +84,7 @@ func TestSealingOnShutdown(t *testing.T) {
 	// third start
 	_, fm, stop = setupFracManager(t, cfg)
 
-	allFractions = fm.lc.registry.all.fractions
+	allFractions = fm.lc.registry.snapshot.fractions
 	assert.Equal(t, 2, len(allFractions), "should have 2 fraction: new active and old sealed")
 	_, ok = allFractions[0].(*refCountedSealed)
 	assert.True(t, ok, "first fraction should be sealed")

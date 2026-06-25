@@ -79,11 +79,11 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 		wg.Wait()
 
 		// finalize appender to prevent new writes
-		appender := lc.registry.Appender()
-		if err := appender.Finalize(); err != nil {
+		appender := lc.registry.appender()
+		if err := appender.finalize(); err != nil {
 			logger.Fatal("shutdown fraction freezing error", zap.Error(err))
 		}
-		appender.WaitWriteIdle()
+		appender.waitWriteIdle()
 
 		stopIdx()
 
@@ -98,16 +98,50 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 	return &fm, stop, nil
 }
 
+type CompactionSnapshot struct {
+	claimed []*refCountedSealed
+}
+
+func (cs *CompactionSnapshot) Fractions() []*frac.Sealed {
+	result := make([]*frac.Sealed, len(cs.claimed))
+	for i, f := range cs.claimed {
+		result[i] = f.Sealed
+	}
+	return result
+}
+
+func (cs *CompactionSnapshot) Destroy() {
+	for _, f := range cs.claimed {
+		f.Destroy()
+	}
+}
+
+func (fm *FracManager) SealedFractionsSnapshot() []*frac.Sealed {
+	return fm.lc.registry.sealedSnapshot()
+}
+
+func (fm *FracManager) ClaimForCompaction(names []string) (*CompactionSnapshot, error) {
+	claimed, err := fm.lc.registry.claimForCompaction(names)
+	if err != nil {
+		return nil, err
+	}
+	return &CompactionSnapshot{claimed: claimed}, nil
+}
+
+func (fm *FracManager) SubstituteWithSealed(produced *frac.Sealed, snapshot *CompactionSnapshot) {
+	fm.lc.registry.substituteWithSealed(produced, snapshot.claimed...)
+}
+
 func (fm *FracManager) AcquireFraction(name string) (frac.Fraction, func(), bool) {
-	return fm.lc.registry.AcquireOneFraction(name)
+	return fm.lc.registry.acquireOneFraction(name)
 }
 
 func (fm *FracManager) AcquireFractions() (List, func()) {
-	return fm.lc.registry.AcquireAllFractions()
+	return fm.lc.registry.acquireAllFractions()
 }
 
 func (fm *FracManager) Oldest() uint64 {
-	return fm.lc.registry.OldestTotal()
+	return fm.lc.registry.oldestTotal()
 }
 
 func (fm *FracManager) Flags() *StateManager {
@@ -123,7 +157,7 @@ func (fm *FracManager) Append(ctx context.Context, docs storage.DocBlock, metas 
 			return ctx.Err()
 		default:
 			// Try to append data to the currently active fraction
-			err := fm.lc.registry.Appender().Append(docs, metas)
+			err := fm.lc.registry.appender().append(docs, metas)
 			if err != nil {
 				logger.Info("append fail", zap.Error(err))
 				if err == ErrFractionNotWritable {
@@ -169,7 +203,7 @@ func startStatsWorker(ctx context.Context, cfg *Config, reg *fractionRegistry, w
 		logger.Info("stats loop is started")
 		// Run stats collection every 10 seconds
 		util.RunEvery(ctx.Done(), time.Second*10, func() {
-			stats := reg.Stats()
+			stats := reg.statistics()
 			stats.Log()        // Log statistics
 			stats.SetMetrics() // Update Prometheus metrics
 
