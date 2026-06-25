@@ -76,6 +76,9 @@ func (p SearchParams) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 			return err
 		}
 	}
+	if p.Downsample > 1 {
+		enc.AddUint32("Downsample", p.Downsample)
+	}
 	return nil
 }
 

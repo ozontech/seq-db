@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -335,7 +336,7 @@ func sampler(n uint32) func(in []node.LID) []node.LID {
 		}
 	}
 
-	var cnt uint32
+	cnt := rand.Uint32N(n)
 	return func(in []node.LID) []node.LID {
 		i := 0
 		for _, lid := range in {
