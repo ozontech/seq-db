@@ -1,6 +1,9 @@
 package indexwriter
 
-import "github.com/ozontech/seq-db/frac/sealed/lids"
+import (
+	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac/sealed/lids"
+)
 
 type lidAccumulator struct {
 	blockCapacity int
@@ -17,6 +20,10 @@ func newLIDAccumulator(
 	blockCapacity int,
 	onBlock func(unpackedLIDBlock) error,
 ) *lidAccumulator {
+	if blockCapacity == 0 {
+		blockCapacity = consts.DefaultLIDBlockCap
+	}
+
 	a := &lidAccumulator{
 		blockCapacity: blockCapacity,
 		onBlock:       onBlock,
