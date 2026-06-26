@@ -218,6 +218,7 @@ func (f *Remote) IsIntersecting(from, to seq.MID) bool {
 func (f *Remote) Suicide() {
 	// FIXME(dkharms): We need to rename `.remote` file to `._remote` to commit deletion intent.
 	// Now, we might have fraction leaks in S3 storage since [Suicide] is not atomic.
+
 	util.MustRemoveFileByPath(f.BaseFileName + consts.RemoteFractionSuffix)
 
 	f.docsCache.Release()
