@@ -115,8 +115,6 @@ func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedIn
 }
 
 // nextFractionID generates a unique identifier for a new fraction
-// IMPORTANT: This method is not thread-safe. When used in concurrent environments,
-// external synchronization must be provided to avoid ID collisions
 func (fp *fractionProvider) nextFractionID() string {
 	fp.mu.Lock()
 	defer fp.mu.Unlock()
@@ -144,16 +142,9 @@ func (fp *fractionProvider) Seal(a *frac.Active) (*frac.Sealed, error) {
 
 	params := fp.config.SealParams
 	// NOTE(dkharms): If compaction is enabled we do not want to waste CPU on compression.
-	//
 	// Sealed fractions will be picked up by compaction workers almost instantly,
 	// and that will trigger compression again.
-	if fp.config.CompactionEnabled {
-		params = common.SealParams{
-			DocBlocksZstdLevel: params.DocBlocksZstdLevel,
-			LIDBlockSize:       params.LIDBlockSize,
-			DocBlockSize:       params.DocBlockSize,
-		}
-	}
+	params.DisableIndexCompression = fp.config.CompactionEnabled
 
 	preloaded, err := sealing.Seal(src, params)
 	if err != nil {

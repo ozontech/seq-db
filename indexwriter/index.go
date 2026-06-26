@@ -205,7 +205,7 @@ func newIndexBlock(raw []byte) indexBlock {
 }
 
 func (s *IndexWriter) newIndexBlockZSTD(raw []byte, level int) indexBlock {
-	if level <= 0 {
+	if s.params.DisableIndexCompression {
 		return newIndexBlock(raw)
 	}
 

@@ -212,15 +212,32 @@ type Config struct {
 
 	Compaction struct {
 		STCS struct {
-			MergeTrigger     int     `config:"merge_trigger" default:"4"`
-			MergeFanIn       int     `config:"merge_fan_in" default:"32"`
-			MergeFanOutSize  Bytes   `config:"merge_fan_out_size" default:"512MiB"`
+			// MergeTrigger is the minimum number of fractions that a bucket must
+			// contain before it becomes eligible for compaction.
+			MergeTrigger int `config:"merge_trigger" default:"4"`
+			// MergeFanIn caps how many fractions are compacted from a single bucket
+			// per compaction iteration.
+			MergeFanIn int `config:"merge_fan_in" default:"32"`
+			// MergeFanOutSize is the upper bound on the combined input index size of
+			// a single merge. It limits how large a compacted fraction can grow.
+			MergeFanOutSize Bytes `config:"merge_fan_out_size" default:"512MiB"`
+			// BucketLowerbound and BucketUpperbound control bucket membership:
+			// a fraction joins a bucket only if its size is within
+			// [BucketLowerbound, BucketUpperbound] * avg(bucket).
 			BucketLowerbound float64 `config:"bucket_lowerbound" default:"0.5"`
 			BucketUpperbound float64 `config:"bucket_upperbound" default:"1.5"`
 		} `config:"stcs"`
-		Enabled      bool          `config:"enabled"`
-		Workers      int           `config:"workers"`
-		TimeWindow   time.Duration `config:"time_window" default:"1h"`
+		// Enabled is the master switch for background compaction.
+		// Compaction is disabled unless this is set to true.
+		Enabled bool `config:"enabled"`
+		// Workers specifies the number of executor workers performing merges
+		// concurrently. By default this setting is equal to [runtime.GOMAXPROCS].
+		Workers int `config:"workers"`
+		// TimeWindow is the width of a time bin. Fractions are grouped into bins by
+		// truncating their creation time.
+		TimeWindow time.Duration `config:"time_window" default:"1h"`
+		// TickInterval specifies how often the planner wakes up to pick a single
+		// compaction task.
 		TickInterval time.Duration `config:"tick_interval" default:"1s"`
 	} `config:"compaction"`
 

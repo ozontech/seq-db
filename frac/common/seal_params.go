@@ -1,6 +1,10 @@
 package common
 
 type SealParams struct {
+	// DisableIndexCompression disables compression
+	// of index components (lids, ids, etc.)
+	DisableIndexCompression bool
+
 	IDsZstdLevel           int
 	LIDsZstdLevel          int
 	TokenListZstdLevel     int
