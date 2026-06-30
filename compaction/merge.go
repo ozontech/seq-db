@@ -1,6 +1,7 @@
 package compaction
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 
@@ -13,6 +14,10 @@ import (
 func Merge(filename string, params common.SealParams, srcs ...Source) (*sealed.PreloadedData, error) {
 	w := indexwriter.New(params)
 	src := NewMergeSource(filename, srcs)
+
+	if err := createCompactionPlan(filename, srcs...); err != nil {
+		return nil, err
+	}
 
 	if err := createAndWrite(
 		filename+consts.OffsetsTmpFileSuffix,
@@ -81,6 +86,37 @@ func Merge(filename string, params common.SealParams, srcs ...Source) (*sealed.P
 	}
 
 	return preloaded, nil
+}
+
+func createCompactionPlan(filename string, srcs ...Source) error {
+	type plan struct {
+		Participants []string `json:"participants"`
+	}
+
+	// Write which fractions are participating in compaction.
+	//
+	// Since we cannot remove all stale fractions and move
+	// the merged one into final state, we have to keep our
+	// intention on disk.
+	//
+	// Later on, it will help us to make correct decision
+	// whether we should drop participants (delete them from disk).
+	return createAndWrite(
+		filename+consts.CompactionQueue,
+		filename+consts.CompactionQueue,
+		func(f *os.File) error {
+			var p plan
+
+			for i := range srcs {
+				p.Participants = append(
+					p.Participants,
+					srcs[i].Info().Name(),
+				)
+			}
+
+			return json.NewEncoder(f).Encode(p)
+		},
+	)
 }
 
 func mergeDocs(filename string, srcs ...Source) error {

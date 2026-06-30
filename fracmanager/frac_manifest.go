@@ -1,9 +1,13 @@
 package fracmanager
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -37,6 +41,8 @@ type fracManifest struct {
 	hasDocsDel  bool // documents deletion marker
 	hasSdocsDel bool // sorted documents deletion marker
 	hasIndexDel bool // index deletion marker
+
+	hasCompactionQueue bool
 }
 
 // hasAllIndexFiles reports whether all 5 split index files are present.
@@ -78,6 +84,9 @@ func (m *fracManifest) AddExtension(ext string) error {
 		m.hasSdocsDel = true
 	case consts.IndexDelFileSuffix:
 		m.hasIndexDel = true
+
+	case consts.CompactionQueue:
+		m.hasCompactionQueue = true
 
 	case consts.IndexTmpFileSuffix, consts.InfoTmpFileSuffix,
 		consts.TokenTmpFileSuffix, consts.OffsetsTmpFileSuffix,
@@ -146,6 +155,11 @@ func removeMeta(m *fracManifest) {
 		util.RemoveFile(m.basePath + consts.WalFileSuffix)
 		m.hasWal = false
 	}
+}
+
+func removeCompactionQueue(m *fracManifest) {
+	util.RemoveFile(m.basePath + consts.CompactionQueue)
+	m.hasCompactionQueue = false
 }
 
 func removeIndexFiles(m *fracManifest) {
@@ -233,7 +247,14 @@ func analyzeFiles(files []string) ([]*fracManifest, error) {
 // filterValid filters valid fractions and handles invalid ones
 // Removes partially deleted and unknown fractions
 func filterValid(ids []string, manifests map[string]*fracManifest) ([]*fracManifest, error) {
+	// We need to drop stale (compacted) fractions first.
+	ids, err := dropCompacted(ids, manifests)
+	if err != nil {
+		return nil, err
+	}
+
 	validated := make([]*fracManifest, 0, len(manifests))
+
 	for _, id := range ids {
 		manifest := manifests[id]
 		if manifest == nil {
@@ -256,7 +277,58 @@ func filterValid(ids []string, manifests map[string]*fracManifest) ([]*fracManif
 		cleanupFrac(manifest)
 		validated = append(validated, manifest)
 	}
+
 	return validated, nil
+}
+
+func dropCompacted(ids []string, manifests map[string]*fracManifest) ([]string, error) {
+	type plan struct {
+		Participants []string `json:"participants"`
+	}
+
+	filtered := make(map[string]struct{})
+
+	for _, id := range ids {
+		filtered[id] = struct{}{}
+	}
+
+	for _, id := range ids {
+		m := manifests[id]
+		if m == nil {
+			return nil, errors.New("inconsistent fraction file analysis")
+		}
+
+		skip := !m.hasCompactionQueue ||
+			m.Stage() != fracStageSealed
+
+		if skip {
+			continue
+		}
+
+		f, err := os.Open(m.basePath + consts.CompactionQueue)
+		if err != nil {
+			return nil, err
+		}
+
+		var p plan
+		if err := json.NewDecoder(f).Decode(&p); err != nil {
+			return nil, err
+		}
+
+		for _, pname := range p.Participants {
+			pid := pname[len(fileBasePattern):]
+
+			f := manifests[pid]
+			if f == nil {
+				return nil, errors.New("inconsistent fraction file analysis")
+			}
+
+			delete(filtered, pid)
+			removeAllFiles(f.basePath)
+		}
+	}
+
+	return slices.Collect(maps.Keys(filtered)), nil
 }
 
 // cleanupFrac performs cleanup of unnecessary files depending on fraction stage
@@ -284,6 +356,7 @@ func cleanupRemoteFrac(m *fracManifest) {
 // Removes redundant files after finishing work with the fraction
 func cleanupSealedFrac(m *fracManifest) {
 	removeMeta(m)
+	removeCompactionQueue(m)
 	if m.hasSdocs {
 		removeDocs(m) // remove orig docs, but keeping sorted
 	}
@@ -315,6 +388,7 @@ func removeAllFiles(basePath string) {
 
 		consts.MetaFileSuffix,
 		consts.WalFileSuffix,
+		consts.CompactionQueue,
 	} {
 		util.RemoveFile(basePath + suffix)
 	}
