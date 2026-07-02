@@ -140,6 +140,11 @@ func (fm *FracManager) SubstituteWithSealed(produced *sealed.PreloadedData, snap
 		fm.lc.provider.NewSealedPreloaded(produced.Info.Path, produced),
 		snapshot.claimed...,
 	)
+
+	fm.lc.infoCache.Add(produced.Info)
+	for _, f := range snapshot.claimed {
+		fm.lc.infoCache.Remove(f.Info().Name())
+	}
 }
 
 func (fm *FracManager) AcquireFraction(name string) (frac.Fraction, func(), bool) {
