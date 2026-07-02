@@ -1485,6 +1485,15 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   toTime,
 		},
 		{
+			name:  "message:req*t OR message:f*ed",
+			query: "message:req*t OR message:f*ed",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.message, "request") || strings.Contains(doc.message, "failed")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
 			name:  "message:*uest OR id:*1",
 			query: "message:*uest OR id:*1",
 			filter: func(doc *testDoc) bool {

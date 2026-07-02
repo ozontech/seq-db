@@ -159,6 +159,7 @@ func newTokenTableEntry(
 		ValCount:   lastIndex - firstIndex + 1, // Number of tokens in this entry
 		MinVal:     minVal,                     // Smallest token value in range
 		MaxVal:     maxVal,                     // Largest token value in range
+		Letters:    block.payload.LettersBitset(),
 	}
 }
 

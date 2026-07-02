@@ -37,6 +37,10 @@ func (s *baseSearch) LastTID() uint32 {
 	return uint32(s.last)
 }
 
+func (s *baseSearch) CheckEntry(letters util.LettersBitset) bool {
+	return true
+}
+
 type literalSearch struct {
 	baseSearch
 	value    []byte
@@ -78,11 +82,12 @@ func (s *literalSearch) Check(val []byte) (bool, error) {
 
 type wildcardSearch struct {
 	baseSearch
-	prefix    []byte
-	suffix    []byte
-	middle    [][]byte
-	middleLen int
-	narrowed  bool
+	prefix        []byte
+	suffix        []byte
+	middle        [][]byte
+	middleLen     int
+	narrowed      bool
+	lettersBitset util.LettersBitset
 }
 
 func newWildcardSearch(base baseSearch, token *parser.Literal) *wildcardSearch {
@@ -106,6 +111,16 @@ func newWildcardSearch(base baseSearch, token *parser.Literal) *wildcardSearch {
 			s.middleLen += len(val)
 		}
 	}
+
+	// compute required letters for block filtering
+	allBytes := make([]byte, 0, len(s.prefix)+len(s.suffix)+s.middleLen)
+	allBytes = append(allBytes, s.prefix...)
+	allBytes = append(allBytes, s.suffix...)
+	for _, m := range s.middle {
+		allBytes = append(allBytes, m...)
+	}
+	s.lettersBitset = util.NewLettersBitset(allBytes)
+
 	return s
 }
 
@@ -169,6 +184,10 @@ func findSequence(haystack []byte, needles [][]byte) int {
 
 func (s *wildcardSearch) Check(val []byte) (bool, error) {
 	return s.checkPrefix(val) && s.checkSuffix(val) && s.checkMiddle(val), nil
+}
+
+func (s *wildcardSearch) CheckEntry(letters util.LettersBitset) bool {
+	return letters.IsNil() || letters.ContainsAll(s.lettersBitset)
 }
 
 type rangeTextSearch struct {
@@ -341,6 +360,7 @@ type Searcher interface {
 	FirstTID() uint32
 	LastTID() uint32
 	Check(val []byte) (bool, error)
+	CheckEntry(letters util.LettersBitset) bool
 }
 
 func newSearcher(token parser.Token, tp tokenProvider) Searcher {
