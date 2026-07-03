@@ -21,8 +21,8 @@ type mockSource struct {
 	tokenLIDs    [][]uint32
 }
 
-func (m *mockSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
-	return func(yield func(string, iter.Seq2[TokenPosting, error]) bool) {
+func (m *mockSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenLIDs, error]] {
+	return func(yield func(string, iter.Seq2[TokenLIDs, error]) bool) {
 		start := 0
 		for i, field := range m.fields {
 			end := int(m.fieldMaxTIDs[i])
@@ -34,14 +34,14 @@ func (m *mockSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, er
 	}
 }
 
-func (m *mockSource) tokensForField(start, end int) iter.Seq2[TokenPosting, error] {
-	return func(yield func(TokenPosting, error) bool) {
+func (m *mockSource) tokensForField(start, end int) iter.Seq2[TokenLIDs, error] {
+	return func(yield func(TokenLIDs, error) bool) {
 		for j := start; j < end; j++ {
 			var lidsbuf []uint32
 			if j < len(m.tokenLIDs) {
 				lidsbuf = m.tokenLIDs[j]
 			}
-			if !yield(TokenPosting{First: m.tokens[j], Second: lidsbuf}, nil) {
+			if !yield(TokenLIDs{First: m.tokens[j], Second: lidsbuf}, nil) {
 				return
 			}
 		}

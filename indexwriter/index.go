@@ -17,8 +17,8 @@ import (
 )
 
 type (
-	DocLocation  = util.Pair[seq.ID, seq.DocPos]
-	TokenPosting = util.Pair[[]byte, []uint32]
+	DocLocation = util.Pair[seq.ID, seq.DocPos]
+	TokenLIDs   = util.Pair[[]byte, []uint32]
 )
 
 // Source defines the data required to write all index files for a fraction.
@@ -28,7 +28,7 @@ type Source interface {
 
 	// ID returns an iterator over stored document identifiers paired with
 	// their positions, in descending [seq.ID] order.
-	ID() iter.Seq2[DocLocation, error]
+	IDs() iter.Seq2[DocLocation, error]
 
 	// BlockOffsets returns byte offsets to each document block
 	// within this source's `.docs` file.
@@ -37,7 +37,7 @@ type Source interface {
 	// TokenTriplet iterates over fields in lexicographic order.
 	// For each field, it yields tokens (lexicographically sorted)
 	// paired with the local document ID list for that token.
-	TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]]
+	TokenTriplets() iter.Seq2[string, iter.Seq2[TokenLIDs, error]]
 }
 
 // indexBlock is one compressed (or not) block with its registry metadata.
@@ -111,7 +111,7 @@ func (s *IndexWriter) WriteIDFile(ws io.WriteSeeker, src Source) error {
 	}
 	defer w.release()
 
-	for block, err := range idBlock(src.ID(), consts.IDsPerBlock) {
+	for block, err := range idBlock(src.IDs(), consts.IDsPerBlock) {
 		if err != nil {
 			return err
 		}
@@ -153,7 +153,7 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	)
 
 	var allFieldsTables []token.FieldTable
-	for pair, err := range tokenBlock(src.TokenTriplet(), lidAccumulator.add, consts.RegularBlockSize) {
+	for pair, err := range tokenBlock(src.TokenTriplets(), lidAccumulator.add, consts.RegularBlockSize) {
 		if err != nil {
 			return err
 		}

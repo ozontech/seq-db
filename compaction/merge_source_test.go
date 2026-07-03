@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/indexwriter"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -42,15 +43,15 @@ func (m *mockSealingSource) BlockOffsets() []uint64 {
 	return m.blocks
 }
 
-func (m *mockSealingSource) ID() iter.Seq2[DocLocation, error] {
-	return func(yield func(DocLocation, error) bool) {
-		docloc := DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}
+func (m *mockSealingSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
+	return func(yield func(indexwriter.DocLocation, error) bool) {
+		docloc := indexwriter.DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}
 		if !yield(docloc, nil) {
 			return
 		}
 
 		for i, id := range m.ids {
-			docloc = DocLocation{First: id, Second: m.pos[i]}
+			docloc = indexwriter.DocLocation{First: id, Second: m.pos[i]}
 			if !yield(docloc, nil) {
 				return
 			}
@@ -58,14 +59,14 @@ func (m *mockSealingSource) ID() iter.Seq2[DocLocation, error] {
 	}
 }
 
-func (m *mockSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
+func (m *mockSealingSource) TokenTriplets() iter.Seq2[string, iter.Seq2[indexwriter.TokenLIDs, error]] {
 	fields := make([]string, 0, len(m.fields))
 	for f := range m.fields {
 		fields = append(fields, f)
 	}
 
 	slices.Sort(fields)
-	return func(yield func(string, iter.Seq2[TokenPosting, error]) bool) {
+	return func(yield func(string, iter.Seq2[indexwriter.TokenLIDs, error]) bool) {
 		for _, field := range fields {
 			if !yield(field, m.postingsForField(field)) {
 				return
@@ -74,8 +75,8 @@ func (m *mockSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPost
 	}
 }
 
-func (m *mockSealingSource) postingsForField(field string) iter.Seq2[TokenPosting, error] {
-	return func(yield func(TokenPosting, error) bool) {
+func (m *mockSealingSource) postingsForField(field string) iter.Seq2[indexwriter.TokenLIDs, error] {
+	return func(yield func(indexwriter.TokenLIDs, error) bool) {
 		tokens := make([]string, 0, len(m.fields[field]))
 		for t := range m.fields[field] {
 			tokens = append(tokens, t)
@@ -83,7 +84,7 @@ func (m *mockSealingSource) postingsForField(field string) iter.Seq2[TokenPostin
 
 		slices.Sort(tokens)
 		for _, tok := range tokens {
-			posting := TokenPosting{
+			posting := indexwriter.TokenLIDs{
 				First:  []byte(tok),
 				Second: m.fields[field][tok],
 			}
@@ -95,7 +96,7 @@ func (m *mockSealingSource) postingsForField(field string) iter.Seq2[TokenPostin
 	}
 }
 
-func (m *mockSealingSource) DocBlock() iter.Seq2[DocBlockLocation, error] {
+func (m *mockSealingSource) DocBlocks() iter.Seq2[DocBlockLocation, error] {
 	return func(yield func(DocBlockLocation, error) bool) {
 		if !yield(DocBlockLocation{}, nil) {
 			return
@@ -168,7 +169,7 @@ func TestMergeSource(t *testing.T) {
 			docpos []seq.DocPos
 		)
 
-		for loc, err := range source.ID() {
+		for loc, err := range source.IDs() {
 			require.NoError(t, err)
 			ids = append(ids, loc.First)
 			docpos = append(docpos, loc.Second)
@@ -207,7 +208,7 @@ func TestMergeSource(t *testing.T) {
 			lids   [][]uint32
 		)
 
-		for field, fieldIt := range source.TokenTriplet() {
+		for field, fieldIt := range source.TokenTriplets() {
 			fields = append(fields, field)
 
 			for posting, err := range fieldIt {
@@ -341,10 +342,10 @@ func BenchmarkMergeSource(b *testing.B) {
 		ms := NewMergeSource("bench", sources)
 
 		ms.BlockOffsets()
-		for range ms.ID() {
+		for range ms.IDs() {
 		}
 
-		for _, tokIt := range ms.TokenTriplet() {
+		for _, tokIt := range ms.TokenTriplets() {
 			for range tokIt {
 			}
 		}

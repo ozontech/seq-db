@@ -54,7 +54,7 @@ func (s *SealedSource) BlockOffsets() []uint64 {
 	return s.f.blocksData.BlocksOffsets
 }
 
-func (s *SealedSource) ID() iter.Seq2[indexwriter.DocLocation, error] {
+func (s *SealedSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
 	return func(yield func(indexwriter.DocLocation, error) bool) {
 		for lid := uint32(0); lid < s.f.blocksData.IDsTable.IDsTotal; lid++ {
 			mid, err := s.idsProvider.MID(seq.LID(lid))
@@ -82,7 +82,7 @@ func (s *SealedSource) ID() iter.Seq2[indexwriter.DocLocation, error] {
 	}
 }
 
-func (s *SealedSource) TokenTriplet() iter.Seq2[string, iter.Seq2[indexwriter.TokenPosting, error]] {
+func (s *SealedSource) TokenTriplets() iter.Seq2[string, iter.Seq2[indexwriter.TokenLIDs, error]] {
 	tokenTable := s.tokenTableLoader.Load()
 
 	fields := make([]string, 0, len(tokenTable))
@@ -91,7 +91,7 @@ func (s *SealedSource) TokenTriplet() iter.Seq2[string, iter.Seq2[indexwriter.To
 	}
 
 	slices.Sort(fields)
-	return func(yield func(string, iter.Seq2[indexwriter.TokenPosting, error]) bool) {
+	return func(yield func(string, iter.Seq2[indexwriter.TokenLIDs, error]) bool) {
 		for _, field := range fields {
 			if !yield(field, s.postingsForField(field)) {
 				return
@@ -100,16 +100,16 @@ func (s *SealedSource) TokenTriplet() iter.Seq2[string, iter.Seq2[indexwriter.To
 	}
 }
 
-func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.TokenPosting, error] {
+func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.TokenLIDs, error] {
 	lidsTable := s.f.blocksData.LIDsTable
 	tokenTable := s.tokenTableLoader.Load()
 
 	var lidsBuf []uint32
-	return func(yield func(indexwriter.TokenPosting, error) bool) {
+	return func(yield func(indexwriter.TokenLIDs, error) bool) {
 		for _, entry := range tokenTable[field].Entries {
 			block := s.tokenBlockLoader.Load(entry.BlockIndex)
 
-			for tid := entry.StartTID; tid < entry.StartTID+entry.ValCount; tid++ {
+			for tid := entry.StartTID; tid <= entry.GetLastTID(); tid++ {
 				lidsBuf = lidsBuf[:0]
 
 				tokenVal := block.GetToken(entry.GetIndexInTokensBlock(tid))
@@ -119,15 +119,15 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 				for bi := firstBlock; bi <= lastBlock; bi++ {
 					lidBlock, err := s.lidsLoader.GetLIDsBlock(bi)
 					if err != nil {
-						yield(indexwriter.TokenPosting{}, err)
+						yield(indexwriter.TokenLIDs{}, err)
 						return
 					}
 
 					chunkIdx := lidsTable.GetChunkIndex(bi, tid)
-					lidsBuf = append(lidsBuf, lidBlock.LIDs[lidBlock.Offsets[chunkIdx]:lidBlock.Offsets[chunkIdx+1]]...)
+					lidsBuf = append(lidsBuf, lidBlock.GetLIDs(chunkIdx)...)
 				}
 
-				if !yield(indexwriter.TokenPosting{First: tokenVal, Second: lidsBuf}, nil) {
+				if !yield(indexwriter.TokenLIDs{First: tokenVal, Second: lidsBuf}, nil) {
 					return
 				}
 			}
@@ -135,7 +135,7 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 	}
 }
 
-func (s *SealedSource) DocBlock() iter.Seq2[DocBlockLocation, error] {
+func (s *SealedSource) DocBlocks() iter.Seq2[DocBlockLocation, error] {
 	return func(yield func(DocBlockLocation, error) bool) {
 		// We do not want to cache payload of DocBlock because
 		// it will just pollute cache and cause unnecessary evictions.
