@@ -309,6 +309,7 @@ func dropCompacted(ids []string, manifests map[string]*fracManifest) ([]string, 
 		if err != nil {
 			return nil, err
 		}
+		defer f.Close() //nolint
 
 		var p plan
 		if err := json.NewDecoder(f).Decode(&p); err != nil {
@@ -320,7 +321,9 @@ func dropCompacted(ids []string, manifests map[string]*fracManifest) ([]string, 
 
 			f := manifests[pid]
 			if f == nil {
-				return nil, errors.New("inconsistent fraction file analysis")
+				// NOTE(dkharms): It is possible that compaction participants
+				// were dropped but the queue itself was not deleted.
+				continue
 			}
 
 			delete(filtered, pid)
