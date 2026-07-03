@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -28,6 +29,8 @@ func (m *mockSealingSource) Info() *common.Info {
 		DocsRaw:    m.docsOnDisk,
 		DocsTotal:  uint32(len(m.ids)),
 		DocsOnDisk: m.docsOnDisk,
+
+		CreationTime: uint64(time.Now().UnixMilli()),
 
 		From: slices.MinFunc(m.ids, func(x, y seq.ID) int {
 			return cmp.Compare(x.MID, y.MID)
