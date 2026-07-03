@@ -118,9 +118,7 @@ func (cs *CompactionSnapshot) Destroy() {
 }
 
 func (fm *FracManager) FractionName() string {
-	filePath := fileBasePattern + fm.lc.provider.nextFractionID()
-	baseFilePath := filepath.Join(fm.lc.provider.config.DataDir, filePath)
-	return baseFilePath
+	return fm.lc.provider.fractionName()
 }
 
 func (fm *FracManager) SealedFractionsSnapshot() []*frac.Sealed {
@@ -133,6 +131,10 @@ func (fm *FracManager) ClaimForCompaction(names []string) (*CompactionSnapshot, 
 		return nil, err
 	}
 	return &CompactionSnapshot{claimed: claimed}, nil
+}
+
+func (fm *FracManager) ReleaseSnapshot(snapshot *CompactionSnapshot) {
+	fm.lc.registry.releaseSnapshot(snapshot)
 }
 
 func (fm *FracManager) SubstituteWithSealed(produced *sealed.PreloadedData, snapshot *CompactionSnapshot) {

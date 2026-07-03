@@ -26,6 +26,10 @@ type bucket struct {
 	fracs   []fraction
 }
 
+func newBucket(sizeAvg uint64, fracs []fraction) bucket {
+	return bucket{sizeAvg: sizeAvg, fracs: fracs}
+}
+
 func (s strategySTCS) Pick(candidates []fraction) bucket {
 	if len(candidates) < s.mergeTrigger {
 		return bucket{}
@@ -85,14 +89,14 @@ func (s strategySTCS) group(sorted []fraction) []bucket {
 			continue
 		}
 
-		buckets = append(buckets, bucket{uint64(avg), current})
+		buckets = append(buckets, newBucket(uint64(avg), current))
 		current = []fraction{f}
 		sum = size
 	}
 
 	if len(current) > 0 {
 		avg := float64(sum) / float64(len(current))
-		buckets = append(buckets, bucket{uint64(avg), current})
+		buckets = append(buckets, newBucket(uint64(avg), current))
 	}
 
 	return buckets
@@ -104,7 +108,7 @@ func (s strategySTCS) takeUntilSize(b bucket) bucket {
 	for i := range b.fracs {
 		picked += b.fracs[i].Info().IndexOnDisk
 		if picked >= s.mergeFanOutSize {
-			return bucket{b.sizeAvg, b.fracs[:i]}
+			return newBucket(b.sizeAvg, b.fracs[:i])
 		}
 	}
 

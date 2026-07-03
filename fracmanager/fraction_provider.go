@@ -121,12 +121,15 @@ func (fp *fractionProvider) nextFractionID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), fp.ulidEntropy).String()
 }
 
+func (fp *fractionProvider) fractionName() string {
+	filePath := fileBasePattern + fp.nextFractionID()
+	return filepath.Join(fp.config.DataDir, filePath)
+}
+
 // CreateActive creates a new active fraction with auto-generated filename
 // Filename pattern: base_pattern + ULID
 func (fp *fractionProvider) CreateActive() *frac.Active {
-	filePath := fileBasePattern + fp.nextFractionID()
-	baseFilePath := filepath.Join(fp.config.DataDir, filePath)
-	return fp.NewActive(baseFilePath)
+	return fp.NewActive(fp.fractionName())
 }
 
 // Seal converts an active fraction to a sealed one

@@ -49,23 +49,26 @@ type task struct {
 
 type planner struct {
 	cfg Config
-	ctx context.Context
 
-	wg   sync.WaitGroup
-	done chan struct{}
+	ctx    context.Context
+	cancel func()
+
+	wg sync.WaitGroup
 
 	fm    *fracmanager.FracManager
 	tasks chan task
 }
 
 func NewPlanner(ctx context.Context, fm *fracmanager.FracManager, cfg Config) *planner {
+	ctx, cancel := context.WithCancel(ctx)
+
 	p := planner{
 		cfg: cfg,
-		ctx: ctx,
 
-		done: make(chan struct{}),
-		fm:   fm,
+		ctx:    ctx,
+		cancel: cancel,
 
+		fm:    fm,
 		tasks: make(chan task),
 	}
 
@@ -87,10 +90,6 @@ func (p *planner) init() {
 				close(p.tasks)
 				return
 
-			case <-p.done:
-				close(p.tasks)
-				return
-
 			case <-t.C:
 				task, ok := p.pick()
 				if !ok {
@@ -101,6 +100,7 @@ func (p *planner) init() {
 				select {
 				case p.tasks <- task:
 				case <-time.NewTimer(time.Second).C:
+					p.fm.ReleaseSnapshot(task.snapshot)
 					// If all executor workers are busy for some long period of time,
 					// we want to drop the task because it might contain stale decision.
 					compactionSkipped.Inc()
@@ -111,10 +111,12 @@ func (p *planner) init() {
 }
 
 func (p *planner) stop() {
-	close(p.done)
 	if !p.cfg.Enabled {
 		close(p.tasks)
 	}
+
+	p.cancel()
+	p.wg.Wait()
 }
 
 func (p *planner) pick() (task, bool) {
@@ -143,7 +145,7 @@ func (p *planner) pick() (task, bool) {
 			continue
 		}
 
-		bucketSize := util.SizeStr(powerOfTwo(picked.sizeAvg))
+		bucketSize := util.SizeStr(ceilPowerOfTwo(picked.sizeAvg))
 		csnapshot, err := p.fm.ClaimForCompaction(names(picked.fracs))
 		if err != nil {
 			continue
@@ -166,6 +168,7 @@ func (p *planner) pick() (task, bool) {
 						zap.Any("snapshot", names(csnapshot.Fractions())),
 					)
 
+					p.fm.ReleaseSnapshot(csnapshot)
 					return
 				}
 
@@ -174,6 +177,8 @@ func (p *planner) pick() (task, bool) {
 						"compaction did not produce fraction",
 						zap.Any("snapshot", names(csnapshot.Fractions())),
 					)
+
+					p.fm.ReleaseSnapshot(csnapshot)
 					return
 				}
 
@@ -223,7 +228,7 @@ func (p *planner) prioritize(bins map[time.Time][]fraction) []time.Time {
 	return ordered
 }
 
-func names[T interface{ Info() *common.Info }, S ~[]T](fracs S) []string {
+func names[T fraction, S ~[]T](fracs S) []string {
 	fnames := make([]string, len(fracs))
 	for i := range fracs {
 		fnames[i] = fracs[i].Info().Name()
@@ -231,7 +236,7 @@ func names[T interface{ Info() *common.Info }, S ~[]T](fracs S) []string {
 	return fnames
 }
 
-func powerOfTwo(v uint64) uint64 {
+func ceilPowerOfTwo(v uint64) uint64 {
 	if v == 0 {
 		return 1
 	}
