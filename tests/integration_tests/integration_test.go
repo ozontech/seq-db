@@ -1365,6 +1365,8 @@ func (s *IntegrationTestSuite) TestDownsamplePropagation() {
 		wantAll:    false,
 	}}
 
+	env.WaitIdle()
+
 	for _, tc := range cases {
 		opts := []setup.SearchOption{setup.NoFetch(), setup.WithTotal(true)}
 		if tc.downsample != nil {
