@@ -17,6 +17,7 @@ import (
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/indexwriter"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
@@ -25,8 +26,6 @@ import (
 
 type (
 	Document        = util.Pair[seq.ID, []byte]
-	TokenPosting    = util.Pair[[]byte, []uint32]
-	DocLocation     = util.Pair[seq.ID, seq.DocPos]
 	IndexedDocBlock = util.Pair[[]byte, []seq.DocPos]
 )
 
@@ -116,20 +115,20 @@ func sortFields(tl *TokenList) ([]string, [][]uint32) {
 	return fields, fieldTIDs
 }
 
-func (src *ActiveSealingSource) ID() iter.Seq2[DocLocation, error] {
-	return func(yield func(DocLocation, error) bool) {
+func (src *ActiveSealingSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
+	return func(yield func(indexwriter.DocLocation, error) bool) {
 		mids := src.mids.vals
 		rids := src.rids.vals
 
 		// System ID and DocPos are not stored in `src.sortedLIDs`.
 		// However we do have to yield them to preserve 1-based indexing for ids.
-		dloc := DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}
+		dloc := indexwriter.DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}
 		if !yield(dloc, nil) {
 			return
 		}
 
 		for i, lid := range src.sortedLIDs {
-			dloc := DocLocation{
+			dloc := indexwriter.DocLocation{
 				First: seq.ID{
 					MID: seq.MID(mids[lid]),
 					RID: seq.RID(rids[lid]),
@@ -180,8 +179,8 @@ func (src *ActiveSealingSource) Info() *common.Info {
 	return src.info
 }
 
-func (src *ActiveSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenPosting, error]] {
-	return func(yield func(string, iter.Seq2[TokenPosting, error]) bool) {
+func (src *ActiveSealingSource) TokenTriplets() iter.Seq2[string, iter.Seq2[indexwriter.TokenLIDs, error]] {
+	return func(yield func(string, iter.Seq2[indexwriter.TokenLIDs, error]) bool) {
 		for idx, field := range src.fields {
 			if !yield(field, src.postingsForField(field, idx)) {
 				return
@@ -190,9 +189,9 @@ func (src *ActiveSealingSource) TokenTriplet() iter.Seq2[string, iter.Seq2[Token
 	}
 }
 
-func (src *ActiveSealingSource) postingsForField(field string, idx int) iter.Seq2[TokenPosting, error] {
+func (src *ActiveSealingSource) postingsForField(field string, idx int) iter.Seq2[indexwriter.TokenLIDs, error] {
 	var lidsbuf []uint32
-	return func(yield func(TokenPosting, error) bool) {
+	return func(yield func(indexwriter.TokenLIDs, error) bool) {
 		for _, tid := range src.fieldTIDs[idx] {
 			token := src.tokens[tid]
 
@@ -203,7 +202,7 @@ func (src *ActiveSealingSource) postingsForField(field string, idx int) iter.Seq
 				lidsbuf = append(lidsbuf, src.oldToNewLIDs[lid])
 			}
 
-			tpost := TokenPosting{First: token, Second: lidsbuf}
+			tpost := indexwriter.TokenLIDs{First: token, Second: lidsbuf}
 			if !yield(tpost, nil) {
 				return
 			}
@@ -228,7 +227,7 @@ func (src *ActiveSealingSource) Docs() iter.Seq2[Document, error] {
 			prev   seq.ID = seq.SystemID
 		)
 
-		for dloc, err := range src.ID() {
+		for dloc, err := range src.IDs() {
 			if err != nil {
 				yield(Document{}, err)
 				return

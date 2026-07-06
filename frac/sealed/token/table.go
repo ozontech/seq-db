@@ -77,7 +77,7 @@ func (t Table) GetEntryByTID(tid uint32) *TableEntry {
 	}
 	for _, data := range t {
 		from := data.Entries[0].StartTID
-		to := data.Entries[len(data.Entries)-1].getLastTID()
+		to := data.Entries[len(data.Entries)-1].GetLastTID()
 		if tid < from || tid > to {
 			continue
 		}

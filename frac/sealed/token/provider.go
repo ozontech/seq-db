@@ -29,7 +29,7 @@ func (tp *Provider) FirstTID() uint32 {
 }
 
 func (tp *Provider) LastTID() uint32 {
-	return tp.entries[len(tp.entries)-1].getLastTID()
+	return tp.entries[len(tp.entries)-1].GetLastTID()
 }
 
 func (tp *Provider) Ordered() bool {
@@ -41,7 +41,7 @@ func (tp *Provider) findEntry(tid uint32) *TableEntry {
 		return tp.curEntry
 	}
 
-	entryIndex := sort.Search(len(tp.entries), func(blockIndex int) bool { return tid <= tp.entries[blockIndex].getLastTID() })
+	entryIndex := sort.Search(len(tp.entries), func(blockIndex int) bool { return tid <= tp.entries[blockIndex].GetLastTID() })
 	return tp.entries[entryIndex]
 }
 
