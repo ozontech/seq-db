@@ -427,6 +427,28 @@ func (r *fractionRegistry) sealedSnapshot() []*frac.Sealed {
 	return result
 }
 
+func (r *fractionRegistry) releaseSnapshot(snapshot *CompactionSnapshot) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, f := range snapshot.claimed {
+		info := f.Info()
+
+		if _, ok := r.compacting[info.Name()]; !ok {
+			panic("BUG: fraction state was changed during compaction")
+		}
+
+		delete(r.compacting, info.Name())
+		r.stats.compacting.Sub(info)
+
+		r.sealed.Add(info.Name(), f)
+		r.stats.sealed.Add(info)
+	}
+
+	// NOTE(dkharms): It is safe to skip snapshot rebuilding here, because for search
+	// operations change of state (compacting to sealed) is not observable.
+}
+
 func (r *fractionRegistry) claimForCompaction(names []string) ([]*refCountedSealed, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

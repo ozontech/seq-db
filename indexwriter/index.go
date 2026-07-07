@@ -205,10 +205,15 @@ func newIndexBlock(raw []byte) indexBlock {
 }
 
 func (s *IndexWriter) newIndexBlockZSTD(raw []byte, level int) indexBlock {
+	if s.params.DisableIndexCompression {
+		return newIndexBlock(raw)
+	}
+
 	s.buf2 = zstd.CompressLevel(raw, s.buf2[:0], level)
 	if len(s.buf2) < len(raw) {
 		return indexBlock{codec: storage.CodecZSTD, rawLen: uint32(len(raw)), payload: s.buf2}
 	}
+
 	return newIndexBlock(raw)
 }
 
