@@ -357,7 +357,9 @@ func (fi *sealedFetchIndex) findLIDs(ids []seq.ID) []seq.LID {
 			return fi.idsIndex.LessOrEqual(seq.LID(lid), id)
 		}))
 
-		if id.MID == fi.idsIndex.GetMID(lid) && id.RID == fi.idsIndex.GetRID(lid) {
+		// In case when ID does not exist in fraction, binary search will return `right + 1`.
+		// Such value will correspond to the amount of LIDs in fraction, not to the index.
+		if lid <= seq.LID(right) && id.MID == fi.idsIndex.GetMID(lid) && id.RID == fi.idsIndex.GetRID(lid) {
 			res[i] = lid
 		}
 
