@@ -259,12 +259,14 @@ func iterateEvalTree(
 		lidsBatch := batchedEvalTree(maxBatchSize)
 		timerEval.Stop()
 
-		total += len(lidsBatch)
-
-		lidsBatch = sample(lidsBatch)
-
 		if len(lidsBatch) == 0 {
 			break
+		}
+
+		total += len(lidsBatch)
+
+		if lidsBatch = sample(lidsBatch); len(lidsBatch) == 0 {
+			continue
 		}
 
 		if hasHist || needIDs > 0 {
