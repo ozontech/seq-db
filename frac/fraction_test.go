@@ -72,6 +72,9 @@ func (s *FractionTestSuite) TearDownSuiteCommon() {
 
 func (s *FractionTestSuite) SetupTestCommon() {
 	s.config = &frac.Config{}
+	s.config.Search.QueryOptimization = frac.QueryOptimizationConfig{
+		BatchIterationCostThreshold: 1000,
+	}
 	s.tokenizers = map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(20, false, true),
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 100),
@@ -1328,7 +1331,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			fromTime: fromTime,
 			toTime:   midTime,
 		},
-		// AND operator queries
+		// AND operator queries (intersection)
 		{
 			name:  "message:request AND message:failed",
 			query: "message:request AND message:failed",
@@ -1337,6 +1340,24 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			},
 			fromTime: fromTime,
 			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND level:5",
+			query: "service:gateway AND level:5",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && doc.level == 5
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND level:5 AND message:processing (time range)",
+			query: "service:gateway AND level:5 AND message:processing",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && doc.level == 5 && strings.Contains(doc.message, "processing")
+			},
+			fromTime: fromTime,
+			toTime:   midTime,
 		},
 		{
 			name:  "service:gateway AND message:processing AND message:retry AND level:5",
@@ -1387,7 +1408,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   toTime,
 		},
 		{
-			name: "complex AND+OR",
+			name: "complex AND+OR 2",
 			query: "(service:gateway OR service:proxy OR service:scheduler) AND " +
 				"(message:request OR message:failed) AND (level:1 OR level:2 OR level:3)",
 			filter: func(doc *testDoc) bool {
@@ -1397,6 +1418,25 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			},
 			fromTime: fromTime,
 			toTime:   toTime,
+		},
+		// AND NOT
+		{
+			name:  "service:gateway AND NOT message:request",
+			query: "service:gateway AND NOT message:request",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && !strings.Contains(doc.message, "request")
+			},
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+		{
+			name:  "service:gateway AND NOT message:request AND NOT level:3",
+			query: "service:gateway AND NOT message:request AND NOT level:3",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && !strings.Contains(doc.message, "request") && doc.level != 3
+			},
+			fromTime: fromTime,
+			toTime:   midTime,
 		},
 		{
 			name:  "service:gateway AND NOT (message:request OR message:timed OR level:[0 to 3])",

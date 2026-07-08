@@ -32,9 +32,11 @@ type idsIndex interface {
 }
 
 type tokenIndex interface {
-	GetValByTID(tid uint32) []byte
+	GetValByTID(tid uint32, field string) []byte
 	GetTIDsByTokenExpr(token parser.Token) ([]uint32, error)
+	GetFreqsByTIDs(tids []uint32, field string) []uint32
 	GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node
+	GetBatchedLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.BatchedNode
 }
 
 type searchIndex interface {
@@ -47,6 +49,7 @@ type searchBuffers struct {
 	mids []seq.MID
 	rids []seq.RID
 	lids []node.LID
+	tmp  []uint32
 }
 
 var searchBuffersPool = sync.Pool{
@@ -55,19 +58,19 @@ var searchBuffersPool = sync.Pool{
 			// Currently, we drain up to 4k lids from eval tree, but with proper batching enabled
 			// we can get as much as whole LID block can have (currently, 64k lids)
 			lids: make([]node.LID, 0, consts.DefaultLIDBlockCap),
+			tmp:  make([]uint32, 0, consts.DefaultLIDBlockCap),
 			mids: make([]seq.MID, 0, consts.DefaultLIDBlockCap),
 			rids: make([]seq.RID, 0, consts.DefaultLIDBlockCap),
 		}
 	},
 }
 
-const maxLidsToDrain = 4096
-
 func IndexSearch(
 	ctx context.Context,
 	params SearchParams,
 	index searchIndex,
 	aggLimits AggLimits,
+	queryOpt QueryOptimizationConfig,
 	sw *stopwatch.Stopwatch,
 ) (qpr *seq.QPR, err error) {
 	stats := &searchStats{}
@@ -76,16 +79,60 @@ func IndexSearch(
 	minLID, maxLID := getLIDsBorders(params, index)
 	m.Stop()
 
-	m = sw.Start("eval_leaf")
-	evalTree, err := buildEvalTree(params.AST, minLID, maxLID, stats, params.Order.IsReverse(),
-		func(token parser.Token) (node.Node, error) {
-			return evalLeaf(index, token, sw, stats, minLID, maxLID, params.Order)
-		},
-	)
+	m = sw.Start("get_skip_lids")
+	skipLIDs, hasSkipLIDs, release, err := index.GetSkipLIDs(minLID, maxLID, params.Order.IsReverse())
+	defer func() {
+		err = errors.Join(err, release())
+	}()
 	m.Stop()
-
 	if err != nil {
 		return nil, err
+	}
+
+	desc := !params.Order.IsReverse()
+
+	m = sw.Start("check_enable_batching")
+	// TODO(cheb0) skipmasks block batched execution
+	useBatching := canEnableBatching(params.AST, index, queryOpt) && !hasSkipLIDs
+	m.Stop()
+
+	var evalTree node.BatchedNode
+
+	if useBatching {
+		m = sw.Start("eval_batch_leaf")
+		evalTree, err = buildBatchEvalTree(params.AST, minLID, maxLID, stats, desc,
+			func(token parser.Token) (node.BatchedNode, error) {
+				return evalBatchLeaf(index, token, sw, stats, minLID, maxLID, params.Order)
+			},
+		)
+		m.Stop()
+		if errors.Is(err, errBatchingUnsupported) {
+			useBatching = false
+		} else if err != nil {
+			return nil, err
+		}
+	}
+
+	if !useBatching {
+		m = sw.Start("eval_leaf")
+		var nodeTree node.Node
+		nodeTree, err = buildEvalTree(params.AST, minLID, maxLID, stats, params.Order.IsReverse(),
+			func(token parser.Token) (node.Node, error) {
+				return evalLeaf(index, token, sw, stats, minLID, maxLID, params.Order)
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+		m.Stop()
+
+		if hasSkipLIDs {
+			m = sw.Start("eval_skip_lids")
+			nodeTree = evalSkipLIDs(nodeTree, skipLIDs, stats)
+			m.Stop()
+		}
+
+		evalTree = node.NewBatcherNode(nodeTree, desc)
 	}
 
 	defer func(start time.Time) { stats.TreeDuration += time.Since(start) }(time.Now())
@@ -114,22 +161,6 @@ func IndexSearch(
 
 			return aggs, nil
 		}
-	}
-
-	m = sw.Start("get_skip_lids")
-	skipLIDs, hasSkipLIDs, release, err := index.GetSkipLIDs(minLID, maxLID, params.Order.IsReverse())
-	defer func() {
-		err = errors.Join(err, release())
-	}()
-	m.Stop()
-	if err != nil {
-		return nil, err
-	}
-
-	if hasSkipLIDs {
-		m = sw.Start("eval_skip_lids")
-		evalTree = evalSkipLIDs(evalTree, skipLIDs, stats)
-		m.Stop()
 	}
 
 	m = sw.Start("iterate_eval_tree")
@@ -175,35 +206,11 @@ func IndexSearch(
 	return qpr, nil
 }
 
-func batcher(evalTree node.Node, buf []node.LID, desc bool) func(need int) []node.LID {
-	if batchNode, ok := tryConvertToBatchedTree(evalTree); ok {
-		return func(need int) []node.LID {
-			buf = batchNode.NextBatch(need).CopyLIDs(desc, buf[:0])
-			if len(buf) > need {
-				buf = buf[:need]
-			}
-			return buf
-		}
-	}
-
-	return func(need int) []node.LID {
-		buf = buf[:0]
-		for range min(maxLidsToDrain, need) {
-			lid := evalTree.Next()
-			if lid.IsNull() {
-				break
-			}
-			buf = append(buf, lid)
-		}
-		return buf
-	}
-}
-
 func iterateEvalTree(
 	ctx context.Context,
 	params SearchParams,
 	idsIndex idsIndex,
-	evalTree node.Node,
+	evalTree node.BatchedNode,
 	aggSupplier func() ([]Aggregator, error),
 	sw *stopwatch.Stopwatch,
 ) (int, seq.IDSources, HistMap, []Aggregator, error) {
@@ -226,8 +233,9 @@ func iterateEvalTree(
 
 	mids := buffers.mids
 	rids := buffers.rids
-
-	batchedEvalTree := batcher(evalTree, buffers.lids, params.Order.IsDesc())
+	lidsBuf := buffers.lids[:cap(buffers.lids)]
+	tmpBuf := buffers.tmp[:cap(buffers.tmp)]
+	desc := !params.Order.IsReverse()
 
 	timerEval := sw.Timer("eval_tree_next")
 	timerMID := sw.Timer("get_mid")
@@ -256,51 +264,76 @@ func iterateEvalTree(
 		}
 
 		timerEval.Start()
-		lidsBatch := batchedEvalTree(maxBatchSize)
-		timerEval.Stop()
-
-		total += len(lidsBatch)
-
-		lidsBatch = sample(lidsBatch)
-
-		if len(lidsBatch) == 0 {
+		batch := evalTree.NextBatch(maxBatchSize)
+		if batch.IsEmpty() {
+			timerEval.Stop()
 			break
 		}
+		iter := batch.ManyIter(desc)
+		timerEval.Stop()
 
-		if hasHist || needIDs > 0 {
-			timerMID.Start()
-			mids = idsIndex.GetMIDs(lidsBatch, mids[:0])
-			timerMID.Stop()
-
-			if hasHist {
-				timerHist.Start()
-				hist.Update(mids)
-				timerHist.Stop()
+		remaining := maxBatchSize
+		for remaining > 0 {
+			if util.IsCancelled(ctx) {
+				return total, ids, hist, aggs, ctx.Err()
 			}
 
-			if needIDs > 0 {
-				needLIDs := min(needIDs, len(lidsBatch))
+			timerEval.Start()
+			n := iter.CopyLIDs(lidsBuf[:min(remaining, len(lidsBuf))], tmpBuf[:min(remaining, len(tmpBuf))])
+			timerEval.Stop()
+			if n == 0 {
+				break
+			}
 
-				timerRID.Start()
-				rids = idsIndex.GetRIDs(lidsBatch[:needLIDs], rids[:0])
-				timerRID.Stop()
+			lidsBatch := lidsBuf[:n]
+			total += n
+			remaining -= n
 
-				// fill IDs for search
-				for i := 0; i < needLIDs; i++ {
-					id := seq.ID{MID: mids[i], RID: rids[i]}
-					if i == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
-						ids = append(ids, seq.IDSource{ID: id})
+			lidsBatch = sample(lidsBatch)
+			if len(lidsBatch) == 0 {
+				continue
+			}
+
+			needIDs = params.Limit - len(ids)
+			if hasHist || needIDs > 0 {
+				timerMID.Start()
+				mids = idsIndex.GetMIDs(lidsBatch, mids[:0])
+				timerMID.Stop()
+
+				if hasHist {
+					timerHist.Start()
+					hist.Update(mids)
+					timerHist.Stop()
+				}
+
+				if needIDs > 0 {
+					needLIDs := min(needIDs, len(lidsBatch))
+
+					timerRID.Start()
+					rids = idsIndex.GetRIDs(lidsBatch[:needLIDs], rids[:0])
+					timerRID.Stop()
+
+					// fill IDs for search
+					for i := 0; i < needLIDs; i++ {
+						id := seq.ID{MID: mids[i], RID: rids[i]}
+						if i == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
+							ids = append(ids, seq.IDSource{ID: id})
+						}
+						lastID = id
 					}
-					lastID = id
 				}
 			}
-		}
 
-		// Update aggregators
-		if params.HasAgg() {
-			var err error
-			if aggs, err = updateAggs(aggs, lidsBatch, aggSupplier, timerAgg); err != nil {
-				return total, ids, hist, aggs, err
+			// Update aggregators
+			if params.HasAgg() {
+				var err error
+				if aggs, err = updateAggs(aggs, lidsBatch, aggSupplier, timerAgg); err != nil {
+					return total, ids, hist, aggs, err
+				}
+			}
+
+			if !needScanAllRange && params.Limit-len(ids) < 1 {
+				break
 			}
 		}
 	}
@@ -347,17 +380,6 @@ func sampler(n uint32) func(in []node.LID) []node.LID {
 			cnt++
 		}
 		return in[:i]
-	}
-}
-
-func tryConvertToBatchedTree(evalTree node.Node) (node.BatchedNode, bool) {
-	switch it := evalTree.(type) {
-	case *lids.IteratorDesc:
-		return lids.NewBatchedIteratorDesc(it), true
-	case *lids.IteratorAsc:
-		return lids.NewBatchedIteratorAsc(it), true
-	default:
-		return nil, false
 	}
 }
 

@@ -111,6 +111,13 @@ type AggLimits struct {
 	MaxTIDsPerFraction int
 }
 
+// QueryOptimizationConfig controls search-time query optimization decisions.
+type QueryOptimizationConfig struct {
+	// BatchIterationCostThreshold is the minimum estimated non-batched iteration
+	// cost required to enable batch-at-a-time query evaluation.
+	BatchIterationCostThreshold int
+}
+
 type iteratorLimit struct {
 	// limit value
 	limit int
@@ -223,5 +230,5 @@ func iteratorFromLiteral(
 	}
 
 	sourcedNode := node.BuildORTreeAgg(lidsTids)
-	return NewSourcedNodeIterator(sourcedNode, ti, tids, iteratorLimit), nil
+	return NewSourcedNodeIterator(sourcedNode, ti, tids, literal.Field, iteratorLimit), nil
 }

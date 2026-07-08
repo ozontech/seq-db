@@ -173,6 +173,12 @@ type Config struct {
 		} `config:"aggregation"`
 	} `config:"limits"`
 
+	QueryOptimization struct {
+		// BatchIterationCostThreshold is the minimum estimated non-batched
+		// iteration cost required to enable batch-at-a-time query evaluation.
+		BatchIterationCostThreshold int `config:"batch_iteration_cost_threshold" default:"50000"`
+	} `config:"query_optimization"`
+
 	CircuitBreaker struct {
 		Bulk struct {
 			// Checkout [CircuitBreaker] for more information.

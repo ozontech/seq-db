@@ -110,6 +110,7 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	params.To = min(params.To, dp.info.To)
 
 	aggLimits := processor.AggLimits(dp.config.Search.AggLimits)
+	queryOpt := processor.QueryOptimizationConfig(dp.config.Search.QueryOptimization)
 
 	sw := stopwatch.New()
 
@@ -132,7 +133,7 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	qprs := make([]*seq.QPR, 0, len(indexes))
 
 	for _, si := range indexes {
-		qpr, err := processor.IndexSearch(dp.ctx, params, &si, aggLimits, sw)
+		qpr, err := processor.IndexSearch(dp.ctx, params, &si, aggLimits, queryOpt, sw)
 		if err != nil {
 			return nil, err
 		}
@@ -240,12 +241,16 @@ type activeTokenIndex struct {
 	inverser  *inverser
 }
 
-func (si *activeTokenIndex) GetValByTID(tid uint32) []byte {
-	return si.tokenList.GetValByTID(tid)
+func (si *activeTokenIndex) GetValByTID(tid uint32, field string) []byte {
+	return si.tokenList.GetValByTID(tid, field)
 }
 
 func (si *activeTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
 	return si.tokenList.FindPattern(si.ctx, t)
+}
+
+func (si *activeTokenIndex) GetFreqsByTIDs(tids []uint32, field string) []uint32 {
+	return make([]uint32, len(tids))
 }
 
 func (si *activeTokenIndex) GetLIDsFromTIDs(tids []uint32, _ lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
@@ -255,6 +260,17 @@ func (si *activeTokenIndex) GetLIDsFromTIDs(tids []uint32, _ lids.Counter, minLI
 		unmapped := tlids.GetLIDs(si.mids, si.rids)
 		inverse := inverseLIDs(unmapped, si.inverser, minLID, maxLID)
 		nodes = append(nodes, node.NewStatic(inverse, order.IsReverse()))
+	}
+	return nodes
+}
+
+func (si *activeTokenIndex) GetBatchedLIDsFromTIDs(tids []uint32, _ lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.BatchedNode {
+	nodes := make([]node.BatchedNode, 0, len(tids))
+	for _, tid := range tids {
+		tlids := si.tokenList.Provide(tid)
+		unmapped := tlids.GetLIDs(si.mids, si.rids)
+		inverse := inverseLIDs(unmapped, si.inverser, minLID, maxLID)
+		nodes = append(nodes, node.NewStaticBatched(inverse, order.IsReverse()))
 	}
 	return nodes
 }

@@ -29,7 +29,7 @@ func TestSingleSourceCountAggregator(t *testing.T) {
 	}
 
 	source := node.BuildORTreeAgg(node.MakeStaticNodes(sources))
-	iter := NewSourcedNodeIterator(source, nil, nil, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
+	iter := NewSourcedNodeIterator(source, nil, nil, "", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 	agg := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 	for _, id := range searchDocs {
 		if err := agg.Next(node.NewDescLID(id)); err != nil {
@@ -57,7 +57,7 @@ func TestSingleSourceCountAggregatorWithInterval(t *testing.T) {
 	}
 
 	source := node.BuildORTreeAgg(node.MakeStaticNodes(sources))
-	iter := NewSourcedNodeIterator(source, nil, nil, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
+	iter := NewSourcedNodeIterator(source, nil, nil, "", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 
 	agg := NewSingleSourceCountAggregator(iter, func(l seq.LID) seq.MID {
 		return seq.MID(l) % 3
@@ -99,7 +99,7 @@ func BenchmarkAggDeep(b *testing.B) {
 			r := rand.New(rand.NewSource(benchRandSeed))
 			v, _ := Generate(r, s)
 			src := node.NewSourcedNodeWrapper(node.NewStatic(v, false), 0)
-			iter := NewSourcedNodeIterator(src, nil, make([]uint32, 1), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
+			iter := NewSourcedNodeIterator(src, nil, make([]uint32, 1), "", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 			vals, _ := Generate(r, s)
 
@@ -133,7 +133,7 @@ func BenchmarkAggWide(b *testing.B) {
 
 			source := node.BuildORTreeAgg(node.MakeStaticNodes(wide))
 
-			iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(wide)), iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
+			iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(wide)), "", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 			vals, _ := Generate(r, s)
 
@@ -152,8 +152,12 @@ type MockTokenIndex struct {
 	tokenIndex // embed to implement TokenIndex interface and override only needed methods
 }
 
-func (m *MockTokenIndex) GetValByTID(tid uint32) []byte {
+func (m *MockTokenIndex) GetValByTID(tid uint32, _ string) []byte {
 	return []byte(strconv.Itoa(int(tid)))
+}
+
+func (m *MockTokenIndex) GetFreqsByTIDs(tids []uint32, _ string) []uint32 {
+	return make([]uint32, len(tids))
 }
 
 type IDSourcePair struct {
@@ -211,8 +215,8 @@ func TestTwoSourceAggregator(t *testing.T) {
 
 	fieldTIDs := []uint32{42, 73}
 	groupByTIDs := []uint32{1, 2}
-	groupIterator := NewSourcedNodeIterator(groupBy, dp, groupByTIDs, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
-	fieldIterator := NewSourcedNodeIterator(field, dp, fieldTIDs, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
+	groupIterator := NewSourcedNodeIterator(groupBy, dp, groupByTIDs, "group_by", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
+	fieldIterator := NewSourcedNodeIterator(field, dp, fieldTIDs, "field", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 	limits := AggLimits{}
 	aggregator := NewGroupAndFieldAggregator(
 		fieldIterator, groupIterator, provideExtractTimeFunc(nil, nil, 0), true, false, limits,
@@ -264,7 +268,7 @@ func TestSingleTreeCountAggregator(t *testing.T) {
 		},
 	}
 
-	iter := NewSourcedNodeIterator(field, dp, []uint32{0}, iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
+	iter := NewSourcedNodeIterator(field, dp, []uint32{0}, "field", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 	aggregator := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 
 	r.NoError(aggregator.Next(node.NewDescLID(1)))
@@ -302,7 +306,7 @@ func TestAggregatorLimitExceeded(t *testing.T) {
 
 	for _, expectedErr := range []error{consts.ErrTooManyGroupTokens, consts.ErrTooManyFieldTokens} {
 		source := node.BuildORTreeAgg(node.MakeStaticNodes(sources))
-		iter := NewSourcedNodeIterator(source, nil, nil, iteratorLimit{limit: limit, err: expectedErr})
+		iter := NewSourcedNodeIterator(source, nil, nil, "", iteratorLimit{limit: limit, err: expectedErr})
 		agg := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
 
 		var limitErr error

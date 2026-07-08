@@ -58,6 +58,7 @@ type IndexWriter struct {
 
 	buf1       []byte
 	buf2       []byte
+	buf32      []uint32
 	buf64      []uint64
 	lidsPacker *lids.BlockPacker
 
@@ -76,6 +77,7 @@ func New(params common.SealParams) *IndexWriter {
 		params:     params,
 		buf1:       make([]byte, 0, consts.RegularBlockSize),
 		buf2:       make([]byte, 0, consts.RegularBlockSize),
+		buf32:      make([]uint32, 0, consts.RegularBlockSize),
 		buf64:      make([]uint64, 0, consts.RegularBlockSize),
 		lidsPacker: lidsPacker,
 	}

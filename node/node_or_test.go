@@ -246,6 +246,28 @@ func TestNodeOrAgg_EmptySide(t *testing.T) {
 	})
 }
 
+func TestNodeOrBatchedMulti_Ascending(t *testing.T) {
+	n := NewOrBatchedMulti([]BatchedNode{
+		NewStaticBatched([]uint32{1, 3, 7, 10}, false),
+		NewStaticBatched([]uint32{1, 2, 3, 7, 8, 11, 15}, false),
+		NewStaticBatched([]uint32{2, 3, 5, 8, 10}, false),
+	}, false)
+
+	got := readAllBatchedLIDs(n, false)
+	assertSameSet(t, []uint32{1, 2, 3, 5, 7, 8, 10, 11, 15}, got)
+}
+
+func TestNodeOrBatchedMulti_Descending(t *testing.T) {
+	n := NewOrBatchedMulti([]BatchedNode{
+		NewStaticBatched([]uint32{1, 3, 7, 10}, true),
+		NewStaticBatched([]uint32{1, 2, 3, 7, 8, 11, 15}, true),
+		NewStaticBatched([]uint32{2, 3, 5, 8, 10}, true),
+	}, true)
+
+	got := readAllBatchedLIDs(n, true)
+	assertSameSet(t, []uint32{15, 11, 10, 8, 7, 5, 3, 2, 1}, got)
+}
+
 func readAllSourced(n Sourced) [][2]uint32 {
 	var res [][2]uint32
 	id, src := n.NextSourced()
@@ -254,4 +276,19 @@ func readAllSourced(n Sourced) [][2]uint32 {
 		id, src = n.NextSourced()
 	}
 	return res
+}
+
+func readAllBatchedLIDs(n BatchedNode, desc bool) []uint32 {
+	var out []uint32
+	minLID := NewDescZeroLID()
+	if desc {
+		minLID = NewAscZeroLID()
+	}
+	for {
+		b := n.NextBatchGeq(2, minLID)
+		if b.IsEmpty() {
+			return out
+		}
+		out = appendBatchLIDs(out, b, desc)
+	}
 }

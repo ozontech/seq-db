@@ -99,3 +99,91 @@ func MakeStaticNodes(data [][]uint32) []Node {
 	}
 	return nodes
 }
+
+type staticBatchedAsc struct {
+	staticCursor
+	batch LIDBatch
+}
+
+type staticBatchedDesc struct {
+	staticCursor
+	batch LIDBatch
+}
+
+func NewStaticBatched(data []uint32, reverse bool) BatchedNode {
+	if reverse {
+		return &staticBatchedDesc{staticCursor: staticCursor{
+			ptr:  len(data) - 1,
+			data: data,
+		}, batch: EmptyBatch()}
+	}
+
+	return &staticBatchedAsc{staticCursor: staticCursor{
+		ptr:  0,
+		data: data,
+	}, batch: EmptyBatch()}
+}
+
+func (n *staticBatchedAsc) String() string {
+	return "STATIC_BATCHED_ASC"
+}
+
+func (n *staticBatchedAsc) NextBatch(need int) LIDBatch {
+	return n.NextBatchGeq(need, NewDescZeroLID())
+}
+
+func (n *staticBatchedAsc) NextBatchGeq(need int, nextID LID) LIDBatch {
+	for {
+		if n.batch.IsEmpty() {
+			if n.ptr >= len(n.data) {
+				return EmptyBatch()
+			}
+			n.batch = NewSliceBatch(n.data[n.ptr:])
+			n.ptr = len(n.data)
+		}
+
+		if n.batch.IsEmpty() {
+			continue
+		}
+		if nextID.Unpack() > n.batch.Max() {
+			n.batch = EmptyBatch()
+			continue
+		}
+
+		out := n.batch.Narrow(nextID.Unpack(), math.MaxUint32)
+		n.batch = EmptyBatch()
+		return out
+	}
+}
+
+func (n *staticBatchedDesc) String() string {
+	return "STATIC_BATCHED_DESC"
+}
+
+func (n *staticBatchedDesc) NextBatch(need int) LIDBatch {
+	return n.NextBatchGeq(need, NewAscZeroLID())
+}
+
+func (n *staticBatchedDesc) NextBatchGeq(need int, nextID LID) LIDBatch {
+	for {
+		if n.batch.IsEmpty() {
+			if n.ptr < 0 {
+				return EmptyBatch()
+			}
+			n.batch = NewSliceBatch(n.data[:n.ptr+1])
+			n.ptr = -1
+		}
+
+		if n.batch.IsEmpty() {
+			continue
+		}
+		if nextID.Unpack() < n.batch.Min() {
+			n.batch = EmptyBatch()
+			continue
+		}
+
+		out := n.batch.Narrow(0, nextID.Unpack())
+		n.batch = EmptyBatch()
+		return out
+	}
+}

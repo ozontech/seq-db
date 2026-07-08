@@ -79,3 +79,57 @@ func (n *nodeAnd) NextGeq(nextID LID) LID {
 		}
 	}
 }
+
+type nodeAndBatched struct {
+	left  BatchedNode
+	right BatchedNode
+	desc  bool
+
+	leftBatch  LIDBatch
+	rightBatch LIDBatch
+}
+
+// NewAndBatched returns a BatchedNode that intersects two batched iterators.
+// desc is the document traversal order for NextBatch / NextBatchGeq.
+func NewAndBatched(left, right BatchedNode, desc bool) BatchedNode {
+	return &nodeAndBatched{
+		left:       left,
+		right:      right,
+		desc:       desc,
+		leftBatch:  EmptyBatch(),
+		rightBatch: EmptyBatch(),
+	}
+}
+
+func (n *nodeAndBatched) String() string {
+	return fmt.Sprintf("(%s AND %s)", n.left.String(), n.right.String())
+}
+
+func (n *nodeAndBatched) NextBatch(need int) LIDBatch {
+	if n.desc {
+		return n.NextBatchGeq(need, NewDescZeroLID())
+	}
+	return n.NextBatchGeq(need, NewAscZeroLID())
+}
+
+func (n *nodeAndBatched) NextBatchGeq(need int, minLID LID) LIDBatch {
+	for {
+		if n.leftBatch.IsEmpty() {
+			n.leftBatch = n.left.NextBatchGeq(need, minLID)
+		}
+		if n.rightBatch.IsEmpty() {
+			n.rightBatch = n.right.NextBatchGeq(need, minLID)
+		}
+		if n.leftBatch.IsEmpty() || n.rightBatch.IsEmpty() {
+			return EmptyBatch()
+		}
+
+		inter, leftResidual, rightResidual := And(n.leftBatch, n.rightBatch, n.desc)
+		n.leftBatch = leftResidual
+		n.rightBatch = rightResidual
+
+		if !inter.IsEmpty() {
+			return inter
+		}
+	}
+}
