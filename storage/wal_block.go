@@ -163,43 +163,6 @@ func PackWalBlock(payload []byte, dst WalBlock) WalBlock {
 	return dst
 }
 
-// PackWalBlockToDocBlock converts WalBlock to legacy DocBlock.
-func PackWalBlockToDocBlock(walBlock WalBlock, dst DocBlock) DocBlock {
-	dst = append(dst[:0], make([]byte, DocBlockHeaderLen)...)
-	dst = append(dst, walBlock.Payload()...)
-
-	dst.CalcLen()
-	dst.SetRawLen(uint64(walBlock.RawLen()))
-	dst.SetCodec(walBlock.Codec())
-	dst.SetExt2(walBlock.DocsOffset())
-
-	return dst
-}
-
-// PackDocBlockToWalBlock converts DocBlock to WalBlock in place without copying payload.
-// docBlock will be invalid after packing
-func PackDocBlockToWalBlock(docBlock DocBlock) WalBlock {
-	rawLen := uint32(docBlock.RawLen())
-	codec := docBlock.Codec()
-	docsOffset := docBlock.GetExt2()
-	payloadLen := uint32(len(docBlock) - DocBlockHeaderLen)
-
-	const headerDiff = DocBlockHeaderLen - WalBlockHeaderLen
-	mb := WalBlock(docBlock[headerDiff:])
-
-	mb[offsetWalBlockMagic] = WalBlockMagic
-	mb.SetVersion(WalBlockCurrentVersion)
-	mb.SetLen(payloadLen)
-	mb.SetRawLen(rawLen)
-	mb.SetCodec(codec)
-	// write docs offset directly since SetDocsOffset recalculates header checksum
-	binary.LittleEndian.PutUint64(mb[offsetWalBlockDocsOffset:], docsOffset)
-	mb.CalcPayloadChecksum()
-	mb.CalcHeaderChecksum()
-
-	return mb
-}
-
 // DecompressTo always put the result in `dst` regardless of whether unpacking is required
 // or part of the WalBlock can be enough.
 //

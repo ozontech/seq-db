@@ -24,7 +24,7 @@ seq-db store keeps all document data in three file types:
 | File type | Purpose                                        |
 |-----------|------------------------------------------------|
 | `.docs`   | Stores compressed batches of raw log documents |
-| `.meta`   | Tokenized metadata stream (used for recovery)  |
+| `.wal`    | Tokenized metadata stream (used for recovery)  |
 | `.index`  | On-disk inverted index                         | 
 
 
@@ -38,7 +38,7 @@ Read more about file types and their internal structure [here](internal/fraction
 A write operation is acknowledged only after the payload is safely persisted:
 
 ```
-write, fsync   # .meta file
+write, fsync   # .wal file
 write, fsync   # .data file
 ```
 That is, two write system calls followed by two fsync
