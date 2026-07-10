@@ -35,6 +35,8 @@ type Config struct {
 	OffloadingQueueSize  uint64
 	OffloadingRetention  time.Duration
 	OffloadingRetryDelay time.Duration
+
+	CompactionEnabled bool
 }
 
 func FillConfigWithDefault(config *Config) *Config {

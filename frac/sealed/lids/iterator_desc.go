@@ -51,7 +51,7 @@ func (it *IteratorDesc) loadNextLIDsBlock() {
 		logger.Panic("unexpected LIDs count")
 	}
 
-	it.lids = block.getLIDs(it.table.GetChunkIndex(it.blockIndex, it.tid))
+	it.lids = block.GetLIDs(it.table.GetChunkIndex(it.blockIndex, it.tid))
 	it.tryNextBlock = it.table.HasTIDInNextBlock(it.blockIndex, it.tid)
 	it.blockIndex++
 }

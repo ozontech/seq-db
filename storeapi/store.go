@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/atomic"
 
+	"github.com/ozontech/seq-db/compaction"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
@@ -30,7 +31,8 @@ type Store struct {
 	FracManager     *fracmanager.FracManager
 	fracManagerStop func()
 
-	SkipMaskManager *skipmaskmanager.SkipMaskManager
+	SkipMaskManager    *skipmaskmanager.SkipMaskManager
+	CompactionExecutor *compaction.Executor
 
 	isStopped atomic.Bool
 }
@@ -39,6 +41,7 @@ type StoreConfig struct {
 	API                   APIConfig
 	FracManager           fracmanager.Config
 	SkipMaskManagerConfig skipmaskmanager.Config
+	Compaction            compaction.Config
 }
 
 func (c *StoreConfig) setDefaults() error {
@@ -66,23 +69,26 @@ func NewStore(
 	}
 
 	skipMaskManager := skipmaskmanager.New(ctx, c.SkipMaskManagerConfig, skipMaskParams, mappingProvider)
-
 	fracManager, stop, err := fracmanager.New(ctx, &c.FracManager, s3cli, skipMaskManager)
 	if err != nil {
 		return nil, fmt.Errorf("loading fractions error: %w", err)
 	}
+
+	planner := compaction.NewPlanner(ctx, fracManager, c.Compaction)
+	executor := compaction.NewExecutor(c.Compaction.Workers, c.FracManager.SealParams, planner)
 
 	skipMaskManager.Start(fracManager)
 
 	return &Store{
 		Config: c,
 		// We will set grpcAddr later in Start()
-		grpcAddr:        "",
-		grpcServer:      newGRPCServer(c.API, fracManager, mappingProvider),
-		FracManager:     fracManager,
-		fracManagerStop: stop,
-		SkipMaskManager: skipMaskManager,
-		isStopped:       atomic.Bool{},
+		grpcAddr:           "",
+		grpcServer:         newGRPCServer(c.API, fracManager, mappingProvider),
+		FracManager:        fracManager,
+		fracManagerStop:    stop,
+		SkipMaskManager:    skipMaskManager,
+		CompactionExecutor: executor,
+		isStopped:          atomic.Bool{},
 	}, nil
 }
 
@@ -107,6 +113,7 @@ func (s *Store) Stop() {
 	s.grpcServer.Stop(ctx)
 	s.fracManagerStop()
 	s.SkipMaskManager.Stop()
+	s.CompactionExecutor.Stop()
 
 	logger.Info("store stopped")
 }

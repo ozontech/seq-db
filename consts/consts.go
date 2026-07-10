@@ -56,6 +56,7 @@ const (
 	WalFileSuffix  = ".wal"
 
 	DocsFileSuffix    = ".docs"
+	DocsTmpFileSuffix = "._docs"
 	DocsDelFileSuffix = ".docs.del"
 
 	SdocsFileSuffix    = ".sdocs"

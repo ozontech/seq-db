@@ -35,6 +35,7 @@ func Parse(path string) (Config, error) {
 	}
 
 	/* Set computed defaults if user did not override them */
+	c.Compaction.Workers = cmp.Or(c.Compaction.Workers, NumCPU)
 
 	c.Resources.ReaderWorkers = cmp.Or(c.Resources.ReaderWorkers, NumCPU)
 	c.Resources.SearchWorkers = cmp.Or(c.Resources.SearchWorkers, NumCPU)
@@ -59,7 +60,7 @@ type Config struct {
 		// DataDir is a path to a directory where fractions will be stored.
 		DataDir string `config:"data_dir"`
 		// FracSize specifies the maximum size of an active fraction before it gets sealed.
-		FracSize Bytes `config:"frac_size" default:"128MiB"`
+		FracSize Bytes `config:"frac_size" default:"16MiB"`
 		// TotalSize specifies upper bound of how much disk space can be occupied
 		// by sealed fractions before they get deleted (or offloaded).
 		TotalSize Bytes `config:"total_size" default:"1GiB"`
@@ -208,6 +209,37 @@ type Config struct {
 		SealedZstdCompressionLevel   int `config:"sealed_zstd_compression_level" default:"3"`
 		DocBlockZstdCompressionLevel int `config:"doc_block_zstd_compression_level" default:"3"`
 	} `config:"compression"`
+
+	Compaction struct {
+		STCS struct {
+			// MergeTrigger is the minimum number of fractions that a bucket must
+			// contain before it becomes eligible for compaction.
+			MergeTrigger int `config:"merge_trigger" default:"4"`
+			// MergeFanIn caps how many fractions are compacted from a single bucket
+			// per compaction iteration.
+			MergeFanIn int `config:"merge_fan_in" default:"32"`
+			// MergeFanOutSize is the upper bound on the combined input index size of
+			// a single merge. It limits how large a compacted fraction can grow.
+			MergeFanOutSize Bytes `config:"merge_fan_out_size" default:"512MiB"`
+			// BucketLowerbound and BucketUpperbound control bucket membership:
+			// a fraction joins a bucket only if its size is within
+			// [BucketLowerbound, BucketUpperbound] * avg(bucket).
+			BucketLowerbound float64 `config:"bucket_lowerbound" default:"0.5"`
+			BucketUpperbound float64 `config:"bucket_upperbound" default:"1.5"`
+		} `config:"stcs"`
+		// Enabled is the master switch for background compaction.
+		// Compaction is disabled unless this is set to true.
+		Enabled bool `config:"enabled"`
+		// Workers specifies the number of executor workers performing merges
+		// concurrently. By default this setting is equal to [runtime.GOMAXPROCS].
+		Workers int `config:"workers"`
+		// TimeWindow is the width of a time bin. Fractions are grouped into bins by
+		// truncating their creation time.
+		TimeWindow time.Duration `config:"time_window" default:"1h"`
+		// TickInterval specifies how often the planner wakes up to pick a single
+		// compaction task.
+		TickInterval time.Duration `config:"tick_interval" default:"1s"`
+	} `config:"compaction"`
 
 	Indexing struct {
 		MaxTokenSize         int  `config:"max_token_size" default:"72"`

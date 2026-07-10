@@ -73,6 +73,17 @@ func (c *Config) storeValidations() []validateFn {
 		inRange("offloading.queue_size_percent", 0, 100, c.Offloading.QueueSizePercent),
 
 		greaterThan("experimental.max_regex_tokens_check", -1, c.Experimental.MaxRegexTokensCheck),
+
+		greaterThan("compaction.stcs.merge_trigger", 0, c.Compaction.STCS.MergeTrigger),
+		greaterThan("compaction.stcs.merge_fan_out_size", 0, c.Compaction.STCS.MergeFanOutSize),
+		greaterOrEqThan("compaction.stcs.merge_fan_in", c.Compaction.STCS.MergeTrigger, c.Compaction.STCS.MergeFanIn),
+
+		greaterThan("compaction.stcs.bucket_lowerbound", 0, c.Compaction.STCS.BucketLowerbound),
+		greaterOrEqThan("compaction.stcs.bucket_upperbound", c.Compaction.STCS.BucketLowerbound, c.Compaction.STCS.BucketUpperbound),
+
+		greaterOrEqThan("compaction.workers", 0, c.Compaction.Workers),
+		greaterThan("compaction.time_window", 0, c.Compaction.TimeWindow),
+		greaterThan("compaction.tick_interval", 0, c.Compaction.TickInterval),
 	}
 
 	if c.Offloading.Enabled {
@@ -112,7 +123,19 @@ func lessOrEqThan[T cmp.Ordered](field string, base, v T) validateFn {
 	return func() error {
 		if v > base {
 			return fmt.Errorf(
-				"field %q must be greater than %v",
+				"field %q must be less or equal than %v",
+				field, base,
+			)
+		}
+		return nil
+	}
+}
+
+func greaterOrEqThan[T cmp.Ordered](field string, base, v T) validateFn {
+	return func() error {
+		if v < base {
+			return fmt.Errorf(
+				"field %q must be greater or equal than %v",
 				field, base,
 			)
 		}

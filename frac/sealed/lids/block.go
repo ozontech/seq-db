@@ -19,7 +19,7 @@ func (b *Block) getCount() int {
 	return len(b.Offsets) - 1
 }
 
-func (b *Block) getLIDs(i int) []uint32 {
+func (b *Block) GetLIDs(i int) []uint32 {
 	return b.LIDs[b.Offsets[i]:b.Offsets[i+1]]
 }
 

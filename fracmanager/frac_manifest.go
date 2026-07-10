@@ -79,10 +79,10 @@ func (m *fracManifest) AddExtension(ext string) error {
 	case consts.IndexDelFileSuffix:
 		m.hasIndexDel = true
 
-	case consts.IndexTmpFileSuffix,
-		consts.InfoTmpFileSuffix, consts.TokenTmpFileSuffix,
-		consts.OffsetsTmpFileSuffix, consts.IDTmpFileSuffix,
-		consts.LIDTmpFileSuffix, consts.SdocsTmpFileSuffix:
+	case consts.IndexTmpFileSuffix, consts.InfoTmpFileSuffix,
+		consts.TokenTmpFileSuffix, consts.OffsetsTmpFileSuffix,
+		consts.IDTmpFileSuffix, consts.LIDTmpFileSuffix,
+		consts.DocsTmpFileSuffix, consts.SdocsTmpFileSuffix:
 
 		// Just handle temporary files (which were not commited).
 		// We will just drop them in all possible cases.
@@ -198,6 +198,10 @@ func removeSdocsTmp(m *fracManifest) {
 	util.RemoveFile(m.basePath + consts.SdocsTmpFileSuffix)
 }
 
+func removeDocsTmp(m *fracManifest) {
+	util.RemoveFile(m.basePath + consts.DocsTmpFileSuffix)
+}
+
 // analyzeFiles analyzes fraction files and groups them by fraction ID
 // Creates manifests that represent the complete state of each fraction
 func analyzeFiles(files []string) ([]*fracManifest, error) {
@@ -240,7 +244,9 @@ func filterValid(ids []string, manifests map[string]*fracManifest) ([]*fracManif
 		case fracStageUnknown:
 			logger.Error("unknown fraction stage", zap.Object("manifest", manifest))
 			fractionLoadErrors.Inc()
+			removeAllFiles(manifest.basePath)
 			continue
+
 		case fracStageZombie:
 			logger.Warn("cleaning up partially deleted fraction files", zap.String("base_path", manifest.basePath))
 			removeAllFiles(manifest.basePath)
@@ -289,6 +295,7 @@ func cleanupTemporary(m *fracManifest) {
 	removeSdocsDel(m)
 	removeDocsDel(m)
 	removeIndexTmp(m)
+	removeDocsTmp(m)
 	removeSdocsTmp(m)
 }
 
@@ -296,7 +303,7 @@ func cleanupTemporary(m *fracManifest) {
 // Used for cleaning up partially deleted or corrupted fractions
 func removeAllFiles(basePath string) {
 	for _, suffix := range []string{
-		consts.DocsFileSuffix, consts.DocsDelFileSuffix,
+		consts.DocsFileSuffix, consts.DocsDelFileSuffix, consts.DocsTmpFileSuffix,
 		consts.SdocsFileSuffix, consts.SdocsDelFileSuffix, consts.SdocsTmpFileSuffix,
 		consts.IndexFileSuffix, consts.IndexDelFileSuffix, consts.IndexTmpFileSuffix,
 
