@@ -189,8 +189,8 @@ func (p *planner) pick() (task, bool) {
 				csnapshot.Destroy()
 
 				// We have destroyed all sealed fractions which participated
-				// in compaction and now stale. So we can drop compaction queue.
-				util.RemoveFile(s.Info.Path + consts.CompactionQueue)
+				// in compaction and now stale. So we can drop compaction plan.
+				util.RemoveFile(s.Info.Path + consts.CompactionPlan)
 			},
 		}, true
 	}

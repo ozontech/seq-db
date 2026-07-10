@@ -42,7 +42,7 @@ type fracManifest struct {
 	hasSdocsDel bool // sorted documents deletion marker
 	hasIndexDel bool // index deletion marker
 
-	hasCompactionQueue bool
+	hasCompactionPlan bool
 }
 
 // hasAllIndexFiles reports whether all 5 split index files are present.
@@ -85,8 +85,8 @@ func (m *fracManifest) AddExtension(ext string) error {
 	case consts.IndexDelFileSuffix:
 		m.hasIndexDel = true
 
-	case consts.CompactionQueue:
-		m.hasCompactionQueue = true
+	case consts.CompactionPlan:
+		m.hasCompactionPlan = true
 
 	case consts.IndexTmpFileSuffix, consts.InfoTmpFileSuffix,
 		consts.TokenTmpFileSuffix, consts.OffsetsTmpFileSuffix,
@@ -157,9 +157,9 @@ func removeMeta(m *fracManifest) {
 	}
 }
 
-func removeCompactionQueue(m *fracManifest) {
-	util.RemoveFile(m.basePath + consts.CompactionQueue)
-	m.hasCompactionQueue = false
+func removeCompactionPlan(m *fracManifest) {
+	util.RemoveFile(m.basePath + consts.CompactionPlan)
+	m.hasCompactionPlan = false
 }
 
 func removeIndexFiles(m *fracManifest) {
@@ -263,6 +263,16 @@ func filterValid(ids []string, manifests map[string]*fracManifest) ([]*fracManif
 
 		switch manifest.Stage() {
 		case fracStageUnknown:
+			// Processing partially compacted fraction.
+			if manifest.hasCompactionPlan {
+				logger.Warn(
+					"dropping partially compacted fraction",
+					zap.String("base_path", manifest.basePath),
+				)
+				removeAllFiles(manifest.basePath)
+				continue
+			}
+
 			logger.Error("unknown fraction stage", zap.Object("manifest", manifest))
 			fractionLoadErrors.Inc()
 			removeAllFiles(manifest.basePath)
@@ -298,14 +308,14 @@ func dropCompacted(ids []string, manifests map[string]*fracManifest) ([]string, 
 			return nil, errors.New("inconsistent fraction file analysis")
 		}
 
-		skip := !m.hasCompactionQueue ||
+		skip := !m.hasCompactionPlan ||
 			m.Stage() != fracStageSealed
 
 		if skip {
 			continue
 		}
 
-		f, err := os.Open(m.basePath + consts.CompactionQueue)
+		f, err := os.Open(m.basePath + consts.CompactionPlan)
 		if err != nil {
 			return nil, err
 		}
@@ -313,21 +323,38 @@ func dropCompacted(ids []string, manifests map[string]*fracManifest) ([]string, 
 
 		var p plan
 		if err := json.NewDecoder(f).Decode(&p); err != nil {
-			return nil, err
+			// Well, we cannot decode compaction plan so let's drop whatever the result is.
+
+			logger.Warn(
+				"dropping possibly correctly compacted fraction: cannot decode compaction plan",
+				zap.Error(err),
+				zap.String("base_path", m.basePath),
+			)
+
+			delete(filtered, id)
+			removeAllFiles(m.basePath)
+			continue
 		}
 
 		for _, pname := range p.Participants {
 			pid := pname[len(fileBasePattern):]
 
-			f := manifests[pid]
-			if f == nil {
+			pm := manifests[pid]
+			if pm == nil {
 				// NOTE(dkharms): It is possible that compaction participants
-				// were dropped but the queue itself was not deleted.
+				// were dropped but the plan itself was not deleted.
 				continue
 			}
 
+			logger.Warn(
+				"dropping fraction: it was merged into another one",
+				zap.Error(err),
+				zap.String("merged_base_path", m.basePath),
+				zap.String("participant_base_path", pm.basePath),
+			)
+
 			delete(filtered, pid)
-			removeAllFiles(f.basePath)
+			removeAllFiles(pm.basePath)
 		}
 	}
 
@@ -359,7 +386,7 @@ func cleanupRemoteFrac(m *fracManifest) {
 // Removes redundant files after finishing work with the fraction
 func cleanupSealedFrac(m *fracManifest) {
 	removeMeta(m)
-	removeCompactionQueue(m)
+	removeCompactionPlan(m)
 	if m.hasSdocs {
 		removeDocs(m) // remove orig docs, but keeping sorted
 	}
@@ -391,7 +418,7 @@ func removeAllFiles(basePath string) {
 
 		consts.MetaFileSuffix,
 		consts.WalFileSuffix,
-		consts.CompactionQueue,
+		consts.CompactionPlan,
 	} {
 		util.RemoveFile(basePath + suffix)
 	}

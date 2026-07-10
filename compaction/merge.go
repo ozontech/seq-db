@@ -102,8 +102,8 @@ func createCompactionPlan(filename string, srcs ...Source) error {
 	// Later on, it will help us to make correct decision
 	// whether we should drop participants (delete them from disk).
 	return createAndWrite(
-		filename+consts.CompactionQueue,
-		filename+consts.CompactionQueue,
+		filename+consts.CompactionPlan,
+		filename+consts.CompactionPlan,
 		func(f *os.File) error {
 			var p plan
 
