@@ -112,11 +112,21 @@ func (lc *lifecycleManager) offloadLocal(ctx context.Context, sizeLimit uint64, 
 
 			if remote == nil {
 				lc.infoCache.Remove(frac.Info().Name())
+				logger.Info("do not offload local fraction",
+					zap.String("name", frac.Info().Name()),
+					zap.Time("created", time.UnixMilli(int64(frac.Info().CreationTime))))
+			} else {
+				logger.Info("offload local fraction",
+					zap.String("name", remote.Info().Name()),
+					zap.Time("created", time.UnixMilli(int64(remote.Info().CreationTime))))
 			}
 
 			// free up local resources
 			frac.Destroy()
 			maintenanceTruncateTotal.Add(1)
+			logger.Info("remove local fraction",
+				zap.String("name", frac.Info().Name()),
+				zap.Time("created", time.UnixMilli(int64(frac.Info().CreationTime))))
 		})
 		if err != nil {
 			panic(err) // we do not expect error here
@@ -186,8 +196,12 @@ func (lc *lifecycleManager) cleanRemote(retention time.Duration, wg *sync.WaitGr
 	for _, remote := range toDelete {
 		go func() {
 			defer wg.Done()
-			lc.infoCache.Remove(remote.Info().Name())
+			info := remote.Info()
+			lc.infoCache.Remove(info.Name())
 			remote.Destroy()
+			logger.Info("remove remote fraction",
+				zap.String("name", info.Name()),
+				zap.Time("created", time.UnixMilli(int64(info.CreationTime))))
 		}()
 	}
 }
@@ -209,9 +223,13 @@ func (lc *lifecycleManager) cleanLocal(sizeLimit uint64, wg *sync.WaitGroup) {
 	for _, frac := range toDelete {
 		go func() {
 			defer wg.Done()
-			lc.infoCache.Remove(frac.Info().Name())
+			info := frac.Info()
+			lc.infoCache.Remove(info.Name())
 			frac.Destroy()
 			maintenanceTruncateTotal.Add(1)
+			logger.Info("remove local fraction",
+				zap.String("name", info.Name()),
+				zap.Time("created", time.UnixMilli(int64(info.CreationTime))))
 		}()
 	}
 }

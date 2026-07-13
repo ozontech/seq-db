@@ -341,6 +341,7 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) 
 	}
 
 	if err := g.Wait(); err != nil {
+		// TODO: Clean S3 zombies
 		return true, err
 	}
 
