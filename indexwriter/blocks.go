@@ -26,11 +26,12 @@ type unpackedTokenBlock struct {
 	payload token.Block // Actual token data payload
 }
 
-// lidExt represents the range and continuation status of LID blocks.
+// lidExt represents the range of LID blocks.
 type lidExt struct {
-	minTID      uint32 // First token ID in the LID block
-	maxTID      uint32 // Last token ID in the LID block
-	isContinued bool   // Whether LID sequence continues in next block
+	minTID   uint32 // First token ID in the LID block
+	maxTID   uint32 // Last token ID in the LID block
+	firstLID uint32 // First LID value in the block
+	lastLID  uint32 // Last LID value in the block
 }
 
 // unpackedLIDBlock represents a sealed block containing LID (Local ID) data.

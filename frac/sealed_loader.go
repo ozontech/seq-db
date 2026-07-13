@@ -41,7 +41,7 @@ func (l *LegacyLoader) Load(blocksData *sealed.BlocksData, info *common.Info, re
 		logger.Fatal("legacy load ids error", zap.Error(err))
 	}
 
-	blocksData.LIDsTable, err = l.loadLIDsTable()
+	blocksData.LIDsTable, err = l.loadLIDsTable(info.BinaryDataVer)
 	if err != nil {
 		logger.Fatal("legacy load lids error", zap.Error(err))
 	}
@@ -126,12 +126,14 @@ func (l *LegacyLoader) loadIDs(info *common.Info) (seqids.Table, []uint64, error
 }
 
 // loadLIDsTable scans LID block headers, recording the absolute start index for lids.Table.
-func (l *LegacyLoader) loadLIDsTable() (*lids.Table, error) {
+func (l *LegacyLoader) loadLIDsTable(fracVer config.BinaryDataVersion) (*lids.Table, error) {
 	startIndex := l.blockIndex // absolute index of first LID block in .index
 
 	var (
 		maxTIDs     []uint32
 		minTIDs     []uint32
+		firstLIDs   []uint32
+		lastLIDs    []uint32
 		isContinued []bool
 	)
 
@@ -149,10 +151,15 @@ func (l *LegacyLoader) loadLIDsTable() (*lids.Table, error) {
 		maxTIDs = append(maxTIDs, uint32(h.GetExt2()>>32))
 		minTIDs = append(minTIDs, uint32(h.GetExt2()&0xFFFFFFFF))
 
-		isContinued = append(isContinued, h.GetExt1() == 1)
+		if fracVer >= config.BinaryDataV5 {
+			lastLIDs = append(lastLIDs, uint32(h.GetExt1()>>32))
+			firstLIDs = append(firstLIDs, uint32(h.GetExt1()&0xFFFFFFFF))
+		} else {
+			isContinued = append(isContinued, h.GetExt1() == 1)
+		}
 	}
 
-	return lids.NewTable(startIndex, minTIDs, maxTIDs, isContinued), nil
+	return lids.NewTable(fracVer, startIndex, minTIDs, maxTIDs, firstLIDs, lastLIDs, isContinued), nil
 }
 
 // IndexReaders holds one IndexReader per split index file.
@@ -186,7 +193,7 @@ func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, readers 
 	blocksData.BlocksOffsets = blockOffsets.Offsets
 
 	blocksData.IDsTable = l.loadIDsTable(readers.ID, info)
-	blocksData.LIDsTable, err = l.loadLIDsTable(readers.LID)
+	blocksData.LIDsTable, err = l.loadLIDsTable(readers.LID, info.BinaryDataVer)
 	if err != nil {
 		logger.Fatal("load lids error", zap.Error(err))
 	}
@@ -259,10 +266,12 @@ func (l *Loader) loadIDsTable(r storage.IndexReader, info *common.Info) seqids.T
 }
 
 // loadLIDsTable scans block headers in the .lid file to build lids.Table.
-func (l *Loader) loadLIDsTable(r storage.IndexReader) (*lids.Table, error) {
+func (l *Loader) loadLIDsTable(r storage.IndexReader, fracVer config.BinaryDataVersion) (*lids.Table, error) {
 	var (
 		maxTIDs     []uint32
 		minTIDs     []uint32
+		firstLIDs   []uint32
+		lastLIDs    []uint32
 		isContinued []bool
 	)
 
@@ -278,8 +287,14 @@ func (l *Loader) loadLIDsTable(r storage.IndexReader) (*lids.Table, error) {
 		maxTIDs = append(maxTIDs, uint32(ext2>>32))
 		minTIDs = append(minTIDs, uint32(ext2&0xFFFFFFFF))
 
-		isContinued = append(isContinued, header.GetExt1() == 1)
+		ext1 := header.GetExt1()
+		if fracVer >= config.BinaryDataV5 {
+			lastLIDs = append(lastLIDs, uint32(ext1>>32))
+			firstLIDs = append(firstLIDs, uint32(ext1&0xFFFFFFFF))
+		} else {
+			isContinued = append(isContinued, ext1 == 1)
+		}
 	}
 
-	return lids.NewTable(0, minTIDs, maxTIDs, isContinued), nil
+	return lids.NewTable(fracVer, 0, minTIDs, maxTIDs, firstLIDs, lastLIDs, isContinued), nil
 }

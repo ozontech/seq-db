@@ -13,7 +13,6 @@ type lidAccumulator struct {
 	currentBlock unpackedLIDBlock
 
 	isEndOfToken bool
-	isContinued  bool
 }
 
 func newLIDAccumulator(
@@ -84,8 +83,11 @@ func (a *lidAccumulator) finalizeBlock() unpackedLIDBlock {
 	}
 
 	result := a.currentBlock
-	result.ext.isContinued = a.isContinued
+	if blockLIDs := result.payload.LIDs; len(blockLIDs) > 0 {
+		result.ext.firstLID = blockLIDs[0]
+		result.ext.lastLID = blockLIDs[len(blockLIDs)-1]
+	}
+	result.payload.IsLastLID = a.isEndOfToken
 
-	a.isContinued = !a.isEndOfToken
 	return result
 }
