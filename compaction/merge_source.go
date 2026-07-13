@@ -69,17 +69,23 @@ func (s *MergeSource) prepareInfo() *common.Info {
 	info := common.NewInfo(s.filename, 0, 0)
 
 	var (
-		from seq.MID = seq.MaxID.MID
-		to   seq.MID = seq.MinID.MID
+		from     seq.MID = seq.MaxID.MID
+		to       seq.MID = seq.MinID.MID
+		creation uint64  = info.CreationTime
 	)
 
 	for _, src := range s.sources {
+		creation = min(creation, src.Info().CreationTime)
 		from = min(from, src.Info().From)
 		to = max(to, src.Info().To)
 	}
 
 	info.From, info.To = from, to
 	info.SealingTime = info.CreationTime
+
+	// TODO(dkharms): This is workaround which will
+	// force compacted fraction to stay in the same bin.
+	info.CreationTime = creation
 
 	info.InitEmptyDistribution()
 	return info

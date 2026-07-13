@@ -303,6 +303,7 @@ func (c *Cache[V]) Release() {
 	for _, e := range c.payload {
 		totalFreed += e.size
 		e.gen.size.Sub(e.size)
+		e.deleted = true
 	}
 
 	c.metrics.reportReleased(totalFreed, entriesFreed)

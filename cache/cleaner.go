@@ -28,14 +28,15 @@ type CleanStat struct {
 	BucketsCleaned int
 }
 type Cleaner struct {
-	sizeLimit uint64
-	metrics   *CleanerMetrics
+	sizeLimit  uint64
+	maxGenSize uint64
+	metrics    *CleanerMetrics
 
-	mu          sync.Mutex
-	buckets     []bucket
 	generations []*Generation
-	lastGen     *Generation
-	maxGenSize  uint64
+
+	mu      sync.Mutex
+	buckets []bucket
+	lastGen *Generation
 }
 
 func NewCleaner(sizeLimit uint64, metrics *CleanerMetrics) *Cleaner {
@@ -163,35 +164,24 @@ func (c *Cleaner) CleanEmptyGenerations() int {
 }
 
 func (c *Cleaner) ReleaseBuckets() int {
-	toDelete := []int{}
-
-	// collect released
-	for i, b := range c.getBuckets() {
-		if b.Released() {
-			toDelete = append(toDelete, i)
-		}
-	}
-
-	if len(toDelete) == 0 {
-		return 0
-	}
-
-	// remove released
 	c.mu.Lock()
-	last := len(c.buckets)
-	for _, i := range toDelete {
-		last--
-		if i >= last {
-			break
+
+	var l int
+	for _, b := range c.buckets {
+		if !b.Released() {
+			c.buckets[l] = b
+			l++
 		}
-		c.buckets[i] = c.buckets[last]
 	}
-	c.buckets = c.buckets[:last]
+
+	released := len(c.buckets) - l
+
+	clear(c.buckets[l:])
+	c.buckets = c.buckets[:l]
+
 	c.mu.Unlock()
 
-	released := len(toDelete)
 	c.metrics.BucketsSub(released)
-
 	return released
 }
 

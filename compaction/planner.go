@@ -11,6 +11,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -183,10 +184,13 @@ func (p *planner) pick() (task, bool) {
 				}
 
 				compactionResultTotal.WithLabelValues(bucketSize, "success").Inc()
-				// TODO(dkharms): Is it fine to substitute and delete?
-				// We need somehow substitute and delete atomically.
+
 				p.fm.SubstituteWithSealed(s, csnapshot)
 				csnapshot.Destroy()
+
+				// We have destroyed all sealed fractions which participated
+				// in compaction and now stale. So we can drop compaction plan.
+				util.RemoveFile(s.Info.Path + consts.CompactionPlan)
 			},
 		}, true
 	}
