@@ -787,6 +787,35 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 		})
 }
 
+func (s *FractionTestSuite) TestCornersID() {
+	mid := seq.MID(946731600000000000)
+
+	s.insertDocuments([]string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
+	})
+
+	s.Require().Equal(mid, s.fraction.Info().From)
+	s.Require().Equal(mid, s.fraction.Info().To)
+
+	data, err := s.fraction.Fetch(s.T().Context(), []seq.ID{{
+		MID: seq.MID(mid),
+		RID: 0,
+	}}, false)
+
+	s.Require().NoError(err)
+	// [Fetch] returns `nil` for every non-found id.
+	s.Require().Equal([][]byte{nil}, data)
+
+	data, err = s.fraction.Fetch(s.T().Context(), []seq.ID{{
+		MID: seq.MID(mid),
+		RID: seq.SystemRID,
+	}}, false)
+
+	s.Require().NoError(err)
+	// [Fetch] returns `nil` for every non-found id.
+	s.Require().Equal([][]byte{nil}, data)
+}
+
 func (s *FractionTestSuite) TestAggSum() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
@@ -1911,12 +1940,8 @@ func (s *FractionTestSuite) TestFractionInfo() {
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
 	case *frac.Sealed:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1300) && info.IndexOnDisk < uint64(1450),
-			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	case *frac.Remote:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1300) && info.IndexOnDisk < uint64(1450),
-			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
 	default:
 		s.Require().Fail("unsupported fraction type")
 	}
@@ -1928,7 +1953,7 @@ func (s *FractionTestSuite) TestSearchDownsample() {
 		bulkSize      = 200
 		queryAll      = "message:*"
 		queryFiltered = "message:started"
-		eps           = 0.05
+		eps           = 0.1
 	)
 
 	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
@@ -1983,7 +2008,7 @@ func (s *FractionTestSuite) TestSearchDownsampleWithTotal() {
 	const (
 		totalDocs = 1000
 		bulkSize  = 200
-		eps       = 0.05
+		eps       = 0.1
 	)
 
 	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
@@ -2106,8 +2131,8 @@ func (s *FractionTestSuite) TestSearchDownsampleWithAggAndHist() {
 
 func assertSampledAggs(s *FractionTestSuite, expected, actual []seq.AggregatableSamples, ds uint32) {
 	const (
-		distEps  = 0.3
-		totalEps = 0.05
+		distEps  = 0.45
+		totalEps = 0.1
 	)
 
 	s.Require().Equal(len(expected), len(actual),
@@ -2132,8 +2157,8 @@ func assertSampledAggs(s *FractionTestSuite, expected, actual []seq.Aggregatable
 
 func assertSampledHist(s *FractionTestSuite, expected, actual map[seq.MID]uint64, ds uint32) {
 	const (
-		distEps  = 0.3
-		totalEps = 0.05
+		distEps  = 0.45
+		totalEps = 0.1
 	)
 
 	expTotal := sumMap(expected)

@@ -7,7 +7,7 @@ address:
   debug: :9200
 
 storage:
-  frac_size: 16MiB
+  frac_size: 1MiB
   total_size: 1GiB
 
 compaction:
