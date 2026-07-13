@@ -683,9 +683,10 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 
 	var qpr seq.QPR
 	var fracsDone, fracsInQueue int
+	histInterval := seq.MillisToMID(info.Request.Params.HistInterval)
 	if info.merged.Load() {
 		p := path.Join(as.config.DataDir, r.ID+asyncSearchExtMergedQPR)
-		qpr, _ = as.loadSearchResult([]string{p}, r.Limit, r.Order)
+		qpr, _ = as.loadSearchResult([]string{p}, r.Limit, r.Order, histInterval)
 		fracsDone = len(info.Fractions)
 		fracsInQueue = 0
 	} else {
@@ -693,7 +694,7 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		if err != nil {
 			logger.Fatal("can't load async search result", zap.String("id", r.ID), zap.Error(err))
 		}
-		qpr, _ = as.loadSearchResult(p, r.Limit, r.Order)
+		qpr, _ = as.loadSearchResult(p, r.Limit, r.Order, histInterval)
 		fracsDone = len(p)
 		fracsInQueue = len(info.Fractions) - fracsDone
 	}
@@ -725,16 +726,21 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 	}, true
 }
 
-func (as *AsyncSearcher) loadSearchResult(qprsPaths []string, limit int, order seq.DocsOrder) (seq.QPR, int) {
+func (as *AsyncSearcher) loadSearchResult(qprsPaths []string, limit int, order seq.DocsOrder, histInterval seq.MID) (seq.QPR, int) {
 	qpr := seq.QPR{}
 	size := 0
 	for _, qprPath := range qprsPaths {
 		compressedQPR, err := os.ReadFile(qprPath)
-		size += len(compressedQPR)
 		if err != nil {
+			if os.IsNotExist(err) {
+				// the corresponding fraction may have been removed concurrently by retention,
+				// so the qpr file may not exist
+				continue
+			}
 			logger.Error("can't read async search result from file", zap.String("path", qprPath), zap.Error(err))
 			return seq.QPR{}, 0
 		}
+		size += len(compressedQPR)
 		qprRaw, err := zstd.Decompress(compressedQPR, nil)
 		if err != nil {
 			logger.Fatal("can't decompress async search result", zap.String("path", qprPath), zap.Error(err))
@@ -748,7 +754,7 @@ func (as *AsyncSearcher) loadSearchResult(qprsPaths []string, limit int, order s
 		if len(tail) > 0 {
 			logger.Fatal("unexpected tail when unmarshaling binary QPR", zap.String("path", qprPath))
 		}
-		seq.MergeQPRs(&qpr, []*seq.QPR{&tmp}, limit, 1, order)
+		seq.MergeQPRs(&qpr, []*seq.QPR{&tmp}, limit, histInterval, order)
 	}
 	return qpr, size
 }
@@ -785,9 +791,8 @@ func (as *AsyncSearcher) merge() {
 			continue
 		}
 		mergeJobs = append(mergeJobs, mergeJob{
-			ID:    id,
-			Fracs: info.Fractions,
-			Info:  info,
+			ID:   id,
+			Info: info,
 		})
 	}
 	as.requestsMu.RUnlock()
@@ -799,8 +804,7 @@ func (as *AsyncSearcher) merge() {
 }
 
 type mergeJob struct {
-	ID    string
-	Fracs []fracSearchState
+	ID string
 
 	Info asyncSearchInfo
 }
@@ -808,12 +812,13 @@ type mergeJob struct {
 func (as *AsyncSearcher) mergeQPRs(job mergeJob) {
 	start := time.Now()
 	var qprs []string
-	for _, f := range job.Fracs {
+	for _, f := range job.Info.Fractions {
 		qprFilename := getQPRFilename(job.ID, f.Name)
 		qprPath := path.Join(as.config.DataDir, qprFilename)
 		qprs = append(qprs, qprPath)
 	}
-	qpr, sizeBefore := as.loadSearchResult(qprs, job.Info.Request.Params.Limit, seq.DocsOrderDesc)
+	params := job.Info.Request.Params
+	qpr, sizeBefore := as.loadSearchResult(qprs, params.Limit, params.Order, seq.MillisToMID(params.HistInterval))
 
 	var sizeAfter int
 	storeMQPR := func(compressed []byte) error {
@@ -839,7 +844,7 @@ func (as *AsyncSearcher) mergeQPRs(job mergeJob) {
 	logger.Info("QPRs have been merged",
 		zap.String("id", job.ID),
 		zap.Float64("ratio", float64(sizeBefore)/float64(sizeAfter)),
-		zap.Int("fracs", len(job.Fracs)),
+		zap.Int("fracs", len(qprs)),
 		zap.Duration("took", time.Since(start)),
 	)
 }
