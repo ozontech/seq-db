@@ -88,6 +88,7 @@ const (
 	RemoteFractionSuffix = ".remote"
 
 	FracCacheFileSuffix = ".frac-cache"
+	CompactionPlan      = ".compaction-plan"
 
 	// tracing
 	JaegerDebugKey = "jaeger-debug-id"
