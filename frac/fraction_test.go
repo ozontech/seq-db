@@ -787,6 +787,35 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 		})
 }
 
+func (s *FractionTestSuite) TestCornersID() {
+	mid := seq.MID(946731600000000000)
+
+	s.insertDocuments([]string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
+	})
+
+	s.Require().Equal(mid, s.fraction.Info().From)
+	s.Require().Equal(mid, s.fraction.Info().To)
+
+	data, err := s.fraction.Fetch(s.T().Context(), []seq.ID{{
+		MID: seq.MID(mid),
+		RID: 0,
+	}}, false)
+
+	s.Require().NoError(err)
+	// [Fetch] returns `nil` for every non-found id.
+	s.Require().Equal([][]byte{nil}, data)
+
+	data, err = s.fraction.Fetch(s.T().Context(), []seq.ID{{
+		MID: seq.MID(mid),
+		RID: seq.SystemRID,
+	}}, false)
+
+	s.Require().NoError(err)
+	// [Fetch] returns `nil` for every non-found id.
+	s.Require().Equal([][]byte{nil}, data)
+}
+
 func (s *FractionTestSuite) TestAggSum() {
 	docs := []string{
 		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
