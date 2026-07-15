@@ -36,8 +36,10 @@ func treeFold[V any](op func(V, V) V, values []V) V {
 
 	mid := len(values) / 2
 
-	return op(
-		treeFold(op, values[:mid]),
-		treeFold(op, values[mid:]),
-	)
+	// single call site to prevent stack traces explosion of alloc samples on ultra-deep OR trees
+	var children [2]V
+	for i, part := range [2][]V{values[:mid], values[mid:]} {
+		children[i] = treeFold(op, part)
+	}
+	return op(children[0], children[1])
 }
