@@ -225,7 +225,7 @@ func startStatsWorker(ctx context.Context, cfg *Config, reg *fractionRegistry, w
 			stats.SetMetrics() // Update Prometheus metrics
 
 			corruptions := countDocsFiles(filepath.Join(cfg.DataDir, consts.BrokenDir))
-			walCorruptionsTotal.Add(float64(corruptions))
+			walCorruptions.Set(float64(corruptions))
 		})
 		logger.Info("stats loop is stopped")
 	}()
