@@ -2,6 +2,7 @@ package storeapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -50,7 +51,7 @@ func (g *GrpcV1) Search(ctx context.Context, req *storeapi.SearchRequest) (*stor
 	}
 	if data != nil && data.Code != storeapi.SearchErrorCode_NO_ERROR {
 		logger.Error("search error",
-			zap.Error(fmt.Errorf(storeapi.SearchErrorCode_name[int32(data.Code)])),
+			zap.Error(errors.New(storeapi.SearchErrorCode_name[int32(data.Code)])),
 			zap.Object("request", (*searchRequestMarshaler)(req)))
 	}
 
