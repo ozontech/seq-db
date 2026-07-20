@@ -1579,6 +1579,7 @@ func (s *IntegrationTestSuite) TestTimeField() {
 func (s *IntegrationTestSuite) TestAsyncSearch() {
 	t := s.T()
 	r := require.New(t)
+	now := time.Now()
 
 	cfg := *s.Config
 	cfg.Mapping = map[string]seq.MappingTypes{
@@ -1618,8 +1619,8 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 
 	startReq := search.AsyncRequest{
 		Query:     "* | fields ip, method, uri",
-		From:      time.UnixMilli(0).UTC(),
-		To:        time.Now().UTC().Add(time.Hour).Truncate(time.Millisecond),
+		From:      now.UTC().Truncate(time.Millisecond),
+		To:        now.UTC().Add(time.Minute).Truncate(time.Millisecond),
 		Retention: time.Minute * 5,
 		Aggregations: []search.AggQuery{
 			{

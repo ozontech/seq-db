@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/seq"
 )
 
 // RefCounter provides reference counting capability.
@@ -71,6 +72,33 @@ func (fs *fractionsSnapshot) AcquireAll() ([]frac.Fraction, func()) {
 
 	counters := fs.counters // make copy of counters
 	return fs.fractions, func() {
+		for _, c := range counters {
+			c.Dec()
+		}
+	}
+}
+
+func (fs *fractionsSnapshot) AcquireInRange(from, to seq.MID) ([]frac.Fraction, func()) {
+	fracs := make(List, 0)
+	counters := make([]RefCounter, 0)
+
+	for i := range len(fs.fractions) {
+		f := fs.fractions[i]
+		c := fs.counters[i]
+
+		if f.Info().To < from {
+			continue
+		}
+		if f.Info().From > to {
+			break
+		}
+
+		fracs = append(fracs, f)
+		c.Inc()
+		counters = append(counters, c)
+	}
+
+	return fracs, func() {
 		for _, c := range counters {
 			c.Dec()
 		}
