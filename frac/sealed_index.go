@@ -124,12 +124,13 @@ func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	)
 
 	t := sw.Start("total")
+	defer t.Stop()
+
 	qpr, err := processor.IndexSearch(dp.ctx, params, dp.getSearchIndex(), aggLimits, sw)
 	if err != nil {
 		return nil, err
 	}
 	qpr.IDs.ApplyHint(dp.info.Name())
-	t.Stop()
 
 	return qpr, nil
 }
