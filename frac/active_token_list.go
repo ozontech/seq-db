@@ -177,7 +177,7 @@ func (tl *TokenList) initSystemTokens() {
 	tl.allTokenLIDs = tlids[0]
 }
 
-func (tl *TokenList) GetValByTID(tid uint32) []byte {
+func (tl *TokenList) GetValByTID(tid uint32, _ string) []byte {
 	tl.tidMu.RLock()
 	defer tl.tidMu.RUnlock()
 

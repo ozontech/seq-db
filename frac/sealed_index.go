@@ -228,9 +228,9 @@ type sealedTokenIndex struct {
 	tokenBlockLoader *token.BlockLoader
 }
 
-func (ti *sealedTokenIndex) GetValByTID(tid uint32) []byte {
+func (ti *sealedTokenIndex) GetValByTID(tid uint32, field string) []byte {
 	tokenTable := ti.tokenTableLoader.Load()
-	if entry := tokenTable.GetEntryByTID(tid); entry != nil {
+	if entry := tokenTable.GetEntryByTID(tid, field); entry != nil {
 		block := ti.tokenBlockLoader.Load(entry.BlockIndex)
 		return block.GetToken(entry.GetIndexInTokensBlock(tid))
 	}

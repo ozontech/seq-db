@@ -223,5 +223,5 @@ func iteratorFromLiteral(
 	}
 
 	sourcedNode := node.BuildORTreeAgg(lidsTids)
-	return NewSourcedNodeIterator(sourcedNode, ti, tids, iteratorLimit), nil
+	return NewSourcedNodeIterator(sourcedNode, ti, tids, literal.Field, iteratorLimit), nil
 }
