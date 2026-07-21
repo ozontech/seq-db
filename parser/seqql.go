@@ -388,7 +388,7 @@ func parseSeqQLSubexpr(lex *lexer, mapping seq.Mapping, depth int) (*ASTNode, er
 		return nil, fmt.Errorf("unexpected end of query")
 	}
 
-	if lex.IsKeyword(string(wildcardRune)) && depth == 0 {
+	if lex.IsKeyword(string(wildcardRune)) {
 		lex.Next()
 		// Query is `*`.
 		return &ASTNode{
