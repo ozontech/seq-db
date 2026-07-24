@@ -868,6 +868,25 @@ func (m *ExportRequest) CloneMessageVT() proto.Message {
 	return m.CloneVT()
 }
 
+func (m *ExportAsyncSearchRequest) CloneVT() *ExportAsyncSearchRequest {
+	if m == nil {
+		return (*ExportAsyncSearchRequest)(nil)
+	}
+	r := new(ExportAsyncSearchRequest)
+	r.SearchId = m.SearchId
+	r.Size = m.Size
+	r.Offset = m.Offset
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *ExportAsyncSearchRequest) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
 func (m *ExportResponse) CloneVT() *ExportResponse {
 	if m == nil {
 		return (*ExportResponse)(nil)
@@ -2045,6 +2064,31 @@ func (this *ExportRequest) EqualMessageVT(thatMsg proto.Message) bool {
 	}
 	return this.EqualVT(that)
 }
+func (this *ExportAsyncSearchRequest) EqualVT(that *ExportAsyncSearchRequest) bool {
+	if this == that {
+		return true
+	} else if this == nil || that == nil {
+		return false
+	}
+	if this.SearchId != that.SearchId {
+		return false
+	}
+	if this.Size != that.Size {
+		return false
+	}
+	if this.Offset != that.Offset {
+		return false
+	}
+	return string(this.unknownFields) == string(that.unknownFields)
+}
+
+func (this *ExportAsyncSearchRequest) EqualMessageVT(thatMsg proto.Message) bool {
+	that, ok := thatMsg.(*ExportAsyncSearchRequest)
+	if !ok {
+		return false
+	}
+	return this.EqualVT(that)
+}
 func (this *ExportResponse) EqualVT(that *ExportResponse) bool {
 	if this == that {
 		return true
@@ -2102,6 +2146,8 @@ type SeqProxyApiClient interface {
 	DeleteAsyncSearch(ctx context.Context, in *DeleteAsyncSearchRequest, opts ...grpc.CallOption) (*DeleteAsyncSearchResponse, error)
 	// Fetch list of async searches.
 	GetAsyncSearchesList(ctx context.Context, in *GetAsyncSearchesListRequest, opts ...grpc.CallOption) (*GetAsyncSearchesListResponse, error)
+	// Stream documents for given async search ID.
+	ExportAsyncSearch(ctx context.Context, in *ExportAsyncSearchRequest, opts ...grpc.CallOption) (SeqProxyApi_ExportAsyncSearchClient, error)
 }
 
 type seqProxyApiClient struct {
@@ -2275,6 +2321,38 @@ func (c *seqProxyApiClient) GetAsyncSearchesList(ctx context.Context, in *GetAsy
 	return out, nil
 }
 
+func (c *seqProxyApiClient) ExportAsyncSearch(ctx context.Context, in *ExportAsyncSearchRequest, opts ...grpc.CallOption) (SeqProxyApi_ExportAsyncSearchClient, error) {
+	stream, err := c.cc.NewStream(ctx, &SeqProxyApi_ServiceDesc.Streams[2], "/seqproxyapi.v1.SeqProxyApi/ExportAsyncSearch", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &seqProxyApiExportAsyncSearchClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type SeqProxyApi_ExportAsyncSearchClient interface {
+	Recv() (*ExportResponse, error)
+	grpc.ClientStream
+}
+
+type seqProxyApiExportAsyncSearchClient struct {
+	grpc.ClientStream
+}
+
+func (x *seqProxyApiExportAsyncSearchClient) Recv() (*ExportResponse, error) {
+	m := new(ExportResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // SeqProxyApiServer is the server API for SeqProxyApi service.
 // All implementations must embed UnimplementedSeqProxyApiServer
 // for forward compatibility
@@ -2307,6 +2385,8 @@ type SeqProxyApiServer interface {
 	DeleteAsyncSearch(context.Context, *DeleteAsyncSearchRequest) (*DeleteAsyncSearchResponse, error)
 	// Fetch list of async searches.
 	GetAsyncSearchesList(context.Context, *GetAsyncSearchesListRequest) (*GetAsyncSearchesListResponse, error)
+	// Stream documents for given async search ID.
+	ExportAsyncSearch(*ExportAsyncSearchRequest, SeqProxyApi_ExportAsyncSearchServer) error
 	mustEmbedUnimplementedSeqProxyApiServer()
 }
 
@@ -2352,6 +2432,9 @@ func (UnimplementedSeqProxyApiServer) DeleteAsyncSearch(context.Context, *Delete
 }
 func (UnimplementedSeqProxyApiServer) GetAsyncSearchesList(context.Context, *GetAsyncSearchesListRequest) (*GetAsyncSearchesListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAsyncSearchesList not implemented")
+}
+func (UnimplementedSeqProxyApiServer) ExportAsyncSearch(*ExportAsyncSearchRequest, SeqProxyApi_ExportAsyncSearchServer) error {
+	return status.Errorf(codes.Unimplemented, "method ExportAsyncSearch not implemented")
 }
 func (UnimplementedSeqProxyApiServer) mustEmbedUnimplementedSeqProxyApiServer() {}
 
@@ -2606,6 +2689,27 @@ func _SeqProxyApi_GetAsyncSearchesList_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SeqProxyApi_ExportAsyncSearch_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ExportAsyncSearchRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(SeqProxyApiServer).ExportAsyncSearch(m, &seqProxyApiExportAsyncSearchServer{stream})
+}
+
+type SeqProxyApi_ExportAsyncSearchServer interface {
+	Send(*ExportResponse) error
+	grpc.ServerStream
+}
+
+type seqProxyApiExportAsyncSearchServer struct {
+	grpc.ServerStream
+}
+
+func (x *seqProxyApiExportAsyncSearchServer) Send(m *ExportResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // SeqProxyApi_ServiceDesc is the grpc.ServiceDesc for SeqProxyApi service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2667,6 +2771,11 @@ var SeqProxyApi_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Export",
 			Handler:       _SeqProxyApi_Export_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ExportAsyncSearch",
+			Handler:       _SeqProxyApi_ExportAsyncSearch_Handler,
 			ServerStreams: true,
 		},
 	},
@@ -4897,6 +5006,56 @@ func (m *ExportRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		}
 		i -= size
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ExportAsyncSearchRequest) MarshalVT() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVT(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ExportAsyncSearchRequest) MarshalToVT(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVT(dAtA[:size])
+}
+
+func (m *ExportAsyncSearchRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Offset != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Offset))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Size != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Size))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.SearchId) > 0 {
+		i -= len(m.SearchId)
+		copy(dAtA[i:], m.SearchId)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.SearchId)))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -7176,6 +7335,56 @@ func (m *ExportRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *ExportAsyncSearchRequest) MarshalVTStrict() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVTStrict(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ExportAsyncSearchRequest) MarshalToVTStrict(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVTStrict(dAtA[:size])
+}
+
+func (m *ExportAsyncSearchRequest) MarshalToSizedBufferVTStrict(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.Offset != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Offset))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Size != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Size))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.SearchId) > 0 {
+		i -= len(m.SearchId)
+		copy(dAtA[i:], m.SearchId)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.SearchId)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *ExportResponse) MarshalVTStrict() (dAtA []byte, err error) {
 	if m == nil {
 		return nil, nil
@@ -8045,6 +8254,26 @@ func (m *ExportRequest) SizeVT() (n int) {
 	_ = l
 	if m.Query != nil {
 		l = m.Query.SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.Size != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.Size))
+	}
+	if m.Offset != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.Offset))
+	}
+	n += len(m.unknownFields)
+	return n
+}
+
+func (m *ExportAsyncSearchRequest) SizeVT() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.SearchId)
+	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	if m.Size != 0 {
@@ -13391,6 +13620,127 @@ func (m *ExportRequest) UnmarshalVT(dAtA []byte) error {
 			if err := m.Query.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Size", wireType)
+			}
+			m.Size = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Size |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Offset", wireType)
+			}
+			m.Offset = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Offset |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.unknownFields = append(m.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ExportAsyncSearchRequest) UnmarshalVT(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return protohelpers.ErrIntOverflow
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ExportAsyncSearchRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ExportAsyncSearchRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SearchId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SearchId = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 2:
 			if wireType != 0 {
@@ -18941,6 +19291,131 @@ func (m *ExportRequest) UnmarshalVTUnsafe(dAtA []byte) error {
 			if err := m.Query.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Size", wireType)
+			}
+			m.Size = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Size |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Offset", wireType)
+			}
+			m.Offset = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Offset |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.unknownFields = append(m.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ExportAsyncSearchRequest) UnmarshalVTUnsafe(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return protohelpers.ErrIntOverflow
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ExportAsyncSearchRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ExportAsyncSearchRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SearchId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var stringValue string
+			if intStringLen > 0 {
+				stringValue = unsafe.String(&dAtA[iNdEx], intStringLen)
+			}
+			m.SearchId = stringValue
 			iNdEx = postIndex
 		case 2:
 			if wireType != 0 {

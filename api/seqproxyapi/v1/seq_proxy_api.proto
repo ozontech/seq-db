@@ -112,6 +112,14 @@ service SeqProxyApi {
       body: "*"
     };
   }
+
+  // Stream documents for given async search ID.
+  rpc ExportAsyncSearch(ExportAsyncSearchRequest) returns (stream ExportResponse) {
+    option (google.api.http) = {
+      post: "/async-searches/export"
+      body: "*"
+    };
+  }
 }
 
 // Custom error code, returned by seq-db proxy.
@@ -417,6 +425,12 @@ message ExportRequest {
   SearchQuery query = 1; // Search query.
   int64 size = 2;        // Maximum number of documents to return.
   int64 offset = 3;      // Search offset.
+}
+
+message ExportAsyncSearchRequest {
+  string search_id = 1;
+  int64 size = 2;
+  int64 offset = 3;
 }
 
 message ExportResponse {

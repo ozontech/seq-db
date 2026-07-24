@@ -57,6 +57,10 @@ type FetchServer interface {
 	seqproxyapi.SeqProxyApi_FetchServer
 }
 
+type ExportAsyncSearchServer interface {
+	seqproxyapi.SeqProxyApi_ExportAsyncSearchServer
+}
+
 type grpcV1 struct {
 	seqproxyapi.UnimplementedSeqProxyApiServer
 
