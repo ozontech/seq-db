@@ -33,6 +33,7 @@ type idsIndex interface {
 
 type tokenIndex interface {
 	GetValByTID(tid uint32, field string) []byte
+	GetTIDsByField(field string) ([]uint32, error)
 	GetTIDsByTokenExpr(token parser.Token) ([]uint32, error)
 	GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node
 }
