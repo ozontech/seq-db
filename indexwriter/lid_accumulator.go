@@ -84,7 +84,6 @@ func (a *lidAccumulator) finalizeBlock() unpackedLIDBlock {
 	}
 
 	result := a.currentBlock
-	result.payload.IsLastLID = a.isEndOfToken
 	result.ext.isContinued = a.isContinued
 
 	a.isContinued = !a.isEndOfToken

@@ -11,8 +11,6 @@ import (
 type Block struct {
 	LIDs    []uint32
 	Offsets []uint32
-	// todo remove this legacy field
-	IsLastLID bool
 }
 
 func (b *Block) getCount() int {
@@ -67,9 +65,6 @@ func (b *Block) unpackBitpack(data []byte, buf *UnpackBuffer) error {
 
 func (b *Block) unpackVarint(data []byte, buf *UnpackBuffer) error {
 	var lid, offset uint32
-
-	b.IsLastLID = true
-
 	buf.offsets = append(buf.offsets, 0) // first offset is always zero
 
 	unpacker := packer.NewBytesUnpacker(data)
@@ -91,7 +86,6 @@ func (b *Block) unpackVarint(data []byte, buf *UnpackBuffer) error {
 	}
 
 	if int(offset) < len(buf.lids) {
-		b.IsLastLID = false
 		buf.offsets = append(buf.offsets, uint32(len(buf.lids)))
 	}
 
