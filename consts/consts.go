@@ -52,8 +52,7 @@ const (
 	BrokenDir = ".broken"
 
 	// known extensions
-	MetaFileSuffix = ".meta"
-	WalFileSuffix  = ".wal"
+	WalFileSuffix = ".wal"
 
 	DocsFileSuffix    = ".docs"
 	DocsTmpFileSuffix = "._docs"

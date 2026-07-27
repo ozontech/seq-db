@@ -2551,7 +2551,7 @@ func (s *ActiveReplayedFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 	// Setting this flags allows to keep meta and docs files on disk after Active.Release() is called
 	s.config.SkipSortDocs = true
-	s.config.KeepMetaFile = true
+	s.config.KeepWalFile = true
 
 	s.insertDocuments = func(bulks ...[]string) {
 		if s.fraction != nil {

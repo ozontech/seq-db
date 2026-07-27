@@ -24,8 +24,7 @@ import (
 type fracManifest struct {
 	basePath  string // base path to fraction files (without extension)
 	hasDocs   bool   // presence of main documents file
-	hasMeta   bool   // presence of meta-information (legacy WAL format)
-	hasWal    bool   // presence of WAL with meta 	 (new WAL format)
+	hasWal    bool   // presence of WAL with meta
 	hasIndex  bool   // presence of index file
 	hasSdocs  bool   // presence of sorted documents
 	hasRemote bool   // presence of remote fraction
@@ -56,8 +55,6 @@ func (m *fracManifest) AddExtension(ext string) error {
 	switch ext {
 	case consts.DocsFileSuffix:
 		m.hasDocs = true
-	case consts.MetaFileSuffix:
-		m.hasMeta = true
 	case consts.WalFileSuffix:
 		m.hasWal = true
 	case consts.SdocsFileSuffix:
@@ -123,7 +120,7 @@ func (m *fracManifest) Stage() fracStage {
 	if (m.hasAllIndexFiles() || m.hasIndex) && (m.hasSdocs || m.hasDocs) {
 		return fracStageSealed
 	}
-	if (m.hasMeta || m.hasWal) && m.hasDocs {
+	if m.hasWal && m.hasDocs {
 		return fracStageActive
 	}
 	if m.hasDocsDel || m.hasSdocsDel || m.hasIndexDel {
@@ -146,11 +143,7 @@ func removeSdocs(m *fracManifest) {
 	}
 }
 
-func removeMeta(m *fracManifest) {
-	if m.hasMeta {
-		util.RemoveFile(m.basePath + consts.MetaFileSuffix)
-		m.hasMeta = false
-	}
+func removeWal(m *fracManifest) {
 	if m.hasWal {
 		util.RemoveFile(m.basePath + consts.WalFileSuffix)
 		m.hasWal = false
@@ -376,7 +369,7 @@ func cleanupFrac(m *fracManifest) {
 // cleanupRemoteFrac cleans files for remote fractions
 // Removes local file copies since data is stored remotely
 func cleanupRemoteFrac(m *fracManifest) {
-	removeMeta(m)
+	removeWal(m)
 	removeDocs(m)
 	removeSdocs(m)
 	removeIndexFiles(m)
@@ -385,7 +378,7 @@ func cleanupRemoteFrac(m *fracManifest) {
 // cleanupSealedFrac cleans files for sealed fractions
 // Removes redundant files after finishing work with the fraction
 func cleanupSealedFrac(m *fracManifest) {
-	removeMeta(m)
+	removeWal(m)
 	removeCompactionPlan(m)
 	if m.hasSdocs {
 		removeDocs(m) // remove orig docs, but keeping sorted
@@ -416,7 +409,6 @@ func removeAllFiles(basePath string) {
 		consts.IDFileSuffix, consts.IDTmpFileSuffix,
 		consts.LIDFileSuffix, consts.LIDTmpFileSuffix,
 
-		consts.MetaFileSuffix,
 		consts.WalFileSuffix,
 		consts.CompactionPlan,
 	} {
@@ -455,7 +447,6 @@ func extractSuffix(filename string) string {
 func (f *fracManifest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("basePath", f.basePath)
 	enc.AddBool("hasDocs", f.hasDocs)
-	enc.AddBool("hasMeta", f.hasMeta)
 	enc.AddBool("hasWal", f.hasWal)
 	enc.AddBool("hasIndex", f.hasIndex)
 	enc.AddBool("hasSdocs", f.hasSdocs)

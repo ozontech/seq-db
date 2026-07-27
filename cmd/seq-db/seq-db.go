@@ -285,7 +285,7 @@ func startStore(
 					},
 				},
 				SkipSortDocs: !cfg.DocsSorting.Enabled,
-				KeepMetaFile: false,
+				KeepWalFile:  false,
 			},
 			OffloadingEnabled:    cfg.Offloading.Enabled,
 			OffloadingRetention:  cfg.Offloading.Retention,
