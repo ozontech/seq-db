@@ -90,6 +90,7 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 			if err != nil {
 				return err
 			}
+			a.Release()
 			sealed[i] = s
 
 			return nil
