@@ -70,9 +70,11 @@ func TestBlock_UnpackBufferReuse(t *testing.T) {
 	var packBuf []uint32
 	packed := src.Pack(nil, packBuf)
 
+	unpackBuf := &UnpackBuffer{}
+
 	var dst1, dst2 Block
-	require.NoError(t, dst1.Unpack(packed, config.BinaryDataV5, &UnpackBuffer{}))
-	require.NoError(t, dst2.Unpack(packed, config.BinaryDataV5, &UnpackBuffer{}))
+	require.NoError(t, dst1.Unpack(packed, config.BinaryDataV5, unpackBuf))
+	require.NoError(t, dst2.Unpack(packed, config.BinaryDataV5, unpackBuf))
 
 	assert.Equal(t, dst1.FreqIndexes, dst2.FreqIndexes)
 	assert.Equal(t, dst1.Freqs, dst2.Freqs)
