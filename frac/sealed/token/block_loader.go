@@ -91,19 +91,17 @@ func (b *Block) unpackV5(data []byte, buf *UnpackBuffer) error {
 
 	if flags&1 > 0 {
 		var err error
-		var freqIndexes []uint16
-		data, freqIndexes, err = packer.DecompressDeltaBitpackUint16(data, buf.decompressedUint16, buf.compressed)
+		data, buf.decompressedUint16, err = packer.DecompressDeltaBitpackUint16(data, buf.decompressedUint16, buf.compressed)
 		if err != nil {
 			return err
 		}
-		b.FreqIndexes = append(b.FreqIndexes, freqIndexes...)
+		b.FreqIndexes = append(b.FreqIndexes, buf.decompressedUint16...)
 
-		var freqs []uint32
-		_, freqs, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressedUint32, buf.compressed)
+		_, buf.decompressedUint32, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressedUint32, buf.compressed)
 		if err != nil {
 			return err
 		}
-		b.Freqs = append(b.Freqs, freqs...)
+		b.Freqs = append(b.Freqs, buf.decompressedUint32...)
 	}
 
 	return nil
@@ -256,9 +254,12 @@ func (b *UnpackBuffer) Reset(fracVer config.BinaryDataVersion) {
 	} else {
 		b.decompressedUint32 = b.decompressedUint32[:0]
 	}
+	if b.decompressedUint16 == nil {
+		b.decompressedUint16 = make([]uint16, 0, 256)
+	} else {
+		b.decompressedUint16 = b.decompressedUint16[:0]
+	}
 	if b.compressed == nil {
 		b.compressed = make([]uint32, 0, 256)
-	} else {
-		b.compressed = b.compressed[:0]
 	}
 }
