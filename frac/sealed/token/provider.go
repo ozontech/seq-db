@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/ozontech/seq-db/pattern"
+	"github.com/ozontech/seq-db/util"
 )
 
 type Provider struct {
@@ -60,22 +61,43 @@ func (tp *Provider) GetToken(tid uint32) []byte {
 }
 
 func (tp *Provider) FindContains(needle []byte) ([]uint32, error) {
-	return tp.findInBlocks(tp.FirstTID(), tp.LastTID(), func(b *Block, firstIndex, lastIndex int) ([]int, error) {
-		return b.contains(firstIndex, lastIndex, needle)
-	})
+	requiredLetters := util.NewLettersBitset(needle)
+
+	return tp.findInBlocks(
+		tp.FirstTID(),
+		tp.LastTID(),
+		func(e *TableEntry) bool {
+			return e.Letters.IsNil() || e.Letters.ContainsAll(requiredLetters)
+		},
+		func(b *Block, firstIndex, lastIndex int) ([]int, error) {
+			return b.contains(firstIndex, lastIndex, needle)
+		})
 }
 
 func (tp *Provider) FindToken(searcher pattern.Searcher) ([]uint32, error) {
-	return tp.findInBlocks(searcher.FirstTID(), searcher.LastTID(), func(b *Block, firstIndex, lastIndex int) ([]int, error) {
-		return b.find(firstIndex, lastIndex, searcher)
-	})
+	return tp.findInBlocks(
+		searcher.FirstTID(),
+		searcher.LastTID(),
+		func(e *TableEntry) bool {
+			return searcher.CheckEntry(e.Letters)
+		},
+		func(b *Block, firstIndex, lastIndex int) ([]int, error) {
+			return b.find(firstIndex, lastIndex, searcher)
+		})
 }
 
-func (tp *Provider) findInBlocks(firstTID, lastTID uint32, search func(*Block, int, int) ([]int, error)) ([]uint32, error) {
+func (tp *Provider) findInBlocks(
+	firstTID,
+	lastTID uint32,
+	entryFilter func(*TableEntry) bool,
+	search func(*Block, int, int) ([]int, error)) ([]uint32, error) {
 	var tids []uint32
 
 	for _, entry := range tp.entries {
 		if !entry.checkTIDsInBlock(firstTID, lastTID) {
+			continue
+		}
+		if !entryFilter(entry) {
 			continue
 		}
 

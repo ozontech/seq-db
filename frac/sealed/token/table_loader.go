@@ -9,15 +9,18 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/util"
 )
 
 const CacheKeyTable = 1
 
 type TableLoader struct {
 	fracName string
+	fracVer  config.BinaryDataVersion
 	isLegacy bool
 
 	reader *storage.IndexReader
@@ -31,12 +34,14 @@ type TableLoader struct {
 
 func NewTableLoader(
 	fracName string,
+	fracVer config.BinaryDataVersion,
 	isLegacy bool,
 	reader *storage.IndexReader,
 	c *cache.Cache[Table],
 ) *TableLoader {
 	return &TableLoader{
 		fracName: fracName,
+		fracVer:  fracVer,
 		isLegacy: isLegacy,
 		reader:   reader,
 		cache:    c,
@@ -126,7 +131,7 @@ func (l *TableLoader) loadBlocksLegacy() ([]TableBlock, error) {
 		}
 
 		var tb TableBlock
-		tb.Unpack(blockData)
+		tb.Unpack(blockData, l.fracVer)
 
 		blocks = append(blocks, tb)
 		blockIndex += 1
@@ -149,7 +154,7 @@ func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
 		}
 
 		var tb TableBlock
-		tb.Unpack(data)
+		tb.Unpack(data, l.fracVer)
 
 		blocks = append(blocks, tb)
 	}
@@ -206,6 +211,8 @@ func (b TableBlock) packedSize() int {
 			// MaxVal
 			size += sizeOfUint32
 			size += len(entry.MaxVal)
+			// Letters
+			size += sizeOfUint32
 		}
 	}
 	return size
@@ -231,12 +238,14 @@ func (b TableBlock) Pack(buf []byte) []byte {
 			// MaxVal
 			buf = binary.LittleEndian.AppendUint32(buf, uint32(len(entry.MaxVal)))
 			buf = append(buf, entry.MaxVal...)
+			// Letters
+			buf = binary.LittleEndian.AppendUint32(buf, uint32(entry.Letters))
 		}
 	}
 	return buf
 }
 
-func (b *TableBlock) Unpack(data []byte) {
+func (b *TableBlock) Unpack(data []byte, fracVer config.BinaryDataVersion) {
 	b.FieldsTables = make([]FieldTable, 0)
 	unpacker := packer.NewBytesUnpacker(data)
 
@@ -260,6 +269,11 @@ func (b *TableBlock) Unpack(data []byte) {
 				e.MinVal = minVal
 			}
 			e.MaxVal = maxVal
+			if fracVer >= config.BinaryDataV5 {
+				e.Letters = util.LettersBitset(unpacker.GetUint32())
+			} else {
+				e.Letters = util.NewLettersBitsetNil()
+			}
 			ft.Entries[i] = e
 		}
 		b.FieldsTables = append(b.FieldsTables, ft)

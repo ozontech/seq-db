@@ -13,6 +13,7 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pattern"
 	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/util"
 )
 
 const sizeOfUint32 = uint32(unsafe.Sizeof(uint32(0)))
@@ -60,6 +61,14 @@ func (b *Block) GetToken(index int) []byte {
 	l := binary.LittleEndian.Uint32(b.Payload[offset:])
 	offset += sizeOfUint32 // skip val length
 	return b.Payload[offset : offset+l]
+}
+
+func (b *Block) LettersBitset() util.LettersBitset {
+	var builder util.LetterBitsetBuilder
+	for i := 0; i < b.Len(); i++ {
+		builder.Add(b.GetToken(i))
+	}
+	return builder.Build()
 }
 
 func (b *Block) contains(from, to int, needle []byte) ([]int, error) {

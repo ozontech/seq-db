@@ -10,6 +10,7 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
 )
 
 type mockSource struct {
@@ -59,6 +60,8 @@ func (m *mockSource) ID() iter.Seq2[DocLocation, error] {
 }
 
 func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
+	lettersFV := util.NewLettersBitsetFromArray([30]bool{5: true, 21: true, 26: true})
+
 	src := mockSource{
 		tokens: [][]byte{
 			[]byte("f1v1"), // 1
@@ -156,6 +159,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   2,
 						MinVal:     "f1v1",
 						MaxVal:     "f1v2",
+						Letters:    lettersFV,
 					},
 				},
 			}, {
@@ -168,6 +172,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   1,
 						MinVal:     "f2v1",
 						MaxVal:     "f2v1",
+						Letters:    lettersFV,
 					}, {
 						StartIndex: 0,
 						StartTID:   4,
@@ -175,6 +180,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   3,
 						MinVal:     "f2v2",
 						MaxVal:     "f2v4",
+						Letters:    lettersFV,
 					}, {
 						StartIndex: 0,
 						StartTID:   7,
@@ -182,6 +188,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   1,
 						MinVal:     "f2v5",
 						MaxVal:     "f2v5",
+						Letters:    lettersFV,
 					},
 				},
 			}, {
@@ -194,6 +201,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   2,
 						MinVal:     "f3v1",
 						MaxVal:     "f3v2",
+						Letters:    lettersFV,
 					},
 				},
 			}, {
@@ -206,6 +214,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   3,
 						MinVal:     "f4v1",
 						MaxVal:     "f4v3",
+						Letters:    lettersFV,
 					},
 				},
 			}, {
@@ -218,6 +227,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   1,
 						MinVal:     "f5v1",
 						MaxVal:     "f5v1",
+						Letters:    lettersFV,
 					},
 				},
 			}, {
@@ -230,6 +240,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   1,
 						MinVal:     "f6v1",
 						MaxVal:     "f6v1",
+						Letters:    lettersFV,
 					},
 				},
 			},
