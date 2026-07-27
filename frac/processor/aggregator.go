@@ -375,6 +375,7 @@ type SourcedNodeIterator struct {
 	sourcedNode node.Sourced
 	ti          tokenIndex
 	tids        []uint32
+	field       string
 
 	tokensCache map[uint32]string
 
@@ -385,12 +386,13 @@ type SourcedNodeIterator struct {
 	lastSource uint32
 }
 
-func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, limit iteratorLimit) *SourcedNodeIterator {
+func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, field string, limit iteratorLimit) *SourcedNodeIterator {
 	lastID, lastSource := sourced.NextSourced()
 	return &SourcedNodeIterator{
 		sourcedNode:      sourced,
 		ti:               ti,
 		tids:             tids,
+		field:            field,
 		tokensCache:      make(map[uint32]string),
 		uniqSourcesLimit: limit,
 		countBySource:    make(map[uint32]int),
@@ -425,14 +427,14 @@ func (s *SourcedNodeIterator) ConsumeTokenSource(lid node.LID) (uint32, bool, er
 func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
 	const useCacheThreshold = 2
 	if s.countBySource[source] < useCacheThreshold {
-		return string(s.ti.GetValByTID(s.tids[source]))
+		return string(s.ti.GetValByTID(s.tids[source], s.field))
 	}
 
 	val, ok := s.tokensCache[source]
 	if ok {
 		return val
 	}
-	val = string(s.ti.GetValByTID(s.tids[source]))
+	val = string(s.ti.GetValByTID(s.tids[source], s.field))
 	s.tokensCache[source] = val
 	return val
 }

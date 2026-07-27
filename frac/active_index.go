@@ -240,8 +240,8 @@ type activeTokenIndex struct {
 	inverser  *inverser
 }
 
-func (si *activeTokenIndex) GetValByTID(tid uint32) []byte {
-	return si.tokenList.GetValByTID(tid)
+func (si *activeTokenIndex) GetValByTID(tid uint32, field string) []byte {
+	return si.tokenList.GetValByTID(tid, field)
 }
 
 func (si *activeTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
