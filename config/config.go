@@ -72,6 +72,11 @@ type Config struct {
 	} `config:"storage"`
 
 	Sealing struct {
+		Tokens struct {
+			// BlockSize sets max token block size in bytes.
+			BlockSize Bytes `config:"block_size" default:"16KiB"`
+		} `config:"tokens"`
+
 		Lids struct {
 			// BlockSize sets max lids (postings) saved per LIDs block.
 			BlockSize int `config:"block_size" default:"65536"`

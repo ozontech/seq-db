@@ -103,6 +103,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		TokenTableZstdLevel:    1,
 		DocBlocksZstdLevel:     1,
 		LIDBlockSize:           512,
+		TokenBlockSize:         128,
 		DocBlockSize:           128 * int(units.KiB),
 	}
 

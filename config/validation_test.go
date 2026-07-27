@@ -98,6 +98,21 @@ limits:
 			env:       map[string]string{"SEQDB_SEALING_LIDS_BLOCK_SIZE": "8192"},
 			expectErr: false,
 		},
+		{
+			name: "Invalid sealing.tokens.block_size",
+			cfg: createCfgFile(t, base+`
+sealing:
+  tokens:
+    block_size: -1B
+`),
+			expectErr: true,
+		},
+		{
+			name:      "Valid sealing.tokens.block_size",
+			cfg:       baseCfg,
+			env:       map[string]string{"SEQDB_SEALING_TOKENS_BLOCK_SIZE": "32KiB"},
+			expectErr: false,
+		},
 	}
 
 	for _, tt := range tests {

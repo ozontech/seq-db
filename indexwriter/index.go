@@ -67,12 +67,16 @@ type IndexWriter struct {
 }
 
 func New(params common.SealParams) *IndexWriter {
+	if params.TokenBlockSize == 0 {
+		params.TokenBlockSize = consts.RegularBlockSize
+	}
+
 	return &IndexWriter{
 		params: params,
-		buf1:   make([]byte, 0, consts.RegularBlockSize),
-		buf2:   make([]byte, 0, consts.RegularBlockSize),
+		buf1:   make([]byte, 0, params.TokenBlockSize),
+		buf2:   make([]byte, 0, params.TokenBlockSize),
 		buf32:  make([]uint32, 0, consts.DefaultLIDBlockCap),
-		buf64:  make([]uint64, 0, consts.RegularBlockSize),
+		buf64:  make([]uint64, 0, params.TokenBlockSize),
 	}
 }
 
@@ -153,7 +157,7 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 	)
 
 	var allFieldsTables []token.FieldTable
-	for pair, err := range tokenBlock(src.TokenTriplets(), lidAccumulator.add, consts.RegularBlockSize) {
+	for pair, err := range tokenBlock(src.TokenTriplets(), lidAccumulator.add, s.params.TokenBlockSize) {
 		if err != nil {
 			return err
 		}

@@ -115,6 +115,12 @@ Compression level settings for various data types.
 
 Settings for fraction sealing.
 
+### Tokens
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `sealing.tokens.block_size` | Bytes | `16KiB` | Max token block size in bytes |
+
 ### Lids
 
 | Field | Type | Default | Description |
