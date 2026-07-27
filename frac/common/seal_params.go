@@ -12,8 +12,8 @@ type SealParams struct {
 	TokenTableZstdLevel    int
 	DocBlocksZstdLevel     int // DocBlocksZstdLevel is the zstd compress level of each document block.
 
-	LIDBlockSize   int
-	TokenBlockSize int
-	TokenFreqThreshold int // TokenFreqThreshold Min lids count to store frequency for a token.
-	DocBlockSize   int // DocBlockSize is decompressed payload size of document block.
+	LIDBlockSize                 int
+	TokenBlockSize               int
+	TokenFreqThresholdPercentage float64
+	DocBlockSize                 int // DocBlockSize is decompressed payload size of document block.
 }

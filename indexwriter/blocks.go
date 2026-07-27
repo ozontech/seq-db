@@ -6,7 +6,6 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -49,11 +48,8 @@ type unpackedIDBlock struct {
 
 func tokenBlock(
 	it iter.Seq2[string, iter.Seq2[TokenLIDs, error]],
-	accumulate func([]uint32) error, blockCapacity int, tokenFreqThreshold int,
+	accumulate func([]uint32) error, blockCapacity int, tokenFreqAbsThreshold int,
 ) iter.Seq2[tokenFieldBlock, error] {
-	if tokenFreqThreshold == 0 {
-		tokenFreqThreshold = consts.DefaultTokenFreqThreshold
-	}
 	return func(yield func(tokenFieldBlock, error) bool) {
 		var (
 			block     unpackedTokenBlock
@@ -132,7 +128,7 @@ func tokenBlock(
 				block.payload.Payload = binary.LittleEndian.AppendUint32(block.payload.Payload, uint32(len(tok)))
 				block.payload.Payload = append(block.payload.Payload, tok...)
 
-				if len(tlids) >= tokenFreqThreshold {
+				if len(tlids) >= tokenFreqAbsThreshold {
 					if tokenIndex > math.MaxUint16 {
 						panic("unsupported token block size")
 					}
