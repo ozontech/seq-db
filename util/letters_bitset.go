@@ -9,9 +9,10 @@ type LettersBitset uint32
 
 const nilSet LettersBitset = 1 << 31
 
+// Russian alphabet UTF-8 letters first bytes
 const (
-	reservedByteUtf8Ru1 = 208
-	reservedByteUtf8Ru2 = 209
+	reservedByteUtf8Ru1 = 0xD0
+	reservedByteUtf8Ru2 = 0xD1
 )
 
 type LetterBitsetBuilder [30]bool
@@ -60,9 +61,9 @@ func NewLettersBitset(data []byte) LettersBitset {
 }
 
 func (s LettersBitset) IsNil() bool {
-	return s&nilSet != 0
+	return (s & nilSet) != 0
 }
 
 func (s LettersBitset) ContainsAll(required LettersBitset) bool {
-	return s&required == required
+	return (s & required) == required
 }
