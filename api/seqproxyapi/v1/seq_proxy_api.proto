@@ -120,6 +120,14 @@ service SeqProxyApi {
       body: "*"
     };
   }
+
+  // TODO: input stream
+  rpc StreamSearch(StreamSearchRequest) returns (stream StreamSearchResponse) {
+    option (google.api.http) = {
+      post: "/stream-search"
+      body: "*"
+    };
+  }
 }
 
 // Custom error code, returned by seq-db proxy.
@@ -435,4 +443,78 @@ message ExportAsyncSearchRequest {
 
 message ExportResponse {
   Document doc = 1; // Response document.
+}
+
+message StreamSearchRequest {
+  oneof RequestType {
+    StreamSearchQuery query = 1;
+    StreamControl control = 2;
+  }
+}
+
+message StreamSearchQuery {
+  string query = 1;                   // Search query.
+  google.protobuf.Timestamp from = 2; // Lower bound for search (inclusive).
+  google.protobuf.Timestamp to = 3;   // Upper bound for search (inclusive).
+  bool explain = 4;                   // Should request be explained (tracing will be provided with the result).
+  string offset_id = 5;               // ID offset for pagination.
+  bool with_total = 6;                // Should total number of documents be returned in response.
+}
+
+message StreamControl {
+  ControlAction action = 1;
+}
+
+enum ControlAction {
+  CONTROL_ACTION_UNSPECIFIED = 0;
+  FINALIZE = 1;   // Indicates correct stream termination, will get Summary after
+  CANCEL = 2;     // Some client error, termination stream immediately, no need for Summary
+}
+
+message StreamSearchResponse {
+  oneof RequestType {
+    ResponseHeader header = 1;
+    ResponseData data = 2;
+    ResponseSummary summary = 3;
+  }
+}
+
+message ResponseHeader {
+  repeated Typing typing = 1;
+}
+
+message Typing {
+  string title = 1;
+  DataType type = 2;
+}
+
+enum DataType {
+  BYTES = 0;
+  SEQ_ID = 1;
+  RAW_DOCUMENT = 2;
+  STRING = 3;
+  UINT32 = 4;
+  UINT64 = 5;
+  INT32 = 6;
+  INT64 = 7;
+  FLOAT64 = 8;
+  // TODO: array data types: StringArray, Uin64Array, Float64Array etc.
+}
+
+message ResponseData {
+  RecordsBatch batch = 1;
+}
+
+message RecordsBatch {
+  repeated Record records = 1;
+}
+
+message Record {
+  repeated bytes raw_data = 1;
+}
+
+message ResponseSummary {
+  uint64 total = 1;
+  Error error = 2;
+  optional ExplainEntry explain = 3;
 }

@@ -371,6 +371,26 @@ func request_SeqProxyApi_ExportAsyncSearch_0(ctx context.Context, marshaler runt
 	return stream, metadata, nil
 }
 
+func request_SeqProxyApi_StreamSearch_0(ctx context.Context, marshaler runtime.Marshaler, client SeqProxyApiClient, req *http.Request, pathParams map[string]string) (SeqProxyApi_StreamSearchClient, runtime.ServerMetadata, error) {
+	var (
+		protoReq StreamSearchRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	stream, err := client.StreamSearch(ctx, &protoReq)
+	if err != nil {
+		return nil, metadata, err
+	}
+	header, err := stream.Header()
+	if err != nil {
+		return nil, metadata, err
+	}
+	metadata.HeaderMD = header
+	return stream, metadata, nil
+}
+
 // RegisterSeqProxyApiHandlerServer registers the http handlers for service SeqProxyApi to "mux".
 // UnaryRPC     :call SeqProxyApiServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
@@ -613,6 +633,13 @@ func RegisterSeqProxyApiHandlerServer(ctx context.Context, mux *runtime.ServeMux
 	})
 
 	mux.Handle(http.MethodPost, pattern_SeqProxyApi_ExportAsyncSearch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
+		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+		return
+	})
+
+	mux.Handle(http.MethodPost, pattern_SeqProxyApi_StreamSearch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
 		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
 		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
@@ -896,6 +923,23 @@ func RegisterSeqProxyApiHandlerClient(ctx context.Context, mux *runtime.ServeMux
 		}
 		forward_SeqProxyApi_ExportAsyncSearch_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_SeqProxyApi_StreamSearch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/seqproxyapi.v1.SeqProxyApi/StreamSearch", runtime.WithHTTPPathPattern("/stream-search"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_SeqProxyApi_StreamSearch_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_SeqProxyApi_StreamSearch_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
@@ -914,6 +958,7 @@ var (
 	pattern_SeqProxyApi_DeleteAsyncSearch_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 1, 0, 4, 1, 5, 1}, []string{"async-searches", "search_id"}, ""))
 	pattern_SeqProxyApi_GetAsyncSearchesList_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"async-searches", "list"}, ""))
 	pattern_SeqProxyApi_ExportAsyncSearch_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"async-searches", "export"}, ""))
+	pattern_SeqProxyApi_StreamSearch_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0}, []string{"stream-search"}, ""))
 )
 
 var (
@@ -931,4 +976,5 @@ var (
 	forward_SeqProxyApi_DeleteAsyncSearch_0      = runtime.ForwardResponseMessage
 	forward_SeqProxyApi_GetAsyncSearchesList_0   = runtime.ForwardResponseMessage
 	forward_SeqProxyApi_ExportAsyncSearch_0      = runtime.ForwardResponseStream
+	forward_SeqProxyApi_StreamSearch_0           = runtime.ForwardResponseStream
 )

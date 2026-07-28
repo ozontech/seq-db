@@ -38,3 +38,123 @@ func TestParsePipeFieldsExcept(t *testing.T) {
 	test(`* | fields except "_\\message*"`, `* | fields except "_\\message\*"`)
 	test(`* | fields except k8s_namespace`, `* | fields except k8s_namespace`)
 }
+
+func TestParsePipeStats(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test("service:my-service | stats count by (service)", "service:my-service | stats count by (service)")
+	test("service:my-service | stats sum(level) by (service)", "service:my-service | stats sum(level) by (service)")
+	test("service:my-service | stats count by (service) interval(1m)", "service:my-service | stats count by (service) interval(1m)")
+	test("service:my-service | stats min(response_time) by (service)", "service:my-service | stats min(response_time) by (service)")
+	test("service:my-service | stats max(response_time) by (service)", "service:my-service | stats max(response_time) by (service)")
+	test("service:my-service | stats avg(response_time) by (service)", "service:my-service | stats avg(response_time) by (service)")
+	test("service:my-service | stats unique by (service)", "service:my-service | stats unique by (service)")
+	test("service:my-service | stats unique_count by (service)", "service:my-service | stats unique_count by (service)")
+}
+
+func TestParsePipeStatsMultiple(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test("service:my-service | stats count by (service), sum(level) by (service)", "service:my-service | stats count by (service), sum(level) by (service)")
+	test("service:my-service | stats count by (service) interval(1m), sum(level) by (service) interval(1m)", "service:my-service | stats count by (service) interval(1m), sum(level) by (service) interval(1m)")
+}
+
+func TestParsePipeStatsQuantile(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test("service:my-service | stats quantile(response_time, 0.5, 0.95) by (service)", "service:my-service | stats quantile(response_time, 0.5, 0.95) by (service)")
+}
+
+func TestParsePipeSort(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test("service:my_service | sort message asc", "service:my_service | sort message asc")
+	test("service:my_service | sort message desc", "service:my_service | sort message desc")
+	test("service:my_service | sort message", "service:my_service | sort message asc")
+}
+
+func TestParsePipeSortErrors(t *testing.T) {
+	test := func(q string) {
+		t.Helper()
+		_, err := ParseSeqQL(q, nil)
+		require.Error(t, err)
+	}
+
+	test(`service:my_service | sort`)
+	test(`service:my_service | sort field invalid_order`)
+	test(`service:my_service | sort a:1 | sort b:2`)
+}
+
+func TestParsePipeLimit(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test("service:my_service | limit 10", "service:my_service | limit 10")
+	test("service:my_service | limit 100", "service:my_service | limit 100")
+	test("service:my_service | limit 100 | offset 100", "service:my_service | limit 100 | offset 100")
+}
+
+func TestParsePipeLimitErrors(t *testing.T) {
+	test := func(q string) {
+		t.Helper()
+		_, err := ParseSeqQL(q, nil)
+		require.Error(t, err)
+	}
+
+	test(`service:my_service | limit`)
+	test(`service:my_service | limit abc`)
+	test(`service:my_service | limit 0`)
+	test(`service:my_service | limit -1`)
+	test(`service:my_service | limit 10 | limit 20`)
+}
+
+func TestParsePipeOffset(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test("service:my_service | offset 10", "service:my_service | offset 10")
+	test("service:my_service | offset 100", "service:my_service | offset 100")
+	test("service:my_service | limit 100 | offset 100", "service:my_service | limit 100 | offset 100")
+}
+
+func TestParsePipeOffsetErrors(t *testing.T) {
+	test := func(q string) {
+		t.Helper()
+		_, err := ParseSeqQL(q, nil)
+		require.Error(t, err)
+	}
+
+	test(`service:my_service | offset`)
+	test(`service:my_service | offset abc`)
+	test(`service:my_service | offset 0`)
+	test(`service:my_service | offset -1`)
+	test(`service:my_service | offset 10 | offset 20`)
+}

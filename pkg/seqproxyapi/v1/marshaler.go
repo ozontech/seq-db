@@ -2,6 +2,7 @@ package seqproxyapi
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"math"
 	"strconv"
@@ -257,4 +258,55 @@ func (r *FetchAsyncSearchResultResponse) MarshalJSON() ([]byte, error) {
 
 func (i *AsyncSearchesListItem) MarshalJSON() ([]byte, error) {
 	return pbMarshaller.Marshal(i)
+}
+
+// streamSearchDocColumns is the number of columns carried by a document record
+// produced by StreamSearch: id (SEQ_ID), time (UINT64), data (RAW_DOCUMENT).
+const streamSearchDocColumns = 3
+
+// streamSearchAggColumns is the number of columns carried by an aggregation
+// bucket record produced by StreamSearch: key (STRING), value (FLOAT64).
+const streamSearchAggColumns = 2
+
+// MarshalJSON formats a StreamSearch record into a human-readable JSON array.
+//
+// The record layout is fixed by the proxy StreamSearch implementation and is
+// distinguished by the number of raw_data cells:
+//   - documents (3 cells): [id, time(nanoseconds, big-endian uint64), data]
+//     where data is inlined as a json.RawMessage and time is rendered as an
+//     RFC3339Nano string;
+//   - aggregation buckets (2 cells): [key, value(big-endian float64)].
+//
+// For any other layout the raw cells are emitted as-is (base64 for bytes).
+func (r *Record) MarshalJSON() ([]byte, error) {
+	cells := r.GetRawData()
+	switch len(cells) {
+	case streamSearchDocColumns:
+		// cells[1] is a big-endian uint64 storing the document MID (nanoseconds).
+		var ts time.Time
+		if len(cells[1]) == 8 {
+			ts = time.Unix(0, int64(binary.BigEndian.Uint64(cells[1]))).UTC()
+		}
+		return json.Marshal([]interface{}{
+			string(cells[0]), // id
+			ts.Format(time.RFC3339Nano),
+			json.RawMessage(cells[2]), // data, inlined as JSON
+		})
+	case streamSearchAggColumns:
+		// cells[1] is a big-endian float64 storing the aggregation value.
+		var value float64
+		if len(cells[1]) == 8 {
+			value = math.Float64frombits(binary.BigEndian.Uint64(cells[1]))
+		}
+		val := json.RawMessage(strconv.FormatFloat(value, 'f', -1, 64))
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			val = json.RawMessage(strconv.Quote(string(val)))
+		}
+		return json.Marshal([]interface{}{
+			string(cells[0]), // key
+			val,              // value
+		})
+	default:
+		return json.Marshal(cells)
+	}
 }

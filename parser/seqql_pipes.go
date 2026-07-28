@@ -12,8 +12,12 @@ type Pipe interface {
 }
 
 func parsePipes(lex *lexer) ([]Pipe, error) {
-	// Counter of 'fields' pipes.
 	fieldFilters := 0
+	statsPipes := 0
+	sortPipes := 0
+	limitPipes := 0
+	offsetPipes := 0
+
 	var pipes []Pipe
 	for !lex.IsEnd() {
 		if !lex.IsKeyword("|") {
@@ -29,12 +33,52 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 			}
 			pipes = append(pipes, p)
 			fieldFilters++
+		case lex.IsKeyword("stats"):
+			p, err := parsePipeStats(lex)
+			if err != nil {
+				return nil, fmt.Errorf("parsing 'stats' pipe: %s", err)
+			}
+			pipes = append(pipes, p)
+			statsPipes++
+		case lex.IsKeyword("sort"):
+			p, err := parsePipeSort(lex)
+			if err != nil {
+				return nil, fmt.Errorf("parsing 'sort' pipe: %s", err)
+			}
+			pipes = append(pipes, p)
+			sortPipes++
+		case lex.IsKeyword("limit"):
+			p, err := parsePipeLimit(lex)
+			if err != nil {
+				return nil, fmt.Errorf("parsing 'limit' pipe: %s", err)
+			}
+			pipes = append(pipes, p)
+			limitPipes++
+		case lex.IsKeyword("offset"):
+			p, err := parsePipeOffset(lex)
+			if err != nil {
+				return nil, fmt.Errorf("parsing 'offset' pipe: %s", err)
+			}
+			pipes = append(pipes, p)
+			offsetPipes++
 		default:
 			return nil, fmt.Errorf("unknown pipe: %s", lex.Token)
 		}
 
 		if fieldFilters > 1 {
-			return nil, fmt.Errorf("multiple field filters is not allowed")
+			return nil, fmt.Errorf("multiple field filters are not allowed")
+		}
+		if statsPipes > 1 {
+			return nil, fmt.Errorf("multiple 'stats' pipes are not allowed")
+		}
+		if sortPipes > 1 {
+			return nil, fmt.Errorf("multiple 'sort' pipes are not allowed")
+		}
+		if limitPipes > 1 {
+			return nil, fmt.Errorf("multiple 'limit' pipes are not allowed")
+		}
+		if offsetPipes > 1 {
+			return nil, fmt.Errorf("multiple 'offset' pipes are not allowed")
 		}
 	}
 	return pipes, nil
@@ -62,6 +106,50 @@ func (f *PipeFields) DumpSeqQL(o *strings.Builder) {
 	}
 }
 
+type StatsAgg struct {
+	Func      string
+	Field     string
+	GroupBy   string
+	Interval  string
+	Quantiles []float64
+}
+
+type PipeStats struct {
+	Aggs []StatsAgg
+}
+
+func (p *PipeStats) Name() string {
+	return "stats"
+}
+
+func (p *PipeStats) DumpSeqQL(o *strings.Builder) {
+	o.WriteString("stats ")
+	for i, agg := range p.Aggs {
+		if i > 0 {
+			o.WriteString(", ")
+		}
+		o.WriteString(agg.Func)
+		if agg.Field != "" {
+			o.WriteString("(")
+			o.WriteString(quoteTokenIfNeeded(agg.Field))
+			for _, q := range agg.Quantiles {
+				fmt.Fprintf(o, ", %v", q)
+			}
+			o.WriteString(")")
+		}
+		if agg.GroupBy != "" {
+			o.WriteString(" by (")
+			o.WriteString(quoteTokenIfNeeded(agg.GroupBy))
+			o.WriteString(")")
+		}
+		if agg.Interval != "" {
+			o.WriteString(" interval(")
+			o.WriteString(agg.Interval)
+			o.WriteString(")")
+		}
+	}
+}
+
 func parsePipeFields(lex *lexer) (*PipeFields, error) {
 	if !lex.IsKeyword("fields") {
 		return nil, fmt.Errorf("missing 'fields' keyword")
@@ -83,6 +171,233 @@ func parsePipeFields(lex *lexer) (*PipeFields, error) {
 		Fields: fields,
 		Except: except,
 	}, nil
+}
+
+func parsePipeStats(lex *lexer) (*PipeStats, error) {
+	if !lex.IsKeyword("stats") {
+		return nil, fmt.Errorf("missing 'stats' keyword")
+	}
+	lex.Next()
+
+	var aggs []StatsAgg
+	for {
+		agg, err := parseStatsAgg(lex)
+		if err != nil {
+			return nil, err
+		}
+		aggs = append(aggs, agg)
+
+		if !lex.IsKeyword(",") {
+			break
+		}
+		lex.Next()
+	}
+
+	if len(aggs) == 0 {
+		return nil, fmt.Errorf("at least one aggregation is required")
+	}
+
+	return &PipeStats{Aggs: aggs}, nil
+}
+
+type PipeLimit struct {
+	Limit int
+}
+
+func (l *PipeLimit) Name() string {
+	return "limit"
+}
+
+func (l *PipeLimit) DumpSeqQL(o *strings.Builder) {
+	o.WriteString("limit ")
+	o.WriteString(strconv.Itoa(l.Limit))
+}
+
+func parsePipeLimit(lex *lexer) (*PipeLimit, error) {
+	if !lex.IsKeyword("limit") {
+		return nil, fmt.Errorf("missing 'limit' keyword")
+	}
+	lex.Next()
+
+	limitStr := lex.Token
+	if limitStr == "" {
+		return nil, fmt.Errorf("missing limit value")
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid limit value: %s", limitStr)
+	}
+
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be greater than 0, got %d", limit)
+	}
+
+	lex.Next()
+
+	return &PipeLimit{Limit: limit}, nil
+}
+
+type PipeOffset struct {
+	Offset int
+}
+
+func (l *PipeOffset) Name() string {
+	return "offset"
+}
+
+func (l *PipeOffset) DumpSeqQL(o *strings.Builder) {
+	o.WriteString("offset ")
+	o.WriteString(strconv.Itoa(l.Offset))
+}
+
+func parsePipeOffset(lex *lexer) (*PipeOffset, error) {
+	if !lex.IsKeyword("offset") {
+		return nil, fmt.Errorf("missing 'offset' keyword")
+	}
+	lex.Next()
+
+	offsetStr := lex.Token
+	if offsetStr == "" {
+		return nil, fmt.Errorf("missing offset value")
+	}
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid offset value: %s", offsetStr)
+	}
+
+	if offset <= 0 {
+		return nil, fmt.Errorf("offset must be greater than 0, got %d", offset)
+	}
+
+	lex.Next()
+
+	return &PipeOffset{Offset: offset}, nil
+}
+
+type PipeSort struct {
+	Field string
+	Order string
+}
+
+func (s *PipeSort) Name() string {
+	return "sort"
+}
+
+func (s *PipeSort) DumpSeqQL(o *strings.Builder) {
+	o.WriteString("sort ")
+	o.WriteString(quoteTokenIfNeeded(s.Field))
+	o.WriteString(" ")
+	o.WriteString(s.Order)
+}
+
+func parsePipeSort(lex *lexer) (*PipeSort, error) {
+	if !lex.IsKeyword("sort") {
+		return nil, fmt.Errorf("missing 'sort' keyword")
+	}
+	lex.Next()
+
+	field, err := parseCompositeTokenReplaceWildcards(lex)
+	if err != nil {
+		return nil, fmt.Errorf("parsing field name: %s", err)
+	}
+	if field == "" {
+		return nil, fmt.Errorf("empty field name")
+	}
+
+	order := "asc"
+	if lex.IsKeywords("asc", "desc") {
+		order = lex.Token
+		lex.Next()
+	}
+
+	return &PipeSort{
+		Field: field,
+		Order: order,
+	}, nil
+}
+
+func parseStatsAgg(lex *lexer) (StatsAgg, error) {
+	var agg StatsAgg
+
+	if !lex.IsKeywords("count", "sum", "min", "max", "avg", "quantile", "unique", "unique_count") {
+		return agg, fmt.Errorf("expected aggregation function (count, sum, min, max, avg, quantile, unique, unique_count), got %s", lex.Token)
+	}
+	agg.Func = strings.ToLower(lex.Token)
+	lex.Next()
+
+	if lex.IsKeyword("(") {
+		lex.Next()
+		field, err := parseCompositeTokenReplaceWildcards(lex)
+		if err != nil {
+			return agg, err
+		}
+		agg.Field = field
+
+		for lex.IsKeyword(",") {
+			lex.Next()
+			q, err := parseNumber(lex)
+			if err != nil {
+				return agg, fmt.Errorf("failed to parse quantile: %w", err)
+			}
+			agg.Quantiles = append(agg.Quantiles, q)
+		}
+
+		if !lex.IsKeyword(")") {
+			return agg, fmt.Errorf("expected ')' after field, got %s", lex.Token)
+		}
+		lex.Next()
+	}
+
+	if lex.IsKeyword("by") {
+		lex.Next()
+		if !lex.IsKeyword("(") {
+			return agg, fmt.Errorf("expected '(' after 'by', got %s", lex.Token)
+		}
+		lex.Next()
+		groupBy, err := parseCompositeTokenReplaceWildcards(lex)
+		if err != nil {
+			return agg, err
+		}
+		agg.GroupBy = groupBy
+		if !lex.IsKeyword(")") {
+			return agg, fmt.Errorf("expected ')' after groupBy, got %s", lex.Token)
+		}
+		lex.Next()
+	}
+
+	if lex.IsKeyword("interval") {
+		lex.Next()
+		if !lex.IsKeyword("(") {
+			return agg, fmt.Errorf("expected '(' after 'interval', got %s", lex.Token)
+		}
+		lex.Next()
+		interval := lex.Token
+		if interval == "" {
+			return agg, fmt.Errorf("expected interval value, got %s", lex.Token)
+		}
+		agg.Interval = interval
+		lex.Next()
+		if !lex.IsKeyword(")") {
+			return agg, fmt.Errorf("expected ')' after interval, got %s", lex.Token)
+		}
+		lex.Next()
+	}
+
+	return agg, nil
+}
+
+func parseNumber(lex *lexer) (float64, error) {
+	if lex.Token == "" {
+		return 0, fmt.Errorf("expected number, got empty token")
+	}
+	q, err := strconv.ParseFloat(lex.Token, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse number %s: %w", lex.Token, err)
+	}
+	lex.Next()
+	return q, nil
 }
 
 func parseFieldList(lex *lexer) ([]string, error) {
@@ -149,7 +464,7 @@ var reservedKeywords = uniqueTokens([]string{
 	"|",
 
 	// Pipe specific keywords.
-	"fields", "except",
+	"fields", "except", "limit", "offset", "sort", "stats", "by", "interval", "unique_count", "asc", "desc",
 })
 
 func needQuoteToken(s string) bool {
