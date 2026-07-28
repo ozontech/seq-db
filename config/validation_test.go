@@ -108,6 +108,51 @@ sealing:
 			expectErr: true,
 		},
 		{
+			name: "Valid sealing.tokens.freq_threshold_percentage",
+			cfg: createCfgFile(t, base+`
+sealing:
+  tokens:
+    freq_threshold_percentage: 0.005
+`),
+			expectErr: false,
+		},
+		{
+			name: "Valid large sealing.tokens.freq_threshold_percentage",
+			cfg: createCfgFile(t, base+`
+sealing:
+  tokens:
+    freq_threshold_percentage: 99.5
+`),
+			expectErr: false,
+		},
+		{
+			name: "Valid max value for sealing.tokens.freq_threshold_percentage",
+			cfg: createCfgFile(t, base+`
+sealing:
+  tokens:
+    freq_threshold_percentage: 100.0
+`),
+			expectErr: false,
+		},
+		{
+			name: "Invalid negative sealing.tokens.freq_threshold_percentage",
+			cfg: createCfgFile(t, base+`
+sealing:
+  tokens:
+    freq_threshold_percentage: -0.005
+`),
+			expectErr: true,
+		},
+		{
+			name: "Invalid large sealing.tokens.freq_threshold_percentage",
+			cfg: createCfgFile(t, base+`
+sealing:
+  tokens:
+    freq_threshold_percentage: 100.03
+`),
+			expectErr: true,
+		},
+		{
 			name:      "Valid sealing.tokens.block_size",
 			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_SEALING_TOKENS_BLOCK_SIZE": "32KiB"},
