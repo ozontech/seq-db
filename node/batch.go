@@ -16,13 +16,17 @@ type LIDBatch interface {
 	Min() uint32
 	// Max returns max (last) value. Panics if batch is empty.
 	Max() uint32
-	CopyLIDs(desc bool, dst []LID) []LID
+	ManyIter(desc bool) ManyIter
 	// Iter iterates lids in ascending way.
 	Iter() Iter
 	// ReverseIter iterates lids in descending way.
 	ReverseIter() Iter
 	// Narrow returns a batch containing only LIDs from minLID to maxLID (inclusive both).
 	Narrow(minLID, maxLID uint32) LIDBatch
+}
+
+type ManyIter interface {
+	CopyLIDs(dst []LID, tmp []uint32) int
 }
 
 type Iter interface {
@@ -111,17 +115,41 @@ func (b *sliceBatch) ReverseIter() Iter {
 	return &sliceReverseIter{lids: b.lids, idx: len(b.lids) - 1}
 }
 
-func (b *sliceBatch) CopyLIDs(desc bool, dst []LID) []LID {
-	if desc {
-		for _, lid := range b.lids {
-			dst = append(dst, NewDescLID(lid))
-		}
-	} else {
-		for i := len(b.lids) - 1; i >= 0; i-- {
-			dst = append(dst, NewAscLID(b.lids[i]))
-		}
+func (b *sliceBatch) ManyIter(desc bool) ManyIter {
+	it := &sliceManyIter{lids: b.lids, desc: desc}
+	if !desc {
+		it.pos = len(b.lids) - 1
 	}
-	return dst
+	return it
+}
+
+type sliceManyIter struct {
+	lids []uint32
+	pos  int
+	desc bool
+}
+
+func (it *sliceManyIter) CopyLIDs(dst []LID, tmp []uint32) int {
+	if len(dst) == 0 || len(tmp) == 0 {
+		return 0
+	}
+	if it.desc {
+		n := min(len(dst), len(tmp), len(it.lids)-it.pos)
+		for i := 0; i < n; i++ {
+			dst[i] = NewDescLID(it.lids[it.pos+i])
+		}
+		it.pos += n
+		return n
+	}
+	if it.pos < 0 {
+		return 0
+	}
+	n := min(len(dst), len(tmp), it.pos+1)
+	for i := 0; i < n; i++ {
+		dst[i] = NewAscLID(it.lids[it.pos-i])
+	}
+	it.pos -= n
+	return n
 }
 
 type sliceIter struct {
@@ -214,7 +242,7 @@ func (b *bitmapBatch) Narrow(minLID, maxLID uint32) LIDBatch {
 		out.RemoveRange(0, uint64(minLID))
 	}
 	if maxLID < b.max {
-		out.RemoveRange(uint64(maxLID)+1, uint64(0x100000000))
+		out.RemoveRange(uint64(maxLID)+1, math.MaxUint64)
 	}
 	return NewBitmapBatch(out)
 }
@@ -227,19 +255,43 @@ func (b *bitmapBatch) ReverseIter() Iter {
 	return newBitmapReverseIter(b.bm)
 }
 
-func (b *bitmapBatch) CopyLIDs(desc bool, dst []LID) []LID {
+func (b *bitmapBatch) ManyIter(desc bool) ManyIter {
 	if desc {
-		it := b.bm.Iterator()
-		for it.HasNext() {
-			dst = append(dst, NewDescLID(it.Next()))
-		}
-	} else {
-		it := b.bm.ReverseIterator()
-		for it.HasNext() {
-			dst = append(dst, NewAscLID(it.Next()))
-		}
+		return &bitmapManyIterAsc{it: b.bm.ManyIterator()}
 	}
-	return dst
+	return &bitmapManyIterDesc{it: b.bm.ReverseIterator()}
+}
+
+type bitmapManyIterAsc struct {
+	it roaring.ManyIntIterable
+}
+
+func (it *bitmapManyIterAsc) CopyLIDs(dst []LID, tmp []uint32) int {
+	if len(dst) == 0 || len(tmp) == 0 {
+		return 0
+	}
+	n := it.it.NextMany(tmp[:min(len(dst), len(tmp))])
+	for i := 0; i < n; i++ {
+		dst[i] = NewDescLID(tmp[i])
+	}
+	return n
+}
+
+type bitmapManyIterDesc struct {
+	it roaring.IntIterable
+}
+
+func (it *bitmapManyIterDesc) CopyLIDs(dst []LID, tmp []uint32) int {
+	if len(dst) == 0 || len(tmp) == 0 {
+		return 0
+	}
+	n := 0
+	limit := min(len(dst), len(tmp))
+	for n < limit && it.it.HasNext() {
+		dst[n] = NewAscLID(it.it.Next())
+		n++
+	}
+	return n
 }
 
 type emptyBatch struct{}
@@ -261,10 +313,16 @@ func (emptyBatch) Max() uint32 {
 	panic("Maximum called on empty batch")
 }
 
-func (emptyBatch) Narrow(uint32, uint32) LIDBatch   { return emptyBatchInstance }
-func (emptyBatch) CopyLIDs(_ bool, dst []LID) []LID { return dst }
-func (emptyBatch) Iter() Iter                       { return emptyIterInstance }
-func (emptyBatch) ReverseIter() Iter                { return emptyIterInstance }
+func (emptyBatch) Narrow(uint32, uint32) LIDBatch { return emptyBatchInstance }
+func (emptyBatch) ManyIter(bool) ManyIter         { return emptyManyIterInstance }
+func (emptyBatch) Iter() Iter                     { return emptyIterInstance }
+func (emptyBatch) ReverseIter() Iter              { return emptyIterInstance }
+
+type emptyManyIter struct{}
+
+var emptyManyIterInstance = emptyManyIter{}
+
+func (emptyManyIter) CopyLIDs([]LID, []uint32) int { return 0 }
 
 type emptyIter struct{}
 

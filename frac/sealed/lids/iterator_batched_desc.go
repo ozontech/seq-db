@@ -65,11 +65,11 @@ func (it *BatchedIteratorDesc) loadNextLIDsBlock() {
 	it.blockIndex++
 }
 
-func (it *BatchedIteratorDesc) NextBatch(need int) node.LIDBatch {
-	return it.NextBatchGeq(need, node.NewDescZeroLID())
+func (it *BatchedIteratorDesc) NextBatch() node.LIDBatch {
+	return it.NextBatchGeq(node.NewDescZeroLID())
 }
 
-func (it *BatchedIteratorDesc) NextBatchGeq(_ int, nextID node.LID) node.LIDBatch {
+func (it *BatchedIteratorDesc) NextBatchGeq(nextID node.LID) node.LIDBatch {
 	for {
 		if it.batch.IsEmpty() {
 			if !it.tryNextBlock {
