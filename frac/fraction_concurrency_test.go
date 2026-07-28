@@ -287,6 +287,17 @@ func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.
 	for i := 0; i < numMessages; i++ {
 		service := services[rand.IntN(len(services))]
 		message := messages[rand.IntN(len(messages))]
+		// populate message with various unique tokens like ids and hex numbers (matches real installation)
+		x := rand.IntN(20)
+		switch x {
+		case 1:
+			message += fmt.Sprintf(" %dms", rand.IntN(10000000))
+		case 2:
+			message += fmt.Sprintf(" %dus", rand.IntN(10000000))
+		default:
+			message += fmt.Sprintf(" %d", rand.IntN(10000000))
+		}
+
 		level := rand.IntN(6)
 		timestamp := fromTime.Add(time.Duration(i) * time.Millisecond)
 		id := fmt.Sprintf("id-%d", i)

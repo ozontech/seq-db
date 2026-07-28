@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
 )
 
 type mockSource struct {
@@ -58,7 +60,44 @@ func (m *mockSource) ID() iter.Seq2[DocLocation, error] {
 	}
 }
 
+func TestBlocksBuilder_BuildTokenBlocksWithFreq(t *testing.T) {
+	const (
+		blockSize          = 1024
+		tokenFreqThreshold = 50
+	)
+	manyLids := make([]uint32, tokenFreqThreshold)
+	for i := range manyLids {
+		manyLids[i] = uint32(i + 1)
+	}
+
+	src := mockSource{
+		tokens: [][]byte{
+			[]byte("rare"),
+			[]byte("common"),
+		},
+		fields:       []string{"f1"},
+		fieldMaxTIDs: []uint32{2},
+		tokenLIDs: [][]uint32{
+			{1, 2, 3},
+			manyLids,
+		},
+	}
+
+	var blocks []unpackedTokenBlock
+	for pair, err := range tokenBlock(src.TokenTriplet(), func([]uint32) error { return nil }, blockSize, tokenFreqThreshold) {
+		assert.NoError(t, err)
+		blocks = append(blocks, pair.First)
+	}
+
+	require.Len(t, blocks, 1)
+
+	assert.Equal(t, uint32(0), blocks[0].payload.GetFreq(0))
+	assert.Equal(t, uint32(tokenFreqThreshold), blocks[0].payload.GetFreq(1))
+}
+
 func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
+	lettersFV := util.NewLettersBitsetFromArray([30]bool{5: true, 21: true, 26: true})
+
 	src := mockSource{
 		tokens: [][]byte{
 			[]byte("f1v1"), // 1
@@ -119,6 +158,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 		src.TokenTriplet(),
 		lidAccumulator.add,
 		blockSize,
+		50,
 	)
 
 	// In our test case, each token is 4 bytes long. Also for each token we use uint32 to encode the length.
@@ -156,6 +196,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   2,
 						MinVal:     "f1v1",
 						MaxVal:     "f1v2",
+						Letters:    lettersFV,
 					},
 				},
 			}, {
@@ -168,6 +209,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   1,
 						MinVal:     "f2v1",
 						MaxVal:     "f2v1",
+						Letters:    lettersFV,
 					}, {
 						StartIndex: 0,
 						StartTID:   4,
@@ -175,6 +217,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   3,
 						MinVal:     "f2v2",
 						MaxVal:     "f2v4",
+						Letters:    lettersFV,
 					}, {
 						StartIndex: 0,
 						StartTID:   7,
@@ -182,6 +225,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   1,
 						MinVal:     "f2v5",
 						MaxVal:     "f2v5",
+						Letters:    lettersFV,
 					},
 				},
 			}, {
@@ -194,6 +238,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   2,
 						MinVal:     "f3v1",
 						MaxVal:     "f3v2",
+						Letters:    lettersFV,
 					},
 				},
 			}, {
@@ -206,6 +251,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   3,
 						MinVal:     "f4v1",
 						MaxVal:     "f4v3",
+						Letters:    lettersFV,
 					},
 				},
 			}, {
@@ -218,6 +264,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   1,
 						MinVal:     "f5v1",
 						MaxVal:     "f5v1",
+						Letters:    lettersFV,
 					},
 				},
 			}, {
@@ -230,6 +277,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 						ValCount:   1,
 						MinVal:     "f6v1",
 						MaxVal:     "f6v1",
+						Letters:    lettersFV,
 					},
 				},
 			},
@@ -241,27 +289,27 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 	expectedLIDBlocks := []unpackedLIDBlock{
 		{
 			ext:     lidExt{minTID: 1, maxTID: 1, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{10, 20, 30}, Offsets: []uint32{0, 3}, IsLastLID: false},
+			payload: lids.Block{LIDs: []uint32{10, 20, 30}, Offsets: []uint32{0, 3}},
 		},
 		{
 			ext:     lidExt{minTID: 1, maxTID: 3, isContinued: true},
-			payload: lids.Block{LIDs: []uint32{40, 2, 3}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			payload: lids.Block{LIDs: []uint32{40, 2, 3}, Offsets: []uint32{0, 1, 2, 3}},
 		},
 		{
 			ext:     lidExt{minTID: 4, maxTID: 6, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{4, 5, 6}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			payload: lids.Block{LIDs: []uint32{4, 5, 6}, Offsets: []uint32{0, 1, 2, 3}},
 		},
 		{
 			ext:     lidExt{minTID: 7, maxTID: 9, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{7, 8, 9}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			payload: lids.Block{LIDs: []uint32{7, 8, 9}, Offsets: []uint32{0, 1, 2, 3}},
 		},
 		{
 			ext:     lidExt{minTID: 10, maxTID: 12, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{10, 11, 12}, Offsets: []uint32{0, 1, 2, 3}, IsLastLID: true},
+			payload: lids.Block{LIDs: []uint32{10, 11, 12}, Offsets: []uint32{0, 1, 2, 3}},
 		},
 		{
 			ext:     lidExt{minTID: 13, maxTID: 14, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{13, 14}, Offsets: []uint32{0, 1, 2}, IsLastLID: true},
+			payload: lids.Block{LIDs: []uint32{13, 14}, Offsets: []uint32{0, 1, 2}},
 		},
 	}
 	assert.Equal(t, expectedLIDBlocks, lidBlocks)

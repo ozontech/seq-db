@@ -3,6 +3,7 @@ package indexwriter
 import (
 	"encoding/binary"
 	"iter"
+	"math"
 	"unsafe"
 
 	"github.com/ozontech/seq-db/frac/sealed/lids"
@@ -47,7 +48,7 @@ type unpackedIDBlock struct {
 
 func tokenBlock(
 	it iter.Seq2[string, iter.Seq2[TokenLIDs, error]],
-	accumulate func([]uint32) error, blockCapacity int,
+	accumulate func([]uint32) error, blockCapacity int, tokenFreqAbsThreshold int,
 ) iter.Seq2[tokenFieldBlock, error] {
 	return func(yield func(tokenFieldBlock, error) bool) {
 		var (
@@ -87,6 +88,8 @@ func tokenBlock(
 
 			block.payload.Payload = block.payload.Payload[:0]
 			block.payload.Offsets = block.payload.Offsets[:0]
+			block.payload.FreqIndexes = block.payload.FreqIndexes[:0]
+			block.payload.Freqs = block.payload.Freqs[:0]
 			block.ext.minTID = currentTID + 1
 
 			blockIdx++
@@ -120,9 +123,18 @@ func tokenBlock(
 					}
 				}
 
+				tokenIndex := uint32(len(block.payload.Offsets))
 				block.payload.Offsets = append(block.payload.Offsets, uint32(len(block.payload.Payload)))
 				block.payload.Payload = binary.LittleEndian.AppendUint32(block.payload.Payload, uint32(len(tok)))
 				block.payload.Payload = append(block.payload.Payload, tok...)
+
+				if len(tlids) >= tokenFreqAbsThreshold {
+					if tokenIndex > math.MaxUint16 {
+						panic("unsupported token block size")
+					}
+					block.payload.FreqIndexes = append(block.payload.FreqIndexes, uint16(tokenIndex))
+					block.payload.Freqs = append(block.payload.Freqs, uint32(len(tlids)))
+				}
 
 				if err := accumulate(tlids); err != nil {
 					yield(tokenFieldBlock{}, err)
@@ -159,6 +171,7 @@ func newTokenTableEntry(
 		ValCount:   lastIndex - firstIndex + 1, // Number of tokens in this entry
 		MinVal:     minVal,                     // Smallest token value in range
 		MaxVal:     maxVal,                     // Largest token value in range
+		Letters:    block.payload.LettersBitset(),
 	}
 }
 

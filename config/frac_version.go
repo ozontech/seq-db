@@ -21,6 +21,9 @@ const (
 
 	// BinaryDataV4 - delta bitpack encoded MIDs and LIDs
 	BinaryDataV4
+
+	// BinaryDataV5 - token blocks have zone maps (eng letters presense) and doc frequencies for heavy tokens
+	BinaryDataV5
 )
 
-const CurrentFracVersion = BinaryDataV4
+const CurrentFracVersion = BinaryDataV5

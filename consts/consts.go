@@ -21,8 +21,9 @@ const (
 
 	DefaultMaxTokenSize = 72
 
-	DefaultBulkRequestsLimit   = 32
-	DefaultSearchRequestsLimit = 32
+	DefaultBulkRequestsLimit            = 32
+	DefaultSearchRequestsLimit          = 32
+	DefaultTokenFreqThresholdPercentage = 0.005
 
 	BulkMaxTries = 3
 
@@ -52,8 +53,7 @@ const (
 	BrokenDir = ".broken"
 
 	// known extensions
-	MetaFileSuffix = ".meta"
-	WalFileSuffix  = ".wal"
+	WalFileSuffix = ".wal"
 
 	DocsFileSuffix    = ".docs"
 	DocsTmpFileSuffix = "._docs"

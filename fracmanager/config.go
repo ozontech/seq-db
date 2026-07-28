@@ -62,6 +62,9 @@ func FillConfigWithDefault(config *Config) *Config {
 	if config.SealParams.LIDBlockSize == 0 {
 		config.SealParams.LIDBlockSize = consts.DefaultLIDBlockCap
 	}
+	if config.SealParams.TokenBlockSize == 0 {
+		config.SealParams.TokenBlockSize = consts.RegularBlockSize
+	}
 	if config.SealParams.TokenListZstdLevel == 0 {
 		config.SealParams.TokenListZstdLevel = zstdDefaultLevel
 	}
@@ -70,6 +73,9 @@ func FillConfigWithDefault(config *Config) *Config {
 	}
 	if config.SealParams.TokenTableZstdLevel == 0 {
 		config.SealParams.TokenTableZstdLevel = zstdDefaultLevel
+	}
+	if config.SealParams.TokenFreqThresholdPercentage == 0 {
+		config.SealParams.TokenFreqThresholdPercentage = consts.DefaultTokenFreqThresholdPercentage
 	}
 	if config.ReplayWorkers == 0 {
 		config.ReplayWorkers = consts.DefaultReplayWorkers

@@ -72,6 +72,15 @@ type Config struct {
 	} `config:"storage"`
 
 	Sealing struct {
+		Tokens struct {
+			// BlockSize sets max token block size in bytes.
+			BlockSize Bytes `config:"block_size" default:"16KiB"`
+			// FreqThresholdPercentage specifies the minimum posting-list length as a percentage
+			// of the fraction's document count. For example, with 1_000_000 docs and FreqThresholdPercentage=1,
+			// frequency is stored for tokens that appear in at least 10_000 documents.
+			FreqThresholdPercentage float64 `config:"freq_threshold_percentage" default:"0.005"`
+		} `config:"tokens"`
+
 		Lids struct {
 			// BlockSize sets max lids (postings) saved per LIDs block.
 			BlockSize int `config:"block_size" default:"65536"`

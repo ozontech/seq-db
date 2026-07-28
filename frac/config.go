@@ -4,7 +4,7 @@ type Config struct {
 	Search SearchConfig
 
 	SkipSortDocs bool
-	KeepMetaFile bool
+	KeepWalFile  bool
 }
 
 type SearchConfig struct {

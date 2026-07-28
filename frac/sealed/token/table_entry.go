@@ -1,5 +1,7 @@
 package token
 
+import "github.com/ozontech/seq-db/util"
+
 // TableEntry is part of token.Table and points to a fragment of token.Block
 type TableEntry struct {
 	StartIndex uint32 // offset from the beginning of the block to the first token pointed to by the TableEntry
@@ -9,6 +11,8 @@ type TableEntry struct {
 
 	MinVal string // only saved for the first entry in block
 	MaxVal string
+
+	Letters util.LettersBitset // case-insensitive English letters present in entry tokens
 }
 
 func (t *TableEntry) GetIndexInTokensBlock(tid uint32) int {

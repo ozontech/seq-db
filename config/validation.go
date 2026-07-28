@@ -70,6 +70,9 @@ func (c *Config) storeValidations() []validateFn {
 		inRange("compression.doc_block_zstd_compression_level", -7, 22, c.Compression.DocBlockZstdCompressionLevel),
 		greaterThan("sealing.lids.block_size", 0, c.Sealing.Lids.BlockSize),
 		lessOrEqThan("sealing.lids.block_size", 65536, c.Sealing.Lids.BlockSize),
+		greaterThan("sealing.tokens.block_size", 0, c.Sealing.Tokens.BlockSize),
+		greaterOrEqThan("sealing.tokens.freq_threshold_percentage", 0.0, c.Sealing.Tokens.FreqThresholdPercentage),
+		lessOrEqThan("sealing.tokens.freq_threshold_percentage", 100.0, c.Sealing.Tokens.FreqThresholdPercentage),
 		inRange("offloading.queue_size_percent", 0, 100, c.Offloading.QueueSizePercent),
 
 		greaterThan("experimental.max_regex_tokens_check", -1, c.Experimental.MaxRegexTokensCheck),
