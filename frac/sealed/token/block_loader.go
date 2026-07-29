@@ -5,47 +5,123 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"sort"
 	"unsafe"
 
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/pattern"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/util"
 )
 
-const sizeOfUint32 = uint32(unsafe.Sizeof(uint32(0)))
-
 type Block struct {
-	Payload []byte
-	Offsets []uint32
+	Payload     []byte
+	Offsets     []uint32
+	FreqIndexes []uint16 // indexes of tokens which have doc freqs (frequencies)
+	Freqs       []uint32 // frequencies of certain tokens (how many docs have this token included at least once)
 }
 
 func (b *Block) Size() int {
 	const selfSize = int(unsafe.Sizeof(Block{}))
-	return selfSize + cap(b.Payload) + cap(b.Offsets)*int(sizeOfUint32)
+	return selfSize +
+		cap(b.Payload) +
+		cap(b.Offsets)*util.SizeOfUint32 +
+		cap(b.FreqIndexes)*util.SizeOfUint16 +
+		cap(b.Freqs)*util.SizeOfUint32
 }
 
-func (b Block) Pack(dst []byte) []byte {
-	return append(dst, b.Payload...)
+func (b Block) Pack(dst []byte, buf []uint32) []byte {
+	// 1st bit is used to identify if at least one token has frequency
+	var flags byte
+	if len(b.FreqIndexes) > 0 {
+		flags |= 1
+	}
+	dst = append(dst, flags)
+
+	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(b.Payload)))
+	dst = append(dst, b.Payload...)
+
+	if len(b.FreqIndexes) > 0 {
+		dst = packer.CompressDeltaBitpackUint16(dst, b.FreqIndexes, buf)
+		dst = packer.CompressDeltaBitpackUint32(dst, b.Freqs, buf)
+	}
+
+	return dst
 }
 
-func (b *Block) Unpack(data []byte) error {
+func (b *Block) Unpack(data []byte, fracVer config.BinaryDataVersion, unpackBuf *UnpackBuffer) error {
+	if fracVer >= config.BinaryDataV5 {
+		unpackBuf.Reset(fracVer)
+		return b.unpackV5(data, unpackBuf)
+	}
+	return b.unpackV1(data)
+}
+
+func (b *Block) unpackV1(data []byte) error {
+	b.Payload = append([]byte{}, data...)
+	return b.parseTokenPayload(b.Payload)
+}
+
+func (b *Block) unpackV5(data []byte, buf *UnpackBuffer) error {
+	if len(data) < util.SizeOfUint32 {
+		return fmt.Errorf("token block too short: %d bytes", len(data))
+	}
+	flags := data[0]
+	data = data[1:]
+
+	payloadLen := binary.LittleEndian.Uint32(data[:util.SizeOfUint32])
+	data = data[util.SizeOfUint32:]
+	if uint32(len(data)) < payloadLen {
+		return fmt.Errorf("invalid token block payload length: %d, data len %d", payloadLen, len(data))
+	}
+
+	payload := data[:payloadLen]
+	data = data[payloadLen:]
+
+	b.Payload = append(b.Payload[:0], payload...)
+
+	if err := b.parseTokenPayload(payload); err != nil {
+		return err
+	}
+
+	if flags&1 > 0 {
+		var err error
+		data, buf.decompressedUint16, err = packer.DecompressDeltaBitpackUint16(data, buf.decompressedUint16, buf.compressed)
+		if err != nil {
+			return err
+		}
+		b.FreqIndexes = append(b.FreqIndexes, buf.decompressedUint16...)
+
+		_, buf.decompressedUint32, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressedUint32, buf.compressed)
+		if err != nil {
+			return err
+		}
+		b.Freqs = append(b.Freqs, buf.decompressedUint32...)
+	}
+
+	return nil
+}
+
+func (b *Block) parseTokenPayload(data []byte) error {
+	b.Offsets = b.Offsets[:0]
+
 	var offset uint32
-	b.Payload = data
 	for i := 0; len(data) != 0; i++ {
 		l := binary.LittleEndian.Uint32(data)
-		data = data[sizeOfUint32:]
-		offset += sizeOfUint32
+		data = data[util.SizeOfUint32:]
+		offset += uint32(util.SizeOfUint32)
 		if l == math.MaxUint32 {
 			continue
 		}
 		if l > uint32(len(data)) {
 			return fmt.Errorf("wrong field block for token %d, in pos %d", i, offset)
 		}
-		b.Offsets = append(b.Offsets, offset-sizeOfUint32)
+		b.Offsets = append(b.Offsets, offset-uint32(util.SizeOfUint32))
 		data = data[l:]
 		offset += l
 	}
@@ -56,10 +132,24 @@ func (b *Block) Len() int {
 	return len(b.Offsets)
 }
 
+// GetFreq returns frequency for a token if stored or 0 otherwise
+func (b *Block) GetFreq(index int) uint32 {
+	if b.Freqs == nil {
+		return 0
+	}
+
+	idx := uint16(index)
+	found := sort.Search(len(b.FreqIndexes), func(i int) bool { return b.FreqIndexes[i] >= idx })
+	if found < len(b.FreqIndexes) && b.FreqIndexes[found] == idx {
+		return b.Freqs[found]
+	}
+	return 0
+}
+
 func (b *Block) GetToken(index int) []byte {
 	offset := b.Offsets[index]
 	l := binary.LittleEndian.Uint32(b.Payload[offset:])
-	offset += sizeOfUint32 // skip val length
+	offset += uint32(util.SizeOfUint32) // skip val length
 	return b.Payload[offset : offset+l]
 }
 
@@ -99,16 +189,26 @@ func (b *Block) find(from, to int, searcher pattern.Searcher) ([]int, error) {
 // NOT THREAD SAFE. Do not use concurrently.
 // Use your own BlockLoader instance for each search query
 type BlockLoader struct {
-	fracName string
-	cache    *cache.Cache[*Block]
-	reader   *storage.IndexReader
+	fracName  string
+	fracVer   config.BinaryDataVersion
+	cache     *cache.Cache[*Block]
+	reader    *storage.IndexReader
+	unpackBuf *UnpackBuffer
+	blockBuf  []byte
 }
 
-func NewBlockLoader(fracName string, reader *storage.IndexReader, c *cache.Cache[*Block]) *BlockLoader {
+func NewBlockLoader(
+	fracName string,
+	fracVer config.BinaryDataVersion,
+	reader *storage.IndexReader,
+	c *cache.Cache[*Block],
+) *BlockLoader {
 	return &BlockLoader{
-		fracName: fracName,
-		cache:    c,
-		reader:   reader,
+		fracName:  fracName,
+		fracVer:   fracVer,
+		cache:     c,
+		reader:    reader,
+		unpackBuf: &UnpackBuffer{},
 	}
 }
 
@@ -129,11 +229,37 @@ func (l *BlockLoader) Load(index uint32) *Block {
 }
 
 func (l *BlockLoader) read(index uint32) (*Block, error) {
-	data, _, err := l.reader.ReadIndexBlock(index, nil)
+	var err error
+	l.blockBuf, _, err = l.reader.ReadIndexBlock(index, l.blockBuf)
 	if err != nil {
 		return nil, err
 	}
-	block := Block{}
-	err = block.Unpack(data)
-	return &block, err
+	block := &Block{}
+	err = block.Unpack(l.blockBuf, l.fracVer, l.unpackBuf)
+	return block, err
+}
+
+type UnpackBuffer struct {
+	decompressedUint32 []uint32 // temporary buffer for bitpack
+	decompressedUint16 []uint16 // temporary buffer for bitpack
+	compressed         []uint32 // temporary buffer for bitpack
+}
+
+func (b *UnpackBuffer) Reset(fracVer config.BinaryDataVersion) {
+	if fracVer < config.BinaryDataV5 {
+		return
+	}
+	if b.decompressedUint32 == nil {
+		b.decompressedUint32 = make([]uint32, 0, 256)
+	} else {
+		b.decompressedUint32 = b.decompressedUint32[:0]
+	}
+	if b.decompressedUint16 == nil {
+		b.decompressedUint16 = make([]uint16, 0, 256)
+	} else {
+		b.decompressedUint16 = b.decompressedUint16[:0]
+	}
+	if b.compressed == nil {
+		b.compressed = make([]uint32, 0, 256)
+	}
 }

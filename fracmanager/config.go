@@ -74,6 +74,9 @@ func FillConfigWithDefault(config *Config) *Config {
 	if config.SealParams.TokenTableZstdLevel == 0 {
 		config.SealParams.TokenTableZstdLevel = zstdDefaultLevel
 	}
+	if config.SealParams.TokenFreqThresholdPercentage == 0 {
+		config.SealParams.TokenFreqThresholdPercentage = consts.DefaultTokenFreqThresholdPercentage
+	}
 	if config.ReplayWorkers == 0 {
 		config.ReplayWorkers = consts.DefaultReplayWorkers
 	}

@@ -242,12 +242,13 @@ var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Help:      "Bulk processing time by stage",
 }, []string{"stage"})
 
-// Append causes data to be written on disk and sends metas to index workers
+// Append causes data to be written on disk and sends metas to index workers.
 func (f *Active) Append(docs storage.DocBlock, metas storage.WalBlock, wg *sync.WaitGroup) (err error) {
 	sw := stopwatch.New()
 	m := sw.Start("append")
 	if err = f.writer.Write(docs, metas, sw); err != nil {
 		m.Stop()
+		wg.Done()
 		return err
 	}
 	f.updateDiskStats(uint64(len(docs)), uint64(len(metas)))

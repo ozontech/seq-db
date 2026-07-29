@@ -21,8 +21,9 @@ const (
 
 	DefaultMaxTokenSize = 72
 
-	DefaultBulkRequestsLimit   = 32
-	DefaultSearchRequestsLimit = 32
+	DefaultBulkRequestsLimit            = 32
+	DefaultSearchRequestsLimit          = 32
+	DefaultTokenFreqThresholdPercentage = 0.005
 
 	BulkMaxTries = 3
 

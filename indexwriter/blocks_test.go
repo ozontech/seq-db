@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -57,6 +58,41 @@ func (m *mockSource) ID() iter.Seq2[DocLocation, error] {
 			}
 		}
 	}
+}
+
+func TestBlocksBuilder_BuildTokenBlocksWithFreq(t *testing.T) {
+	const (
+		blockSize          = 1024
+		tokenFreqThreshold = 50
+	)
+	manyLids := make([]uint32, tokenFreqThreshold)
+	for i := range manyLids {
+		manyLids[i] = uint32(i + 1)
+	}
+
+	src := mockSource{
+		tokens: [][]byte{
+			[]byte("rare"),
+			[]byte("common"),
+		},
+		fields:       []string{"f1"},
+		fieldMaxTIDs: []uint32{2},
+		tokenLIDs: [][]uint32{
+			{1, 2, 3},
+			manyLids,
+		},
+	}
+
+	var blocks []unpackedTokenBlock
+	for pair, err := range tokenBlock(src.TokenTriplet(), func([]uint32) error { return nil }, blockSize, tokenFreqThreshold) {
+		assert.NoError(t, err)
+		blocks = append(blocks, pair.First)
+	}
+
+	require.Len(t, blocks, 1)
+
+	assert.Equal(t, uint32(0), blocks[0].payload.GetFreq(0))
+	assert.Equal(t, uint32(tokenFreqThreshold), blocks[0].payload.GetFreq(1))
 }
 
 func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
@@ -122,6 +158,7 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 		src.TokenTriplet(),
 		lidAccumulator.add,
 		blockSize,
+		50,
 	)
 
 	// In our test case, each token is 4 bytes long. Also for each token we use uint32 to encode the length.

@@ -3,6 +3,7 @@ package indexwriter
 import (
 	"io"
 	"iter"
+	"math"
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
@@ -78,6 +79,13 @@ func New(params common.SealParams) *IndexWriter {
 		buf32:  make([]uint32, 0, consts.DefaultLIDBlockCap),
 		buf64:  make([]uint64, 0, params.TokenBlockSize),
 	}
+}
+
+func tokenFreqAbsoluteThreshold(docsTotal uint32, thresholdPercentage float64) int {
+	if thresholdPercentage == 0 {
+		thresholdPercentage = consts.DefaultTokenFreqThresholdPercentage
+	}
+	return int(math.Ceil(float64(docsTotal) * thresholdPercentage / 100))
 }
 
 func (s *IndexWriter) LIDsTable() lids.Table {
@@ -156,8 +164,9 @@ func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) err
 		},
 	)
 
+	tokenFreqAbsThreshold := tokenFreqAbsoluteThreshold(src.Info().DocsTotal, s.params.TokenFreqThresholdPercentage)
 	var allFieldsTables []token.FieldTable
-	for pair, err := range tokenBlock(src.TokenTriplets(), lidAccumulator.add, s.params.TokenBlockSize) {
+	for pair, err := range tokenBlock(src.TokenTriplets(), lidAccumulator.add, s.params.TokenBlockSize, tokenFreqAbsThreshold) {
 		if err != nil {
 			return err
 		}
@@ -230,7 +239,7 @@ func (s *IndexWriter) packInfoBlock(block sealed.BlockInfo) indexBlock {
 
 // packTokenBlock packs token data into a compressed index block.
 func (s *IndexWriter) packTokenBlock(block unpackedTokenBlock) indexBlock {
-	s.buf1 = block.payload.Pack(s.buf1[:0]) // Pack token data
+	s.buf1 = block.payload.Pack(s.buf1[:0], s.buf32[:0]) // Pack token data
 	b := s.newIndexBlockZSTD(s.buf1, s.params.TokenListZstdLevel)
 	// Store TID range in extended metadata
 	b.ext1 = uint64(block.ext.maxTID)<<32 | uint64(block.ext.minTID)
