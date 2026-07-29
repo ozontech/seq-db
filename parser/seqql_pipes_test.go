@@ -158,3 +158,59 @@ func TestParsePipeOffsetErrors(t *testing.T) {
 	test(`service:my_service | offset -1`)
 	test(`service:my_service | offset 10 | offset 20`)
 }
+
+// Stream-only pipes are parsed by ParseSeqQL but must be rejected by methods that
+// do not support them via ValidatePipes().
+func TestParseSeqQLRejectsStreamPipes(t *testing.T) {
+	test := func(q string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Error(t, query.ValidatePipes())
+	}
+
+	test(`service:my_service | stats count by (service)`)
+	test(`service:my_service | sort message asc`)
+	test(`service:my_service | limit 10`)
+	test(`service:my_service | offset 10`)
+}
+
+func TestValidatePipesAllowsFields(t *testing.T) {
+	t.Parallel()
+	query, err := ParseSeqQL(`service:my_service | fields message, level`, nil)
+	require.NoError(t, err)
+	require.NoError(t, query.ValidatePipes())
+}
+
+func TestParsePipeOrder(t *testing.T) {
+	test := func(q, expected string) {
+		t.Helper()
+		query, err := ParseSeqQL(q, nil)
+		require.NoError(t, err)
+		require.Equal(t, expected, query.SeqQLString())
+	}
+
+	test(
+		"service:my_service | stats count by (service) | fields message | sort message asc | limit 10 | offset 5",
+		"service:my_service | stats count by (service) | fields message | sort message asc | limit 10 | offset 5",
+	)
+	test("service:my_service | stats count by (service) | limit 10", "service:my_service | stats count by (service) | limit 10")
+	test("service:my_service | fields message | offset 5", "service:my_service | fields message | offset 5")
+	test("service:my_service | sort message asc | limit 10", "service:my_service | sort message asc | limit 10")
+	test("service:my_service | fields message | sort message asc", "service:my_service | fields message | sort message asc")
+}
+
+func TestParsePipeOrderErrors(t *testing.T) {
+	test := func(q string) {
+		t.Helper()
+		_, err := ParseSeqQL(q, nil)
+		require.Error(t, err)
+	}
+
+	test(`service:my_service | fields message | stats count by (service)`)
+	test(`service:my_service | sort message asc | fields message`)
+	test(`service:my_service | limit 10 | sort message asc`)
+	test(`service:my_service | offset 5 | limit 10`)
+	test(`service:my_service | offset 5 | sort message asc | limit 10`)
+	test(`service:my_service | offset 5 | limit 10 | sort message asc | fields message | stats count by (service)`)
+}

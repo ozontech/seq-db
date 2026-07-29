@@ -46,7 +46,7 @@ func (g *grpcV1) StreamSearch(
 	}
 
 	tr := querytracer.New(q.Explain, "proxy/StreamSearch")
-	sResp, err := g.doSearch(ctx, proxyReq, true, tr)
+	sResp, err := g.doSearch(ctx, proxyReq, true, false, tr)
 	if err != nil {
 		return err
 	}

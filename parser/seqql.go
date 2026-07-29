@@ -25,6 +25,27 @@ func (q *SeqQLQuery) SeqQLString() string {
 	return b.String()
 }
 
+// streamOnlyPipes are the pipes valid only for the StreamSearch method. Non-stream
+// callers reject them via SeqQLQuery.ValidatePipes.
+var streamOnlyPipes = map[string]struct{}{
+	"stats":  {},
+	"sort":   {},
+	"limit":  {},
+	"offset": {},
+}
+
+// ValidatePipes returns an error if the query contains any stream-only pipe (stats,
+// sort, limit, offset). It is used by methods that do not support stream-only pipes
+// to reject them after parsing. ParseSeqQL itself does not perform this check.
+func (q *SeqQLQuery) ValidatePipes() error {
+	for _, p := range q.Pipes {
+		if _, ok := streamOnlyPipes[p.Name()]; ok {
+			return fmt.Errorf("pipe '%s' is not allowed", p.Name())
+		}
+	}
+	return nil
+}
+
 func parse(q string, mapping seq.Mapping) (SeqQLQuery, error) {
 	lex := newLexer(q)
 

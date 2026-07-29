@@ -403,7 +403,10 @@ func TestParseSeqQLError(t *testing.T) {
 	// Test pipes.
 	test(`message:--||`, `unknown pipe: |`)
 	test(`source_type:access* | fields message | fields except login:admin`, `parsing 'fields' pipe: unexpected symbol ":"`)
-	test(`source_type:access* | fields message | fields login`, `multiple field filters is not allowed`)
+	test(`source_type:access* | stats count by (service) | stats count by (login)`, `multiple 'stats' pipes are not allowed`)
+	test(`source_type:access* | sort message | sort login`, `multiple 'sort' pipes are not allowed`)
+	test(`source_type:access* | limit 10 | limit 20`, `multiple 'limit' pipes are not allowed`)
+	test(`source_type:access* | offset 10 | offset 20`, `multiple 'offset' pipes are not allowed`)
 	test(`* | fields event, `, `parsing 'fields' pipe: trailing comma not allowed`)
 }
 

@@ -11,12 +11,32 @@ type Pipe interface {
 	DumpSeqQL(*strings.Builder)
 }
 
+// pipeOrder defines the allowed order of pipes in a SeqQL query:
+// stats | fields | sort | limit | offset. Any pipe may be omitted, but the
+// present ones must appear in this exact sequence. The value is the position of
+// the pipe in that sequence.
+var pipeOrder = map[string]int{
+	"stats":  0,
+	"fields": 1,
+	"sort":   2,
+	"limit":  3,
+	"offset": 4,
+}
+
+var pipeNameFromOrder = map[int]string{
+	0: "stats",
+	1: "fields",
+	2: "sort",
+	3: "limit",
+	4: "offset",
+}
+
+// parsePipes parses the pipe stage of a SeqQL query. The pipes must appear in
+// the fixed order stats | fields | sort | limit | offset; pipes may be omitted,
+// but none may appear out of order.
 func parsePipes(lex *lexer) ([]Pipe, error) {
-	fieldFilters := 0
-	statsPipes := 0
-	sortPipes := 0
-	limitPipes := 0
-	offsetPipes := 0
+	seen := make(map[string]struct{})
+	lastOrder := -1
 
 	var pipes []Pipe
 	for !lex.IsEnd() {
@@ -25,62 +45,59 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 		}
 		lex.Next()
 
+		var name string
+
 		switch {
 		case lex.IsKeyword("fields"):
+			name = "fields"
 			p, err := parsePipeFields(lex)
 			if err != nil {
 				return nil, fmt.Errorf("parsing 'fields' pipe: %s", err)
 			}
 			pipes = append(pipes, p)
-			fieldFilters++
 		case lex.IsKeyword("stats"):
+			name = "stats"
 			p, err := parsePipeStats(lex)
 			if err != nil {
 				return nil, fmt.Errorf("parsing 'stats' pipe: %s", err)
 			}
 			pipes = append(pipes, p)
-			statsPipes++
 		case lex.IsKeyword("sort"):
+			name = "sort"
 			p, err := parsePipeSort(lex)
 			if err != nil {
 				return nil, fmt.Errorf("parsing 'sort' pipe: %s", err)
 			}
 			pipes = append(pipes, p)
-			sortPipes++
 		case lex.IsKeyword("limit"):
+			name = "limit"
 			p, err := parsePipeLimit(lex)
 			if err != nil {
 				return nil, fmt.Errorf("parsing 'limit' pipe: %s", err)
 			}
 			pipes = append(pipes, p)
-			limitPipes++
 		case lex.IsKeyword("offset"):
+			name = "offset"
 			p, err := parsePipeOffset(lex)
 			if err != nil {
 				return nil, fmt.Errorf("parsing 'offset' pipe: %s", err)
 			}
 			pipes = append(pipes, p)
-			offsetPipes++
 		default:
 			return nil, fmt.Errorf("unknown pipe: %s", lex.Token)
 		}
 
-		if fieldFilters > 1 {
-			return nil, fmt.Errorf("multiple field filters are not allowed")
+		if _, ok := seen[name]; ok {
+			return nil, fmt.Errorf("multiple '%s' pipes are not allowed", name)
 		}
-		if statsPipes > 1 {
-			return nil, fmt.Errorf("multiple 'stats' pipes are not allowed")
+		if order := pipeOrder[name]; order <= lastOrder {
+			return nil, fmt.Errorf("pipe '%s' must come before '%s'", pipeNameFromOrder[lastOrder], name)
 		}
-		if sortPipes > 1 {
-			return nil, fmt.Errorf("multiple 'sort' pipes are not allowed")
-		}
-		if limitPipes > 1 {
-			return nil, fmt.Errorf("multiple 'limit' pipes are not allowed")
-		}
-		if offsetPipes > 1 {
-			return nil, fmt.Errorf("multiple 'offset' pipes are not allowed")
-		}
+
+		seen[name] = struct{}{}
+		lastOrder = pipeOrder[name]
 	}
+
 	return pipes, nil
 }
 
