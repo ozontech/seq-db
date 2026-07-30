@@ -237,6 +237,7 @@ func (s *FractionTestSuite) TestWildcardSymbolsSearch() {
 
 	s.insertDocuments(docs)
 
+	s.AssertSearch("((*) OR message:first) AND message:second", docs, []int{1})
 	s.AssertSearch(`message:*`, docs, []int{3, 2, 1, 0})
 	s.AssertSearch(`message:value`, docs, []int{1, 0})
 	s.AssertSearch(`message:value*`, docs, []int{2, 1, 0})
