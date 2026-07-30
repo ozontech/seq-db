@@ -24,6 +24,9 @@ type Block struct {
 	Offsets     []uint32
 	FreqIndexes []uint16 // indexes of tokens which have doc freqs (frequencies)
 	Freqs       []uint32 // frequencies of certain tokens (how many docs have this token included at least once)
+
+	// TODO(cheb0) delete this field and convert V0..V5 to a new in-memory format when data all clusters have V6 fractions
+	FracVer config.BinaryDataVersion
 }
 
 func (b *Block) Size() int {
@@ -46,6 +49,8 @@ func (b Block) Pack(dst []byte, buf []uint32) []byte {
 	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(b.Payload)))
 	dst = append(dst, b.Payload...)
 
+	dst = packer.CompressDeltaBitpackUint32(dst, b.Offsets, buf)
+
 	if len(b.FreqIndexes) > 0 {
 		dst = packer.CompressDeltaBitpackUint16(dst, b.FreqIndexes, buf)
 		dst = packer.CompressDeltaBitpackUint32(dst, b.Freqs, buf)
@@ -55,6 +60,13 @@ func (b Block) Pack(dst []byte, buf []uint32) []byte {
 }
 
 func (b *Block) Unpack(data []byte, fracVer config.BinaryDataVersion, unpackBuf *UnpackBuffer) error {
+	b.FracVer = fracVer
+
+	if fracVer >= config.BinaryDataV6 {
+		unpackBuf.Reset(fracVer)
+		return b.unpackV6(data, unpackBuf)
+	}
+
 	if fracVer >= config.BinaryDataV5 {
 		unpackBuf.Reset(fracVer)
 		return b.unpackV5(data, unpackBuf)
@@ -62,9 +74,39 @@ func (b *Block) Unpack(data []byte, fracVer config.BinaryDataVersion, unpackBuf 
 	return b.unpackV1(data)
 }
 
-func (b *Block) unpackV1(data []byte) error {
-	b.Payload = append([]byte{}, data...)
-	return b.parseTokenPayload(b.Payload)
+func (b *Block) unpackV6(data []byte, buf *UnpackBuffer) error {
+	if len(data) < util.SizeOfUint32 {
+		return fmt.Errorf("token block too short: %d bytes", len(data))
+	}
+	flags := data[0]
+	data = data[1:]
+
+	// token payload
+	payloadLen := binary.LittleEndian.Uint32(data[:util.SizeOfUint32])
+	data = data[util.SizeOfUint32:]
+	if uint32(len(data)) < payloadLen {
+		return fmt.Errorf("invalid token block payload length: %d, data len %d", payloadLen, len(data))
+	}
+
+	payload := data[:payloadLen]
+	data = data[payloadLen:]
+
+	b.Payload = append(b.Payload[:0], payload...)
+
+	// offsets
+	var err error
+	data, buf.decompressedUint32, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressedUint32, buf.compressed)
+	if err != nil {
+		return err
+	}
+	b.Offsets = append(b.Offsets, buf.decompressedUint32...)
+
+	err = b.unpackFreqs(data, buf, flags)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (b *Block) unpackV5(data []byte, buf *UnpackBuffer) error {
@@ -85,11 +127,22 @@ func (b *Block) unpackV5(data []byte, buf *UnpackBuffer) error {
 
 	b.Payload = append(b.Payload[:0], payload...)
 
-	if err := b.parseTokenPayload(payload); err != nil {
+	if err := b.parseTokenPayloadV5(payload); err != nil {
 		return err
 	}
 
+	err := b.unpackFreqs(data, buf, flags)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (b *Block) unpackFreqs(data []byte, buf *UnpackBuffer, flags byte) error {
 	if flags&1 > 0 {
+		buf.decompressedUint32 = buf.decompressedUint32[:0]
+
 		var err error
 		data, buf.decompressedUint16, err = packer.DecompressDeltaBitpackUint16(data, buf.decompressedUint16, buf.compressed)
 		if err != nil {
@@ -103,11 +156,16 @@ func (b *Block) unpackV5(data []byte, buf *UnpackBuffer) error {
 		}
 		b.Freqs = append(b.Freqs, buf.decompressedUint32...)
 	}
-
 	return nil
 }
 
-func (b *Block) parseTokenPayload(data []byte) error {
+func (b *Block) unpackV1(data []byte) error {
+	b.Payload = append([]byte{}, data...)
+	return b.parseTokenPayloadV5(b.Payload)
+}
+
+// parseTokenPayloadV5 derives offsets from tokens payload. Only used for v1...v5 legacy fractions.
+func (b *Block) parseTokenPayloadV5(data []byte) error {
 	b.Offsets = b.Offsets[:0]
 
 	var offset uint32
@@ -129,6 +187,10 @@ func (b *Block) parseTokenPayload(data []byte) error {
 }
 
 func (b *Block) Len() int {
+	if b.FracVer >= config.BinaryDataV6 {
+		return len(b.Offsets) - 1
+	}
+
 	return len(b.Offsets)
 }
 
@@ -147,6 +209,15 @@ func (b *Block) GetFreq(index int) uint32 {
 }
 
 func (b *Block) GetToken(index int) []byte {
+	if b.FracVer >= config.BinaryDataV6 {
+		return b.Payload[b.Offsets[index]:b.Offsets[index+1]]
+	}
+
+	return b.getTokenV5(index)
+}
+
+//go:noinline
+func (b *Block) getTokenV5(index int) []byte {
 	offset := b.Offsets[index]
 	l := binary.LittleEndian.Uint32(b.Payload[offset:])
 	offset += uint32(util.SizeOfUint32) // skip val length
