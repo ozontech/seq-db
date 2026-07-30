@@ -3,6 +3,8 @@ package asyncsearcher
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/ozontech/seq-db/metric"
 )
 
 var (
@@ -48,4 +50,25 @@ var (
 		Name:      "panics_total",
 		Help:      "Number of panics in async search",
 	})
+
+	ExportDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_ingestor",
+		Subsystem: "async_search",
+		Name:      "export_duration_seconds",
+		Help:      "Time taken to export data by protocol in seconds",
+		Buckets:   metric.SecondsBucketsDoublePrecision,
+	}, []string{"protocol"})
+	ExportSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "seq_db_ingestor",
+		Subsystem: "async_search",
+		Name:      "export_size_bytes",
+		Help:      "Size of exported data by protocol in bytes",
+		Buckets:   prometheus.ExponentialBuckets(10, 3, 20),
+	}, []string{"protocol"})
+	CurrentExportersCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "seq_db_ingestor",
+		Subsystem: "async_search",
+		Name:      "export_current_exporters_in_progress",
+		Help:      "Current number of active exporters in progress by protocol",
+	}, []string{"protocol"})
 )

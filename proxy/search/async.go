@@ -139,6 +139,10 @@ func (si *Ingestor) FetchAsyncSearchResult(
 	ctx context.Context,
 	r FetchAsyncSearchResultRequest,
 ) (FetchAsyncSearchResultResponse, DocsIterator, error) {
+	if r.Size < 0 || r.Offset < 0 {
+		return FetchAsyncSearchResultResponse{}, nil, fmt.Errorf("%w: negative size or offset", consts.ErrInvalidArgument)
+	}
+
 	searchStores, err := si.getAsyncSearchStores()
 	if err != nil {
 		return FetchAsyncSearchResultResponse{}, nil, err
@@ -336,6 +340,10 @@ func (si *Ingestor) GetAsyncSearchesList(
 	ctx context.Context,
 	r GetAsyncSearchesListRequest,
 ) ([]*AsyncSearchesListItem, error) {
+	if r.Size < 0 || r.Offset < 0 {
+		return nil, fmt.Errorf("%w: negative size or offset", consts.ErrInvalidArgument)
+	}
+
 	searchStores, err := si.getAsyncSearchStores()
 	if err != nil {
 		return nil, err
