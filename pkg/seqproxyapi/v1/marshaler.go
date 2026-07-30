@@ -287,7 +287,7 @@ func (r *Record) MarshalJSON() ([]byte, error) {
 		if len(cells[1]) == 8 {
 			ts = time.Unix(0, int64(binary.BigEndian.Uint64(cells[1]))).UTC()
 		}
-		return json.Marshal([]interface{}{
+		return json.Marshal([]any{
 			string(cells[0]), // id
 			ts.Format(time.RFC3339Nano),
 			json.RawMessage(cells[2]), // data, inlined as JSON
@@ -302,7 +302,7 @@ func (r *Record) MarshalJSON() ([]byte, error) {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
 			val = json.RawMessage(strconv.Quote(string(val)))
 		}
-		return json.Marshal([]interface{}{
+		return json.Marshal([]any{
 			string(cells[0]), // key
 			val,              // value
 		})

@@ -122,7 +122,7 @@ service SeqProxyApi {
   }
 
   // TODO: input stream
-  rpc StreamSearch(StreamSearchRequest) returns (stream StreamSearchResponse) {
+  rpc StreamSearch(stream StreamSearchRequest) returns (stream StreamSearchResponse) {
     option (google.api.http) = {
       post: "/stream-search"
       body: "*"

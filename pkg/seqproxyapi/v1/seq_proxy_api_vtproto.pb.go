@@ -2791,7 +2791,7 @@ type SeqProxyApiClient interface {
 	// Stream documents for given async search ID.
 	ExportAsyncSearch(ctx context.Context, in *ExportAsyncSearchRequest, opts ...grpc.CallOption) (SeqProxyApi_ExportAsyncSearchClient, error)
 	// TODO: input stream
-	StreamSearch(ctx context.Context, in *StreamSearchRequest, opts ...grpc.CallOption) (SeqProxyApi_StreamSearchClient, error)
+	StreamSearch(ctx context.Context, opts ...grpc.CallOption) (SeqProxyApi_StreamSearchClient, error)
 }
 
 type seqProxyApiClient struct {
@@ -2997,28 +2997,27 @@ func (x *seqProxyApiExportAsyncSearchClient) Recv() (*ExportResponse, error) {
 	return m, nil
 }
 
-func (c *seqProxyApiClient) StreamSearch(ctx context.Context, in *StreamSearchRequest, opts ...grpc.CallOption) (SeqProxyApi_StreamSearchClient, error) {
+func (c *seqProxyApiClient) StreamSearch(ctx context.Context, opts ...grpc.CallOption) (SeqProxyApi_StreamSearchClient, error) {
 	stream, err := c.cc.NewStream(ctx, &SeqProxyApi_ServiceDesc.Streams[3], "/seqproxyapi.v1.SeqProxyApi/StreamSearch", opts...)
 	if err != nil {
 		return nil, err
 	}
 	x := &seqProxyApiStreamSearchClient{stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
 	return x, nil
 }
 
 type SeqProxyApi_StreamSearchClient interface {
+	Send(*StreamSearchRequest) error
 	Recv() (*StreamSearchResponse, error)
 	grpc.ClientStream
 }
 
 type seqProxyApiStreamSearchClient struct {
 	grpc.ClientStream
+}
+
+func (x *seqProxyApiStreamSearchClient) Send(m *StreamSearchRequest) error {
+	return x.ClientStream.SendMsg(m)
 }
 
 func (x *seqProxyApiStreamSearchClient) Recv() (*StreamSearchResponse, error) {
@@ -3064,7 +3063,7 @@ type SeqProxyApiServer interface {
 	// Stream documents for given async search ID.
 	ExportAsyncSearch(*ExportAsyncSearchRequest, SeqProxyApi_ExportAsyncSearchServer) error
 	// TODO: input stream
-	StreamSearch(*StreamSearchRequest, SeqProxyApi_StreamSearchServer) error
+	StreamSearch(SeqProxyApi_StreamSearchServer) error
 	mustEmbedUnimplementedSeqProxyApiServer()
 }
 
@@ -3114,7 +3113,7 @@ func (UnimplementedSeqProxyApiServer) GetAsyncSearchesList(context.Context, *Get
 func (UnimplementedSeqProxyApiServer) ExportAsyncSearch(*ExportAsyncSearchRequest, SeqProxyApi_ExportAsyncSearchServer) error {
 	return status.Errorf(codes.Unimplemented, "method ExportAsyncSearch not implemented")
 }
-func (UnimplementedSeqProxyApiServer) StreamSearch(*StreamSearchRequest, SeqProxyApi_StreamSearchServer) error {
+func (UnimplementedSeqProxyApiServer) StreamSearch(SeqProxyApi_StreamSearchServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamSearch not implemented")
 }
 func (UnimplementedSeqProxyApiServer) mustEmbedUnimplementedSeqProxyApiServer() {}
@@ -3392,15 +3391,12 @@ func (x *seqProxyApiExportAsyncSearchServer) Send(m *ExportResponse) error {
 }
 
 func _SeqProxyApi_StreamSearch_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(StreamSearchRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(SeqProxyApiServer).StreamSearch(m, &seqProxyApiStreamSearchServer{stream})
+	return srv.(SeqProxyApiServer).StreamSearch(&seqProxyApiStreamSearchServer{stream})
 }
 
 type SeqProxyApi_StreamSearchServer interface {
 	Send(*StreamSearchResponse) error
+	Recv() (*StreamSearchRequest, error)
 	grpc.ServerStream
 }
 
@@ -3410,6 +3406,14 @@ type seqProxyApiStreamSearchServer struct {
 
 func (x *seqProxyApiStreamSearchServer) Send(m *StreamSearchResponse) error {
 	return x.ServerStream.SendMsg(m)
+}
+
+func (x *seqProxyApiStreamSearchServer) Recv() (*StreamSearchRequest, error) {
+	m := new(StreamSearchRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 // SeqProxyApi_ServiceDesc is the grpc.ServiceDesc for SeqProxyApi service.
@@ -3484,6 +3488,7 @@ var SeqProxyApi_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "StreamSearch",
 			Handler:       _SeqProxyApi_StreamSearch_Handler,
 			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "seqproxyapi/v1/seq_proxy_api.proto",
