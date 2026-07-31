@@ -307,7 +307,7 @@ const (
 	DataType_UINT64       DataType = 5
 	DataType_INT32        DataType = 6
 	DataType_INT64        DataType = 7
-	DataType_FLOAT64      DataType = 8 // TODO: array data types: StringArray, Uin64Array, Float64Array etc.
+	DataType_FLOAT64      DataType = 8
 )
 
 // Enum value maps for DataType.

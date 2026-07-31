@@ -121,7 +121,6 @@ service SeqProxyApi {
     };
   }
 
-  // TODO: input stream
   rpc StreamSearch(stream StreamSearchRequest) returns (stream StreamSearchResponse) {
     option (google.api.http) = {
       post: "/stream-search"
@@ -498,7 +497,8 @@ enum DataType {
   INT32 = 6;
   INT64 = 7;
   FLOAT64 = 8;
-  // TODO: array data types: StringArray, Uin64Array, Float64Array etc.
+  // TODO: later we will need array data types, such as:
+  // StringArray, Uin64Array, Float64Array etc.
 }
 
 message ResponseData {

@@ -2790,7 +2790,6 @@ type SeqProxyApiClient interface {
 	GetAsyncSearchesList(ctx context.Context, in *GetAsyncSearchesListRequest, opts ...grpc.CallOption) (*GetAsyncSearchesListResponse, error)
 	// Stream documents for given async search ID.
 	ExportAsyncSearch(ctx context.Context, in *ExportAsyncSearchRequest, opts ...grpc.CallOption) (SeqProxyApi_ExportAsyncSearchClient, error)
-	// TODO: input stream
 	StreamSearch(ctx context.Context, opts ...grpc.CallOption) (SeqProxyApi_StreamSearchClient, error)
 }
 
@@ -3062,7 +3061,6 @@ type SeqProxyApiServer interface {
 	GetAsyncSearchesList(context.Context, *GetAsyncSearchesListRequest) (*GetAsyncSearchesListResponse, error)
 	// Stream documents for given async search ID.
 	ExportAsyncSearch(*ExportAsyncSearchRequest, SeqProxyApi_ExportAsyncSearchServer) error
-	// TODO: input stream
 	StreamSearch(SeqProxyApi_StreamSearchServer) error
 	mustEmbedUnimplementedSeqProxyApiServer()
 }

@@ -20,7 +20,7 @@ import (
 
 // streamSearchBatchSize limits the number of records sent in a single
 // StreamSearchResponse data message.
-const streamSearchBatchSize = 100
+const streamSearchBatchSize = 50
 
 // controlOutcome describes how the data streaming phase ended.
 type controlOutcome int
@@ -76,6 +76,7 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	recvErrCh := make(chan error, 1)
 	go func() {
 		defer close(controlCh)
+		defer close(recvErrCh)
 		for {
 			msg, err := stream.Recv()
 			if err != nil {
@@ -272,7 +273,7 @@ func aggBucketToRecord(item seq.AggregationBucket) *seqproxyapi.Record {
 	}
 }
 
-// hardcoded schema for now
+// hardcoded schema
 func docsTyping() []*seqproxyapi.Typing {
 	return []*seqproxyapi.Typing{
 		{Title: "id", Type: seqproxyapi.DataType_SEQ_ID},
@@ -281,7 +282,7 @@ func docsTyping() []*seqproxyapi.Typing {
 	}
 }
 
-// hardcoded schema for now
+// hardcoded schema
 func aggsTyping() []*seqproxyapi.Typing {
 	return []*seqproxyapi.Typing{
 		{Title: "key", Type: seqproxyapi.DataType_STRING},
@@ -323,7 +324,7 @@ func buildProxyReq(q *seqproxyapi.StreamSearchQuery) (*seqproxyapi.ComplexSearch
 				proxyReqAgg := &seqproxyapi.AggQuery{
 					Field:     agg.Field,
 					GroupBy:   agg.GroupBy,
-					Func:      mustConvertStringToAggFunc(agg.Func), // TODO: ???
+					Func:      mustConvertStringToAggFunc(agg.Func),
 					Quantiles: agg.Quantiles,
 				}
 				if agg.Interval != "" {

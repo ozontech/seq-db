@@ -23,6 +23,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/ozontech/seq-db/asyncsearcher"
@@ -355,7 +359,7 @@ func (s *IntegrationTestSuite) envWithDummyDocs(n int) (*setup.TestingEnv, []str
 	origDocs := make([]string, 0, allDocsNum)
 	docsBulk := make([]string, 2*n)
 
-	getNextTs := getAutoTsGenerator(time.Now(), -time.Nanosecond)
+	getNextTs := getAutoTsGenerator(time.Now(), -time.Nanosecond) //
 
 	for i := 0; i < bulksNum; i++ {
 
@@ -1921,4 +1925,225 @@ func (s *IntegrationTestSuite) TestSkipMaskManager() {
 	qpr, _, _, err = env.Search(`service:hidden`, 10, setup.WithTotal(true))
 	r.NoError(err)
 	r.Equal(uint64(0), qpr.Total)
+}
+
+// newStreamSearchClient connects to a random ingestor's gRPC endpoint and opens
+// a StreamSearch stream.
+func newStreamSearchClient(t *testing.T, env *setup.TestingEnv) (
+	seqproxyapi.SeqProxyApi_StreamSearchClient,
+	*grpc.ClientConn,
+	context.Context,
+	context.CancelFunc,
+) {
+	t.Helper()
+	addr := env.Ingestor().Config.API.GatewayAddr
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stream, err := seqproxyapi.NewSeqProxyApiClient(conn).StreamSearch(ctx)
+	require.NoError(t, err)
+	return stream, conn, ctx, cancel
+}
+
+// sendStreamSearchQuery sends the initial search query on the stream.
+func sendStreamSearchQuery(t *testing.T, stream seqproxyapi.SeqProxyApi_StreamSearchClient, query string) {
+	t.Helper()
+	now := time.Now()
+	require.NoError(t, stream.Send(&seqproxyapi.StreamSearchRequest{
+		RequestType: &seqproxyapi.StreamSearchRequest_Query{
+			Query: &seqproxyapi.StreamSearchQuery{
+				Query:     query,
+				From:      timestamppb.New(now.Add(-time.Hour)),
+				To:        timestamppb.New(now.Add(time.Hour)),
+				WithTotal: true,
+			},
+		},
+	}))
+}
+
+// collectStreamData reads responses until the summary is received or the stream
+// ends. It returns the collected document payloads (the "data" column of each
+// record), the record count and the final summary.
+func collectStreamData(
+	t *testing.T,
+	stream seqproxyapi.SeqProxyApi_StreamSearchClient,
+) ([][]byte, *seqproxyapi.ResponseSummary) {
+	t.Helper()
+	var docs [][]byte
+	for {
+		resp, err := stream.Recv()
+		if err != nil {
+			return docs, nil
+		}
+		switch v := resp.RequestType.(type) {
+		case *seqproxyapi.StreamSearchResponse_Header:
+			// expected: typing metadata
+		case *seqproxyapi.StreamSearchResponse_Data:
+			for _, rec := range v.Data.GetBatch().GetRecords() {
+				raw := rec.GetRawData()
+				if len(raw) > 0 {
+					docs = append(docs, raw[len(raw)-1])
+				}
+			}
+		case *seqproxyapi.StreamSearchResponse_Summary:
+			return docs, v.Summary
+		}
+	}
+}
+
+func (s *IntegrationTestSuite) TestStreamSearch() {
+	t := s.T()
+	r := require.New(t)
+
+	env := setup.NewTestingEnv(s.Config)
+	defer env.StopAll()
+
+	// A large dataset is required so that the response exceeds the gRPC
+	// flow-control window: this forces the server to block between batches and
+	// actually observe the control actions the client sends mid-stream. With a
+	// tiny dataset the server buffers the whole response and finishes before any
+	// control message arrives.
+	const totalDocs = 20020
+	getNextTs := getAutoTsGenerator(time.Now(), -time.Nanosecond)
+	origDocs := make([]string, totalDocs)
+	for i := range totalDocs {
+		origDocs[i] = fmt.Sprintf(`{"service":"a", "trace_id":"%d", "ts":%q}`, i, getNextTs())
+	}
+	setup.Bulk(t, env.IngestorBulkAddr(), origDocs)
+	env.WaitIdle()
+
+	streamQuery := func(limit int) string {
+		return fmt.Sprintf(`service:a | limit %d`, limit)
+	}
+
+	t.Run("finalize after full stream", func(t *testing.T) {
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		sendStreamSearchQuery(t, stream, streamQuery(totalDocs))
+		// No explicit control action: the server must send the summary once the
+		// data is exhausted.
+		docs, summary := collectStreamData(t, stream)
+		r.Len(docs, totalDocs)
+
+		gotDocs := make([]string, 0, len(docs))
+		for _, d := range docs {
+			gotDocs = append(gotDocs, string(d))
+		}
+		wantDocs := make([]string, 0, len(origDocs))
+		for _, d := range origDocs {
+			wantDocs = append(wantDocs, d)
+		}
+		r.Equal(wantDocs, gotDocs, "streamed documents must match the ingested ones")
+
+		r.NotNil(summary)
+		r.Equal(uint64(totalDocs), summary.GetTotal(), "summary total must match the document count")
+		r.Equal(seqproxyapi.ErrorCode_ERROR_CODE_NO, summary.GetError().GetCode())
+	})
+
+	t.Run("explicit finalize", func(t *testing.T) {
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		sendStreamSearchQuery(t, stream, streamQuery(totalDocs))
+
+		// Read until the first data batch arrives, then ask the server to
+		// finalize before all data is consumed.
+		var gotRecordsCount int
+		finalizeSent := false
+		for {
+			resp, err := stream.Recv()
+			r.NoError(err)
+
+			switch v := resp.RequestType.(type) {
+			case *seqproxyapi.StreamSearchResponse_Data:
+				gotRecordsCount += len(v.Data.GetBatch().GetRecords())
+				if !finalizeSent {
+					require.NoError(t, stream.Send(&seqproxyapi.StreamSearchRequest{
+						RequestType: &seqproxyapi.StreamSearchRequest_Control{
+							Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_FINALIZE},
+						},
+					}))
+					finalizeSent = true
+				}
+			case *seqproxyapi.StreamSearchResponse_Summary:
+				r.True(finalizeSent, "got summary without finalize")
+				r.Greater(gotRecordsCount, 0)
+				r.Less(gotRecordsCount, totalDocs, "finalize should stop the stream before all data is sent")
+				return
+			}
+		}
+	})
+
+	t.Run("cancel mid-stream", func(t *testing.T) {
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		sendStreamSearchQuery(t, stream, streamQuery(totalDocs))
+
+		// Send CANCEL as soon as the first data batch arrives, then keep reading
+		// until the stream ends. The server must terminate without a summary.
+		canceled := false
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				r.ErrorIs(err, io.EOF, "cancel must terminate the stream with EOF")
+				return
+			}
+			switch resp.RequestType.(type) {
+			case *seqproxyapi.StreamSearchResponse_Data:
+				if !canceled {
+					require.NoError(t, stream.Send(&seqproxyapi.StreamSearchRequest{
+						RequestType: &seqproxyapi.StreamSearchRequest_Control{
+							Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_CANCEL},
+						},
+					}))
+					canceled = true
+				}
+			case *seqproxyapi.StreamSearchResponse_Summary:
+				r.Fail("cancel must not produce a summary")
+			}
+		}
+	})
+
+	t.Run("aggregation stream", func(t *testing.T) {
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		sendStreamSearchQuery(t, stream, `service:a | stats count by (trace_id)`)
+
+		var gotBucketsCount int
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				break
+			}
+			switch v := resp.RequestType.(type) {
+			case *seqproxyapi.StreamSearchResponse_Data:
+				gotBucketsCount += len(v.Data.GetBatch().GetRecords())
+			case *seqproxyapi.StreamSearchResponse_Summary:
+				return
+			}
+		}
+		r.Equal(totalDocs, gotBucketsCount, "each distinct `trace_id` value should produce one bucket")
+	})
+
+	t.Run("missing query is rejected", func(t *testing.T) {
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		require.NoError(t, stream.Send(&seqproxyapi.StreamSearchRequest{
+			RequestType: &seqproxyapi.StreamSearchRequest_Control{
+				Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_FINALIZE},
+			},
+		}))
+		_, err := stream.Recv()
+		r.ErrorIs(err, status.Error(codes.InvalidArgument, "first message must be a search query"))
+	})
 }
