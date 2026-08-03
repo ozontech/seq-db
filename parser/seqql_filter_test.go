@@ -395,8 +395,8 @@ func TestParseSeqQLError(t *testing.T) {
 	test(`keyword:re()`, "parsing `re` filter: invalid syntax")
 	test(`keyword:re(")`, "parsing `re` filter: invalid syntax")
 	test(`keyword:re(""invalid)`, "parsing `re` filter: expected ')', got \"invalid\"")
-	test(`keyword:re("[invalid")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: missing closing ]: `[invalid)$`")
-	test(`keyword:re("invalid)")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: unexpected ): `^(?i:invalid))$`")
+	test(`keyword:re("[invalid")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: missing closing ]: `[invalid`")
+	test(`keyword:re("invalid)")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: unexpected ): `invalid)`")
 	test(`keyword:re("[z-a]")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: invalid character class range: `z-a`")
 	test(`keyword:re("*invalid")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: missing argument to repetition operator: `*`")
 
