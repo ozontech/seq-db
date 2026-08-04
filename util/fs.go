@@ -161,3 +161,39 @@ func CopyFile(src, dst string) error {
 	_, err = io.Copy(out, in)
 	return err
 }
+
+func DurableHardLink(src, dst string) error {
+	if err := os.Link(src, dst); err != nil {
+		return err
+	}
+	if err := SyncPath(filepath.Dir(dst)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func DurableRenameFile(src, dst string) error {
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+	if err := SyncPath(filepath.Dir(dst)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func FileExists(filename string) bool {
+	_, err := os.Stat(filename)
+	return !os.IsNotExist(err)
+}
+
+func DurableTouchFile(name string) error {
+	file, err := os.Create(name)
+	if err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return SyncPath(filepath.Dir(name))
+}

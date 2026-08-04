@@ -143,7 +143,6 @@ func openFrac(
 	rl *storage.ReadLimiter,
 ) (indexwriter.Source, func()) {
 	base := basePath(path)
-	legacy := strings.HasSuffix(path, consts.IndexFileSuffix)
 
 	sealed := frac.NewSealed(
 		base,
@@ -153,7 +152,6 @@ func openFrac(
 		nil,
 		&frac.Config{},
 		noopSkipMaskProvider{},
-		legacy,
 	)
 	return frac.NewSealedSource(sealed), sealed.Release
 }
