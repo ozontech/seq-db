@@ -294,7 +294,6 @@ func parsePipeOffset(lex *lexer) (*PipeOffset, error) {
 }
 
 type PipeSort struct {
-	Field string
 	Order string
 }
 
@@ -304,8 +303,6 @@ func (s *PipeSort) Name() string {
 
 func (s *PipeSort) DumpSeqQL(o *strings.Builder) {
 	o.WriteString("sort ")
-	o.WriteString(quoteTokenIfNeeded(s.Field))
-	o.WriteString(" ")
 	o.WriteString(s.Order)
 }
 
@@ -315,22 +312,14 @@ func parsePipeSort(lex *lexer) (*PipeSort, error) {
 	}
 	lex.Next()
 
-	field, err := parseCompositeTokenReplaceWildcards(lex)
-	if err != nil {
-		return nil, fmt.Errorf("parsing field name: %s", err)
-	}
-	if field == "" {
-		return nil, fmt.Errorf("empty field name")
+	if !lex.IsKeywords("asc", "desc") {
+		return nil, fmt.Errorf("expected `asc` or `desc` order")
 	}
 
-	order := "asc"
-	if lex.IsKeywords("asc", "desc") {
-		order = lex.Token
-		lex.Next()
-	}
+	order := lex.Token
+	lex.Next()
 
 	return &PipeSort{
-		Field: field,
 		Order: order,
 	}, nil
 }

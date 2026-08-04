@@ -88,9 +88,8 @@ func TestParsePipeSort(t *testing.T) {
 		require.Equal(t, expected, query.SeqQLString())
 	}
 
-	test("service:my_service | sort message asc", "service:my_service | sort message asc")
-	test("service:my_service | sort message desc", "service:my_service | sort message desc")
-	test("service:my_service | sort message", "service:my_service | sort message asc")
+	test("service:my_service | sort asc", "service:my_service | sort asc")
+	test("service:my_service | sort desc", "service:my_service | sort desc")
 }
 
 func TestParsePipeSortErrors(t *testing.T) {
@@ -100,9 +99,9 @@ func TestParsePipeSortErrors(t *testing.T) {
 		require.Error(t, err)
 	}
 
-	test(`service:my_service | sort`)
-	test(`service:my_service | sort field invalid_order`)
-	test(`service:my_service | sort a:1 | sort b:2`)
+	test(`service:my_service | sort invalid_order`)
+	test(`service:my_service | sort asc | sort desc`)
+	test("service:my_service | sort")
 }
 
 func TestParsePipeLimit(t *testing.T) {
@@ -170,7 +169,7 @@ func TestParseSeqQLRejectsStreamPipes(t *testing.T) {
 	}
 
 	test(`service:my_service | stats count by (service)`)
-	test(`service:my_service | sort message asc`)
+	test(`service:my_service | sort asc`)
 	test(`service:my_service | limit 10`)
 	test(`service:my_service | offset 10`)
 }
@@ -191,13 +190,13 @@ func TestParsePipeOrder(t *testing.T) {
 	}
 
 	test(
-		"service:my_service | stats count by (service) | fields message | sort message asc | limit 10 | offset 5",
-		"service:my_service | stats count by (service) | fields message | sort message asc | limit 10 | offset 5",
+		"service:my_service | stats count by (service) | fields message | sort asc | limit 10 | offset 5",
+		"service:my_service | stats count by (service) | fields message | sort asc | limit 10 | offset 5",
 	)
 	test("service:my_service | stats count by (service) | limit 10", "service:my_service | stats count by (service) | limit 10")
 	test("service:my_service | fields message | offset 5", "service:my_service | fields message | offset 5")
-	test("service:my_service | sort message asc | limit 10", "service:my_service | sort message asc | limit 10")
-	test("service:my_service | fields message | sort message asc", "service:my_service | fields message | sort message asc")
+	test("service:my_service | sort asc | limit 10", "service:my_service | sort asc | limit 10")
+	test("service:my_service | fields message | sort asc", "service:my_service | fields message | sort asc")
 }
 
 func TestParsePipeOrderErrors(t *testing.T) {
@@ -208,9 +207,9 @@ func TestParsePipeOrderErrors(t *testing.T) {
 	}
 
 	test(`service:my_service | fields message | stats count by (service)`)
-	test(`service:my_service | sort message asc | fields message`)
-	test(`service:my_service | limit 10 | sort message asc`)
+	test(`service:my_service | sort asc | fields message`)
+	test(`service:my_service | limit 10 | sort asc`)
 	test(`service:my_service | offset 5 | limit 10`)
-	test(`service:my_service | offset 5 | sort message asc | limit 10`)
-	test(`service:my_service | offset 5 | limit 10 | sort message asc | fields message | stats count by (service)`)
+	test(`service:my_service | offset 5 | sort asc | limit 10`)
+	test(`service:my_service | offset 5 | limit 10 | sort asc | fields message | stats count by (service)`)
 }
