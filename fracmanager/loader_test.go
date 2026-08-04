@@ -3,18 +3,22 @@ package fracmanager
 import (
 	"context"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
 )
 
 func setupLoaderTest(t testing.TB, cfg *Config) (*fractionProvider, *Loader, func()) {
@@ -272,4 +276,255 @@ func TestDiscover(t *testing.T) {
 	assert.Equal(t, a.BaseFileName, actives[0].BaseFileName, "must be the same name")
 	assert.Empty(t, expectedSealed, "we don't expect any more sealed fractions")
 	assert.Empty(t, expectedRemote, "we don't expect any more remote fractions")
+}
+
+// createEmptyRemoteFile creates an empty .remote marker file on disk.
+func createEmptyRemoteFile(t testing.TB, basePath string) {
+	t.Helper()
+
+	err := os.WriteFile(basePath+consts.RemoteFractionSuffix, nil, 0o644)
+	require.NoError(t, err)
+}
+
+// TestDiscover_RemoteInfoExists verifies that a fraction with .remote-info is detected
+// as remote with the new split format (no S3 request needed).
+// No .frac-cache
+func TestDiscover_RemoteInfoExists(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	// Create a sealed fraction and offload it — this creates .remote-info on disk
+	// and uploads all files to S3.
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 10)
+	s, err := fp.Seal(a)
+	require.NoError(t, err)
+
+	r, err := fp.Offload(t.Context(), s)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	s.Suicide()
+
+	// Now discover from FS.
+	actives, locals, remotes, err := loader.discover(t.Context())
+	require.NoError(t, err)
+
+	assert.Empty(t, actives, "no active fractions expected")
+	assert.Empty(t, locals, "no local fractions expected")
+	require.Len(t, remotes, 1, "one remote fraction expected")
+
+	remote := remotes[0]
+	assert.Equal(t, r.Info().Name(), remote.Info().Name(), "remote fraction name should match")
+	assert.False(t, remote.IsSingleIndex(), "remote fraction with .remote-info should be non-legacy")
+	assert.True(t, util.FileExists(remote.BaseFileName+consts.RemoteFractionInfoSuffix), "file .remote-info must exists")
+}
+
+// TestDiscover_EmptyRemote_NewIndex verifies that a fraction with empty .remote
+// and no .index in S3 (but split files exist) is detected as non-legacy remote.
+// Uses a real offloaded fraction, then replaces .remote-info with empty .remote.
+// No .frac-cache
+func TestDiscover_EmptyRemote_NewIndex(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	// Create a sealed fraction and offload it — this creates real files in S3.
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 10)
+	s, err := fp.Seal(a)
+	require.NoError(t, err)
+
+	r, err := fp.Offload(t.Context(), s)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	s.Suicide()
+
+	basePath := r.BaseFileName
+
+	// Remove .remote-info and create empty .remote marker instead.
+	err = os.Remove(basePath + consts.RemoteFractionInfoSuffix)
+	require.NoError(t, err)
+	createEmptyRemoteFile(t, basePath)
+
+	// Discover from FS.
+	actives, locals, remotes, err := loader.discover(t.Context())
+	require.NoError(t, err)
+
+	assert.Empty(t, actives, "no active fractions expected")
+	assert.Empty(t, locals, "no local fractions expected")
+	require.Len(t, remotes, 1, "one remote fraction expected")
+
+	remote := remotes[0]
+	assert.Equal(t, r.Info().Name(), remote.Info().Name(), "remote fraction name should match")
+	assert.False(t, remote.IsSingleIndex(), "remote fraction without .index in S3 should be non-legacy")
+}
+
+// TestDiscover_EmptyRemote_CacheLegacy verifies that a fraction with empty .remote
+// and cached Info with BinaryDataVer < V3 is detected as legacy remote.
+func TestDiscover_EmptyRemote_CacheLegacy(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	// Create a sealed fraction and offload it.
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 10)
+	s, err := fp.Seal(a)
+	require.NoError(t, err)
+
+	r, err := fp.Offload(t.Context(), s)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	s.Suicide()
+
+	basePath := r.BaseFileName
+	baseName := r.Info().Name()
+
+	// Remove .remote-info and create empty .remote marker instead.
+	err = os.Remove(basePath + consts.RemoteFractionInfoSuffix)
+	require.NoError(t, err)
+	createEmptyRemoteFile(t, basePath)
+
+	// Add cached Info with BinaryDataVer < V3 (simulating legacy)
+	// and IndexOnDisk > 0 so NewRemote fast path (info.IndexOnDisk > 0) works.
+	cachedInfo := &common.Info{
+		Path:          basePath,
+		DocsTotal:     r.Info().DocsTotal,
+		BinaryDataVer: config.BinaryDataV2, // < V3 — legacy
+		IndexOnDisk:   4096,                // > 0 — enables fast path in NewRemote
+	}
+	loader.infoCache.Add(cachedInfo)
+	err = loader.infoCache.SyncWithDisk()
+	require.NoError(t, err)
+
+	// Discover from FS.
+	actives, locals, remotes, err := loader.discover(t.Context())
+	require.NoError(t, err)
+
+	assert.Empty(t, actives, "no active fractions expected")
+	assert.Empty(t, locals, "no local fractions expected")
+	require.Len(t, remotes, 1, "one remote fraction expected")
+
+	remote := remotes[0]
+	assert.Equal(t, baseName, remote.Info().Name(), "remote fraction name should match")
+	assert.True(t, remote.IsSingleIndex(), "remote fraction with cached BinaryDataVer<V3 should be legacy")
+}
+
+// TestDiscover_EmptyRemote_CacheNew verifies that a fraction with empty .remote
+// and cached Info with BinaryDataVer >= V3 is detected as non-legacy remote.
+// Since split format is known from cache, no S3 request should be made.
+func TestDiscover_EmptyRemote_CacheNew(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	// Create a sealed fraction and offload it.
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 10)
+	s, err := fp.Seal(a)
+	require.NoError(t, err)
+
+	// Add cached Info and sync to disk so loadedInfoCache inside discover() picks it up.
+	loader.infoCache.Add(s.Info())
+	err = loader.infoCache.SyncWithDisk()
+	require.NoError(t, err)
+
+	// Offload and remove localy
+	r, err := fp.Offload(t.Context(), s)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	s.Suicide()
+
+	// Remove .remote-info and create empty .remote marker instead.
+	basePath := r.BaseFileName
+	err = os.Remove(basePath + consts.RemoteFractionInfoSuffix)
+	require.NoError(t, err)
+	createEmptyRemoteFile(t, basePath)
+
+	// Discover from FS.
+	actives, locals, remotes, err := loader.discover(t.Context())
+	require.NoError(t, err)
+
+	assert.Empty(t, actives, "no active fractions expected")
+	assert.Empty(t, locals, "no local fractions expected")
+	require.Len(t, remotes, 1, "one remote fraction expected")
+
+	remote := remotes[0]
+	assert.Equal(t, r.Info().Name(), remote.Info().Name(), "remote fraction name should match")
+	assert.False(t, remote.IsSingleIndex(), "remote fraction with cached BinaryDataVer>=V3 should be non-legacy")
+}
+
+// TestLoadRemote_Legacy verifies loading a legacy remote fraction using cached Info
+// with IndexOnDisk > 0 (fast path — no S3 request for info loading).
+func TestLoadRemote_Legacy(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	baseName := "seq-db-TESTLEGACYLOAD"
+	basePath := filepath.Join(fp.config.DataDir, baseName)
+
+	// Create cached Info with IndexOnDisk > 0 (legacy, fast path).
+	cachedInfo := &common.Info{
+		Path:          basePath,
+		BinaryDataVer: config.BinaryDataV2,
+		DocsTotal:     100,
+		IndexOnDisk:   4096,
+	}
+	loadedInfoCache := NewFracInfoCacheFromDisk(loader.infoCache.fullPath)
+	loadedInfoCache.Add(cachedInfo)
+
+	remote := loader.loadRemote(t.Context(), basePath, loadedInfoCache)
+	require.NotNil(t, remote)
+	assert.True(t, remote.IsSingleIndex(), "should be legacy")
+}
+
+// TestLoadRemote_NewFormat verifies loading a new-format remote fraction with .remote-info.
+func TestLoadRemote_NewFormat(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	// Create a sealed fraction and offload it.
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 10)
+	s, err := fp.Seal(a)
+	require.NoError(t, err)
+
+	r, err := fp.Offload(t.Context(), s)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	s.Suicide()
+
+	loadedInfoCache := NewFracInfoCacheFromDisk(loader.infoCache.fullPath)
+	remote := loader.loadRemote(t.Context(), r.BaseFileName, loadedInfoCache)
+	require.NotNil(t, remote)
+	assert.False(t, remote.IsSingleIndex(), "should be non-legacy")
+	assert.Equal(t, r.Info().Name(), remote.Info().Name(), "name should match")
+}
+
+// TestLoadRemote_RemoteInfoFallback verifies loading a remote fraction where
+// .remote-info is missing but .info exists in S3.
+// Uses a real offloaded fraction to ensure valid .info file in S3.
+func TestLoadRemote_RemoteInfoFallback(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	// Create a sealed fraction and offload it — this uploads valid files to S3.
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 10)
+	s, err := fp.Seal(a)
+	require.NoError(t, err)
+
+	r, err := fp.Offload(t.Context(), s)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	s.Suicide()
+
+	basePath := r.BaseFileName
+
+	// Remove .remote-info so loadInfo() falls back to S3.
+	err = os.Remove(basePath + consts.RemoteFractionInfoSuffix)
+	require.NoError(t, err)
+
+	loadedInfoCache := NewFracInfoCacheFromDisk(loader.infoCache.fullPath)
+	remote := loader.loadRemote(t.Context(), basePath, loadedInfoCache)
+	require.NotNil(t, remote)
+	assert.False(t, remote.IsSingleIndex(), "should be non-legacy")
+	assert.Equal(t, r.Info().Name(), remote.Info().Name(), "name should match")
 }

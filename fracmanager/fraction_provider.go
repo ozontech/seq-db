@@ -74,7 +74,7 @@ func (fp *fractionProvider) NewActive(name string) *frac.Active {
 	)
 }
 
-func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info, isLegacy bool) *frac.Sealed {
+func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info) *frac.Sealed {
 	return frac.NewSealed(
 		name,
 		fp.readLimiter,
@@ -83,7 +83,6 @@ func (fp *fractionProvider) NewSealed(name string, cachedInfo *common.Info, isLe
 		cachedInfo, // Preloaded meta information
 		&fp.config.Fraction,
 		fp.skipMaskProvider,
-		isLegacy,
 	)
 }
 
@@ -99,7 +98,7 @@ func (fp *fractionProvider) NewSealedPreloaded(name string, preloadedData *seale
 	)
 }
 
-func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedInfo *common.Info, isLegacy bool) *frac.Remote {
+func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedInfo *common.Info) *frac.Remote {
 	return frac.NewRemote(
 		ctx,
 		name,
@@ -110,7 +109,6 @@ func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedIn
 		&fp.config.Fraction,
 		fp.s3cli,
 		fp.skipMaskProvider,
-		isLegacy,
 	)
 }
 
@@ -182,5 +180,5 @@ func (fp *fractionProvider) Offload(ctx context.Context, f *frac.Sealed) (*frac.
 	}
 
 	info := f.Info()
-	return fp.NewRemote(ctx, info.Path, info, f.IsLegacy), nil
+	return fp.NewRemote(ctx, info.Path, info), nil
 }

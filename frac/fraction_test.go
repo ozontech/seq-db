@@ -2679,7 +2679,6 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *frac
 		nil,
 		s.config,
 		testSkipMaskProvider{},
-		false,
 	)
 
 	s.fraction = sealed
@@ -2741,7 +2740,6 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			s.config,
 			s3cli,
 			testSkipMaskProvider{},
-			false,
 		)
 
 		s.fraction = remoteFrac

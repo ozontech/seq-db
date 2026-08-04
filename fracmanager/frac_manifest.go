@@ -22,12 +22,14 @@ import (
 // fracManifest represents a manifest of fraction files
 // Contains information about the presence of various file types for a specific fraction
 type fracManifest struct {
-	basePath  string // base path to fraction files (without extension)
-	hasDocs   bool   // presence of main documents file
-	hasWal    bool   // presence of WAL with meta
-	hasIndex  bool   // presence of index file
-	hasSdocs  bool   // presence of sorted documents
-	hasRemote bool   // presence of remote fraction
+	// <<<<<<< HEAD
+	basePath      string // base path to fraction files (without extension)
+	hasDocs       bool   // presence of main documents file
+	hasWal        bool   // presence of WAL with meta
+	hasIndex      bool   // presence of index file
+	hasSdocs      bool   // presence of sorted documents
+	hasRemote     bool   // presence of remote fraction (legacy)
+	hasRemoteInfo bool   // presence of .remote-info
 
 	// Split index file flags
 	hasInfo    bool
@@ -61,6 +63,9 @@ func (m *fracManifest) AddExtension(ext string) error {
 		m.hasSdocs = true
 	case consts.IndexFileSuffix:
 		m.hasIndex = true
+	case consts.RemoteFractionInfoSuffix:
+		m.hasRemote = true
+		m.hasRemoteInfo = true
 	case consts.RemoteFractionSuffix:
 		m.hasRemote = true
 
@@ -451,6 +456,7 @@ func (f *fracManifest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddBool("hasIndex", f.hasIndex)
 	enc.AddBool("hasSdocs", f.hasSdocs)
 	enc.AddBool("hasRemote", f.hasRemote)
+	enc.AddBool("hasRemoteInfo", f.hasRemoteInfo)
 
 	enc.AddBool("hasInfo", f.hasInfo)
 	enc.AddBool("hasToken", f.hasToken)

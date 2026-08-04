@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sync"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -39,8 +39,6 @@ type Sealed struct {
 	docsCache  *cache.Cache[[]byte]
 	docsReader storage.DocsReader
 
-	// IsLegacy is true for fractions that use the old single .index file format.
-	IsLegacy             bool
 	legacyFile           *os.File
 	legacyReaderProvider *storage.ReaderProvider
 
@@ -84,9 +82,8 @@ func NewSealed(
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
 	info *common.Info,
-	config *Config,
+	cfg *Config,
 	skipMaskProvider skipMaskProvider,
-	isLegacy bool,
 ) *Sealed {
 	f := &Sealed{
 		initMu: &sync.RWMutex{},
@@ -95,10 +92,9 @@ func NewSealed(
 		docsCache:   docsCache,
 		indexCache:  indexCache,
 
-		IsLegacy:     isLegacy,
 		info:         info,
 		BaseFileName: baseFile,
-		Config:       config,
+		Config:       cfg,
 
 		PartialSuicideMode: Off,
 
@@ -122,7 +118,7 @@ func NewSealedPreloaded(
 	rl *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
-	config *Config,
+	cfg *Config,
 	skipMaskProvider skipMaskProvider,
 ) *Sealed {
 	f := &Sealed{
@@ -137,7 +133,7 @@ func NewSealedPreloaded(
 
 		info:         preloaded.Info,
 		BaseFileName: baseFile,
-		Config:       config,
+		Config:       cfg,
 
 		skipMaskProvider: skipMaskProvider,
 	}
@@ -160,7 +156,11 @@ func NewSealedPreloaded(
 	return f
 }
 
-func (f *Sealed) openInfoLegacy() {
+func (f *Sealed) IsSingleIndex() bool {
+	return f.info.BinaryDataVer < config.BinaryDataV3
+}
+
+func (f *Sealed) openIndexLegacy() {
 	if f.legacyFile != nil {
 		return
 	}
@@ -182,68 +182,63 @@ func (f *Sealed) openInfoLegacy() {
 	)
 }
 
-func (f *Sealed) openInfo() {
+func (f *Sealed) openInfo() error {
 	if f.infoFile != nil {
-		return
+		return nil
 	}
 
-	name := f.BaseFileName + consts.InfoFileSuffix
-	file, err := os.Open(name)
+	file, err := os.Open(f.BaseFileName + consts.InfoFileSuffix)
 	if err != nil {
-		logger.Fatal(
-			"can't open info file",
-			zap.String("file", name),
-			zap.Error(err),
-		)
+		return err
 	}
 
 	f.infoFile = file
+	return nil
 }
 
 func (f *Sealed) openIndex() {
-	if f.IsLegacy {
+	if f.IsSingleIndex() {
 		// We have exactly one `.index` file for legacy sealed fractions.
 		// So opening only this file is sufficient.
-		f.openInfoLegacy()
+		f.openIndexLegacy()
 		return
 	}
 
-	f.openInfo()
+	if err := f.openInfo(); err != nil {
+		logger.Fatal("can't open info file", zap.String("fraction", f.BaseFileName), zap.Error(err))
+	}
+
 	if f.tokenFile == nil {
-		name := f.BaseFileName + consts.TokenFileSuffix
-		file, err := os.Open(name)
+		file, err := os.Open(f.BaseFileName + consts.TokenFileSuffix)
 		if err != nil {
-			logger.Fatal("can't open token file", zap.String("file", name), zap.Error(err))
+			logger.Fatal("can't open token file", zap.String("fraction", f.BaseFileName), zap.Error(err))
 		}
 		f.tokenFile = file
 		f.tokenReaderProvider = storage.NewReaderProvider(f.readLimiter, file.Name(), file, f.indexCache.TokenRegistry)
 	}
 
 	if f.offsetsFile == nil {
-		name := f.BaseFileName + consts.OffsetsFileSuffix
-		file, err := os.Open(name)
+		file, err := os.Open(f.BaseFileName + consts.OffsetsFileSuffix)
 		if err != nil {
-			logger.Fatal("can't open offsets file", zap.String("file", name), zap.Error(err))
+			logger.Fatal("can't open offsets file", zap.String("fraction", f.BaseFileName), zap.Error(err))
 		}
 		f.offsetsFile = file
 		f.offsetsReaderProvider = storage.NewReaderProvider(f.readLimiter, file.Name(), file, f.indexCache.OffsetsRegistry)
 	}
 
 	if f.idFile == nil {
-		name := f.BaseFileName + consts.IDFileSuffix
-		file, err := os.Open(name)
+		file, err := os.Open(f.BaseFileName + consts.IDFileSuffix)
 		if err != nil {
-			logger.Fatal("can't open id file", zap.String("file", name), zap.Error(err))
+			logger.Fatal("can't open id file", zap.String("fraction", f.BaseFileName), zap.Error(err))
 		}
 		f.idFile = file
 		f.idReaderProvider = storage.NewReaderProvider(f.readLimiter, file.Name(), file, f.indexCache.IDRegistry)
 	}
 
 	if f.lidFile == nil {
-		name := f.BaseFileName + consts.LIDFileSuffix
-		file, err := os.Open(name)
+		file, err := os.Open(f.BaseFileName + consts.LIDFileSuffix)
 		if err != nil {
-			logger.Fatal("can't open lid file", zap.String("file", name), zap.Error(err))
+			logger.Fatal("can't open lid file", zap.String("fraction", f.BaseFileName), zap.Error(err))
 		}
 		f.lidFile = file
 		f.lidReaderProvider = storage.NewReaderProvider(f.readLimiter, file.Name(), file, f.indexCache.LIDRegistry)
@@ -288,20 +283,35 @@ func (f *Sealed) mustGetReader(p *storage.ReaderProvider) storage.IndexReader {
 }
 
 func (f *Sealed) loadInfo() {
-	var err error
-
-	if f.IsLegacy {
-		f.openInfoLegacy()
-		if f.info, err = loadInfoLegacy(f.mustGetReader(f.legacyReaderProvider)); err != nil {
-			logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
-		}
-		return
+	if err := f.tryLoadInfo(); err != nil {
+		logger.Warn(
+			"cannot open single info file, falling back to legacy index",
+			zap.String("fraction", f.BaseFileName),
+			zap.Error(err),
+		)
+		f.tryLoadLegacyInfo()
 	}
+}
 
-	f.openInfo()
-	if f.info, err = loadInfo(f.infoFile); err != nil {
-		logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+func (f *Sealed) tryLoadInfo() error {
+	if err := f.openInfo(); err != nil {
+		return err
 	}
+	info, err := loadInfo(f.infoFile)
+	if err != nil {
+		logger.Fatal("error loading info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+	}
+	f.info = info
+	return nil
+}
+
+func (f *Sealed) tryLoadLegacyInfo() {
+	f.openIndexLegacy()
+	info, err := loadInfoLegacy(f.mustGetReader(f.legacyReaderProvider))
+	if err != nil {
+		logger.Fatal("error loading legacy info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+	}
+	f.info = info
 }
 
 func (f *Sealed) init(full bool) {
@@ -315,7 +325,7 @@ func (f *Sealed) init(full bool) {
 		return
 	}
 
-	if f.IsLegacy {
+	if f.IsSingleIndex() {
 		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.mustGetReader(f.legacyReaderProvider))
 		f.isInited = true
 		return
@@ -338,7 +348,7 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return u.Upload(gctx, f.docsFile) })
 
-	if f.IsLegacy {
+	if f.IsSingleIndex() {
 		g.Go(func() error { return u.Upload(gctx, f.legacyFile) })
 	} else {
 		g.Go(func() error { return u.Upload(gctx, f.infoFile) })
@@ -353,15 +363,18 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) 
 		return true, err
 	}
 
-	remoteFracName := f.BaseFileName + consts.RemoteFractionSuffix
-	file, err := os.Create(remoteFracName)
+	info, err := io.ReadAll(f.infoFile)
 	if err != nil {
 		return true, err
 	}
-	defer file.Close()
 
-	util.MustSyncPath(filepath.Dir(remoteFracName))
-	return true, nil
+	remoteInfoName := f.BaseFileName + consts.RemoteFractionInfoSuffix
+	err = util.WriteFileAtomic(remoteInfoName, info, 0o666, ".tmp")
+	if err != nil {
+		return true, err
+	}
+
+	return true, err
 }
 
 func (f *Sealed) Release() {
@@ -376,7 +389,7 @@ func (f *Sealed) Release() {
 		f.lidFile,
 	}
 
-	if f.IsLegacy {
+	if f.IsSingleIndex() {
 		indexFiles = []*os.File{
 			f.docsFile,
 			f.legacyFile,
@@ -438,7 +451,7 @@ func (f *Sealed) Suicide() {
 		consts.LIDFileSuffix,
 	}
 
-	if f.IsLegacy {
+	if f.IsSingleIndex() {
 		indexSuffixes = []string{
 			consts.IndexFileSuffix,
 		}
@@ -509,7 +522,8 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		idReader    storage.IndexReader
 	)
 
-	if f.IsLegacy {
+	isLegacy := f.IsSingleIndex()
+	if isLegacy {
 		legacyReader := f.mustGetReader(f.legacyReaderProvider)
 		tokenReader = legacyReader
 		lidReader = legacyReader
@@ -530,8 +544,8 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		blocksOffsets:    f.blocksData.BlocksOffsets,
 		lidsTable:        f.blocksData.LIDsTable,
 		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, &lidReader, f.indexCache.LIDs),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &tokenReader, f.indexCache.TokenTable),
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.info.BinaryDataVer, &tokenReader, f.indexCache.Tokens),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.info.BinaryDataVer, isLegacy, &tokenReader, f.indexCache.TokenTable),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
@@ -606,7 +620,7 @@ func (f *Sealed) computeIndexSize() {
 		consts.LIDFileSuffix,
 	}
 
-	if f.IsLegacy {
+	if f.IsSingleIndex() {
 		suffixes = []string{
 			consts.IndexFileSuffix,
 		}
