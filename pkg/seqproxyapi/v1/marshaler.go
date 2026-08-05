@@ -2,16 +2,17 @@ package seqproxyapi
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"math"
 	"strconv"
 	"time"
 
-	"github.com/ozontech/seq-db/seq"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/ozontech/seq-db/query/encoding"
+	"github.com/ozontech/seq-db/seq"
 )
 
 var (
@@ -295,7 +296,7 @@ func (r *Record) MarshalJSON() ([]byte, error) {
 			// cells[1] is a little-endian uint64 storing the document MID (nanoseconds).
 			var ts time.Time
 			if len(cells[1]) == 8 {
-				ts = seq.MID(binary.LittleEndian.Uint64(cells[1])).Time()
+				ts = seq.MID(encoding.Uint64FromBytes(cells[1])).Time()
 			}
 			return json.Marshal([]any{
 				string(cells[0]), // id
@@ -306,7 +307,7 @@ func (r *Record) MarshalJSON() ([]byte, error) {
 		// cells[1] is a little-endian float64 storing the aggregation value.
 		var value float64
 		if len(cells[1]) == 8 {
-			value = math.Float64frombits(binary.LittleEndian.Uint64(cells[1]))
+			value = encoding.Float64FromBytes(cells[1])
 		}
 		val := json.RawMessage(strconv.FormatFloat(value, 'f', -1, 64))
 		if math.IsNaN(value) || math.IsInf(value, 0) {
@@ -316,7 +317,7 @@ func (r *Record) MarshalJSON() ([]byte, error) {
 		// A zero MID (no timestamp) is rendered as an empty string.
 		formattedTime := ""
 		if len(cells[2]) == 8 {
-			if ns := binary.LittleEndian.Uint64(cells[2]); ns != 0 {
+			if ns := encoding.Uint64FromBytes(cells[2]); ns != 0 {
 				formattedTime = time.Unix(0, int64(ns)).UTC().Format(time.RFC3339Nano)
 			}
 		}

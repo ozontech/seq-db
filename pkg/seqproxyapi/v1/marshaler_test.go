@@ -1,12 +1,12 @@
 package seqproxyapi
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"math"
 	"testing"
 	"time"
 
+	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -152,12 +152,9 @@ func TestRecordMarshalJSON(t *testing.T) {
 
 	t.Run("documents", func(t *testing.T) {
 		ns := time.Date(2025, 7, 8, 10, 19, 8, 742000000, time.UTC).UnixNano()
-		timeBuf := make([]byte, 8)
-		binary.LittleEndian.PutUint64(timeBuf, uint64(ns))
-
 		rec := &Record{RawData: [][]byte{
 			[]byte("46e48be997010000-e70163d0fa7582e4"),
-			timeBuf,
+			encoding.Uint64ToBytes(uint64(ns)),
 			[]byte(`{"message":"some_message","level":3}`),
 		}}
 
@@ -170,16 +167,11 @@ func TestRecordMarshalJSON(t *testing.T) {
 	})
 
 	t.Run("aggregation buckets", func(t *testing.T) {
-		valueBuf := make([]byte, 8)
-		binary.LittleEndian.PutUint64(valueBuf, math.Float64bits(42.5))
 		tsNs := time.Date(2025, 7, 8, 10, 19, 8, 742000000, time.UTC).UnixNano()
-		tsBuf := make([]byte, 8)
-		binary.LittleEndian.PutUint64(tsBuf, uint64(tsNs))
-
 		rec := &Record{RawData: [][]byte{
 			[]byte("service-a"),
-			valueBuf,
-			tsBuf,
+			encoding.Float64ToBytes(42.5),
+			encoding.Uint64ToBytes(uint64(tsNs)),
 		}}
 
 		raw, err := json.Marshal(rec)
@@ -188,14 +180,10 @@ func TestRecordMarshalJSON(t *testing.T) {
 	})
 
 	t.Run("aggregation bucket with NaN", func(t *testing.T) {
-		valueBuf := make([]byte, 8)
-		binary.LittleEndian.PutUint64(valueBuf, math.Float64bits(math.NaN()))
-		tsBuf := make([]byte, 8)
-
 		rec := &Record{RawData: [][]byte{
 			[]byte("service-a"),
-			valueBuf,
-			tsBuf,
+			encoding.Float64ToBytes(math.NaN()),
+			make([]byte, 8),
 		}}
 
 		raw, err := json.Marshal(rec)

@@ -25,6 +25,7 @@ import (
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
+	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
@@ -32,6 +33,7 @@ import (
 
 type SearchIngestor interface {
 	Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, *search.SearchStats, error)
+	StreamSearch(ctx context.Context, sr *search.StreamSearchRequest, tr *querytracer.Tracer) (query.RecordProducer, search.ControlBroadcaster, error)
 	Documents(ctx context.Context, r search.FetchRequest) (search.DocsIterator, error)
 	Status(ctx context.Context) *search.IngestorStatus
 	StartAsyncSearch(context.Context, search.AsyncRequest) (search.AsyncResponse, error)
