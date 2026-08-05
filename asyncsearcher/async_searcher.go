@@ -230,7 +230,7 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracProvider fraction
 	if err != nil {
 		return err
 	}
-	if err := ast.ValidatePipes(); err != nil {
+	if err := ast.ValidateStreamPipes(); err != nil {
 		return err
 	}
 	r.Params.AST = ast.Root
@@ -376,7 +376,7 @@ func (as *AsyncSearcher) doSearch(id string, fracProvider fractionAcquirer) {
 		if err != nil {
 			panic(fmt.Errorf("BUG: search query must be valid: %s", err))
 		}
-		if err := ast.ValidatePipes(); err != nil {
+		if err := ast.ValidateStreamPipes(); err != nil {
 			panic(fmt.Errorf("BUG: search query must be valid: %s", err))
 		}
 		info.Request.Params.AST = ast.Root

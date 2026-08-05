@@ -471,7 +471,7 @@ enum ControlAction {
 }
 
 message StreamSearchResponse {
-  oneof RequestType {
+  oneof ResponseType {
     ResponseHeader header = 1;
     ResponseData data = 2;
     ResponseSummary summary = 3;

@@ -153,7 +153,7 @@ func TestRecordMarshalJSON(t *testing.T) {
 	t.Run("documents", func(t *testing.T) {
 		ns := time.Date(2025, 7, 8, 10, 19, 8, 742000000, time.UTC).UnixNano()
 		timeBuf := make([]byte, 8)
-		binary.BigEndian.PutUint64(timeBuf, uint64(ns))
+		binary.LittleEndian.PutUint64(timeBuf, uint64(ns))
 
 		rec := &Record{RawData: [][]byte{
 			[]byte("46e48be997010000-e70163d0fa7582e4"),
@@ -171,7 +171,7 @@ func TestRecordMarshalJSON(t *testing.T) {
 
 	t.Run("aggregation buckets", func(t *testing.T) {
 		valueBuf := make([]byte, 8)
-		binary.BigEndian.PutUint64(valueBuf, math.Float64bits(42.5))
+		binary.LittleEndian.PutUint64(valueBuf, math.Float64bits(42.5))
 
 		rec := &Record{RawData: [][]byte{
 			[]byte("service-a"),
@@ -185,7 +185,7 @@ func TestRecordMarshalJSON(t *testing.T) {
 
 	t.Run("aggregation bucket with NaN", func(t *testing.T) {
 		valueBuf := make([]byte, 8)
-		binary.BigEndian.PutUint64(valueBuf, math.Float64bits(math.NaN()))
+		binary.LittleEndian.PutUint64(valueBuf, math.Float64bits(math.NaN()))
 
 		rec := &Record{RawData: [][]byte{
 			[]byte("service-a"),

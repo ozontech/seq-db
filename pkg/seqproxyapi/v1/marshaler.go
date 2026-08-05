@@ -285,7 +285,7 @@ func (r *Record) MarshalJSON() ([]byte, error) {
 		// cells[1] is a big-endian uint64 storing the document MID (nanoseconds).
 		var ts time.Time
 		if len(cells[1]) == 8 {
-			ts = time.Unix(0, int64(binary.BigEndian.Uint64(cells[1]))).UTC()
+			ts = time.Unix(0, int64(binary.LittleEndian.Uint64(cells[1]))).UTC()
 		}
 		return json.Marshal([]any{
 			string(cells[0]), // id
@@ -296,7 +296,7 @@ func (r *Record) MarshalJSON() ([]byte, error) {
 		// cells[1] is a big-endian float64 storing the aggregation value.
 		var value float64
 		if len(cells[1]) == 8 {
-			value = math.Float64frombits(binary.BigEndian.Uint64(cells[1]))
+			value = math.Float64frombits(binary.LittleEndian.Uint64(cells[1]))
 		}
 		val := json.RawMessage(strconv.FormatFloat(value, 'f', -1, 64))
 		if math.IsNaN(value) || math.IsInf(value, 0) {

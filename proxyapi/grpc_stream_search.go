@@ -125,7 +125,7 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	tr.Done()
 	summary.Explain = tracerSpanToExplainEntry(tr.ToSpan())
 	if err := stream.Send(&seqproxyapi.StreamSearchResponse{
-		RequestType: &seqproxyapi.StreamSearchResponse_Summary{Summary: summary},
+		ResponseType: &seqproxyapi.StreamSearchResponse_Summary{Summary: summary},
 	}); err != nil {
 		return status.Errorf(codes.Internal, "failed to send summary: %v", err)
 	}
@@ -167,7 +167,7 @@ func (g *grpcV1) streamSearchDocs(
 ) (controlOutcome, error) {
 	header := &seqproxyapi.ResponseHeader{Typing: docsTyping()}
 	if err := stream.Send(&seqproxyapi.StreamSearchResponse{
-		RequestType: &seqproxyapi.StreamSearchResponse_Header{Header: header},
+		ResponseType: &seqproxyapi.StreamSearchResponse_Header{Header: header},
 	}); err != nil {
 		return outcomeNone, status.Errorf(codes.Internal, "failed to send header: %v", err)
 	}
@@ -206,7 +206,7 @@ func (g *grpcV1) streamSearchAggs(
 ) (controlOutcome, error) {
 	header := &seqproxyapi.ResponseHeader{Typing: aggsTyping()}
 	if err := stream.Send(&seqproxyapi.StreamSearchResponse{
-		RequestType: &seqproxyapi.StreamSearchResponse_Header{Header: header},
+		ResponseType: &seqproxyapi.StreamSearchResponse_Header{Header: header},
 	}); err != nil {
 		return outcomeNone, status.Errorf(codes.Internal, "failed to send header: %v", err)
 	}
@@ -240,7 +240,7 @@ func (g *grpcV1) streamSearchAggs(
 
 func sendRecords(stream seqproxyapi.SeqProxyApi_StreamSearchServer, records []*seqproxyapi.Record) error {
 	resp := &seqproxyapi.StreamSearchResponse{
-		RequestType: &seqproxyapi.StreamSearchResponse_Data{Data: &seqproxyapi.ResponseData{
+		ResponseType: &seqproxyapi.StreamSearchResponse_Data{Data: &seqproxyapi.ResponseData{
 			Batch: &seqproxyapi.RecordsBatch{Records: records},
 		}},
 	}
@@ -252,7 +252,7 @@ func sendRecords(stream seqproxyapi.SeqProxyApi_StreamSearchServer, records []*s
 
 func docToRecord(doc search.StreamingDoc) *seqproxyapi.Record {
 	timeBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(timeBuf, uint64(doc.ID.MID))
+	binary.LittleEndian.PutUint64(timeBuf, uint64(doc.ID.MID))
 	return &seqproxyapi.Record{
 		RawData: [][]byte{
 			[]byte(doc.ID.String()),
@@ -264,7 +264,7 @@ func docToRecord(doc search.StreamingDoc) *seqproxyapi.Record {
 
 func aggBucketToRecord(item seq.AggregationBucket) *seqproxyapi.Record {
 	valueBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(valueBuf, math.Float64bits(item.Value))
+	binary.LittleEndian.PutUint64(valueBuf, math.Float64bits(item.Value))
 	return &seqproxyapi.Record{
 		RawData: [][]byte{
 			[]byte(item.Name),
@@ -312,7 +312,7 @@ func buildProxyReq(q *seqproxyapi.StreamSearchQuery) (*seqproxyapi.ComplexSearch
 		case *parser.PipeLimit:
 			proxyReq.Size = int64(p.Limit)
 		case *parser.PipeOffset:
-			proxyReq.Size = int64(p.Offset)
+			proxyReq.Offset = int64(p.Offset)
 		case *parser.PipeSort:
 			order := seqproxyapi.Order_ORDER_DESC
 			if p.Order == "asc" {

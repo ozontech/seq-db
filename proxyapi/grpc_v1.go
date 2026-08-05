@@ -188,7 +188,7 @@ func (g *grpcV1) doSearch(
 	ctx context.Context,
 	req *seqproxyapi.ComplexSearchRequest,
 	shouldFetch bool,
-	shouldValidatePipes bool,
+	shouldValidateStreamPipes bool,
 	tr *querytracer.Tracer,
 ) (*proxySearchResponse, error) {
 	metric.SearchOverall.Add(1)
@@ -212,12 +212,12 @@ func (g *grpcV1) doSearch(
 		return nil, status.Error(codes.InvalidArgument, `"from" timestamp must not be after "to" timestamp`)
 	}
 
-	if shouldValidatePipes {
+	if shouldValidateStreamPipes {
 		ast, err := parser.ParseSeqQL(req.Query.Query, nil)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("search query must be valid: %s", err))
 		}
-		if err := ast.ValidatePipes(); err != nil {
+		if err := ast.ValidateStreamPipes(); err != nil {
 			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("search query must be valid: %s", err))
 		}
 	}

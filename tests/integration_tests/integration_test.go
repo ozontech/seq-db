@@ -1976,7 +1976,7 @@ func collectStreamData(
 		if err != nil {
 			return docs, nil
 		}
-		switch v := resp.RequestType.(type) {
+		switch v := resp.ResponseType.(type) {
 		case *seqproxyapi.StreamSearchResponse_Header:
 			// expected: typing metadata
 		case *seqproxyapi.StreamSearchResponse_Data:
@@ -2058,7 +2058,7 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 			resp, err := stream.Recv()
 			r.NoError(err)
 
-			switch v := resp.RequestType.(type) {
+			switch v := resp.ResponseType.(type) {
 			case *seqproxyapi.StreamSearchResponse_Data:
 				gotRecordsCount += len(v.Data.GetBatch().GetRecords())
 				if !finalizeSent {
@@ -2094,7 +2094,7 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 				r.ErrorIs(err, io.EOF, "cancel must terminate the stream with EOF")
 				return
 			}
-			switch resp.RequestType.(type) {
+			switch resp.ResponseType.(type) {
 			case *seqproxyapi.StreamSearchResponse_Data:
 				if !canceled {
 					require.NoError(t, stream.Send(&seqproxyapi.StreamSearchRequest{
@@ -2123,7 +2123,7 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 			if err != nil {
 				break
 			}
-			switch v := resp.RequestType.(type) {
+			switch v := resp.ResponseType.(type) {
 			case *seqproxyapi.StreamSearchResponse_Data:
 				gotBucketsCount += len(v.Data.GetBatch().GetRecords())
 			case *seqproxyapi.StreamSearchResponse_Summary:

@@ -987,9 +987,9 @@ func (m *StreamSearchResponse) CloneVT() *StreamSearchResponse {
 		return (*StreamSearchResponse)(nil)
 	}
 	r := new(StreamSearchResponse)
-	if m.RequestType != nil {
-		r.RequestType = m.RequestType.(interface {
-			CloneVT() isStreamSearchResponse_RequestType
+	if m.ResponseType != nil {
+		r.ResponseType = m.ResponseType.(interface {
+			CloneVT() isStreamSearchResponse_ResponseType
 		}).CloneVT()
 	}
 	if len(m.unknownFields) > 0 {
@@ -1003,7 +1003,7 @@ func (m *StreamSearchResponse) CloneMessageVT() proto.Message {
 	return m.CloneVT()
 }
 
-func (m *StreamSearchResponse_Header) CloneVT() isStreamSearchResponse_RequestType {
+func (m *StreamSearchResponse_Header) CloneVT() isStreamSearchResponse_ResponseType {
 	if m == nil {
 		return (*StreamSearchResponse_Header)(nil)
 	}
@@ -1012,7 +1012,7 @@ func (m *StreamSearchResponse_Header) CloneVT() isStreamSearchResponse_RequestTy
 	return r
 }
 
-func (m *StreamSearchResponse_Data) CloneVT() isStreamSearchResponse_RequestType {
+func (m *StreamSearchResponse_Data) CloneVT() isStreamSearchResponse_ResponseType {
 	if m == nil {
 		return (*StreamSearchResponse_Data)(nil)
 	}
@@ -1021,7 +1021,7 @@ func (m *StreamSearchResponse_Data) CloneVT() isStreamSearchResponse_RequestType
 	return r
 }
 
-func (m *StreamSearchResponse_Summary) CloneVT() isStreamSearchResponse_RequestType {
+func (m *StreamSearchResponse_Summary) CloneVT() isStreamSearchResponse_ResponseType {
 	if m == nil {
 		return (*StreamSearchResponse_Summary)(nil)
 	}
@@ -2496,15 +2496,15 @@ func (this *StreamSearchResponse) EqualVT(that *StreamSearchResponse) bool {
 	} else if this == nil || that == nil {
 		return false
 	}
-	if this.RequestType == nil && that.RequestType != nil {
+	if this.ResponseType == nil && that.ResponseType != nil {
 		return false
-	} else if this.RequestType != nil {
-		if that.RequestType == nil {
+	} else if this.ResponseType != nil {
+		if that.ResponseType == nil {
 			return false
 		}
-		if !this.RequestType.(interface {
-			EqualVT(isStreamSearchResponse_RequestType) bool
-		}).EqualVT(that.RequestType) {
+		if !this.ResponseType.(interface {
+			EqualVT(isStreamSearchResponse_ResponseType) bool
+		}).EqualVT(that.ResponseType) {
 			return false
 		}
 	}
@@ -2518,7 +2518,7 @@ func (this *StreamSearchResponse) EqualMessageVT(thatMsg proto.Message) bool {
 	}
 	return this.EqualVT(that)
 }
-func (this *StreamSearchResponse_Header) EqualVT(thatIface isStreamSearchResponse_RequestType) bool {
+func (this *StreamSearchResponse_Header) EqualVT(thatIface isStreamSearchResponse_ResponseType) bool {
 	that, ok := thatIface.(*StreamSearchResponse_Header)
 	if !ok {
 		return false
@@ -2543,7 +2543,7 @@ func (this *StreamSearchResponse_Header) EqualVT(thatIface isStreamSearchRespons
 	return true
 }
 
-func (this *StreamSearchResponse_Data) EqualVT(thatIface isStreamSearchResponse_RequestType) bool {
+func (this *StreamSearchResponse_Data) EqualVT(thatIface isStreamSearchResponse_ResponseType) bool {
 	that, ok := thatIface.(*StreamSearchResponse_Data)
 	if !ok {
 		return false
@@ -2568,7 +2568,7 @@ func (this *StreamSearchResponse_Data) EqualVT(thatIface isStreamSearchResponse_
 	return true
 }
 
-func (this *StreamSearchResponse_Summary) EqualVT(thatIface isStreamSearchResponse_RequestType) bool {
+func (this *StreamSearchResponse_Summary) EqualVT(thatIface isStreamSearchResponse_ResponseType) bool {
 	that, ok := thatIface.(*StreamSearchResponse_Summary)
 	if !ok {
 		return false
@@ -6058,7 +6058,7 @@ func (m *StreamSearchResponse) MarshalToSizedBufferVT(dAtA []byte) (int, error) 
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if vtmsg, ok := m.RequestType.(interface {
+	if vtmsg, ok := m.ResponseType.(interface {
 		MarshalToSizedBufferVT([]byte) (int, error)
 	}); ok {
 		size, err := vtmsg.MarshalToSizedBufferVT(dAtA[:i])
@@ -8988,21 +8988,21 @@ func (m *StreamSearchResponse) MarshalToSizedBufferVTStrict(dAtA []byte) (int, e
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if msg, ok := m.RequestType.(*StreamSearchResponse_Summary); ok {
+	if msg, ok := m.ResponseType.(*StreamSearchResponse_Summary); ok {
 		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
 		if err != nil {
 			return 0, err
 		}
 		i -= size
 	}
-	if msg, ok := m.RequestType.(*StreamSearchResponse_Data); ok {
+	if msg, ok := m.ResponseType.(*StreamSearchResponse_Data); ok {
 		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
 		if err != nil {
 			return 0, err
 		}
 		i -= size
 	}
-	if msg, ok := m.RequestType.(*StreamSearchResponse_Header); ok {
+	if msg, ok := m.ResponseType.(*StreamSearchResponse_Header); ok {
 		size, err := msg.MarshalToSizedBufferVTStrict(dAtA[:i])
 		if err != nil {
 			return 0, err
@@ -10323,7 +10323,7 @@ func (m *StreamSearchResponse) SizeVT() (n int) {
 	}
 	var l int
 	_ = l
-	if vtmsg, ok := m.RequestType.(interface{ SizeVT() int }); ok {
+	if vtmsg, ok := m.ResponseType.(interface{ SizeVT() int }); ok {
 		n += vtmsg.SizeVT()
 	}
 	n += len(m.unknownFields)
@@ -16549,7 +16549,7 @@ func (m *StreamSearchResponse) UnmarshalVT(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if oneof, ok := m.RequestType.(*StreamSearchResponse_Header); ok {
+			if oneof, ok := m.ResponseType.(*StreamSearchResponse_Header); ok {
 				if err := oneof.Header.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
@@ -16558,7 +16558,7 @@ func (m *StreamSearchResponse) UnmarshalVT(dAtA []byte) error {
 				if err := v.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
-				m.RequestType = &StreamSearchResponse_Header{Header: v}
+				m.ResponseType = &StreamSearchResponse_Header{Header: v}
 			}
 			iNdEx = postIndex
 		case 2:
@@ -16590,7 +16590,7 @@ func (m *StreamSearchResponse) UnmarshalVT(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if oneof, ok := m.RequestType.(*StreamSearchResponse_Data); ok {
+			if oneof, ok := m.ResponseType.(*StreamSearchResponse_Data); ok {
 				if err := oneof.Data.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
@@ -16599,7 +16599,7 @@ func (m *StreamSearchResponse) UnmarshalVT(dAtA []byte) error {
 				if err := v.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
-				m.RequestType = &StreamSearchResponse_Data{Data: v}
+				m.ResponseType = &StreamSearchResponse_Data{Data: v}
 			}
 			iNdEx = postIndex
 		case 3:
@@ -16631,7 +16631,7 @@ func (m *StreamSearchResponse) UnmarshalVT(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if oneof, ok := m.RequestType.(*StreamSearchResponse_Summary); ok {
+			if oneof, ok := m.ResponseType.(*StreamSearchResponse_Summary); ok {
 				if err := oneof.Summary.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
@@ -16640,7 +16640,7 @@ func (m *StreamSearchResponse) UnmarshalVT(dAtA []byte) error {
 				if err := v.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
-				m.RequestType = &StreamSearchResponse_Summary{Summary: v}
+				m.ResponseType = &StreamSearchResponse_Summary{Summary: v}
 			}
 			iNdEx = postIndex
 		default:
@@ -23420,7 +23420,7 @@ func (m *StreamSearchResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if oneof, ok := m.RequestType.(*StreamSearchResponse_Header); ok {
+			if oneof, ok := m.ResponseType.(*StreamSearchResponse_Header); ok {
 				if err := oneof.Header.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
@@ -23429,7 +23429,7 @@ func (m *StreamSearchResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 				if err := v.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
-				m.RequestType = &StreamSearchResponse_Header{Header: v}
+				m.ResponseType = &StreamSearchResponse_Header{Header: v}
 			}
 			iNdEx = postIndex
 		case 2:
@@ -23461,7 +23461,7 @@ func (m *StreamSearchResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if oneof, ok := m.RequestType.(*StreamSearchResponse_Data); ok {
+			if oneof, ok := m.ResponseType.(*StreamSearchResponse_Data); ok {
 				if err := oneof.Data.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
@@ -23470,7 +23470,7 @@ func (m *StreamSearchResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 				if err := v.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
-				m.RequestType = &StreamSearchResponse_Data{Data: v}
+				m.ResponseType = &StreamSearchResponse_Data{Data: v}
 			}
 			iNdEx = postIndex
 		case 3:
@@ -23502,7 +23502,7 @@ func (m *StreamSearchResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if oneof, ok := m.RequestType.(*StreamSearchResponse_Summary); ok {
+			if oneof, ok := m.ResponseType.(*StreamSearchResponse_Summary); ok {
 				if err := oneof.Summary.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
@@ -23511,7 +23511,7 @@ func (m *StreamSearchResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 				if err := v.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
 					return err
 				}
-				m.RequestType = &StreamSearchResponse_Summary{Summary: v}
+				m.ResponseType = &StreamSearchResponse_Summary{Summary: v}
 			}
 			iNdEx = postIndex
 		default:

@@ -159,13 +159,13 @@ func TestParsePipeOffsetErrors(t *testing.T) {
 }
 
 // Stream-only pipes are parsed by ParseSeqQL but must be rejected by methods that
-// do not support them via ValidatePipes().
+// do not support them via ValidateStreamPipes().
 func TestParseSeqQLRejectsStreamPipes(t *testing.T) {
 	test := func(q string) {
 		t.Helper()
 		query, err := ParseSeqQL(q, nil)
 		require.NoError(t, err)
-		require.Error(t, query.ValidatePipes())
+		require.Error(t, query.ValidateStreamPipes())
 	}
 
 	test(`service:my_service | stats count by (service)`)
@@ -178,7 +178,7 @@ func TestValidatePipesAllowsFields(t *testing.T) {
 	t.Parallel()
 	query, err := ParseSeqQL(`service:my_service | fields message, level`, nil)
 	require.NoError(t, err)
-	require.NoError(t, query.ValidatePipes())
+	require.NoError(t, query.ValidateStreamPipes())
 }
 
 func TestParsePipeOrder(t *testing.T) {

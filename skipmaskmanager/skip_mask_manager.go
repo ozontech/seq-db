@@ -172,7 +172,7 @@ func (smm *SkipMaskManager) Start(fracProvider fractionAcquirer) {
 			if err != nil {
 				panic(fmt.Errorf("BUG: search query must be valid: %s", err))
 			}
-			if err := ast.ValidatePipes(); err != nil {
+			if err := ast.ValidateStreamPipes(); err != nil {
 				panic(fmt.Errorf("BUG: search query must be valid: %s", err))
 			}
 			sm.ast = ast
