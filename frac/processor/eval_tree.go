@@ -200,11 +200,13 @@ func iteratorFromLiteral(
 	iteratorLimit iteratorLimit,
 	order seq.DocsOrder,
 ) (*SourcedNodeIterator, error) {
-	m := sw.Start("get_tids_by_token_expr")
-	tids, err := ti.GetTIDsByTokenExpr(literal)
+	m := sw.Start("get_tids_by_field")
+	// For aggregations we can receive the first and the last TID for field,
+	// because we build tree over *all* token values.
+	tids, err := ti.GetTIDsByField(literal.Field)
 	m.Stop()
 	if err != nil {
-		return nil, fmt.Errorf("getting TIDs by token expression: %s", err)
+		return nil, fmt.Errorf("getting TIDs for field %q: %s", literal.Field, err)
 	}
 
 	if len(tids) > maxTIDs && maxTIDs > 0 {

@@ -237,6 +237,25 @@ func (ti *sealedTokenIndex) GetValByTID(tid uint32, field string) []byte {
 	return nil
 }
 
+func (ti *sealedTokenIndex) GetTIDsByField(field string) ([]uint32, error) {
+	table := ti.tokenTableLoader.Load()
+
+	entries := table.SelectEntries(field, "")
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	first := entries[0].StartTID
+	last := entries[len(entries)-1].GetLastTID()
+
+	tids := make([]uint32, (last-first)+1)
+	for i := range tids {
+		tids[i] = first + uint32(i)
+	}
+
+	return tids, nil
+}
+
 func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
 	field := parser.GetField(t)
 	searchStr := parser.GetHint(t)

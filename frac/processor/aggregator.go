@@ -1,8 +1,10 @@
 package processor
 
 import (
+	"cmp"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 
 	"github.com/ozontech/seq-db/consts"
@@ -113,6 +115,9 @@ func (n *TwoSourceAggregator) Next(lid node.LID) error {
 
 // Aggregate processes and returns the final aggregation result.
 func (n *TwoSourceAggregator) Aggregate() (seq.AggregatableSamples, error) {
+	n.groupBy.prefetchTokenValues()
+	n.field.prefetchTokenValues()
+
 	aggMap := make(map[seq.AggBin]*seq.SamplesContainer, n.groupBy.UniqueSources())
 
 	var sourceValuePool []string
@@ -226,6 +231,8 @@ func (n *SingleSourceCountAggregator) Next(lid node.LID) error {
 }
 
 func (n *SingleSourceCountAggregator) Aggregate() (seq.AggregatableSamples, error) {
+	n.group.prefetchTokenValues()
+
 	aggMap := make(map[seq.AggBin]*seq.SamplesContainer, n.group.UniqueSources())
 
 	for bin, cnt := range n.countBySource {
@@ -289,6 +296,8 @@ func (n *SingleSourceUniqueAggregator) Next(lid node.LID) error {
 }
 
 func (n *SingleSourceUniqueAggregator) Aggregate() (seq.AggregatableSamples, error) {
+	n.group.prefetchTokenValues()
+
 	aggMap := make(map[seq.AggBin]*seq.SamplesContainer, n.group.UniqueSources())
 
 	for val := range n.values {
@@ -342,6 +351,9 @@ func (n *SingleSourceHistogramAggregator) Next(lid node.LID) error {
 		return nil
 	}
 
+	// TODO(dkharms): Sequence of `source` values
+	// is in a random order so we again lose benefits of kernel read-ahead.
+	// Maybe it's worth it to do something like [prefetchTokenValues].
 	value := n.field.ValueBySource(source)
 	num, err := parseNum(value)
 	if err != nil {
@@ -411,31 +423,53 @@ func (s *SourcedNodeIterator) ConsumeTokenSource(lid node.LID) (uint32, bool, er
 		return 0, false, nil
 	}
 
-	if s.uniqSourcesLimit.limit <= 0 {
-		return s.lastSource, true, nil
-	}
-
 	s.countBySource[s.lastSource]++
-
-	if len(s.countBySource) > s.uniqSourcesLimit.limit {
+	if s.uniqSourcesLimit.limit > 0 && len(s.countBySource) > s.uniqSourcesLimit.limit {
 		return lid.Unpack(), true, fmt.Errorf("%w: iterator limit is exceeded", s.uniqSourcesLimit.err)
 	}
 
 	return s.lastSource, true, nil
 }
 
+func (s *SourcedNodeIterator) prefetchTokenValues() {
+	if s.ti == nil || len(s.countBySource) == 0 {
+		return
+	}
+
+	// NOTE(dkharms): Since `countBySource` is a hashmap and
+	// its iteration order is not determined, we lose benefits
+	// of kernel read-ahead.
+	//
+	// In this method we establish the order again.
+	sources := make([]uint32, 0, len(s.countBySource))
+	for source := range s.countBySource {
+		if _, ok := s.tokensCache[source]; !ok {
+			sources = append(sources, source)
+		}
+	}
+
+	slices.SortFunc(sources, func(a, b uint32) int {
+		return cmp.Compare(s.tids[a], s.tids[b])
+	})
+
+	for _, source := range sources {
+		s.tokensCache[source] = string(s.ti.GetValByTID(s.tids[source], s.field))
+	}
+}
+
 func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
+	if val, ok := s.tokensCache[source]; ok {
+		return val
+	}
+
 	const useCacheThreshold = 2
 	if s.countBySource[source] < useCacheThreshold {
 		return string(s.ti.GetValByTID(s.tids[source], s.field))
 	}
 
-	val, ok := s.tokensCache[source]
-	if ok {
-		return val
-	}
-	val = string(s.ti.GetValByTID(s.tids[source], s.field))
+	val := string(s.ti.GetValByTID(s.tids[source], s.field))
 	s.tokensCache[source] = val
+
 	return val
 }
 
