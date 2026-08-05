@@ -497,6 +497,24 @@ func TestPatternSymbols(t *testing.T) {
 }
 
 func TestPatternRe(t *testing.T) {
+	t.Run("match-simple", func(t *testing.T) {
+		needles := []string{"simple"}
+
+		data := append(
+			[]string{"not-uuid", "not uuid as well"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("simple")`,
+				needles,
+			},
+		})
+	})
+
 	t.Run("match-uuid", func(t *testing.T) {
 		needles := []string{
 			"7313c25b-2eae-4839-b773-91dff1f24f1f",
@@ -717,7 +735,7 @@ func TestPatternRe(t *testing.T) {
 		})
 	})
 
-	t.Run("match-case-insensitive", func(t *testing.T) {
+	t.Run("match-case-sensitive", func(t *testing.T) {
 		defer func(v bool) { config.CaseSensitive = v }(config.CaseSensitive)
 		config.CaseSensitive = true
 
@@ -736,7 +754,7 @@ func TestPatternRe(t *testing.T) {
 
 		testAll(t, tp, []testCase{
 			{
-				`re("(?i)error.*")`,
+				`re("(?i)error.*red")`,
 				needles,
 			},
 		})
@@ -745,6 +763,13 @@ func TestPatternRe(t *testing.T) {
 			{
 				`re("error.*")`,
 				[]string{needles[2]},
+			},
+		})
+
+		testAll(t, tp, []testCase{
+			{
+				`re("error.*RED")`,
+				[]string{},
 			},
 		})
 	})

@@ -396,7 +396,7 @@ func (s *reSearch) CheckEntry(letters util.LettersBitset) bool {
 }
 
 func (s *reSearch) Check(val []byte) (bool, error) {
-	if len(s.prefix.Value)+len(s.suffix.Value) > len(val) {
+	if max(len(s.prefix.Value), len(s.suffix.Value)) > len(val) {
 		return false, nil
 	}
 
@@ -463,7 +463,7 @@ func (s *reSearch) checkSuffix(val []byte) bool {
 	}
 
 	if s.suffix.Foldable {
-		return bytes.EqualFold(suffix, val[:len(suffix)])
+		return bytes.EqualFold(suffix, val[len(val)-len(suffix):])
 	}
 
 	return bytes.Equal(suffix, val[len(val)-len(suffix):])
