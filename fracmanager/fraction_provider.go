@@ -170,13 +170,9 @@ func (fp *fractionProvider) Seal(a *frac.Active) (*frac.Sealed, error) {
 // Offload uploads fraction to S3 storage and returns a remote fraction
 // IMPORTANT: context controls timeouts and operation cancellation
 func (fp *fractionProvider) Offload(ctx context.Context, f *frac.Sealed) (*frac.Remote, error) {
-	mustBeOffloaded, err := f.Offload(ctx, s3.NewUploader(fp.s3cli))
+	err := f.Offload(ctx, s3.NewUploader(fp.s3cli))
 	if err != nil {
 		return nil, err
-	}
-
-	if !mustBeOffloaded {
-		return nil, nil
 	}
 
 	info := f.Info()

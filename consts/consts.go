@@ -85,8 +85,9 @@ const (
 	// We can remove it in the future releases.
 	IndexDelFileSuffix = ".index.del"
 
-	RemoteFractionSuffix     = ".remote"
-	RemoteFractionInfoSuffix = ".remote-info"
+	RemoteFractionSuffix        = ".remote"
+	RemoteFractionInfoSuffix    = ".remote-info"
+	RemoteFractionInfoTmpSuffix = "._remote-info"
 
 	FracCacheFileSuffix = ".frac-cache"
 	CompactionPlan      = ".compaction-plan"

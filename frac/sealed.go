@@ -57,8 +57,8 @@ type Sealed struct {
 	blocksData sealed.BlocksData
 	indexCache *IndexCache
 
-	initMu   *sync.RWMutex
-	isInited bool
+	loadMu sync.RWMutex
+	loaded bool
 
 	readLimiter *storage.ReadLimiter
 
@@ -86,8 +86,6 @@ func NewSealed(
 	skipMaskProvider skipMaskProvider,
 ) *Sealed {
 	f := &Sealed{
-		initMu: &sync.RWMutex{},
-
 		readLimiter: readLimiter,
 		docsCache:   docsCache,
 		indexCache:  indexCache,
@@ -126,8 +124,7 @@ func NewSealedPreloaded(
 		docsCache:  docsCache,
 		indexCache: indexCache,
 
-		initMu:   &sync.RWMutex{},
-		isInited: true,
+		loaded: true,
 
 		readLimiter: rl,
 
@@ -314,20 +311,20 @@ func (f *Sealed) tryLoadLegacyInfo() {
 	f.info = info
 }
 
-func (f *Sealed) init(full bool) {
-	f.initMu.Lock()
-	defer f.initMu.Unlock()
+func (f *Sealed) init(load bool) {
+	f.loadMu.Lock()
+	defer f.loadMu.Unlock()
 
 	f.openDocs()
 	f.openIndex()
 
-	if f.isInited || !full {
+	if f.loaded || !load {
 		return
 	}
 
 	if f.IsSingleIndex() {
 		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.mustGetReader(f.legacyReaderProvider))
-		f.isInited = true
+		f.loaded = true
 		return
 	}
 
@@ -338,12 +335,18 @@ func (f *Sealed) init(full bool) {
 		LID:     f.mustGetReader(f.lidReaderProvider),
 	})
 
-	f.isInited = true
+	f.loaded = true
 }
 
 // Offload saves all index files and docs to remote storage.
-func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) {
+func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) error {
 	f.init(false)
+
+	infoScr := f.BaseFileName + consts.InfoFileSuffix
+	infoDstTmp := f.BaseFileName + consts.RemoteFractionInfoTmpSuffix
+	if err := util.DurableHardLink(infoScr, infoDstTmp); err != nil {
+		return err
+	}
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return u.Upload(gctx, f.docsFile) })
@@ -360,21 +363,15 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) (bool, error) 
 
 	if err := g.Wait(); err != nil {
 		// TODO: Clean S3 zombies
-		return true, err
+		return err
 	}
 
-	info, err := io.ReadAll(f.infoFile)
-	if err != nil {
-		return true, err
+	infoDst := f.BaseFileName + consts.RemoteFractionInfoSuffix
+	if err := util.DurableRenameFile(infoDstTmp, infoDst); err != nil {
+		return err
 	}
 
-	remoteInfoName := f.BaseFileName + consts.RemoteFractionInfoSuffix
-	err = util.WriteFileAtomic(remoteInfoName, info, 0o666, ".tmp")
-	if err != nil {
-		return true, err
-	}
-
-	return true, err
+	return nil
 }
 
 func (f *Sealed) Release() {
