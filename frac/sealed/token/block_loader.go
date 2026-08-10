@@ -216,7 +216,6 @@ func (b *Block) GetToken(index int) []byte {
 	return b.getTokenV5(index)
 }
 
-//go:noinline
 func (b *Block) getTokenV5(index int) []byte {
 	offset := b.Offsets[index]
 	l := binary.LittleEndian.Uint32(b.Payload[offset:])
