@@ -232,9 +232,29 @@ func (b *Block) LettersBitset() util.LettersBitset {
 }
 
 func (b *Block) contains(from, to int, needle []byte) ([]int, error) {
+	if b.FracVer >= config.BinaryDataV6 {
+		return b.containsV6(from, to, needle)
+	}
+
+	return b.containsV5(from, to, needle)
+}
+
+func (b *Block) containsV6(from int, to int, needle []byte) ([]int, error) {
 	indexes := make([]int, 0)
 	for i := from; i <= to; i++ {
-		if bytes.Contains(b.GetToken(i), needle) {
+		tok := b.Payload[b.Offsets[i]:b.Offsets[i+1]]
+		if bytes.Contains(tok, needle) {
+			indexes = append(indexes, i)
+		}
+	}
+	return indexes, nil
+}
+
+// TODO(cheb0) delete when Block.FracVer is deleted
+func (b *Block) containsV5(from int, to int, needle []byte) ([]int, error) {
+	indexes := make([]int, 0)
+	for i := from; i <= to; i++ {
+		if bytes.Contains(b.getTokenV5(i), needle) {
 			indexes = append(indexes, i)
 		}
 	}
