@@ -18,7 +18,7 @@ type RefCounter interface {
 // with associated reference counters to keep them alive.
 type fractionsSnapshot struct {
 	counters    []RefCounter    // Reference counters to keep fractions alive
-	fractions   []frac.Fraction // The actual fractions in chronological order
+	fractions   []frac.Fraction // The actual fractions
 	names       map[string]int
 	oldestLocal uint64
 	oldestTotal uint64
@@ -86,16 +86,11 @@ func (fs *fractionsSnapshot) AcquireInRange(from, to seq.MID) ([]frac.Fraction, 
 		f := fs.fractions[i]
 		c := fs.counters[i]
 
-		if f.Info().To < from {
-			continue
+		if f.IsIntersecting(from, to) {
+			fracs = append(fracs, f)
+			c.Inc()
+			counters = append(counters, c)
 		}
-		if f.Info().From > to {
-			break
-		}
-
-		fracs = append(fracs, f)
-		c.Inc()
-		counters = append(counters, c)
 	}
 
 	return fracs, func() {
