@@ -262,6 +262,49 @@ func (b *Block) containsV5(from, to int, needle []byte) ([]int, error) {
 	return indexes, nil
 }
 
+func (b *Block) suffix(from, to int, suffix []byte) ([]int, error) {
+	if b.FracVer >= config.BinaryDataV6 {
+		return b.suffixV6(from, to, suffix), nil
+	}
+
+	return b.suffixV5(from, to, suffix), nil
+}
+
+// TODO(cheb0) delete this when Block.FracVer is deleted
+func (b *Block) suffixV5(from, to int, suffix []byte) []int {
+	indexes := make([]int, 0)
+	suffixLen := len(suffix)
+
+	for i := from; i <= to; i++ {
+		token := b.GetToken(i)
+		if len(token) >= suffixLen && bytes.Equal(token[len(token)-suffixLen:], suffix) {
+			indexes = append(indexes, i)
+		}
+	}
+
+	return indexes
+}
+
+func (b *Block) suffixV6(from int, to int, suffix []byte) []int {
+	indexes := make([]int, 0)
+	suffixLen := uint32(len(suffix))
+
+	offsets := b.Offsets[from : to+2]
+
+	for i := 1; i < len(offsets); i++ {
+		endPos := offsets[i]
+		tokLen := endPos - offsets[i-1]
+		if tokLen >= suffixLen {
+			tokSuffix := b.Payload[endPos-suffixLen : endPos]
+			if bytes.Equal(tokSuffix, suffix) {
+				indexes = append(indexes, from+i-1)
+			}
+		}
+	}
+
+	return indexes
+}
+
 func (b *Block) find(from, to int, searcher pattern.Searcher) ([]int, error) {
 	indexes := make([]int, 0)
 	for i := from; i <= to; i++ {
