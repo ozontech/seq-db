@@ -320,18 +320,17 @@ func buildProxyReq(q *seqproxyapi.StreamSearchQuery) (*seqproxyapi.ComplexSearch
 			}
 			proxyReq.Order = order
 		case *parser.PipeStats:
-			for _, agg := range p.Aggs {
-				proxyReqAgg := &seqproxyapi.AggQuery{
-					Field:     agg.Field,
-					GroupBy:   agg.GroupBy,
-					Func:      mustConvertStringToAggFunc(agg.Func),
-					Quantiles: agg.Quantiles,
-				}
-				if agg.Interval != "" {
-					proxyReqAgg.Interval = &agg.Interval
-				}
-				proxyReq.Aggs = append(proxyReq.Aggs, proxyReqAgg)
+			agg := p.Agg
+			proxyReqAgg := &seqproxyapi.AggQuery{
+				Field:     agg.Field,
+				GroupBy:   agg.GroupBy,
+				Func:      mustConvertStringToAggFunc(agg.Func),
+				Quantiles: agg.Quantiles,
 			}
+			if agg.Interval != "" {
+				proxyReqAgg.Interval = &agg.Interval
+			}
+			proxyReq.Aggs = append(proxyReq.Aggs, proxyReqAgg)
 		default:
 			continue
 		}

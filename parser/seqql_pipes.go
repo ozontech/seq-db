@@ -132,7 +132,7 @@ type StatsAgg struct {
 }
 
 type PipeStats struct {
-	Aggs []StatsAgg
+	Agg StatsAgg
 }
 
 func (p *PipeStats) Name() string {
@@ -141,29 +141,25 @@ func (p *PipeStats) Name() string {
 
 func (p *PipeStats) DumpSeqQL(o *strings.Builder) {
 	o.WriteString("stats ")
-	for i, agg := range p.Aggs {
-		if i > 0 {
-			o.WriteString(", ")
+	agg := p.Agg
+	o.WriteString(agg.Func)
+	if agg.Field != "" {
+		o.WriteString("(")
+		o.WriteString(quoteTokenIfNeeded(agg.Field))
+		for _, q := range agg.Quantiles {
+			fmt.Fprintf(o, ", %v", q)
 		}
-		o.WriteString(agg.Func)
-		if agg.Field != "" {
-			o.WriteString("(")
-			o.WriteString(quoteTokenIfNeeded(agg.Field))
-			for _, q := range agg.Quantiles {
-				fmt.Fprintf(o, ", %v", q)
-			}
-			o.WriteString(")")
-		}
-		if agg.GroupBy != "" {
-			o.WriteString(" by (")
-			o.WriteString(quoteTokenIfNeeded(agg.GroupBy))
-			o.WriteString(")")
-		}
-		if agg.Interval != "" {
-			o.WriteString(" interval(")
-			o.WriteString(agg.Interval)
-			o.WriteString(")")
-		}
+		o.WriteString(")")
+	}
+	if agg.GroupBy != "" {
+		o.WriteString(" by (")
+		o.WriteString(quoteTokenIfNeeded(agg.GroupBy))
+		o.WriteString(")")
+	}
+	if agg.Interval != "" {
+		o.WriteString(" interval(")
+		o.WriteString(agg.Interval)
+		o.WriteString(")")
 	}
 }
 
@@ -196,25 +192,16 @@ func parsePipeStats(lex *lexer) (*PipeStats, error) {
 	}
 	lex.Next()
 
-	var aggs []StatsAgg
-	for {
-		agg, err := parseStatsAgg(lex)
-		if err != nil {
-			return nil, err
-		}
-		aggs = append(aggs, agg)
-
-		if !lex.IsKeyword(",") {
-			break
-		}
-		lex.Next()
+	agg, err := parseStatsAgg(lex)
+	if err != nil {
+		return nil, err
 	}
 
-	if len(aggs) == 0 {
-		return nil, fmt.Errorf("at least one aggregation is required")
+	if lex.IsKeyword(",") {
+		return nil, fmt.Errorf("stats pipe allows only one aggregation")
 	}
 
-	return &PipeStats{Aggs: aggs}, nil
+	return &PipeStats{Agg: agg}, nil
 }
 
 type PipeLimit struct {

@@ -58,15 +58,14 @@ func TestParsePipeStats(t *testing.T) {
 }
 
 func TestParsePipeStatsMultiple(t *testing.T) {
-	test := func(q, expected string) {
+	test := func(q string) {
 		t.Helper()
-		query, err := ParseSeqQL(q, nil)
-		require.NoError(t, err)
-		require.Equal(t, expected, query.SeqQLString())
+		_, err := ParseSeqQL(q, nil)
+		require.Error(t, err)
 	}
 
-	test("service:my-service | stats count by (service), sum(level) by (service)", "service:my-service | stats count by (service), sum(level) by (service)")
-	test("service:my-service | stats count by (service) interval(1m), sum(level) by (service) interval(1m)", "service:my-service | stats count by (service) interval(1m), sum(level) by (service) interval(1m)")
+	test("service:my-service | stats count by (service), sum(level) by (service)")
+	test("service:my-service | stats count by (service) interval(1m), sum(level) by (service) interval(1m)")
 }
 
 func TestParsePipeStatsQuantile(t *testing.T) {
