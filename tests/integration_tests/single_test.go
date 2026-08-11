@@ -255,7 +255,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 				fetched = append(fetched, string(doc.Data))
 			}
 		}
-		s.Assert().Empty(fetched)
+		s.Require().Equal(docStrs, fetched) // we will check id with broken hint in each fraction
 	})
 }
 

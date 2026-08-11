@@ -244,6 +244,10 @@ func (si *activeTokenIndex) GetValByTID(tid uint32, field string) []byte {
 	return si.tokenList.GetValByTID(tid, field)
 }
 
+func (si *activeTokenIndex) GetTIDsByField(field string) ([]uint32, error) {
+	return si.tokenList.GetTIDsByField(field), nil
+}
+
 func (si *activeTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
 	return si.tokenList.FindPattern(si.ctx, t)
 }

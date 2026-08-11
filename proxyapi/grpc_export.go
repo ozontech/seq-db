@@ -47,7 +47,7 @@ func (g *grpcV1) Export(req *seqproxyapi.ExportRequest, stream seqproxyapi.SeqPr
 		Offset:    req.Offset,
 		WithTotal: false,
 	}
-	sResp, err := g.doSearch(ctx, proxyReq, true, nil)
+	sResp, err := g.doSearch(ctx, proxyReq, true, true, nil)
 	if err != nil {
 		return err
 	}

@@ -138,6 +138,20 @@ func groupIDsByFraction(idsOrig seq.IDSources, fracsIn List) (List, [][]seq.ID) 
 	fracsOut := fracsIn.FilterInRange(minMID, maxMID) // reduce candidate fractions
 	idsByFracs := make([][]seq.ID, 0, len(fracsOut))
 
+	fracsByName := make(map[string]struct{}, len(fracsOut))
+	for _, f := range fracsOut {
+		fracsByName[f.Info().Name()] = struct{}{}
+	}
+	for i, id := range ids {
+		if id.Hint == "" {
+			continue
+		}
+		if _, ok := fracsByName[id.Hint]; !ok {
+			// we need this to check ids with non-existing hints for all fractions
+			ids[i].Hint = ""
+		}
+	}
+
 	// stats
 	withHintsCnt := 0
 	hintMissesCnt := 0
