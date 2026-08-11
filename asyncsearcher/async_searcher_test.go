@@ -40,16 +40,7 @@ type fakeDP struct {
 
 type fakeFractionProvider fracmanager.List
 
-func (fp fakeFractionProvider) AcquireFraction(name string) (frac.Fraction, func(), bool) {
-	for _, f := range fp {
-		if f.Info().Name() == name {
-			return f, func() {}, true
-		}
-	}
-	return nil, func() {}, false
-}
-
-func (fp fakeFractionProvider) AcquireFractions() (fracmanager.List, func()) {
+func (fp fakeFractionProvider) AcquireFractionsInRange(from, to seq.MID) (fracmanager.List, func()) {
 	return fracmanager.List(fp), func() {}
 }
 
@@ -79,34 +70,9 @@ func TestAsyncSearcherMaintain(t *testing.T) {
 	as.processWg.Wait()
 }
 
-// partialProvider lists both fractions (so info.Fractions gets two entries),
-// but only "present" is acquirable. "missing" simulates a fraction that was
-// removed by the time the search reached it: it stays listed in info.Fractions
-// yet never produces a .qpr file.
-type partialProvider struct {
-	list fracmanager.List
-}
-
-func (p *partialProvider) AcquireFractions() (fracmanager.List, func()) {
-	return p.list, func() {}
-}
-
-func (p *partialProvider) AcquireFraction(name string) (frac.Fraction, func(), bool) {
-	for _, f := range p.list {
-		if f.Info().Name() == name && name == "present" {
-			return f, func() {}, true
-		}
-	}
-	return nil, func() {}, false
-}
-
-// TestMergeSkipsMissingFrac is a regression test: when a fraction listed in
-// info.Fractions was skipped (already removed) and produced no .qpr, merge used
-// to build its path from info.Fractions, hit a missing file in loadSearchResult,
-// discard the whole accumulated result, write an empty .mqpr and delete the
-// real .qpr — losing the only matching document.
-func TestMergeSkipsMissingFrac(t *testing.T) {
+func TestMerge(t *testing.T) {
 	r := require.New(t)
+	now := time.Now()
 
 	cfg := AsyncSearcherConfig{DataDir: t.TempDir()}
 	mp, err := mappingprovider.New("", mappingprovider.WithMapping(seq.Mapping{}))
@@ -115,29 +81,104 @@ func TestMergeSkipsMissingFrac(t *testing.T) {
 	as := MustStartAsync(cfg, mp, nil)
 	t.Cleanup(func() { as.readOnly.Store(false) })
 
-	presentFrac := &fakeFrac{
-		info: common.Info{Path: "present"},
-		dp:   fakeDP{qpr: seq.QPR{IDs: []seq.IDSource{{ID: seq.ID{MID: 42}}}, Total: 1}},
+	frac1 := &fakeFrac{
+		info: common.Info{Path: "1", From: seq.TimeToMID(now.Add(-time.Minute * 11)), To: seq.TimeToMID(now.Add(-time.Minute * 6))},
+		dp:   fakeDP{qpr: seq.QPR{IDs: []seq.IDSource{{ID: seq.ID{MID: 1}}}, Total: 1}},
 	}
-	missingFrac := &fakeFrac{info: common.Info{Path: "missing"}}
-	provider := &partialProvider{list: fracmanager.List{presentFrac, missingFrac}}
+	frac2 := &fakeFrac{
+		info: common.Info{Path: "2", From: seq.TimeToMID(now.Add(-time.Minute * 6)), To: seq.TimeToMID(now.Add(-time.Minute * 1))},
+		dp:   fakeDP{qpr: seq.QPR{IDs: []seq.IDSource{{ID: seq.ID{MID: 2}}}, Total: 1}},
+	}
+	provider := &fakeFractionProvider{frac1, frac2}
 
 	req := AsyncSearchRequest{
-		ID:        uuid.New().String(),
-		Params:    processor.SearchParams{Limit: 1000, Order: seq.DocsOrderDesc},
+		ID: uuid.New().String(),
+		Params: processor.SearchParams{
+			Limit: 1000,
+			Order: seq.DocsOrderDesc,
+			From:  seq.TimeToMID(now.UTC().Add(-time.Minute * 30).Truncate(time.Millisecond)),
+			To:    seq.TimeToMID(now.UTC().Truncate(time.Millisecond)),
+		},
 		Query:     "*",
 		Retention: time.Hour,
 	}
 	r.NoError(as.StartSearch(req, provider))
 	as.processWg.Wait()
 
-	// "missing" produced no .qpr; "present" did. Merge must not drop the
-	// present result while collapsing the request into a single .mqpr.
 	as.merge()
 
 	resp, ok := as.FetchSearchResult(FetchSearchResultRequest{ID: req.ID, Limit: 1000, Order: seq.DocsOrderDesc})
 	r.True(ok)
 	r.Equal(AsyncSearchStatusDone, resp.Status)
-	r.Len(resp.QPR.IDs, 1)
-	r.Equal(seq.MID(42), resp.QPR.IDs[0].ID.MID)
+	r.Len(resp.QPR.IDs, 2)
+	r.Equal(seq.MID(2), resp.QPR.IDs[0].ID.MID)
+	r.Equal(seq.MID(1), resp.QPR.IDs[1].ID.MID)
+}
+
+func TestBuildIntervals(t *testing.T) {
+	tests := []struct {
+		name     string
+		from     seq.MID
+		to       seq.MID
+		expected []searchInterval
+	}{
+		{
+			name:     "empty_range_from_equals_to",
+			from:     100,
+			to:       100,
+			expected: nil,
+		},
+		{
+			name: "single_interval_small_range",
+			from: 0,
+			to:   100,
+			expected: []searchInterval{
+				{0, 100},
+			},
+		},
+		{
+			name: "single_interval_exact_split",
+			from: 0,
+			to:   seq.DurationToMID(defaultSearchInterval),
+			expected: []searchInterval{
+				{0, 300_000_000_000},
+			},
+		},
+		{
+			name: "two_intervals",
+			from: 0,
+			to:   seq.DurationToMID(defaultSearchInterval) * 2,
+			expected: []searchInterval{
+				{0, 299_999_999_999},
+				{300_000_000_000, 600_000_000_000},
+			},
+		},
+		{
+			name: "three_intervals_with_remainder",
+			from: 0,
+			to:   seq.DurationToMID(defaultSearchInterval)*3 + 50,
+			expected: []searchInterval{
+				{0, 299_999_999_999},
+				{300_000_000_000, 599_999_999_999},
+				{600_000_000_000, 899_999_999_999},
+				{900_000_000_000, 900_000_000_050},
+			},
+		},
+		{
+			name: "minimal_range",
+			from: 5,
+			to:   6,
+			expected: []searchInterval{
+				{5, 6},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			result := buildIntervals(tt.from, tt.to)
+			r.Equal(tt.expected, result)
+		})
+	}
 }
