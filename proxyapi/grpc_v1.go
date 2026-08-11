@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/querytracer"
@@ -186,6 +188,7 @@ func (g *grpcV1) doSearch(
 	ctx context.Context,
 	req *seqproxyapi.ComplexSearchRequest,
 	shouldFetch bool,
+	shouldValidateStreamPipes bool,
 	tr *querytracer.Tracer,
 ) (*proxySearchResponse, error) {
 	metric.SearchOverall.Add(1)
@@ -208,6 +211,17 @@ func (g *grpcV1) doSearch(
 	if fromTime.After(toTime) {
 		return nil, status.Error(codes.InvalidArgument, `"from" timestamp must not be after "to" timestamp`)
 	}
+
+	if shouldValidateStreamPipes {
+		ast, err := parser.ParseSeqQL(req.Query.Query, nil)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("search query must be valid: %s", err))
+		}
+		if err := ast.ValidateStreamPipes(); err != nil {
+			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("search query must be valid: %s", err))
+		}
+	}
+
 	if span.IsRecordingEvents() {
 		span.AddAttributes(
 			trace.StringAttribute("query", req.Query.Query),
