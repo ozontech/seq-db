@@ -16,7 +16,7 @@ func TestCacheSize(t *testing.T) {
 	cleaner := NewCleaner(0, nil)
 	c := NewCache[[]byte](cleaner, nil)
 
-	c.Get(1, func() ([]byte, int) { return make([]byte, SIZE), SIZE })
+	_, _ = c.Get(1, LoaderFunc[[]byte](func(uint32) ([]byte, int, error) { return make([]byte, SIZE), SIZE, nil }))
 
 	total := cleaner.getSize()
 	assert.Equal(t, uint64(SIZE)+c.entrySize, total, "wrong cache size")
@@ -36,14 +36,14 @@ func TestClean(t *testing.T) {
 	c3 := NewCache[[]byte](cleaner, nil)
 
 	stat := &CleanStat{}
-	c1.Get(0, func() ([]byte, int) { return make([]byte, Size1), int(Size1) })
+	_, _ = c1.Get(0, LoaderFunc[[]byte](func(uint32) ([]byte, int, error) { return make([]byte, Size1), int(Size1), nil }))
 
 	cleaner.Rotate()
 	cleaner.Cleanup(stat)
 
-	c1.Get(1, func() ([]byte, int) { return make([]byte, Size2), int(Size2) })
-	c2.Get(1, func() ([]byte, int) { return make([]byte, Size3), int(Size3) })
-	c3.Get(1, func() ([]byte, int) { return make([]byte, Size4), int(Size4) })
+	_, _ = c1.Get(1, LoaderFunc[[]byte](func(uint32) ([]byte, int, error) { return make([]byte, Size2), int(Size2), nil }))
+	_, _ = c2.Get(1, LoaderFunc[[]byte](func(uint32) ([]byte, int, error) { return make([]byte, Size3), int(Size3), nil }))
+	_, _ = c3.Get(1, LoaderFunc[[]byte](func(uint32) ([]byte, int, error) { return make([]byte, Size4), int(Size4), nil }))
 
 	bytesTotal := cleaner.getSize()
 
@@ -111,14 +111,14 @@ func TestStress(t *testing.T) {
 				}
 			}()
 		}
-		val := c.Get(key, func() ([]uint64, int) {
+		val, _ := c.Get(key, LoaderFunc[[]uint64](func(uint32) ([]uint64, int, error) {
 			time.Sleep(1 * time.Millisecond)
 			if err != nil {
 				panicFired = true
 				panic(err)
 			}
-			return []uint64{uint64(key)}, 32
-		})
+			return []uint64{uint64(key)}, 32, nil
+		}))
 		if val == nil {
 			t.Errorf("cache is corrupted")
 		}
@@ -136,7 +136,7 @@ func BenchmarkBucketClean(b *testing.B) {
 		b.StopTimer()
 
 		for i := range 1000 {
-			c.Get(uint32(i), func() (int, int) { return i, 4 })
+			_, _ = c.Get(uint32(i), LoaderFunc[int](func(uint32) (int, int, error) { return i, 4, nil }))
 		}
 
 		cleaner.markStale(cleaner.getSize())

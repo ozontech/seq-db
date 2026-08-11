@@ -40,9 +40,9 @@ type Sealed struct {
 	docsReader storage.DocsReader
 
 	// IsLegacy is true for fractions that use the old single .index file format.
-	IsLegacy             bool
-	legacyFile           *os.File
-	legacyReaderProvider *storage.ReaderProvider
+	IsLegacy     bool
+	legacyFile   *os.File
+	legacyReader storage.IndexReader
 
 	// Per-section index files and their readers (new split format only).
 	infoFile    *os.File
@@ -51,10 +51,10 @@ type Sealed struct {
 	idFile      *os.File
 	lidFile     *os.File
 
-	tokenReaderProvider   *storage.ReaderProvider
-	offsetsReaderProvider *storage.ReaderProvider
-	idReaderProvider      *storage.ReaderProvider
-	lidReaderProvider     *storage.ReaderProvider
+	tokenReader   storage.IndexReader
+	offsetsReader storage.IndexReader
+	idReader      storage.IndexReader
+	lidReader     storage.IndexReader
 
 	blocksData sealed.BlocksData
 	indexCache *IndexCache
@@ -143,9 +143,9 @@ func NewSealedPreloaded(
 	}
 
 	// Put token table built during sealing into the cache.
-	indexCache.TokenTable.Get(token.CacheKeyTable, func() (token.Table, int) {
-		return preloaded.TokenTable, preloaded.TokenTable.Size()
-	})
+	_, _ = indexCache.TokenTable.Get(token.CacheKeyTable, cache.LoaderFunc[token.Table](func(uint32) (token.Table, int, error) {
+		return preloaded.TokenTable, preloaded.TokenTable.Size(), nil
+	}))
 
 	docsCountK := float64(f.info.DocsTotal) / 1000
 	logger.Info("sealed fraction created from active",
@@ -176,7 +176,7 @@ func (f *Sealed) openInfoLegacy() {
 	}
 
 	f.legacyFile = file
-	f.legacyReaderProvider = storage.NewReaderProvider(
+	f.legacyReader = storage.NewIndexReader(
 		f.readLimiter, file.Name(),
 		file, f.indexCache.LegacyRegistry,
 	)
@@ -216,7 +216,7 @@ func (f *Sealed) openIndex() {
 			logger.Fatal("can't open token file", zap.String("file", name), zap.Error(err))
 		}
 		f.tokenFile = file
-		f.tokenReaderProvider = storage.NewReaderProvider(f.readLimiter, file.Name(), file, f.indexCache.TokenRegistry)
+		f.tokenReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.TokenRegistry)
 	}
 
 	if f.offsetsFile == nil {
@@ -226,7 +226,7 @@ func (f *Sealed) openIndex() {
 			logger.Fatal("can't open offsets file", zap.String("file", name), zap.Error(err))
 		}
 		f.offsetsFile = file
-		f.offsetsReaderProvider = storage.NewReaderProvider(f.readLimiter, file.Name(), file, f.indexCache.OffsetsRegistry)
+		f.offsetsReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.OffsetsRegistry)
 	}
 
 	if f.idFile == nil {
@@ -236,7 +236,7 @@ func (f *Sealed) openIndex() {
 			logger.Fatal("can't open id file", zap.String("file", name), zap.Error(err))
 		}
 		f.idFile = file
-		f.idReaderProvider = storage.NewReaderProvider(f.readLimiter, file.Name(), file, f.indexCache.IDRegistry)
+		f.idReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.IDRegistry)
 	}
 
 	if f.lidFile == nil {
@@ -246,7 +246,7 @@ func (f *Sealed) openIndex() {
 			logger.Fatal("can't open lid file", zap.String("file", name), zap.Error(err))
 		}
 		f.lidFile = file
-		f.lidReaderProvider = storage.NewReaderProvider(f.readLimiter, file.Name(), file, f.indexCache.LIDRegistry)
+		f.lidReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.LIDRegistry)
 	}
 }
 
@@ -279,20 +279,12 @@ func (f *Sealed) openDocs() {
 	f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
 }
 
-func (f *Sealed) mustGetReader(p *storage.ReaderProvider) storage.IndexReader {
-	r, err := p.GetReader()
-	if err != nil {
-		logger.Fatal("error creating IndexReader", zap.String("fraction", f.BaseFileName), zap.Error(err))
-	}
-	return r
-}
-
 func (f *Sealed) loadInfo() {
 	var err error
 
 	if f.IsLegacy {
 		f.openInfoLegacy()
-		if f.info, err = loadInfoLegacy(f.mustGetReader(f.legacyReaderProvider)); err != nil {
+		if f.info, err = loadInfoLegacy(f.legacyReader); err != nil {
 			logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
 		}
 		return
@@ -316,16 +308,16 @@ func (f *Sealed) init(full bool) {
 	}
 
 	if f.IsLegacy {
-		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.mustGetReader(f.legacyReaderProvider))
+		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.legacyReader)
 		f.isInited = true
 		return
 	}
 
 	(&Loader{}).Load(&f.blocksData, f.info, IndexReaders{
-		Token:   f.mustGetReader(f.tokenReaderProvider),
-		Offsets: f.mustGetReader(f.offsetsReaderProvider),
-		ID:      f.mustGetReader(f.idReaderProvider),
-		LID:     f.mustGetReader(f.lidReaderProvider),
+		Token:   f.tokenReader,
+		Offsets: f.offsetsReader,
+		ID:      f.idReader,
+		LID:     f.lidReader,
 	})
 
 	f.isInited = true
@@ -503,21 +495,14 @@ func (f *Sealed) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) 
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 	f.init(true)
 
-	var (
-		tokenReader storage.IndexReader
-		lidReader   storage.IndexReader
-		idReader    storage.IndexReader
-	)
+	tokenReader := &f.tokenReader
+	lidReader := &f.lidReader
+	idReader := &f.idReader
 
 	if f.IsLegacy {
-		legacyReader := f.mustGetReader(f.legacyReaderProvider)
-		tokenReader = legacyReader
-		lidReader = legacyReader
-		idReader = legacyReader
-	} else {
-		tokenReader = f.mustGetReader(f.tokenReaderProvider)
-		lidReader = f.mustGetReader(f.lidReaderProvider)
-		idReader = f.mustGetReader(f.idReaderProvider)
+		tokenReader = &f.legacyReader
+		lidReader = &f.legacyReader
+		idReader = &f.legacyReader
 	}
 
 	return &sealedDataProvider{
@@ -529,16 +514,16 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		docsReader:       &f.docsReader,
 		blocksOffsets:    f.blocksData.BlocksOffsets,
 		lidsTable:        f.blocksData.LIDsTable,
-		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, &lidReader, f.indexCache.LIDs),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &tokenReader, f.indexCache.TokenTable),
+		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, lidReader, cache.NewSession(f.indexCache.LIDs)),
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, tokenReader, cache.NewSession(f.indexCache.Tokens)),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, tokenReader, cache.NewSession(f.indexCache.TokenTable)),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
-			&idReader,
-			f.indexCache.MIDs,
-			f.indexCache.RIDs,
-			f.indexCache.Params,
+			idReader,
+			cache.NewSession(f.indexCache.MIDs),
+			cache.NewSession(f.indexCache.RIDs),
+			cache.NewSession(f.indexCache.Params),
 			&f.blocksData.IDsTable,
 			f.info.BinaryDataVer,
 		),
