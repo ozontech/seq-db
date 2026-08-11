@@ -42,14 +42,16 @@ func (l *loader) getFile() (*os.File, error) {
 }
 
 func (l *loader) getHeaders() ([]lidsBlockHeader, error) {
-	return l.headersCache.GetWithError(l.cashKey, func() ([]lidsBlockHeader, int, error) {
-		headers, err := l.loadHeaders()
-		if err != nil {
-			return headers, 0, err
-		}
-		size := len(headers) * int(lidsBlockHeaderSizeBytes)
-		return headers, size, nil
-	})
+	return l.headersCache.Get(l.cashKey, l)
+}
+
+func (l *loader) Load(uint32) ([]lidsBlockHeader, int, error) {
+	headers, err := l.loadHeaders()
+	if err != nil {
+		return headers, 0, err
+	}
+	size := len(headers) * int(lidsBlockHeaderSizeBytes)
+	return headers, size, nil
 }
 
 func (l *loader) loadHeaders() ([]lidsBlockHeader, error) {

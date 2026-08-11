@@ -253,45 +253,30 @@ func (c *Cache[V]) handlePanic(key uint32, wg *sync.WaitGroup) {
 	panic(err)
 }
 
-func (c *Cache[V]) Get(key uint32, fn func() (V, int)) V {
-	// attempt to obtain cached value
-	// or create an entry for a new one
-	e, wg, success := c.getOrCreate(key)
-	if success {
-		return e.value
-	}
-
-	defer c.handlePanic(key, wg)
-	// long operation
-	t := time.Now()
-	value, refMemSize := fn()
-	latency := time.Since(t).Seconds()
-
-	// all good, just update the cache
-	c.save(e, wg, value, refMemSize, latency)
-
-	return value
+func (c *Cache[V]) Get(key uint32, l Loader[V]) (V, error) {
+	value, _, err := c.get(key, l)
+	return value, err
 }
 
-func (c *Cache[V]) GetWithError(key uint32, fn func() (V, int, error)) (V, error) {
+func (c *Cache[V]) get(key uint32, l Loader[V]) (V, *entry[V], error) {
 	e, wg, success := c.getOrCreate(key)
 	if success {
-		return e.value, nil
+		return e.value, e, nil
 	}
 
 	defer c.handlePanic(key, wg)
+
 	t := time.Now()
-	value, refMemSize, err := fn()
+	value, refMemSize, err := l.Load(key)
 	latency := time.Since(t).Seconds()
 
 	if err != nil {
 		c.recover(key, wg)
-		return value, err
+		return value, nil, err
 	}
 
 	c.save(e, wg, value, refMemSize, latency)
-
-	return value, nil
+	return value, e, nil
 }
 
 func (c *Cache[V]) Release() {

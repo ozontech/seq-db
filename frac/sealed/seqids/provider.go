@@ -18,9 +18,9 @@ type Provider struct {
 
 func NewProvider(
 	indexReader *storage.IndexReader,
-	cacheMIDs *cache.Cache[[]byte],
-	cacheRIDs *cache.Cache[BlockRIDs],
-	cacheParams *cache.Cache[BlockParams],
+	cacheMIDs cache.Wrapper[[]byte],
+	cacheRIDs cache.Wrapper[BlockRIDs],
+	cacheParams cache.Wrapper[BlockParams],
 	table *Table,
 	fracVersion config.BinaryDataVersion,
 ) *Provider {
@@ -29,9 +29,9 @@ func NewProvider(
 		loader: Loader{
 			reader:      indexReader,
 			table:       table,
-			cacheMIDs:   cacheMIDs,
-			cacheRIDs:   cacheRIDs,
-			cacheParams: cacheParams,
+			mids:        cacheMIDs,
+			rids:        cacheRIDs,
+			params:      cacheParams,
 			fracVersion: fracVersion,
 		},
 		midCache: NewCache(),

@@ -24,7 +24,7 @@ type TableLoader struct {
 	isLegacy bool
 
 	reader *storage.IndexReader
-	cache  *cache.Cache[Table]
+	cache  cache.Wrapper[Table]
 
 	once       sync.Once
 	tableIndex uint32
@@ -37,7 +37,7 @@ func NewTableLoader(
 	fracVer config.BinaryDataVersion,
 	isLegacy bool,
 	reader *storage.IndexReader,
-	c *cache.Cache[Table],
+	c cache.Wrapper[Table],
 ) *TableLoader {
 	return &TableLoader{
 		fracName: fracName,
@@ -48,28 +48,34 @@ func NewTableLoader(
 	}
 }
 
+type tableLoader TableLoader
+
+func (s *tableLoader) Load(uint32) (Table, int, error) {
+	l := (*TableLoader)(s)
+
+	var (
+		blocks []TableBlock
+		err    error
+	)
+
+	l.advanceToTable()
+
+	if l.isLegacy {
+		blocks, err = l.loadBlocksLegacy()
+	} else {
+		blocks, err = l.loadBlocks()
+	}
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	table := TableFromBlocks(blocks)
+	return table, table.Size(), nil
+}
+
 func (l *TableLoader) Load() Table {
-	table, err := l.cache.GetWithError(CacheKeyTable, func() (Table, int, error) {
-		var (
-			blocks []TableBlock
-			err    error
-		)
-
-		l.advanceToTable()
-
-		if l.isLegacy {
-			blocks, err = l.loadBlocksLegacy()
-		} else {
-			blocks, err = l.loadBlocks()
-		}
-
-		if err != nil {
-			return nil, 0, err
-		}
-
-		table := TableFromBlocks(blocks)
-		return table, table.Size(), nil
-	})
+	table, err := l.cache.Get(CacheKeyTable, (*tableLoader)(l))
 	if err != nil {
 		logger.Fatal("load token table error",
 			zap.String("frac", l.fracName),
@@ -141,7 +147,10 @@ func (l *TableLoader) loadBlocksLegacy() ([]TableBlock, error) {
 }
 
 func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
-	blocksCount := l.reader.BlocksCount()
+	blocksCount, err := l.reader.BlocksCount()
+	if err != nil {
+		return nil, err
+	}
 
 	var blocks []TableBlock
 	for blockIndex := l.tableIndex; blockIndex < uint32(blocksCount); blockIndex++ {

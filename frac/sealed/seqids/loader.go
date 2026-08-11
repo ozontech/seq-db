@@ -26,85 +26,102 @@ func (Table) BlockStartLID(blockIndex uint32) uint32 {
 }
 
 type Loader struct {
+	fracVersion config.BinaryDataVersion
 	reader      *storage.IndexReader
 	table       *Table
-	cacheMIDs   *cache.Cache[[]byte]
-	cacheRIDs   *cache.Cache[BlockRIDs]
-	cacheParams *cache.Cache[BlockParams]
-	fracVersion config.BinaryDataVersion
+
+	mids   cache.Wrapper[[]byte]
+	rids   cache.Wrapper[BlockRIDs]
+	params cache.Wrapper[BlockParams]
+}
+
+type midsLoader Loader
+
+func (l *midsLoader) midBlockIndex(index uint32) uint32 {
+	return l.table.StartBlockIndex + index*3
+}
+
+func (s *midsLoader) Load(index uint32) ([]byte, int, error) {
+	data, _, err := s.reader.ReadIndexBlock(s.midBlockIndex(index), nil)
+	return data, cap(data), err
 }
 
 func (l *Loader) GetMIDsBlock(index uint32, unpackCache *unpackCache) (BlockMIDs, error) {
-	// load binary from index
-	data, err := l.cacheMIDs.GetWithError(index, func() ([]byte, int, error) {
-		data, _, err := l.reader.ReadIndexBlock(l.midBlockIndex(index), nil)
-		return data, cap(data), err
-	})
-	// check errors
+	data, err := l.mids.Get(index, (*midsLoader)(l))
 	if err == nil && len(data) == 0 {
-		err = errors.New("empty block")
+		return BlockMIDs{}, errors.New("empty block")
 	}
+
 	if err != nil {
 		return BlockMIDs{}, err
 	}
+
 	// unpack
 	block := BlockMIDs{Values: unpackCache.values[:0]}
 	if err := block.Unpack(data, l.fracVersion, unpackCache); err != nil {
 		return BlockMIDs{}, err
 	}
+
 	return block, nil
 }
 
+type ridsLoader Loader
+
+func (s *ridsLoader) Load(index uint32) (BlockRIDs, int, error) {
+	l := (*Loader)(s)
+
+	data, _, err := l.reader.ReadIndexBlock(l.ridBlockIndex(index), nil)
+	if err != nil {
+		return BlockRIDs{}, 0, err
+	}
+
+	block := BlockRIDs{
+		fracVersion: l.fracVersion,
+		Values:      make([]uint64, 0, consts.IDsPerBlock),
+	}
+
+	err = block.Unpack(data)
+	if err != nil {
+		return BlockRIDs{}, 0, err
+	}
+
+	if len(block.Values) == 0 {
+		return BlockRIDs{}, 0, errors.New("empty block")
+	}
+
+	const ui64 = int(unsafe.Sizeof(uint64(0)))
+	return block, cap(block.Values) * ui64, err
+}
+
 func (l *Loader) GetRIDsBlock(index uint32) (BlockRIDs, error) {
-	return l.cacheRIDs.GetWithError(index, func() (BlockRIDs, int, error) {
-		data, _, err := l.reader.ReadIndexBlock(l.ridBlockIndex(index), nil)
-		if err != nil {
-			return BlockRIDs{}, 0, err
-		}
+	return l.rids.Get(index, (*ridsLoader)(l))
+}
 
-		block := BlockRIDs{
-			fracVersion: l.fracVersion,
-			Values:      make([]uint64, 0, consts.IDsPerBlock),
-		}
+type paramsLoader Loader
 
-		err = block.Unpack(data)
-		if err != nil {
-			return BlockRIDs{}, 0, err
-		}
+func (s *paramsLoader) Load(index uint32) (BlockParams, int, error) {
+	l := (*Loader)(s)
 
-		if len(block.Values) == 0 {
-			return BlockRIDs{}, 0, errors.New("empty block")
-		}
+	data, _, err := l.reader.ReadIndexBlock(l.paramsBlockIndex(index), nil)
+	if err != nil {
+		return BlockParams{}, 0, err
+	}
 
-		const ui64 = int(unsafe.Sizeof(uint64(0)))
-		return block, cap(block.Values) * ui64, err
-	})
+	block := BlockParams{Values: make([]uint64, 0, consts.IDsPerBlock)}
+	if err := block.Unpack(data); err != nil {
+		return BlockParams{}, 0, err
+	}
+
+	if len(block.Values) == 0 {
+		return BlockParams{}, 0, errors.New("empty block")
+	}
+
+	const ui64 = int(unsafe.Sizeof(uint64(0)))
+	return block, cap(block.Values) * ui64, nil
 }
 
 func (l *Loader) GetParamsBlock(index uint32) (BlockParams, error) {
-	return l.cacheParams.GetWithError(index, func() (BlockParams, int, error) {
-		data, _, err := l.reader.ReadIndexBlock(l.paramsBlockIndex(index), nil)
-		if err != nil {
-			return BlockParams{}, 0, err
-		}
-
-		block := BlockParams{Values: make([]uint64, 0, consts.IDsPerBlock)}
-		if err := block.Unpack(data); err != nil {
-			return BlockParams{}, 0, err
-		}
-
-		if len(block.Values) == 0 {
-			return BlockParams{}, 0, errors.New("empty block")
-		}
-
-		const ui64 = int(unsafe.Sizeof(uint64(0)))
-		return block, cap(block.Values) * ui64, nil
-	})
-}
-
-// blocks are stored as triplets on disk, (MID + RID + Pos), check docs/format-index-file.go
-func (l *Loader) midBlockIndex(index uint32) uint32 {
-	return l.table.StartBlockIndex + index*3
+	return l.params.Get(index, (*paramsLoader)(l))
 }
 
 func (l *Loader) ridBlockIndex(index uint32) uint32 {
