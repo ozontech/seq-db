@@ -509,12 +509,7 @@ func (as *AsyncSearcher) processFrac(
 	// use interval's from and to
 	info.Request.Params.From = interval[0]
 	info.Request.Params.To = interval[1]
-
-	qpr, err = f.Search(info.ctx, info.Request.Params)
-	if err != nil {
-		return nil, err
-	}
-	return qpr, nil
+	return f.Search(info.ctx, info.Request.Params)
 }
 
 func getQPRFilename(id, intervalName string) string {
