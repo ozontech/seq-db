@@ -251,24 +251,21 @@ func sendRecords(stream seqproxyapi.SeqProxyApi_StreamSearchServer, records []*s
 }
 
 func docToRecord(doc search.StreamingDoc) *seqproxyapi.Record {
-	timeBuf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(timeBuf, uint64(doc.ID.MID))
 	return &seqproxyapi.Record{
 		RawData: [][]byte{
 			[]byte(doc.ID.String()),
-			timeBuf,
+			Uint64ToBytes(uint64(doc.ID.MID)),
 			doc.Data,
 		},
 	}
 }
 
-func aggBucketToRecord(item seq.AggregationBucket) *seqproxyapi.Record {
-	valueBuf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(valueBuf, math.Float64bits(item.Value))
+func aggBucketToRecord(aggBucket seq.AggregationBucket) *seqproxyapi.Record {
 	return &seqproxyapi.Record{
 		RawData: [][]byte{
-			[]byte(item.Name),
-			valueBuf,
+			[]byte(aggBucket.Name),
+			Uint64ToBytes(math.Float64bits(aggBucket.Value)),
+			Uint64ToBytes(uint64(aggBucket.MID)),
 		},
 	}
 }
@@ -287,6 +284,7 @@ func aggsTyping() []*seqproxyapi.Typing {
 	return []*seqproxyapi.Typing{
 		{Title: "key", Type: seqproxyapi.DataType_STRING},
 		{Title: "value", Type: seqproxyapi.DataType_FLOAT64},
+		{Title: "ts", Type: seqproxyapi.DataType_UINT64},
 	}
 }
 
@@ -360,4 +358,10 @@ func mustConvertStringToAggFunc(funcName string) seqproxyapi.AggFunc {
 	default:
 		panic(fmt.Errorf("unknown aggregation function: %s", funcName))
 	}
+}
+
+func Uint64ToBytes(val uint64) []byte {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, val)
+	return b
 }

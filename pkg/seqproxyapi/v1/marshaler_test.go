@@ -172,33 +172,39 @@ func TestRecordMarshalJSON(t *testing.T) {
 	t.Run("aggregation buckets", func(t *testing.T) {
 		valueBuf := make([]byte, 8)
 		binary.LittleEndian.PutUint64(valueBuf, math.Float64bits(42.5))
+		tsNs := time.Date(2025, 7, 8, 10, 19, 8, 742000000, time.UTC).UnixNano()
+		tsBuf := make([]byte, 8)
+		binary.LittleEndian.PutUint64(tsBuf, uint64(tsNs))
 
 		rec := &Record{RawData: [][]byte{
 			[]byte("service-a"),
 			valueBuf,
+			tsBuf,
 		}}
 
 		raw, err := json.Marshal(rec)
 		r.NoError(err)
-		r.Equal(`["service-a",42.5]`, string(raw))
+		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z"]`, string(raw))
 	})
 
 	t.Run("aggregation bucket with NaN", func(t *testing.T) {
 		valueBuf := make([]byte, 8)
 		binary.LittleEndian.PutUint64(valueBuf, math.Float64bits(math.NaN()))
+		tsBuf := make([]byte, 8)
 
 		rec := &Record{RawData: [][]byte{
 			[]byte("service-a"),
 			valueBuf,
+			tsBuf,
 		}}
 
 		raw, err := json.Marshal(rec)
 		r.NoError(err)
-		r.Equal(`["service-a","NaN"]`, string(raw))
+		r.Equal(`["service-a","NaN",""]`, string(raw))
 	})
 
 	t.Run("unknown layout falls back to raw bytes", func(t *testing.T) {
-		rec := &Record{RawData: [][]byte{[]byte("only"), []byte("two"), []byte("three"), []byte("four")}}
+		rec := &Record{RawData: [][]byte{[]byte("only"), []byte("two"), []byte("three"), []byte("four"), []byte("five")}}
 		raw, err := json.Marshal(rec)
 		r.NoError(err)
 		// encoding/json marshals [][]byte as an array of base64 strings.

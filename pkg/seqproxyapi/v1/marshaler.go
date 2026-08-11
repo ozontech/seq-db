@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ozontech/seq-db/seq"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -260,40 +261,49 @@ func (i *AsyncSearchesListItem) MarshalJSON() ([]byte, error) {
 	return pbMarshaller.Marshal(i)
 }
 
-// streamSearchDocColumns is the number of columns carried by a document record
-// produced by StreamSearch: id (SEQ_ID), time (UINT64), data (RAW_DOCUMENT).
-const streamSearchDocColumns = 3
-
-// streamSearchAggColumns is the number of columns carried by an aggregation
-// bucket record produced by StreamSearch: key (STRING), value (FLOAT64).
-const streamSearchAggColumns = 2
+// streamSearchColumns is the number of columns carried by a record produced by
+// StreamSearch. Both document and aggregation records use 3 cells, so the
+// layout is distinguished by the third cell's content rather than its count:
+//   - documents: [id, time(uint64 nanoseconds), data] — data is a JSON document;
+//   - aggregation buckets: [key, value(float64), ts(uint64 nanoseconds)] — ts is
+//     a little-endian uint64, never valid JSON.
+const streamSearchColumns = 3
 
 // MarshalJSON formats a StreamSearch record into a human-readable JSON array.
 //
-// The record layout is fixed by the proxy StreamSearch implementation and is
-// distinguished by the number of raw_data cells:
-//   - documents (3 cells): [id, time(nanoseconds, big-endian uint64), data]
-//     where data is inlined as a json.RawMessage and time is rendered as an
-//     RFC3339Nano string;
-//   - aggregation buckets (2 cells): [key, value(big-endian float64)].
+// Document and aggregation records share the same 3-cell width, so the record
+// kind is inferred from the third cell: when it holds a valid JSON document the
+// record is treated as a document, otherwise as an aggregation bucket.
+//
+//   - documents: [id, time(nanoseconds, little-endian uint64), data] where data
+//     is inlined as a json.RawMessage and time is rendered as an RFC3339Nano
+//     string;
+//   - aggregation buckets: [key, value(little-endian float64),
+//     ts(nanoseconds, little-endian uint64)] where value is rendered as a number
+//     (NaN/Inf become quoted strings) and ts is rendered as an RFC3339Nano
+//     string (empty when the bucket has no timestamp).
 //
 // For any other layout the raw cells are emitted as-is (base64 for bytes).
 func (r *Record) MarshalJSON() ([]byte, error) {
 	cells := r.GetRawData()
 	switch len(cells) {
-	case streamSearchDocColumns:
-		// cells[1] is a big-endian uint64 storing the document MID (nanoseconds).
-		var ts time.Time
-		if len(cells[1]) == 8 {
-			ts = time.Unix(0, int64(binary.LittleEndian.Uint64(cells[1]))).UTC()
+	case streamSearchColumns:
+		// Both layouts use 3 cells. A document's third cell is a JSON document;
+		// an aggregation bucket's third cell is an 8-byte uint64 timestamp,
+		// which is never valid JSON.
+		if json.Valid(cells[2]) {
+			// cells[1] is a little-endian uint64 storing the document MID (nanoseconds).
+			var ts time.Time
+			if len(cells[1]) == 8 {
+				ts = seq.MID(binary.LittleEndian.Uint64(cells[1])).Time()
+			}
+			return json.Marshal([]any{
+				string(cells[0]), // id
+				ts.UTC().Format(time.RFC3339Nano),
+				json.RawMessage(cells[2]), // data, inlined as JSON
+			})
 		}
-		return json.Marshal([]any{
-			string(cells[0]), // id
-			ts.Format(time.RFC3339Nano),
-			json.RawMessage(cells[2]), // data, inlined as JSON
-		})
-	case streamSearchAggColumns:
-		// cells[1] is a big-endian float64 storing the aggregation value.
+		// cells[1] is a little-endian float64 storing the aggregation value.
 		var value float64
 		if len(cells[1]) == 8 {
 			value = math.Float64frombits(binary.LittleEndian.Uint64(cells[1]))
@@ -302,9 +312,18 @@ func (r *Record) MarshalJSON() ([]byte, error) {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
 			val = json.RawMessage(strconv.Quote(string(val)))
 		}
+		// cells[2] is a little-endian uint64 storing the bucket MID (nanoseconds).
+		// A zero MID (no timestamp) is rendered as an empty string.
+		formattedTime := ""
+		if len(cells[2]) == 8 {
+			if ns := binary.LittleEndian.Uint64(cells[2]); ns != 0 {
+				formattedTime = time.Unix(0, int64(ns)).UTC().Format(time.RFC3339Nano)
+			}
+		}
 		return json.Marshal([]any{
 			string(cells[0]), // key
 			val,              // value
+			formattedTime,    // ts
 		})
 	default:
 		return json.Marshal(cells)

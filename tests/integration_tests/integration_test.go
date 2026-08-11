@@ -359,7 +359,7 @@ func (s *IntegrationTestSuite) envWithDummyDocs(n int) (*setup.TestingEnv, []str
 	origDocs := make([]string, 0, allDocsNum)
 	docsBulk := make([]string, 2*n)
 
-	getNextTs := getAutoTsGenerator(time.Now(), -time.Nanosecond) //
+	getNextTs := getAutoTsGenerator(time.Now(), -time.Nanosecond)
 
 	for i := 0; i < bulksNum; i++ {
 
