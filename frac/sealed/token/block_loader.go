@@ -239,19 +239,20 @@ func (b *Block) contains(from, to int, needle []byte) ([]int, error) {
 	return b.containsV5(from, to, needle)
 }
 
-func (b *Block) containsV6(from int, to int, needle []byte) ([]int, error) {
+func (b *Block) containsV6(from, to int, needle []byte) ([]int, error) {
 	indexes := make([]int, 0)
-	for i := from; i <= to; i++ {
-		tok := b.Payload[b.Offsets[i]:b.Offsets[i+1]]
+	offsets := b.Offsets[from : to+2]
+	for i := 1; i < len(offsets); i++ {
+		tok := b.Payload[offsets[i-1]:offsets[i]]
 		if bytes.Contains(tok, needle) {
-			indexes = append(indexes, i)
+			indexes = append(indexes, from+i-1)
 		}
 	}
 	return indexes, nil
 }
 
 // TODO(cheb0) delete when Block.FracVer is deleted
-func (b *Block) containsV5(from int, to int, needle []byte) ([]int, error) {
+func (b *Block) containsV5(from, to int, needle []byte) ([]int, error) {
 	indexes := make([]int, 0)
 	for i := from; i <= to; i++ {
 		if bytes.Contains(b.getTokenV5(i), needle) {

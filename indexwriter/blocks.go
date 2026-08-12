@@ -129,7 +129,8 @@ func tokenBlock(
 					offsets = append(offsets, 0)
 				}
 				tokenIndex := uint32(len(offsets) - 1)
-				block.payload.Offsets = append(offsets, offsets[len(offsets)-1]+uint32(len(tok)))
+				offsets = append(offsets, offsets[len(offsets)-1]+uint32(len(tok)))
+				block.payload.Offsets = offsets
 				block.payload.Payload = append(block.payload.Payload, tok...)
 
 				if len(tlids) >= tokenFreqAbsThreshold {
