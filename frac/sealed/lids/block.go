@@ -95,7 +95,7 @@ func (b *Block) GetLIDs(i int) node.LIDBatch {
 	return node.NewBitmapBatch(b.bitmaps[-t-1])
 }
 
-func (b *Block) CopyLIDs(idx int, dst []uint32) []uint32 {
+func (b *Block) AppendLIDsTo(idx int, dst []uint32) []uint32 {
 	if b.types == nil {
 		dst = append(dst, b.lids[b.offsets[idx]:b.offsets[idx+1]]...)
 		return dst
