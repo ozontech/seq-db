@@ -1,0 +1,27 @@
+storage:
+  data_dir: /seq-db-data
+  frac_size: 32MiB
+  total_size: 64GiB
+
+mapping:
+  path: /configs/mapping.yaml
+
+indexing:
+  past_allowed_time_drift: 99000h
+
+sealing:
+  lids:
+    block_size: 16384
+
+resources:
+  skip_fsync: true
+
+compression:
+  docs_zstd_compression_level: 3
+
+limits:
+  query_rate: 1024
+  search_requests: 1024
+  bulk_requests: 128
+  inflight_bulks: 128
+  doc_size: 1MiB
