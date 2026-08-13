@@ -285,7 +285,7 @@ func (b *Block) suffixV5(from, to int, suffix []byte) []int {
 	return indexes
 }
 
-func (b *Block) suffixV6(from int, to int, suffix []byte) []int {
+func (b *Block) suffixV6(from, to int, suffix []byte) []int {
 	indexes := make([]int, 0)
 	suffixLen := uint32(len(suffix))
 
