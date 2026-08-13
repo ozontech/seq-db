@@ -60,6 +60,10 @@ func (d *testTokenIndex) GetValByTID(tid uint32, _ string) []byte {
 	panic("not implemented")
 }
 
+func (d *testTokenIndex) GetTIDsByField(field string) ([]uint32, error) {
+	panic("not implemented")
+}
+
 func (d *testTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
 	panic("not implemented")
 }
