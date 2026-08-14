@@ -40,7 +40,7 @@ func (f *testFakeFrac) Contains(mid seq.MID) bool {
 	return f.info.IsIntersecting(mid, mid)
 }
 
-func (f *testFakeFrac) Fetch(_ context.Context, ids []seq.ID) ([][]byte, error) {
+func (f *testFakeFrac) Fetch(_ context.Context, ids []seq.ID, _ bool) ([][]byte, error) {
 	f.fetchCount++
 	if f.fetchError != nil {
 		return nil, f.fetchError
@@ -60,6 +60,10 @@ func (f *testFakeFrac) Fetch(_ context.Context, ids []seq.ID) ([][]byte, error) 
 func (f *testFakeFrac) Search(context.Context, processor.SearchParams) (*seq.QPR, error) {
 	f.searchesCount++
 	return f.qpr, nil
+}
+
+func (f *testFakeFrac) FindLIDs(context.Context, []seq.ID) ([]seq.LID, error) {
+	return []seq.LID{}, nil
 }
 
 func newFakeFrac(from, to seq.MID, qpr *seq.QPR) *testFakeFrac {

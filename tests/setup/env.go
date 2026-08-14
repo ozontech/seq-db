@@ -8,10 +8,8 @@ import (
 	"net"
 	"path/filepath"
 	"runtime"
+	"testing"
 	"time"
-
-	"go.uber.org/atomic"
-	"go.uber.org/zap"
 
 	"github.com/alecthomas/units"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -19,6 +17,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
+	"go.uber.org/atomic"
+	"go.uber.org/zap"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
@@ -27,11 +28,13 @@ import (
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/mappingprovider"
 	"github.com/ozontech/seq-db/network/circuitbreaker"
+	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/skipmaskmanager"
 	seqs3 "github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/storeapi"
 	testscommon "github.com/ozontech/seq-db/tests/common"
@@ -48,6 +51,7 @@ type TestingEnvConfig struct {
 	HotModeEnabled    bool
 	QueryRateLimit    *float64
 	FracManagerConfig *fracmanager.Config
+	SkipMaskParams    []skipmaskmanager.SkipMaskParams
 
 	Mapping        seq.Mapping
 	IndexAllFields bool
@@ -121,6 +125,9 @@ func (cfg *TestingEnvConfig) GetStoreConfig(replicaID string, cold bool) storeap
 				RequestsLimit:         0,
 				LogThreshold:          0,
 			},
+		},
+		SkipMaskManagerConfig: skipmaskmanager.Config{
+			DataDir: filepath.Join(cfg.DataDir, replicaID, "skipmasks"),
 		},
 	}
 }
@@ -275,7 +282,7 @@ func (cfg *TestingEnvConfig) MakeStores(
 			logger.Fatal("can't create mapping", zap.Error(err))
 		}
 
-		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider)
+		store, err := storeapi.NewStore(context.Background(), confs[i], s3cli, mappingProvider, cfg.SkipMaskParams)
 		if err != nil {
 			panic(err)
 		}
@@ -340,7 +347,7 @@ func MakeIngestors(cfg *TestingEnvConfig, hot, cold [][]string) []*Ingestor {
 				API: proxyapi.APIConfig{
 					SearchTimeout:  10 * time.Minute, // long enough for debugging purposes with a debugger
 					ExportTimeout:  10 * time.Minute, // the same (debugging purposes)
-					QueryRateLimit: 0,
+					QueryRateLimit: 10000,            // todo: support no ratelimit if == 0
 					EsVersion:      "test",
 					GatewayAddr:    grpcLis.Addr().String(),
 				},
@@ -568,7 +575,13 @@ func WithOrder(o seq.DocsOrder) SearchOption {
 	}
 }
 
-func (t *TestingEnv) Search(q string, size int, options ...SearchOption) (*seq.QPR, [][]byte, time.Duration, error) {
+func WithDownsample(downsample uint32) SearchOption {
+	return func(sr *search.SearchRequest) {
+		sr.Downsample = downsample
+	}
+}
+
+func (t *TestingEnv) buildRequest(q string, size int, options ...SearchOption) *search.SearchRequest {
 	sr := &search.SearchRequest{
 		Explain:     false,
 		Q:           []byte(q),
@@ -580,10 +593,33 @@ func (t *TestingEnv) Search(q string, size int, options ...SearchOption) (*seq.Q
 		ShouldFetch: true,
 		Order:       seq.DocsOrderDesc,
 	}
-
 	for _, option := range options {
 		option(sr)
 	}
+	return sr
+}
+
+func (t *TestingEnv) HTTPSearch(tt *testing.T, q string, size int, options ...SearchOption) *seqproxyapi.SearchResponse {
+	sr := t.buildRequest(q, size, options...)
+
+	return SearchHTTP(tt, t.IngestorSearchAddr(), &seqproxyapi.SearchRequest{
+		Query: &seqproxyapi.SearchQuery{
+			Query:      string(sr.Q),
+			From:       timestamppb.New(sr.From.Time()),
+			To:         timestamppb.New(sr.To.Time()),
+			Explain:    sr.Explain,
+			Downsample: sr.Downsample,
+		},
+		Size:      int64(sr.Size),
+		Offset:    int64(sr.Offset),
+		WithTotal: sr.WithTotal,
+		Order:     seqproxyapi.Order(sr.Order),
+		OffsetId:  sr.OffsetId,
+	})
+}
+
+func (t *TestingEnv) Search(q string, size int, options ...SearchOption) (*seq.QPR, [][]byte, time.Duration, error) {
+	sr := t.buildRequest(q, size, options...)
 
 	var docs [][]byte
 	qpr, docsStream, duration, err := t.Ingestor().SearchIngestor.Search(context.Background(), sr, nil)

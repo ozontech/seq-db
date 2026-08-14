@@ -19,6 +19,7 @@ import (
 
 	"github.com/ozontech/seq-db/asyncsearcher"
 	"github.com/ozontech/seq-db/buildinfo"
+	"github.com/ozontech/seq-db/compaction"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
@@ -33,6 +34,8 @@ import (
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/proxy/stores"
 	"github.com/ozontech/seq-db/proxyapi"
+	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/skipmaskmanager"
 	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/storeapi"
 	"github.com/ozontech/seq-db/tracing"
@@ -262,13 +265,16 @@ func startStore(
 			CacheCleanupDelay: 0,
 			MinSealFracSize:   uint64(cfg.Storage.FracSize) * consts.DefaultMinSealPercent / 100,
 			SealParams: common.SealParams{
-				IDsZstdLevel:           cfg.Compression.SealedZstdCompressionLevel,
-				LIDsZstdLevel:          cfg.Compression.SealedZstdCompressionLevel,
-				TokenListZstdLevel:     cfg.Compression.SealedZstdCompressionLevel,
-				DocsPositionsZstdLevel: cfg.Compression.SealedZstdCompressionLevel,
-				TokenTableZstdLevel:    cfg.Compression.SealedZstdCompressionLevel,
-				DocBlocksZstdLevel:     cfg.Compression.DocBlockZstdCompressionLevel,
-				DocBlockSize:           int(cfg.DocsSorting.DocBlockSize),
+				IDsZstdLevel:                 cfg.Compression.SealedZstdCompressionLevel,
+				LIDsZstdLevel:                cfg.Compression.SealedZstdCompressionLevel,
+				LIDBlockSize:                 cfg.Sealing.Lids.BlockSize,
+				TokenBlockSize:               int(cfg.Sealing.Tokens.BlockSize),
+				TokenListZstdLevel:           cfg.Compression.SealedZstdCompressionLevel,
+				DocsPositionsZstdLevel:       cfg.Compression.SealedZstdCompressionLevel,
+				TokenTableZstdLevel:          cfg.Compression.SealedZstdCompressionLevel,
+				DocBlocksZstdLevel:           cfg.Compression.DocBlockZstdCompressionLevel,
+				DocBlockSize:                 int(cfg.DocsSorting.DocBlockSize),
+				TokenFreqThresholdPercentage: cfg.Sealing.Tokens.FreqThresholdPercentage,
 			},
 			Fraction: frac.Config{
 				Search: frac.SearchConfig{
@@ -280,12 +286,13 @@ func startStore(
 					},
 				},
 				SkipSortDocs: !cfg.DocsSorting.Enabled,
-				KeepMetaFile: false,
+				KeepWalFile:  false,
 			},
 			OffloadingEnabled:    cfg.Offloading.Enabled,
 			OffloadingRetention:  cfg.Offloading.Retention,
 			OffloadingRetryDelay: cfg.Offloading.RetryDelay,
 			OffloadingQueueSize:  uint64(float64(cfg.Storage.TotalSize) * cfg.Offloading.QueueSizePercent / 100),
+			CompactionEnabled:    cfg.Compaction.Enabled,
 		},
 		API: storeapi.APIConfig{
 			StoreMode: configMode,
@@ -316,10 +323,29 @@ func startStore(
 				From:  cfg.Filtering.From,
 			},
 		},
+		SkipMaskManagerConfig: skipmaskmanager.Config{
+			DataDir:        cfg.SkipMaskManager.DataDir,
+			Workers:        cfg.SkipMaskManager.Workers,
+			CacheSizeLimit: uint64(cfg.SkipMaskManager.CacheSize),
+		},
+		Compaction: compaction.Config{
+			Enabled: cfg.Compaction.Enabled,
+
+			MergeTrigger:    cfg.Compaction.STCS.MergeTrigger,
+			MergeFanIn:      cfg.Compaction.STCS.MergeFanIn,
+			MergeFanOutSize: uint64(cfg.Compaction.STCS.MergeFanOutSize),
+
+			BucketLowerbound: cfg.Compaction.STCS.BucketLowerbound,
+			BucketUpperbound: cfg.Compaction.STCS.BucketUpperbound,
+
+			Workers:      cfg.Compaction.Workers,
+			TimeWindow:   cfg.Compaction.TimeWindow,
+			TickInterval: cfg.Compaction.TickInterval,
+		},
 	}
 
 	s3cli := initS3Client(cfg)
-	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp)
+	store, err := storeapi.NewStore(ctx, sconfig, s3cli, mp, skipMaskParamsFromCfg(cfg.SkipMaskManager.SkipMasks))
 	if err != nil {
 		logger.Fatal("initializing store", zap.Error(err))
 	}
@@ -360,4 +386,16 @@ func initS3Client(cfg config.Config) *s3.Client {
 
 func enableIndexingForAllFields(mappingPath string) bool {
 	return mappingPath == "auto"
+}
+
+func skipMaskParamsFromCfg(in []config.SkipMaskParams) []skipmaskmanager.SkipMaskParams {
+	out := make([]skipmaskmanager.SkipMaskParams, 0, len(in))
+	for _, f := range in {
+		out = append(out, skipmaskmanager.SkipMaskParams{
+			Query: f.Query,
+			From:  seq.TimeToMID(f.From),
+			To:    seq.TimeToMID(f.To),
+		})
+	}
+	return out
 }

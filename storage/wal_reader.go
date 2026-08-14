@@ -14,10 +14,12 @@ import (
 )
 
 type WalRecord struct {
-	Data   WalBlock
-	Offset int64
-	Size   int64
-	Err    error
+	ContainsData bool
+	Data         WalBlock
+	Offset       int64
+	Size         int64
+	Corruptions  uint64
+	Err          error
 }
 
 type WalReader struct {
@@ -60,12 +62,14 @@ func (r *WalReader) Entries() iter.Seq[WalRecord] {
 		offset := align(r.headerOffset)
 
 		var corruptionStart int64 = -1
+		var corruptions uint64
 		logCorruptionEnd := func(offset int64) {
 			if corruptionStart >= 0 {
 				logger.Error("WAL file corrupted",
 					zap.String("fraction", r.baseFileName),
 					zap.Int64("from", corruptionStart),
 					zap.Int64("to", offset))
+				corruptions++
 				corruptionStart = -1
 			}
 		}
@@ -80,16 +84,17 @@ func (r *WalReader) Entries() iter.Seq[WalRecord] {
 			n, err := r.limiter.ReadAt(r.reader, headerBuf, offset)
 
 			if err != nil && !errors.Is(err, io.EOF) {
-				yield(WalRecord{Offset: offset, Err: err})
+				yield(WalRecord{Offset: offset, Corruptions: corruptions, Err: err})
 				return
 			}
 
 			if errors.Is(err, io.EOF) || n < WalBlockHeaderLen {
-				// log corruption only if at least 1 was read
 				if n > 0 {
+					// we read at least one byte - start corruption if not already started
 					startCorruptionTracking(offset)
-					logCorruptionEnd(offset + int64(n))
 				}
+				logCorruptionEnd(offset + int64(n))
+				yield(WalRecord{Offset: offset, Corruptions: corruptions})
 				return
 			}
 
@@ -113,13 +118,14 @@ func (r *WalReader) Entries() iter.Seq[WalRecord] {
 			n, err = r.limiter.ReadAt(r.reader, blockBuf, offset)
 
 			if err != nil && !errors.Is(err, io.EOF) {
-				yield(WalRecord{Offset: offset, Err: err})
+				yield(WalRecord{Offset: offset, Corruptions: corruptions, Err: err})
 				return
 			}
 
 			if errors.Is(err, io.EOF) || int64(n) < blockLen {
 				startCorruptionTracking(offset)
 				logCorruptionEnd(offset + int64(n))
+				yield(WalRecord{Offset: offset, Corruptions: corruptions})
 				return
 			}
 
@@ -134,9 +140,11 @@ func (r *WalReader) Entries() iter.Seq[WalRecord] {
 			logCorruptionEnd(offset)
 
 			entry := WalRecord{
-				Data:   mb,
-				Offset: offset,
-				Size:   blockLen,
+				ContainsData: true,
+				Data:         mb,
+				Offset:       offset,
+				Size:         blockLen,
+				Corruptions:  corruptions,
 			}
 
 			if !yield(entry) {

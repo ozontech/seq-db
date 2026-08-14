@@ -45,6 +45,12 @@ var (
 		Name:      "size_released_bytes_total",
 		Help:      "Size in bytes released from cache",
 	}, []string{"layer"})
+	cacheEntriesReleased = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "cache",
+		Name:      "entries_released_total",
+		Help:      "Number of cache entries released by layer",
+	}, []string{"layer"})
 	cacheHitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "cache",
@@ -205,5 +211,12 @@ var (
 		Subsystem: "common",
 		Name:      "bytes_read_total",
 		Help:      "Number of bytes read from disk storage",
+	})
+
+	walCorruptions = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "storage",
+		Name:      "wal_corruptions",
+		Help:      "Number of WAL files with detected corruption during replay",
 	})
 )

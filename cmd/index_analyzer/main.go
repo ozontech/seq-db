@@ -5,23 +5,26 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/alecthomas/units"
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/frac/sealed"
-	"github.com/ozontech/seq-db/frac/sealed/lids"
-	"github.com/ozontech/seq-db/frac/sealed/token"
+	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/indexwriter"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/storage"
 )
 
 // Launch as:
 //
-// > go run ./cmd/index_analyzer/... ./data/*.index | tee ~/report.txt
+// > go run ./cmd/index_analyzer/... ./data/*.info | tee ~/report.txt
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("No args")
@@ -33,13 +36,10 @@ func main() {
 
 	readLimiter := storage.NewReadLimiter(1, nil)
 
-	mergedTokensUniq := map[string]map[string]int{}
-	mergedTokensValuesUniq := map[string]int{}
-
-	stats := []Stats{}
+	var stats []Stats
 	for _, path := range os.Args[1:] {
 		fmt.Println(path)
-		stats = append(stats, analyzeIndex(path, cm, readLimiter, mergedTokensUniq, mergedTokensValuesUniq))
+		stats = append(stats, analyzeIndex(path, cm, readLimiter))
 	}
 
 	fmt.Println("\nUniq Tokens Stats")
@@ -73,109 +73,59 @@ func getCacheMaintainer() (*fracmanager.CacheMaintainer, func()) {
 	}
 }
 
+// basePath strips any known index suffix to return the fraction base path.
+func basePath(path string) string {
+	for _, suffix := range []string{
+		consts.InfoFileSuffix,
+		consts.IndexFileSuffix,
+		consts.TokenFileSuffix,
+		consts.OffsetsFileSuffix,
+		consts.IDFileSuffix,
+		consts.LIDFileSuffix,
+	} {
+		if strings.HasSuffix(path, suffix) {
+			return path[:len(path)-len(suffix)]
+		}
+	}
+	return path
+}
+
 func analyzeIndex(
 	path string,
 	cm *fracmanager.CacheMaintainer,
-	reader *storage.ReadLimiter,
-	mergedTokensUniq map[string]map[string]int,
-	allTokensValuesUniq map[string]int,
+	rl *storage.ReadLimiter,
 ) Stats {
-	var blockIndex uint32
-	cache := cm.CreateIndexCache()
+	fracSrc, release := openFrac(path, cm, rl)
+	defer release()
 
-	f, err := os.Open(path)
-	if err != nil {
-		panic(err)
-	}
+	tokensUniq := map[string]map[string]int{}
+	tokensValuesUniq := map[string]int{}
 
-	indexReader := storage.NewIndexReader(reader, f.Name(), f, cache.Registry)
+	docsCount := int(fracSrc.Info().DocsTotal)
 
-	readBlock := func() []byte {
-		data, _, err := indexReader.ReadIndexBlock(blockIndex, nil)
-		blockIndex++
-		if err != nil {
-			logger.Fatal("error reading block", zap.String("file", f.Name()), zap.Error(err))
-		}
-		return data
-	}
-
-	// load info
-	var b sealed.BlockInfo
-	if err := b.Unpack(readBlock()); err != nil {
-		logger.Fatal("error unpacking block info", zap.Error(err))
-	}
-
-	docsCount := int(b.Info.DocsTotal)
-
-	// load tokens
-	tokens := [][]byte{}
-	for {
-		data := readBlock()
-		if len(data) == 0 { // empty block - is section separator
-			break
-		}
-		block := token.Block{}
-		if err := block.Unpack(data); err != nil {
-			logger.Fatal("error unpacking tokens", zap.Error(err))
-		}
-		for i := range block.Len() {
-			tokens = append(tokens, block.GetToken(i))
-		}
-	}
-
-	// load tokens table
-	tokenTableBlocks := []token.TableBlock{}
-	for {
-		data := readBlock()
-		if len(data) == 0 { // empty block - is section separator
-			break
-		}
-		block := token.TableBlock{}
-		block.Unpack(data)
-		tokenTableBlocks = append(tokenTableBlocks, block)
-	}
-	tokenTable := token.TableFromBlocks(tokenTableBlocks)
-
-	// skip position
-	blockIndex++
-
-	// skip IDS
-	for {
-		data := readBlock()
-		if len(data) == 0 { // empty block - is section separator
-			break
-		}
-		blockIndex++ // skip RID
-		blockIndex++ // skip Param
-	}
-
-	// load LIDs
-	tid := 0
+	var tokens [][]byte
 	lidsTotal := 0
 	lidsUniq := map[[16]byte]int{}
-	lidsLens := make([]int, len(tokens))
-	tokenLIDs := []uint32{}
-	for {
-		data := readBlock()
-		if len(data) == 0 { // empty block - is section separator
-			break
-		}
 
-		block := &lids.Block{}
-		if err := block.Unpack(data, &lids.UnpackBuffer{}); err != nil {
-			logger.Fatal("error unpacking lids block", zap.Error(err))
-		}
-
-		last := len(block.Offsets) - 2
-		for i := 0; i <= last; i++ {
-			tokenLIDs = append(tokenLIDs, block.LIDs[block.Offsets[i]:block.Offsets[i+1]]...)
-			if i < last || block.IsLastLID { // the end of token lids
-				lidsTotal += len(tokenLIDs)
-				lidsLens[tid] = len(tokenLIDs)
-				lidsUniq[getLIDsHash(tokenLIDs)] = len(tokenLIDs)
-				tokenLIDs = tokenLIDs[:0]
-				tid++
+	for field, fieldPostings := range fracSrc.TokenTriplets() {
+		for tokenLIDs, err := range fieldPostings {
+			if err != nil {
+				logger.Fatal("error reading token lids", zap.String("field", field), zap.Error(err))
 			}
+
+			token := append([]byte(nil), tokenLIDs.First...)
+			tokens = append(tokens, token)
+
+			lidsTotal += len(tokenLIDs.Second)
+			lidsUniq[getLIDsHash(tokenLIDs.Second)] = len(tokenLIDs.Second)
+
+			fieldsTokens, ok := tokensUniq[field]
+			if !ok {
+				fieldsTokens = map[string]int{}
+				tokensUniq[field] = fieldsTokens
+			}
+			fieldsTokens[string(token)] += len(tokenLIDs.Second)
+			tokensValuesUniq[string(token)]++
 		}
 	}
 
@@ -184,8 +134,28 @@ func analyzeIndex(
 		lidsUniqCnt += l
 	}
 
-	mergeAllTokens(mergedTokensUniq, allTokensValuesUniq, tokenTable, tokens, lidsLens)
-	return newStats(mergedTokensUniq, allTokensValuesUniq, tokens, docsCount, lidsUniqCnt, lidsTotal)
+	return newStats(tokensUniq, tokensValuesUniq, tokens, docsCount, lidsUniqCnt, lidsTotal)
+}
+
+func openFrac(
+	path string,
+	cm *fracmanager.CacheMaintainer,
+	rl *storage.ReadLimiter,
+) (indexwriter.Source, func()) {
+	base := basePath(path)
+	legacy := strings.HasSuffix(path, consts.IndexFileSuffix)
+
+	sealed := frac.NewSealed(
+		base,
+		rl,
+		cm.CreateIndexCache(),
+		cm.CreateSortDocsCache(),
+		nil,
+		&frac.Config{},
+		noopSkipMaskProvider{},
+		legacy,
+	)
+	return frac.NewSealedSource(sealed), sealed.Release
 }
 
 func getLIDsHash(tokenLIDs []uint32) [16]byte {
@@ -200,18 +170,14 @@ func getLIDsHash(tokenLIDs []uint32) [16]byte {
 	return res
 }
 
-func mergeAllTokens(allTokensUniq map[string]map[string]int, allTokensValuesUniq map[string]int, tokensTable token.Table, tokens [][]byte, lidsLens []int) {
-	for k, v := range tokensTable {
-		fieldsTokens, ok := allTokensUniq[k]
-		if !ok {
-			fieldsTokens = map[string]int{}
-			allTokensUniq[k] = fieldsTokens
-		}
-		for _, e := range v.Entries {
-			for tid := e.StartTID; tid < e.StartTID+e.ValCount; tid++ {
-				fieldsTokens[string(tokens[tid-1])] += lidsLens[tid-1]
-				allTokensValuesUniq[string(tokens[tid-1])]++
-			}
-		}
-	}
+type noopSkipMaskProvider struct{}
+
+func (noopSkipMaskProvider) GetIDsIteratorByFrac(_ string, _, _ uint32, reverse bool) (node.Node, bool, func() error, error) {
+	return node.NewStatic(nil, reverse), false, func() error { return nil }, nil
 }
+
+func (noopSkipMaskProvider) GetIDsBitmapByFrac(_ string, _, _ uint32) (*roaring.Bitmap, error) {
+	return nil, nil
+}
+
+func (noopSkipMaskProvider) RemoveFrac(_ string) {}

@@ -2,6 +2,7 @@ package storeapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -47,6 +48,11 @@ func (g *GrpcV1) Search(ctx context.Context, req *storeapi.SearchRequest) (*stor
 	if err != nil {
 		span.SetStatus(trace.Status{Code: 1, Message: err.Error()})
 		logger.Error("search error", zap.Error(err), zap.Object("request", (*searchRequestMarshaler)(req)))
+	}
+	if data != nil && data.Code != storeapi.SearchErrorCode_NO_ERROR {
+		logger.Error("search error",
+			zap.Error(errors.New(storeapi.SearchErrorCode_name[int32(data.Code)])),
+			zap.Object("request", (*searchRequestMarshaler)(req)))
 	}
 
 	tr.Done()
@@ -186,21 +192,17 @@ func (g *GrpcV1) doSearch(
 		WithTotal:    req.WithTotal,
 		Order:        req.Order.MustDocsOrder(),
 		OffsetId:     offsetId,
+		Downsample:   req.Downsample,
 	}
 
 	searchTr := tr.NewChild("search iteratively")
-	qpr, err := g.searchData.searcher.SearchDocs(
-		ctx,
-		g.fracManager.Fractions(),
-		searchParams,
-		tr,
-	)
+	qpr, err := g.searchDocs(ctx, searchParams, tr)
 	searchTr.Done()
+
 	if err != nil {
 		if code, ok := parseStoreError(err); ok {
 			return &storeapi.SearchResponse{Code: code}, nil
 		}
-
 		return nil, err
 	}
 
@@ -227,6 +229,13 @@ func (g *GrpcV1) doSearch(
 	}
 
 	return buildSearchResponse(qpr), nil
+}
+
+func (g *GrpcV1) searchDocs(ctx context.Context, sp processor.SearchParams, tr *querytracer.Tracer) (*seq.QPR, error) {
+	fracs, release := g.fracManager.AcquireFractions()
+	defer release()
+
+	return g.searchData.searcher.SearchDocs(ctx, fracs, sp, tr)
 }
 
 func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, error) {

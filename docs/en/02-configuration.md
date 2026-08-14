@@ -104,12 +104,45 @@ Resource allocation settings.
 
 Compression level settings for various data types.
 
+| Field                                          | Type | Default | Description                                      |
+|------------------------------------------------|------|---------|--------------------------------------------------|
+| `compression.docs_zstd_compression_level`      | int | `1`     | Zstandard compression level for documents        |
+| `compression.metas_zstd_compression_level`     | int | `1`     | Zstandard compression level for metadata         |
+| `compression.sealed_zstd_compression_level`    | int | `3`     | Zstandard compression level for sealed fractions |
+| `compression.doc_block_zstd_compression_level` | int | `3`     | Zstandard compression level for document blocks  |
+
+## Sealing Configuration
+
+Settings for fraction sealing.
+
+### Tokens
+
+| Field                                      | Type    | Default | Description                                                                                                                                     |
+|--------------------------------------------|---------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| `sealing.tokens.block_size`                | Bytes   | `16KiB` | Max token block size in bytes                                                                                                                   |
+| `sealing.tokens.freq_threshold_percentage` | float64 | `0.005` | The minimum posting-list length as a percentage of the fraction's document count a token should have to have a doc frequency stored in fraction |
+
+### Lids
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `compression.docs_zstd_compression_level` | int | `1` | Zstandard compression level for documents |
-| `compression.metas_zstd_compression_level` | int | `1` | Zstandard compression level for metadata |
-| `compression.sealed_zstd_compression_level` | int | `3` | Zstandard compression level for sealed fractions |
-| `compression.doc_block_zstd_compression_level` | int | `3` | Zstandard compression level for document blocks |
+| `sealing.lids.block_size` | int | `65536` | Max lids (postings) saved per LIDs block |
+
+## Compaction Configuration
+
+Settings for background compaction, which merges small sealed fractions into larger ones to keep search fast.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `compaction.enabled` | bool | `false` | Master switch for background compaction |
+| `compaction.workers` | int | runtime.GOMAXPROCS | Number of executor workers performing merges concurrently |
+| `compaction.time_window` | Duration | `1h` | Width of a time bin. Only fractions whose creation time falls into the same bin are merged together |
+| `compaction.tick_interval` | Duration | `1s` | How often the planner wakes up to pick a compaction task |
+| `compaction.stcs.merge_trigger` | int | `4` | Minimum number of fractions in a size bucket required to trigger a merge |
+| `compaction.stcs.merge_fan_in` | int | `32` | Maximum number of fractions merged from a single bucket per iteration |
+| `compaction.stcs.merge_fan_out_size` | Bytes | `512MiB` | Upper bound on the combined input index size of a single merge, limiting the resulting fraction size |
+| `compaction.stcs.bucket_lowerbound` | float64 | `0.5` | Lower size ratio for bucket membership (fraction size ≥ `bucket_lowerbound × avg(bucket)`) |
+| `compaction.stcs.bucket_upperbound` | float64 | `1.5` | Upper size ratio for bucket membership (fraction size ≤ `bucket_upperbound × avg(bucket)`) |
 
 ## Indexing Configuration
 

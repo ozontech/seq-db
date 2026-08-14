@@ -78,10 +78,10 @@ func (si *Ingestor) StartAsyncSearch(ctx context.Context, r AsyncRequest) (Async
 			break
 		}
 		if err != nil {
-			err := si.DeleteAsyncSearch(ctx, requestID)
-			if err != nil {
+			delErr := si.DeleteAsyncSearch(ctx, requestID)
+			if delErr != nil {
 				logger.Error("unable to clear inconsistent async search creation",
-					zap.String("id", requestID), zap.Error(err))
+					zap.String("id", requestID), zap.Error(delErr))
 			}
 			return AsyncResponse{}, fmt.Errorf("starting search in shard=%d: %s", i, err)
 		}
@@ -139,6 +139,10 @@ func (si *Ingestor) FetchAsyncSearchResult(
 	ctx context.Context,
 	r FetchAsyncSearchResultRequest,
 ) (FetchAsyncSearchResultResponse, DocsIterator, error) {
+	if r.Size < 0 || r.Offset < 0 {
+		return FetchAsyncSearchResultResponse{}, nil, fmt.Errorf("%w: negative size or offset", consts.ErrInvalidArgument)
+	}
+
 	searchStores, err := si.getAsyncSearchStores()
 	if err != nil {
 		return FetchAsyncSearchResultResponse{}, nil, err
@@ -316,7 +320,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 	if size > 0 {
 		fieldsFilter := tryParseFieldsFilter(pr.Request.Query)
 		var err error
-		docsStream, err = si.FetchDocsStream(ctx, pr.QPR.IDs, false, fieldsFilter)
+		docsStream, err = si.FetchDocsStream(ctx, pr.QPR.IDs, false, false, fieldsFilter)
 		if err != nil {
 			return pr, nil, err
 		}
@@ -336,6 +340,10 @@ func (si *Ingestor) GetAsyncSearchesList(
 	ctx context.Context,
 	r GetAsyncSearchesListRequest,
 ) ([]*AsyncSearchesListItem, error) {
+	if r.Size < 0 || r.Offset < 0 {
+		return nil, fmt.Errorf("%w: negative size or offset", consts.ErrInvalidArgument)
+	}
+
 	searchStores, err := si.getAsyncSearchStores()
 	if err != nil {
 		return nil, err

@@ -76,6 +76,7 @@ type registryStats struct {
 	active     fracsStats // Statistics for active fraction
 	sealing    fracsStats // Statistics for fractions in the sealing process
 	sealed     fracsStats // Statistics for fractions on sealed disk
+	compacting fracsStats // Statistics for fractions participating in compaction
 	offloading fracsStats // Statistics for fractions in the offloading process
 	remotes    fracsStats // Statistics for fractions in remote storage
 }
@@ -84,6 +85,7 @@ func (s *registryStats) Log() {
 	s.active.Log("active")
 	s.sealing.Log("sealing")
 	s.sealed.Log("sealed")
+	s.compacting.Log("compacting")
 	s.offloading.Log("offloading")
 	s.remotes.Log("remotes")
 }
@@ -92,6 +94,11 @@ func (s *registryStats) SetMetrics() {
 	s.active.SetMetrics(dataSizeTotal, "active")
 	s.sealing.SetMetrics(dataSizeTotal, "sealing")
 	s.sealed.SetMetrics(dataSizeTotal, "sealed")
+	s.compacting.SetMetrics(dataSizeTotal, "compacting")
 	s.offloading.SetMetrics(dataSizeTotal, "offloading")
 	s.remotes.SetMetrics(dataSizeTotal, "remotes")
+}
+
+func (s registryStats) TotalSizeOnDiskLocal() uint64 {
+	return s.sealing.totalSizeOnDisk + s.sealed.totalSizeOnDisk + s.compacting.totalSizeOnDisk
 }

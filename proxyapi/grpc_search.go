@@ -27,7 +27,7 @@ func (g *grpcV1) Search(
 		WithTotal: req.WithTotal,
 		Order:     req.Order,
 	}
-	sResp, err := g.doSearch(ctx, proxyReq, true, nil)
+	sResp, err := g.doSearch(ctx, proxyReq, true, true, nil)
 	if err != nil {
 		return nil, err
 	}

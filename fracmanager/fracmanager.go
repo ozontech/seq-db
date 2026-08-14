@@ -2,7 +2,9 @@ package fracmanager
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,7 +13,9 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/util"
@@ -35,13 +39,13 @@ var defaultStorageState = StorageState{
 //   - stats updating
 //
 // Returns the manager instance and a stop function to gracefully shutdown
-func New(ctx context.Context, cfg *Config, s3cli *s3.Client) (*FracManager, func(), error) {
+func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider skipMaskProvider) (*FracManager, func(), error) {
 	FillConfigWithDefault(cfg)
 
 	readLimiter := storage.NewReadLimiter(config.ReaderWorkers, storeBytesRead)
 	idx, stopIdx := frac.NewActiveIndexer(config.IndexWorkers, config.IndexWorkers)
 	cache := NewCacheMaintainer(cfg.CacheSize, cfg.SortCacheSize, newDefaultCacheMetrics())
-	provider := newFractionProvider(cfg, s3cli, cache, readLimiter, idx)
+	provider := newFractionProvider(cfg, s3cli, cache, readLimiter, idx, skipMaskProvider)
 	infoCache := NewFracInfoCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix))
 
 	// Load existing fractions into registry
@@ -65,7 +69,7 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client) (*FracManager, func
 	wg := sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(ctx)
 
-	startStatsWorker(ctx, registry, &wg)
+	startStatsWorker(ctx, cfg, registry, &wg)
 	startMaintWorker(ctx, cfg, &fm, &wg)
 	startCacheWorker(ctx, cfg, cache, &wg)
 
@@ -76,18 +80,19 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client) (*FracManager, func
 		cancel()
 		wg.Wait()
 
-		// freeze active fraction to prevent new writes
-		active := lc.registry.Active()
-		if err := active.Finalize(); err != nil {
+		// finalize appender to prevent new writes
+		appender := lc.registry.appender()
+		if err := appender.finalize(); err != nil {
 			logger.Fatal("shutdown fraction freezing error", zap.Error(err))
 		}
-		active.WaitWriteIdle()
+		appender.waitWriteIdle()
 
 		stopIdx()
 
 		lc.SyncInfoCache()
 
-		sealOnShutdown(active.instance, provider, cfg.MinSealFracSize)
+		// Seal active fraction
+		sealOnShutdown(appender.Active, provider, cfg.MinSealFracSize)
 
 		logger.Info("fracmanager's workers are stopped", zap.Int64("took_ms", time.Since(n).Milliseconds()))
 	}
@@ -95,12 +100,70 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client) (*FracManager, func
 	return &fm, stop, nil
 }
 
-func (fm *FracManager) Fractions() List {
-	return fm.lc.registry.AllFractions()
+type CompactionSnapshot struct {
+	claimed []*refCountedSealed
+}
+
+func (cs *CompactionSnapshot) Fractions() []*frac.Sealed {
+	result := make([]*frac.Sealed, len(cs.claimed))
+	for i, f := range cs.claimed {
+		result[i] = f.Sealed
+	}
+	return result
+}
+
+func (cs *CompactionSnapshot) Destroy() {
+	for _, f := range cs.claimed {
+		f.Destroy()
+	}
+}
+
+func (fm *FracManager) FractionName() string {
+	return fm.lc.provider.fractionName()
+}
+
+func (fm *FracManager) SealedFractionsSnapshot() []*frac.Sealed {
+	return fm.lc.registry.sealedSnapshot()
+}
+
+func (fm *FracManager) ClaimForCompaction(names []string) (*CompactionSnapshot, error) {
+	claimed, err := fm.lc.registry.claimForCompaction(names)
+	if err != nil {
+		return nil, err
+	}
+	return &CompactionSnapshot{claimed: claimed}, nil
+}
+
+func (fm *FracManager) ReleaseSnapshot(snapshot *CompactionSnapshot) {
+	fm.lc.registry.releaseSnapshot(snapshot)
+}
+
+func (fm *FracManager) SubstituteWithSealed(produced *sealed.PreloadedData, snapshot *CompactionSnapshot) {
+	fm.lc.registry.substituteWithSealed(
+		fm.lc.provider.NewSealedPreloaded(produced.Info.Path, produced),
+		snapshot.claimed...,
+	)
+
+	fm.lc.infoCache.Add(produced.Info)
+	for _, f := range snapshot.claimed {
+		fm.lc.infoCache.Remove(f.Info().Name())
+	}
+}
+
+func (fm *FracManager) AcquireFraction(name string) (frac.Fraction, func(), bool) {
+	return fm.lc.registry.acquireOneFraction(name)
+}
+
+func (fm *FracManager) AcquireFractions() (List, func()) {
+	return fm.lc.registry.acquireAllFractions()
+}
+
+func (fm *FracManager) AcquireFractionsInRange(from, to seq.MID) (List, func()) {
+	return fm.lc.registry.acquireFractionsInRange(from, to)
 }
 
 func (fm *FracManager) Oldest() uint64 {
-	return fm.lc.registry.OldestTotal()
+	return fm.lc.registry.oldestTotal()
 }
 
 func (fm *FracManager) Flags() *StateManager {
@@ -116,7 +179,7 @@ func (fm *FracManager) Append(ctx context.Context, docs storage.DocBlock, metas 
 			return ctx.Err()
 		default:
 			// Try to append data to the currently active fraction
-			err := fm.lc.registry.Active().Append(docs, metas)
+			err := fm.lc.registry.appender().append(docs, metas)
 			if err != nil {
 				logger.Info("append fail", zap.Error(err))
 				if err == ErrFractionNotWritable {
@@ -154,7 +217,7 @@ func startCacheWorker(ctx context.Context, cfg *Config, cache *CacheMaintainer, 
 }
 
 // startStatsWorker starts periodic statistics collection and reporting
-func startStatsWorker(ctx context.Context, reg *fractionRegistry, wg *sync.WaitGroup) {
+func startStatsWorker(ctx context.Context, cfg *Config, reg *fractionRegistry, wg *sync.WaitGroup) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -162,12 +225,31 @@ func startStatsWorker(ctx context.Context, reg *fractionRegistry, wg *sync.WaitG
 		logger.Info("stats loop is started")
 		// Run stats collection every 10 seconds
 		util.RunEvery(ctx.Done(), time.Second*10, func() {
-			stats := reg.Stats()
+			stats := reg.statistics()
 			stats.Log()        // Log statistics
 			stats.SetMetrics() // Update Prometheus metrics
+
+			corruptions := countDocsFiles(filepath.Join(cfg.DataDir, consts.BrokenDir))
+			walCorruptions.Set(float64(corruptions))
 		})
 		logger.Info("stats loop is stopped")
 	}()
+}
+
+func countDocsFiles(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		logger.Error("error reading directory", zap.Error(err))
+		return 0
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), consts.DocsFileSuffix) {
+			count++
+		}
+	}
+	return count
 }
 
 // startMaintWorker starts periodic fraction maintenance operations

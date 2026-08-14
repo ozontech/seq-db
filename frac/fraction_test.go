@@ -1,7 +1,9 @@
-package frac
+package frac_test
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -14,43 +16,54 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/alecthomas/units"
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/compaction"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
-	"github.com/ozontech/seq-db/frac/sealed/lids"
-	"github.com/ozontech/seq-db/frac/sealed/sealing"
-	"github.com/ozontech/seq-db/frac/sealed/seqids"
-	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/indexer"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
+	"github.com/ozontech/seq-db/sealing"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
+type testSkipMaskProvider struct{}
+
+func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
+	return node.NewStatic([]uint32{}, false), false, func() error { return nil }, nil
+}
+func (testSkipMaskProvider) GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error) {
+	return nil, nil
+}
+func (testSkipMaskProvider) RemoveFrac(_ string) {}
+
 type FractionTestSuite struct {
 	suite.Suite
 	tmpDir        string
-	config        *Config
+	config        *frac.Config
 	mapping       seq.Mapping
 	tokenizers    map[seq.TokenizerType]tokenizer.Tokenizer
-	activeIndexer *ActiveIndexer
+	activeIndexer *frac.ActiveIndexer
 	stopIndexer   func()
 	sealParams    common.SealParams
 
-	fraction Fraction
+	fraction frac.Fraction
 
 	insertDocuments func(docs ...[]string)
 }
 
 func (s *FractionTestSuite) SetupSuiteCommon() {
-	s.activeIndexer, s.stopIndexer = NewActiveIndexer(4, 10)
+	s.activeIndexer, s.stopIndexer = frac.NewActiveIndexer(4, 10)
 }
 
 func (s *FractionTestSuite) TearDownSuiteCommon() {
@@ -58,7 +71,7 @@ func (s *FractionTestSuite) TearDownSuiteCommon() {
 }
 
 func (s *FractionTestSuite) SetupTestCommon() {
-	s.config = &Config{}
+	s.config = &frac.Config{}
 	s.tokenizers = map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(20, false, true),
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 100),
@@ -89,6 +102,8 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		DocsPositionsZstdLevel: 1,
 		TokenTableZstdLevel:    1,
 		DocBlocksZstdLevel:     1,
+		LIDBlockSize:           512,
+		TokenBlockSize:         128,
 		DocBlockSize:           128 * int(units.KiB),
 	}
 
@@ -103,6 +118,12 @@ func (s *FractionTestSuite) TearDownTestCommon() {
 	}
 	err := os.RemoveAll(s.tmpDir)
 	s.NoError(err, "Failed to remove tmp dir")
+}
+
+func randomHex(n int) string {
+	b := make([]byte, (n+1)/2)
+	cryptorand.Read(b)
+	return hex.EncodeToString(b)[:n]
 }
 
 func (s *FractionTestSuite) TestSearchKeyword() {
@@ -216,6 +237,7 @@ func (s *FractionTestSuite) TestWildcardSymbolsSearch() {
 
 	s.insertDocuments(docs)
 
+	s.AssertSearch("((*) OR message:first) AND message:second", docs, []int{1})
 	s.AssertSearch(`message:*`, docs, []int{3, 2, 1, 0})
 	s.AssertSearch(`message:value`, docs, []int{1, 0})
 	s.AssertSearch(`message:value*`, docs, []int{2, 1, 0})
@@ -765,6 +787,35 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 			{gateway: 3, proxy: 2, scheduler: 1},
 			{"1": 4, "2": 1, "3": 1},
 		})
+}
+
+func (s *FractionTestSuite) TestCornersID() {
+	mid := seq.MID(946731600000000000)
+
+	s.insertDocuments([]string{
+		`{"timestamp":"2000-01-01T13:00:00.000Z","service":"sum1","v":1}`,
+	})
+
+	s.Require().Equal(mid, s.fraction.Info().From)
+	s.Require().Equal(mid, s.fraction.Info().To)
+
+	data, err := s.fraction.Fetch(s.T().Context(), []seq.ID{{
+		MID: seq.MID(mid),
+		RID: 0,
+	}}, false)
+
+	s.Require().NoError(err)
+	// [Fetch] returns `nil` for every non-found id.
+	s.Require().Equal([][]byte{nil}, data)
+
+	data, err = s.fraction.Fetch(s.T().Context(), []seq.ID{{
+		MID: seq.MID(mid),
+		RID: seq.SystemRID,
+	}}, false)
+
+	s.Require().NoError(err)
+	// [Fetch] returns `nil` for every non-found id.
+	s.Require().Equal([][]byte{nil}, data)
 }
 
 func (s *FractionTestSuite) TestAggSum() {
@@ -1390,11 +1441,75 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   midTime,
 		},
 
-		// other queries
+		// wildcards
 		{
 			name:     "trace_id:trace-4*",
 			query:    "trace_id:trace-4*",
 			filter:   func(doc *testDoc) bool { return strings.Contains(doc.traceId, "trace-4") },
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "id:*1* OR id:*2*",
+			query: "id:*1* OR id:*2*",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.id, "1") || strings.Contains(doc.id, "2")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "id:*1* AND id:*2*",
+			query: "id:*1* AND id:*2*",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.id, "1") && strings.Contains(doc.id, "2")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "id:*1 OR id:*2 OR id:*3",
+			query: "id:*1 OR id:*2 OR id:*3",
+			filter: func(doc *testDoc) bool {
+				return strings.HasSuffix(doc.id, "1") || strings.HasSuffix(doc.id, "2") || strings.HasSuffix(doc.id, "3")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "message:*re*",
+			query: "message:*re*",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.message, "re")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "message:req*t OR message:f*ed",
+			query: "message:req*t OR message:f*ed",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.message, "request") || strings.Contains(doc.message, "failed")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "message:*uest OR id:*1",
+			query: "message:*uest OR id:*1",
+			filter: func(doc *testDoc) bool {
+				// the only message token which suffices is 'request'
+				return strings.Contains(doc.message, "request") || strings.HasSuffix(doc.id, "1")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:*a*",
+			query: "service:*a*",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.service, "a")
+			},
 			fromTime: fromTime,
 			toTime:   toTime,
 		},
@@ -1584,6 +1699,12 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		for _, ord := range orders {
 			histBuckets := make(map[string]uint64)
 			for _, doc := range testDocs {
+				if doc.timestamp.Before(fromTime) {
+					continue
+				}
+				if doc.timestamp.After(midTime) {
+					continue
+				}
 				if doc.service == "database" && doc.level == 3 {
 					bucketTime := doc.timestamp.Truncate(time.Second)
 					bucketKey := bucketTime.Format(time.RFC3339Nano)
@@ -1593,7 +1714,8 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 
 			searchParams := s.query(
 				"service:database AND level:3",
-				withTo(toTime.Format(time.RFC3339Nano)),
+				withFrom(fromTime.Format(time.RFC3339Nano)),
+				withTo(midTime.Format(time.RFC3339Nano)),
 				withHist(1000))
 			searchParams.Order = ord
 
@@ -1648,7 +1770,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 				qprIDs := qpr.IDs.IDs()
 				totalIDsScrolled += len(qprIDs)
 
-				docs, err := s.fraction.Fetch(context.Background(), qprIDs)
+				docs, err := s.fraction.Fetch(context.Background(), qprIDs, false)
 				s.Require().NoError(err, "fetch failed for order=%v", order)
 
 				for j, doc := range docs {
@@ -1784,7 +1906,7 @@ func (s *FractionTestSuite) TestMIDDistribution() {
 
 	s.insertDocuments(docs)
 
-	_, ok := s.fraction.(*Active)
+	_, ok := s.fraction.(*frac.Active)
 	if ok {
 		s.Require().Nil(s.fraction.Info().Distribution, "active fraction has MID distribution")
 		return
@@ -1823,21 +1945,292 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	s.Require().Equal(seq.MID(946731654000000000), info.To, "to doesn't match")
 
 	switch s.fraction.(type) {
-	case *Active:
+	case *frac.Active:
 		s.Require().True(info.MetaOnDisk >= uint64(250) && info.MetaOnDisk <= uint64(400),
 			"meta on disk doesn't match. actual value: %d", info.MetaOnDisk)
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
-	case *Sealed:
+	case *frac.Sealed:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1600),
-			"index on disk doesn't match. actual value: %d", info.IndexOnDisk)
-	case *Remote:
+	case *frac.Remote:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-		s.Require().True(info.IndexOnDisk > uint64(1400) && info.IndexOnDisk < uint64(1500),
-			"index on disk doesn't match. actual value: %d", info.MetaOnDisk)
 	default:
 		s.Require().Fail("unsupported fraction type")
 	}
+}
+
+func (s *FractionTestSuite) TestSearchDownsample() {
+	const (
+		totalDocs     = 5000
+		bulkSize      = 200
+		queryAll      = "message:*"
+		queryFiltered = "message:started"
+		eps           = 0.1
+	)
+
+	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
+	s.insertDocuments(bulks...)
+
+	baseOpts := []searchOption{
+		withFrom(fromTime.Format(time.RFC3339Nano)),
+		withTo(toTime.Format(time.RFC3339Nano)),
+	}
+
+	// Step 1: verify that all documents are indexed and searchable
+	allResult, err := s.fraction.Search(context.Background(), *s.query(queryAll, baseOpts...))
+	s.Require().NoError(err, "search for all documents should succeed")
+	s.Require().Equal(totalDocs, allResult.IDs.Len(), "all %d documents should be found without downsample", totalDocs)
+
+	// Step 2: find how many documents match the filtered query (message:started)
+	// This count serves as the baseline for downsample expectations.
+	filteredResult, err := s.fraction.Search(context.Background(), *s.query(queryFiltered, baseOpts...))
+	s.Require().NoError(err, "search for filtered documents should succeed")
+	filteredDocCount := filteredResult.IDs.Len()
+	s.Require().Greater(filteredDocCount, 0, "at least one document should match %q", queryFiltered)
+
+	// Step 3: verify downsample produces approximately expected document counts
+	// With downsample=k, each document has a 1/k probability of being included,
+	// so we expect approximately total/k documents with ±eps.
+	downsampleValues := []int{10, 20, 50, 100}
+
+	assertSampled := func(q string, ds int, total int) {
+		actSum := 0
+		actCnt := 0
+		query := s.query(q, append(baseOpts, withDownsample(uint32(ds)))...)
+		for range 100 {
+			result, err := s.fraction.Search(s.T().Context(), *query)
+			s.Require().NoError(err, "search with downsample=%d should succeed", ds)
+			actSum += result.IDs.Len()
+			actCnt++
+		}
+		act := float64(actSum) / float64(actCnt)
+		exp := float64(total) / float64(ds)
+		s.Require().InEpsilon(exp, act, eps, "sampled count (%.2f) should be ~ %d/%d (±%f%%)", act, total, ds, eps)
+	}
+
+	for _, ds := range downsampleValues {
+		s.T().Run(fmt.Sprintf("downsample=%d", ds), func(t *testing.T) {
+			assertSampled(queryAll, ds, totalDocs)
+			assertSampled(queryFiltered, ds, filteredDocCount)
+		})
+	}
+}
+
+func (s *FractionTestSuite) TestSearchDownsampleWithTotal() {
+	const (
+		totalDocs = 1000
+		bulkSize  = 200
+		eps       = 0.1
+	)
+
+	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
+	s.insertDocuments(bulks...)
+
+	// downsample values to test: each should return ~1/ds of total documents
+	downsampleValues := []int{10, 20, 50, 100}
+
+	for _, ds := range downsampleValues {
+		s.T().Run(fmt.Sprintf("downsample=%d", ds), func(t *testing.T) {
+			params := s.query(
+				"message:*",
+				withFrom(fromTime.Format(time.RFC3339Nano)),
+				withTo(toTime.Format(time.RFC3339Nano)),
+				withDownsample(uint32(ds)),
+				withTotal(),
+			)
+
+			actSum := 0
+			actCnt := 0
+			for range 100 {
+				result, err := s.fraction.Search(s.T().Context(), *params)
+				s.Require().NoError(err, "search with downsample=%d failed", ds)
+				s.Require().Equal(totalDocs, int(result.Total), "total should not be affected by downsample")
+				actSum += result.IDs.Len()
+				actCnt++
+			}
+			act := float64(actSum) / float64(actCnt)
+			exp := float64(totalDocs) / float64(ds) // with downsample=k, expect approximately totalDocs/k documents
+			s.Require().InEpsilon(exp, act, eps, "sampled docs (%.2f) should be ~ %d/%d (±%0.2f)", act, totalDocs, ds, eps)
+
+		})
+	}
+}
+
+func (s *FractionTestSuite) TestSearchDownsampleZeroAndOne() {
+	const (
+		totalDocs = 5000
+		bulkSize  = 200
+		queryAll  = "message:*"
+	)
+
+	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
+	s.insertDocuments(bulks...)
+
+	baseOpts := []searchOption{
+		withFrom(fromTime.Format(time.RFC3339Nano)),
+		withTo(toTime.Format(time.RFC3339Nano)),
+	}
+
+	// searchAndAssertIDs is a local helper that runs a search with the given options
+	// and asserts that the result contains exactly totalDocs documents.
+	searchAndAssertIDs := func(name string, opts ...searchOption) {
+		s.T().Run(name, func(t *testing.T) {
+			params := s.query(queryAll, append(baseOpts, opts...)...)
+			qpr, err := s.fraction.Search(context.Background(), *params)
+			s.Require().NoError(err, "%s: search failed", name)
+			s.Require().NotNil(qpr, "%s: search result must not be nil", name)
+			s.Require().Equal(totalDocs, qpr.IDs.Len(),
+				"%s: expected %d documents, got %d", name, totalDocs, qpr.IDs.Len())
+		})
+	}
+
+	// downsample=0 (default) — should return all documents
+	searchAndAssertIDs("downsample=0 (default)")
+
+	// downsample=0 explicitly — should return all documents
+	searchAndAssertIDs("downsample=0 (explicit)", withDownsample(0))
+
+	// downsample=1 — should return all documents
+	searchAndAssertIDs("downsample=1", withDownsample(1))
+}
+
+func (s *FractionTestSuite) TestSearchDownsampleWithAggAndHist() {
+	const (
+		totalDocs  = 10000
+		bulkSize   = 200
+		hist       = 1000
+		downsample = 3
+	)
+
+	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
+	s.insertDocuments(bulks...)
+
+	commonOpts := []searchOption{
+		withFrom(fromTime.Format(time.RFC3339Nano)),
+		withTo(toTime.Format(time.RFC3339Nano)),
+		withHist(uint64(hist)),
+		withAggQuery(processor.AggQuery{
+			GroupBy: aggField("service"),
+			Func:    seq.AggFuncCount,
+		}),
+	}
+
+	s.T().Run("without downsample", func(t *testing.T) {
+		paramsNoDS := s.query("message:started", commonOpts...)
+		qprNoDS, err := s.fraction.Search(context.Background(), *paramsNoDS)
+		s.Require().NoError(err, "search without downsample failed")
+		s.Require().NotNil(qprNoDS, "search result must not be nil")
+		s.Require().Greater(len(qprNoDS.Aggs), 0, "should have aggregation results")
+
+		// Verify the histogram has a reasonable number of buckets.
+		actualHist := len(qprNoDS.Histogram)
+		s.Require().Greater(actualHist, 0, "histogram should have at least one bucket")
+		s.Require().InEpsilon(totalDocs/hist, actualHist, 0.1,
+			"histogram buckets (%d) should be ~ cntDocs/hist=%d",
+			actualHist, totalDocs/hist)
+
+		s.T().Run("with downsample", func(t *testing.T) {
+			paramsDS := s.query("message:started", append(commonOpts, withDownsample(downsample))...)
+			qprDS, err := s.fraction.Search(context.Background(), *paramsDS)
+			s.Require().NoError(err, "search with downsample=%d failed", downsample)
+			s.Require().NotNil(qprDS, "search result must not be nil")
+			assertSampledAggs(s, qprNoDS.Aggs, qprDS.Aggs, downsample)
+			assertSampledHist(s, qprNoDS.Histogram, qprDS.Histogram, downsample)
+		})
+	})
+
+}
+
+func assertSampledAggs(s *FractionTestSuite, expected, actual []seq.AggregatableSamples, ds uint32) {
+	const (
+		distEps  = 0.45
+		totalEps = 0.1
+	)
+
+	s.Require().Equal(len(expected), len(actual),
+		"number of aggregation groups: expected %d, got %d",
+		len(expected), len(actual))
+
+	for i := range expected {
+		// convert aggregations to token → Total maps
+		expMap := samplesToMap(expected[i].SamplesByBin)
+		actMap := samplesToMap(actual[i].SamplesByBin)
+
+		// calculate totals and distributions
+		expTotal := sumMap(expMap)
+		actTotal := sumMap(actMap)
+		expDist := buildDistMap(expMap, expTotal)
+		actDist := buildDistMap(actMap, actTotal)
+
+		assertDistEqual(s, expDist, actDist, distEps, "aggs")
+		assertTotalScaled(s, expTotal, actTotal, ds, totalEps, "aggs")
+	}
+}
+
+func assertSampledHist(s *FractionTestSuite, expected, actual map[seq.MID]uint64, ds uint32) {
+	const (
+		distEps  = 0.45
+		totalEps = 0.1
+	)
+
+	expTotal := sumMap(expected)
+	actTotal := sumMap(actual)
+	expDist := buildDistMap(expected, expTotal)
+	actDist := buildDistMap(actual, actTotal)
+
+	assertDistEqual(s, expDist, actDist, distEps, "histogram")
+	assertTotalScaled(s, expTotal, actTotal, ds, totalEps, "histogram")
+}
+
+func sumMap[K comparable](m map[K]uint64) uint64 {
+	var sum uint64
+	for _, v := range m {
+		sum += v
+	}
+	return sum
+}
+
+func buildDistMap[K comparable](m map[K]uint64, total uint64) map[K]float64 {
+	dist := make(map[K]float64, len(m))
+	if total == 0 {
+		return dist
+	}
+	for k, v := range m {
+		dist[k] = float64(v) / float64(total)
+	}
+	return dist
+}
+
+func assertDistEqual[K comparable](s *FractionTestSuite, expDist, actDist map[K]float64, eps float64, label string) {
+	allKeys := make(map[K]struct{})
+	for k := range expDist {
+		allKeys[k] = struct{}{}
+	}
+	for k := range actDist {
+		allKeys[k] = struct{}{}
+	}
+
+	for k := range allKeys {
+		expVal := expDist[k]
+		actVal := actDist[k]
+		s.Assert().InEpsilon(expVal, actVal, eps,
+			"%s: distribution mismatch for key \"%v\": expected %.2f, got %.2f",
+			label, k, expVal, actVal)
+	}
+}
+
+func assertTotalScaled(s *FractionTestSuite, expTotal, actTotal uint64, ds uint32, eps float64, label string) {
+	expScaled := float64(expTotal) / float64(ds)
+	s.Assert().InEpsilon(expScaled, float64(actTotal), eps,
+		"%s: total count mismatch: expected %.2f (scaled by ds=%d), got %d",
+		label, expScaled, ds, actTotal)
+}
+
+func samplesToMap(samplesByBin map[seq.AggBin]*seq.SamplesContainer) map[string]uint64 {
+	res := make(map[string]uint64, len(samplesByBin))
+	for bin, sample := range samplesByBin {
+		res[bin.Token] = uint64(sample.Total)
+	}
+	return res
 }
 
 type searchOption func(*processor.SearchParams) error
@@ -1904,6 +2297,13 @@ func withHist(histInterval uint64) searchOption {
 	}
 }
 
+func withDownsample(k uint32) searchOption {
+	return func(sp *processor.SearchParams) error {
+		sp.Downsample = k
+		return nil
+	}
+}
+
 func aggField(field string) *parser.Literal {
 	searchAll := []parser.Term{{
 		Kind: parser.TermSymbol, Data: "*",
@@ -1957,7 +2357,7 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 		s.Require().NoError(err, "search failed for query with order=%v", order)
 		s.Require().Equal(len(expectedIndexes), qpr.IDs.Len(), "doc count doesn't match")
 
-		docs, err := s.fraction.Fetch(context.Background(), qpr.IDs.IDs())
+		docs, err := s.fraction.Fetch(context.Background(), qpr.IDs.IDs(), false)
 		s.Require().NoError(err, "failed to fetch docs")
 
 		if order.IsReverse() {
@@ -2030,15 +2430,17 @@ func (s *FractionTestSuite) AssertHist(
 	}
 }
 
-func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
-	baseName := filepath.Join(s.tmpDir, "test_fraction")
-	active := NewActive(
+func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
+	baseName := filepath.Join(s.tmpDir, randomHex(12))
+
+	active := frac.NewActive(
 		baseName,
 		s.activeIndexer,
 		storage.NewReadLimiter(1, nil),
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
+		testSkipMaskProvider{},
 	)
 
 	var wg sync.WaitGroup
@@ -2075,33 +2477,25 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *Active {
 	return active
 }
 
-func (s *FractionTestSuite) newSealed(bulks ...[]string) *Sealed {
+func (s *FractionTestSuite) newSealed(bulks ...[]string) *frac.Sealed {
 	active := s.newActive(bulks...)
 
-	activeSealingSource, err := NewActiveSealingSource(active, s.sealParams)
+	activeSealingSource, err := frac.NewActiveSealingSource(active, s.sealParams)
 	s.Require().NoError(err, "Sealing source creation failed")
 
 	preloaded, err := sealing.Seal(activeSealingSource, s.sealParams)
 	s.Require().NoError(err, "Sealing failed")
 
-	indexCache := &IndexCache{
-		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
-		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
-		LIDs:       cache.NewCache[*lids.Block](nil, nil),
-		Tokens:     cache.NewCache[*token.Block](nil, nil),
-		TokenTable: cache.NewCache[token.Table](nil, nil),
-		Registry:   cache.NewCache[[]byte](nil, nil),
-	}
-
-	sealed := NewSealedPreloaded(
+	sealed := frac.NewSealedPreloaded(
 		active.BaseFileName,
 		preloaded,
 		storage.NewReadLimiter(1, nil),
-		indexCache,
+		frac.NewIndexCache(),
 		cache.NewCache[[]byte](nil, nil),
 		s.config,
+		testSkipMaskProvider{},
 	)
+
 	active.Release()
 	return sealed
 }
@@ -2129,7 +2523,7 @@ func (s *ActiveFractionTestSuite) SetupTest() {
 }
 
 func (s *ActiveFractionTestSuite) TearDownTest() {
-	if active, ok := s.fraction.(*Active); ok {
+	if active, ok := s.fraction.(*frac.Active); ok {
 		active.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Active type")
@@ -2147,7 +2541,7 @@ ActiveReplayedFractionTestSuite run tests for active fraction which was replayed
 */
 type ActiveReplayedFractionTestSuite struct {
 	FractionTestSuite
-	originalFrac *Active
+	originalFrac *frac.Active
 }
 
 func (s *ActiveReplayedFractionTestSuite) SetupSuite() {
@@ -2158,7 +2552,7 @@ func (s *ActiveReplayedFractionTestSuite) SetupTest() {
 	s.SetupTestCommon()
 	// Setting this flags allows to keep meta and docs files on disk after Active.Release() is called
 	s.config.SkipSortDocs = true
-	s.config.KeepMetaFile = true
+	s.config.KeepWalFile = true
 
 	s.insertDocuments = func(bulks ...[]string) {
 		if s.fraction != nil {
@@ -2168,24 +2562,29 @@ func (s *ActiveReplayedFractionTestSuite) SetupTest() {
 	}
 }
 
-func (s *ActiveReplayedFractionTestSuite) Replay(frac *Active) Fraction {
-	fracFileName := frac.BaseFileName
-	s.originalFrac = frac
-	replayedFrac := NewActive(
+func (s *ActiveReplayedFractionTestSuite) Replay(f *frac.Active) frac.Fraction {
+	s.originalFrac = f
+	fracFileName := f.BaseFileName
+
+	replayedFrac := frac.NewActive(
 		fracFileName,
 		s.activeIndexer,
 		storage.NewReadLimiter(1, nil),
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
-		&Config{})
+		&frac.Config{},
+		testSkipMaskProvider{},
+	)
+
 	err := replayedFrac.Replay(context.Background())
 	s.Require().NoError(err, "replay failed")
+
 	return replayedFrac
 }
 
 func (s *ActiveReplayedFractionTestSuite) TearDownTest() {
 	s.originalFrac.Release()
-	if active, ok := s.fraction.(*Active); ok {
+	if active, ok := s.fraction.(*frac.Active); ok {
 		active.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Active type")
@@ -2220,7 +2619,7 @@ func (s *SealedFractionTestSuite) SetupTest() {
 }
 
 func (s *SealedFractionTestSuite) TearDownTest() {
-	if sealed, ok := s.fraction.(*Sealed); ok {
+	if sealed, ok := s.fraction.(*frac.Sealed); ok {
 		sealed.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
@@ -2256,7 +2655,7 @@ func (s *SealedLoadedFractionTestSuite) SetupTest() {
 }
 
 func (s *SealedLoadedFractionTestSuite) TearDownTest() {
-	if sealed, ok := s.fraction.(*Sealed); ok {
+	if sealed, ok := s.fraction.(*frac.Sealed); ok {
 		sealed.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
@@ -2268,27 +2667,21 @@ func (s *SealedLoadedFractionTestSuite) TearDownSuite() {
 	s.TearDownSuiteCommon()
 }
 
-func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *Sealed {
+func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *frac.Sealed {
 	sealed := s.newSealed(bulks...)
 	sealed.Release()
 
-	indexCache := &IndexCache{
-		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
-		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
-		LIDs:       cache.NewCache[*lids.Block](nil, nil),
-		Tokens:     cache.NewCache[*token.Block](nil, nil),
-		TokenTable: cache.NewCache[token.Table](nil, nil),
-		Registry:   cache.NewCache[[]byte](nil, nil),
-	}
-
-	sealed = NewSealed(
+	sealed = frac.NewSealed(
 		sealed.BaseFileName,
 		storage.NewReadLimiter(1, nil),
-		indexCache,
+		frac.NewIndexCache(),
 		cache.NewCache[[]byte](nil, nil),
 		nil,
-		s.config)
+		s.config,
+		testSkipMaskProvider{},
+		false,
+	)
+
 	s.fraction = sealed
 	return sealed
 }
@@ -2338,31 +2731,25 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 		s.Require().NoError(err, "offload failed")
 		s.Require().True(offloaded, "didn't offload frac")
 
-		indexCache := &IndexCache{
-			MIDs:       cache.NewCache[[]byte](nil, nil),
-			RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
-			Params:     cache.NewCache[seqids.BlockParams](nil, nil),
-			LIDs:       cache.NewCache[*lids.Block](nil, nil),
-			Tokens:     cache.NewCache[*token.Block](nil, nil),
-			TokenTable: cache.NewCache[token.Table](nil, nil),
-			Registry:   cache.NewCache[[]byte](nil, nil),
-		}
-
-		remoteFrac := NewRemote(
+		remoteFrac := frac.NewRemote(
 			context.Background(),
 			sealed.BaseFileName,
 			storage.NewReadLimiter(1, nil),
-			indexCache,
+			frac.NewIndexCache(),
 			cache.NewCache[[]byte](nil, nil),
-			sealed.info,
+			sealed.Info(),
 			s.config,
-			s3cli)
+			s3cli,
+			testSkipMaskProvider{},
+			false,
+		)
+
 		s.fraction = remoteFrac
 	}
 }
 
 func (s *RemoteFractionTestSuite) TearDownTest() {
-	if remote, ok := s.fraction.(*Remote); ok {
+	if remote, ok := s.fraction.(*frac.Remote); ok {
 		remote.Suicide()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Remote type")
@@ -2374,6 +2761,113 @@ func (s *RemoteFractionTestSuite) TearDownSuite() {
 	s.TearDownSuiteCommon()
 
 	s.s3server.Close()
+}
+
+type CompactedFractionTestSuite struct {
+	FractionTestSuite
+}
+
+func (s *CompactedFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
+}
+
+func (s *CompactedFractionTestSuite) SetupTest() {
+	s.SetupTestCommon()
+
+	s.insertDocuments = func(bulks ...[]string) {
+		if s.fraction != nil {
+			s.Require().Fail("can insert docs only once")
+		}
+		s.fraction = s.newCompacted(bulks...)
+	}
+}
+
+func (s *CompactedFractionTestSuite) TearDownTest() {
+	if sealed, ok := s.fraction.(*frac.Sealed); ok {
+		sealed.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
+	}
+	s.TearDownTestCommon()
+}
+
+func (s *CompactedFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
+}
+
+// newCompacted flattens all bulks into one doc list, splits it in half,
+// seals each half as a separate fraction, and merges them with compaction.Merge.
+func (s *CompactedFractionTestSuite) newCompacted(bulks ...[]string) *frac.Sealed {
+	// Flatten all documents because we are going to reorganize it.
+	var docs []string
+	for _, b := range bulks {
+		docs = append(docs, b...)
+	}
+
+	var (
+		reorganized [][]string
+		bulkSize    = max(len(docs)/32, 1)
+	)
+
+	for i := 0; i < len(docs); i += bulkSize {
+		reorganized = append(
+			reorganized,
+			docs[i:min(i+bulkSize, len(docs))],
+		)
+	}
+
+	merged := s.newSealed(reorganized[0])
+	for i, bulk := range reorganized[1:] {
+		current := s.newSealed(bulk)
+
+		mergedBase := filepath.Join(
+			s.tmpDir,
+			fmt.Sprintf("merged-%d", i),
+		)
+
+		preloaded, err := compaction.Merge(
+			mergedBase, s.sealParams,
+			frac.NewSealedSource(merged),
+			frac.NewSealedSource(current),
+		)
+
+		s.Require().NoError(err)
+		merged = frac.NewSealedPreloaded(
+			mergedBase,
+			preloaded,
+			storage.NewReadLimiter(1, nil),
+			frac.NewIndexCache(),
+			cache.NewCache[[]byte](nil, nil),
+			s.config,
+			testSkipMaskProvider{},
+		)
+	}
+
+	return merged
+}
+
+// TestFractionInfo overrides the base test because DocsOnDisk is larger in a
+// merged fraction (sum of two source docs files) and MIDsDistribution is not
+// populated by compaction.Merge.
+func (s *CompactedFractionTestSuite) TestFractionInfo() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message some text", "container":"gateway"}`,
+		`{"timestamp":"2000-01-01T13:00:32Z","service":"service_b","message":"second message other text", "container":"kube-proxy"}`,
+		`{"timestamp":"2000-01-01T13:00:43Z","service":"service_c","message":"third message other text", "container":"gateway"}`,
+		`{"timestamp":"2000-01-01T13:00:53Z","service":"service_a","message":"fourth message some text", "container":"kube-proxy"}`,
+		`{"timestamp":"2000-01-01T13:00:54Z","service":"service_c","message":"apple","container":"kube-scheduler"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	info := s.fraction.Info()
+
+	s.Require().Equal(uint32(5), info.DocsTotal, "doc total doesn't match")
+	s.Require().Equal(uint64(583), info.DocsRaw, "doc raw doesn't match")
+	s.Require().Equal(seq.MID(946731625000000000), info.From, "from doesn't match")
+	s.Require().Equal(seq.MID(946731654000000000), info.To, "to doesn't match")
+	s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match")
+	s.Require().True(info.IndexOnDisk > 0, "index on disk should be non-zero")
 }
 
 func TestActiveFractionTestSuite(t *testing.T) {
@@ -2394,4 +2888,8 @@ func TestSealedLoadedFractionTestSuite(t *testing.T) {
 
 func TestRemoteFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(RemoteFractionTestSuite))
+}
+
+func TestCompactedFractionTestSuite(t *testing.T) {
+	suite.Run(t, new(CompactedFractionTestSuite))
 }

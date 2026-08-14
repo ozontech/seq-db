@@ -35,6 +35,8 @@ type Config struct {
 	OffloadingQueueSize  uint64
 	OffloadingRetention  time.Duration
 	OffloadingRetryDelay time.Duration
+
+	CompactionEnabled bool
 }
 
 func FillConfigWithDefault(config *Config) *Config {
@@ -57,6 +59,12 @@ func FillConfigWithDefault(config *Config) *Config {
 	if config.SealParams.LIDsZstdLevel == 0 {
 		config.SealParams.LIDsZstdLevel = zstdDefaultLevel
 	}
+	if config.SealParams.LIDBlockSize == 0 {
+		config.SealParams.LIDBlockSize = consts.DefaultLIDBlockCap
+	}
+	if config.SealParams.TokenBlockSize == 0 {
+		config.SealParams.TokenBlockSize = consts.RegularBlockSize
+	}
 	if config.SealParams.TokenListZstdLevel == 0 {
 		config.SealParams.TokenListZstdLevel = zstdDefaultLevel
 	}
@@ -66,23 +74,33 @@ func FillConfigWithDefault(config *Config) *Config {
 	if config.SealParams.TokenTableZstdLevel == 0 {
 		config.SealParams.TokenTableZstdLevel = zstdDefaultLevel
 	}
+	if config.SealParams.TokenFreqThresholdPercentage == 0 {
+		config.SealParams.TokenFreqThresholdPercentage = consts.DefaultTokenFreqThresholdPercentage
+	}
 	if config.ReplayWorkers == 0 {
 		config.ReplayWorkers = consts.DefaultReplayWorkers
 	}
 
-	if config.SortCacheSize == 0 {
+	// Document sorting is enabled.
+	if !config.Fraction.SkipSortDocs {
 		const (
 			SdocsCacheSizeMultiplier = 8
 			SdocsCacheSizeMaxRatio   = 0.8
 		)
-		config.SortCacheSize = config.FracSize * SdocsCacheSizeMultiplier
+
 		if config.SortCacheSize > config.CacheSize {
-			config.SortCacheSize = uint64(float64(config.CacheSize) * 0.8)
+			logger.Fatal("cache size misconfiguration",
+				zap.Float64("total_cache_size_mb", util.SizeToUnit(config.CacheSize, "mb")),
+				zap.Float64("sort_cache_size_mb", util.SizeToUnit(config.SortCacheSize, "mb")))
 		}
-	} else if config.SortCacheSize > config.CacheSize {
-		logger.Fatal("cache size misconfiguration",
-			zap.Float64("total_cache_size_mb", util.SizeToUnit(config.CacheSize, "mb")),
-			zap.Float64("sort_cache_size_mb", util.SizeToUnit(config.SortCacheSize, "mb")))
+
+		// Set defaults.
+		if config.SortCacheSize == 0 {
+			config.SortCacheSize = config.FracSize * SdocsCacheSizeMultiplier
+			if config.SortCacheSize > config.CacheSize {
+				config.SortCacheSize = uint64(float64(config.CacheSize) * 0.8)
+			}
+		}
 	}
 
 	return config

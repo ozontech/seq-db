@@ -218,7 +218,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 		ids := make(seq.IDSources, len(origIDs))
 		copy(ids, origIDs)
 
-		docsStreamWithHints, err := s.Ingestor().SearchIngestor.FetchDocsStream(context.TODO(), ids, false, search.FetchFieldsFilter{})
+		docsStreamWithHints, err := s.Ingestor().SearchIngestor.FetchDocsStream(context.TODO(), ids, false, false, search.FetchFieldsFilter{})
 		s.Require().NoError(err)
 
 		var fetched []string
@@ -232,7 +232,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 			ids[i].Hint = ""
 		}
 
-		docsStreamNoHints, err := s.Ingestor().SearchIngestor.FetchDocsStream(context.TODO(), ids, false, search.FetchFieldsFilter{})
+		docsStreamNoHints, err := s.Ingestor().SearchIngestor.FetchDocsStream(context.TODO(), ids, false, false, search.FetchFieldsFilter{})
 		s.Require().NoError(err)
 
 		fetched = []string{}
@@ -246,7 +246,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 			ids[i].Hint = "foobar"
 		}
 
-		docsStreamBrokenHints, err := s.Ingestor().SearchIngestor.FetchDocsStream(context.TODO(), ids, false, search.FetchFieldsFilter{})
+		docsStreamBrokenHints, err := s.Ingestor().SearchIngestor.FetchDocsStream(context.TODO(), ids, false, false, search.FetchFieldsFilter{})
 		s.Assert().NoError(err)
 
 		fetched = []string{}
@@ -255,7 +255,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 				fetched = append(fetched, string(doc.Data))
 			}
 		}
-		s.Assert().Empty(fetched)
+		s.Require().Equal(docStrs, fetched) // we will check id with broken hint in each fraction
 	})
 }
 

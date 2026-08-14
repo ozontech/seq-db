@@ -11,9 +11,9 @@ const (
 	// DummyMID is used in aggregations when we do not need to build time series.
 	DummyMID = 0
 
-	IDsPerBlock      = int(4 * units.KiB)
-	LIDBlockCap      = int(64 * units.KiB)
-	RegularBlockSize = int(16 * units.KiB)
+	IDsPerBlock        = int(4 * units.KiB)
+	DefaultLIDBlockCap = int(64 * units.KiB)
+	RegularBlockSize   = int(16 * units.KiB)
 
 	DefaultMaintenanceDelay  = time.Second
 	DefaultCacheGCDelay      = 1 * time.Second
@@ -21,8 +21,9 @@ const (
 
 	DefaultMaxTokenSize = 72
 
-	DefaultBulkRequestsLimit   = 32
-	DefaultSearchRequestsLimit = 32
+	DefaultBulkRequestsLimit            = 32
+	DefaultSearchRequestsLimit          = 32
+	DefaultTokenFreqThresholdPercentage = 0.005
 
 	BulkMaxTries = 3
 
@@ -48,24 +49,46 @@ const (
 
 	DefaultReplayWorkers = 2
 
+	// dir names
+	BrokenDir = ".broken"
+
 	// known extensions
-	MetaFileSuffix = ".meta"
-	WalFileSuffix  = ".wal"
+	WalFileSuffix = ".wal"
 
 	DocsFileSuffix    = ".docs"
+	DocsTmpFileSuffix = "._docs"
 	DocsDelFileSuffix = ".docs.del"
 
 	SdocsFileSuffix    = ".sdocs"
 	SdocsTmpFileSuffix = "._sdocs"
 	SdocsDelFileSuffix = ".sdocs.del"
 
+	InfoFileSuffix    = ".info"
+	InfoTmpFileSuffix = "._info"
+
+	TokenFileSuffix    = ".tokens"
+	TokenTmpFileSuffix = "._tokens"
+
+	OffsetsFileSuffix    = ".offsets"
+	OffsetsTmpFileSuffix = "._offsets"
+
+	IDFileSuffix    = ".ids"
+	IDTmpFileSuffix = "._ids"
+
+	LIDFileSuffix    = ".lids"
+	LIDTmpFileSuffix = "._lids"
+
+	// IndexFileSuffix is the legacy single-file index format (pre-split).
 	IndexFileSuffix    = ".index"
 	IndexTmpFileSuffix = "._index"
+	// TODO(dkharms): [IndexDelFileSuffix] is actually not necessary.
+	// We can remove it in the future releases.
 	IndexDelFileSuffix = ".index.del"
 
 	RemoteFractionSuffix = ".remote"
 
 	FracCacheFileSuffix = ".frac-cache"
+	CompactionPlan      = ".compaction-plan"
 
 	// tracing
 	JaegerDebugKey = "jaeger-debug-id"

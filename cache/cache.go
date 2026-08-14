@@ -107,7 +107,10 @@ func (c *Cache[V]) Cleanup() uint64 {
 	defer c.mu.Unlock()
 
 	// collect old data
-	var totalFreed uint64
+	var (
+		bytesFreed   uint64
+		entriesFreed uint64
+	)
 	if len(c.payload) > c.maxPayloadSize {
 		c.maxPayloadSize = len(c.payload)
 	}
@@ -117,13 +120,28 @@ func (c *Cache[V]) Cleanup() uint64 {
 		}
 		delete(c.payload, k)
 		e.deleted = true
-		totalFreed += e.size
+		bytesFreed += e.size
+		entriesFreed++
 	}
 
 	c.recreatePayload()
-	c.metrics.reportReleased(totalFreed)
+	c.metrics.reportReleased(bytesFreed, entriesFreed)
 
-	return totalFreed
+	return bytesFreed
+}
+
+func (c *Cache[V]) Evict(key uint32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	e, ok := c.payload[key]
+	if !ok {
+		// no key in cache
+		return
+	}
+
+	delete(c.payload, key)
+	e.deleted = true
 }
 
 // Recreates the payload map. If len is too small, fraction is probably out of date and useless
@@ -280,13 +298,15 @@ func (c *Cache[V]) Release() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	entriesFreed := uint64(len(c.payload))
 	var totalFreed uint64
 	for _, e := range c.payload {
 		totalFreed += e.size
 		e.gen.size.Sub(e.size)
+		e.deleted = true
 	}
 
-	c.metrics.reportReleased(totalFreed)
+	c.metrics.reportReleased(totalFreed, entriesFreed)
 
 	c.payload = nil
 	c.released = true

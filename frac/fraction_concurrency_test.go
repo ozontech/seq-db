@@ -1,4 +1,4 @@
-package frac
+package frac_test
 
 import (
 	"fmt"
@@ -14,17 +14,15 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
-	"github.com/ozontech/seq-db/frac/sealed/lids"
-	"github.com/ozontech/seq-db/frac/sealed/sealing"
-	"github.com/ozontech/seq-db/frac/sealed/seqids"
-	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/parser"
+	"github.com/ozontech/seq-db/sealing"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
-	test_common "github.com/ozontech/seq-db/tests/common"
+	testcommon "github.com/ozontech/seq-db/tests/common"
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
@@ -38,20 +36,21 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 	docs, bulks, fromTime, toTime := generatesMessages(numWriters*numMessagesPerWriter, bulkSize)
 
-	tmpDir := test_common.CreateTempDir()
+	tmpDir := testcommon.CreateTempDir()
 	fracPath := filepath.Join(tmpDir, "test_fraction")
-	defer test_common.RemoveDir(fracPath)
+	defer testcommon.RemoveDir(fracPath)
 
-	activeIndexer, stop := NewActiveIndexer(numIndexWorkers, 1000)
+	activeIndexer, stop := frac.NewActiveIndexer(numIndexWorkers, 1000)
 	defer stop()
 
-	active := NewActive(
+	active := frac.NewActive(
 		fracPath,
 		activeIndexer,
 		storage.NewReadLimiter(numReaders/2, nil),
 		cache.NewCache[[]byte](nil, nil),
 		cache.NewCache[[]byte](nil, nil),
-		&Config{},
+		&frac.Config{},
+		testSkipMaskProvider{},
 	)
 
 	mapping := seq.Mapping{
@@ -156,7 +155,7 @@ const (
 	kafka     = "kafka"
 )
 
-func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs []*testDoc, fromTime, toTime time.Time, mapping seq.Mapping) {
+func readTest(t *testing.T, fraction frac.Fraction, numReaders, numQueries int, docs []*testDoc, fromTime, toTime time.Time, mapping seq.Mapping) {
 	readersGroup, ctx := errgroup.WithContext(t.Context())
 
 	type queryFilter func(doc *testDoc) bool
@@ -230,7 +229,7 @@ func readTest(t *testing.T, fraction Fraction, numReaders, numQueries int, docs 
 					return fmt.Errorf("search failed: %w", err)
 				}
 
-				fetchedResult, err := fraction.Fetch(ctx, qpr.IDs.IDs())
+				fetchedResult, err := fraction.Fetch(ctx, qpr.IDs.IDs(), false)
 				if err != nil {
 					return fmt.Errorf("fetch failed: %w", err)
 				}
@@ -288,6 +287,17 @@ func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.
 	for i := 0; i < numMessages; i++ {
 		service := services[rand.IntN(len(services))]
 		message := messages[rand.IntN(len(messages))]
+		// populate message with various unique tokens like ids and hex numbers (matches real installation)
+		x := rand.IntN(20)
+		switch x {
+		case 1:
+			message += fmt.Sprintf(" %dms", rand.IntN(10000000))
+		case 2:
+			message += fmt.Sprintf(" %dus", rand.IntN(10000000))
+		default:
+			message += fmt.Sprintf(" %d", rand.IntN(10000000))
+		}
+
 		level := rand.IntN(6)
 		timestamp := fromTime.Add(time.Duration(i) * time.Millisecond)
 		id := fmt.Sprintf("id-%d", i)
@@ -334,7 +344,7 @@ func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.
 	return docs, bulks, fromTime, toTime
 }
 
-func seal(active *Active) (*Sealed, error) {
+func seal(active *frac.Active) (*frac.Sealed, error) {
 	sealParams := common.SealParams{
 		IDsZstdLevel:           1,
 		LIDsZstdLevel:          1,
@@ -343,8 +353,9 @@ func seal(active *Active) (*Sealed, error) {
 		TokenTableZstdLevel:    1,
 		DocBlocksZstdLevel:     1,
 		DocBlockSize:           128 * int(units.KiB),
+		LIDBlockSize:           512,
 	}
-	activeSealingSource, err := NewActiveSealingSource(active, sealParams)
+	activeSealingSource, err := frac.NewActiveSealingSource(active, sealParams)
 	if err != nil {
 		return nil, err
 	}
@@ -352,23 +363,17 @@ func seal(active *Active) (*Sealed, error) {
 	if err != nil {
 		return nil, err
 	}
-	indexCache := &IndexCache{
-		MIDs:       cache.NewCache[[]byte](nil, nil),
-		RIDs:       cache.NewCache[seqids.BlockRIDs](nil, nil),
-		Params:     cache.NewCache[seqids.BlockParams](nil, nil),
-		LIDs:       cache.NewCache[*lids.Block](nil, nil),
-		Tokens:     cache.NewCache[*token.Block](nil, nil),
-		TokenTable: cache.NewCache[token.Table](nil, nil),
-		Registry:   cache.NewCache[[]byte](nil, nil),
-	}
-	sealed := NewSealedPreloaded(
+
+	sealed := frac.NewSealedPreloaded(
 		active.BaseFileName,
 		preloaded,
 		storage.NewReadLimiter(1, nil),
-		indexCache,
+		frac.NewIndexCache(),
 		cache.NewCache[[]byte](nil, nil),
-		&Config{},
+		&frac.Config{},
+		testSkipMaskProvider{},
 	)
+
 	active.Release()
 	return sealed, nil
 }

@@ -3,29 +3,46 @@ package token
 import (
 	"encoding/binary"
 	"slices"
+	"sync"
 	"unsafe"
 
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/util"
 )
 
 const CacheKeyTable = 1
 
 type TableLoader struct {
 	fracName string
-	reader   *storage.IndexReader
-	cache    *cache.Cache[Table]
-	i        uint32
-	buf      []byte
+	fracVer  config.BinaryDataVersion
+	isLegacy bool
+
+	reader *storage.IndexReader
+	cache  *cache.Cache[Table]
+
+	once       sync.Once
+	tableIndex uint32
+
+	buf []byte
 }
 
-func NewTableLoader(fracName string, reader *storage.IndexReader, c *cache.Cache[Table]) *TableLoader {
+func NewTableLoader(
+	fracName string,
+	fracVer config.BinaryDataVersion,
+	isLegacy bool,
+	reader *storage.IndexReader,
+	c *cache.Cache[Table],
+) *TableLoader {
 	return &TableLoader{
 		fracName: fracName,
+		fracVer:  fracVer,
+		isLegacy: isLegacy,
 		reader:   reader,
 		cache:    c,
 	}
@@ -33,10 +50,23 @@ func NewTableLoader(fracName string, reader *storage.IndexReader, c *cache.Cache
 
 func (l *TableLoader) Load() Table {
 	table, err := l.cache.GetWithError(CacheKeyTable, func() (Table, int, error) {
-		blocks, err := l.loadBlocks()
+		var (
+			blocks []TableBlock
+			err    error
+		)
+
+		l.advanceToTable()
+
+		if l.isLegacy {
+			blocks, err = l.loadBlocksLegacy()
+		} else {
+			blocks, err = l.loadBlocks()
+		}
+
 		if err != nil {
 			return nil, 0, err
 		}
+
 		table := TableFromBlocks(blocks)
 		return table, table.Size(), nil
 	})
@@ -45,11 +75,13 @@ func (l *TableLoader) Load() Table {
 			zap.String("frac", l.fracName),
 			zap.Error(err))
 	}
+
 	return table
 }
 
 func TableFromBlocks(blocks []TableBlock) Table {
 	table := make(Table)
+
 	for _, block := range blocks {
 		for _, ft := range block.FieldsTables {
 			fd, ok := table[ft.Field]
@@ -62,49 +94,88 @@ func TableFromBlocks(blocks []TableBlock) Table {
 			} else if minVal < fd.MinVal {
 				fd.MinVal = minVal
 			}
+
 			for _, e := range ft.Entries {
 				e.MinVal = ""
 				fd.Entries = append(fd.Entries, e)
 			}
+
 			table[ft.Field] = fd
 		}
 	}
+
 	return table
 }
 
-func (l *TableLoader) readHeader() storage.IndexBlockHeader {
-	h, e := l.reader.GetBlockHeader(l.i)
+func (l *TableLoader) readHeader(idx uint32) storage.IndexBlockHeader {
+	h, e := l.reader.GetBlockHeader(idx)
 	if e != nil {
 		logger.Panic("error reading block header", zap.Error(e))
 	}
-	l.i++
 	return h
 }
 
-func (l *TableLoader) readBlock() ([]byte, error) {
-	block, _, err := l.reader.ReadIndexBlock(l.i, l.buf)
+func (l *TableLoader) readBlock(idx uint32) ([]byte, error) {
+	block, _, err := l.reader.ReadIndexBlock(idx, l.buf)
 	l.buf = block
-	l.i++
 	return block, err
 }
 
-func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
-	// todo: scan all headers in sealed_loader and remember startIndex for each sections
-	// todo: than use this startIndex to load sections on demand (do not scan every time)
-	l.i = 1
-	for h := l.readHeader(); h.Len() > 0; h = l.readHeader() { // skip actual token blocks, go for token table
-	}
-
+func (l *TableLoader) loadBlocksLegacy() ([]TableBlock, error) {
 	blocks := make([]TableBlock, 0)
-	for blockData, err := l.readBlock(); len(blockData) > 0; blockData, err = l.readBlock() {
+
+	blockIndex := l.tableIndex
+	for blockData, err := l.readBlock(blockIndex); len(blockData) > 0; blockData, err = l.readBlock(blockIndex) {
 		if err != nil {
 			return nil, err
 		}
-		tb := TableBlock{}
-		tb.Unpack(blockData)
+
+		var tb TableBlock
+		tb.Unpack(blockData, l.fracVer)
+
+		blocks = append(blocks, tb)
+		blockIndex += 1
+	}
+
+	return blocks, nil
+}
+
+func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
+	blocksCount := l.reader.BlocksCount()
+
+	var blocks []TableBlock
+	for blockIndex := l.tableIndex; blockIndex < uint32(blocksCount); blockIndex++ {
+		data, err := l.readBlock(blockIndex)
+		if err != nil {
+			return nil, err
+		}
+
+		var tb TableBlock
+		tb.Unpack(data, l.fracVer)
+
 		blocks = append(blocks, tb)
 	}
+
 	return blocks, nil
+}
+
+func (l *TableLoader) advanceToTable() {
+	l.once.Do(func() {
+		// This is correct for both legacy and non-legacy sealed fractions:
+		// 	- in legacy fractions we have following layout: [info][token][separator][token-table][...];
+		//	- in non-legacy fraction we have following layout: [token][separator][token-table];
+		// As you can see, it is safe to start from 0-th block in both cases.
+		blockIndex := uint32(0)
+
+		for h := l.readHeader(blockIndex); h.Len() > 0; h = l.readHeader(blockIndex) {
+			// Skip token blocks, go for token table.
+			blockIndex += 1
+		}
+
+		// We've stopped iterating on section separator.
+		// Therefore increment is required to reach index of actual token table.
+		l.tableIndex = blockIndex + 1
+	})
 }
 
 // TableBlock represents how token.Table is stored on disk
@@ -137,6 +208,8 @@ func (b TableBlock) packedSize() int {
 			// MaxVal
 			size += sizeOfUint32
 			size += len(entry.MaxVal)
+			// Letters
+			size += sizeOfUint32
 		}
 	}
 	return size
@@ -162,12 +235,14 @@ func (b TableBlock) Pack(buf []byte) []byte {
 			// MaxVal
 			buf = binary.LittleEndian.AppendUint32(buf, uint32(len(entry.MaxVal)))
 			buf = append(buf, entry.MaxVal...)
+			// Letters
+			buf = binary.LittleEndian.AppendUint32(buf, uint32(entry.Letters))
 		}
 	}
 	return buf
 }
 
-func (b *TableBlock) Unpack(data []byte) {
+func (b *TableBlock) Unpack(data []byte, fracVer config.BinaryDataVersion) {
 	b.FieldsTables = make([]FieldTable, 0)
 	unpacker := packer.NewBytesUnpacker(data)
 
@@ -191,6 +266,11 @@ func (b *TableBlock) Unpack(data []byte) {
 				e.MinVal = minVal
 			}
 			e.MaxVal = maxVal
+			if fracVer >= config.BinaryDataV5 {
+				e.Letters = util.LettersBitset(unpacker.GetUint32())
+			} else {
+				e.Letters = util.NewLettersBitsetNil()
+			}
 			ft.Entries[i] = e
 		}
 		b.FieldsTables = append(b.FieldsTables, ft)

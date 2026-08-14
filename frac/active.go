@@ -2,8 +2,7 @@ package frac
 
 import (
 	"context"
-	"io"
-	"math"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -26,9 +25,7 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-var (
-	_ Fraction = (*Active)(nil)
-)
+var _ Fraction = (*Active)(nil)
 
 type Active struct {
 	Config *Config
@@ -46,6 +43,7 @@ type Active struct {
 	TokenList *TokenList
 
 	DocsPositions *DocsPositions
+	IDsToLIDs     *ActiveLIDs
 
 	docsFile   *os.File
 	docsReader storage.DocsReader
@@ -53,22 +51,13 @@ type Active struct {
 	docsCache  *cache.Cache[[]byte]
 	sortCache  *cache.Cache[[]byte]
 
-	metaFile   *os.File
-	metaReader *storage.DocBlocksReader
-	walReader  *storage.WalReader
+	walFile   *os.File
+	walReader *storage.WalReader
 
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
-}
 
-const (
-	systemMID = math.MaxUint64
-	systemRID = math.MaxUint64
-)
-
-var systemSeqID = seq.ID{
-	MID: systemMID,
-	RID: systemRID,
+	skipMaskProvider skipMaskProvider
 }
 
 func NewActive(
@@ -78,14 +67,15 @@ func NewActive(
 	docsCache *cache.Cache[[]byte],
 	sortCache *cache.Cache[[]byte],
 	cfg *Config,
+	skipMaskProvider skipMaskProvider,
 ) *Active {
 	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
-
-	metaFile, writer, metaReader, walReader, metaSize := mustOpenMetaWriter(baseFileName, readLimiter, docsFile, docsStats)
+	walFile, writer, walReader, walSize := mustOpenWalWriter(baseFileName, readLimiter, docsFile, docsStats)
 
 	f := &Active{
 		TokenList:     NewActiveTokenList(config.IndexWorkers),
 		DocsPositions: NewSyncDocsPositions(),
+		IDsToLIDs:     NewActiveLIDs(),
 		MIDs:          NewIDs(),
 		RIDs:          NewIDs(),
 		DocBlocks:     NewIDs(),
@@ -96,54 +86,43 @@ func NewActive(
 		docsReader: storage.NewDocsReader(readLimiter, docsFile, docsCache),
 		sortReader: storage.NewDocsReader(readLimiter, docsFile, sortCache),
 
-		metaFile:   metaFile,
-		metaReader: metaReader,
-		walReader:  walReader,
+		walFile:   walFile,
+		walReader: walReader,
 
 		indexer: activeIndexer,
 		writer:  writer,
 
 		BaseFileName: baseFileName,
-		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), metaSize),
+		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), walSize),
 		Config:       cfg,
+
+		skipMaskProvider: skipMaskProvider,
 	}
 
 	// use of 0 as keys in maps is prohibited – it's system key, so add first element
-	f.MIDs.Append(systemMID)
-	f.RIDs.Append(systemRID)
+	f.MIDs.Append(uint64(seq.SystemMID))
+	f.RIDs.Append(uint64(seq.SystemRID))
 
 	logger.Info("active fraction created", zap.String("fraction", baseFileName))
 
 	return f
 }
 
-func mustOpenMetaWriter(
+func mustOpenWalWriter(
 	baseFileName string,
 	readLimiter *storage.ReadLimiter,
 	docsFile *os.File,
-	docsStats os.FileInfo) (*os.File, *ActiveWriter, *storage.DocBlocksReader, *storage.WalReader, uint64) {
-	legacyMetaFileName := baseFileName + consts.MetaFileSuffix
-
-	if _, err := os.Stat(legacyMetaFileName); err == nil {
-		// .meta file exists
-		metaFile, metaStats := mustOpenFile(legacyMetaFileName, config.SkipFsync)
-		metaSize := uint64(metaStats.Size())
-		metaReader := storage.NewDocBlocksReader(readLimiter, metaFile)
-		writer := NewActiveWriterLegacy(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
-		logger.Info("using legacy meta file format", zap.String("fraction", baseFileName))
-		return metaFile, writer, &metaReader, nil, metaSize
-	}
-
-	logger.Info("using new WAL format", zap.String("fraction", baseFileName))
+	docsStats os.FileInfo,
+) (*os.File, *ActiveWriter, *storage.WalReader, uint64) {
 	walFileName := baseFileName + consts.WalFileSuffix
-	metaFile, metaStats := mustOpenFile(walFileName, config.SkipFsync)
-	metaSize := uint64(metaStats.Size())
-	writer := NewActiveWriter(docsFile, metaFile, docsStats.Size(), metaStats.Size(), config.SkipFsync)
-	walReader, err := storage.NewWalReader(readLimiter, metaFile, baseFileName)
+	walFile, walStats := mustOpenFile(walFileName, config.SkipFsync)
+	walSize := uint64(walStats.Size())
+	writer := NewActiveWriter(docsFile, walFile, docsStats.Size(), walStats.Size(), config.SkipFsync)
+	walReader, err := storage.NewWalReader(readLimiter, walFile, baseFileName)
 	if err != nil {
 		logger.Fatal("failed to initialize WAL reader", zap.String("fraction", baseFileName), zap.Error(err))
 	}
-	return metaFile, writer, nil, walReader, metaSize
+	return walFile, writer, walReader, walSize
 }
 
 func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
@@ -165,13 +144,6 @@ func mustOpenFile(name string, skipFsync bool) (*os.File, os.FileInfo) {
 }
 
 func (f *Active) Replay(ctx context.Context) error {
-	if f.metaReader != nil {
-		return f.replayMetaFileLegacy(ctx)
-	}
-	return f.replayWalFile(ctx)
-}
-
-func (f *Active) replayWalFile(ctx context.Context) error {
 	logger.Info("start replaying WAL file...", zap.String("name", f.info.Name()))
 
 	t := time.Now()
@@ -181,6 +153,7 @@ func (f *Active) replayWalFile(ctx context.Context) error {
 
 	sw := stopwatch.New()
 	wg := sync.WaitGroup{}
+	var corruptions uint64
 
 	for entry := range f.walReader.Entries() {
 		// Check for context cancellation
@@ -193,24 +166,35 @@ func (f *Active) replayWalFile(ctx context.Context) error {
 		if entry.Err != nil {
 			return entry.Err
 		}
+		corruptions = entry.Corruptions
 
-		if uint64(entry.Offset) > next {
-			next += step
-			progress := float64(uint64(entry.Offset)) / float64(f.info.MetaOnDisk) * 100
-			logger.Info("replaying batch, meta",
-				zap.String("name", f.info.Name()),
-				zap.Int64("from", entry.Offset),
-				zap.Int64("to", entry.Offset+entry.Size),
-				zap.Uint64("target", f.info.MetaOnDisk),
-				util.ZapFloat64WithPrec("progress_percentage", progress, 2),
-			)
+		if entry.ContainsData {
+			if uint64(entry.Offset) > next {
+				next += step
+				progress := float64(uint64(entry.Offset)) / float64(f.info.MetaOnDisk) * 100
+				logger.Info("replaying batch, meta",
+					zap.String("name", f.info.Name()),
+					zap.Int64("from", entry.Offset),
+					zap.Int64("to", entry.Offset+entry.Size),
+					zap.Uint64("target", f.info.MetaOnDisk),
+					util.ZapFloat64WithPrec("progress_percentage", progress, 2),
+				)
+			}
+
+			wg.Add(1)
+			f.indexer.Index(f, entry.Data, &wg, sw)
 		}
-
-		wg.Add(1)
-		f.indexer.Index(f, entry.Data, &wg, sw)
 	}
 
 	wg.Wait()
+	if corruptions > 0 {
+		if err := f.backupCorruptedFiles(); err != nil {
+			logger.Error("failed to copy a corrupted WAL file",
+				zap.String("name", f.info.Name()),
+				zap.Error(err),
+			)
+		}
+	}
 
 	tookSeconds := util.DurationToUnit(time.Since(t), "s")
 	throughputRaw := util.SizeToUnit(f.info.DocsRaw, "mb") / tookSeconds
@@ -226,69 +210,27 @@ func (f *Active) replayWalFile(ctx context.Context) error {
 	return nil
 }
 
-// replayMetaFileLegacy replays legacy *.meta files. Only basic corruption detection support is implemented
-func (f *Active) replayMetaFileLegacy(ctx context.Context) error {
-	logger.Info("start replaying...", zap.String("name", f.info.Name()))
-
-	t := time.Now()
-
-	offset := uint64(0)
-	step := f.info.MetaOnDisk / 10
-	next := step
-
-	sw := stopwatch.New()
-	wg := sync.WaitGroup{}
-
-out:
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			meta, metaSize, err := f.metaReader.ReadDocBlock(int64(offset))
-			if err == io.EOF {
-				if metaSize != 0 {
-					logger.Warn("last meta block is partially written, skipping it")
-				}
-				break out
-			}
-			if err != nil && err != io.EOF {
-				return err
-			}
-
-			if offset > next {
-				next += step
-				progress := float64(offset) / float64(f.info.MetaOnDisk) * 100
-				logger.Info("replaying batch, meta",
-					zap.String("name", f.info.Name()),
-					zap.Uint64("from", offset),
-					zap.Uint64("to", offset+metaSize),
-					zap.Uint64("target", f.info.MetaOnDisk),
-					util.ZapFloat64WithPrec("progress_percentage", progress, 2),
-				)
-			}
-			offset += metaSize
-
-			wg.Add(1)
-
-			walBlock := storage.PackDocBlockToWalBlock(meta)
-			f.indexer.Index(f, walBlock, &wg, sw)
-		}
+// backupCorruptedFiles saves wal and docs file in a directory with corrupted files for later analysis
+func (f *Active) backupCorruptedFiles() error {
+	brokenDir := filepath.Join(filepath.Dir(f.BaseFileName), consts.BrokenDir)
+	if err := os.MkdirAll(brokenDir, 0o777); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("create dir %s, err: %w", brokenDir, err)
 	}
 
-	wg.Wait()
+	fracName := filepath.Base(f.BaseFileName)
 
-	tookSeconds := util.DurationToUnit(time.Since(t), "s")
-	throughputRaw := util.SizeToUnit(f.info.DocsRaw, "mb") / tookSeconds
-	throughputMeta := util.SizeToUnit(f.info.MetaOnDisk, "mb") / tookSeconds
-	logger.Info("active fraction replayed",
-		zap.String("name", f.info.Name()),
-		zap.Uint32("docs_total", f.info.DocsTotal),
-		util.ZapUint64AsSizeStr("docs_size", f.info.DocsOnDisk),
-		util.ZapFloat64WithPrec("took_s", tookSeconds, 1),
-		util.ZapFloat64WithPrec("throughput_raw_mb_sec", throughputRaw, 1),
-		util.ZapFloat64WithPrec("throughput_meta_mb_sec", throughputMeta, 1),
-	)
+	walSrc := f.BaseFileName + consts.WalFileSuffix
+	walDst := filepath.Join(brokenDir, fracName+consts.WalFileSuffix)
+	if err := util.CopyFile(walSrc, walDst); err != nil {
+		return fmt.Errorf("copy from %s to %s, err: %w", walSrc, walDst, err)
+	}
+
+	docSrc := f.BaseFileName + consts.DocsFileSuffix
+	docDst := filepath.Join(brokenDir, fracName+consts.DocsFileSuffix)
+	if err := util.CopyFile(docSrc, docDst); err != nil {
+		return fmt.Errorf("copy from %s to %s, err: %w", docSrc, docDst, err)
+	}
+
 	return nil
 }
 
@@ -300,12 +242,13 @@ var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Help:      "Bulk processing time by stage",
 }, []string{"stage"})
 
-// Append causes data to be written on disk and sends metas to index workers
+// Append causes data to be written on disk and sends metas to index workers.
 func (f *Active) Append(docs storage.DocBlock, metas storage.WalBlock, wg *sync.WaitGroup) (err error) {
 	sw := stopwatch.New()
 	m := sw.Start("append")
 	if err = f.writer.Write(docs, metas, sw); err != nil {
 		m.Stop()
+		wg.Done()
 		return err
 	}
 	f.updateDiskStats(uint64(len(docs)), uint64(len(metas)))
@@ -362,7 +305,7 @@ func (f *Active) String() string {
 	return fracToString(f, "active")
 }
 
-func (f *Active) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
+func (f *Active) Fetch(ctx context.Context, ids []seq.ID, noSkipMasks bool) ([][]byte, error) {
 	if f.Info().DocsTotal == 0 { // it is empty active fraction state
 		return nil, nil
 	}
@@ -370,7 +313,7 @@ func (f *Active) Fetch(ctx context.Context, ids []seq.ID) ([][]byte, error) {
 	dp := f.createDataProvider(ctx)
 	defer dp.release()
 
-	return dp.Fetch(ids)
+	return dp.Fetch(ids, noSkipMasks)
 }
 
 func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
@@ -385,6 +328,17 @@ func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*se
 	return dp.Search(params)
 }
 
+func (f *Active) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
+	if f.Info().DocsTotal == 0 { // it is empty active fraction state
+		return nil, nil
+	}
+
+	dp := f.createDataProvider(ctx)
+	defer dp.release()
+
+	return dp.FindLIDs(ids)
+}
+
 func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 	return &activeDataProvider{
 		ctx:    ctx,
@@ -397,7 +351,10 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 
 		blocksOffsets: f.DocBlocks.GetVals(),
 		docsPositions: f.DocsPositions,
+		idsToLids:     f.IDsToLIDs,
 		docsReader:    &f.docsReader,
+
+		skipMaskProvider: f.skipMaskProvider,
 	}
 }
 
@@ -420,8 +377,8 @@ func (f *Active) IsIntersecting(from, to seq.MID) bool {
 func (f *Active) Release() {
 	f.releaseMem()
 
-	if !f.Config.KeepMetaFile {
-		util.RemoveFile(f.metaFile.Name())
+	if !f.Config.KeepWalFile {
+		util.RemoveFile(f.walFile.Name())
 	}
 
 	if !f.Config.SkipSortDocs {
@@ -433,7 +390,7 @@ func (f *Active) Release() {
 func (f *Active) Suicide() {
 	f.releaseMem()
 
-	util.RemoveFile(f.metaFile.Name())
+	util.RemoveFile(f.walFile.Name())
 	util.RemoveFile(f.docsFile.Name())
 	util.RemoveFile(f.BaseFileName + consts.SdocsFileSuffix)
 }
@@ -445,8 +402,8 @@ func (f *Active) releaseMem() {
 	f.docsCache.Release()
 	f.sortCache.Release()
 
-	if err := f.metaFile.Close(); err != nil {
-		logger.Error("can't close meta file", zap.String("frac", f.BaseFileName), zap.Error(err))
+	if err := f.walFile.Close(); err != nil {
+		logger.Error("can't close wal file", zap.String("frac", f.BaseFileName), zap.Error(err))
 	}
 	if err := f.docsFile.Close(); err != nil {
 		logger.Error("can't close docs file", zap.String("frac", f.BaseFileName), zap.Error(err))

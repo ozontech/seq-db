@@ -71,26 +71,29 @@ func (t Table) SelectEntries(field, hint string) []*TableEntry {
 	return data.Entries[l:r]
 }
 
-func (t Table) GetEntryByTID(tid uint32) *TableEntry {
+func (t Table) GetEntryByTID(tid uint32, field string) *TableEntry {
 	if tid == 0 {
 		return nil
 	}
-	for _, data := range t {
-		from := data.Entries[0].StartTID
-		to := data.Entries[len(data.Entries)-1].getLastTID()
-		if tid < from || tid > to {
-			continue
-		}
 
-		i := sort.Search(len(data.Entries), func(j int) bool {
-			return data.Entries[j].StartTID > tid
-		})
-
-		return data.Entries[i-1]
+	data, ok := t[field]
+	if !ok {
+		logger.Panic("can't find field", zap.String("field", field))
+		return nil
 	}
 
-	logger.Panic("can't find tid", zap.Uint32("tid", tid))
-	return nil
+	from := data.Entries[0].StartTID
+	to := data.Entries[len(data.Entries)-1].GetLastTID()
+	if tid < from || tid > to {
+		logger.Panic("tid out of range", zap.Uint32("tid", tid), zap.Uint32("from", from), zap.Uint32("to", to))
+		return nil
+	}
+
+	i := sort.Search(len(data.Entries), func(j int) bool {
+		return data.Entries[j].StartTID > tid
+	})
+
+	return data.Entries[i-1]
 }
 
 // Size calculates a very approximate amount of memory occupied

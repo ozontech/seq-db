@@ -35,6 +35,7 @@ func Parse(path string) (Config, error) {
 	}
 
 	/* Set computed defaults if user did not override them */
+	c.Compaction.Workers = cmp.Or(c.Compaction.Workers, NumCPU)
 
 	c.Resources.ReaderWorkers = cmp.Or(c.Resources.ReaderWorkers, NumCPU)
 	c.Resources.SearchWorkers = cmp.Or(c.Resources.SearchWorkers, NumCPU)
@@ -59,7 +60,7 @@ type Config struct {
 		// DataDir is a path to a directory where fractions will be stored.
 		DataDir string `config:"data_dir"`
 		// FracSize specifies the maximum size of an active fraction before it gets sealed.
-		FracSize Bytes `config:"frac_size" default:"128MiB"`
+		FracSize Bytes `config:"frac_size" default:"16MiB"`
 		// TotalSize specifies upper bound of how much disk space can be occupied
 		// by sealed fractions before they get deleted (or offloaded).
 		TotalSize Bytes `config:"total_size" default:"1GiB"`
@@ -69,6 +70,22 @@ type Config struct {
 		// A value of zero disables this limit, allowing writes to proceed unconditionally.
 		SealingQueueLen int `config:"sealing_queue_len" default:"10"`
 	} `config:"storage"`
+
+	Sealing struct {
+		Tokens struct {
+			// BlockSize sets max token block size in bytes.
+			BlockSize Bytes `config:"block_size" default:"16KiB"`
+			// FreqThresholdPercentage specifies the minimum posting-list length as a percentage
+			// of the fraction's document count. For example, with 1_000_000 docs and FreqThresholdPercentage=1,
+			// frequency is stored for tokens that appear in at least 10_000 documents.
+			FreqThresholdPercentage float64 `config:"freq_threshold_percentage" default:"0.005"`
+		} `config:"tokens"`
+
+		Lids struct {
+			// BlockSize sets max lids (postings) saved per LIDs block.
+			BlockSize int `config:"block_size" default:"65536"`
+		} `config:"lids"`
+	} `config:"sealing"`
 
 	Cluster struct {
 		// WriteStores contains cold store instances which will be written to.
@@ -202,6 +219,37 @@ type Config struct {
 		DocBlockZstdCompressionLevel int `config:"doc_block_zstd_compression_level" default:"3"`
 	} `config:"compression"`
 
+	Compaction struct {
+		STCS struct {
+			// MergeTrigger is the minimum number of fractions that a bucket must
+			// contain before it becomes eligible for compaction.
+			MergeTrigger int `config:"merge_trigger" default:"4"`
+			// MergeFanIn caps how many fractions are compacted from a single bucket
+			// per compaction iteration.
+			MergeFanIn int `config:"merge_fan_in" default:"32"`
+			// MergeFanOutSize is the upper bound on the combined input index size of
+			// a single merge. It limits how large a compacted fraction can grow.
+			MergeFanOutSize Bytes `config:"merge_fan_out_size" default:"512MiB"`
+			// BucketLowerbound and BucketUpperbound control bucket membership:
+			// a fraction joins a bucket only if its size is within
+			// [BucketLowerbound, BucketUpperbound] * avg(bucket).
+			BucketLowerbound float64 `config:"bucket_lowerbound" default:"0.5"`
+			BucketUpperbound float64 `config:"bucket_upperbound" default:"1.5"`
+		} `config:"stcs"`
+		// Enabled is the master switch for background compaction.
+		// Compaction is disabled unless this is set to true.
+		Enabled bool `config:"enabled"`
+		// Workers specifies the number of executor workers performing merges
+		// concurrently. By default this setting is equal to [runtime.GOMAXPROCS].
+		Workers int `config:"workers"`
+		// TimeWindow is the width of a time bin. Fractions are grouped into bins by
+		// truncating their creation time.
+		TimeWindow time.Duration `config:"time_window" default:"1h"`
+		// TickInterval specifies how often the planner wakes up to pick a single
+		// compaction task.
+		TickInterval time.Duration `config:"tick_interval" default:"1s"`
+	} `config:"compaction"`
+
 	Indexing struct {
 		MaxTokenSize         int  `config:"max_token_size" default:"72"`
 		CaseSensitive        bool `config:"case_sensitive"`
@@ -277,13 +325,14 @@ type Config struct {
 	} `config:"tracing"`
 
 	// Additional filtering options
-	Filtering struct {
-		// If a search query time range overlaps with the [from; to] range
-		// the search query will be `AND`-ed with an additional predicate with the provided query expression
-		Query string    `config:"query"`
-		From  time.Time `config:"from"`
-		To    time.Time `config:"to"`
-	} `config:"filtering"`
+	Filtering SkipMaskParams `config:"filtering"`
+
+	SkipMaskManager struct {
+		DataDir   string           `config:"data_dir"`
+		Workers   int              `config:"workers" default:"1"`
+		SkipMasks []SkipMaskParams `config:"skip_masks"`
+		CacheSize Bytes            `config:"cache_size" default:"100MiB"`
+	} `config:"skip_mask_manager"`
 
 	// Experimental provides flags
 	// For configuring experimental features.
@@ -293,6 +342,12 @@ type Config struct {
 		// If zero then there is no limit.
 		MaxRegexTokensCheck int `config:"max_regex_tokens_check" default:"0"`
 	} `config:"experimental"`
+}
+
+type SkipMaskParams struct {
+	Query string    `config:"query"`
+	From  time.Time `config:"from"`
+	To    time.Time `config:"to"`
 }
 
 type Bytes units.Base2Bytes

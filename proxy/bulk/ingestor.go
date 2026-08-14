@@ -10,6 +10,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/alecthomas/units"
+
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/indexer"
@@ -168,14 +170,10 @@ func (i *Ingestor) ProcessDocuments(ctx context.Context, requestTime time.Time, 
 
 var (
 	binaryDocsPool = sync.Pool{
-		New: func() any {
-			return new(bytespool.Buffer)
-		},
+		New: func() any { return &bytespool.Buffer{B: make([]byte, 0, units.MiB)} },
 	}
 	binaryMetasPool = sync.Pool{
-		New: func() any {
-			return new(bytespool.Buffer)
-		},
+		New: func() any { return &bytespool.Buffer{B: make([]byte, 0, units.MiB)} },
 	}
 )
 

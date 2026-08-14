@@ -56,7 +56,7 @@ func (l List) Sort(order seq.DocsOrder) {
 }
 
 func (l List) FilterInRange(from, to seq.MID) List {
-	res := make(List, 0)
+	res := make(List, 0, len(l))
 	for _, f := range l {
 		if f.IsIntersecting(from, to) {
 			res = append(res, f)
@@ -69,5 +69,13 @@ func (l *List) Shift(n int) []frac.Fraction {
 	n = min(n, len(*l))
 	res := (*l)[:n]
 	*l = (*l)[n:]
+	return res
+}
+
+func (l List) Names() []string {
+	res := make([]string, 0, len(l))
+	for _, f := range l {
+		res = append(res, f.Info().Name())
+	}
 	return res
 }

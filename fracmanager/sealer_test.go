@@ -19,8 +19,8 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
-	"github.com/ozontech/seq-db/frac/sealed/sealing"
 	"github.com/ozontech/seq-db/indexer"
+	"github.com/ozontech/seq-db/sealing"
 	"github.com/ozontech/seq-db/seq"
 	testscommon "github.com/ozontech/seq-db/tests/common"
 )
