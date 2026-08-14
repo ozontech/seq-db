@@ -1,7 +1,16 @@
 storage:
   data_dir: /seq-db-data
-  frac_size: 32MiB
+  frac_size: 16MiB
   total_size: 64GiB
+
+compaction:
+  enabled: true
+  workers: 4
+  time_window: '30m'
+  stcs:
+    merge_trigger: 4
+    merge_fan_in: 8
+    merge_fan_out_size: '156MiB'
 
 mapping:
   path: /configs/mapping.yaml
@@ -24,4 +33,4 @@ limits:
   search_requests: 1024
   bulk_requests: 128
   inflight_bulks: 128
-  doc_size: 1MiB
+  doc_size: 10MiB
