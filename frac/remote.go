@@ -48,17 +48,12 @@ type Remote struct {
 	legacyFile   storage.ImmutableFile
 	legacyReader storage.IndexReader
 
-	// Per-section index files and their readers (new split format only).
+	// Per-section index files (new split format only).
 	infoFile    storage.ImmutableFile
 	tokenFile   storage.ImmutableFile
 	offsetsFile storage.ImmutableFile
 	idFile      storage.ImmutableFile
 	lidFile     storage.ImmutableFile
-
-	tokenReader   storage.IndexReader
-	offsetsReader storage.IndexReader
-	idReader      storage.IndexReader
-	lidReader     storage.IndexReader
 
 	indexCache *IndexCache
 
@@ -171,32 +166,25 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		return nil, err
 	}
 
-	tokenReader := &f.tokenReader
-	lidReader := &f.lidReader
-	idReader := &f.idReader
-
-	if f.IsLegacy {
-		tokenReader = &f.legacyReader
-		lidReader = &f.legacyReader
-		idReader = &f.legacyReader
-	}
-
+	ir := f.indexReaders()
 	return &sealedDataProvider{
 		ctx:               ctx,
 		fractionTypeLabel: "remote",
 
-		info:             f.info,
-		config:           f.Config,
-		docsReader:       &f.docsReader,
-		blocksOffsets:    f.blocksData.BlocksOffsets,
-		lidsTable:        f.blocksData.LIDsTable,
-		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, lidReader, cache.NewSession(f.indexCache.LIDs)),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, tokenReader, cache.NewSession(f.indexCache.Tokens)),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, tokenReader, cache.NewSession(f.indexCache.TokenTable)),
+		info:          f.info,
+		config:        f.Config,
+		docsReader:    &f.docsReader,
+		blocksOffsets: f.blocksData.BlocksOffsets,
+
+		lidsTable:  f.blocksData.LIDsTable,
+		lidsLoader: lids.NewLoader(f.info.BinaryDataVer, &ir.LID, cache.NewSession(f.indexCache.LIDs)),
+
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &ir.Token, cache.NewSession(f.indexCache.Tokens)),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &ir.Token, cache.NewSession(f.indexCache.TokenTable)),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
-			idReader,
+			&ir.ID,
 			cache.NewSession(f.indexCache.MIDs),
 			cache.NewSession(f.indexCache.RIDs),
 			cache.NewSession(f.indexCache.Params),
@@ -205,6 +193,38 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		),
 		skipMaskProvider: f.skipMaskProvider,
 	}, nil
+}
+
+func (f *Remote) indexReaders() IndexReaders {
+	if f.IsLegacy {
+		r := storage.NewIndexReader(
+			f.readLimiter, f.legacyFile.Name(), f.legacyFile,
+			cache.NewSession(f.indexCache.LegacyRegistry),
+		)
+		return IndexReaders{Token: r, Offsets: r, ID: r, LID: r}
+	}
+
+	return IndexReaders{
+		Token: storage.NewIndexReader(
+			f.readLimiter, f.tokenFile.Name(), f.tokenFile,
+			cache.NewSession(f.indexCache.TokenRegistry),
+		),
+
+		Offsets: storage.NewIndexReader(
+			f.readLimiter, f.offsetsFile.Name(), f.offsetsFile,
+			cache.NewSession(f.indexCache.OffsetsRegistry),
+		),
+
+		ID: storage.NewIndexReader(
+			f.readLimiter, f.idFile.Name(), f.idFile,
+			cache.NewSession(f.indexCache.IDRegistry),
+		),
+
+		LID: storage.NewIndexReader(
+			f.readLimiter, f.lidFile.Name(), f.lidFile,
+			cache.NewSession(f.indexCache.LIDRegistry),
+		),
+	}
 }
 
 func (f *Remote) Info() *common.Info {
@@ -298,12 +318,7 @@ func (f *Remote) init() error {
 		return nil
 	}
 
-	(&Loader{}).Load(&f.blocksData, f.info, IndexReaders{
-		Token:   f.tokenReader,
-		Offsets: f.offsetsReader,
-		ID:      f.idReader,
-		LID:     f.lidReader,
-	})
+	(&Loader{}).Load(&f.blocksData, f.info, f.indexReaders())
 
 	f.isInited = true
 	return nil
@@ -348,13 +363,7 @@ func (f *Remote) openIndex() error {
 	if f.tokenFile == nil {
 		if err := f.openRemoteFile(
 			consts.TokenFileSuffix,
-			func(file storage.ImmutableFile) {
-				f.tokenFile = file
-				f.tokenReader = storage.NewIndexReader(
-					f.readLimiter, file.Name(),
-					file, f.indexCache.TokenRegistry,
-				)
-			},
+			func(file storage.ImmutableFile) { f.tokenFile = file },
 		); err != nil {
 			return err
 		}
@@ -363,13 +372,7 @@ func (f *Remote) openIndex() error {
 	if f.offsetsFile == nil {
 		if err := f.openRemoteFile(
 			consts.OffsetsFileSuffix,
-			func(file storage.ImmutableFile) {
-				f.offsetsFile = file
-				f.offsetsReader = storage.NewIndexReader(
-					f.readLimiter, file.Name(),
-					file, f.indexCache.OffsetsRegistry,
-				)
-			},
+			func(file storage.ImmutableFile) { f.offsetsFile = file },
 		); err != nil {
 			return err
 		}
@@ -378,13 +381,7 @@ func (f *Remote) openIndex() error {
 	if f.idFile == nil {
 		if err := f.openRemoteFile(
 			consts.IDFileSuffix,
-			func(file storage.ImmutableFile) {
-				f.idFile = file
-				f.idReader = storage.NewIndexReader(
-					f.readLimiter, file.Name(),
-					file, f.indexCache.IDRegistry,
-				)
-			},
+			func(file storage.ImmutableFile) { f.idFile = file },
 		); err != nil {
 			return err
 		}
@@ -393,13 +390,7 @@ func (f *Remote) openIndex() error {
 	if f.lidFile == nil {
 		if err := f.openRemoteFile(
 			consts.LIDFileSuffix,
-			func(file storage.ImmutableFile) {
-				f.lidFile = file
-				f.lidReader = storage.NewIndexReader(
-					f.readLimiter, file.Name(),
-					file, f.indexCache.LIDRegistry,
-				)
-			},
+			func(file storage.ImmutableFile) { f.lidFile = file },
 		); err != nil {
 			return err
 		}
