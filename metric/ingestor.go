@@ -30,6 +30,12 @@ var (
 		Name:      "errors_total",
 		Help:      "Number of search requests completed with error",
 	})
+	SearchResults = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "seq_db_ingestor",
+		Subsystem: "search",
+		Name:      "results_total",
+		Help:      "Number of search requests by result and storage tier",
+	}, []string{"result", "tier"})
 	IngestorPanics = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "common",

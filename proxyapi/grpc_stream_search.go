@@ -31,7 +31,7 @@ const (
 	outcomeCancel                         // client canceled or disconnected
 )
 
-func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer) error {
+func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer) (retErr error) {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 
@@ -60,7 +60,8 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	}
 
 	tr := querytracer.New(q.Explain, "proxy/StreamSearch")
-	sResp, err := g.doSearch(ctx, proxyReq, true, false, tr)
+	sResp, obs, err := g.doSearch(ctx, proxyReq, true, false, tr)
+	defer func() { obs.finish("StreamSearch", retErr) }()
 	if err != nil {
 		return err
 	}

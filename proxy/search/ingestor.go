@@ -48,6 +48,10 @@ const (
 
 // SearchStats carries observability data collected while executing a search.
 type SearchStats struct {
+	Size    int
+	HasHist bool
+	HasAgg  bool
+
 	StorageTier         StorageTier
 	HotSearchDuration   time.Duration
 	ColdSearchDuration  time.Duration
@@ -97,7 +101,12 @@ func (si *Ingestor) Search(
 		)
 	}
 
-	stats = &SearchStats{StorageTier: StorageTierNone}
+	stats = &SearchStats{
+		Size:        sr.Size + sr.Offset,
+		HasHist:     sr.Interval > 0,
+		HasAgg:      len(sr.AggQ) > 0,
+		StorageTier: StorageTierNone,
+	}
 
 	if sr.Size < 0 || sr.Offset < 0 {
 		return nil, nil, stats, fmt.Errorf("%w: negative size or offset", consts.ErrInvalidArgument)

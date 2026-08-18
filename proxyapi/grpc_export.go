@@ -25,7 +25,7 @@ func (s *metricStream) Send(resp *seqproxyapi.ExportResponse) error {
 	return s.SeqProxyApi_ExportServer.Send(resp)
 }
 
-func (g *grpcV1) Export(req *seqproxyapi.ExportRequest, stream seqproxyapi.SeqProxyApi_ExportServer) error {
+func (g *grpcV1) Export(req *seqproxyapi.ExportRequest, stream seqproxyapi.SeqProxyApi_ExportServer) (retErr error) {
 	ctx, cancel := context.WithTimeout(stream.Context(), g.config.ExportTimeout)
 	defer cancel()
 
@@ -48,7 +48,8 @@ func (g *grpcV1) Export(req *seqproxyapi.ExportRequest, stream seqproxyapi.SeqPr
 		Offset:    req.Offset,
 		WithTotal: false,
 	}
-	sResp, err := g.doSearch(ctx, proxyReq, true, true, nil)
+	sResp, obs, err := g.doSearch(ctx, proxyReq, true, true, nil)
+	defer func() { obs.finish("Export", retErr) }()
 	if err != nil {
 		return err
 	}

@@ -172,6 +172,35 @@ func (e *explainWrapperIterator) Next() (StreamingDoc, error) {
 	return d, nil
 }
 
+type DocsIteratorWithEvents struct {
+	it       DocsIterator
+	start    bool
+	finish   bool
+	onStart  func()
+	onFinish func()
+}
+
+func SetDocsIteratorEvents(it DocsIterator, onStart, onFinish func()) DocsIterator {
+	return &DocsIteratorWithEvents{
+		it:       it,
+		onStart:  onStart,
+		onFinish: onFinish,
+	}
+}
+
+func (e *DocsIteratorWithEvents) Next() (StreamingDoc, error) {
+	if !e.start {
+		e.onStart()
+		e.start = true
+	}
+	doc, err := e.it.Next()
+	if err != nil && !e.finish {
+		e.onFinish()
+		e.finish = true
+	}
+	return doc, err
+}
+
 func DocsIteratorSeq(it DocsIterator) iter.Seq2[StreamingDoc, error] {
 	return func(yield func(StreamingDoc, error) bool) {
 		doc, err := it.Next()
