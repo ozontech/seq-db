@@ -51,11 +51,6 @@ type Sealed struct {
 	idFile      *os.File
 	lidFile     *os.File
 
-	tokenReader   storage.IndexReader
-	offsetsReader storage.IndexReader
-	idReader      storage.IndexReader
-	lidReader     storage.IndexReader
-
 	blocksData sealed.BlocksData
 	indexCache *IndexCache
 
@@ -143,9 +138,12 @@ func NewSealedPreloaded(
 	}
 
 	// Put token table built during sealing into the cache.
-	_, _ = indexCache.TokenTable.Get(token.CacheKeyTable, cache.LoaderFunc[token.Table](func(uint32) (token.Table, int, error) {
-		return preloaded.TokenTable, preloaded.TokenTable.Size(), nil
-	}))
+	_, _ = indexCache.TokenTable.Get(
+		token.CacheKeyTable,
+		cache.LoaderFunc[token.Table](func(uint32) (token.Table, int, error) {
+			return preloaded.TokenTable, preloaded.TokenTable.Size(), nil
+		}),
+	)
 
 	docsCountK := float64(f.info.DocsTotal) / 1000
 	logger.Info("sealed fraction created from active",
@@ -160,94 +158,42 @@ func NewSealedPreloaded(
 	return f
 }
 
-func (f *Sealed) openInfoLegacy() {
-	if f.legacyFile != nil {
-		return
-	}
-
-	name := f.BaseFileName + consts.IndexFileSuffix
-	file, err := os.Open(name)
-	if err != nil {
-		logger.Fatal(
-			"can't open legacy index file",
-			zap.String("file", name),
-			zap.Error(err),
-		)
-	}
-
-	f.legacyFile = file
-	f.legacyReader = storage.NewIndexReader(
-		f.readLimiter, file.Name(),
-		file, f.indexCache.LegacyRegistry,
-	)
-}
-
-func (f *Sealed) openInfo() {
-	if f.infoFile != nil {
-		return
-	}
-
-	name := f.BaseFileName + consts.InfoFileSuffix
-	file, err := os.Open(name)
-	if err != nil {
-		logger.Fatal(
-			"can't open info file",
-			zap.String("file", name),
-			zap.Error(err),
-		)
-	}
-
-	f.infoFile = file
-}
-
 func (f *Sealed) openIndex() {
 	if f.IsLegacy {
 		// We have exactly one `.index` file for legacy sealed fractions.
 		// So opening only this file is sufficient.
-		f.openInfoLegacy()
+		f.legacyFile = f.openFileIfNeeded(f.legacyFile, f.BaseFileName+consts.IndexFileSuffix)
+
+		f.legacyReader = storage.NewIndexReader(
+			f.readLimiter, f.legacyFile.Name(),
+			f.legacyFile, f.indexCache.LegacyRegistry,
+		)
+
 		return
 	}
 
-	f.openInfo()
-	if f.tokenFile == nil {
-		name := f.BaseFileName + consts.TokenFileSuffix
-		file, err := os.Open(name)
-		if err != nil {
-			logger.Fatal("can't open token file", zap.String("file", name), zap.Error(err))
-		}
-		f.tokenFile = file
-		f.tokenReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.TokenRegistry)
+	f.infoFile = f.openFileIfNeeded(f.infoFile, f.BaseFileName+consts.InfoFileSuffix)
+	f.tokenFile = f.openFileIfNeeded(f.tokenFile, f.BaseFileName+consts.TokenFileSuffix)
+	f.offsetsFile = f.openFileIfNeeded(f.offsetsFile, f.BaseFileName+consts.OffsetsFileSuffix)
+	f.idFile = f.openFileIfNeeded(f.idFile, f.BaseFileName+consts.IDFileSuffix)
+	f.lidFile = f.openFileIfNeeded(f.lidFile, f.BaseFileName+consts.LIDFileSuffix)
+}
+
+func (f *Sealed) openFileIfNeeded(ff *os.File, name string) *os.File {
+	if ff != nil {
+		return ff
 	}
 
-	if f.offsetsFile == nil {
-		name := f.BaseFileName + consts.OffsetsFileSuffix
-		file, err := os.Open(name)
-		if err != nil {
-			logger.Fatal("can't open offsets file", zap.String("file", name), zap.Error(err))
-		}
-		f.offsetsFile = file
-		f.offsetsReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.OffsetsRegistry)
+	file, err := os.Open(name)
+	if err != nil {
+		logger.Fatal(
+			"cannot open file",
+			zap.String("file", name),
+			zap.Error(err),
+		)
 	}
 
-	if f.idFile == nil {
-		name := f.BaseFileName + consts.IDFileSuffix
-		file, err := os.Open(name)
-		if err != nil {
-			logger.Fatal("can't open id file", zap.String("file", name), zap.Error(err))
-		}
-		f.idFile = file
-		f.idReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.IDRegistry)
-	}
-
-	if f.lidFile == nil {
-		name := f.BaseFileName + consts.LIDFileSuffix
-		file, err := os.Open(name)
-		if err != nil {
-			logger.Fatal("can't open lid file", zap.String("file", name), zap.Error(err))
-		}
-		f.lidFile = file
-		f.lidReader = storage.NewIndexReader(f.readLimiter, file.Name(), file, f.indexCache.LIDRegistry)
-	}
+	return file
 }
 
 func (f *Sealed) openDocs() {
@@ -283,16 +229,30 @@ func (f *Sealed) loadInfo() {
 	var err error
 
 	if f.IsLegacy {
-		f.openInfoLegacy()
+		f.legacyFile = f.openFileIfNeeded(f.legacyFile, f.BaseFileName+consts.IndexFileSuffix)
+
+		f.legacyReader = storage.NewIndexReader(
+			f.readLimiter, f.legacyFile.Name(),
+			f.legacyFile, f.indexCache.LegacyRegistry,
+		)
+
 		if f.info, err = loadInfoLegacy(f.legacyReader); err != nil {
-			logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+			logger.Fatal(
+				"error loading Info",
+				zap.String("fraction", f.BaseFileName),
+				zap.Error(err),
+			)
 		}
 		return
 	}
 
-	f.openInfo()
+	f.infoFile = f.openFileIfNeeded(f.infoFile, f.BaseFileName+consts.InfoFileSuffix)
 	if f.info, err = loadInfo(f.infoFile); err != nil {
-		logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+		logger.Fatal(
+			"error loading Info",
+			zap.String("fraction", f.BaseFileName),
+			zap.Error(err),
+		)
 	}
 }
 
@@ -313,13 +273,7 @@ func (f *Sealed) init(full bool) {
 		return
 	}
 
-	(&Loader{}).Load(&f.blocksData, f.info, IndexReaders{
-		Token:   f.tokenReader,
-		Offsets: f.offsetsReader,
-		ID:      f.idReader,
-		LID:     f.lidReader,
-	})
-
+	(&Loader{}).Load(&f.blocksData, f.info, f.indexReaders())
 	f.isInited = true
 }
 
@@ -495,32 +449,25 @@ func (f *Sealed) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) 
 func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 	f.init(true)
 
-	tokenReader := &f.tokenReader
-	lidReader := &f.lidReader
-	idReader := &f.idReader
-
-	if f.IsLegacy {
-		tokenReader = &f.legacyReader
-		lidReader = &f.legacyReader
-		idReader = &f.legacyReader
-	}
-
+	ir := f.indexReaders()
 	return &sealedDataProvider{
 		ctx:               ctx,
 		fractionTypeLabel: "sealed",
 
-		info:             f.info,
-		config:           f.Config,
-		docsReader:       &f.docsReader,
-		blocksOffsets:    f.blocksData.BlocksOffsets,
-		lidsTable:        f.blocksData.LIDsTable,
-		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, lidReader, cache.NewSession(f.indexCache.LIDs)),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, tokenReader, cache.NewSession(f.indexCache.Tokens)),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, tokenReader, cache.NewSession(f.indexCache.TokenTable)),
+		info:          f.info,
+		config:        f.Config,
+		docsReader:    &f.docsReader,
+		blocksOffsets: f.blocksData.BlocksOffsets,
+
+		lidsTable:  f.blocksData.LIDsTable,
+		lidsLoader: lids.NewLoader(f.info.BinaryDataVer, &ir.LID, cache.NewSession(f.indexCache.LIDs)),
+
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &ir.Token, cache.NewSession(f.indexCache.Tokens)),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &ir.Token, cache.NewSession(f.indexCache.TokenTable)),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
-			idReader,
+			&ir.ID,
 			cache.NewSession(f.indexCache.MIDs),
 			cache.NewSession(f.indexCache.RIDs),
 			cache.NewSession(f.indexCache.Params),
@@ -542,6 +489,69 @@ func (f *Sealed) Contains(id seq.MID) bool {
 
 func (f *Sealed) IsIntersecting(from, to seq.MID) bool {
 	return f.info.IsIntersecting(from, to)
+}
+
+func (f *Sealed) indexReaders() IndexReaders {
+	if f.IsLegacy {
+		r := storage.NewIndexReader(
+			f.readLimiter, f.legacyFile.Name(), f.legacyFile,
+			cache.NewSession(f.indexCache.LegacyRegistry),
+		)
+		return IndexReaders{Token: r, Offsets: r, ID: r, LID: r}
+	}
+
+	return IndexReaders{
+		Token: storage.NewIndexReader(
+			f.readLimiter, f.tokenFile.Name(), f.tokenFile,
+			cache.NewSession(f.indexCache.TokenRegistry),
+		),
+
+		Offsets: storage.NewIndexReader(
+			f.readLimiter, f.offsetsFile.Name(), f.offsetsFile,
+			cache.NewSession(f.indexCache.OffsetsRegistry),
+		),
+
+		ID: storage.NewIndexReader(
+			f.readLimiter, f.idFile.Name(), f.idFile,
+			cache.NewSession(f.indexCache.IDRegistry),
+		),
+
+		LID: storage.NewIndexReader(
+			f.readLimiter, f.lidFile.Name(), f.lidFile,
+			cache.NewSession(f.indexCache.LIDRegistry),
+		),
+	}
+}
+
+// computeIndexOnDisk returns the total on-disk size of index files for a local fraction.
+func (f *Sealed) computeIndexSize() {
+	suffixes := []string{
+		consts.InfoFileSuffix,
+		consts.TokenFileSuffix,
+		consts.OffsetsFileSuffix,
+		consts.IDFileSuffix,
+		consts.LIDFileSuffix,
+	}
+
+	if f.IsLegacy {
+		suffixes = []string{
+			consts.IndexFileSuffix,
+		}
+	}
+
+	f.info.IndexOnDisk = 0
+	for _, suffix := range suffixes {
+		st, err := os.Stat(f.info.Path + suffix)
+		if err != nil {
+			logger.Fatal(
+				"can't stat index file",
+				zap.String("file", f.info.Path+suffix),
+				zap.Error(err),
+			)
+		}
+
+		f.info.IndexOnDisk += uint64(st.Size())
+	}
 }
 
 func loadInfoLegacy(infoReader storage.IndexReader) (*common.Info, error) {
@@ -579,35 +589,4 @@ func loadInfo(r interface {
 	}
 
 	return bi.Info, nil
-}
-
-// computeIndexOnDisk returns the total on-disk size of index files for a local fraction.
-func (f *Sealed) computeIndexSize() {
-	suffixes := []string{
-		consts.InfoFileSuffix,
-		consts.TokenFileSuffix,
-		consts.OffsetsFileSuffix,
-		consts.IDFileSuffix,
-		consts.LIDFileSuffix,
-	}
-
-	if f.IsLegacy {
-		suffixes = []string{
-			consts.IndexFileSuffix,
-		}
-	}
-
-	f.info.IndexOnDisk = 0
-	for _, suffix := range suffixes {
-		st, err := os.Stat(f.info.Path + suffix)
-		if err != nil {
-			logger.Fatal(
-				"can't stat index file",
-				zap.String("file", f.info.Path+suffix),
-				zap.Error(err),
-			)
-		}
-
-		f.info.IndexOnDisk += uint64(st.Size())
-	}
 }
