@@ -5,13 +5,14 @@ import (
 	"errors"
 	"time"
 
+	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/proxy/search"
-	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // requestObservation collects timing and storage-tier data for a single search

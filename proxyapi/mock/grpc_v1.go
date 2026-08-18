@@ -9,11 +9,12 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
+	metadata "google.golang.org/grpc/metadata"
+
 	seqproxyapi "github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	search "github.com/ozontech/seq-db/proxy/search"
 	querytracer "github.com/ozontech/seq-db/querytracer"
 	seq "github.com/ozontech/seq-db/seq"
-	metadata "google.golang.org/grpc/metadata"
 )
 
 // MockSearchIngestor is a mock of SearchIngestor interface.
