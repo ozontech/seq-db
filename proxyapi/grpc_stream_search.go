@@ -173,7 +173,10 @@ func (g *grpcV1) streamSearchDocs(
 	}
 
 	var batch []*seqproxyapi.Record
-	for doc, err := sResp.docsStream.Next(); err == nil; doc, err = sResp.docsStream.Next() {
+	for doc, err := range search.DocsIteratorSeq(sResp.docsStream) {
+		if err != nil {
+			return outcomeNone, err
+		}
 		batch = append(batch, docToRecord(doc))
 		if len(batch) >= streamSearchBatchSize {
 			if err := sendRecords(stream, batch); err != nil {

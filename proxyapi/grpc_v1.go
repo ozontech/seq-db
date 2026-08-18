@@ -31,7 +31,7 @@ import (
 )
 
 type SearchIngestor interface {
-	Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, time.Duration, error)
+	Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, *search.SearchStats, error)
 	Documents(ctx context.Context, r search.FetchRequest) (search.DocsIterator, error)
 	Status(ctx context.Context) *search.IngestorStatus
 	StartAsyncSearch(context.Context, search.AsyncRequest) (search.AsyncResponse, error)

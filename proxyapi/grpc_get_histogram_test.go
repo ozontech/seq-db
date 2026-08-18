@@ -105,9 +105,9 @@ func prepareGetHistogramTestData(t *testing.T, cData getHistogramTestCaseData) g
 		siSearchMock = &siSearchMockData{
 			sr: sr,
 			ret: siSearchRet{
-				qpr:  qpr,
-				took: time.Second,
-				err:  cData.siErr,
+				qpr:   qpr,
+				stats: &search.SearchStats{},
+				err:   cData.siErr,
 			},
 		}
 	}
