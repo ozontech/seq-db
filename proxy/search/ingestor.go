@@ -35,6 +35,25 @@ type Config struct {
 	MirrorAddr      string
 }
 
+// StorageTier shows whether a search was served by hot or cold stores.
+type StorageTier string
+
+const (
+	StorageTierHot  StorageTier = "hot"
+	StorageTierCold StorageTier = "cold"
+	// StorageTierNone is used when a request never reached the ingestor
+	// (e.g. it failed validation in the proxy layer).
+	StorageTierNone StorageTier = "none"
+)
+
+// SearchStats carries observability data collected while executing a search.
+type SearchStats struct {
+	StorageTier         StorageTier
+	HotSearchDuration   time.Duration
+	ColdSearchDuration  time.Duration
+	TotalSearchDuration time.Duration
+}
+
 type Ingestor struct {
 	config         Config
 	clients        map[string]storeapi.StoreApiClient
@@ -65,10 +84,10 @@ func (si *Ingestor) Search(
 	sr *SearchRequest,
 	tr *querytracer.Tracer,
 ) (
-	qpr *seq.QPR,
-	docsStream DocsIterator,
-	overallDuration time.Duration,
-	err error,
+	*seq.QPR,
+	DocsIterator,
+	*SearchStats,
+	error,
 ) {
 	if sr.Explain {
 		logger.Info("search request",
@@ -77,8 +96,11 @@ func (si *Ingestor) Search(
 			zap.String("to", sr.To.String()),
 		)
 	}
+
+	stats := &SearchStats{StorageTier: StorageTierNone}
+
 	if sr.Size < 0 || sr.Offset < 0 {
-		return nil, nil, 0, fmt.Errorf("%w: negative size or offset", consts.ErrInvalidArgument)
+		return nil, nil, stats, fmt.Errorf("%w: negative size or offset", consts.ErrInvalidArgument)
 	}
 
 	startTime := time.Now()
@@ -86,7 +108,12 @@ func (si *Ingestor) Search(
 	if si.config.HotReadStores != nil && len(si.config.HotReadStores.Shards) > 0 {
 		searchStores = si.config.HotReadStores
 	}
+
 	qprs, err := si.searchStores(ctx, sr, searchStores, tr)
+
+	stats.StorageTier = StorageTierHot
+	stats.HotSearchDuration = time.Since(startTime)
+
 	var partialRespErr error
 
 	if err != nil {
@@ -94,31 +121,36 @@ func (si *Ingestor) Search(
 		case errors.Is(err, consts.ErrIngestorQueryWantsOldData):
 			if len(si.config.ReadStores.Shards) == 0 {
 				logger.Error("no cold stores, but hot mode is enabled, bad configuration of stores!")
-				return nil, nil, 0, err
+				return nil, nil, stats, err
 			}
 			metric.SearchColdTotal.Inc()
+
+			coldStart := time.Now()
 			qprs, err = si.searchStores(ctx, sr, si.config.ReadStores, tr)
+			stats.StorageTier = StorageTierCold
+			stats.ColdSearchDuration = time.Since(coldStart)
+
 			if err != nil {
 				metric.SearchColdErrors.Add(1)
 				if errors.Is(err, consts.ErrPartialResponse) {
 					partialRespErr = err // consider partial response from cold stores as a result
 				} else {
 					// errors from both hot and cold stores, return error
-					return nil, nil, 0, err
+					return nil, nil, stats, err
 				}
 			}
 		case errors.Is(err, consts.ErrPartialResponse):
 			partialRespErr = err // consider partial response from hot stores as a result
 		default:
 			// unexpected error on all hot replica sets (usually bad query)
-			return nil, nil, 0, err
+			return nil, nil, stats, err
 		}
 	}
 
 	queryDuration := time.Since(startTime)
 
 	t := time.Now()
-	qpr = &seq.QPR{
+	qpr := &seq.QPR{
 		Histogram: make(map[seq.MID]uint64),
 		Aggs:      make([]seq.AggregatableSamples, len(sr.AggQ)),
 	}
@@ -140,22 +172,23 @@ func (si *Ingestor) Search(
 	ids := qpr.IDs
 
 	t = time.Now()
-	docsStream = EmptyDocsStream{}
+
+	var docsStream DocsIterator = EmptyDocsStream{}
 	if sr.ShouldFetch && size > 0 {
 		if util.IsCancelled(ctx) {
-			return nil, nil, 0, ctx.Err()
+			return nil, nil, stats, ctx.Err()
 		}
 		metric.DocumentsRequested.Observe(float64(len(ids)))
 
 		fieldsFilter := tryParseFieldsFilter(string(sr.Q))
 		docsStream, err = si.FetchDocsStream(ctx, ids, sr.Explain, true, fieldsFilter)
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, stats, err
 		}
 	}
 
 	fetchDuration := time.Since(t)
-	overallDuration = time.Since(startTime)
+	stats.TotalSearchDuration = time.Since(startTime)
 
 	if sr.Explain {
 		logger.Info("data", zap.Any("histogram", qpr.Histogram))
@@ -166,11 +199,11 @@ func (si *Ingestor) Search(
 			util.ZapDurationWithPrec("query_ms", queryDuration, "ms", 2),
 			util.ZapDurationWithPrec("merge_ms", mergeDuration, "ms", 2),
 			util.ZapDurationWithPrec("fetch_ms", fetchDuration, "ms", 2),
-			util.ZapDurationWithPrec("all_ms", overallDuration, "ms", 2),
+			util.ZapDurationWithPrec("all_ms", stats.TotalSearchDuration, "ms", 2),
 		)
 	}
 
-	return qpr, docsStream, overallDuration, partialRespErr
+	return qpr, docsStream, stats, partialRespErr
 }
 
 // tryParseFieldsFilter tries to parse seq-ql query to extract fields/remove pipe.

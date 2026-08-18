@@ -113,7 +113,7 @@ func (s *IntegrationTestSuite) TestSubSearch() {
 			expectedCount = expectedTotal
 		}
 
-		qpr, _, _, err := env.Search("service:*", limit, setup.NoFetch(), setup.WithTotal(false), setup.WithTimeRange(f, t))
+		qpr, _, err := env.Search("service:*", limit, setup.NoFetch(), setup.WithTotal(false), setup.WithTimeRange(f, t))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), expectedCount, len(qpr.IDs), "wrong doc count in range [%s, %s]", f, t)
 	}
@@ -132,7 +132,7 @@ func (s *IntegrationTestSuite) TestSubSearch() {
 			expectedCount = expectedTotal
 		}
 
-		qpr, _, _, err := env.Search("service:*", limit, setup.NoFetch(), setup.WithTotal(true), setup.WithTimeRange(f, t))
+		qpr, _, err := env.Search("service:*", limit, setup.NoFetch(), setup.WithTotal(true), setup.WithTimeRange(f, t))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), expectedCount, len(qpr.IDs), "wrong doc count in range [%s, %s]", f, t)
 		assert.Equal(s.T(), expectedTotal, int(qpr.Total), "wrong doc count in range [%s, %s]", f, t)
@@ -153,7 +153,7 @@ func (s *IntegrationTestSuite) TestSubSearch() {
 		}
 
 		interval := 3 * time.Minute
-		qpr, _, _, err := env.Search("service:*", limit, setup.NoFetch(), setup.WithTotal(false), setup.WithInterval(interval), setup.WithTimeRange(f, t))
+		qpr, _, err := env.Search("service:*", limit, setup.NoFetch(), setup.WithTotal(false), setup.WithInterval(interval), setup.WithTimeRange(f, t))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), expectedCount, len(qpr.IDs), "wrong doc count in range [%s, %s]", f, t)
 		assert.Equal(s.T(), makeHist(sub, interval), qpr.Histogram, "wrong doc count in range [%s, %s]", f, t)

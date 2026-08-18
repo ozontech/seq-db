@@ -11,7 +11,7 @@ import (
 
 func (g *grpcV1) GetHistogram(
 	ctx context.Context, req *seqproxyapi.GetHistogramRequest,
-) (*seqproxyapi.GetHistogramResponse, error) {
+) (_ *seqproxyapi.GetHistogramResponse, retErr error) {
 	ctx, cancel := context.WithTimeout(ctx, g.config.SearchTimeout)
 	defer cancel()
 
@@ -23,7 +23,8 @@ func (g *grpcV1) GetHistogram(
 		Query: req.Query,
 		Hist:  req.Hist,
 	}
-	sResp, err := g.doSearch(ctx, proxyReq, false, true, nil)
+	sResp, obs, err := g.doSearch(ctx, proxyReq, false, true, nil)
+	defer func() { obs.finish(retErr) }()
 	if err != nil {
 		return nil, err
 	}

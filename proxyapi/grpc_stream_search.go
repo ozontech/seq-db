@@ -31,7 +31,7 @@ const (
 	outcomeCancel                         // client canceled or disconnected
 )
 
-func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer) error {
+func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer) (retErr error) {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 
@@ -60,7 +60,8 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	}
 
 	tr := querytracer.New(q.Explain, "proxy/StreamSearch")
-	sResp, err := g.doSearch(ctx, proxyReq, true, false, tr)
+	sResp, obs, err := g.doSearch(ctx, proxyReq, true, false, tr)
+	defer func() { obs.finish(retErr) }()
 	if err != nil {
 		return err
 	}
@@ -173,7 +174,10 @@ func (g *grpcV1) streamSearchDocs(
 	}
 
 	var batch []*seqproxyapi.Record
-	for doc, err := sResp.docsStream.Next(); err == nil; doc, err = sResp.docsStream.Next() {
+	for doc, err := range search.DocsIteratorSeq(sResp.docsStream) {
+		if err != nil {
+			return outcomeNone, err
+		}
 		batch = append(batch, docToRecord(doc))
 		if len(batch) >= streamSearchBatchSize {
 			if err := sendRecords(stream, batch); err != nil {

@@ -176,7 +176,7 @@ func (s *ReplicasEnv) searchStores() (map[string]int, error) {
 	if err != nil {
 		return result, err
 	}
-	for doc, err := docsStream.Next(); err == nil; doc, err = docsStream.Next() {
+	for doc := range search.DocsIteratorSeq(docsStream) {
 		result[string(doc.Data)]++
 	}
 	return result, nil

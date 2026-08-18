@@ -81,10 +81,10 @@ func prepareExportTestData(cData exportTestCaseData) exportTestData {
 				ShouldFetch: true,
 			},
 			ret: siSearchRet{
-				qpr:  qpr,
-				docs: docs,
-				took: time.Second,
-				err:  cData.siErr,
+				qpr:   qpr,
+				docs:  docs,
+				stats: &search.SearchStats{},
+				err:   cData.siErr,
 			},
 		}
 	}

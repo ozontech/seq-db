@@ -40,7 +40,7 @@ func TestMergedDocsStream(t *testing.T) {
 	)
 
 	actual := make([]StreamingDoc, 0)
-	for doc, err := stream.Next(); err == nil; doc, err = stream.Next() {
+	for doc := range DocsIteratorSeq(stream) {
 		actual = append(actual, doc)
 	}
 
@@ -53,7 +53,7 @@ func TestMergedDocsStream(t *testing.T) {
 	)
 
 	actual = make([]StreamingDoc, 0)
-	for doc, err := stream.Next(); err == nil; doc, err = stream.Next() {
+	for doc := range DocsIteratorSeq(stream) {
 		actual = append(actual, doc)
 	}
 
@@ -120,7 +120,7 @@ func TestCollapseBySources(t *testing.T) {
 
 	allDocs := []StreamingDoc{}
 	origStream := makeTestStream(origDocs, nil)
-	for doc, err := origStream.Next(); err == nil; doc, err = origStream.Next() {
+	for doc := range DocsIteratorSeq(origStream) {
 		allDocs = append(allDocs, doc)
 	}
 	assert.Equal(t, origDocs, allDocs)
@@ -129,7 +129,7 @@ func TestCollapseBySources(t *testing.T) {
 	collapsedStream := newUniqueIDIterator(origStream)
 
 	collapsedDocs := []StreamingDoc{}
-	for doc, err := collapsedStream.Next(); err == nil; doc, err = collapsedStream.Next() {
+	for doc := range DocsIteratorSeq(collapsedStream) {
 		collapsedDocs = append(collapsedDocs, doc)
 	}
 

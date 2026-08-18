@@ -124,7 +124,7 @@ func (s *SingleTestSuite) TestSearchAgg() {
 
 	assertAgg := func(query string, aggQ []any, expected []map[string]uint64) {
 		r := s.Require()
-		qpr, _, _, err := s.Env.Search(query, math.MaxInt32, setup.WithAggQuery(aggQ...), setup.WithTotal(false))
+		qpr, _, err := s.Env.Search(query, math.MaxInt32, setup.WithAggQuery(aggQ...), setup.WithTotal(false))
 		r.NoError(err)
 		r.Equal(len(expected), len(qpr.Aggs))
 		for i := range expected {
@@ -210,7 +210,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 
 	sort.Sort(&ExampleDocSorting{sample: docsSample, docStrs: docStrs})
 
-	qpr, _, _, err := s.Env.Search("_all_:*", math.MaxInt32, setup.WithTotal(true), setup.NoFetch())
+	qpr, _, err := s.Env.Search("_all_:*", math.MaxInt32, setup.WithTotal(true), setup.NoFetch())
 	s.Assert().NoError(err)
 	origIDs := qpr.IDs
 
@@ -222,7 +222,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 		s.Require().NoError(err)
 
 		var fetched []string
-		for doc, err := docsStreamWithHints.Next(); err == nil; doc, err = docsStreamWithHints.Next() {
+		for doc := range search.DocsIteratorSeq(docsStreamWithHints) {
 			fetched = append(fetched, string(doc.Data))
 		}
 		s.Require().Equal(docStrs, fetched)
@@ -236,7 +236,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 		s.Require().NoError(err)
 
 		fetched = []string{}
-		for doc, err := docsStreamNoHints.Next(); err == nil; doc, err = docsStreamNoHints.Next() {
+		for doc := range search.DocsIteratorSeq(docsStreamNoHints) {
 			fetched = append(fetched, string(doc.Data))
 		}
 		s.Require().Equal(docStrs, fetched)
@@ -250,7 +250,7 @@ func (s *SingleTestSuite) TestFetchHints() {
 		s.Assert().NoError(err)
 
 		fetched = []string{}
-		for doc, err := docsStreamBrokenHints.Next(); err == nil; doc, err = docsStreamBrokenHints.Next() {
+		for doc := range search.DocsIteratorSeq(docsStreamBrokenHints) {
 			if !doc.Empty() {
 				fetched = append(fetched, string(doc.Data))
 			}
