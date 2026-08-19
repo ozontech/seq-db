@@ -321,8 +321,7 @@ enum DataType {
   INT32 = 6;
   INT64 = 7;
   FLOAT64 = 8;
-  // TODO: later we will need array data types, such as:
-  // StringArray, Uin64Array, Float64Array etc.
+  FLOAT64_ARRAY = 9;
 }
 
 message ResponseData {

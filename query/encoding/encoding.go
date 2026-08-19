@@ -77,3 +77,28 @@ func Float64ToBytes(val float64) []byte {
 func Float64FromBytes(b []byte) float64 {
 	return math.Float64frombits(binary.LittleEndian.Uint64(b))
 }
+
+// Float64ArrayToBytes encodes a float64 slice as an 8-byte little-endian length
+// prefix followed by the little-endian raw bytes of each element. An empty or
+// nil slice is encoded as a zero length (8 zero bytes).
+func Float64ArrayToBytes(v []float64) []byte {
+	b := make([]byte, 8+len(v)*8)
+	binary.LittleEndian.PutUint64(b, uint64(len(v)))
+	for i, f := range v {
+		binary.LittleEndian.PutUint64(b[8+i*8:], math.Float64bits(f))
+	}
+	return b
+}
+
+// Float64ArrayFromBytes is the inverse of Float64ArrayToBytes.
+func Float64ArrayFromBytes(b []byte) []float64 {
+	if len(b) < 8 {
+		return nil
+	}
+	n := binary.LittleEndian.Uint64(b)
+	v := make([]float64, n)
+	for i := range n {
+		v[i] = math.Float64frombits(binary.LittleEndian.Uint64(b[8+i*8:]))
+	}
+	return v
+}

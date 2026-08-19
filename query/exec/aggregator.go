@@ -27,20 +27,14 @@ type aggKey struct {
 	ts    uint64
 }
 
-type AggSamples struct {
-	Min   float64
-	Max   float64
-	Sum   float64
-	Total uint64
-}
-
 type DistributedAggregator struct {
 	state  ExecutorState
 	inputs []query.RecordProducer
 
-	aggFunc seq.AggFunc
+	aggFunc   seq.AggFunc
+	quantiles []float64
 
-	buckets    map[aggKey]AggSamples
+	buckets    map[aggKey]*seq.SamplesContainer
 	sortingBuf []*query.Record
 
 	curIdx int
@@ -49,11 +43,13 @@ type DistributedAggregator struct {
 func NewDistributedAggregator(
 	inputs []query.RecordProducer,
 	aggFunc seq.AggFunc,
+	quantiles []float64,
 ) *DistributedAggregator {
 	return &DistributedAggregator{
 		inputs:     inputs,
 		aggFunc:    aggFunc,
-		buckets:    make(map[aggKey]AggSamples),
+		quantiles:  quantiles,
+		buckets:    make(map[aggKey]*seq.SamplesContainer),
 		sortingBuf: make([]*query.Record, 0),
 	}
 }
@@ -72,9 +68,13 @@ func (a *DistributedAggregator) Next() *query.Record {
 					token: r.Vals[0].Decoded().(string),
 					ts:    r.Vals[6].Decoded().(uint64),
 				}
-				s := a.buckets[key]
 
-				if s.Total == 0 {
+				s, exists := a.buckets[key]
+				if !exists {
+					s = seq.NewSamplesContainers()
+				}
+
+				if !exists {
 					s.Min = r.Vals[1].Decoded().(float64)
 					s.Max = r.Vals[2].Decoded().(float64)
 				} else {
@@ -83,7 +83,13 @@ func (a *DistributedAggregator) Next() *query.Record {
 				}
 
 				s.Sum += r.Vals[3].Decoded().(float64)
-				s.Total += r.Vals[4].Decoded().(uint64)
+				s.Total += int64(r.Vals[4].Decoded().(uint64))
+
+				if a.aggFunc == seq.AggFuncQuantile {
+					for _, v := range r.Vals[7].Decoded().([]float64) {
+						s.InsertSample(v)
+					}
+				}
 
 				a.buckets[key] = s
 			}
@@ -95,6 +101,7 @@ func (a *DistributedAggregator) Next() *query.Record {
 	if a.state == ExecutorStateProcessingData {
 		for key, bucket := range a.buckets {
 			var value float64
+			var quantiles []float64
 
 			// TODO: support all aggregate functions
 			switch a.aggFunc {
@@ -110,6 +117,15 @@ func (a *DistributedAggregator) Next() *query.Record {
 				if bucket.Total != 0 {
 					value = bucket.Sum / float64(bucket.Total)
 				}
+			case seq.AggFuncQuantile:
+				if len(a.quantiles) == 0 {
+					panic(fmt.Errorf("BUG: empty quantiles"))
+				}
+				quantiles = make([]float64, 0, len(a.quantiles))
+				for _, q := range a.quantiles {
+					quantiles = append(quantiles, bucket.Quantile(q))
+				}
+				value = quantiles[0]
 			default:
 				panic(fmt.Errorf("unimplemented aggregation func"))
 			}
@@ -118,6 +134,7 @@ func (a *DistributedAggregator) Next() *query.Record {
 				query.NewRecordVals(query.DataTypeString, []byte(key.token)),
 				query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(value)),
 				query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(key.ts)),
+				query.NewRecordVals(query.DataTypeFloat64Array, encoding.Float64ArrayToBytes(quantiles)),
 			}))
 		}
 

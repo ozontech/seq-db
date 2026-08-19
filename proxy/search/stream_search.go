@@ -83,7 +83,7 @@ func (si *Ingestor) StreamSearch(
 
 	var mergedStream query.RecordProducer
 	if sr.Agg != nil {
-		mergedStream = exec.NewDistributedAggregator(producers, sr.Agg.Func)
+		mergedStream = exec.NewDistributedAggregator(producers, sr.Agg.Func, sr.Agg.Quantiles)
 	} else {
 		const seqIdColIdx = 0
 		mergedDocsStream := exec.NewNMergedProducers(producers, seqIdColIdx, "", query.DataTypeSeqID, sr.Order)

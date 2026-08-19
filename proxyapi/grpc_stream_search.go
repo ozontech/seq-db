@@ -59,7 +59,7 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 		return status.Error(codes.InvalidArgument, fmt.Sprintf("error parsing query: %s", err.Error()))
 	}
 
-	if searchReq.Agg != nil && (searchReq.Agg.Func == seq.AggFuncQuantile || searchReq.Agg.Func == seq.AggFuncUniqueCount) {
+	if searchReq.Agg != nil && searchReq.Agg.Func == seq.AggFuncUniqueCount {
 		// TODO: support all agg funcs
 		return status.Error(codes.InvalidArgument, `unsupported aggregate function`)
 	}
@@ -287,6 +287,7 @@ func aggsTyping() []*seqproxyapi.Typing {
 		{Title: "key", Type: seqproxyapi.DataType_STRING},
 		{Title: "value", Type: seqproxyapi.DataType_FLOAT64},
 		{Title: "ts", Type: seqproxyapi.DataType_UINT64},
+		{Title: "quantiles", Type: seqproxyapi.DataType_FLOAT64_ARRAY},
 	}
 }
 
@@ -310,6 +311,7 @@ func aggToRecord(r *query.Record) *seqproxyapi.Record {
 			r.Vals[0].RawData(), // key
 			r.Vals[1].RawData(), // value
 			r.Vals[2].RawData(), // ts
+			r.Vals[3].RawData(), // quantiles
 		},
 	}
 }

@@ -35,6 +35,7 @@ import (
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
+	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/skipmaskmanager"
 	"github.com/ozontech/seq-db/tests/common"
@@ -2185,8 +2186,8 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 			case *seqproxyapi.StreamSearchResponse_Data:
 				for _, rec := range v.Data.GetBatch().GetRecords() {
 					raw := rec.GetRawData()
-					// [key:STRING, value:FLOAT64, ts:UINT64] — proxy agg schema.
-					r.Len(raw, 3)
+					// [key:STRING, value:FLOAT64, ts:UINT64, quantiles:FLOAT64_ARRAY] — proxy agg schema.
+					r.Len(raw, 4)
 					value := math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
 					ts := binary.LittleEndian.Uint64(raw[2])
 					got[ts] += value
@@ -2207,6 +2208,52 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 				}
 			}
 		}
+	})
+
+	t.Run("quantile aggregation stream", func(t *testing.T) {
+		const quantDocs = 10
+		qDocs := make([]string, 0, quantDocs)
+		for i := range quantDocs {
+			qDocs = append(qDocs, fmt.Sprintf(`{"service":"q","level":%d}`, i))
+		}
+		setup.Bulk(t, env.IngestorBulkAddr(), qDocs)
+		env.WaitIdle()
+
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		sendStreamSearchQuery(t, stream, `service:q | stats quantile(level, 0, 0.5, 1) by (service)`)
+
+		var gotRecords int
+		var value float64
+		var quantiles []float64
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				break
+			}
+			switch v := resp.ResponseType.(type) {
+			case *seqproxyapi.StreamSearchResponse_Data:
+				for _, rec := range v.Data.GetBatch().GetRecords() {
+					raw := rec.GetRawData()
+					// [key:STRING, value:FLOAT64, ts:UINT64, quantiles:FLOAT64_ARRAY].
+					r.Len(raw, 4)
+					gotRecords++
+					value = math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
+					quantiles = encoding.Float64ArrayFromBytes(raw[3])
+				}
+			case *seqproxyapi.StreamSearchResponse_Summary:
+				r.Equal(1, gotRecords, "one bucket per `service` group")
+				r.Len(quantiles, 3)
+				r.Equal(0.0, value)
+				r.Equal(0.0, quantiles[0], "q=0 -> min")
+				r.Equal(9.0, quantiles[2], "q=1 -> max")
+				r.Equal(5.0, quantiles[1], "q=0.5 -> median")
+				return
+			}
+		}
+		r.Fail("expected a summary message")
 	})
 
 	t.Run("missing query is rejected", func(t *testing.T) {

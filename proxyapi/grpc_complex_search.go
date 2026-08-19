@@ -191,6 +191,9 @@ func readAggregations(storesStream query.RecordProducer) []*seqproxyapi.Aggregat
 		if ts := r.Vals[2].Decoded().(uint64); ts != consts.DummyMID {
 			bucket.Ts = timestamppb.New(seq.MID(ts).Time())
 		}
+		if quantiles := r.Vals[3].Decoded().([]float64); len(quantiles) > 0 {
+			bucket.Quantiles = quantiles
+		}
 		buckets = append(buckets, bucket)
 	}
 	return []*seqproxyapi.Aggregation{{Buckets: buckets}}
@@ -203,7 +206,7 @@ func shouldTryStreamSearch(tryStreamSearch bool, req *seqproxyapi.ComplexSearchR
 	if req.Hist != nil || len(req.Aggs) > 1 {
 		return false
 	}
-	if len(req.Aggs) == 1 && (req.Aggs[0].Func == seq.AggFuncQuantile || req.Aggs[0].Func == seq.AggFuncUniqueCount) {
+	if len(req.Aggs) == 1 && req.Aggs[0].Func == seq.AggFuncUniqueCount {
 		return false
 	}
 	return true
