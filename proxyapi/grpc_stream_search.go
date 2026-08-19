@@ -59,11 +59,6 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 		return status.Error(codes.InvalidArgument, fmt.Sprintf("error parsing query: %s", err.Error()))
 	}
 
-	if searchReq.Agg != nil && searchReq.Agg.Func == seq.AggFuncUniqueCount {
-		// TODO: support all agg funcs
-		return status.Error(codes.InvalidArgument, `unsupported aggregate function`)
-	}
-
 	tr := querytracer.New(q.Explain, "proxy/StreamSearch")
 
 	var partialErr error

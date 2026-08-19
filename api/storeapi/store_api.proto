@@ -322,6 +322,7 @@ enum DataType {
   INT64 = 7;
   FLOAT64 = 8;
   FLOAT64_ARRAY = 9;
+  STRING_ARRAY = 10;
 }
 
 message ResponseData {

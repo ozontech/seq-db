@@ -37,6 +37,9 @@ type DistributedAggregator struct {
 	buckets    map[aggKey]*seq.SamplesContainer
 	sortingBuf []*query.Record
 
+	// values holds the unique field-value sets per bucket for unique count.
+	values map[aggKey]map[string]struct{}
+
 	curIdx int
 }
 
@@ -91,6 +94,20 @@ func (a *DistributedAggregator) Next() *query.Record {
 					}
 				}
 
+				if a.aggFunc == seq.AggFuncUniqueCount {
+					if a.values == nil {
+						a.values = make(map[aggKey]map[string]struct{})
+					}
+					m, ok := a.values[key]
+					if !ok {
+						m = make(map[string]struct{})
+						a.values[key] = m
+					}
+					for _, v := range r.Vals[8].Decoded().([]string) {
+						m[v] = struct{}{}
+					}
+				}
+
 				a.buckets[key] = s
 			}
 		}
@@ -103,10 +120,11 @@ func (a *DistributedAggregator) Next() *query.Record {
 			var value float64
 			var quantiles []float64
 
-			// TODO: support all aggregate functions
 			switch a.aggFunc {
 			case seq.AggFuncCount, seq.AggFuncUnique:
 				value = float64(bucket.Total)
+			case seq.AggFuncUniqueCount:
+				value = float64(len(a.values[key]))
 			case seq.AggFuncSum:
 				value = bucket.Sum
 			case seq.AggFuncMin:

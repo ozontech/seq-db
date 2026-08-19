@@ -81,16 +81,15 @@ func Float64FromBytes(b []byte) float64 {
 // Float64ArrayToBytes encodes a float64 slice as an 8-byte little-endian length
 // prefix followed by the little-endian raw bytes of each element. An empty or
 // nil slice is encoded as a zero length (8 zero bytes).
-func Float64ArrayToBytes(v []float64) []byte {
-	b := make([]byte, 8+len(v)*8)
-	binary.LittleEndian.PutUint64(b, uint64(len(v)))
-	for i, f := range v {
+func Float64ArrayToBytes(val []float64) []byte {
+	b := make([]byte, 8+len(val)*8)
+	binary.LittleEndian.PutUint64(b, uint64(len(val)))
+	for i, f := range val {
 		binary.LittleEndian.PutUint64(b[8+i*8:], math.Float64bits(f))
 	}
 	return b
 }
 
-// Float64ArrayFromBytes is the inverse of Float64ArrayToBytes.
 func Float64ArrayFromBytes(b []byte) []float64 {
 	if len(b) < 8 {
 		return nil
@@ -99,6 +98,44 @@ func Float64ArrayFromBytes(b []byte) []float64 {
 	v := make([]float64, n)
 	for i := range n {
 		v[i] = math.Float64frombits(binary.LittleEndian.Uint64(b[8+i*8:]))
+	}
+	return v
+}
+
+// StringArrayToBytes encodes a string slice as an 8-byte little-endian length
+// prefix (number of strings) followed by each string prefixed with its own
+// 8-byte little-endian length. An empty or nil slice is encoded as a zero
+// length (8 zero bytes).
+func StringArrayToBytes(val []string) []byte {
+	// 8 bytes for the count, plus 8 bytes + len(s) per string.
+	size := 8
+	for _, s := range val {
+		size += 8 + len(s)
+	}
+	b := make([]byte, size)
+	binary.LittleEndian.PutUint64(b, uint64(len(val)))
+	offset := 8
+	for _, s := range val {
+		binary.LittleEndian.PutUint64(b[offset:], uint64(len(s)))
+		offset += 8
+		copy(b[offset:], s)
+		offset += len(s)
+	}
+	return b
+}
+
+func StringArrayFromBytes(b []byte) []string {
+	if len(b) < 8 {
+		return nil
+	}
+	n := binary.LittleEndian.Uint64(b)
+	v := make([]string, n)
+	offset := 8
+	for i := range n {
+		slen := binary.LittleEndian.Uint64(b[offset:])
+		offset += 8
+		v[i] = string(b[offset : offset+int(slen)])
+		offset += int(slen)
 	}
 	return v
 }

@@ -136,3 +136,25 @@ func TestFloat64ArrayByteLength(t *testing.T) {
 	assert.Len(t, Float64ArrayToBytes([]float64{}), 8)
 	assert.Len(t, Float64ArrayToBytes([]float64{1, 2, 3}), 8+3*8)
 }
+
+func TestStringArray(t *testing.T) {
+	cases := [][]string{
+		nil,
+		{},
+		{""},
+		{"a"},
+		{"a", "b", "", "hello", "мир"},
+	}
+	for _, v := range cases {
+		// nil and an empty slice both encode as a zero length and decode to an
+		// empty (non-nil) slice, so compare elements rather than nil-ness.
+		assert.ElementsMatch(t, v, StringArrayFromBytes(StringArrayToBytes(v)))
+	}
+	assert.Len(t, StringArrayFromBytes(StringArrayToBytes(nil)), 0)
+}
+
+func TestStringArrayByteLength(t *testing.T) {
+	assert.Len(t, StringArrayToBytes(nil), 8)
+	assert.Len(t, StringArrayToBytes([]string{}), 8)
+	assert.Len(t, StringArrayToBytes([]string{"a", "bc"}), 8+(8+1)+(8+2))
+}

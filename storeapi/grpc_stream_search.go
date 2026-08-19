@@ -398,6 +398,7 @@ func aggsTyping() []*storeapi.Typing {
 		{Title: "not_exists", Type: storeapi.DataType_UINT64},
 		{Title: "ts", Type: storeapi.DataType_UINT64},
 		{Title: "samples", Type: storeapi.DataType_FLOAT64_ARRAY},
+		{Title: "values", Type: storeapi.DataType_STRING_ARRAY},
 	}
 }
 

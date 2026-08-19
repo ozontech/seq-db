@@ -206,9 +206,6 @@ func shouldTryStreamSearch(tryStreamSearch bool, req *seqproxyapi.ComplexSearchR
 	if req.Hist != nil || len(req.Aggs) > 1 {
 		return false
 	}
-	if len(req.Aggs) == 1 && req.Aggs[0].Func == seq.AggFuncUniqueCount {
-		return false
-	}
 	return true
 }
 

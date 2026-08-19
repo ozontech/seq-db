@@ -133,7 +133,7 @@ func (s *SearcherDataSource) nextAgg() *query.Record {
 		return nil
 	}
 
-	record := makeAggRecord(s.agg.Timeseries[s.curIdx])
+	record := makeAggRecord(s.agg.Timeseries[s.curIdx], s.agg.ValuesPool)
 
 	s.curIdx++
 
@@ -242,6 +242,13 @@ func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
 			NotExists: hist.NotExists,
 		}
 
+		if len(hist.Values) > 0 {
+			pbhist.Values = make([]uint32, 0, len(hist.Values))
+			for idx := range hist.Values {
+				pbhist.Values = append(pbhist.Values, idx)
+			}
+		}
+
 		agg.Timeseries = append(agg.Timeseries,
 			&storeapi.SearchResponse_Bin{
 				Label: bin.Token,
@@ -255,6 +262,8 @@ func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
 
 	agg.NotExists = fromAgg.NotExists
 	agg.AggHistogram = to
+	agg.ValuesPool = fromAgg.ValuesPool
+
 	return agg
 }
 
@@ -267,7 +276,16 @@ func makeDocumentRecord(id seq.ID, payload []byte) *query.Record {
 	}
 }
 
-func makeAggRecord(bin *storeapi.SearchResponse_Bin) *query.Record {
+func makeAggRecord(bin *storeapi.SearchResponse_Bin, valuesPool []string) *query.Record {
+	// For unique_count, the store holds unique field values as indices into the per-agg ValuesPool.
+	// Resolve them to strings here so each record is self-contained, no shared pool.
+	var values []string
+	if len(bin.Hist.Values) > 0 && len(valuesPool) > 0 {
+		values = make([]string, 0, len(bin.Hist.Values))
+		for _, idx := range bin.Hist.Values {
+			values = append(values, valuesPool[idx])
+		}
+	}
 	return &query.Record{
 		Vals: []*query.RecordVals{
 			query.NewRecordVals(query.DataTypeBytes, []byte(bin.Label)),
@@ -278,6 +296,7 @@ func makeAggRecord(bin *storeapi.SearchResponse_Bin) *query.Record {
 			query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(uint64(bin.Hist.NotExists))),
 			query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(uint64(bin.Ts.AsTime().UnixNano()))),
 			query.NewRecordVals(query.DataTypeFloat64Array, encoding.Float64ArrayToBytes(bin.Hist.Samples)),
+			query.NewRecordVals(query.DataTypeStringArray, encoding.StringArrayToBytes(values)),
 		},
 	}
 }

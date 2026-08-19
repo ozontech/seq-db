@@ -2256,6 +2256,48 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 		r.Fail("expected a summary message")
 	})
 
+	t.Run("unique_count aggregation stream", func(t *testing.T) {
+		const uniqLevels = 5
+		const reps = 2
+		uDocs := make([]string, 0, uniqLevels*reps)
+		for i := range uniqLevels {
+			for range reps {
+				uDocs = append(uDocs, fmt.Sprintf(`{"service":"uc","level":%d}`, i))
+			}
+		}
+		setup.Bulk(t, env.IngestorBulkAddr(), uDocs)
+		env.WaitIdle()
+
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		sendStreamSearchQuery(t, stream, `service:uc | stats unique_count(level) by (service)`)
+
+		var gotRecords int
+		var value float64
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				break
+			}
+			switch v := resp.ResponseType.(type) {
+			case *seqproxyapi.StreamSearchResponse_Data:
+				for _, rec := range v.Data.GetBatch().GetRecords() {
+					raw := rec.GetRawData()
+					r.Len(raw, 4)
+					gotRecords++
+					value = math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
+				}
+			case *seqproxyapi.StreamSearchResponse_Summary:
+				r.Equal(1, gotRecords, "one bucket per `service` group")
+				r.Equal(float64(uniqLevels), value, "value = number of unique levels")
+				return
+			}
+		}
+		r.Fail("expected a summary message")
+	})
+
 	t.Run("missing query is rejected", func(t *testing.T) {
 		stream, conn, _, cancel := newStreamSearchClient(t, env)
 		defer cancel()
