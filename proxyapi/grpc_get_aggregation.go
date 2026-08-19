@@ -24,6 +24,18 @@ func (g *grpcV1) GetAggregation(
 		Aggs:  req.Aggs,
 	}
 
+	if len(req.Aggs) == 1 && shouldTryStreamSearch(g.config.TryStreamSearch, proxyReq) {
+		cResp, err := g.emulateStreamSearch(ctx, proxyReq, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &seqproxyapi.GetAggregationResponse{
+			Aggs:  cResp.Aggs,
+			Total: cResp.Total,
+			Error: cResp.Error,
+		}, nil
+	}
+
 	sResp, obs, err := g.doSearch(ctx, proxyReq, false, true, nil)
 	defer func() { obs.finish("GetAggregation", retErr) }()
 	if err != nil {
