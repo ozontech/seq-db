@@ -237,21 +237,9 @@ func iterateEvalTree(
 	sample := sampler(params.Downsample)
 
 	var aggs []Aggregator
-	for {
+	for (params.Limit-len(ids)) > 0 || needScanAllRange {
 		if util.IsCancelled(ctx) {
 			return total, ids, hist, aggs, ctx.Err()
-		}
-
-		needIDs := params.Limit - len(ids)
-		if needIDs < 1 && !needScanAllRange {
-			break
-		}
-
-		remaining := needIDs
-		if needScanAllRange || params.Downsample > 1 {
-			// if full range scan is required OR downsampling is active,
-			// we must fetch as many LIDs as possible in one batch.
-			remaining = math.MaxInt32
 		}
 
 		timerEval.Start()
@@ -264,26 +252,40 @@ func iterateEvalTree(
 
 		iter := batch.ManyIter(params.Order.IsDesc())
 
-		for remaining > 0 {
+		// Process batch part by part (batches can be quite large currently)
+		for (params.Limit-len(ids)) > 0 || needScanAllRange {
 			if util.IsCancelled(ctx) {
 				return total, ids, hist, aggs, ctx.Err()
 			}
 
-			if !needScanAllRange && params.Limit-len(ids) < 1 {
-				break
+			needIDs := params.Limit - len(ids)
+
+			// Estimate how many LIDs we want in the next part to keep the balance between unneeded work and batch part size.
+			var toProcessLIDs int
+			if needIDs > 0 {
+				// We have IDs to fill for search - iterate batch by supposedly smaller parts with length equal to count of IDs needed
+				// This allows fetching MIDs for the entire batch part to serve for IDs creation and hist
+				toProcessLIDs = min(needIDs, cap(lidsBuf))
+			} else if needScanAllRange || params.Downsample > 1 {
+				// We don't have IDs to fill for search. We now operate on larger parts (size is capped by tmp buff).
+				// If it's a hist request, then we fetch MIDs for entire part which means no unneeded work is done.
+				toProcessLIDs = cap(lidsBuf)
 			}
 
 			timerEval.Start()
-			n := iter.CopyLIDs(lidsBuf[:min(remaining, len(lidsBuf))], tmpBuf[:min(remaining, len(tmpBuf))])
+			n := iter.CopyLIDs(lidsBuf[:toProcessLIDs], tmpBuf[:toProcessLIDs])
 			timerEval.Stop()
 
+			// no more LIDs left in the current batch
 			if n == 0 {
 				break
 			}
 
+			// get the copied LIDs part of batch
 			lidsBatch := lidsBuf[:n]
+
+			// TODO(cheb0) not correct for nested indexes
 			total += n
-			remaining -= n
 
 			lidsBatch = sample(lidsBatch)
 
@@ -291,7 +293,6 @@ func iterateEvalTree(
 				continue
 			}
 
-			needIDs = params.Limit - len(ids)
 			if hasHist || needIDs > 0 {
 				timerMID.Start()
 				mids = idsIndex.GetMIDs(lidsBatch, mids[:0])
@@ -304,16 +305,14 @@ func iterateEvalTree(
 				}
 
 				if needIDs > 0 {
-					needLIDs := min(needIDs, len(lidsBatch))
-
 					timerRID.Start()
-					rids = idsIndex.GetRIDs(lidsBatch[:needLIDs], rids[:0])
+					rids = idsIndex.GetRIDs(lidsBatch, rids[:0])
 					timerRID.Stop()
 
 					// fill IDs for search
-					for i := 0; i < needLIDs; i++ {
+					for i := 0; i < len(lidsBatch) && params.Limit-len(ids) > 0; i++ {
 						id := seq.ID{MID: mids[i], RID: rids[i]}
-						if i == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
+						if len(ids) == 0 || lastID != id { // lids increase monotonically, it's enough to compare current id with the last one
 							ids = append(ids, seq.IDSource{ID: id})
 						}
 						lastID = id

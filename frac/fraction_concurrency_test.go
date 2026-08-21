@@ -58,7 +58,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	const numMessagesPerWriter = 5000
 	const bulkSize = 100
 
-	docs, bulks, fromTime, toTime := generatesMessages(numWriters*numMessagesPerWriter, bulkSize)
+	docs, bulks, fromTime, toTime := generatesMessages(numWriters*numMessagesPerWriter, bulkSize, false)
 
 	tmpDir := testcommon.CreateTempDir()
 	fracPath := filepath.Join(tmpDir, "test_fraction")
@@ -502,6 +502,17 @@ func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.
 			message += fmt.Sprintf(" %d", rand.IntN(10000000))
 		}
 
+		var spansJson string
+
+		if nestedIndexes {
+			numSpans := 1 + rand.IntN(5)
+			spans := make([]string, numSpans)
+			for j := 0; j < numSpans; j++ {
+				spans[j] = fmt.Sprintf(`{"span_id":"span-%d"}`, rand.IntN(5000))
+			}
+			spansJson = fmt.Sprintf(`, "spans":[%s]`, strings.Join(spans, ","))
+		}
+
 		level := rand.IntN(6)
 		timestamp := fromTime.Add(time.Duration(i) * time.Millisecond)
 		id := fmt.Sprintf("id-%d", i)
@@ -512,8 +523,8 @@ func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.
 			toTime = timestamp
 		}
 
-		json := fmt.Sprintf(`{"timestamp":%q,"id": %q, "service":%q,"pod":%q,"client_ip":%q,"message":%q,"trace_id": %q,"level":"%d"}`,
-			timestamp.Format(time.RFC3339Nano), id, service, pod, clientIp, message, traceId, level)
+		json := fmt.Sprintf(`{"timestamp":%q,"id": %q, "service":%q,"pod":%q,"client_ip":%q,"message":%q,"trace_id": %q,"level":"%d"%s}`,
+			timestamp.Format(time.RFC3339Nano), id, service, pod, clientIp, message, traceId, level, spansJson)
 
 		docs = append(docs, &testDoc{
 			json:      json,
