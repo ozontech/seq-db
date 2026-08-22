@@ -21,7 +21,7 @@ func NewIteratorDesc(
 	minLID, maxLID uint32,
 ) *IteratorDesc {
 	it := &IteratorDesc{
-		Cursor: *NewLIDsCursor(table, loader, startIndex, tid, counter, minLID, maxLID),
+		Cursor: NewLIDsCursor(table, loader, startIndex, tid, counter, minLID, maxLID),
 	}
 	it.it = it.batch.Iter()
 	return it
@@ -38,13 +38,13 @@ func (it *IteratorDesc) narrowLIDsRange(tryNextBlock bool) bool {
 	}
 
 	first := it.batch.Min()
-	if it.maxLID < first {
-		it.batch = node.EmptyBatch()
+	if it.maxLID < first { // fast path: out-of-bounds 1
+		it.batch = node.EmptyBatch() // stop reading blocks
 		return false
 	}
 
 	last := it.batch.Max()
-	if it.minLID > last {
+	if it.minLID > last { // fast path: out-of-bounds 2; allowed to continue reading blocks
 		it.batch = node.EmptyBatch()
 		return tryNextBlock
 	}

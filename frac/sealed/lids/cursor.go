@@ -29,8 +29,8 @@ func NewLIDsCursor(
 	tid uint32,
 	counter Counter,
 	minLID, maxLID uint32,
-) *Cursor {
-	return &Cursor{
+) Cursor {
+	return Cursor{
 		table:  table,
 		loader: loader,
 

@@ -61,7 +61,7 @@ type UnpackedBlock struct {
 //	[offsets: delta-bitpack []uint32]     — slice boundaries in the delta-encoded LIDs array
 //	[lids: delta-bitpack []uint32]        — concatenated delta-encoded LID values
 //
-// Each list i in [0, listsCount) is either a roaring bitmap (when i appears in bitmapIndexes)
+// Each ith list in [0, listsCount) is either a roaring bitmap (when i appears in bitmapIndexes)
 // or a delta-encoded slice lids[offsets[k]:offsets[k+1]], where k is its delta-encoded slot index.
 // Lists with length >= LidsBitmapThreshold are stored as bitmaps; shorter lists use delta-encoding.
 type Block struct {

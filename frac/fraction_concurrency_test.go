@@ -1,6 +1,7 @@
 package frac_test
 
 import (
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"path/filepath"
@@ -26,6 +27,29 @@ import (
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
+const (
+	scheduler = "scheduler"
+	database  = "database"
+	bus       = "bus"
+	proxy     = "proxy"
+	gateway   = "gateway"
+	kafka     = "kafka"
+)
+
+type testDoc = struct {
+	id        string
+	json      string
+	message   string
+	service   string
+	pod       string
+	clientIp  string
+	level     int
+	traceId   string
+	timestamp time.Time
+}
+
+// TestConcurrentAppendAndQuery tests concurrent appends to an active fraction, then concurrent querying an active fraction.
+// Then tests concurrent queries for a sealed fraction.
 func TestConcurrentAppendAndQuery(t *testing.T) {
 	const numIndexWorkers = 8
 	const numWriters = 8
@@ -115,7 +139,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 				// 20% chance - simply issue a query for race detector to catch something
 				if rand.IntN(10) < 2 {
 					searchParams := processor.SearchParams{}
-					searchParams.Limit = 50
+					searchParams.Limit = 1000
 					searchParams.From = seq.MID(0)
 					searchParams.To = seq.TimeToMID(toTime)
 					ast, err := parser.ParseSeqQL("message:*", mapping)
@@ -146,14 +170,191 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	readTest(t, sealed, numReaders, numQueries, docs, fromTime, toTime, mapping)
 }
 
-const (
-	scheduler = "scheduler"
-	database  = "database"
-	bus       = "bus"
-	proxy     = "proxy"
-	gateway   = "gateway"
-	kafka     = "kafka"
-)
+// TestConcurrentColdQueriesSealedFrac tests concurrent cold querying against a sealed fraction.
+func TestConcurrentColdQueriesSealedFrac(t *testing.T) {
+	const numIndexWorkers = 8
+	const numWriters = 4
+	const numReaders = 8
+	const numMessagesPerWriter = 1000
+	const bulkSize = 100
+	const numIterations = 100
+
+	docs, bulks, _, toTime := generatesMessages(numWriters*numMessagesPerWriter, bulkSize)
+
+	tmpDir := testcommon.CreateTempDir()
+	fracPath := filepath.Join(tmpDir, "test_fraction")
+	defer testcommon.RemoveDir(fracPath)
+
+	mapping := getTestMapping()
+	tokenizers := getTestTokenizers()
+
+	active, stop := createActiveFraction(fracPath, numIndexWorkers, numReaders)
+	fillActiveFraction(t, active, bulks, mapping, tokenizers, numWriters)
+	stop()
+
+	activeSealingSource, err := frac.NewActiveSealingSource(active, getTestSealParams())
+	assert.NoError(t, err)
+
+	preloaded, err := sealing.Seal(activeSealingSource, getTestSealParams())
+	assert.NoError(t, err)
+	active.Release()
+
+	for range numIterations {
+		sealed := frac.NewSealedPreloaded(
+			fracPath,
+			preloaded,
+			storage.NewReadLimiter(128, nil),
+			frac.NewIndexCache(),
+			cache.NewCache[[]byte](nil, nil),
+			&frac.Config{},
+			testSkipMaskProvider{},
+		)
+
+		readTestUniqueQueries(t, sealed, numReaders, docs, toTime, mapping)
+
+		sealed.Release()
+	}
+}
+
+func getTestMapping() seq.Mapping {
+	return seq.Mapping{
+		"service":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"client_ip": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"message":   seq.NewSingleType(seq.TokenizerTypeText, "", 100),
+		"level":     seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+		"trace_id":  seq.NewSingleType(seq.TokenizerTypeKeyword, "", 20),
+	}
+}
+
+func getTestTokenizers() map[seq.TokenizerType]tokenizer.Tokenizer {
+	return map[seq.TokenizerType]tokenizer.Tokenizer{
+		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(1024, false, true, 8192),
+		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(1024, false, true),
+		seq.TokenizerTypeExists:  tokenizer.NewExistsTokenizer(),
+	}
+}
+
+func getTestSealParams() common.SealParams {
+	return common.SealParams{
+		IDsZstdLevel:           1,
+		LIDsZstdLevel:          1,
+		TokenListZstdLevel:     1,
+		DocsPositionsZstdLevel: 1,
+		TokenTableZstdLevel:    1,
+		DocBlocksZstdLevel:     1,
+		DocBlockSize:           128 * int(units.KiB),
+		LIDBlockSize:           256,
+		LIDsBitmapThreshold:    256,
+	}
+}
+
+type queryParams struct {
+	query  string
+	filter func(doc *testDoc) bool
+}
+
+func readTestUniqueQueries(t *testing.T, fraction frac.Fraction, numReaders int, docs []*testDoc, toTime time.Time, mapping seq.Mapping) {
+	queries := []queryParams{
+		{
+			query: "message:request OR message:failed OR message:processing OR message:timed",
+			filter: func(doc *testDoc) bool {
+				return strings.Contains(doc.message, "request") || strings.Contains(doc.message, "failed") ||
+					strings.Contains(doc.message, "processing") || strings.Contains(doc.message, "timed")
+			},
+		},
+		{
+			query: "service:proxy AND (level:2 OR level:3 OR level:4 OR level:5) AND message:request",
+			filter: func(doc *testDoc) bool {
+				return doc.service == proxy && (doc.level >= 2 && doc.level <= 5) && strings.Contains(doc.message, "request")
+			},
+		},
+		{
+			query: "service:gateway AND (level:3 OR level:4 OR level:5) AND message:request",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && (doc.level >= 3 && doc.level <= 5) && strings.Contains(doc.message, "request")
+			},
+		},
+		{
+			query: "service:gateway AND (message:failed OR message:processing OR message:timed) AND level:[3 to 6]",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && (strings.Contains(doc.message, "failed") || strings.Contains(doc.message, "processing") || strings.Contains(doc.message, "timed")) &&
+					(doc.level >= 3 && doc.level <= 6)
+			},
+		},
+		{
+			query: "service:proxy AND message:request AND level:[0 to 6]",
+			filter: func(doc *testDoc) bool {
+				return doc.service == proxy && strings.Contains(doc.message, "request") && (doc.level >= 0 && doc.level <= 6)
+			},
+		},
+	}
+
+	// warmup query (registry reading)
+	warmupQueryAst, _ := parser.ParseSeqQL("service:a", mapping)
+	warmupQueryParams := processor.SearchParams{}
+	warmupQueryParams.AST = warmupQueryAst.Root
+	warmupQueryParams.From = seq.MID(0)
+	warmupQueryParams.To = seq.TimeToMID(toTime)
+	warmupQueryParams.Limit = 1
+	_, _ = fraction.Search(context.Background(), warmupQueryParams)
+
+	readersGroup, ctx := errgroup.WithContext(t.Context())
+
+	for readerId := 0; readerId < numReaders; readerId++ {
+		readersGroup.Go(func() error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
+			query := queries[rand.IntN(len(queries))]
+
+			queryAst, err := parser.ParseSeqQL(query.query, mapping)
+			if err != nil {
+				return err
+			}
+
+			searchParams := processor.SearchParams{}
+			searchParams.AST = queryAst.Root
+			searchParams.From = seq.MID(0)
+			searchParams.To = seq.TimeToMID(toTime)
+			searchParams.Limit = 1000
+
+			qpr, err := fraction.Search(ctx, searchParams)
+			if err != nil {
+				return fmt.Errorf("search failed: %w", err)
+			}
+
+			fetchedResult, err := fraction.Fetch(ctx, qpr.IDs.IDs(), false)
+			if err != nil {
+				return fmt.Errorf("fetch failed: %w", err)
+			}
+
+			fetchedDocs := make([]string, len(fetchedResult))
+			for j, doc := range fetchedResult {
+				fetchedDocs[j] = string(doc)
+			}
+
+			var expectedDocs []string
+			for k := len(docs) - 1; k >= 0 && len(expectedDocs) < searchParams.Limit; k-- {
+				if (docs[k].timestamp.Before(toTime) || docs[k].timestamp.Equal(toTime)) && query.filter(docs[k]) {
+					expectedDocs = append(expectedDocs, docs[k].json)
+				}
+			}
+
+			assert.Equal(t, len(expectedDocs), len(fetchedDocs), "doc count doesn't match for query %s", query.query)
+			//if len(expectedDocs) > 0 {
+			//	assert.Equal(t, expectedDocs, fetchedDocs, "docs do not match for query %s", query.query)
+			//}
+			return nil
+		})
+	}
+
+	err := readersGroup.Wait()
+	assert.NoError(t, err, "concurrent unique queries should complete without errors")
+}
 
 func readTest(t *testing.T, fraction frac.Fraction, numReaders, numQueries int, docs []*testDoc, fromTime, toTime time.Time, mapping seq.Mapping) {
 	readersGroup, ctx := errgroup.WithContext(t.Context())
@@ -208,6 +409,21 @@ func readTest(t *testing.T, fraction frac.Fraction, numReaders, numQueries int, 
 					filter = func(doc *testDoc) bool {
 						return doc.service == gateway && doc.level == 3
 					}
+				case 7:
+					query = "message:request AND level:3"
+					filter = func(doc *testDoc) bool {
+						return strings.Contains(doc.message, "request") && doc.level == 3
+					}
+				case 8:
+					query = "message:request AND service:gateway"
+					filter = func(doc *testDoc) bool {
+						return strings.Contains(doc.message, "request") && doc.service == gateway
+					}
+				case 9:
+					query = "service:proxy AND message:request AND level:3"
+					filter = func(doc *testDoc) bool {
+						return doc.service == proxy && strings.Contains(doc.message, "request") && doc.level == 3
+					}
 				}
 
 				queryAst, err := parser.ParseSeqQL(query, mapping)
@@ -222,7 +438,7 @@ func readTest(t *testing.T, fraction frac.Fraction, numReaders, numQueries int, 
 				searchParams.AST = queryAst.Root
 				searchParams.From = seq.MID(0)
 				searchParams.To = seq.TimeToMID(queryTime)
-				searchParams.Limit = 50
+				searchParams.Limit = 1000
 
 				qpr, err := fraction.Search(ctx, searchParams)
 				if err != nil {
@@ -258,18 +474,6 @@ func readTest(t *testing.T, fraction frac.Fraction, numReaders, numQueries int, 
 
 	err := readersGroup.Wait()
 	assert.NoError(t, err, "concurrent queries should complete without errors")
-}
-
-type testDoc = struct {
-	id        string
-	json      string
-	message   string
-	service   string
-	pod       string
-	clientIp  string
-	level     int
-	traceId   string
-	timestamp time.Time
 }
 
 func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.Time, time.Time) {
@@ -344,22 +548,83 @@ func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.
 	return docs, bulks, fromTime, toTime
 }
 
-func seal(active *frac.Active) (*frac.Sealed, error) {
-	sealParams := common.SealParams{
-		IDsZstdLevel:           1,
-		LIDsZstdLevel:          1,
-		TokenListZstdLevel:     1,
-		DocsPositionsZstdLevel: 1,
-		TokenTableZstdLevel:    1,
-		DocBlocksZstdLevel:     1,
-		DocBlockSize:           128 * int(units.KiB),
-		LIDBlockSize:           512,
+func createActiveFraction(fracPath string, numIndexWorkers, numReaders int) (*frac.Active, func()) {
+	activeIndexer, stop := frac.NewActiveIndexer(numIndexWorkers, 1000)
+
+	active := frac.NewActive(
+		fracPath,
+		activeIndexer,
+		storage.NewReadLimiter(numReaders/2, nil),
+		cache.NewCache[[]byte](nil, nil),
+		cache.NewCache[[]byte](nil, nil),
+		&frac.Config{},
+		testSkipMaskProvider{},
+	)
+
+	return active, stop
+}
+
+func fillActiveFraction(t *testing.T, active *frac.Active, bulks [][]string, mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, numWriters int) {
+	bulksPerWriter := len(bulks) / numWriters
+
+	writersGroup, writeCtx := errgroup.WithContext(t.Context())
+
+	for writerId := 0; writerId < numWriters; writerId++ {
+		start := writerId * bulksPerWriter
+		end := start + bulksPerWriter
+
+		writerBulks := bulks[start:end]
+
+		writersGroup.Go(func() error {
+			wg := sync.WaitGroup{}
+			proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
+			for _, bulk := range writerBulks {
+				select {
+				case <-writeCtx.Done():
+					return writeCtx.Err()
+				default:
+				}
+
+				idx := 0
+				readNext := func() ([]byte, error) {
+					if idx >= len(bulk) {
+						return nil, nil
+					}
+					d := []byte(bulk[idx])
+					idx++
+					return d, nil
+				}
+
+				compressor := indexer.GetDocsMetasCompressor(3, 3)
+				_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
+				if err != nil {
+					return fmt.Errorf("writer %d: processing bulk failed: %w", writerId, err)
+				}
+
+				compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
+				docsBlock, metasBlock := compressor.DocsMetas()
+
+				wg.Add(1)
+				err = active.Append(docsBlock, metasBlock, &wg)
+				if err != nil {
+					return fmt.Errorf("writer %d: appending docs failed: %w", writerId, err)
+				}
+			}
+			wg.Wait()
+			return nil
+		})
 	}
-	activeSealingSource, err := frac.NewActiveSealingSource(active, sealParams)
+
+	err := writersGroup.Wait()
+	assert.NoError(t, err, "filling active fraction should complete without errors")
+}
+
+func seal(active *frac.Active) (*frac.Sealed, error) {
+	activeSealingSource, err := frac.NewActiveSealingSource(active, getTestSealParams())
 	if err != nil {
 		return nil, err
 	}
-	preloaded, err := sealing.Seal(activeSealingSource, sealParams)
+	preloaded, err := sealing.Seal(activeSealingSource, getTestSealParams())
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +632,7 @@ func seal(active *frac.Active) (*frac.Sealed, error) {
 	sealed := frac.NewSealedPreloaded(
 		active.BaseFileName,
 		preloaded,
-		storage.NewReadLimiter(1, nil),
+		storage.NewReadLimiter(128, nil),
 		frac.NewIndexCache(),
 		cache.NewCache[[]byte](nil, nil),
 		&frac.Config{},

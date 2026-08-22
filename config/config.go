@@ -86,8 +86,8 @@ type Config struct {
 			BlockSize int `config:"block_size" default:"65536"`
 			// BitmapThreshold specifies minimum number of LIDs in the lid list
 			// which are serialized as bitmap. LIDs lists with more elements use bitmap encoding,
-			// while smaller lists use delta encoding.
-			BitmapThreshold int `config:"bitmap_threshold" default:"65536"`
+			// while smaller lists use delta encoding. Default value is 0 (disabled).
+			BitmapThreshold int `config:"bitmap_threshold"`
 		} `config:"lids"`
 	} `config:"sealing"`
 

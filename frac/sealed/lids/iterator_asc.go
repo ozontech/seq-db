@@ -21,7 +21,7 @@ func NewIteratorAsc(
 	minLID, maxLID uint32,
 ) *IteratorAsc {
 	it := &IteratorAsc{
-		Cursor: *NewLIDsCursor(table, loader, startIndex, tid, counter, minLID, maxLID),
+		Cursor: NewLIDsCursor(table, loader, startIndex, tid, counter, minLID, maxLID),
 	}
 	it.it = it.batch.ReverseIter()
 	return it
@@ -38,14 +38,14 @@ func (it *IteratorAsc) narrowLIDsRange(tryNextBlock bool) bool {
 	}
 
 	first := it.batch.Min()
-	if it.maxLID < first {
+	if it.maxLID < first { // fast path: out-of-bounds 1; allowed to continue reading blocks
 		it.batch = node.EmptyBatch()
 		return tryNextBlock
 	}
 
 	last := it.batch.Max()
-	if it.minLID > last {
-		it.batch = node.EmptyBatch()
+	if it.minLID > last { // fast path: out-of-bounds 2
+		it.batch = node.EmptyBatch() // stop reading blocks
 		return false
 	}
 
