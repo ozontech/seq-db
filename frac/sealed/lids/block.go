@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sort"
 	"unsafe"
 
 	"github.com/RoaringBitmap/roaring/v2"
@@ -42,74 +43,70 @@ func NewBlockPacker() *BlockPacker {
 
 // UnpackedBlock contains accumulated LIDs ready to pack. It's only used on sealing/compaction (index writing) time.
 type UnpackedBlock struct {
-	LIDs      []uint32
-	Offsets   []uint32
-	IsLastLID bool
+	LIDs    []uint32
+	Offsets []uint32
 }
 
 // Block contains LIDs in variable format. It's used during search/queries processing.
-// Field types is used to distinguish format for every LID list. If it's positive or zero, then it's a slot index in offsets
-// (delta-encoding is used). If it's negative, then it's a bitmap slot index (index starts from -1, so -1 stands for bitmaps[0]).
-// If types is nil, then the entire block is delta-encoded.
+// Each posting list is either a roaring bitmap or a delta-encoded slice.
+// bitmapIndexes holds the list indexes that were stored as bitmaps.
 //
 // On-disk format:
 //
-//	[listsCount: uint32]     — number of LID lists in the block
 //	[bitmapsCount: uint32]   — number of lists stored as roaring bitmaps
 //	[bitmaps: bitmapsCount × roaring bitmap, serial format]
 //	[bitmapIndexes: delta-bitpack []uint32] — sorted list indices encoded as bitmaps
 //	[offsets: delta-bitpack []uint32]     — slice boundaries in the delta-encoded LIDs array
 //	[lids: delta-bitpack []uint32]        — concatenated delta-encoded LID values
-//
-// Each ith list in [0, listsCount) is either a roaring bitmap (when i appears in bitmapIndexes)
-// or a delta-encoded slice lids[offsets[k]:offsets[k+1]], where k is its delta-encoded slot index.
-// Lists with length >= LidsBitmapThreshold are stored as bitmaps; shorter lists use delta-encoding.
 type Block struct {
-	types   []int32           // determines LID list type: delta-encoded (non-negative value) or bitmap (negative value). nil for delta-encoded blocks
-	lids    []uint32          // all LIDs which are delta-encoded as a flat array
-	offsets []uint32          // offsets for delta-encoded LIDs
-	bitmaps []*roaring.Bitmap // all LIDs lists which are stored as bitmaps
-	lastLID bool              // legacy field, will be removed soon
+	lids          []uint32 // all LIDs which are delta-encoded as a flat array
+	offsets       []uint32 // offsets for delta-encoded LIDs
+	bitmapIndexes []uint32 // indexes of lists which are stored as bitmaps
+	bitmaps       []*roaring.Bitmap
 }
 
 func (b *Block) GetCount() int {
-	if b.types != nil {
-		return len(b.types)
+	n := len(b.bitmapIndexes)
+	if len(b.offsets) > 0 {
+		n += len(b.offsets) - 1
 	}
-
-	return len(b.offsets) - 1
-}
-
-func (b *Block) IsLastLID() bool {
-	return b.lastLID
+	return n
 }
 
 func (b *Block) GetLIDs(i int) node.LIDBatch {
-	if b.types == nil {
-		return node.NewSliceBatch(b.lids[b.offsets[i]:b.offsets[i+1]])
+	slot, isBitmap := b.getListSlot(i)
+	if isBitmap {
+		return node.NewBitmapBatch(b.bitmaps[slot])
 	}
-	t := b.types[i]
-	if t >= 0 {
-		return node.NewSliceBatch(b.lids[b.offsets[t]:b.offsets[t+1]])
-	}
-	return node.NewBitmapBatch(b.bitmaps[-t-1])
+	return node.NewSliceBatch(b.lids[b.offsets[slot]:b.offsets[slot+1]])
 }
 
 func (b *Block) AppendLIDsTo(idx int, dst []uint32) []uint32 {
-	if b.types == nil {
-		dst = append(dst, b.lids[b.offsets[idx]:b.offsets[idx+1]]...)
-		return dst
+	slot, isBitmap := b.getListSlot(idx)
+	if isBitmap {
+		return b.copyLIDsFromBitmap(slot, dst)
 	}
-	t := b.types[idx]
-	if t >= 0 {
-		dst = append(dst, b.lids[b.offsets[t]:b.offsets[t+1]]...)
-		return dst
-	}
-	return b.copyLIDsFromBitmap(t, dst)
+	return append(dst, b.lids[b.offsets[slot]:b.offsets[slot+1]]...)
 }
 
-func (b *Block) copyLIDsFromBitmap(ref int32, buf []uint32) []uint32 {
-	bitmap := b.bitmaps[-ref-1]
+// getListSlot returns either a slot into bitmaps if the corresponding list is a bitmap. Otherwise, returns
+// a slot into offsets if the list is delta-encoded.
+func (b *Block) getListSlot(i int) (slot int, isBitmap bool) {
+	n := len(b.bitmapIndexes)
+	if n == 0 {
+		return i, false
+	}
+	slot = sort.Search(n, func(j int) bool {
+		return b.bitmapIndexes[j] >= uint32(i)
+	})
+	if slot < n && b.bitmapIndexes[slot] == uint32(i) {
+		return slot, true
+	}
+	return i - slot, false
+}
+
+func (b *Block) copyLIDsFromBitmap(slot int, buf []uint32) []uint32 {
+	bitmap := b.bitmaps[slot]
 	n := int(bitmap.GetCardinality())
 	oldLen := len(buf)
 
@@ -121,7 +118,7 @@ func (b *Block) copyLIDsFromBitmap(ref int32, buf []uint32) []uint32 {
 
 func (b *Block) GetSizeBytes() int {
 	const uint32Size = int(unsafe.Sizeof(uint32(0)))
-	size := int(unsafe.Sizeof(*b)) + uint32Size*cap(b.types) + uint32Size*cap(b.lids) + uint32Size*cap(b.offsets)
+	size := int(unsafe.Sizeof(*b)) + uint32Size*cap(b.bitmapIndexes) + uint32Size*cap(b.lids) + uint32Size*cap(b.offsets)
 	for _, bm := range b.bitmaps {
 		if bm != nil {
 			size += int(bm.GetSizeInBytes())
@@ -142,10 +139,7 @@ func (p *BlockPacker) Pack(b *UnpackedBlock, dst []byte) []byte {
 		}
 	}
 
-	// write total number of LID lists and bitmap indexes
 	var numBuf [4]byte
-	binary.LittleEndian.PutUint32(numBuf[:], uint32(totalLists))
-	dst = append(dst, numBuf[:]...)
 	binary.LittleEndian.PutUint32(numBuf[:], uint32(bmCount))
 	dst = append(dst, numBuf[:]...)
 
@@ -209,13 +203,11 @@ func (b *Block) Unpack(data []byte, fracVer config.BinaryDataVersion, buf *Unpac
 
 // unpackBlockV6 unpacks the mixed bitmap / delta-bitpack format (BinaryDataV6+).
 func (b *Block) unpackBlockV6(data []byte, buf *UnpackBuffer) error {
-	listsCount := int(binary.LittleEndian.Uint32(data[:4]))
-	data = data[4:]
-	bitmapsCount := int(binary.LittleEndian.Uint32(data[:4]))
+	bitmapCount := int(binary.LittleEndian.Uint32(data[:4]))
 	data = data[4:]
 
-	bitmaps := make([]*roaring.Bitmap, bitmapsCount)
-	for i := 0; i < bitmapsCount; i++ {
+	bitmaps := make([]*roaring.Bitmap, bitmapCount)
+	for i := 0; i < bitmapCount; i++ {
 		rb := roaring.NewBitmap()
 		n, err := rb.ReadFrom(bytes.NewReader(data))
 		if err != nil {
@@ -233,7 +225,7 @@ func (b *Block) unpackBlockV6(data []byte, buf *UnpackBuffer) error {
 	if err != nil {
 		return err
 	}
-	b.types = deriveTypes(listsCount, bitmapIndexes)
+	b.bitmapIndexes = append([]uint32{}, bitmapIndexes...)
 
 	var values []uint32
 	data, values, err = packer.DecompressDeltaBitpackUint32(data, buf.decompressed, buf.compressed)
@@ -254,28 +246,6 @@ func (b *Block) unpackBlockV6(data []byte, buf *UnpackBuffer) error {
 	return nil
 }
 
-// deriveTypes derives types array (only for LID blocks which have at least one bitmap).
-func deriveTypes(totalLists int, bitmapIndexes []uint32) []int32 {
-	if len(bitmapIndexes) == 0 {
-		return nil
-	}
-	listTypes := make([]int32, totalLists)
-	bmIdx := 0
-	deltaIdx := 0
-	bmSlotIdx := 0
-	for i := 0; i < totalLists; i++ {
-		if bmSlotIdx < len(bitmapIndexes) && bitmapIndexes[bmSlotIdx] == uint32(i) {
-			listTypes[i] = -int32(bmIdx + 1)
-			bmIdx++
-			bmSlotIdx++
-		} else {
-			listTypes[i] = int32(deltaIdx)
-			deltaIdx++
-		}
-	}
-	return listTypes
-}
-
 func (b *Block) unpackBitpackV4(data []byte, buf *UnpackBuffer) error {
 	var err error
 	var values []uint32
@@ -292,11 +262,10 @@ func (b *Block) unpackBitpackV4(data []byte, buf *UnpackBuffer) error {
 	}
 	lids := append([]uint32{}, values...)
 
-	b.types = nil
+	b.bitmapIndexes = nil
 	b.lids = lids
 	b.offsets = offsets
 	b.bitmaps = nil
-	b.lastLID = false
 	return nil
 }
 
@@ -322,15 +291,13 @@ func (b *Block) unpackVarintsV1(data []byte, buf *UnpackBuffer) error {
 		buf.lids = append(buf.lids, lid)
 	}
 
-	lastLID := true
 	if int(offset) < len(buf.lids) {
 		buf.offsets = append(buf.offsets, uint32(len(buf.lids)))
 	}
 
-	b.types = nil
+	b.bitmapIndexes = nil
 	b.lids = append([]uint32{}, buf.lids...)
 	b.offsets = append([]uint32{}, buf.offsets...)
 	b.bitmaps = nil
-	b.lastLID = lastLID
 	return nil
 }

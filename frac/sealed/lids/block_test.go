@@ -106,14 +106,19 @@ func TestBlockPack(t *testing.T) {
 			offsets: []uint32{0, 1000, 1005, 1010, 2000, 2100, 2103, 2106, 2107, 3000, 3500, 3505, 4096},
 		},
 		{
-			name:    "medium_4k",
+			name:    "medium_4k_single_bitmap",
 			lids:    generate(4096),
 			offsets: []uint32{0, 4096},
 		},
 		{
-			name:    "medium_4095",
+			name:    "medium_4095_hybrid",
 			lids:    generate(4095),
 			offsets: []uint32{0, 10, 50, 100, 150, 190, 1000, 1500, 4095},
+		},
+		{
+			name:    "medium_4k_hybrid_interleaved",
+			lids:    generate(4096),
+			offsets: []uint32{0, 10, 50, 100, 102, 104, 107, 150, 151, 152, 155, 1000, 1500, 4090, 4096},
 		},
 		{
 			name:    "medium_4097",
