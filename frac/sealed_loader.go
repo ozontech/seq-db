@@ -151,7 +151,7 @@ func (l *LegacyLoader) loadLIDsTable(fracVer config.BinaryDataVersion) (*lids.Ta
 		maxTIDs = append(maxTIDs, uint32(h.GetExt2()>>32))
 		minTIDs = append(minTIDs, uint32(h.GetExt2()&0xFFFFFFFF))
 
-		if fracVer >= config.BinaryDataV5 {
+		if fracVer >= config.BinaryDataV6 {
 			lastLIDs = append(lastLIDs, uint32(h.GetExt1()>>32))
 			firstLIDs = append(firstLIDs, uint32(h.GetExt1()&0xFFFFFFFF))
 		} else {
@@ -288,7 +288,7 @@ func (l *Loader) loadLIDsTable(r storage.IndexReader, fracVer config.BinaryDataV
 		minTIDs = append(minTIDs, uint32(ext2&0xFFFFFFFF))
 
 		ext1 := header.GetExt1()
-		if fracVer >= config.BinaryDataV5 {
+		if fracVer >= config.BinaryDataV6 {
 			lastLIDs = append(lastLIDs, uint32(ext1>>32))
 			firstLIDs = append(firstLIDs, uint32(ext1&0xFFFFFFFF))
 		} else {

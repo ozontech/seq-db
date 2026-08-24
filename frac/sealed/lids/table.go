@@ -39,7 +39,7 @@ func NewTable(
 }
 
 func (t *Table) GetAdjustedMinTID(blockIndex uint32) uint32 {
-	if t.FracVer < config.BinaryDataV5 {
+	if t.FracVer < config.BinaryDataV6 {
 		if t.IsContinued[blockIndex] {
 			return t.MinTIDs[blockIndex] - 1
 		}
@@ -92,7 +92,7 @@ func (t *Table) GetLastBlockIndexForTID(tid uint32) uint32 {
 // lid greater or equal to provided LID starting from provided index (inclusive).
 // - index: an index of block which is already suits and contains next portion of LIDs. Safe to return for old fractions.
 func (t *Table) SeekBlockGeq(index, tid, nextLID uint32) uint32 {
-	if t.FracVer < config.BinaryDataV5 {
+	if t.FracVer < config.BinaryDataV6 {
 		// not supported for old frac versions
 		return index
 	}
@@ -112,7 +112,7 @@ func (t *Table) SeekBlockGeq(index, tid, nextLID uint32) uint32 {
 // less or equal to provided LID starting from provided index (inclusive).
 // - index: an index of block which is already suits and contains next portion of LIDs. Safe to return for old fractions.
 func (t *Table) SeekBlockLeq(index, tid, nextLID uint32) uint32 {
-	if t.FracVer < config.BinaryDataV5 {
+	if t.FracVer < config.BinaryDataV6 {
 		// not supported for old frac versions
 		return index
 	}

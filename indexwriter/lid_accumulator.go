@@ -87,7 +87,6 @@ func (a *lidAccumulator) finalizeBlock() unpackedLIDBlock {
 		result.ext.firstLID = blockLIDs[0]
 		result.ext.lastLID = blockLIDs[len(blockLIDs)-1]
 	}
-	result.payload.IsLastLID = a.isEndOfToken
 
 	return result
 }
