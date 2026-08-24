@@ -60,6 +60,8 @@ func (it *BatchedIteratorDesc) loadNextLIDsBlock() {
 
 	it.batch = block.GetLIDs(it.table.GetChunkIndex(it.blockIndex, it.tid))
 	it.tryNextBlock = it.table.HasTIDInNextBlock(it.blockIndex, it.tid)
+	it.tryNextBlock = it.narrowLIDsRange(it.tryNextBlock)
+	it.counter.AddLIDsCount(it.batch.Len())
 	it.blockIndex++
 }
 
@@ -74,8 +76,6 @@ func (it *BatchedIteratorDesc) NextBatchGeq(_ int, nextID node.LID) node.LIDBatc
 				return node.EmptyBatch()
 			}
 			it.loadNextLIDsBlock()
-			it.tryNextBlock = it.narrowLIDsRange(it.tryNextBlock)
-			it.counter.AddLIDsCount(it.batch.Len())
 		}
 
 		if it.batch.IsEmpty() {
