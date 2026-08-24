@@ -181,7 +181,7 @@ type Config struct {
 			Enabled bool `config:"enabled"`
 			// CostThreshold is the minimum estimated non-batched execution cost required to enable batch-at-a-time query
 			// evaluation. Suggestion is to use value which is greater than 3 x LID block size.
-			CostThreshold int `config:"cost_threshold" default:"50000"`
+			CostThreshold int `config:"cost_threshold" default:"150000"`
 		} `config:"batch_execution"`
 	} `config:"query_optimization"`
 

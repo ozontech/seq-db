@@ -60,17 +60,13 @@ func astSupportsBatching(root *parser.ASTNode) bool {
 		return false
 	}
 
-	switch root.Value.(type) {
+	switch v := root.Value.(type) {
 	case *parser.Literal:
-		literal := root.Value.(*parser.Literal)
-		// currently batching supports only simple terms like 'field:A'
-		return len(literal.Terms) == 1 && literal.Terms[0].Kind == parser.TermText
+		return len(v.Terms) == 1 && v.Terms[0].Kind == parser.TermText
 	case *parser.Range:
 		return true
 	case *parser.Logical:
-		logical := root.Value.(*parser.Logical)
-		// batching is not supported for NOT nodes yet
-		if logical.Operator == parser.LogicalNot {
+		if v.Operator == parser.LogicalNot {
 			return false
 		}
 		for i := range root.Children {
@@ -129,6 +125,8 @@ func leafIterationCost(ti tokenIndex, field string, token parser.Token, cache le
 	if err != nil {
 		return 0, err
 	}
+
+	// Currently we do not support batches for queries with deep trees. For example, queries like 'service:abc* AND level:*'
 	if len(tids) > maxBatchedTIDsPerLeaf {
 		return 0, errBatchingUnsupported
 	}

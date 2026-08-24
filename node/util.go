@@ -7,7 +7,9 @@ import (
 
 const maxBatchDrain = 4 * 1024
 
-// batcherNode allows to iterate over non-batched iterator batch by batch
+// batcherNode allows to iterate over non-batched iterator batch by batch.
+// A caller must immediately consume a yielded batch after calling NextBatch, since
+// the underlying slice is reused.
 type batcherNode struct {
 	source Node
 	desc   bool
@@ -23,39 +25,33 @@ func NewBatcherNode(source Node, desc bool) BatchedNode {
 }
 
 func (b *batcherNode) NextBatch() LIDBatch {
-	batch := b.batch[:0]
-	polled := 0
-	for polled < maxBatchDrain {
+	b.batch = b.batch[:0]
+	for len(b.batch) < maxBatchDrain {
 		lid := b.source.Next()
 		if lid.IsNull() {
 			break
 		}
-		batch = append(batch, lid.Unpack())
-		polled++
+		b.batch = append(b.batch, lid.Unpack())
 	}
-	b.batch = batch[:0]
 	if !b.desc {
-		slices.Reverse(batch)
+		slices.Reverse(b.batch)
 	}
-	return NewSliceBatch(batch)
+	return NewSliceBatch(b.batch)
 }
 
 func (b *batcherNode) NextBatchGeq(nextID LID) LIDBatch {
-	batch := b.batch[:0]
-	polled := 0
-	for polled < maxBatchDrain {
+	b.batch = b.batch[:0]
+	for len(b.batch) < maxBatchDrain {
 		lid := b.source.NextGeq(nextID)
 		if lid.IsNull() {
 			break
 		}
-		batch = append(batch, lid.Unpack())
-		polled++
+		b.batch = append(b.batch, lid.Unpack())
 	}
-	b.batch = batch[:0]
 	if !b.desc {
-		slices.Reverse(batch)
+		slices.Reverse(b.batch)
 	}
-	return NewSliceBatch(batch)
+	return NewSliceBatch(b.batch)
 }
 
 func (b *batcherNode) String() string {

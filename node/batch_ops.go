@@ -148,7 +148,7 @@ func OrMulti(batches []LIDBatch, desc bool) (result LIDBatch, residuals []LIDBat
 	return NewBitmapBatch(resultBm), residuals
 }
 
-func truncateBatches(result *roaring.Bitmap, left *bitmapBatch, right *bitmapBatch, desc bool) (LIDBatch, LIDBatch, LIDBatch) {
+func truncateBatches(result *roaring.Bitmap, left, right *bitmapBatch, desc bool) (LIDBatch, LIDBatch, LIDBatch) {
 	if desc {
 		if left.max > right.max {
 			leftRes := left.Narrow(right.max+1, math.MaxUint32)
