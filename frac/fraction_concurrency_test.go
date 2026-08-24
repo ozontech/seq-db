@@ -345,9 +345,9 @@ func readTestUniqueQueries(t *testing.T, fraction frac.Fraction, numReaders int,
 			}
 
 			assert.Equal(t, len(expectedDocs), len(fetchedDocs), "doc count doesn't match for query %s", query.query)
-			//if len(expectedDocs) > 0 {
-			//	assert.Equal(t, expectedDocs, fetchedDocs, "docs do not match for query %s", query.query)
-			//}
+			if len(expectedDocs) > 0 {
+				assert.Equal(t, expectedDocs, fetchedDocs, "docs do not match for query %s", query.query)
+			}
 			return nil
 		})
 	}
