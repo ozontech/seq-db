@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -68,6 +69,7 @@ var searchBuffersPool = sync.Pool{
 
 func IndexSearch(
 	ctx context.Context,
+	fracVer config.BinaryDataVersion,
 	params SearchParams,
 	index searchIndex,
 	aggLimits AggLimits,
@@ -95,7 +97,7 @@ func IndexSearch(
 	var evalTree node.BatchedNode
 	if !hasSkipLIDs {
 		evalTree, err = tryBuildBatchEvalTree(
-			params.AST, index, queryOpt, minLID, maxLID, stats, params.Order, sw,
+			params.AST, fracVer, index, queryOpt, minLID, maxLID, stats, params.Order, sw,
 		)
 	} else {
 		err = errBatchingUnsupported

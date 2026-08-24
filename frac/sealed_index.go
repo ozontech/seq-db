@@ -129,7 +129,7 @@ func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	t := sw.Start("total")
 	defer t.Stop()
 
-	qpr, err := processor.IndexSearch(dp.ctx, params, dp.getSearchIndex(), aggLimits, queryOpt, sw)
+	qpr, err := processor.IndexSearch(dp.ctx, dp.info.BinaryDataVer, params, dp.getSearchIndex(), aggLimits, queryOpt, sw)
 	if err != nil {
 		return nil, err
 	}

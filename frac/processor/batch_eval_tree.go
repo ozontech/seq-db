@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
@@ -22,6 +23,7 @@ type leafTIDsCache map[parser.Token][]uint32
 // Returns errBatchingUnsupported when the non-batched path should be used.
 func tryBuildBatchEvalTree(
 	root *parser.ASTNode,
+	fracVer config.BinaryDataVersion,
 	ti tokenIndex,
 	queryOpts QueryOptimizationConfig,
 	minLID, maxLID uint32,
@@ -30,6 +32,10 @@ func tryBuildBatchEvalTree(
 	sw *stopwatch.Stopwatch,
 ) (node.BatchedNode, error) {
 	if !queryOpts.BatchExecution.Enabled {
+		return nil, errBatchingUnsupported
+	}
+	if fracVer < config.BinaryDataV6 {
+		// block batching for earlier versions (avoid delta-encoded posting lists converted to bitmaps)
 		return nil, errBatchingUnsupported
 	}
 

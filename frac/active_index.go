@@ -135,7 +135,7 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	qprs := make([]*seq.QPR, 0, len(indexes))
 
 	for _, si := range indexes {
-		qpr, err := processor.IndexSearch(dp.ctx, params, &si, aggLimits, queryOpt, sw)
+		qpr, err := processor.IndexSearch(dp.ctx, dp.info.BinaryDataVer, params, &si, aggLimits, queryOpt, sw)
 		if err != nil {
 			return nil, err
 		}
