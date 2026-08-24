@@ -1,11 +1,11 @@
 package indexwriter
 
 import (
-	"encoding/binary"
 	"iter"
 	"math"
 	"unsafe"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -56,6 +56,7 @@ func tokenBlock(
 			blockIdx  uint32
 			blockSize int
 		)
+		block.payload.FracVer = config.BinaryDataV6
 
 		var (
 			currentTID         uint32
@@ -123,9 +124,13 @@ func tokenBlock(
 					}
 				}
 
-				tokenIndex := uint32(len(block.payload.Offsets))
-				block.payload.Offsets = append(block.payload.Offsets, uint32(len(block.payload.Payload)))
-				block.payload.Payload = binary.LittleEndian.AppendUint32(block.payload.Payload, uint32(len(tok)))
+				offsets := block.payload.Offsets
+				if len(offsets) == 0 {
+					offsets = append(offsets, 0)
+				}
+				tokenIndex := uint32(len(offsets) - 1)
+				offsets = append(offsets, offsets[len(offsets)-1]+uint32(len(tok)))
+				block.payload.Offsets = offsets
 				block.payload.Payload = append(block.payload.Payload, tok...)
 
 				if len(tlids) >= tokenFreqAbsThreshold {
