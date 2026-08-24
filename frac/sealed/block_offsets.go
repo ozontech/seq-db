@@ -3,6 +3,8 @@ package sealed
 import (
 	"encoding/binary"
 	"errors"
+
+	"github.com/ozontech/seq-db/config"
 )
 
 type BlockOffsets struct {
@@ -12,12 +14,6 @@ type BlockOffsets struct {
 func (b *BlockOffsets) Pack(buf []byte) []byte {
 	buf = binary.LittleEndian.AppendUint32(buf, uint32(len(b.Offsets)))
 
-	// NOTE(dkharms): Previously we stored here amount of documents ids.
-	//
-	// I've created a task which will require fraction binary version bumping
-	// to get rid of this: https://github.com/ozontech/seq-db/issues/409
-	buf = binary.LittleEndian.AppendUint32(buf, 0)
-
 	var prev uint64
 	for _, pos := range b.Offsets {
 		buf = binary.AppendVarint(buf, int64(pos-prev))
@@ -26,7 +22,7 @@ func (b *BlockOffsets) Pack(buf []byte) []byte {
 	return buf
 }
 
-func (b *BlockOffsets) Unpack(data []byte) error {
+func (b *BlockOffsets) Unpack(data []byte, fracVer config.BinaryDataVersion) error {
 	if len(data) < 4 {
 		return errors.New("blocks offset decoding error: truncated header (missing offsets count)")
 	}
@@ -34,13 +30,13 @@ func (b *BlockOffsets) Unpack(data []byte) error {
 	idsBlocksCount := binary.LittleEndian.Uint32(data)
 	data = data[4:]
 
-	if len(data) < 4 {
-		return errors.New("blocks offset decoding error: truncated header (missing IDsTotal)")
-	}
+	if fracVer < config.BinaryDataV6 {
+		if len(data) < 4 {
+			return errors.New("blocks offset decoding error: truncated header (missing IDsTotal)")
+		}
 
-	// NOTE(dkharms): Previously we stored here amount of documents ids.
-	_ = binary.LittleEndian.Uint32(data)
-	data = data[4:]
+		data = data[4:]
+	}
 
 	offset := uint64(0)
 	b.Offsets = make([]uint64, 0, idsBlocksCount)

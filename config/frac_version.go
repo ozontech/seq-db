@@ -24,6 +24,9 @@ const (
 
 	// BinaryDataV5 - token blocks have zone maps (eng letters presense) and doc frequencies for heavy tokens
 	BinaryDataV5
+
+	// BinaryDataV6 - the ID count is no longer stored in the offsets section.
+	BinaryDataV6
 )
 
-const CurrentFracVersion = BinaryDataV5
+const CurrentFracVersion = BinaryDataV6

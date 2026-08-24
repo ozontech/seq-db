@@ -86,7 +86,7 @@ func (l *LegacyLoader) loadIDs(info *common.Info) (seqids.Table, []uint64, error
 	}
 
 	var offsets sealed.BlockOffsets
-	if err := offsets.Unpack(data); err != nil {
+	if err := offsets.Unpack(data, info.BinaryDataVer); err != nil {
 		return seqids.Table{}, nil, err
 	}
 
@@ -179,7 +179,7 @@ func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, readers 
 		blockOffsets sealed.BlockOffsets
 	)
 
-	blockOffsets, err = l.loadBlocksOffsets(readers.Offsets)
+	blockOffsets, err = l.loadBlocksOffsets(readers.Offsets, info.BinaryDataVer)
 	if err != nil {
 		logger.Fatal("load offsets error", zap.Error(err))
 	}
@@ -207,7 +207,10 @@ func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, readers 
 }
 
 // loadBlocksOffsets reads block 0 from the .offsets file.
-func (l *Loader) loadBlocksOffsets(r storage.IndexReader) (sealed.BlockOffsets, error) {
+func (l *Loader) loadBlocksOffsets(
+	r storage.IndexReader,
+	fracVer config.BinaryDataVersion,
+) (sealed.BlockOffsets, error) {
 	data, _, err := r.ReadIndexBlock(0, l.buf)
 	l.buf = data
 
@@ -216,7 +219,7 @@ func (l *Loader) loadBlocksOffsets(r storage.IndexReader) (sealed.BlockOffsets, 
 	}
 
 	var b sealed.BlockOffsets
-	if err := b.Unpack(data); err != nil {
+	if err := b.Unpack(data, fracVer); err != nil {
 		return sealed.BlockOffsets{}, err
 	}
 
