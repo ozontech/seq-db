@@ -102,7 +102,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		DocsPositionsZstdLevel: 1,
 		TokenTableZstdLevel:    1,
 		DocBlocksZstdLevel:     1,
-		LIDBlockSize:           512,
+		LIDBlockSize:           256,
 		TokenBlockSize:         128,
 		DocBlockSize:           128 * int(units.KiB),
 	}
@@ -1368,6 +1368,43 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			fromTime: fromTime,
 			toTime:   toTime,
 		},
+		// block skipping scenarios
+		{
+			name:  "service:gateway AND trace_id:trace-2026",
+			query: "service:gateway AND trace_id:trace-2026",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && doc.traceId == "trace-2026"
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND (trace_id:trace-0 OR trace_id:trace-2500 OR trace_id:trace-4999)",
+			query: "service:gateway AND (trace_id:trace-0 OR trace_id:trace-2500 OR trace_id:trace-4999)",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && (doc.traceId == "trace-0" || doc.traceId == "trace-2500" || doc.traceId == "trace-4999")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND pod:pod-5",
+			query: "service:gateway AND pod:pod-5",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && doc.pod == "pod-5"
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND pod:pod-5 AND message:failed",
+			query: "service:gateway AND pod:pod-5 AND message:failed",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && doc.pod == "pod-5" && strings.Contains(doc.message, "failed")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
 		{
 			name:  "service:gateway AND message:processing AND message:retry AND level:5",
 			query: "service:gateway AND message:processing AND message:retry AND level:5",
@@ -1379,6 +1416,17 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   toTime,
 		},
 		// OR operator queries
+		{
+			name:  "(service OR) AND (trace_id OR)",
+			query: "(service:bus OR service:kafka) AND (trace_id:trace-1000 OR trace_id:trace-1500 OR trace_id:trace-2000)",
+			filter: func(doc *testDoc) bool {
+				return (doc.service == bus || doc.service == kafka) && (doc.traceId == "trace-1000" ||
+					doc.traceId == "trace-1500" ||
+					doc.traceId == "trace-2000")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
 		{
 			name:  "trace_id OR",
 			query: "trace_id:trace-1000 OR trace_id:trace-1500 OR trace_id:trace-2000 OR trace_id:trace-2500 OR trace_id:trace-3000",

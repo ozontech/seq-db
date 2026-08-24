@@ -28,6 +28,8 @@ const (
 	// BinaryDataV6
 	// - Keep offsets separate in token block.
 	// - The ID count is no longer stored in the offsets section.
+	// - LID blocks have firstLID/lastLID encoded in ext1.
+	// - isContinued is not used, no legacy TID adjusting.
 	BinaryDataV6
 )
 
