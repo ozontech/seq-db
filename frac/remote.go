@@ -44,9 +44,9 @@ type Remote struct {
 	docsReader storage.DocsReader
 
 	// IsLegacy is true for fractions that use the old single .index file format.
-	IsLegacy     bool
-	legacyFile   storage.ImmutableFile
-	legacyReader storage.IndexReader
+	IsLegacy             bool
+	legacyFile           storage.ImmutableFile
+	legacyReaderProvider *storage.ReaderProvider
 
 	// Per-section index files and their readers (new split format only).
 	infoFile    storage.ImmutableFile
@@ -55,10 +55,10 @@ type Remote struct {
 	idFile      storage.ImmutableFile
 	lidFile     storage.ImmutableFile
 
-	tokenReader   storage.IndexReader
-	offsetsReader storage.IndexReader
-	idReader      storage.IndexReader
-	lidReader     storage.IndexReader
+	tokenReaderProvider   *storage.ReaderProvider
+	offsetsReaderProvider *storage.ReaderProvider
+	idReaderProvider      *storage.ReaderProvider
+	lidReaderProvider     *storage.ReaderProvider
 
 	indexCache *IndexCache
 
@@ -161,6 +161,14 @@ func (f *Remote) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) 
 	return dp.FindLIDs(ids)
 }
 
+func (f *Remote) mustGetReader(p *storage.ReaderProvider) storage.IndexReader {
+	r, err := p.GetReader()
+	if err != nil {
+		logger.Fatal("error creating IndexReader", zap.String("fraction", f.BaseFileName), zap.Error(err))
+	}
+	return r
+}
+
 func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, error) {
 	if err := f.init(); err != nil {
 		logger.Error(
@@ -171,14 +179,21 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		return nil, err
 	}
 
-	tokenReader := &f.tokenReader
-	lidReader := &f.lidReader
-	idReader := &f.idReader
+	var (
+		tokenReader storage.IndexReader
+		lidReader   storage.IndexReader
+		idReader    storage.IndexReader
+	)
 
 	if f.IsLegacy {
-		tokenReader = &f.legacyReader
-		lidReader = &f.legacyReader
-		idReader = &f.legacyReader
+		legacyReader := f.mustGetReader(f.legacyReaderProvider)
+		tokenReader = legacyReader
+		lidReader = legacyReader
+		idReader = legacyReader
+	} else {
+		tokenReader = f.mustGetReader(f.tokenReaderProvider)
+		lidReader = f.mustGetReader(f.lidReaderProvider)
+		idReader = f.mustGetReader(f.idReaderProvider)
 	}
 
 	return &sealedDataProvider{
@@ -190,13 +205,13 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		docsReader:       &f.docsReader,
 		blocksOffsets:    f.blocksData.BlocksOffsets,
 		lidsTable:        f.blocksData.LIDsTable,
-		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, lidReader, f.indexCache.LIDs),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, tokenReader, f.indexCache.TokenTable),
+		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, &lidReader, f.indexCache.LIDs),
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &tokenReader, f.indexCache.Tokens),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &tokenReader, f.indexCache.TokenTable),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
-			idReader,
+			&idReader,
 			f.indexCache.MIDs,
 			f.indexCache.RIDs,
 			f.indexCache.Params,
@@ -260,7 +275,7 @@ func (f *Remote) loadInfo() error {
 		if err := f.openInfoLegacy(); err != nil {
 			return err
 		}
-		if f.info, err = loadInfoLegacy(f.legacyReader); err != nil {
+		if f.info, err = loadInfoLegacy(f.mustGetReader(f.legacyReaderProvider)); err != nil {
 			logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
 		}
 		return nil
@@ -293,16 +308,16 @@ func (f *Remote) init() error {
 	}
 
 	if f.IsLegacy {
-		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.legacyReader)
+		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.mustGetReader(f.legacyReaderProvider))
 		f.isInited = true
 		return nil
 	}
 
 	(&Loader{}).Load(&f.blocksData, f.info, IndexReaders{
-		Token:   f.tokenReader,
-		Offsets: f.offsetsReader,
-		ID:      f.idReader,
-		LID:     f.lidReader,
+		Token:   f.mustGetReader(f.tokenReaderProvider),
+		Offsets: f.mustGetReader(f.offsetsReaderProvider),
+		ID:      f.mustGetReader(f.idReaderProvider),
+		LID:     f.mustGetReader(f.lidReaderProvider),
 	})
 
 	f.isInited = true
@@ -316,7 +331,7 @@ func (f *Remote) openInfoLegacy() error {
 
 	return f.openRemoteFile(consts.IndexFileSuffix, func(file storage.ImmutableFile) {
 		f.legacyFile = file
-		f.legacyReader = storage.NewIndexReader(
+		f.legacyReaderProvider = storage.NewReaderProvider(
 			f.readLimiter, file.Name(),
 			file, f.indexCache.LegacyRegistry,
 		)
@@ -350,7 +365,7 @@ func (f *Remote) openIndex() error {
 			consts.TokenFileSuffix,
 			func(file storage.ImmutableFile) {
 				f.tokenFile = file
-				f.tokenReader = storage.NewIndexReader(
+				f.tokenReaderProvider = storage.NewReaderProvider(
 					f.readLimiter, file.Name(),
 					file, f.indexCache.TokenRegistry,
 				)
@@ -365,7 +380,7 @@ func (f *Remote) openIndex() error {
 			consts.OffsetsFileSuffix,
 			func(file storage.ImmutableFile) {
 				f.offsetsFile = file
-				f.offsetsReader = storage.NewIndexReader(
+				f.offsetsReaderProvider = storage.NewReaderProvider(
 					f.readLimiter, file.Name(),
 					file, f.indexCache.OffsetsRegistry,
 				)
@@ -380,7 +395,7 @@ func (f *Remote) openIndex() error {
 			consts.IDFileSuffix,
 			func(file storage.ImmutableFile) {
 				f.idFile = file
-				f.idReader = storage.NewIndexReader(
+				f.idReaderProvider = storage.NewReaderProvider(
 					f.readLimiter, file.Name(),
 					file, f.indexCache.IDRegistry,
 				)
@@ -395,7 +410,7 @@ func (f *Remote) openIndex() error {
 			consts.LIDFileSuffix,
 			func(file storage.ImmutableFile) {
 				f.lidFile = file
-				f.lidReader = storage.NewIndexReader(
+				f.lidReaderProvider = storage.NewReaderProvider(
 					f.readLimiter, file.Name(),
 					file, f.indexCache.LIDRegistry,
 				)

@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/seq"
 )
 
 // RefCounter provides reference counting capability.
@@ -17,7 +18,7 @@ type RefCounter interface {
 // with associated reference counters to keep them alive.
 type fractionsSnapshot struct {
 	counters    []RefCounter    // Reference counters to keep fractions alive
-	fractions   []frac.Fraction // The actual fractions in chronological order
+	fractions   []frac.Fraction // The actual fractions
 	names       map[string]int
 	oldestLocal uint64
 	oldestTotal uint64
@@ -71,6 +72,28 @@ func (fs *fractionsSnapshot) AcquireAll() ([]frac.Fraction, func()) {
 
 	counters := fs.counters // make copy of counters
 	return fs.fractions, func() {
+		for _, c := range counters {
+			c.Dec()
+		}
+	}
+}
+
+func (fs *fractionsSnapshot) AcquireInRange(from, to seq.MID) ([]frac.Fraction, func()) {
+	fracs := make(List, 0)
+	counters := make([]RefCounter, 0)
+
+	for i := range len(fs.fractions) {
+		f := fs.fractions[i]
+		c := fs.counters[i]
+
+		if f.IsIntersecting(from, to) {
+			fracs = append(fracs, f)
+			c.Inc()
+			counters = append(counters, c)
+		}
+	}
+
+	return fracs, func() {
 		for _, c := range counters {
 			c.Dec()
 		}

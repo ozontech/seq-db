@@ -30,19 +30,24 @@ type SealedSource struct {
 
 func NewSealedSource(f *Sealed) *SealedSource {
 	f.init(true)
+
+	idReader := f.mustGetReader(f.idReaderProvider)
+	lidReader := f.mustGetReader(f.lidReaderProvider)
+	tokenReader := f.mustGetReader(f.tokenReaderProvider)
+
 	return &SealedSource{
 		f: f,
 		idsProvider: seqids.NewProvider(
-			&f.idReader,
+			&idReader,
 			f.indexCache.MIDs,
 			f.indexCache.RIDs,
 			f.indexCache.Params,
 			&f.blocksData.IDsTable,
 			f.info.BinaryDataVer,
 		),
-		lidsLoader:       lids.NewLoader(f.Info().BinaryDataVer, &f.lidReader, f.indexCache.LIDs),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &f.tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &f.tokenReader, f.indexCache.TokenTable),
+		lidsLoader:       lids.NewLoader(f.Info().BinaryDataVer, &lidReader, f.indexCache.LIDs),
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &tokenReader, f.indexCache.Tokens),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &tokenReader, f.indexCache.TokenTable),
 	}
 }
 
