@@ -92,7 +92,7 @@ func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
 			continue
 		}
 
-		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] >= nextID.Unpack() })
+		idx := searchGeqGallop(it.lids, nextID.Unpack())
 		if idx < len(it.lids) {
 			it.lids = it.lids[idx:]
 			lid := it.lids[0]
@@ -130,7 +130,7 @@ func (it *IteratorDesc) NextBatchGeq(nextID node.LID) node.LIDBatch {
 			continue
 		}
 
-		idx := sort.Search(len(it.lids), func(i int) bool { return it.lids[i] >= nextID.Unpack() })
+		idx := searchGeqGallop(it.lids, nextID.Unpack())
 		if idx < len(it.lids) {
 			batch := it.lids[idx:len(it.lids)]
 			it.lids = it.lids[:0]
