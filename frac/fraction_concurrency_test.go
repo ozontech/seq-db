@@ -179,7 +179,7 @@ func TestConcurrentColdQueriesSealedFrac(t *testing.T) {
 	const bulkSize = 100
 	const numIterations = 100
 
-	docs, bulks, _, toTime := generatesMessages(numWriters*numMessagesPerWriter, bulkSize)
+	docs, bulks, _, toTime := generatesMessages(numWriters*numMessagesPerWriter, bulkSize, false)
 
 	tmpDir := testcommon.CreateTempDir()
 	fracPath := filepath.Join(tmpDir, "test_fraction")
@@ -476,7 +476,7 @@ func readTest(t *testing.T, fraction frac.Fraction, numReaders, numQueries int, 
 	assert.NoError(t, err, "concurrent queries should complete without errors")
 }
 
-func generatesMessages(numMessages, bulkSize int) ([]*testDoc, [][]string, time.Time, time.Time) {
+func generatesMessages(numMessages, bulkSize int, nestedIndexes bool) ([]*testDoc, [][]string, time.Time, time.Time) {
 	services := []string{gateway, proxy, scheduler, database, bus, kafka}
 	messages := []string{
 		"request started", "request completed", "processing timed out",
