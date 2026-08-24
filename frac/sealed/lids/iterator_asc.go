@@ -99,7 +99,8 @@ func (it *IteratorAsc) NextGeq(nextID node.LID) node.LID {
 		if !it.tryNextBlock {
 			return node.NullLID()
 		}
-		// TODO it.blockIndex = it.table.SeekBlockLeq(it.blockIndex, it.tid, nextID.Unpack())
+
+		it.blockIndex = it.table.SeekBlockLeq(it.blockIndex, it.tid, nextID.Unpack())
 		it.loadNextLIDsBlock()
 	}
 }

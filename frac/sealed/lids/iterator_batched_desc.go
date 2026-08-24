@@ -75,6 +75,8 @@ func (it *BatchedIteratorDesc) NextBatchGeq(_ int, nextID node.LID) node.LIDBatc
 			if !it.tryNextBlock {
 				return node.EmptyBatch()
 			}
+
+			it.blockIndex = it.table.SeekBlockGeq(it.blockIndex, it.tid, nextID.Unpack())
 			it.loadNextLIDsBlock()
 		}
 
