@@ -17,6 +17,8 @@ import (
 	"github.com/ozontech/seq-db/parser"
 )
 
+const fieldName = "m"
+
 type testTokenProvider struct {
 	ordered  *simpleTokenProvider
 	shuffled *simpleTokenProvider
@@ -156,15 +158,28 @@ func parseSingleTokenForTests(query string) (parser.Token, error) {
 
 func search(t *testing.T, tp *simpleTokenProvider, req string, expect []string) {
 	searchType := "full"
+
 	if tp.Ordered() {
 		searchType = "narrow"
 	}
 
-	token, err := parseSingleTokenForTests("m:" + req)
+	token, err := parseSingleTokenForTests(fieldName + ":" + req)
 	require.NoError(t, err)
-	s := newSearcher(token, tp)
+
+	// When parsing query we perform following rewrite:
+	//   foo:* --> _exists_:foo
+	// This is workaround for that so we could really
+	// test the pattern checking.
+	if req == "*" {
+		token = &parser.Literal{
+			Field: fieldName,
+			Terms: []parser.Term{{Kind: parser.TermSymbol}},
+		}
+	}
 
 	res := []string{}
+	s := newSearcher(token, tp)
+
 	for i := s.FirstTID(); i <= s.LastTID(); i++ {
 		val := tp.GetToken(i)
 
@@ -177,8 +192,8 @@ func search(t *testing.T, tp *simpleTokenProvider, req string, expect []string) 
 			res = append(res, string(val))
 		}
 	}
-	sort.Strings(res)
 
+	sort.Strings(res)
 	assert.Equal(t, expect, res, "%s search request %q failed", searchType, req)
 }
 

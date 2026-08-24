@@ -27,6 +27,8 @@ func (n *Literal) DumpSeqQL(o *strings.Builder) {
 func (n *Literal) Optimize() *Literal {
 	// We cannot rewrite _all_:* to _exists_:_all_
 	ok := n.Field != seq.TokenAll &&
+		// We cannot rewrite _exists_:* to _exists_:_exists_
+		n.Field != seq.TokenExists &&
 		// We cannot rewrite anything except foo:*
 		(len(n.Terms) == 1 && n.Terms[0].IsWildcard())
 

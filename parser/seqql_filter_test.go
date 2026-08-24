@@ -76,6 +76,7 @@ func TestSeqQLAll(t *testing.T) {
 	test("*", "*")
 	test("((*))", "*")
 	test("((*) OR service:foo) AND service:bar", "((* or service:foo) and service:bar)")
+	test("_exists_:*", "_exists_:*")
 
 	// Propagate "not".
 	test(`NOT NOT text:a`, `text:a`)
