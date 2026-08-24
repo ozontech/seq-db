@@ -98,9 +98,9 @@ func (t *Table) SeekBlockGeq(index, tid, nextLID uint32) uint32 {
 	}
 
 	res := index
-	for i := index + 1; i < uint32(len(t.MinTIDs)); i++ {
+	for i := int(index) + 1; i < len(t.MinTIDs); i++ {
 		if t.MinTIDs[i] == tid && nextLID >= t.FirstLIDs[i] {
-			res = i
+			res = uint32(i)
 			continue
 		}
 		break
