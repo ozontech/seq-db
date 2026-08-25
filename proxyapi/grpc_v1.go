@@ -31,7 +31,7 @@ import (
 )
 
 type SearchIngestor interface {
-	Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, time.Duration, error)
+	Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, *search.SearchStats, error)
 	Documents(ctx context.Context, r search.FetchRequest) (search.DocsIterator, error)
 	Status(ctx context.Context) *search.IngestorStatus
 	StartAsyncSearch(context.Context, search.AsyncRequest) (search.AsyncResponse, error)
@@ -190,35 +190,40 @@ func (g *grpcV1) doSearch(
 	shouldFetch bool,
 	shouldValidateStreamPipes bool,
 	tr *querytracer.Tracer,
-) (*proxySearchResponse, error) {
+) (*proxySearchResponse, requestObservation, error) {
 	metric.SearchOverall.Add(1)
+
+	obs := requestObservation{
+		start: time.Now(),
+		stats: &search.SearchStats{},
+	}
 
 	span := trace.FromContext(ctx)
 	defer span.End()
 
 	if req.Query == nil {
-		return nil, status.Error(codes.InvalidArgument, "search query must be provided")
+		return nil, obs, status.Error(codes.InvalidArgument, "search query must be provided")
 	}
 	if req.Query.From == nil || req.Query.To == nil {
-		return nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
+		return nil, obs, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
 	}
 	if req.Offset != 0 && req.OffsetId != "" {
-		return nil, status.Error(codes.InvalidArgument, `only one of "offset" and "offset_id" must be provided`)
+		return nil, obs, status.Error(codes.InvalidArgument, `only one of "offset" and "offset_id" must be provided`)
 	}
 
 	fromTime := req.Query.From.AsTime()
 	toTime := req.Query.To.AsTime()
 	if fromTime.After(toTime) {
-		return nil, status.Error(codes.InvalidArgument, `"from" timestamp must not be after "to" timestamp`)
+		return nil, obs, status.Error(codes.InvalidArgument, `"from" timestamp must not be after "to" timestamp`)
 	}
 
 	if shouldValidateStreamPipes {
 		ast, err := parser.ParseSeqQL(req.Query.Query, nil)
 		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("search query must be valid: %s", err))
+			return nil, obs, status.Error(codes.InvalidArgument, fmt.Sprintf("search query must be valid: %s", err))
 		}
 		if err := ast.ValidateStreamPipes(); err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("search query must be valid: %s", err))
+			return nil, obs, status.Error(codes.InvalidArgument, fmt.Sprintf("search query must be valid: %s", err))
 		}
 	}
 
@@ -249,7 +254,7 @@ func (g *grpcV1) doSearch(
 
 	rlQuery := getSearchQueryFromGRPCReqForRateLimiter(req)
 	if !g.rateLimiter.Account(rlQuery) {
-		return nil, status.Error(codes.ResourceExhausted, consts.ErrRequestWasRateLimited.Error())
+		return nil, obs, status.Error(codes.ResourceExhausted, consts.ErrRequestWasRateLimited.Error())
 	}
 
 	proxyReq := &search.SearchRequest{
@@ -269,7 +274,7 @@ func (g *grpcV1) doSearch(
 	if len(req.Aggs) > 0 {
 		aggs, err := convertAggsQuery(req.Aggs)
 		if err != nil {
-			return nil, err
+			return nil, obs, err
 		}
 		proxyReq.AggQ = aggs
 	}
@@ -277,7 +282,7 @@ func (g *grpcV1) doSearch(
 	if req.Hist != nil {
 		intervalDuration, err := util.ParseDuration(req.Hist.Interval)
 		if err != nil {
-			return nil, status.Errorf(
+			return nil, obs, status.Errorf(
 				codes.InvalidArgument,
 				"failed to parse 'interval': %v",
 				err,
@@ -286,25 +291,23 @@ func (g *grpcV1) doSearch(
 		proxyReq.Interval = seq.MID(intervalDuration.Nanoseconds())
 	}
 
-	qpr, docsStream, _, err := g.searchIngestor.Search(ctx, proxyReq, tr)
-	psr := &proxySearchResponse{
-		qpr:        qpr,
-		docsStream: docsStream,
-	}
+	psr := &proxySearchResponse{}
+	psr.qpr, psr.docsStream, obs.stats, obs.rawErr = g.searchIngestor.Search(ctx, proxyReq, tr)
 
+	err := obs.rawErr
 	if e, ok := parseProxyError(err); ok {
 		psr.err = e
-		return psr, nil
+		return psr, obs, nil
 	}
 
 	if errors.Is(err, consts.ErrInvalidArgument) {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, obs, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	if st, ok := status.FromError(err); ok {
 		// could not parse a query
 		if st.Code() == codes.InvalidArgument {
-			return nil, err
+			return nil, obs, err
 		}
 	}
 
@@ -314,16 +317,16 @@ func (g *grpcV1) doSearch(
 			Code:    seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE,
 			Message: err.Error(),
 		}
-		return psr, nil
+		return psr, obs, nil
 	}
-	if err = processSearchErrors(qpr, err); err != nil {
+	if err = processSearchErrors(psr.qpr, err); err != nil {
 		metric.SearchErrors.Inc()
-		return nil, err
+		return nil, obs, err
 	}
 
 	g.tryMirrorRequest(req)
 
-	return psr, nil
+	return psr, obs, nil
 }
 
 func convertAggsQuery(aggs []*seqproxyapi.AggQuery) ([]search.AggQuery, error) {

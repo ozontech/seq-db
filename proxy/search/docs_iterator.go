@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"time"
 
 	"go.uber.org/zap"
@@ -169,4 +170,19 @@ func (e *explainWrapperIterator) Next() (StreamingDoc, error) {
 		e.received++
 	}
 	return d, nil
+}
+
+func DocsIteratorSeq(it DocsIterator) iter.Seq2[StreamingDoc, error] {
+	return func(yield func(StreamingDoc, error) bool) {
+		doc, err := it.Next()
+		for ; err == nil; doc, err = it.Next() {
+			if !yield(doc, nil) {
+				return
+			}
+		}
+		if err != io.EOF {
+			var empty StreamingDoc
+			yield(empty, err)
+		}
+	}
 }

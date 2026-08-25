@@ -225,7 +225,10 @@ func (g *grpcV1) ExportAsyncSearch(req *seqproxyapi.ExportAsyncSearchRequest, st
 		asyncsearcher.ExportSize.WithLabelValues(protocol).Observe(float64(wrapped.size))
 	}()
 
-	for doc, err := docsStream.Next(); err == nil; doc, err = docsStream.Next() {
+	for doc, err := range search.DocsIteratorSeq(docsStream) {
+		if err != nil {
+			return status.Errorf(codes.Internal, "docs reading error: %v", err)
+		}
 		eResp := &seqproxyapi.ExportResponse{
 			Doc: &seqproxyapi.Document{
 				Id:   doc.ID.String(),

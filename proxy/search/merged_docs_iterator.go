@@ -86,19 +86,22 @@ func (m *mergedDocStream) Next() (StreamingDoc, error) {
 }
 
 func newNMergedStreams(streams []DocsIterator, less func(seq.IDSource, seq.IDSource) bool) DocsIterator {
-	if len(streams) == 0 {
+	l := len(streams)
+	if l == 0 {
 		return EmptyDocsStream{}
 	}
-
-	if len(streams) == 1 {
+	if l == 1 {
 		return newMergedDocsStream(streams[0], EmptyDocsStream{}, less)
 	}
-
-	merged := newMergedDocsStream(streams[0], streams[1], less)
-	for _, s := range streams[2:] {
-		merged = newMergedDocsStream(merged, s, less)
+	if l == 2 {
+		return newMergedDocsStream(streams[0], streams[1], less)
 	}
-	return merged
+
+	half := l / 2
+	a := newNMergedStreams(streams[:half], less)
+	b := newNMergedStreams(streams[half:], less)
+
+	return newMergedDocsStream(a, b, less)
 }
 
 type mergedStreamIterator struct {
