@@ -5,6 +5,7 @@ import (
 	"iter"
 	"math"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
@@ -57,10 +58,11 @@ func (i indexBlock) bin(pos int64) (storage.IndexBlockHeader, []byte) {
 type IndexWriter struct {
 	params common.SealParams
 
-	buf1  []byte
-	buf2  []byte
-	buf32 []uint32
-	buf64 []uint64
+	buf1       []byte
+	buf2       []byte
+	buf32      []uint32
+	buf64      []uint64
+	lidsPacker *lids.BlockPacker
 
 	idsTable   seqids.Table
 	lidsTable  lids.Table
@@ -68,16 +70,21 @@ type IndexWriter struct {
 }
 
 func New(params common.SealParams) *IndexWriter {
+	lidsPacker := lids.NewBlockPacker()
+	if params.LIDsBitmapThreshold != 0 {
+		lidsPacker.LidsBitmapThreshold = params.LIDsBitmapThreshold
+	}
 	if params.TokenBlockSize == 0 {
 		params.TokenBlockSize = consts.RegularBlockSize
 	}
 
 	return &IndexWriter{
-		params: params,
-		buf1:   make([]byte, 0, params.TokenBlockSize),
-		buf2:   make([]byte, 0, params.TokenBlockSize),
-		buf32:  make([]uint32, 0, consts.DefaultLIDBlockCap),
-		buf64:  make([]uint64, 0, params.TokenBlockSize),
+		params:     params,
+		buf1:       make([]byte, 0, params.TokenBlockSize),
+		buf2:       make([]byte, 0, params.TokenBlockSize),
+		buf32:      make([]uint32, 0, params.TokenBlockSize),
+		buf64:      make([]uint64, 0, params.TokenBlockSize),
+		lidsPacker: lidsPacker,
 	}
 }
 
@@ -303,21 +310,17 @@ func (s *IndexWriter) packPosBlock(block unpackedIDBlock) indexBlock {
 // packLIDsBlock packs Local IDs (LIDs) into a compressed index block.
 // Also updates LIDs table for preloaded data access.
 func (s *IndexWriter) packLIDsBlock(block unpackedLIDBlock) indexBlock {
-	var ext1 uint64
-	if block.ext.isContinued { // todo: Legacy continuation flag
-		ext1 = 1
-		block.ext.minTID++ // Adjust for legacy format
-	}
-
 	// Update LIDs table for PreloadedData
+	s.lidsTable.FracVer = config.CurrentFracVersion
+	s.lidsTable.FirstLIDs = append(s.lidsTable.FirstLIDs, block.ext.firstLID)
+	s.lidsTable.LastLIDs = append(s.lidsTable.LastLIDs, block.ext.lastLID)
 	s.lidsTable.MinTIDs = append(s.lidsTable.MinTIDs, block.ext.minTID)
 	s.lidsTable.MaxTIDs = append(s.lidsTable.MaxTIDs, block.ext.maxTID)
-	s.lidsTable.IsContinued = append(s.lidsTable.IsContinued, block.ext.isContinued)
 
 	// Packing block
-	s.buf1 = block.payload.Pack(s.buf1[:0], s.buf32[:0])
+	s.buf1 = s.lidsPacker.Pack(&block.payload, s.buf1[:0])
 	b := s.newIndexBlockZSTD(s.buf1, s.params.LIDsZstdLevel)
-	b.ext1 = ext1                                                    // Legacy continuation flag
+	b.ext1 = uint64(block.ext.lastLID)<<32 | uint64(block.ext.firstLID)
 	b.ext2 = uint64(block.ext.maxTID)<<32 | uint64(block.ext.minTID) // TID range
 
 	return b

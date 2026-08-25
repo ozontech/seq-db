@@ -13,7 +13,7 @@ import (
 
 func (g *grpcV1) ComplexSearch(
 	ctx context.Context, req *seqproxyapi.ComplexSearchRequest,
-) (*seqproxyapi.ComplexSearchResponse, error) {
+) (_ *seqproxyapi.ComplexSearchResponse, retErr error) {
 	ctx, cancel := context.WithTimeout(ctx, g.config.SearchTimeout)
 	defer cancel()
 
@@ -22,7 +22,8 @@ func (g *grpcV1) ComplexSearch(
 	}
 
 	tr := querytracer.New(req.Query.Explain, "proxy/ComplexSearch")
-	sResp, err := g.doSearch(ctx, req, true, tr)
+	sResp, obs, err := g.doSearch(ctx, req, true, true, tr)
+	defer func() { obs.finish("ComplexSearch", retErr) }()
 	if err != nil {
 		return nil, err
 	}

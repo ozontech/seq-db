@@ -158,3 +158,127 @@ func (n *nodeOrAgg) NextSourcedGeq(nextID LID) (LID, uint32) {
 
 	return n.NextSourced()
 }
+
+type nodeOrBatched struct {
+	left  BatchedNode
+	right BatchedNode
+	desc  bool
+
+	leftBatch  LIDBatch
+	rightBatch LIDBatch
+	leftDone   bool
+	rightDone  bool
+}
+
+// NewOrBatched returns a BatchedNode that unions two batched iterators.
+// desc is the document traversal order for NextBatch / NextBatchGeq.
+func NewOrBatched(left, right BatchedNode, desc bool) BatchedNode {
+	return &nodeOrBatched{
+		left:       left,
+		right:      right,
+		desc:       desc,
+		leftBatch:  EmptyBatch(),
+		rightBatch: EmptyBatch(),
+	}
+}
+
+func (n *nodeOrBatched) String() string {
+	return fmt.Sprintf("(%s OR %s)", n.left.String(), n.right.String())
+}
+
+func (n *nodeOrBatched) NextBatch() LIDBatch {
+	if n.desc {
+		return n.NextBatchGeq(NewDescZeroLID())
+	}
+	return n.NextBatchGeq(NewAscZeroLID())
+}
+
+func (n *nodeOrBatched) NextBatchGeq(nextID LID) LIDBatch {
+	for {
+		if n.leftBatch.IsEmpty() && !n.leftDone {
+			n.leftBatch = n.left.NextBatchGeq(nextID)
+			n.leftDone = n.leftBatch.IsEmpty()
+		}
+
+		if n.rightBatch.IsEmpty() && !n.rightDone {
+			n.rightBatch = n.right.NextBatchGeq(nextID)
+			n.rightDone = n.rightBatch.IsEmpty()
+		}
+
+		if n.leftDone && n.rightDone && n.leftBatch.IsEmpty() && n.rightBatch.IsEmpty() {
+			return EmptyBatch()
+		}
+
+		out, leftRes, rightRes := Or(n.leftBatch, n.rightBatch, n.desc)
+		n.leftBatch = leftRes
+		n.rightBatch = rightRes
+
+		if !out.IsEmpty() {
+			return out
+		}
+	}
+}
+
+type nodeOrBatchedMulti struct {
+	children []BatchedNode
+	desc     bool
+
+	batches []LIDBatch
+	done    []bool
+}
+
+func NewOrBatchedMulti(children []BatchedNode, desc bool) BatchedNode {
+	if len(children) == 0 {
+		return EmptyBatched()
+	}
+	if len(children) == 1 {
+		return children[0]
+	}
+	batches := make([]LIDBatch, len(children))
+	for i := range batches {
+		batches[i] = EmptyBatch()
+	}
+	return &nodeOrBatchedMulti{
+		children: children,
+		desc:     desc,
+		batches:  batches,
+		done:     make([]bool, len(children)),
+	}
+}
+
+func (n *nodeOrBatchedMulti) String() string {
+	return "OR_MULTI_BATCHED"
+}
+
+func (n *nodeOrBatchedMulti) NextBatch() LIDBatch {
+	if n.desc {
+		return n.NextBatchGeq(NewDescZeroLID())
+	}
+	return n.NextBatchGeq(NewAscZeroLID())
+}
+
+func (n *nodeOrBatchedMulti) NextBatchGeq(nextID LID) LIDBatch {
+	for {
+		active := 0
+		for i := range n.children {
+			if n.batches[i].IsEmpty() && !n.done[i] {
+				n.batches[i] = n.children[i].NextBatchGeq(nextID)
+				n.done[i] = n.batches[i].IsEmpty()
+			}
+			if !n.batches[i].IsEmpty() {
+				active++
+			}
+		}
+
+		if active == 0 {
+			return EmptyBatch()
+		}
+
+		out, residuals := OrMulti(n.batches, n.desc)
+		n.batches = residuals
+
+		if !out.IsEmpty() {
+			return out
+		}
+	}
+}

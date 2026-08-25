@@ -10,6 +10,7 @@ import (
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -98,6 +99,14 @@ func (r *fractionRegistry) acquireAllFractions() ([]frac.Fraction, func()) {
 	defer r.muSnapshot.RUnlock()
 
 	return r.snapshot.AcquireAll()
+}
+
+// acquireFractionsInRange returns a read-only subset of fractions within the range
+func (r *fractionRegistry) acquireFractionsInRange(from, to seq.MID) ([]frac.Fraction, func()) {
+	r.muSnapshot.RLock()
+	defer r.muSnapshot.RUnlock()
+
+	return r.snapshot.AcquireInRange(from, to)
 }
 
 // statistics returns current size statistics of the registry.

@@ -288,28 +288,28 @@ func TestBlocksBuilder_BuildTokenBlocks(t *testing.T) {
 
 	expectedLIDBlocks := []unpackedLIDBlock{
 		{
-			ext:     lidExt{minTID: 1, maxTID: 1, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{10, 20, 30}, Offsets: []uint32{0, 3}},
+			ext:     lidExt{minTID: 1, maxTID: 1, firstLID: 10, lastLID: 30},
+			payload: lids.UnpackedBlock{LIDs: []uint32{10, 20, 30}, Offsets: []uint32{0, 3}},
 		},
 		{
-			ext:     lidExt{minTID: 1, maxTID: 3, isContinued: true},
-			payload: lids.Block{LIDs: []uint32{40, 2, 3}, Offsets: []uint32{0, 1, 2, 3}},
+			ext:     lidExt{minTID: 1, maxTID: 3, firstLID: 40, lastLID: 3},
+			payload: lids.UnpackedBlock{LIDs: []uint32{40, 2, 3}, Offsets: []uint32{0, 1, 2, 3}},
 		},
 		{
-			ext:     lidExt{minTID: 4, maxTID: 6, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{4, 5, 6}, Offsets: []uint32{0, 1, 2, 3}},
+			ext:     lidExt{minTID: 4, maxTID: 6, firstLID: 4, lastLID: 6},
+			payload: lids.UnpackedBlock{LIDs: []uint32{4, 5, 6}, Offsets: []uint32{0, 1, 2, 3}},
 		},
 		{
-			ext:     lidExt{minTID: 7, maxTID: 9, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{7, 8, 9}, Offsets: []uint32{0, 1, 2, 3}},
+			ext:     lidExt{minTID: 7, maxTID: 9, firstLID: 7, lastLID: 9},
+			payload: lids.UnpackedBlock{LIDs: []uint32{7, 8, 9}, Offsets: []uint32{0, 1, 2, 3}},
 		},
 		{
-			ext:     lidExt{minTID: 10, maxTID: 12, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{10, 11, 12}, Offsets: []uint32{0, 1, 2, 3}},
+			ext:     lidExt{minTID: 10, maxTID: 12, firstLID: 10, lastLID: 12},
+			payload: lids.UnpackedBlock{LIDs: []uint32{10, 11, 12}, Offsets: []uint32{0, 1, 2, 3}},
 		},
 		{
-			ext:     lidExt{minTID: 13, maxTID: 14, isContinued: false},
-			payload: lids.Block{LIDs: []uint32{13, 14}, Offsets: []uint32{0, 1, 2}},
+			ext:     lidExt{minTID: 13, maxTID: 14, firstLID: 13, lastLID: 14},
+			payload: lids.UnpackedBlock{LIDs: []uint32{13, 14}, Offsets: []uint32{0, 1, 2}},
 		},
 	}
 	assert.Equal(t, expectedLIDBlocks, lidBlocks)

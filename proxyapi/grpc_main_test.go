@@ -45,10 +45,10 @@ type testAggQuery struct {
 }
 
 type siSearchRet struct {
-	qpr  *seq.QPR
-	docs search.DocsIterator
-	took time.Duration
-	err  error
+	qpr   *seq.QPR
+	docs  search.DocsIterator
+	stats *search.SearchStats
+	err   error
 }
 
 type siSearchMockData struct {
@@ -161,7 +161,7 @@ func prepareMock(m *mocks, mData *mocksData) {
 			ret := mData.si.search.ret
 			m.siMock.EXPECT().Search(
 				gomock.Any(), mData.si.search.sr, gomock.Any(),
-			).Return(ret.qpr, ret.docs, ret.took, ret.err)
+			).Return(ret.qpr, ret.docs, ret.stats, ret.err)
 		}
 		if mData.si.documents != nil {
 			ret := mData.si.documents.ret

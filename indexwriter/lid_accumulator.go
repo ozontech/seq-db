@@ -5,6 +5,8 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 )
 
+// lidAccumulator accumulates LIDs into blocks of fixed capacity.
+// It implements the add function that receives []uint32 directly.
 type lidAccumulator struct {
 	blockCapacity int
 	onBlock       func(unpackedLIDBlock) error
@@ -13,7 +15,6 @@ type lidAccumulator struct {
 	currentBlock unpackedLIDBlock
 
 	isEndOfToken bool
-	isContinued  bool
 }
 
 func newLIDAccumulator(
@@ -30,7 +31,7 @@ func newLIDAccumulator(
 	}
 
 	a.currentBlock.ext.minTID = 1
-	a.currentBlock.payload = lids.Block{
+	a.currentBlock.payload = lids.UnpackedBlock{
 		LIDs:    make([]uint32, 0, blockCapacity),
 		Offsets: []uint32{0},
 	}
@@ -84,8 +85,10 @@ func (a *lidAccumulator) finalizeBlock() unpackedLIDBlock {
 	}
 
 	result := a.currentBlock
-	result.ext.isContinued = a.isContinued
+	if blockLIDs := result.payload.LIDs; len(blockLIDs) > 0 {
+		result.ext.firstLID = blockLIDs[0]
+		result.ext.lastLID = blockLIDs[len(blockLIDs)-1]
+	}
 
-	a.isContinued = !a.isEndOfToken
 	return result
 }
