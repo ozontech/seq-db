@@ -36,8 +36,8 @@ type lidExt struct {
 
 // unpackedLIDBlock represents a sealed block containing LID (Local ID) data.
 type unpackedLIDBlock struct {
-	ext     lidExt     // LIDs block metadata for registry marking
-	payload lids.Block // LID data payload
+	ext     lidExt             // LIDs block metadata for registry marking
+	payload lids.UnpackedBlock // LID data payload
 }
 
 // unpackedIDBlock represents a sealed block containing various identifier types.

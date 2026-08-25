@@ -30,6 +30,7 @@ const (
 	// - The ID count is no longer stored in the offsets section.
 	// - LID blocks have firstLID/lastLID encoded in ext1.
 	// - isContinued is not used, no legacy TID adjusting.
+	// - Roaring bitmaps for sufficiently large LID lists, hybrid LIDs block format
 	BinaryDataV6
 )
 

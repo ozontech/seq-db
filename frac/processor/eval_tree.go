@@ -111,6 +111,20 @@ type AggLimits struct {
 	MaxTIDsPerFraction int
 }
 
+// QueryOptimizationConfig controls search-time query optimization decisions.
+type QueryOptimizationConfig struct {
+	BatchExecution BatchExecutionConfig
+}
+
+// BatchExecutionConfig controls batch-at-a-time query evaluation.
+type BatchExecutionConfig struct {
+	// Enabled is the master switch for batch-at-a-time query evaluation.
+	Enabled bool
+	// CostThreshold is the minimum estimated non-batched iteration
+	// cost required to enable batch-at-a-time query evaluation.
+	CostThreshold int
+}
+
 type iteratorLimit struct {
 	// limit value
 	limit int

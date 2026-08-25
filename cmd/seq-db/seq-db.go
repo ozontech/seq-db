@@ -275,6 +275,7 @@ func startStore(
 				DocBlocksZstdLevel:           cfg.Compression.DocBlockZstdCompressionLevel,
 				DocBlockSize:                 int(cfg.DocsSorting.DocBlockSize),
 				TokenFreqThresholdPercentage: cfg.Sealing.Tokens.FreqThresholdPercentage,
+				LIDsBitmapThreshold:          cfg.Sealing.Lids.BitmapThreshold,
 			},
 			Fraction: frac.Config{
 				Search: frac.SearchConfig{
@@ -283,6 +284,12 @@ func startStore(
 						MaxFieldValues:     cfg.Limits.Aggregation.FieldValues,
 						MaxGroupTokens:     cfg.Limits.Aggregation.GroupTokens,
 						MaxTIDsPerFraction: cfg.Limits.Aggregation.FractionTokens,
+					},
+					QueryOptimization: frac.QueryOptimizationConfig{
+						BatchExecution: frac.BatchExecutionConfig{
+							Enabled:       cfg.QueryOptimization.BatchExecution.Enabled,
+							CostThreshold: cfg.QueryOptimization.BatchExecution.CostThreshold,
+						},
 					},
 				},
 				SkipSortDocs: !cfg.DocsSorting.Enabled,
