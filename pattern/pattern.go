@@ -131,10 +131,12 @@ func cut(b []byte, l int) []byte {
 func (s *wildcardSearch) Narrow(tp tokenProvider) {
 	s.narrowed = true
 	l := len(s.prefix)
+
 	s.first = util.BinSearchInRange(s.first, s.last, func(tid int) bool {
 		tokenPrefix := cut(tp.GetToken(uint32(tid)), l)
 		return bytes.Compare(tokenPrefix, s.prefix) >= 0
 	})
+
 	s.last = util.BinSearchInRange(s.first, s.last, func(tid int) bool {
 		tokenPrefix := cut(tp.GetToken(uint32(tid)), l)
 		return bytes.Compare(tokenPrefix, s.prefix) > 0
@@ -334,26 +336,137 @@ func (s *rangeIpSearch) Check(rawVal []byte) (bool, error) {
 
 type reSearch struct {
 	baseSearch
-	r       *regexp.Regexp
-	checked int
+	r *regexp.Regexp
+
+	prefix parser.ReLiteral
+	middle []parser.ReLiteral
+	suffix parser.ReLiteral
+
+	letters  util.LettersBitset
+	narrowed bool
+	checked  int
 }
 
 func newReSearch(base baseSearch, token *parser.Re) *reSearch {
 	if token.Expression.Kind != parser.TermText {
 		panic("BUG: wrong term kind in re")
 	}
-	return &reSearch{baseSearch: base, r: token.CompiledExpression}
+
+	var b util.LetterBitsetBuilder
+	b.Add(token.Prefix.Value)
+	b.Add(token.Suffix.Value)
+
+	for i := range token.Middle {
+		b.Add(token.Middle[i].Value)
+	}
+
+	return &reSearch{
+		baseSearch: base,
+		r:          token.CompiledExpression,
+
+		prefix: token.Prefix,
+		middle: token.Middle,
+		suffix: token.Suffix,
+
+		letters: b.Build(),
+	}
 }
 
-func (s *reSearch) Check(rawVal []byte) (bool, error) {
+func (s *reSearch) Narrow(tp tokenProvider) {
+	// TODO(dkharms): Handle case-insensitive search.
+	if s.prefix.Foldable {
+		return
+	}
+
+	s.narrowed = true
+	l := len(s.prefix.Value)
+	s.first = util.BinSearchInRange(s.first, s.last, func(tid int) bool {
+		tokenPrefix := cut(tp.GetToken(uint32(tid)), l)
+		return bytes.Compare(tokenPrefix, s.prefix.Value) >= 0
+	})
+
+	s.last = util.BinSearchInRange(s.first, s.last, func(tid int) bool {
+		tokenPrefix := cut(tp.GetToken(uint32(tid)), l)
+		return bytes.Compare(tokenPrefix, s.prefix.Value) > 0
+	}) - 1
+}
+
+func (s *reSearch) CheckEntry(letters util.LettersBitset) bool {
+	return letters.IsNil() || letters.ContainsAll(s.letters)
+}
+
+func (s *reSearch) Check(val []byte) (bool, error) {
+	if max(len(s.prefix.Value), len(s.suffix.Value)) > len(val) {
+		return false, nil
+	}
+
+	if !s.checkPrefix(val) || !s.checkSuffix(val) || !s.checkMiddle(val) {
+		return false, nil
+	}
+
 	if config.MaxRegexTokensCheck > 0 && s.checked >= config.MaxRegexTokensCheck {
 		return false, errors.New(
 			"'re' filter exceeded token limit: " +
 				"consider using regular filters",
 		)
 	}
+
 	s.checked++
-	return s.r.Match(rawVal), nil
+	return s.r.Match(val), nil
+}
+
+func (s *reSearch) checkPrefix(val []byte) bool {
+	prefix := s.prefix.Value
+
+	if s.narrowed || len(prefix) == 0 {
+		return true
+	}
+
+	if s.prefix.Foldable {
+		return bytes.EqualFold(prefix, val[:len(prefix)])
+	}
+
+	return bytes.Equal(prefix, val[:len(prefix)])
+}
+
+func (s *reSearch) checkMiddle(val []byte) bool {
+	if len(s.middle) == 0 {
+		return true
+	}
+
+	for i := range s.middle {
+		lit := s.middle[i]
+
+		// We have to perform case-insensitive substring search,
+		// so at this point it's just easier to give up and check token
+		// via compiled regular expression.
+		if lit.Foldable {
+			return true
+		}
+
+		start := bytes.Index(val, lit.Value)
+		if start == -1 {
+			return false
+		}
+
+		val = val[start+len(lit.Value):]
+	}
+
+	return true
+}
+
+func (s *reSearch) checkSuffix(val []byte) bool {
+	suffix := s.suffix.Value
+
+	if len(suffix) == 0 {
+		return true
+	}
+
+	if s.suffix.Foldable {
+		return bytes.EqualFold(suffix, val[len(val)-len(suffix):])
+	}
+
+	return bytes.Equal(suffix, val[len(val)-len(suffix):])
 }
 
 type Searcher interface {
@@ -390,20 +503,11 @@ func newSearcher(token parser.Token, tp tokenProvider) Searcher {
 	case *parser.IPRange:
 		return newRangeIPSearch(base, t)
 	case *parser.Re:
-		// TODO(dkharms): We can benefit from many optimizations when dealing with regular expressions.
-		//
-		// For example, with the most obvious one we can narrow search space
-		// by extracting prefix and suffix from expression if there is any:
-		//
-		//   prefix := regexp.Compile(expr).LiteralPrefix()
-		//   suffix := Reverse(regexp.Compile(Reverse(expr)).LiteralPrefix())
-		//
-		// and then performing similar logic as in [literalSearch.Narrow] to find
-		// boundaries for token ids.
-		//
-		// There are other techniques which are more complicated so it's
-		// worth studying Apache Lucene, TSDB (Prometheus) etc.
-		return newReSearch(base, t)
+		s := newReSearch(base, t)
+		if tp.Ordered() {
+			s.Narrow(tp)
+		}
+		return s
 	}
 	panic(fmt.Sprintf("unknown token type: %T", token))
 }

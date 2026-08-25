@@ -54,9 +54,11 @@ func NewLettersBitsetFromArray(letters [30]bool) LettersBitset {
 	return s
 }
 
-func NewLettersBitset(data []byte) LettersBitset {
+func NewLettersBitset(data ...[]byte) LettersBitset {
 	var builder LetterBitsetBuilder
-	builder.Add(data)
+	for i := range data {
+		builder.Add(data[i])
+	}
 	return builder.Build()
 }
 

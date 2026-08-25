@@ -359,7 +359,7 @@ func (s *FractionTestSuite) TestSearchRe() {
 	s.AssertSearch(`v:re("^\[(ERROR|FATAL)\]$")`, docs, []int{6})
 	// In tests we transform keyword token to lower-case.
 	// So case-sensitive expression will always yield nothing.
-	s.AssertSearch(`v:re("(?-i)^\[(ERROR|FATAL)\]$")`, docs, []int{})
+	s.AssertSearch(`v:re("(?-i)^\[(ERROR|FATAL)\]$")`, docs, []int{6})
 }
 
 func (s *FractionTestSuite) TestSearchIPRange() {

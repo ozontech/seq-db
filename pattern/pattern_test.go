@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/parser"
 )
 
@@ -496,6 +497,24 @@ func TestPatternSymbols(t *testing.T) {
 }
 
 func TestPatternRe(t *testing.T) {
+	t.Run("match-simple", func(t *testing.T) {
+		needles := []string{"simple"}
+
+		data := append(
+			[]string{"not-uuid", "not uuid as well"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("simple")`,
+				needles,
+			},
+		})
+	})
+
 	t.Run("match-uuid", func(t *testing.T) {
 		needles := []string{
 			"7313c25b-2eae-4839-b773-91dff1f24f1f",
@@ -564,12 +583,12 @@ func TestPatternRe(t *testing.T) {
 
 	t.Run("match-level", func(t *testing.T) {
 		needles := []string{
-			"[ERROR] connection refused",
-			"[WARN] timeout exceeded",
+			"[error] connection refused",
+			"[warn] timeout exceeded",
 		}
 
 		data := append(
-			[]string{"[INFO] all good", "[DEBUG] trace value"},
+			[]string{"[info] all good", "[debug] trace value"},
 			needles...,
 		)
 
@@ -577,7 +596,7 @@ func TestPatternRe(t *testing.T) {
 
 		testAll(t, tp, []testCase{
 			{
-				`re("\[(ERROR|WARN)\].*")`,
+				`re("\[(error|warn)\].*")`,
 				needles,
 			},
 		})
@@ -649,12 +668,12 @@ func TestPatternRe(t *testing.T) {
 
 	t.Run("match-anchored", func(t *testing.T) {
 		needles := []string{
-			"ERROR: disk empty",
-			"ERROR: disk full",
+			"error: disk empty",
+			"error: disk full",
 		}
 
 		data := append(
-			[]string{"some ERROR in the middle", "info: no error"},
+			[]string{"some error in the middle", "info: no error"},
 			needles...,
 		)
 
@@ -662,7 +681,7 @@ func TestPatternRe(t *testing.T) {
 
 		testAll(t, tp, []testCase{
 			{
-				`re("^ERROR: disk (empty|full)$")`,
+				`re("^error: disk (empty|full)$")`,
 				needles,
 			},
 		})
@@ -716,7 +735,10 @@ func TestPatternRe(t *testing.T) {
 		})
 	})
 
-	t.Run("match-case-insensitive", func(t *testing.T) {
+	t.Run("match-case-sensitive", func(t *testing.T) {
+		defer func(v bool) { config.CaseSensitive = v }(config.CaseSensitive)
+		config.CaseSensitive = true
+
 		needles := []string{
 			"Error occurred",
 			"ERROR occurred",
@@ -732,8 +754,22 @@ func TestPatternRe(t *testing.T) {
 
 		testAll(t, tp, []testCase{
 			{
-				`re("(?i)error.*")`,
+				`re("(?i)error.*red")`,
 				needles,
+			},
+		})
+
+		testAll(t, tp, []testCase{
+			{
+				`re("error.*")`,
+				[]string{needles[2]},
+			},
+		})
+
+		testAll(t, tp, []testCase{
+			{
+				`re("error.*RED")`,
+				[]string{},
 			},
 		})
 	})
