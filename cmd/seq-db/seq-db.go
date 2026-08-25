@@ -275,6 +275,7 @@ func startStore(
 				DocBlocksZstdLevel:           cfg.Compression.DocBlockZstdCompressionLevel,
 				DocBlockSize:                 int(cfg.DocsSorting.DocBlockSize),
 				TokenFreqThresholdPercentage: cfg.Sealing.Tokens.FreqThresholdPercentage,
+				LIDsBitmapThreshold:          cfg.Sealing.Lids.BitmapThreshold,
 			},
 			Fraction: frac.Config{
 				Search: frac.SearchConfig{

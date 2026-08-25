@@ -176,10 +176,10 @@ func IndexSearch(
 	return qpr, nil
 }
 
-func batcher(evalTree node.Node, buf []node.LID) func(need int) []node.LID {
+func batcher(evalTree node.Node, buf []node.LID, desc bool) func(need int) []node.LID {
 	if batchNode, ok := tryConvertToBatchedTree(evalTree); ok {
 		return func(need int) []node.LID {
-			buf = batchNode.NextBatch().LIDs(buf[:0])
+			buf = batchNode.NextBatch(need).CopyLIDs(desc, buf[:0])
 			if len(buf) > need {
 				buf = buf[:need]
 			}
@@ -228,7 +228,7 @@ func iterateEvalTree(
 	mids := buffers.mids
 	rids := buffers.rids
 
-	batchedEvalTree := batcher(evalTree, buffers.lids)
+	batchedEvalTree := batcher(evalTree, buffers.lids, params.Order.IsDesc())
 
 	timerEval := sw.Timer("eval_tree_next")
 	timerMID := sw.Timer("get_mid")
@@ -356,9 +356,9 @@ func sampler(n uint32) func(in []node.LID) []node.LID {
 func tryConvertToBatchedTree(evalTree node.Node) (node.BatchedNode, bool) {
 	switch it := evalTree.(type) {
 	case *lids.IteratorDesc:
-		return it, true
+		return lids.NewBatchedIteratorDesc(it), true
 	case *lids.IteratorAsc:
-		return it, true
+		return lids.NewBatchedIteratorAsc(it), true
 	default:
 		return nil, false
 	}
