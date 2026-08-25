@@ -13,10 +13,10 @@ type Node interface {
 
 type BatchedNode interface {
 	fmt.Stringer
-	// NextBatch returns next batch. Returns nil when exhausted.
-	NextBatch(need int) LIDBatch
-	// NextBatchGeq returns next batch (LIDs >= minLID). Returns nil when exhausted.
-	NextBatchGeq(need int, nextLID LID) LIDBatch
+	// NextBatch returns next batch. Returns empty batch when exhausted.
+	NextBatch() LIDBatch
+	// NextBatchGeq returns next batch (LIDs >= minLID). Returns empty batch when exhausted.
+	NextBatchGeq(nextID LID) LIDBatch
 }
 
 type Sourced interface {

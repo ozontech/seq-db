@@ -197,10 +197,14 @@ func ToArray(b node.LIDBatch) []uint32 {
 		return nil
 	}
 	out := make([]uint32, 0, b.Len())
-	for _, lid := range b.CopyLIDs(true, nil) {
-		out = append(out, lid.Unpack())
+	it := b.Iter()
+	for {
+		lid, ok := it.Next()
+		if !ok {
+			return out
+		}
+		out = append(out, lid)
 	}
-	return out
 }
 
 func TestBlockPack_ReuseBuffer(t *testing.T) {

@@ -285,6 +285,12 @@ func startStore(
 						MaxGroupTokens:     cfg.Limits.Aggregation.GroupTokens,
 						MaxTIDsPerFraction: cfg.Limits.Aggregation.FractionTokens,
 					},
+					QueryOptimization: frac.QueryOptimizationConfig{
+						BatchExecution: frac.BatchExecutionConfig{
+							Enabled:       cfg.QueryOptimization.BatchExecution.Enabled,
+							CostThreshold: cfg.QueryOptimization.BatchExecution.CostThreshold,
+						},
+					},
 				},
 				SkipSortDocs: !cfg.DocsSorting.Enabled,
 				KeepWalFile:  false,

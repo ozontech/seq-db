@@ -111,6 +111,9 @@ func (dp *sealedDataProvider) Fetch(ids []seq.ID, noSkipMasks bool) ([][]byte, e
 
 func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, error) {
 	aggLimits := processor.AggLimits(dp.config.Search.AggLimits)
+	queryOpt := processor.QueryOptimizationConfig{
+		BatchExecution: processor.BatchExecutionConfig(dp.config.Search.QueryOptimization.BatchExecution),
+	}
 
 	// Limit the parameter range to data boundaries to prevent histogram overflow
 	params.From = max(params.From, dp.info.From)
@@ -126,7 +129,7 @@ func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	t := sw.Start("total")
 	defer t.Stop()
 
-	qpr, err := processor.IndexSearch(dp.ctx, params, dp.getSearchIndex(), aggLimits, sw)
+	qpr, err := processor.IndexSearch(dp.ctx, dp.info.BinaryDataVer, params, dp.getSearchIndex(), aggLimits, queryOpt, sw)
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +278,24 @@ func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error)
 	return tids, nil
 }
 
+func (ti *sealedTokenIndex) GetFreqsByTIDs(tids []uint32, field string) []uint32 {
+	freqs := make([]uint32, len(tids))
+	if len(tids) == 0 {
+		return freqs
+	}
+
+	tokenTable := ti.tokenTableLoader.Load()
+	for i, tid := range tids {
+		if tid == 0 {
+			continue
+		}
+		entry := tokenTable.GetEntryByTID(tid, field)
+		block := ti.tokenBlockLoader.Load(entry.BlockIndex)
+		freqs[i] = block.GetFreq(entry.GetIndexInTokensBlock(tid))
+	}
+	return freqs
+}
+
 func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
 	var (
 		getBlockIndex   func(tid uint32) uint32
@@ -301,6 +322,37 @@ func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 	nodes := make([]node.Node, len(tids))
 	for i, tid := range tids {
 		nodes[i] = getLIDsIterator(startIndexes[i], tid)
+	}
+
+	return nodes
+}
+
+func (ti *sealedTokenIndex) GetBatchedLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.BatchedNode {
+	var (
+		getBlockIndex          func(tid uint32) uint32
+		getBatchedLIDsIterator func(uint32, uint32) node.BatchedNode
+	)
+
+	if order.IsReverse() {
+		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetLastBlockIndexForTID(tid) }
+		getBatchedLIDsIterator = func(startIndex uint32, tid uint32) node.BatchedNode {
+			return lids.NewBatchedIteratorAsc(lids.NewIteratorAsc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
+		}
+	} else {
+		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetFirstBlockIndexForTID(tid) }
+		getBatchedLIDsIterator = func(startIndex uint32, tid uint32) node.BatchedNode {
+			return lids.NewBatchedIteratorDesc(lids.NewIteratorDesc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
+		}
+	}
+
+	startIndexes := make([]uint32, len(tids))
+	for i, tid := range tids {
+		startIndexes[i] = getBlockIndex(tid)
+	}
+
+	nodes := make([]node.BatchedNode, len(tids))
+	for i, tid := range tids {
+		nodes[i] = getBatchedLIDsIterator(startIndexes[i], tid)
 	}
 
 	return nodes

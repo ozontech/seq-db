@@ -49,6 +49,12 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 5, 20),
 		Help:      "Number of document hits per search",
 	})
+	batchExecutionFracsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Name:      "batch_execution_fracs_total",
+		Help:      "Number of fractions queried with batch execution",
+	})
 )
 
 type searchStats struct {

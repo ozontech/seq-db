@@ -240,3 +240,62 @@ func TestBatchReverseIter(t *testing.T) {
 		})
 	}
 }
+
+func TestBatchManyIter(t *testing.T) {
+	input := []uint32{1, 5, 10, 15, 20, 25, 30}
+
+	for _, impl := range batchFactories {
+		t.Run(impl.name, func(t *testing.T) {
+			t.Run("desc chunked", func(t *testing.T) {
+				b := impl.build(input)
+				it := b.ManyIter(true)
+				dst := make([]LID, 3)
+				tmp := make([]uint32, 3)
+
+				var got []uint32
+				for {
+					n := it.CopyLIDs(dst, tmp)
+					if n == 0 {
+						break
+					}
+					assert.LessOrEqual(t, n, 3)
+					for i := 0; i < n; i++ {
+						got = append(got, dst[i].Unpack())
+					}
+				}
+				assert.Equal(t, input, got)
+			})
+
+			t.Run("asc chunked", func(t *testing.T) {
+				b := impl.build(input)
+				it := b.ManyIter(false)
+				dst := make([]LID, 3)
+				tmp := make([]uint32, 3)
+
+				var got []uint32
+				for {
+					n := it.CopyLIDs(dst, tmp)
+					if n == 0 {
+						break
+					}
+					assert.LessOrEqual(t, n, 3)
+					for i := 0; i < n; i++ {
+						got = append(got, dst[i].Unpack())
+					}
+				}
+				assert.Equal(t, []uint32{30, 25, 20, 15, 10, 5, 1}, got)
+			})
+
+			t.Run("empty tmp yields zero for desc", func(t *testing.T) {
+				b := impl.build(input)
+				n := b.ManyIter(true).CopyLIDs(make([]LID, 8), nil)
+				assert.Equal(t, 0, n)
+			})
+		})
+	}
+
+	t.Run("empty batch", func(t *testing.T) {
+		n := EmptyBatch().ManyIter(true).CopyLIDs(make([]LID, 8), make([]uint32, 8))
+		assert.Equal(t, 0, n)
+	})
+}
