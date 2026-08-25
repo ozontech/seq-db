@@ -127,6 +127,8 @@ func IndexSearch(
 		}
 
 		evalTree = node.NewBatcherNode(nodeTree, params.Order.IsDesc())
+	} else {
+		batchExecutionFracsTotal.Inc()
 	}
 
 	defer func(start time.Time) { stats.TreeDuration += time.Since(start) }(time.Now())
