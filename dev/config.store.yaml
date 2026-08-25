@@ -1,0 +1,20 @@
+# Local debug config for seq-db (store).
+# Mode: --mode=store. Stores fractions, serves data to proxy via gRPC.
+
+address:
+  http: :9102   # not used in store, but occupies the port from config
+  grpc: :9104   # proxy connects here (cluster.hot_stores)
+  debug: :9201  # pprof / debug server
+
+storage:
+  data_dir: data-store
+  frac_size: 16MiB
+  total_size: 1GiB
+
+slow_logs:
+  bulk_threshold: 1s
+  search_threshold: 100ms
+  fetch_threshold: 100ms
+
+mapping:
+  path: mappings.yaml

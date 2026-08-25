@@ -1,0 +1,19 @@
+# Local debug config for seq-proxy.
+# Mode: --mode=proxy. Accepts HTTP/gRPC from clients, talks to store via gRPC.
+
+address:
+  http: :9002   # client HTTP API (gRPC-gateway)
+  grpc: :9004   # client gRPC API (SeqProxyApi)
+  debug: :9200  # pprof / debug server
+
+cluster:
+  hot_stores:
+    - localhost:9104
+
+slow_logs:
+  bulk_threshold: 1s
+  search_threshold: 100ms
+  fetch_threshold: 100ms
+
+mapping:
+  path: mappings.yaml
