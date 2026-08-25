@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
@@ -174,7 +175,7 @@ func TestTryBuildBatchEvalTree(t *testing.T) {
 		q, err := parser.ParseSeqQL(`a:1 AND b:2`, nil)
 		require.NoError(t, err)
 		stats := &searchStats{}
-		tree, err := tryBuildBatchEvalTree(q.Root, denseIndex, queryOpt, 1, 100, stats, seq.DocsOrderDesc, sw)
+		tree, err := tryBuildBatchEvalTree(q.Root, config.BinaryDataV6, denseIndex, queryOpt, 1, 100, stats, seq.DocsOrderDesc, sw)
 		require.NoError(t, err)
 		assert.NotNil(t, tree)
 		assert.Equal(t, 2, stats.LeavesTotal)
@@ -186,7 +187,7 @@ func TestTryBuildBatchEvalTree(t *testing.T) {
 		q, err := parser.ParseSeqQL(`a:1 AND b:2`, nil)
 		require.NoError(t, err)
 		stats := &searchStats{}
-		tree, err := tryBuildBatchEvalTree(q.Root, denseIndex, disabled, 1, 100, stats, seq.DocsOrderDesc, sw)
+		tree, err := tryBuildBatchEvalTree(q.Root, config.BinaryDataV6, denseIndex, disabled, 1, 100, stats, seq.DocsOrderDesc, sw)
 		require.ErrorIs(t, err, errBatchingUnsupported)
 		assert.Nil(t, tree)
 		assert.Equal(t, 0, stats.LeavesTotal)
@@ -197,7 +198,7 @@ func TestTryBuildBatchEvalTree(t *testing.T) {
 		q, err := parser.ParseSeqQL(`a:1 AND b:2`, nil)
 		require.NoError(t, err)
 		stats := &searchStats{}
-		tree, err := tryBuildBatchEvalTree(q.Root, sparseIndex, queryOpt, 1, 100, stats, seq.DocsOrderDesc, sw)
+		tree, err := tryBuildBatchEvalTree(q.Root, config.BinaryDataV6, sparseIndex, queryOpt, 1, 100, stats, seq.DocsOrderDesc, sw)
 		require.ErrorIs(t, err, errBatchingUnsupported)
 		assert.Nil(t, tree)
 		assert.Equal(t, 0, stats.LeavesTotal)
@@ -212,7 +213,7 @@ func TestTryBuildBatchEvalTree(t *testing.T) {
 		q, err := parser.ParseSeqQL(`a:1`, nil)
 		require.NoError(t, err)
 		stats := &searchStats{}
-		tree, err := tryBuildBatchEvalTree(q.Root, index, queryOpt, 1, 100, stats, seq.DocsOrderDesc, sw)
+		tree, err := tryBuildBatchEvalTree(q.Root, config.BinaryDataV6, index, queryOpt, 1, 100, stats, seq.DocsOrderDesc, sw)
 		require.ErrorIs(t, err, errBatchingUnsupported)
 		assert.Nil(t, tree)
 		assert.Equal(t, 0, stats.LeavesTotal)
@@ -238,7 +239,7 @@ func TestTryBuildBatchEvalTree(t *testing.T) {
 		q, err := parser.ParseSeqQL(`a:1 AND b:2`, nil)
 		require.NoError(t, err)
 		stats := &searchStats{}
-		tree, err := tryBuildBatchEvalTree(q.Root, index, queryOpt, 1, 100, stats, seq.DocsOrderDesc, sw)
+		tree, err := tryBuildBatchEvalTree(q.Root, config.BinaryDataV6, index, queryOpt, 1, 100, stats, seq.DocsOrderDesc, sw)
 		require.ErrorIs(t, err, errBatchingUnsupported)
 		assert.Nil(t, tree)
 		assert.Equal(t, 0, stats.LeavesTotal)
@@ -249,7 +250,7 @@ func TestTryBuildBatchEvalTree(t *testing.T) {
 		q, err := parser.ParseSeqQL(`NOT a:1`, nil)
 		require.NoError(t, err)
 		stats := &searchStats{}
-		tree, err := tryBuildBatchEvalTree(q.Root, denseIndex, queryOpt, 1, 100, stats, seq.DocsOrderDesc, sw)
+		tree, err := tryBuildBatchEvalTree(q.Root, config.BinaryDataV6, denseIndex, queryOpt, 1, 100, stats, seq.DocsOrderDesc, sw)
 		require.ErrorIs(t, err, errBatchingUnsupported)
 		assert.Nil(t, tree)
 		assert.Equal(t, 0, stats.LeavesTotal)
