@@ -182,8 +182,7 @@ func prefix(re *syntax.Regexp) ReLiteral {
 	}
 
 	return ReLiteral{
-		// TODO(dkharms): Check whether it is safe.
-		Value:    util.StringToByteUnsafe(string(subs[0].Rune)),
+		Value:    []byte(string(subs[0].Rune)),
 		Foldable: (subs[0].Flags & syntax.FoldCase) == syntax.FoldCase,
 	}
 }
@@ -226,8 +225,7 @@ func suffix(re *syntax.Regexp) ReLiteral {
 	}
 
 	return ReLiteral{
-		// TODO(dkharms): Check whether it is safe.
-		Value:    util.StringToByteUnsafe(string(subs[len(subs)-1].Rune)),
+		Value:    []byte(string(subs[len(subs)-1].Rune)),
 		Foldable: (subs[len(subs)-1].Flags & syntax.FoldCase) == syntax.FoldCase,
 	}
 }
