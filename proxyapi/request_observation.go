@@ -20,11 +20,9 @@ import (
 // finish() from the calling handler, after the document stream has been read —
 // so the recorded duration includes stream consumption.
 type requestObservation struct {
-	start         time.Time
-	fetchStart    time.Time
-	fetchDuration time.Duration
-	stats         *search.SearchStats
-	rawErr        error // raw ingestor error before status wrapping (preserves timeout type)
+	start  time.Time
+	stats  *search.SearchStats
+	rawErr error // raw ingestor error before status wrapping (preserves timeout type)
 }
 
 // search result categories used as the "result" metric label.
@@ -35,29 +33,24 @@ const (
 	searchResultTimeout   = "timeout"
 )
 
-func (o *requestObservation) takeFetchDuration() {
-	if o.fetchDuration == 0 && !o.fetchStart.IsZero() {
-		o.fetchDuration = time.Since(o.fetchStart)
-	}
-}
-
 func (o *requestObservation) finish(method string, retErr error) {
 	if o == nil {
 		return
 	}
 
-	o.takeFetchDuration() // if we stopped fetching before reaching EOF, calc fetch duration here
+	o.stats.TakeFetchDuration()
 
 	result, tier := classifySearchResult(retErr, o.rawErr, o.stats)
 	fields := []zap.Field{
 		zap.String("method", method),
+		zap.String("query", o.stats.Query),
 		zap.Bool("agg", o.stats.HasAgg),
 		zap.Bool("hist", o.stats.HasHist),
 		zap.Int("docs", o.stats.Size),
 		zap.String("tier", tier),
 		zap.Duration("hot_duration", o.stats.HotSearchDuration),
 		zap.Duration("total_search_duration", o.stats.TotalSearchDuration),
-		zap.Duration("fetch_duration", o.fetchDuration),
+		zap.Duration("fetch_duration", o.stats.FetchDuration),
 		zap.Duration("total_duration", time.Since(o.start)),
 		zap.String("result", result),
 	}
@@ -95,7 +88,7 @@ func isTimeoutErr(e error) bool {
 	if e == nil {
 		return false
 	}
-	if errors.Is(e, context.DeadlineExceeded) || errors.Is(e, context.Canceled) {
+	if errors.Is(e, context.DeadlineExceeded) {
 		return true
 	}
 	return status.Code(e) == codes.DeadlineExceeded
@@ -105,8 +98,13 @@ func isClientErr(retErr, rawErr error) bool {
 	if errors.Is(rawErr, consts.ErrInvalidArgument) {
 		return true
 	}
+
+	if status.Code(rawErr) == codes.Canceled { // client error - canceled
+		return true
+	}
+
 	switch status.Code(retErr) {
-	case codes.InvalidArgument, codes.ResourceExhausted, codes.Canceled:
+	case codes.InvalidArgument, codes.ResourceExhausted:
 		return true
 	}
 	return false

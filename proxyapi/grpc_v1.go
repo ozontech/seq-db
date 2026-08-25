@@ -291,18 +291,10 @@ func (g *grpcV1) doSearch(
 		proxyReq.Interval = seq.MID(intervalDuration.Nanoseconds())
 	}
 
-	qpr, docsStream, stats, err := g.searchIngestor.Search(ctx, proxyReq, tr)
-	psr := &proxySearchResponse{
-		qpr: qpr,
-		docsStream: search.SetDocsIteratorEvents(
-			docsStream,
-			func() { obs.fetchStart = time.Now() },
-			func() { obs.takeFetchDuration() },
-		),
-	}
-	obs.stats = stats
-	obs.rawErr = err
+	psr := &proxySearchResponse{}
+	psr.qpr, psr.docsStream, obs.stats, obs.rawErr = g.searchIngestor.Search(ctx, proxyReq, tr)
 
+	err := obs.rawErr
 	if e, ok := parseProxyError(err); ok {
 		psr.err = e
 		return psr, obs, nil
@@ -327,7 +319,7 @@ func (g *grpcV1) doSearch(
 		}
 		return psr, obs, nil
 	}
-	if err = processSearchErrors(qpr, err); err != nil {
+	if err = processSearchErrors(psr.qpr, err); err != nil {
 		metric.SearchErrors.Inc()
 		return nil, obs, err
 	}

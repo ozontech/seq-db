@@ -48,6 +48,7 @@ const (
 
 // SearchStats carries observability data collected while executing a search.
 type SearchStats struct {
+	Query   string
 	Size    int
 	HasHist bool
 	HasAgg  bool
@@ -56,6 +57,15 @@ type SearchStats struct {
 	HotSearchDuration   time.Duration
 	ColdSearchDuration  time.Duration
 	TotalSearchDuration time.Duration
+
+	FetchStart    time.Time
+	FetchDuration time.Duration
+}
+
+func (s *SearchStats) TakeFetchDuration() {
+	if s.FetchDuration == 0 && !s.FetchStart.IsZero() {
+		s.FetchDuration = time.Since(s.FetchStart)
+	}
 }
 
 type Ingestor struct {
@@ -102,6 +112,7 @@ func (si *Ingestor) Search(
 	}
 
 	stats = &SearchStats{
+		Query:       string(sr.Q),
 		Size:        sr.Size + sr.Offset,
 		HasHist:     sr.Interval > 0,
 		HasAgg:      len(sr.AggQ) > 0,
@@ -179,7 +190,7 @@ func (si *Ingestor) Search(
 	qpr.IDs, size = paginateIDs(qpr.IDs, sr.Offset, sr.Size)
 	ids := qpr.IDs
 
-	t = time.Now()
+	stats.FetchStart = time.Now()
 	docsStream = EmptyDocsStream{}
 	if sr.ShouldFetch && size > 0 {
 		if util.IsCancelled(ctx) {
@@ -194,7 +205,6 @@ func (si *Ingestor) Search(
 		}
 	}
 
-	fetchDuration := time.Since(t)
 	stats.TotalSearchDuration = time.Since(startTime)
 
 	if sr.Explain {
@@ -205,7 +215,6 @@ func (si *Ingestor) Search(
 			zap.Int("buckets", len(qpr.Histogram)),
 			util.ZapDurationWithPrec("query_ms", queryDuration, "ms", 2),
 			util.ZapDurationWithPrec("merge_ms", mergeDuration, "ms", 2),
-			util.ZapDurationWithPrec("fetch_ms", fetchDuration, "ms", 2),
 			util.ZapDurationWithPrec("all_ms", stats.TotalSearchDuration, "ms", 2),
 		)
 	}
