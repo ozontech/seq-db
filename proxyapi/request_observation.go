@@ -46,7 +46,7 @@ func (o *requestObservation) finish(method string, retErr error) {
 		zap.String("query", o.stats.Query),
 		zap.Bool("agg", o.stats.HasAgg),
 		zap.Bool("hist", o.stats.HasHist),
-		zap.Int("docs", o.stats.Size),
+		zap.Int("size", o.stats.Size),
 		zap.String("tier", tier),
 		zap.Duration("hot_duration", o.stats.HotSearchDuration),
 		zap.Duration("total_search_duration", o.stats.TotalSearchDuration),
