@@ -203,7 +203,7 @@ func shouldTryStreamSearch(tryStreamSearch bool, req *seqproxyapi.ComplexSearchR
 	if !tryStreamSearch {
 		return false
 	}
-	if req.Hist != nil || len(req.Aggs) > 1 {
+	if (req.Hist != nil && req.Hist.Interval != "") || len(req.Aggs) > 1 {
 		return false
 	}
 	return true
