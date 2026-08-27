@@ -48,6 +48,7 @@ func (q *SeqQLQuery) ValidateStreamPipes() error {
 }
 
 func parse(q string, mapping seq.Mapping) (SeqQLQuery, error) {
+	q = trimOuterParens(q)
 	lex := newLexer(q)
 
 	lex.Next()
@@ -72,6 +73,37 @@ func parse(q string, mapping seq.Mapping) (SeqQLQuery, error) {
 		Root:  root,
 		Pipes: pipes,
 	}, nil
+}
+
+// trimOuterParens removes every layer of parentheses that wraps the entire
+// query, e.g. "(((* | fields level)))" -> "* | fields level". Parentheses that
+// only wrap part of the query (e.g. "(a:1) | fields b") are left untouched.
+func trimOuterParens(q string) string {
+	for {
+		q = strings.TrimSpace(q)
+		if len(q) < 2 || q[0] != '(' || q[len(q)-1] != ')' {
+			return q
+		}
+
+		depth := 0
+		outer := true
+		for i := 0; i < len(q); i++ {
+			switch q[i] {
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 && i != len(q)-1 {
+					outer = false
+				}
+			}
+		}
+		if !outer {
+			return q
+		}
+
+		q = strings.TrimSpace(q[1 : len(q)-1])
+	}
 }
 
 func ParseSeqQL(q string, mapping seq.Mapping) (SeqQLQuery, error) {
