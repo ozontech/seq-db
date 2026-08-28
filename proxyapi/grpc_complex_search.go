@@ -107,17 +107,19 @@ func (g *grpcV1) emulateStreamSearch(
 	var partialErr error
 	storesStream, broadcaster, err := g.searchIngestor.StreamSearch(ctx, streamSearchReq, tr)
 	if err != nil {
-		// The stores were not opened or failed to open, cancel any that may have started before propagating the error.
-		if broadcaster != nil {
-			broadcaster.SendControl(storeapi.ControlAction_CANCEL)
-		}
 		if errors.Is(err, consts.ErrPartialResponse) {
 			if shouldFailPartialResponse(ctx) {
+				if broadcaster != nil {
+					broadcaster.SendControl(storeapi.ControlAction_CANCEL)
+				}
 				return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
 			}
 			partialErr = err
 			metric.SearchPartial.Inc()
 		} else {
+			if broadcaster != nil {
+				broadcaster.SendControl(storeapi.ControlAction_CANCEL)
+			}
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	}
