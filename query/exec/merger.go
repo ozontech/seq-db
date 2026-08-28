@@ -18,7 +18,7 @@ type Merger struct {
 	field    string
 	dataType query.DataType
 	order    seq.DocsOrder
-	less     func(any, any) int
+	cmp      func(any, any) int
 
 	// dedup drops records whose sort key repeats the previously emitted one.
 	// It is enabled only for the seq.ID merge: shards may match the same
@@ -47,7 +47,7 @@ func NewMerger(
 	dataType query.DataType,
 	order seq.DocsOrder,
 ) *Merger {
-	less := createLessFunc()
+	cmpFunc := createCmpFunc()
 
 	return &Merger{
 		left:     left,
@@ -56,7 +56,7 @@ func NewMerger(
 		field:    field,
 		dataType: dataType,
 		order:    order,
-		less:     less,
+		cmp:      cmpFunc,
 		dedup:    dataType == query.DataTypeSeqID,
 		curLeft:  nil,
 		curRight: nil,
@@ -78,7 +78,7 @@ func (m *Merger) Next() *query.Record {
 			return r
 		}
 		val := m.extractValue(r)
-		if m.lastVal != nil && m.less(val, m.lastVal) == 0 {
+		if m.lastVal != nil && m.cmp(val, m.lastVal) == 0 {
 			// Skip duplicate.
 			m.dups++
 			continue
@@ -116,7 +116,7 @@ func (m *Merger) mergeNext() *query.Record {
 	leftVal := m.extractValue(m.curLeft)
 	rightVal := m.extractValue(m.curRight)
 
-	compared := m.less(leftVal, rightVal)
+	compared := m.cmp(leftVal, rightVal)
 	chooseLeft := compared <= 0
 	if m.order == seq.DocsOrderDesc {
 		chooseLeft = compared >= 0
@@ -217,7 +217,7 @@ func (m *Merger) extractValue(r *query.Record) any {
 	}
 }
 
-func createLessFunc() func(any, any) int {
+func createCmpFunc() func(any, any) int {
 	return func(a, b any) int {
 		switch v := a.(type) {
 		case seq.ID:

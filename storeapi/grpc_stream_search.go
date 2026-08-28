@@ -132,6 +132,7 @@ func (g *GrpcV1) doStreamSearch(
 		},
 	})
 	if err != nil {
+		_ = producer.Finalize()
 		if util.IsCancelled(ctx) {
 			logger.Info("stream search request is canceled")
 			return nil
@@ -168,11 +169,13 @@ func (g *GrpcV1) doStreamSearch(
 
 	outcome, err := g.streamSearchRecords(ctx, stream, producer, controlCh, recvErrCh)
 	if err != nil {
+		_ = producer.Finalize()
 		return fmt.Errorf("store can't stream records: %w", err)
 	}
 
 	// CANCEL: terminate immediately, no summary.
 	if outcome == outcomeCancel {
+		_ = producer.Finalize()
 		return nil
 	}
 
@@ -322,14 +325,13 @@ func (g *GrpcV1) buildProducer(
 
 	typing := docsTyping()
 	var offset int
-	var limit int
 	var fieldsFilter *exec.FieldsFilter
 	var docFilter *exec.DocFilter
 
 	for _, pipe := range seqql.Pipes {
 		switch p := pipe.(type) {
 		case *parser.PipeLimit:
-			limit = p.Limit
+			searchParams.Limit = p.Limit
 		case *parser.PipeOffset:
 			offset = p.Offset
 		case *parser.PipeSort:
@@ -369,9 +371,9 @@ func (g *GrpcV1) buildProducer(
 	if fieldsFilter != nil {
 		producer = exec.NewDocProjector(producer, docDataColIdx, fieldsFilter)
 	}
-	if limit > 0 {
+	if searchParams.Limit > 0 {
 		// set limit=limit+offset and offset=0 to merge stores' results correctly on proxy
-		producer = exec.NewLimiter(producer, uint32(limit+offset), 0)
+		producer = exec.NewLimiter(producer, uint32(searchParams.Limit+offset), 0)
 	}
 
 	return producer, typing, nil

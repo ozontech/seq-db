@@ -15,7 +15,7 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
-const searcherBatchLimit = 1000
+const searcherBatchLimit = 100
 
 // SearcherDataSource is limitless: for the documents
 // path it walks the matched set in fixed-size batches via cursor pagination:
@@ -39,7 +39,7 @@ type SearcherDataSource struct {
 	fetcher     *fracmanager.Fetcher
 
 	qpr         *seq.QPR
-	aggs        []*storeapi.SearchResponse_Agg
+	agg         *storeapi.SearchResponse_Agg
 	aggsScanned bool
 
 	curIdx int
@@ -111,7 +111,7 @@ func (s *SearcherDataSource) nextDoc() *query.Record {
 	idSrc := s.qpr.IDs[s.curIdx]
 	s.curIdx++
 
-	docs, err := s.fetcher.FetchDocs(s.Ctx(), s.fracs, []seq.IDSource{idSrc}, false)
+	docs, err := s.fetcher.FetchDocs(s.Ctx(), s.fracs, []seq.IDSource{idSrc}, true)
 	if err != nil {
 		s.err = err
 		return nil
@@ -129,16 +129,11 @@ func (s *SearcherDataSource) nextAgg() *query.Record {
 		s.aggsScanned = true
 	}
 
-	if len(s.aggs) == 0 {
+	if s.agg == nil || s.curIdx >= len(s.agg.Timeseries) {
 		return nil
 	}
 
-	agg := s.aggs[0]
-	if agg == nil || s.curIdx >= len(agg.Timeseries) {
-		return nil
-	}
-
-	record := makeAggRecord(agg.Timeseries[s.curIdx])
+	record := makeAggRecord(s.agg.Timeseries[s.curIdx])
 
 	s.curIdx++
 
@@ -163,18 +158,15 @@ func (s *SearcherDataSource) scanBatch() error {
 		s.fracs, s.release = s.fracManager.AcquireFractionsInRange(params.From, params.To)
 	}
 
-	params.Limit = searcherBatchLimit
+	if params.Limit == 0 || params.Limit > searcherBatchLimit {
+		params.Limit = searcherBatchLimit
+	}
 
 	if s.batchNo > 0 {
-		// Advance the cursor and narrow the time range so the fractions filter skips already-served data.
+		// Advance the cursor
 		params.WithTotal = false
 		lastID := s.qpr.IDs[len(s.qpr.IDs)-1].ID
 		params.OffsetId = lastID
-		if params.Order == seq.DocsOrderDesc {
-			params.To = lastID.MID
-		} else {
-			params.From = lastID.MID
-		}
 	}
 
 	qpr, err := s.searcher.SearchDocs(s.Ctx(), s.fracs, params, s.tr)
@@ -213,7 +205,7 @@ func (s *SearcherDataSource) scanAgg() error {
 
 	s.qpr = qpr
 	s.total = qpr.Total
-	s.aggs = buildAggs(qpr)
+	s.agg = buildAgg(qpr)
 	return nil
 }
 
@@ -229,44 +221,41 @@ func qprErrors(qpr *seq.QPR) error {
 	return resErr
 }
 
-func buildAggs(qpr *seq.QPR) []*storeapi.SearchResponse_Agg {
-	aggsBuf := make([]storeapi.SearchResponse_Agg, len(qpr.Aggs))
-	aggs := make([]*storeapi.SearchResponse_Agg, len(qpr.Aggs))
+func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
+	if len(qpr.Aggs) == 0 {
+		return nil
+	}
+	// we expect only one agg
+	fromAgg := qpr.Aggs[0]
 
-	for i, fromAgg := range qpr.Aggs {
-		curAgg := &aggsBuf[i]
+	agg := &storeapi.SearchResponse_Agg{}
+	from := fromAgg.SamplesByBin
+	to := make(map[string]*storeapi.SearchResponse_Histogram, len(from))
 
-		from := fromAgg.SamplesByBin
-		to := make(map[string]*storeapi.SearchResponse_Histogram, len(from))
-
-		for bin, hist := range from {
-			pbhist := &storeapi.SearchResponse_Histogram{
-				Min:       hist.Min,
-				Max:       hist.Max,
-				Sum:       hist.Sum,
-				Total:     hist.Total,
-				Samples:   hist.Samples,
-				NotExists: hist.NotExists,
-			}
-
-			curAgg.Timeseries = append(curAgg.Timeseries,
-				&storeapi.SearchResponse_Bin{
-					Label: bin.Token,
-					Ts:    timestamppb.New(bin.MID.Time()),
-					Hist:  pbhist,
-				},
-			)
-
-			to[bin.Token] = pbhist
+	for bin, hist := range from {
+		pbhist := &storeapi.SearchResponse_Histogram{
+			Min:       hist.Min,
+			Max:       hist.Max,
+			Sum:       hist.Sum,
+			Total:     hist.Total,
+			Samples:   hist.Samples,
+			NotExists: hist.NotExists,
 		}
 
-		curAgg.NotExists = fromAgg.NotExists
-		curAgg.AggHistogram = to
+		agg.Timeseries = append(agg.Timeseries,
+			&storeapi.SearchResponse_Bin{
+				Label: bin.Token,
+				Ts:    timestamppb.New(bin.MID.Time()),
+				Hist:  pbhist,
+			},
+		)
 
-		aggs[i] = curAgg
+		to[bin.Token] = pbhist
 	}
 
-	return aggs
+	agg.NotExists = fromAgg.NotExists
+	agg.AggHistogram = to
+	return agg
 }
 
 func makeDocumentRecord(id seq.ID, payload []byte) *query.Record {

@@ -44,9 +44,6 @@ type DistributedAggregator struct {
 	sortingBuf []*query.Record
 
 	curIdx int
-	// err holds the first error encountered while reading the inputs. It is
-	// reported via Finalize.
-	err error
 }
 
 func NewDistributedAggregator(
@@ -151,9 +148,6 @@ func (a *DistributedAggregator) Finalize() *query.Summary {
 		if firstErr == nil && s.Err != nil {
 			firstErr = s.Err
 		}
-	}
-	if firstErr == nil {
-		firstErr = a.err
 	}
 	return &query.Summary{Total: total, Err: firstErr}
 }

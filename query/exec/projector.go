@@ -14,17 +14,9 @@ type FieldsFilter struct {
 }
 
 type DocProjector struct {
-	input      query.RecordProducer
-	colIdx     int
-	filter     *FieldsFilter
-	decoderBuf []byte
-
-	// roots holds the input records whose decoded document root has been
-	// mutated during projection. The mutated root lives only inside the input
-	// record (the output record carries freshly encoded raw bytes with
-	// decoded=nil), so the projector is the last owner and must release these
-	// roots in Finalize.
-	roots []*query.Record
+	input  query.RecordProducer
+	colIdx int
+	filter *FieldsFilter
 }
 
 func NewDocProjector(
@@ -53,7 +45,7 @@ func (p *DocProjector) Next() *query.Record {
 		for _, field := range p.filter.Fields {
 			decoder.Dig(field).Suicide()
 		}
-		newRecord = p.makeRecordWithNewVals(r, decoder.Encode(p.decoderBuf[:0]))
+		newRecord = p.makeRecordWithNewVals(r, decoder.Encode(nil))
 	} else {
 		// Keep only given fields.
 		// fieldsToRemove contains fields that should be removed.
@@ -68,19 +60,16 @@ func (p *DocProjector) Next() *query.Record {
 		for _, field := range fieldsToRemove {
 			field.Suicide()
 		}
-		newRecord = p.makeRecordWithNewVals(r, decoder.Encode(p.decoderBuf[:0]))
+		newRecord = p.makeRecordWithNewVals(r, decoder.Encode(nil))
 	}
 
-	// The input record holds the mutated root and won't be seen downstream;
-	// keep it for release in Finalize.
-	p.roots = append(p.roots, r)
+	// The original root won't be seen downstream, release it immediately.
+	r.Release()
+
 	return newRecord
 }
 
 func (p *DocProjector) Finalize() *query.Summary {
-	for _, r := range p.roots {
-		r.Release()
-	}
 	return p.input.Finalize()
 }
 
