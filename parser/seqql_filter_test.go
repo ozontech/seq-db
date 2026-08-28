@@ -76,6 +76,7 @@ func TestSeqQLAll(t *testing.T) {
 	test("*", "*")
 	test("((*))", "*")
 	test("((*) OR service:foo) AND service:bar", "((* or service:foo) and service:bar)")
+	test("_exists_:*", "_exists_:*")
 
 	// Propagate "not".
 	test(`NOT NOT text:a`, `text:a`)
@@ -106,7 +107,7 @@ func TestSeqQLAll(t *testing.T) {
 	test(`service:"some*thing*"`, `service:some*thing*`)
 	test(`service:some*thing*`, `service:some*thing*`)
 	test(`service:*thing*`, `service:*thing*`)
-	test(`service:"*"`, `service:*`)
+	test(`service:"*"`, `_exists_:service`)
 	test(`service:"cms"*"inter"*"api"`, `service:cms*inter*api`)
 
 	// Test keyword wildcards.
@@ -129,7 +130,7 @@ func TestSeqQLAll(t *testing.T) {
 	test(`keyword:'#''$'"^"`, `keyword:"#$^"`)
 	test(`message:'#''$'"^"`, `message:""`)
 	test(`'#':'#'`, `"#":"#"`)
-	test(`"*":"*"`, `"\*":*`)
+	test(`"*":"*"`, `_exists_:"\*"`)
 	test("`*`:`*`", `"\*":"\*"`)
 	test(`m:a AND OR : r`, `(m:a and "OR":r)`)
 
@@ -143,8 +144,8 @@ func TestSeqQLAll(t *testing.T) {
 	test(`service:a or not service:b or service:c`, `(not (not service:c and (not service:a and service:b)))`)
 	test(`not (service:a or service:c)`, `(not (service:a or service:c))`)
 	test(`NOT Not service:a`, `service:a`)
-	test(`service:*`, `service:*`)
-	test(` service : * `, `service:*`)
+	test(`service:*`, `_exists_:service`)
+	test(` service : * `, `_exists_:service`)
 	test(`service:a or service:b AND NOT service:c`, `(service:a or (not service:c and service:b))`)
 
 	// Test comments.
@@ -162,10 +163,10 @@ service:"wms-svc-logistics-megasort" and level:"#"
 
 	// Test complex search with wildcards.
 	test(`text:"\*\**"`, `text:"\*\*"*`)
-	test(`text:'value=*' AND text:'value="\*"*'`, `((text:value and text:*) and ((text:value and text:"\*") and text:*))`)
-	test(`text:value'="\*\*"*' AND text:"\*\*"`, `(((text:value and text:"\*\*") and text:*) and text:"\*\*")`)
+	test(`text:'value=*' AND text:'value="\*"*'`, `((text:value and _exists_:text) and ((text:value and text:"\*") and _exists_:text))`)
+	test(`text:value'="\*\*"*' AND text:"\*\*"`, `(((text:value and text:"\*\*") and _exists_:text) and text:"\*\*")`)
 	test(`text:'value=*' AND text:'value="\*"*' AND text:'value="\*\*"*' AND text:"\*\*" AND text:"\*\**"`,
-		`(((((text:value and text:*) and ((text:value and text:"\*") and text:*)) and ((text:value and text:"\*\*") and text:*)) and text:"\*\*") and text:"\*\*"*)`)
+		`(((((text:value and _exists_:text) and ((text:value and text:"\*") and _exists_:text)) and ((text:value and text:"\*\*") and _exists_:text)) and text:"\*\*") and text:"\*\*"*)`)
 
 	// Test escape.
 	test("keyword:`+7 995 28 07`", "keyword:\"+7 995 28 07\"")
@@ -215,8 +216,8 @@ service:"wms-svc-logistics-megasort" and level:"#"
 
 	// Test filter 'in'.
 	test(`service:in(auth-api, api-gateway, clickhouse-shard-*)`, `((service:auth-api or service:api-gateway) or service:clickhouse-shard-*)`)
-	test(`service:in(*, *, *)`, `((service:* or service:*) or service:*)`)
-	test(`service:in(*)`, `service:*`)
+	test(`service:in(*, *, *)`, `((_exists_:service or _exists_:service) or _exists_:service)`)
+	test(`service:in(*)`, `_exists_:service`)
 	test(`level:in(1)`, `level:1`)
 	test(`level:in(1, '2', 'three')`, `((level:1 or level:2) or level:three)`)
 	test(`level:in(1, '2', ''*3*"")`, `((level:1 or level:2) or level:*3*)`)
