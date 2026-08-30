@@ -290,7 +290,7 @@ func (ti *sealedTokenIndex) GetFreqsByTIDs(tids []uint32, field string) []uint32
 			continue
 		}
 		entry := tokenTable.GetEntryByTID(tid, field)
-		block := ti.tokenBlockLoader.Load(entry.BlockIndex)
+		block := ti.tokenBlockLoader.GetTokenBlock(entry.BlockIndex)
 		freqs[i] = block.GetFreq(entry.GetIndexInTokensBlock(tid))
 	}
 	return freqs

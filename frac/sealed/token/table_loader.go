@@ -50,8 +50,8 @@ func NewTableLoader(
 
 type tableLoader TableLoader
 
-func (s *tableLoader) Load(uint32) (Table, int, error) {
-	l := (*TableLoader)(s)
+func (tl *tableLoader) Load(uint32) (Table, int, error) {
+	l := (*TableLoader)(tl)
 
 	var (
 		blocks []TableBlock

@@ -35,9 +35,9 @@ func NewIndexReader(
 
 type registryLoader IndexReader
 
-func (r *registryLoader) Load(uint32) ([]byte, int, error) {
+func (rl *registryLoader) Load(uint32) ([]byte, int, error) {
 	prefix := make([]byte, 16)
-	n, err := r.limiter.ReadAt(r.reader, prefix, 0)
+	n, err := rl.limiter.ReadAt(rl.reader, prefix, 0)
 	if err != nil {
 		return nil, 0, fmt.Errorf("can't read disk registry, %s", err.Error())
 	}
@@ -50,7 +50,7 @@ func (r *registryLoader) Load(uint32) ([]byte, int, error) {
 	size := binary.LittleEndian.Uint64(prefix[8:])
 
 	buf := make([]byte, size)
-	n, err = r.limiter.ReadAt(r.reader, buf, int64(pos))
+	n, err = rl.limiter.ReadAt(rl.reader, buf, int64(pos))
 	if err != nil && err != io.EOF {
 		return nil, 0, fmt.Errorf("can't read disk registry, %s", err.Error())
 	}

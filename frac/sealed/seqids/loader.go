@@ -37,12 +37,12 @@ type Loader struct {
 
 type midsLoader Loader
 
-func (l *midsLoader) midBlockIndex(index uint32) uint32 {
-	return l.table.StartBlockIndex + index*3
+func (ml *midsLoader) midBlockIndex(index uint32) uint32 {
+	return ml.table.StartBlockIndex + index*3
 }
 
-func (s *midsLoader) Load(index uint32) ([]byte, int, error) {
-	data, _, err := s.reader.ReadIndexBlock(s.midBlockIndex(index), nil)
+func (ml *midsLoader) Load(index uint32) ([]byte, int, error) {
+	data, _, err := ml.reader.ReadIndexBlock(ml.midBlockIndex(index), nil)
 	return data, cap(data), err
 }
 
@@ -67,8 +67,8 @@ func (l *Loader) GetMIDsBlock(index uint32, unpackCache *unpackCache) (BlockMIDs
 
 type ridsLoader Loader
 
-func (s *ridsLoader) Load(index uint32) (BlockRIDs, int, error) {
-	l := (*Loader)(s)
+func (rl *ridsLoader) Load(index uint32) (BlockRIDs, int, error) {
+	l := (*Loader)(rl)
 
 	data, _, err := l.reader.ReadIndexBlock(l.ridBlockIndex(index), nil)
 	if err != nil {
@@ -99,8 +99,8 @@ func (l *Loader) GetRIDsBlock(index uint32) (BlockRIDs, error) {
 
 type paramsLoader Loader
 
-func (s *paramsLoader) Load(index uint32) (BlockParams, int, error) {
-	l := (*Loader)(s)
+func (pl *paramsLoader) Load(index uint32) (BlockParams, int, error) {
+	l := (*Loader)(pl)
 
 	data, _, err := l.reader.ReadIndexBlock(l.paramsBlockIndex(index), nil)
 	if err != nil {
