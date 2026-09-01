@@ -24,8 +24,8 @@ func (g *grpcV1) GetAggregation(
 		Aggs:  req.Aggs,
 	}
 
-	if len(req.Aggs) == 1 && shouldTryStreamSearch(g.config.TryStreamSearch, proxyReq) {
-		cResp, err := g.emulateStreamSearch(ctx, proxyReq, nil)
+	if len(req.Aggs) == 1 && shouldUseStreamSearch(g.config.UseStreamSearch, proxyReq) {
+		cResp, err := g.useStreamSearch(ctx, proxyReq, nil)
 		if err != nil {
 			return nil, err
 		}

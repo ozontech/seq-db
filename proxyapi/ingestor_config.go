@@ -20,7 +20,7 @@ type APIConfig struct {
 	GatewayAddr                       string
 	AsyncSearchMaxDocumentsPerRequest int64
 	// If true, suitable ComplexSearch queries will be served through stream search implementation.
-	TryStreamSearch bool
+	UseStreamSearch bool
 }
 
 type IngestorConfig struct {

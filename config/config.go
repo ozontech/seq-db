@@ -355,7 +355,7 @@ type Config struct {
 		// If zero then there is no limit.
 		MaxRegexTokensCheck int `config:"max_regex_tokens_check" default:"0"`
 		// If true, suitable ComplexSearch queries will be served through stream search implementation.
-		TryStreamSearch bool `config:"try_stream_search"`
+		UseStreamSearch bool `config:"use_stream_search"`
 	} `config:"experimental"`
 }
 

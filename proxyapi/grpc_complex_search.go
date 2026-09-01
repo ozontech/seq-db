@@ -34,8 +34,8 @@ func (g *grpcV1) ComplexSearch(
 
 	tr := querytracer.New(req.Query.Explain, "proxy/ComplexSearch")
 
-	if shouldTryStreamSearch(g.config.TryStreamSearch, req) {
-		return g.emulateStreamSearch(ctx, req, tr)
+	if shouldUseStreamSearch(g.config.UseStreamSearch, req) {
+		return g.useStreamSearch(ctx, req, tr)
 	}
 
 	sResp, obs, err := g.doSearch(ctx, req, true, true, tr)
@@ -91,7 +91,7 @@ func aggregationArgsFromProto(aggs []*seqproxyapi.AggQuery) []seq.AggregateArgs 
 	return args
 }
 
-func (g *grpcV1) emulateStreamSearch(
+func (g *grpcV1) useStreamSearch(
 	ctx context.Context,
 	req *seqproxyapi.ComplexSearchRequest,
 	tr *querytracer.Tracer,
@@ -143,9 +143,7 @@ func (g *grpcV1) emulateStreamSearch(
 		summary.Err = partialErr
 	}
 
-	if req.Query.Explain {
-		tr.Done()
-	}
+	tr.Done()
 
 	resp := &seqproxyapi.ComplexSearchResponse{
 		Total:   int64(summary.Total),
@@ -201,8 +199,8 @@ func readAggregations(storesStream query.RecordProducer) []*seqproxyapi.Aggregat
 	return []*seqproxyapi.Aggregation{{Buckets: buckets}}
 }
 
-func shouldTryStreamSearch(tryStreamSearch bool, req *seqproxyapi.ComplexSearchRequest) bool {
-	if !tryStreamSearch {
+func shouldUseStreamSearch(useStreamSearch bool, req *seqproxyapi.ComplexSearchRequest) bool {
+	if !useStreamSearch {
 		return false
 	}
 	if (req.Hist != nil && req.Hist.Interval != "") || len(req.Aggs) > 1 {
@@ -232,7 +230,7 @@ func buildStreamSearchReqFromComplexSearchReq(
 	}
 
 	// stream search serves either documents or a single agg.
-	// shouldTryStreamSearch guarantees single agg and no histogram.
+	// shouldUseStreamSearch guarantees single agg and no histogram.
 	if len(req.Aggs) == 1 {
 		aggQuery, err := convertAggsQuery(req.Aggs)
 		if err != nil {
