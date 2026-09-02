@@ -18,7 +18,6 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/frac"
@@ -383,40 +382,24 @@ func (as *AsyncSearcher) doSearch(id string, fracProvider fractionAcquirer) {
 	}
 
 	intervals := buildIntervals(info.Request.Params.From, info.Request.Params.To)
-
-	eg, ctx := errgroup.WithContext(context.Background())
-
-intervalsLoop:
 	for _, interval := range intervals {
-
 		if _, ok := processedIntervals[intervalName(interval)]; ok {
 			continue
 		}
-
-		select {
-		case <-ctx.Done():
-			break intervalsLoop
-		case as.rateLimit <- struct{}{}:
-			eg.Go(func() error {
-				defer func() { <-as.rateLimit }()
-
-				if as.shouldStopSearch(id) {
-					return nil
-				}
-				if err := as.acquireAndProcessFracsInInterval(interval, info, fracProvider); err != nil {
-					return err
-				}
-				return nil
-			})
+		if as.shouldStopSearch(id) {
+			return
 		}
-	}
 
-	if err := eg.Wait(); err != nil {
-		as.updateSearchInfo(id, func(info *asyncSearchInfo) {
-			info.Error = err.Error()
-			info.Finished = true
-		})
-		return
+		as.rateLimit <- struct{}{}
+		if err := as.acquireAndProcessFracsInInterval(interval, info, fracProvider); err != nil {
+			<-as.rateLimit
+			as.updateSearchInfo(id, func(info *asyncSearchInfo) {
+				info.Error = err.Error()
+				info.Finished = true
+			})
+			return
+		}
+		<-as.rateLimit
 	}
 
 	as.updateSearchInfo(id, func(info *asyncSearchInfo) {
