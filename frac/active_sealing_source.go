@@ -5,10 +5,10 @@ import (
 	"encoding/binary"
 	"io"
 	"iter"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/units"
@@ -96,9 +96,17 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 }
 
 func sortFields(tl *TokenList) ([]string, [][]uint32) {
-	fields := slices.Collect(maps.Keys(tl.FieldTIDs))
-	slices.Sort(fields)
+	fields := make([]string, 0, len(tl.FieldTIDs))
 
+	for field := range tl.FieldTIDs {
+		// NOTE(dkharms): Detach the field name from the shared token buffer so the
+		// buffer can be released once the active fraction is dropped.
+		//
+		// For more information take a look at [tokenLIDsWorker].
+		fields = append(fields, strings.Clone(field))
+	}
+
+	slices.Sort(fields)
 	fieldTIDs := make([][]uint32, len(tl.FieldTIDs))
 	for i, field := range fields {
 		// Make a copy because this memory is shared
