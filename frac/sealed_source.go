@@ -31,9 +31,22 @@ type SealedSource struct {
 func NewSealedSource(f *Sealed) *SealedSource {
 	f.init(true)
 
-	idReader := f.mustGetReader(f.idReaderProvider)
-	lidReader := f.mustGetReader(f.lidReaderProvider)
-	tokenReader := f.mustGetReader(f.tokenReaderProvider)
+	var (
+		tokenReader storage.IndexReader
+		lidReader   storage.IndexReader
+		idReader    storage.IndexReader
+	)
+
+	if f.IsLegacy {
+		legacyReader := f.mustGetReader(f.legacyReaderProvider)
+		tokenReader = legacyReader
+		lidReader = legacyReader
+		idReader = legacyReader
+	} else {
+		tokenReader = f.mustGetReader(f.tokenReaderProvider)
+		lidReader = f.mustGetReader(f.lidReaderProvider)
+		idReader = f.mustGetReader(f.idReaderProvider)
+	}
 
 	return &SealedSource{
 		f: f,
