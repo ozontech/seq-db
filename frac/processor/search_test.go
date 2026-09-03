@@ -53,7 +53,7 @@ func TestIterateEvalTreeDuplicateIDsAtBatchBoundary(t *testing.T) {
 		Order: seq.DocsOrderDesc,
 	}
 
-	total, ids, _, _, err := iterateEvalTree(context.Background(), params, idx, evalTree, nil, stopwatch.New())
+	total, ids, _, _, err := iterateEvalTree(context.Background(), params, idx, evalTree, nil, 1, 6, stopwatch.New())
 	require.NoError(t, err)
 
 	// 6 LIDs exist and the limit is not yet satisfied after the duplicate,
