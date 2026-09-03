@@ -38,4 +38,29 @@ func TestTrimOuterParens(t *testing.T) {
 	test("()", "")
 	test("(", "(")
 	test(")", ")")
+
+	// Double-quoted strings.
+	test(`(((body: ":)" | fields level)))`, `body: ":)" | fields level`)
+	test(`(msg: "a ( b ) c")`, `msg: "a ( b ) c"`)
+	test(`((msg: "(test)"))`, `msg: "(test)"`)
+	test(`((msg: "open ( no close"))`, `msg: "open ( no close"`)
+	test(`(msg: ")")`, `msg: ")"`)
+	test(`(msg: "(" | fields b)`, `msg: "(" | fields b`)
+
+	// Single-quoted strings.
+	test(`(msg: '(' | fields b)`, `msg: '(' | fields b`)
+	test(`(msg: 'foo ) bar')`, `msg: 'foo ) bar'`)
+	test(`((msg: '))'))`, `msg: '))'`)
+
+	// Escaped quotes inside strings.
+	test(`(msg: "a\"b)" | fields b)`, `msg: "a\"b)" | fields b`)
+	test(`((msg: "\""))`, `msg: "\""`)
+	test(`(msg: 'it\'s ) ok' | fields b)`, `msg: 'it\'s ) ok' | fields b`)
+
+	// Single-quote inside double-quotes.
+	test(`((msg: "\"'"))`, `msg: "\"'"`)
+
+	// Raw strings (backtick).
+	test("(msg: `a ( b ) c`)", "msg: `a ( b ) c`")
+	test("((msg: `)` | fields b))", "msg: `)` | fields b")
 }

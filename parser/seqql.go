@@ -84,26 +84,50 @@ func trimOuterParens(q string) string {
 		if len(q) < 2 || q[0] != '(' || q[len(q)-1] != ')' {
 			return q
 		}
-
-		depth := 0
-		outer := true
-		for i := 0; i < len(q); i++ {
-			switch q[i] {
-			case '(':
-				depth++
-			case ')':
-				depth--
-				if depth == 0 && i != len(q)-1 {
-					outer = false
-				}
-			}
-		}
-		if !outer {
+		if !wrapsWholeQuery(q) {
 			return q
 		}
-
-		q = strings.TrimSpace(q[1 : len(q)-1])
+		q = q[1 : len(q)-1]
 	}
+}
+
+func wrapsWholeQuery(s string) bool {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\'', '"':
+			// Skip quoted string literals so that parentheses inside them do not affect depth tracking.
+			i += skipQuoted(s[i:])
+		case '`':
+			// Raw strings have no escape sequences: find the closing backtick.
+			if j := strings.IndexByte(s[i+1:], '`'); j >= 0 {
+				i += j + 1
+			} else {
+				i = len(s) - 1
+			}
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 && i != len(s)-1 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func skipQuoted(s string) int {
+	quote := s[0]
+	for i := 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++ // skip the escaped char
+		case quote:
+			return i
+		}
+	}
+	return len(s) - 1
 }
 
 func ParseSeqQL(q string, mapping seq.Mapping) (SeqQLQuery, error) {
