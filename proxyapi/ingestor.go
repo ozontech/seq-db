@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/ozontech/seq-db/network/grpcutil"
 	"github.com/ozontech/seq-db/proxy/stores"
 
@@ -117,7 +118,13 @@ func NewIngestor(config IngestorConfig, store *storeapiclient.Store) (*Ingestor,
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &humanReadableMarshaler{}),
 	)
 	err := seqproxyapi.RegisterSeqProxyApiHandlerFromEndpoint(ctx, grpcGateway, config.API.GatewayAddr,
-		[]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())})
+		[]grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithDefaultCallOptions(
+				grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
+				grpc.MaxCallSendMsgSize(256*int(units.MiB)),
+			),
+		})
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("register grpc handler: %s", err)
@@ -144,7 +151,14 @@ func NewIngestor(config IngestorConfig, store *storeapiclient.Store) (*Ingestor,
 
 	var mirror seqproxyapi.SeqProxyApiClient
 	if config.Search.MirrorAddr != "" {
-		conn, err := grpc.NewClient(config.Search.MirrorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(
+			config.Search.MirrorAddr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithDefaultCallOptions(
+				grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
+				grpc.MaxCallSendMsgSize(256*int(units.MiB)),
+			),
+		)
 		if err != nil {
 			logger.Error("failed to create mirror client", zap.Error(err))
 		} else {
