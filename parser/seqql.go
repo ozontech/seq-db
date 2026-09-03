@@ -29,12 +29,13 @@ func (q *SeqQLQuery) SeqQLString() string {
 // callers reject them via SeqQLQuery.ValidatePipes.
 var streamOnlyPipes = map[string]struct{}{
 	"stats":  {},
+	"filter": {},
 	"sort":   {},
 	"limit":  {},
 	"offset": {},
 }
 
-// ValidateStreamPipes returns an error if the query contains any stream-only pipe (stats,
+// ValidateStreamPipes returns an error if the query contains any stream-only pipe (stats, filter,
 // sort, limit, offset). It is used by methods that do not support stream-only pipes
 // to reject them after parsing. ParseSeqQL itself does not perform this check.
 func (q *SeqQLQuery) ValidateStreamPipes() error {

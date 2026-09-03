@@ -13,6 +13,7 @@ import (
 
 	seqproxyapi "github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	search "github.com/ozontech/seq-db/proxy/search"
+	query "github.com/ozontech/seq-db/query"
 	querytracer "github.com/ozontech/seq-db/querytracer"
 	seq "github.com/ozontech/seq-db/seq"
 )
@@ -158,6 +159,22 @@ func (m *MockSearchIngestor) Status(ctx context.Context) *search.IngestorStatus 
 func (mr *MockSearchIngestorMockRecorder) Status(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockSearchIngestor)(nil).Status), ctx)
+}
+
+// StreamSearch mocks base method.
+func (m *MockSearchIngestor) StreamSearch(ctx context.Context, sr *search.StreamSearchRequest, tr *querytracer.Tracer) (query.RecordProducer, search.ControlBroadcaster, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StreamSearch", ctx, sr, tr)
+	ret0, _ := ret[0].(query.RecordProducer)
+	ret1, _ := ret[1].(search.ControlBroadcaster)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// StreamSearch indicates an expected call of StreamSearch.
+func (mr *MockSearchIngestorMockRecorder) StreamSearch(ctx, sr, tr interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StreamSearch", reflect.TypeOf((*MockSearchIngestor)(nil).StreamSearch), ctx, sr, tr)
 }
 
 // MockMappingProvider is a mock of MappingProvider interface.

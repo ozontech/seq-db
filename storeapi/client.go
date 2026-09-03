@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"slices"
+	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -128,4 +129,144 @@ func (i inMemoryAPIClient) Fetch(ctx context.Context, in *storeapi.FetchRequest,
 
 func (i inMemoryAPIClient) Status(ctx context.Context, in *storeapi.StatusRequest, _ ...grpc.CallOption) (*storeapi.StatusResponse, error) {
 	return i.store.GrpcV1().Status(ctx, in)
+}
+
+// streamSearchPipe is the shared channel plumbing connecting the in-memory
+// StreamSearch client with the StreamSearch server handler.
+// The server handler runs in a goroutine started by inMemoryAPIClient.StreamSearch.
+type streamSearchPipe struct {
+	ctx context.Context
+
+	// reqCh carries StreamSearchRequest messages from client to server.
+	reqCh chan *storeapi.StreamSearchRequest
+	// resCh carries StreamSearchResponse messages from server to client.
+	resCh chan *storeapi.StreamSearchResponse
+
+	// reqClosed is closed when the client will send no more requests, so the
+	// server's Recv returns io.EOF. Closed at most once.
+	reqClosed chan struct{}
+	closeOnce sync.Once
+
+	// serverDone is closed when the server handler returns; serverErr holds its
+	// result. The client reads them after resCh is closed.
+	serverDone chan struct{}
+	serverErr  error
+}
+
+func newStreamSearchPipe(ctx context.Context) *streamSearchPipe {
+	return &streamSearchPipe{
+		ctx:        ctx,
+		reqCh:      make(chan *storeapi.StreamSearchRequest, 1),
+		resCh:      make(chan *storeapi.StreamSearchResponse, 1),
+		reqClosed:  make(chan struct{}),
+		serverDone: make(chan struct{}),
+	}
+}
+
+func (p *streamSearchPipe) closeReq() {
+	p.closeOnce.Do(func() { close(p.reqClosed) })
+}
+
+type storeAPIStreamSearchServer struct {
+	grpc.ServerStream
+	*streamSearchPipe
+}
+
+func (s storeAPIStreamSearchServer) Send(m *storeapi.StreamSearchResponse) error {
+	select {
+	case s.resCh <- m.CloneVT():
+		return nil
+	case <-s.serverDone:
+		return io.EOF
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
+}
+
+func (s storeAPIStreamSearchServer) Recv() (*storeapi.StreamSearchRequest, error) {
+	select {
+	case m, ok := <-s.reqCh:
+		if !ok {
+			return nil, io.EOF
+		}
+		return m, nil
+	case <-s.reqClosed:
+		return nil, io.EOF
+	case <-s.ctx.Done():
+		return nil, s.ctx.Err()
+	}
+}
+
+func (s storeAPIStreamSearchServer) Context() context.Context { return s.ctx }
+
+type storeAPIStreamSearchClient struct {
+	grpc.ClientStream
+	*streamSearchPipe
+}
+
+func (c *storeAPIStreamSearchClient) Header() (metadata.MD, error) {
+	md := make(metadata.MD)
+	md[consts.StoreProtocolVersionHeader] = []string{config.StoreProtocolVersion2.String()}
+	return md, nil
+}
+
+func (c *storeAPIStreamSearchClient) Context() context.Context { return c.ctx }
+
+func (c *storeAPIStreamSearchClient) CloseSend() error { return nil }
+
+func (c *storeAPIStreamSearchClient) Send(m *storeapi.StreamSearchRequest) error {
+	select {
+	case c.reqCh <- m.CloneVT():
+		return nil
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	}
+}
+
+func (c *storeAPIStreamSearchClient) Recv() (*storeapi.StreamSearchResponse, error) {
+	// If the server handler has already finished, we need to drain whatever it produced before cancelling the context.
+	select {
+	case m, ok := <-c.resCh:
+		if !ok {
+			return nil, c.waitServerErr()
+		}
+		return m, nil
+	default:
+	}
+
+	select {
+	case m, ok := <-c.resCh:
+		if !ok {
+			return nil, c.waitServerErr()
+		}
+		return m, nil
+	case <-c.ctx.Done():
+		return nil, c.ctx.Err()
+	}
+}
+
+func (c *storeAPIStreamSearchClient) waitServerErr() error {
+	<-c.serverDone
+	if c.serverErr != nil {
+		return c.serverErr
+	}
+	return io.EOF
+}
+
+func (i inMemoryAPIClient) StreamSearch(ctx context.Context, opts ...grpc.CallOption) (storeapi.StoreApi_StreamSearchClient, error) {
+	setProtocolVersionHeader(opts...)
+	pipeCtx, cancel := context.WithCancel(ctx)
+	p := newStreamSearchPipe(pipeCtx)
+
+	go func() {
+		defer cancel()
+		// Closing resCh unblocks the client's Recv with io.EOF (or serverErr).
+		// closeReq drains the request side so the handler's Recv does not block.
+		defer p.closeReq()
+		defer close(p.resCh)
+		defer close(p.serverDone)
+		p.serverErr = i.store.GrpcV1().StreamSearch(storeAPIStreamSearchServer{streamSearchPipe: p})
+	}()
+
+	return &storeAPIStreamSearchClient{streamSearchPipe: p}, nil
 }

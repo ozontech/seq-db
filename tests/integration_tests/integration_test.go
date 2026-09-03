@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1956,6 +1957,7 @@ func sendStreamSearchQuery(t *testing.T, stream seqproxyapi.SeqProxyApi_StreamSe
 				From:      timestamppb.New(now.Add(-time.Hour)),
 				To:        timestamppb.New(now.Add(time.Hour)),
 				WithTotal: true,
+				Explain:   true,
 			},
 		},
 	}))
@@ -2009,7 +2011,11 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 	for i := range totalDocs {
 		origDocs[i] = fmt.Sprintf(`{"service":"a", "trace_id":"%d", "ts":%q}`, i, getNextTs())
 	}
-	setup.Bulk(t, env.IngestorBulkAddr(), origDocs)
+	const bulkBatchSize = 1000
+	for i := 0; i < totalDocs; i += bulkBatchSize {
+		end := min(i+bulkBatchSize, totalDocs)
+		setup.Bulk(t, env.IngestorBulkAddr(), origDocs[i:end])
+	}
 	env.WaitIdle()
 
 	streamQuery := func(limit int) string {
@@ -2072,6 +2078,8 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 				r.True(finalizeSent, "got summary without finalize")
 				r.Greater(gotRecordsCount, 0)
 				r.Less(gotRecordsCount, totalDocs, "finalize should stop the stream before all data is sent")
+				r.Equal(uint64(totalDocs), v.Summary.GetTotal(), "finalize must not lose the store-reported total")
+				r.Equal(seqproxyapi.ErrorCode_ERROR_CODE_NO, v.Summary.GetError().GetCode())
 				return
 			}
 		}
@@ -2130,6 +2138,75 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 			}
 		}
 		r.Equal(totalDocs, gotBucketsCount, "each distinct `trace_id` value should produce one bucket")
+	})
+
+	t.Run("timeseries aggregation stream", func(t *testing.T) {
+		// Ingest documents for a distinct service spread across two
+		// minute-aligned bins so the interval(1m) stats produce separate
+		// (trace_id, ts) buckets.
+		base := time.Now().Truncate(time.Minute)
+		bin0 := base.Add(-2 * time.Minute)
+		bin1 := base.Add(-time.Minute)
+		const docsPerBin = 5
+		tsDocs := make([]string, 0, 2*docsPerBin)
+		for i := range docsPerBin {
+			tsDocs = append(
+				tsDocs,
+				fmt.Sprintf(`{"service":"ts", "trace_id":"t0", "ts":%q}`,
+					bin0.Add(time.Duration(i)*time.Second).Format(time.RFC3339Nano),
+				),
+			)
+		}
+		for i := range docsPerBin {
+			tsDocs = append(
+				tsDocs,
+				fmt.Sprintf(`{"service":"ts", "trace_id":"t0", "ts":%q}`,
+					bin1.Add(time.Duration(i)*time.Second).Format(time.RFC3339Nano),
+				),
+			)
+		}
+		setup.Bulk(t, env.IngestorBulkAddr(), tsDocs)
+		env.WaitIdle()
+
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		sendStreamSearchQuery(t, stream, `service:ts | stats count by (trace_id) interval(1m)`)
+
+		got := make(map[uint64]float64) // ts -> summed count
+		var gotBuckets int
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				break
+			}
+			switch v := resp.ResponseType.(type) {
+			case *seqproxyapi.StreamSearchResponse_Data:
+				for _, rec := range v.Data.GetBatch().GetRecords() {
+					raw := rec.GetRawData()
+					// [key:STRING, value:FLOAT64, ts:UINT64] — proxy agg schema.
+					r.Len(raw, 3)
+					value := math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
+					ts := binary.LittleEndian.Uint64(raw[2])
+					got[ts] += value
+					gotBuckets++
+				}
+			case *seqproxyapi.StreamSearchResponse_Summary:
+				// Two minute bins, each with 5 documents -> two buckets.
+				r.Equal(2, gotBuckets, "expected one bucket per minute bin")
+				r.Len(got, 2, "expected two distinct ts bins")
+
+				wantBins := []time.Time{bin0, bin1}
+				for _, want := range wantBins {
+					wantMID := uint64(seq.MID(seq.TimeToMID(want)))
+					// Floor to the minute boundary the aggregator bins by.
+					wantBin := wantMID - wantMID%uint64(seq.MID(seq.DurationToMID(time.Minute)))
+					r.Contains(got, wantBin, "missing bin for %s", want)
+					r.Equal(float64(docsPerBin), got[wantBin], "bin %s count mismatch", want)
+				}
+			}
+		}
 	})
 
 	t.Run("missing query is rejected", func(t *testing.T) {
