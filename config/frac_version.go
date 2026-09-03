@@ -34,4 +34,4 @@ const (
 	BinaryDataV6
 )
 
-const CurrentFracVersion = BinaryDataV5
+const CurrentFracVersion = BinaryDataV6
