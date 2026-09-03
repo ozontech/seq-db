@@ -55,6 +55,7 @@ func initServer() *grpc.Server {
 	opts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(interceptors...),
 		grpc.ChainStreamInterceptor(streamInterceptors...),
+		// Proxy can now act like a store, so max msg size is same as for store
 		grpc.MaxRecvMsgSize(int(units.MiB) * 256),
 		grpc.MaxSendMsgSize(int(units.MiB) * 256),
 		grpc.StatsHandler(&tracing.ServerHandler{}),
