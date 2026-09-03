@@ -31,8 +31,8 @@ const (
 	DataTypeInt32
 	DataTypeInt64
 	DataTypeFloat64
-	// later we will need array data types, such as:
-	// StringArray, Uin64Array, Float64Array etc.
+	DataTypeFloat64Array
+	DataTypeStringArray
 )
 
 // Executors make use of val's index. the plan knows which executors use which col indexes
@@ -112,6 +112,10 @@ func (rv *RecordVals) ensureDecoded() {
 		rv.decoded = encoding.Int64FromBytes(rv.rawData)
 	case DataTypeFloat64:
 		rv.decoded = encoding.Float64FromBytes(rv.rawData)
+	case DataTypeFloat64Array:
+		rv.decoded = encoding.Float64ArrayFromBytes(rv.rawData)
+	case DataTypeStringArray:
+		rv.decoded = encoding.StringArrayFromBytes(rv.rawData)
 	default:
 		panic("BUG: unknown data type")
 	}

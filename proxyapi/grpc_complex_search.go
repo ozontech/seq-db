@@ -1,12 +1,23 @@
 package proxyapi
 
 import (
+	"cmp"
 	"context"
+	"errors"
+	"fmt"
+	"slices"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/metric"
+	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
+	"github.com/ozontech/seq-db/pkg/storeapi"
+	"github.com/ozontech/seq-db/proxy/search"
+	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -22,6 +33,11 @@ func (g *grpcV1) ComplexSearch(
 	}
 
 	tr := querytracer.New(req.Query.Explain, "proxy/ComplexSearch")
+
+	if shouldUseStreamSearch(g.config.UseStreamSearch, req) {
+		return g.useStreamSearch(ctx, req, tr)
+	}
+
 	sResp, obs, err := g.doSearch(ctx, req, true, true, tr)
 	defer func() { obs.finish("ComplexSearch", retErr) }()
 	if err != nil {
@@ -73,4 +89,201 @@ func aggregationArgsFromProto(aggs []*seqproxyapi.AggQuery) []seq.AggregateArgs 
 		}
 	}
 	return args
+}
+
+func (g *grpcV1) useStreamSearch(
+	ctx context.Context,
+	req *seqproxyapi.ComplexSearchRequest,
+	tr *querytracer.Tracer,
+) (*seqproxyapi.ComplexSearchResponse, error) {
+	metric.SearchOverall.Add(1)
+	tr.Printf("making stream search request")
+
+	streamSearchReq, err := buildStreamSearchReqFromComplexSearchReq(req)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, `can't build stream search request`)
+	}
+
+	var partialErr error
+	storesStream, broadcaster, err := g.searchIngestor.StreamSearch(ctx, streamSearchReq, tr)
+	if err != nil {
+		if errors.Is(err, consts.ErrPartialResponse) {
+			if shouldFailPartialResponse(ctx) {
+				if broadcaster != nil {
+					broadcaster.SendControl(storeapi.ControlAction_CANCEL)
+				}
+				return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
+			}
+			partialErr = err
+			metric.SearchPartial.Inc()
+		} else {
+			if broadcaster != nil {
+				broadcaster.SendControl(storeapi.ControlAction_CANCEL)
+			}
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+
+	var docs []*seqproxyapi.Document
+	var aggs []*seqproxyapi.Aggregation
+	if streamSearchReq.Agg != nil {
+		aggs = readAggregations(storesStream)
+	} else {
+		docs = readDocuments(storesStream)
+	}
+
+	// finalize to get summary
+	broadcaster.SendControl(storeapi.ControlAction_FINALIZE)
+
+	summary := storesStream.Finalize()
+	if summary == nil {
+		summary = &query.Summary{}
+	}
+	if partialErr != nil && summary.Err == nil {
+		summary.Err = partialErr
+	}
+
+	tr.Done()
+
+	resp := &seqproxyapi.ComplexSearchResponse{
+		Total:   int64(summary.Total),
+		Docs:    docs,
+		Aggs:    aggs,
+		Explain: tracerSpanToExplainEntry(tr.ToSpan()),
+		Error: &seqproxyapi.Error{
+			Code: seqproxyapi.ErrorCode_ERROR_CODE_NO,
+		},
+	}
+	if summary.Err != nil {
+		resp.Error = &seqproxyapi.Error{
+			Code:    mapProxyErrorCode(summary.Err),
+			Message: summary.Err.Error(),
+		}
+		if !shouldHaveResponse(resp.Error.Code) {
+			resp.Docs = nil
+			resp.Aggs = nil
+		}
+	}
+
+	return resp, nil
+}
+
+func readDocuments(storesStream query.RecordProducer) []*seqproxyapi.Document {
+	var docs []*seqproxyapi.Document
+	for r := storesStream.Next(); r != nil; r = storesStream.Next() {
+		id := r.Vals[0].Decoded().(seq.ID)
+		docs = append(docs, &seqproxyapi.Document{
+			Id:   id.String(),
+			Time: timestamppb.New(id.MID.Time()),
+			Data: r.Vals[1].RawData(),
+		})
+	}
+	return docs
+}
+
+func readAggregations(storesStream query.RecordProducer) []*seqproxyapi.Aggregation {
+	buckets := make([]*seqproxyapi.Aggregation_Bucket, 0)
+	for r := storesStream.Next(); r != nil; r = storesStream.Next() {
+		bucket := &seqproxyapi.Aggregation_Bucket{
+			Key:   r.Vals[0].Decoded().(string),
+			Value: r.Vals[1].Decoded().(float64),
+		}
+		if ts := r.Vals[2].Decoded().(uint64); ts != consts.DummyMID {
+			bucket.Ts = timestamppb.New(seq.MID(ts).Time())
+		}
+		if quantiles := r.Vals[3].Decoded().([]float64); len(quantiles) > 0 {
+			bucket.Quantiles = quantiles
+		}
+		buckets = append(buckets, bucket)
+	}
+	return []*seqproxyapi.Aggregation{{Buckets: buckets}}
+}
+
+func shouldUseStreamSearch(useStreamSearch bool, req *seqproxyapi.ComplexSearchRequest) bool {
+	if !useStreamSearch {
+		return false
+	}
+	if (req.Hist != nil && req.Hist.Interval != "") || len(req.Aggs) > 1 {
+		return false
+	}
+	return true
+}
+
+func buildStreamSearchReqFromComplexSearchReq(
+	req *seqproxyapi.ComplexSearchRequest,
+) (*search.StreamSearchRequest, error) {
+	seqql, err := parser.ParseSeqQL(req.Query.Query, nil)
+	if err != nil {
+		return nil, fmt.Errorf("parse query: %w", err)
+	}
+
+	streamSearchReq := &search.StreamSearchRequest{
+		Query:     req.Query.Query,
+		From:      seq.TimeToMID(req.Query.From.AsTime()),
+		To:        seq.TimeToMID(req.Query.To.AsTime()),
+		Explain:   req.Query.Explain,
+		WithTotal: req.WithTotal,
+		OffsetId:  req.OffsetId,
+		Order:     req.Order.MustDocsOrder(),
+		Size:      int(req.Size),
+		Offset:    int(req.Offset),
+	}
+
+	// stream search serves either documents or a single agg.
+	// shouldUseStreamSearch guarantees single agg and no histogram.
+	if len(req.Aggs) == 1 {
+		aggQuery, err := convertAggsQuery(req.Aggs)
+		if err != nil {
+			return nil, err
+		}
+		streamSearchReq.Agg = &aggQuery[0]
+		seqql.Pipes = append(seqql.Pipes, statsPipeFromProto(req.Aggs[0]))
+	} else {
+		if req.Size > 0 {
+			seqql.Pipes = append(seqql.Pipes, &parser.PipeLimit{Limit: int(req.Size)})
+		}
+		if req.Offset > 0 {
+			seqql.Pipes = append(seqql.Pipes, &parser.PipeOffset{Offset: int(req.Offset)})
+		}
+		seqql.Pipes = append(seqql.Pipes, &parser.PipeSort{Order: orderToPipeString(req.Order)})
+	}
+
+	// pipes order is important
+	slices.SortFunc(seqql.Pipes, func(a, b parser.Pipe) int {
+		return cmp.Compare(pipeOrder[a.Name()], pipeOrder[b.Name()])
+	})
+
+	// we need to modify query with pipes because stores extracts parameters from it.
+	streamSearchReq.Query = seqql.SeqQLString()
+
+	return streamSearchReq, nil
+}
+
+var pipeOrder = map[string]int{
+	"stats":  0,
+	"filter": 1,
+	"fields": 2,
+	"sort":   3,
+	"limit":  4,
+	"offset": 5,
+}
+
+func orderToPipeString(order seqproxyapi.Order) string {
+	if order == seqproxyapi.Order_ORDER_ASC {
+		return "asc"
+	}
+	return "desc"
+}
+
+func statsPipeFromProto(agg *seqproxyapi.AggQuery) *parser.PipeStats {
+	statsAgg := parser.StatsAgg{
+		Func:      agg.Func.MustAggFunc().String(),
+		Field:     agg.Field,
+		GroupBy:   agg.GroupBy,
+		Quantiles: agg.Quantiles,
+	}
+	if agg.Interval != nil {
+		statsAgg.Interval = *agg.Interval
+	}
+	return &parser.PipeStats{Agg: statsAgg}
 }

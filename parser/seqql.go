@@ -48,6 +48,7 @@ func (q *SeqQLQuery) ValidateStreamPipes() error {
 }
 
 func parse(q string, mapping seq.Mapping) (SeqQLQuery, error) {
+	q = trimOuterParens(q)
 	lex := newLexer(q)
 
 	lex.Next()
@@ -72,6 +73,61 @@ func parse(q string, mapping seq.Mapping) (SeqQLQuery, error) {
 		Root:  root,
 		Pipes: pipes,
 	}, nil
+}
+
+// trimOuterParens removes every layer of parentheses that wraps the entire
+// query, e.g. "(((* | fields level)))" -> "* | fields level". Parentheses that
+// only wrap part of the query (e.g. "(a:1) | fields b") are left untouched.
+func trimOuterParens(q string) string {
+	for {
+		q = strings.TrimSpace(q)
+		if len(q) < 2 || q[0] != '(' || q[len(q)-1] != ')' {
+			return q
+		}
+		if !wrapsWholeQuery(q) {
+			return q
+		}
+		q = q[1 : len(q)-1]
+	}
+}
+
+func wrapsWholeQuery(s string) bool {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\'', '"':
+			// Skip quoted string literals so that parentheses inside them do not affect depth tracking.
+			i += skipQuoted(s[i:])
+		case '`':
+			// Raw strings have no escape sequences: find the closing backtick.
+			if j := strings.IndexByte(s[i+1:], '`'); j >= 0 {
+				i += j + 1
+			} else {
+				i = len(s) - 1
+			}
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 && i != len(s)-1 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func skipQuoted(s string) int {
+	quote := s[0]
+	for i := 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++ // skip the escaped char
+		case quote:
+			return i
+		}
+	}
+	return len(s) - 1
 }
 
 func ParseSeqQL(q string, mapping seq.Mapping) (SeqQLQuery, error) {

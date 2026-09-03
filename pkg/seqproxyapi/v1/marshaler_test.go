@@ -172,11 +172,26 @@ func TestRecordMarshalJSON(t *testing.T) {
 			[]byte("service-a"),
 			encoding.Float64ToBytes(42.5),
 			encoding.Uint64ToBytes(uint64(tsNs)),
+			encoding.Float64ArrayToBytes(nil), // no quantiles
 		}}
 
 		raw, err := json.Marshal(rec)
 		r.NoError(err)
-		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z"]`, string(raw))
+		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z",[]]`, string(raw))
+	})
+
+	t.Run("aggregation bucket with quantiles", func(t *testing.T) {
+		tsNs := time.Date(2025, 7, 8, 10, 19, 8, 742000000, time.UTC).UnixNano()
+		rec := &Record{RawData: [][]byte{
+			[]byte("service-a"),
+			encoding.Float64ToBytes(42.5),
+			encoding.Uint64ToBytes(uint64(tsNs)),
+			encoding.Float64ArrayToBytes([]float64{5.5, 9.1}),
+		}}
+
+		raw, err := json.Marshal(rec)
+		r.NoError(err)
+		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z",[5.5,9.1]]`, string(raw))
 	})
 
 	t.Run("aggregation bucket with NaN", func(t *testing.T) {
@@ -184,11 +199,12 @@ func TestRecordMarshalJSON(t *testing.T) {
 			[]byte("service-a"),
 			encoding.Float64ToBytes(math.NaN()),
 			make([]byte, 8),
+			encoding.Float64ArrayToBytes(nil),
 		}}
 
 		raw, err := json.Marshal(rec)
 		r.NoError(err)
-		r.Equal(`["service-a","NaN",""]`, string(raw))
+		r.Equal(`["service-a","NaN","",[]]`, string(raw))
 	})
 
 	t.Run("unknown layout falls back to raw bytes", func(t *testing.T) {

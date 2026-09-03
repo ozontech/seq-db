@@ -188,6 +188,7 @@ func startProxy(
 			EsVersion:                         cfg.API.ESVersion,
 			GatewayAddr:                       cfg.Address.GRPC,
 			AsyncSearchMaxDocumentsPerRequest: cfg.AsyncSearch.MaxDocumentsPerRequest,
+			UseStreamSearch:                   cfg.Experimental.UseStreamSearch,
 		},
 		Search: search.Config{
 			HotStores:       hotStores,
