@@ -116,6 +116,20 @@ func (tp *simpleTokenProvider) FindContains(needle []byte) ([]uint32, error) {
 	return tids, nil
 }
 
+func (tp *simpleTokenProvider) FindSuffix(suffix []byte) ([]uint32, error) {
+	if len(suffix) == 0 {
+		return nil, nil
+	}
+	var tids []uint32
+	for t := tp.FirstTID(); t <= tp.LastTID(); t++ {
+		token := tp.GetToken(t)
+		if len(token) >= len(suffix) && bytes.Equal(token[len(token)-len(suffix):], suffix) {
+			tids = append(tids, t)
+		}
+	}
+	return tids, nil
+}
+
 func (tp *simpleTokenProvider) FindToken(searcher Searcher) ([]uint32, error) {
 	firstTID := searcher.FirstTID()
 	lastTID := searcher.LastTID()
@@ -346,6 +360,28 @@ func TestPatternSuffix2(t *testing.T) {
 		{"aba*caba", []string{"abacaba"}},
 		{"abac*caba", []string{}},
 		{"*caba", []string{"abacaba", "caba"}},
+	}
+
+	testAll(t, tp, tests)
+}
+
+func TestPatternSuffixOnly(t *testing.T) {
+	tp := newTestTokenProvider([]string{
+		"abc",
+		"xabc",
+		"xyabc",
+		"xyzabc",
+		"abcx",
+		"xabcx",
+		"notabc",
+		"nothing",
+	})
+
+	tests := []testCase{
+		{"*abc", []string{"abc", "notabc", "xabc", "xyabc", "xyzabc"}},
+		{"*x", []string{"abcx", "xabcx"}},
+		{"*ng", []string{"nothing"}},
+		{"*g", []string{"nothing"}},
 	}
 
 	testAll(t, tp, tests)

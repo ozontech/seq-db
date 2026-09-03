@@ -18,6 +18,7 @@ import (
 type tokenProvider interface {
 	GetToken(uint32) []byte
 	FindContains(needle []byte) ([]uint32, error)
+	FindSuffix(suffix []byte) ([]uint32, error)
 	FindToken(searcher Searcher) ([]uint32, error)
 	FirstTID() uint32
 	LastTID() uint32
@@ -528,12 +529,27 @@ func isSimpleWildcardContains(token parser.Token) (needle []byte, ok bool) {
 	return []byte(lit.Terms[1].Data), true
 }
 
+// isSimpleWildcardSuffix checks if this AST token is simple wildcard like '*abc'
+func isSimpleWildcardSuffix(token parser.Token) (suffix []byte, ok bool) {
+	lit, ok := token.(*parser.Literal)
+	if !ok || len(lit.Terms) != 2 {
+		return nil, false
+	}
+	if !lit.Terms[0].IsWildcard() || lit.Terms[1].Kind != parser.TermText {
+		return nil, false
+	}
+	return []byte(lit.Terms[1].Data), true
+}
+
 func Search(ctx context.Context, t parser.Token, tp tokenProvider) ([]uint32, error) {
 	if util.IsCancelled(ctx) {
 		return nil, ctx.Err()
 	}
 	if needle, ok := isSimpleWildcardContains(t); ok {
 		return tp.FindContains(needle)
+	}
+	if suffix, ok := isSimpleWildcardSuffix(t); ok {
+		return tp.FindSuffix(suffix)
 	}
 	s := newSearcher(t, tp)
 	return tp.FindToken(s)
