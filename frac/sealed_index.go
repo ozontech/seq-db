@@ -305,12 +305,12 @@ func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 	if order.IsReverse() {
 		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetLastBlockIndexForTID(tid) }
 		getLIDsIterator = func(startIndex uint32, tid uint32) node.Node {
-			return lids.NewIteratorAsc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID)
+			return lids.NewIteratorDesc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID)
 		}
 	} else {
 		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetFirstBlockIndexForTID(tid) }
 		getLIDsIterator = func(startIndex uint32, tid uint32) node.Node {
-			return lids.NewIteratorDesc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID)
+			return lids.NewIteratorAsc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID)
 		}
 	}
 
@@ -336,12 +336,12 @@ func (ti *sealedTokenIndex) GetBatchedLIDsFromTIDs(tids []uint32, stats lids.Cou
 	if order.IsReverse() {
 		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetLastBlockIndexForTID(tid) }
 		getBatchedLIDsIterator = func(startIndex uint32, tid uint32) node.BatchedNode {
-			return lids.NewBatchedIteratorAsc(lids.NewIteratorAsc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
+			return lids.NewBatchedIteratorDesc(lids.NewIteratorDesc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
 		}
 	} else {
 		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetFirstBlockIndexForTID(tid) }
 		getBatchedLIDsIterator = func(startIndex uint32, tid uint32) node.BatchedNode {
-			return lids.NewBatchedIteratorDesc(lids.NewIteratorDesc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
+			return lids.NewBatchedIteratorAsc(lids.NewIteratorAsc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
 		}
 	}
 

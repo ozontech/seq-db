@@ -48,11 +48,11 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 			var minLID node.LID
 			var maxLID node.LID
 			if reverse {
-				minLID = node.NewAscLID(maxVal)
-				maxLID = node.NewAscLID(minVal)
+				minLID = node.NewDescLID(maxVal)
+				maxLID = node.NewDescLID(minVal)
 			} else {
-				minLID = node.NewDescLID(minVal)
-				maxLID = node.NewDescLID(maxVal)
+				minLID = node.NewAscLID(minVal)
+				maxLID = node.NewAscLID(maxVal)
 			}
 			return node.NewNot(children[0], minLID, maxLID), nil
 		}
