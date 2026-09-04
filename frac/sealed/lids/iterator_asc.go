@@ -7,6 +7,7 @@ import (
 	"github.com/ozontech/seq-db/node"
 )
 
+// IteratorAsc iterates LIDs in ascending order (low to high).
 type IteratorAsc struct {
 	Cursor
 	it node.Iter
@@ -23,7 +24,7 @@ func NewIteratorAsc(
 	it := &IteratorAsc{
 		Cursor: NewLIDsCursor(table, loader, startIndex, tid, counter, minLID, maxLID),
 	}
-	it.it = it.batch.ReverseIter()
+	it.it = it.batch.Iter()
 	return it
 }
 
@@ -38,18 +39,18 @@ func (it *IteratorAsc) narrowLIDsRange(tryNextBlock bool) bool {
 	}
 
 	first := it.batch.Min()
-	if it.maxLID < first { // fast path: out-of-bounds 1; allowed to continue reading blocks
-		it.batch = node.EmptyBatch()
-		return tryNextBlock
-	}
-
-	last := it.batch.Max()
-	if it.minLID > last { // fast path: out-of-bounds 2
+	if it.maxLID < first { // fast path: out-of-bounds 1
 		it.batch = node.EmptyBatch() // stop reading blocks
 		return false
 	}
 
-	lastBlock := it.minLID > first
+	last := it.batch.Max()
+	if it.minLID > last { // fast path: out-of-bounds 2; allowed to continue reading blocks
+		it.batch = node.EmptyBatch()
+		return tryNextBlock
+	}
+
+	lastBlock := it.maxLID < last
 	it.batch = it.batch.Narrow(it.minLID, it.maxLID)
 	if lastBlock {
 		tryNextBlock = false
@@ -69,18 +70,18 @@ func (it *IteratorAsc) loadNextLIDsBlock() {
 	}
 
 	it.batch = block.GetLIDs(it.table.GetChunkIndex(it.blockIndex, it.tid))
-	tryNextBlock := it.table.HasTIDInPrevBlock(it.blockIndex, it.tid)
-	it.tryNextBlock = it.narrowLIDsRange(tryNextBlock)
-	it.it = it.batch.ReverseIter()
 	it.counter.AddLIDsCount(it.batch.Len())
-	it.blockIndex--
+	tryNextBlock := it.table.HasTIDInNextBlock(it.blockIndex, it.tid)
+	it.tryNextBlock = it.narrowLIDsRange(tryNextBlock)
+	it.it = it.batch.Iter()
+	it.blockIndex++
 }
 
 func (it *IteratorAsc) Next() node.LID {
 	for {
-		lid, ok := it.it.Next()
+		v, ok := it.it.Next()
 		if ok {
-			return node.NewAscLID(lid)
+			return node.NewAscLID(v)
 		}
 		if !it.tryNextBlock {
 			return node.NullLID()
@@ -89,18 +90,18 @@ func (it *IteratorAsc) Next() node.LID {
 	}
 }
 
-// NextGeq returns the next (in reverse iteration order) LID that is <= maxLID.
+// NextGeq finds next greater or equal
 func (it *IteratorAsc) NextGeq(nextID node.LID) node.LID {
 	for {
-		lid, ok := it.it.NextGeq(nextID.Unpack())
+		v, ok := it.it.NextGeq(nextID.Unpack())
 		if ok {
-			return node.NewAscLID(lid)
+			return node.NewAscLID(v)
 		}
 		if !it.tryNextBlock {
 			return node.NullLID()
 		}
 
-		it.blockIndex = it.table.SeekBlockLeq(it.blockIndex, it.tid, nextID.Unpack())
+		it.blockIndex = it.table.SeekBlockGeq(it.blockIndex, it.tid, nextID.Unpack())
 		it.loadNextLIDsBlock()
 	}
 }

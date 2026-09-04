@@ -53,20 +53,22 @@ func (n *nodeNAnd) NextGeq(nextID LID) LID {
 }
 
 type nodeNAndBatched struct {
-	reg  BatchedNode
-	neg  BatchedNode
-	desc bool
+	reg BatchedNode
+	neg BatchedNode
+	asc bool
 
 	regBatch LIDBatch
 	negBatch LIDBatch
 	negDone  bool
 }
 
-func NewNAndBatched(neg, reg BatchedNode, desc bool) BatchedNode {
+// NewNAndBatched returns a BatchedNode that computes AND NOT of two batched iterators.
+// asc is the LID traversal order for NextBatch / NextBatchGeq (true = low to high).
+func NewNAndBatched(neg, reg BatchedNode, asc bool) BatchedNode {
 	return &nodeNAndBatched{
 		reg:      reg,
 		neg:      neg,
-		desc:     desc,
+		asc:      asc,
 		negDone:  false,
 		regBatch: EmptyBatch(),
 		negBatch: EmptyBatch(),
@@ -78,10 +80,10 @@ func (n *nodeNAndBatched) String() string {
 }
 
 func (n *nodeNAndBatched) NextBatch() LIDBatch {
-	if n.desc {
-		return n.NextBatchGeq(NewDescZeroLID())
+	if n.asc {
+		return n.NextBatchGeq(NewAscZeroLID())
 	}
-	return n.NextBatchGeq(NewAscZeroLID())
+	return n.NextBatchGeq(NewDescZeroLID())
 }
 
 func (n *nodeNAndBatched) NextBatchGeq(nextID LID) LIDBatch {
@@ -99,7 +101,7 @@ func (n *nodeNAndBatched) NextBatchGeq(nextID LID) LIDBatch {
 			}
 		}
 
-		result, regResidual, negResidual := AndNot(n.regBatch, n.negBatch, n.desc)
+		result, regResidual, negResidual := AndNot(n.regBatch, n.negBatch, n.asc)
 		n.regBatch = regResidual
 		n.negBatch = negResidual
 

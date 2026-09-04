@@ -16,7 +16,7 @@ type LIDBatch interface {
 	Min() uint32
 	// Max returns max (last) value. Panics if batch is empty.
 	Max() uint32
-	ManyIter(desc bool) ManyIter
+	ManyIter(asc bool) ManyIter
 	// Iter iterates lids in ascending way.
 	Iter() Iter
 	// ReverseIter iterates lids in descending way.
@@ -115,9 +115,9 @@ func (b *sliceBatch) ReverseIter() Iter {
 	return &sliceReverseIter{lids: b.lids, idx: len(b.lids) - 1}
 }
 
-func (b *sliceBatch) ManyIter(desc bool) ManyIter {
-	it := &sliceManyIter{lids: b.lids, desc: desc}
-	if !desc {
+func (b *sliceBatch) ManyIter(asc bool) ManyIter {
+	it := &sliceManyIter{lids: b.lids, asc: asc}
+	if !asc {
 		it.pos = len(b.lids) - 1
 	}
 	return it
@@ -126,17 +126,17 @@ func (b *sliceBatch) ManyIter(desc bool) ManyIter {
 type sliceManyIter struct {
 	lids []uint32
 	pos  int
-	desc bool
+	asc  bool
 }
 
 func (it *sliceManyIter) CopyLIDs(dst []LID, tmp []uint32) int {
 	if len(dst) == 0 || len(tmp) == 0 {
 		return 0
 	}
-	if it.desc {
+	if it.asc {
 		n := min(len(dst), len(tmp), len(it.lids)-it.pos)
 		for i := 0; i < n; i++ {
-			dst[i] = NewDescLID(it.lids[it.pos+i])
+			dst[i] = NewAscLID(it.lids[it.pos+i])
 		}
 		it.pos += n
 		return n
@@ -146,7 +146,7 @@ func (it *sliceManyIter) CopyLIDs(dst []LID, tmp []uint32) int {
 	}
 	n := min(len(dst), len(tmp), it.pos+1)
 	for i := 0; i < n; i++ {
-		dst[i] = NewAscLID(it.lids[it.pos-i])
+		dst[i] = NewDescLID(it.lids[it.pos-i])
 	}
 	it.pos -= n
 	return n
@@ -255,8 +255,8 @@ func (b *bitmapBatch) ReverseIter() Iter {
 	return newBitmapReverseIter(b.bm)
 }
 
-func (b *bitmapBatch) ManyIter(desc bool) ManyIter {
-	if desc {
+func (b *bitmapBatch) ManyIter(asc bool) ManyIter {
+	if asc {
 		return &bitmapManyIterAsc{it: b.bm.ManyIterator()}
 	}
 	return &bitmapManyIterDesc{it: b.bm.ReverseIterator()}
@@ -272,7 +272,7 @@ func (it *bitmapManyIterAsc) CopyLIDs(dst []LID, tmp []uint32) int {
 	}
 	n := it.it.NextMany(tmp[:min(len(dst), len(tmp))])
 	for i := 0; i < n; i++ {
-		dst[i] = NewDescLID(tmp[i])
+		dst[i] = NewAscLID(tmp[i])
 	}
 	return n
 }
@@ -288,7 +288,7 @@ func (it *bitmapManyIterDesc) CopyLIDs(dst []LID, tmp []uint32) int {
 	n := 0
 	limit := min(len(dst), len(tmp))
 	for n < limit && it.it.HasNext() {
-		dst[n] = NewAscLID(it.it.Next())
+		dst[n] = NewDescLID(it.it.Next())
 		n++
 	}
 	return n

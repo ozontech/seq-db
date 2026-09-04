@@ -4,7 +4,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,10 +19,6 @@ func TestIteratorAsc(t *testing.T) {
 		multipleBlocksLIDs = append(multipleBlocksLIDs, seq.LID(i+1))
 	}
 
-	reversed := make([]uint32, len(multipleBlocksLIDs))
-	copy(reversed, lidsToUint32s(multipleBlocksLIDs))
-	slices.Reverse(reversed)
-
 	type testCase struct {
 		title          string
 		minLID, maxLID uint32
@@ -35,13 +30,13 @@ func TestIteratorAsc(t *testing.T) {
 			title:    "ok_without_borders",
 			minLID:   0,
 			maxLID:   math.MaxUint32,
-			expected: reversed,
+			expected: lidsToUint32s(multipleBlocksLIDs),
 		},
 		{
 			title:    "ok_with_borders",
 			minLID:   maxLIDsBlockLen + 11,
 			maxLID:   uint32(len(multipleBlocksLIDs) - (maxLIDsBlockLen + 11)),
-			expected: reversed[maxLIDsBlockLen+11 : len(multipleBlocksLIDs)-(maxLIDsBlockLen+10)],
+			expected: lidsToUint32s(multipleBlocksLIDs[maxLIDsBlockLen+10 : len(multipleBlocksLIDs)-(maxLIDsBlockLen+11)]),
 		},
 		{
 			title:    "ok_out_of_borders",

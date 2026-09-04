@@ -173,7 +173,7 @@ func getLIDsHash(tokenLIDs []uint32) [16]byte {
 type noopSkipMaskProvider struct{}
 
 func (noopSkipMaskProvider) GetIDsIteratorByFrac(_ string, _, _ uint32, reverse bool) (node.Node, bool, func() error, error) {
-	return node.NewStatic(nil, reverse), false, func() error { return nil }, nil
+	return node.NewStatic(nil, !reverse), false, func() error { return nil }, nil
 }
 
 func (noopSkipMaskProvider) GetIDsBitmapByFrac(_ string, _, _ uint32) (*roaring.Bitmap, error) {

@@ -46,7 +46,7 @@ func (p *staticProvider) newStatic(literal *parser.Literal) (node.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return node.NewStatic(data, false), nil
+	return node.NewStatic(data, true), nil
 }
 
 func readAllInto(n node.Node, ids []uint32) []uint32 {
