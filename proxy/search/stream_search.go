@@ -369,7 +369,11 @@ func (it *StreamSearchIterator) SendControl(action storeapi.ControlAction) error
 // It is best-effort and safe to call on an already-closed stream; it must not be called concurrently with Next/Finalize.
 func (it *StreamSearchIterator) Close() error {
 	_ = it.SendControl(storeapi.ControlAction_CANCEL)
+	if !it.done {
+		it.drain()
+	}
 	err := it.stream.CloseSend()
+	it.recvTrailer()
 	it.tr.Done()
 	return err
 }
@@ -380,8 +384,29 @@ func (it *StreamSearchIterator) Finalize() *query.Summary {
 	if !it.done {
 		it.drain()
 	}
+	_ = it.stream.CloseSend()
+	it.recvTrailer()
 	it.tr.Done()
 	return &query.Summary{Total: it.total, Err: it.err}
+}
+
+// recvTrailer performs the final Recv that consumes the gRPC trailer and releases the stream.
+// It must be called only after the last data/summary message has been received.
+func (it *StreamSearchIterator) recvTrailer() {
+	for {
+		_, err := it.stream.Recv()
+		switch {
+		case err == nil:
+			continue
+		case errors.Is(err, io.EOF):
+			return // trailer consumed, the stream is released
+		default:
+			if it.err == nil {
+				it.err = err
+			}
+			return
+		}
+	}
 }
 
 // drain reads the store stream until the summary message (or EOF/error) is
