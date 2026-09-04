@@ -44,9 +44,8 @@ type Remote struct {
 	docsReader storage.DocsReader
 
 	// IsLegacy is true for fractions that use the old single .index file format.
-	IsLegacy     bool
-	legacyFile   storage.ImmutableFile
-	legacyReader storage.IndexReader
+	IsLegacy   bool
+	legacyFile storage.ImmutableFile
 
 	// Per-section index files (new split format only).
 	infoFile    storage.ImmutableFile
@@ -280,9 +279,20 @@ func (f *Remote) loadInfo() error {
 		if err := f.openInfoLegacy(); err != nil {
 			return err
 		}
-		if f.info, err = loadInfoLegacy(f.legacyReader); err != nil {
-			logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+
+		legacyReader := storage.NewIndexReader(
+			f.readLimiter, f.legacyFile.Name(),
+			f.legacyFile, f.indexCache.LegacyRegistry,
+		)
+
+		if f.info, err = loadInfoLegacy(legacyReader); err != nil {
+			logger.Fatal(
+				"error loading Info",
+				zap.String("fraction", f.BaseFileName),
+				zap.Error(err),
+			)
 		}
+
 		return nil
 	}
 
@@ -291,8 +301,13 @@ func (f *Remote) loadInfo() error {
 	}
 
 	if f.info, err = loadInfo(f.infoFile); err != nil {
-		logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+		logger.Fatal(
+			"error loading Info",
+			zap.String("fraction", f.BaseFileName),
+			zap.Error(err),
+		)
 	}
+
 	return nil
 }
 
@@ -313,7 +328,14 @@ func (f *Remote) init() error {
 	}
 
 	if f.IsLegacy {
-		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.legacyReader)
+		(&LegacyLoader{}).Load(
+			&f.blocksData, f.info,
+			storage.NewIndexReader(
+				f.readLimiter, f.legacyFile.Name(),
+				f.legacyFile, f.indexCache.LegacyRegistry,
+			),
+		)
+
 		f.isInited = true
 		return nil
 	}
@@ -331,10 +353,6 @@ func (f *Remote) openInfoLegacy() error {
 
 	return f.openRemoteFile(consts.IndexFileSuffix, func(file storage.ImmutableFile) {
 		f.legacyFile = file
-		f.legacyReader = storage.NewIndexReader(
-			f.readLimiter, file.Name(),
-			file, f.indexCache.LegacyRegistry,
-		)
 	})
 }
 

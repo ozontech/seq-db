@@ -40,9 +40,8 @@ type Sealed struct {
 	docsReader storage.DocsReader
 
 	// IsLegacy is true for fractions that use the old single .index file format.
-	IsLegacy     bool
-	legacyFile   *os.File
-	legacyReader storage.IndexReader
+	IsLegacy   bool
+	legacyFile *os.File
 
 	// Per-section index files and their readers (new split format only).
 	infoFile    *os.File
@@ -163,12 +162,6 @@ func (f *Sealed) openIndex() {
 		// We have exactly one `.index` file for legacy sealed fractions.
 		// So opening only this file is sufficient.
 		f.legacyFile = f.openFileIfNeeded(f.legacyFile, f.BaseFileName+consts.IndexFileSuffix)
-
-		f.legacyReader = storage.NewIndexReader(
-			f.readLimiter, f.legacyFile.Name(),
-			f.legacyFile, f.indexCache.LegacyRegistry,
-		)
-
 		return
 	}
 
@@ -231,18 +224,19 @@ func (f *Sealed) loadInfo() {
 	if f.IsLegacy {
 		f.legacyFile = f.openFileIfNeeded(f.legacyFile, f.BaseFileName+consts.IndexFileSuffix)
 
-		f.legacyReader = storage.NewIndexReader(
+		legacyReader := storage.NewIndexReader(
 			f.readLimiter, f.legacyFile.Name(),
 			f.legacyFile, f.indexCache.LegacyRegistry,
 		)
 
-		if f.info, err = loadInfoLegacy(f.legacyReader); err != nil {
+		if f.info, err = loadInfoLegacy(legacyReader); err != nil {
 			logger.Fatal(
 				"error loading Info",
 				zap.String("fraction", f.BaseFileName),
 				zap.Error(err),
 			)
 		}
+
 		return
 	}
 
@@ -268,7 +262,14 @@ func (f *Sealed) init(full bool) {
 	}
 
 	if f.IsLegacy {
-		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.legacyReader)
+		(&LegacyLoader{}).Load(
+			&f.blocksData, f.info,
+			storage.NewIndexReader(
+				f.readLimiter, f.legacyFile.Name(),
+				f.legacyFile, f.indexCache.LegacyRegistry,
+			),
+		)
+
 		f.isInited = true
 		return
 	}
