@@ -230,7 +230,7 @@ func (si *activeSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (n
 	// we need to sort inversed values since they may be out of order after replay of active fraction
 	slices.Sort(res)
 
-	return node.NewStatic(res, reverse), has, release, nil
+	return node.NewStatic(res, !reverse), has, release, nil
 }
 
 type activeTokenIndex struct {
@@ -263,7 +263,7 @@ func (si *activeTokenIndex) GetLIDsFromTIDs(tids []uint32, _ lids.Counter, minLI
 		tlids := si.tokenList.Provide(tid)
 		unmapped := tlids.GetLIDs(si.mids, si.rids)
 		inverse := inverseLIDs(unmapped, si.inverser, minLID, maxLID)
-		nodes = append(nodes, node.NewStatic(inverse, order.IsReverse()))
+		nodes = append(nodes, node.NewStatic(inverse, order.IsDesc()))
 	}
 	return nodes
 }
@@ -274,7 +274,7 @@ func (si *activeTokenIndex) GetBatchedLIDsFromTIDs(tids []uint32, _ lids.Counter
 		tlids := si.tokenList.Provide(tid)
 		unmapped := tlids.GetLIDs(si.mids, si.rids)
 		inverse := inverseLIDs(unmapped, si.inverser, minLID, maxLID)
-		nodes = append(nodes, node.NewStaticBatched(inverse, order.IsReverse()))
+		nodes = append(nodes, node.NewStaticBatched(inverse, order.IsDesc()))
 	}
 	return nodes
 }

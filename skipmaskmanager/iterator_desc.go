@@ -7,6 +7,7 @@ import (
 	"github.com/ozontech/seq-db/node"
 )
 
+// IteratorDesc iterates skip-mask LIDs in descending order (high to low).
 type IteratorDesc Iterator
 
 func (it *IteratorDesc) String() string {
@@ -20,6 +21,7 @@ func (it *IteratorDesc) Next() node.LID {
 			logger.Panic("can't load skip mask file headers", zap.Error(err))
 		}
 		it.loader.headers = headers
+		it.blockIndex = len(it.loader.headers) - 1
 	}
 
 	for len(it.lids) == 0 {
@@ -31,8 +33,9 @@ func (it *IteratorDesc) Next() node.LID {
 		it.lids = (*Iterator)(it).narrowLIDsRange(it.lids)
 	}
 
-	lid := it.lids[0]
-	it.lids = it.lids[1:]
+	i := len(it.lids) - 1
+	lid := it.lids[i]
+	it.lids = it.lids[:i]
 	return node.NewDescLID(lid)
 }
 
@@ -65,6 +68,6 @@ func (it *IteratorDesc) loadNextLIDsBlock() {
 }
 
 func (it *IteratorDesc) needTryNextBlock() {
-	it.tryNextBlock = it.blockIndex < len(it.loader.headers)-1
-	it.blockIndex++
+	it.tryNextBlock = it.blockIndex > 0
+	it.blockIndex--
 }

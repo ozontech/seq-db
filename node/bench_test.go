@@ -48,7 +48,7 @@ func BenchmarkNot(b *testing.B) {
 			r := rand.New(rand.NewSource(benchRandSeed))
 			v, last := Generate(r, s)
 			res := make([]uint32, 0, last+1)
-			n := NewNot(NewStatic(v, false), NewDescLID(1), NewDescLID(last))
+			n := NewNot(NewStatic(v, true), NewAscLID(1), NewAscLID(last))
 
 			for b.Loop() {
 				res = readAllInto(n, res)
@@ -65,7 +65,7 @@ func BenchmarkNotEmpty(b *testing.B) {
 	for _, s := range sizes {
 		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
 			res := make([]uint32, 0, s*2)
-			n := NewNot(NewStatic(nil, false), NewDescLID(1), NewDescLID(uint32(s)))
+			n := NewNot(NewStatic(nil, true), NewAscLID(1), NewAscLID(uint32(s)))
 
 			for b.Loop() {
 				res = readAllInto(n, res)

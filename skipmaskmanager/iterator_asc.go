@@ -7,6 +7,7 @@ import (
 	"github.com/ozontech/seq-db/node"
 )
 
+// IteratorAsc iterates skip-mask LIDs in ascending order (low to high).
 type IteratorAsc Iterator
 
 func (it *IteratorAsc) String() string {
@@ -20,7 +21,6 @@ func (it *IteratorAsc) Next() node.LID {
 			logger.Panic("can't load skip mask file headers", zap.Error(err))
 		}
 		it.loader.headers = headers
-		it.blockIndex = len(it.loader.headers) - 1
 	}
 
 	for len(it.lids) == 0 {
@@ -32,9 +32,8 @@ func (it *IteratorAsc) Next() node.LID {
 		it.lids = (*Iterator)(it).narrowLIDsRange(it.lids)
 	}
 
-	i := len(it.lids) - 1
-	lid := it.lids[i]
-	it.lids = it.lids[:i]
+	lid := it.lids[0]
+	it.lids = it.lids[1:]
 	return node.NewAscLID(lid)
 }
 
@@ -67,6 +66,6 @@ func (it *IteratorAsc) loadNextLIDsBlock() {
 }
 
 func (it *IteratorAsc) needTryNextBlock() {
-	it.tryNextBlock = it.blockIndex > 0
-	it.blockIndex--
+	it.tryNextBlock = it.blockIndex < len(it.loader.headers)-1
+	it.blockIndex++
 }

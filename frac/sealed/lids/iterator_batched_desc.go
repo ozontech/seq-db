@@ -7,6 +7,7 @@ import (
 	"github.com/ozontech/seq-db/node"
 )
 
+// BatchedIteratorDesc iterates LID batches in descending order (high to low).
 type BatchedIteratorDesc struct {
 	Cursor
 }
@@ -30,16 +31,16 @@ func (it *BatchedIteratorDesc) narrowLIDsRange(tryNextBlock bool) bool {
 	first := it.batch.Min()
 	if it.maxLID < first {
 		it.batch = node.EmptyBatch()
-		return false
+		return tryNextBlock
 	}
 
 	batchMax := it.batch.Max()
 	if it.minLID > batchMax {
 		it.batch = node.EmptyBatch()
-		return tryNextBlock
+		return false
 	}
 
-	lastBlock := it.maxLID < batchMax
+	lastBlock := it.minLID > first
 	it.batch = it.batch.Narrow(it.minLID, it.maxLID)
 	if lastBlock {
 		tryNextBlock = false
@@ -59,10 +60,10 @@ func (it *BatchedIteratorDesc) loadNextLIDsBlock() {
 	}
 
 	it.batch = block.GetLIDs(it.table.GetChunkIndex(it.blockIndex, it.tid))
-	it.tryNextBlock = it.table.HasTIDInNextBlock(it.blockIndex, it.tid)
+	it.tryNextBlock = it.table.HasTIDInPrevBlock(it.blockIndex, it.tid)
 	it.tryNextBlock = it.narrowLIDsRange(it.tryNextBlock)
 	it.counter.AddLIDsCount(it.batch.Len())
-	it.blockIndex++
+	it.blockIndex--
 }
 
 func (it *BatchedIteratorDesc) NextBatch() node.LIDBatch {
@@ -76,7 +77,7 @@ func (it *BatchedIteratorDesc) NextBatchGeq(nextID node.LID) node.LIDBatch {
 				return node.EmptyBatch()
 			}
 
-			it.blockIndex = it.table.SeekBlockGeq(it.blockIndex, it.tid, nextID.Unpack())
+			it.blockIndex = it.table.SeekBlockLeq(it.blockIndex, it.tid, nextID.Unpack())
 			it.loadNextLIDsBlock()
 		}
 
@@ -84,7 +85,7 @@ func (it *BatchedIteratorDesc) NextBatchGeq(nextID node.LID) node.LIDBatch {
 			continue
 		}
 
-		if nextID.Unpack() > it.batch.Max() {
+		if nextID.Unpack() < it.batch.Min() {
 			it.batch = node.EmptyBatch()
 			continue
 		}

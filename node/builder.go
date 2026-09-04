@@ -1,7 +1,7 @@
 package node
 
 var (
-	emptyNode        = NewStatic(nil, false)
+	emptyNode        = NewStatic(nil, true)
 	emptyNodeSourced = NewSourcedNodeWrapper(emptyNode, 0)
 )
 
