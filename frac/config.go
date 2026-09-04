@@ -20,7 +20,8 @@ type AggLimits struct {
 }
 
 type QueryOptimizationConfig struct {
-	BatchExecution BatchExecutionConfig
+	BatchExecution        BatchExecutionConfig
+	MaterializedColumnAgg MaterializedColumnAggConfig
 }
 
 type BatchExecutionConfig struct {
@@ -28,4 +29,8 @@ type BatchExecutionConfig struct {
 	// CostThreshold is the minimum estimated non-batched iteration
 	// cost required to enable batch-at-a-time query evaluation.
 	CostThreshold int
+}
+
+type MaterializedColumnAggConfig struct {
+	Enabled bool
 }
