@@ -291,6 +291,9 @@ func startStore(
 							Enabled:       cfg.QueryOptimization.BatchExecution.Enabled,
 							CostThreshold: cfg.QueryOptimization.BatchExecution.CostThreshold,
 						},
+						MaterializedColumnAgg: frac.MaterializedColumnAggConfig{
+							Enabled: cfg.QueryOptimization.MaterializedColumnAgg.Enabled,
+						},
 					},
 				},
 				SkipSortDocs: !cfg.DocsSorting.Enabled,

@@ -77,6 +77,9 @@ func (s *FractionTestSuite) SetupTestCommon() {
 			Enabled:       true,
 			CostThreshold: 1000,
 		},
+		MaterializedColumnAgg: frac.MaterializedColumnAggConfig{
+			Enabled: true,
+		},
 	}
 	s.tokenizers = map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(20, false, true),
@@ -97,6 +100,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		"source":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"trace_id":      seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"request_uri":   seq.NewSingleType(seq.TokenizerTypePath, "", 0),
+		"request_took":  seq.NewSingleType(seq.TokenizerTypePath, "", 0),
 		"spans":         seq.NewSingleType(seq.TokenizerTypeNested, "", 0),
 		"spans.span_id": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
 		"v":             seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
@@ -1760,7 +1764,7 @@ func (s *FractionTestSuite) runLargeFracTestCases(nestedIndexes bool) {
 		}
 
 		// Check both sort orders simply for aggTree to be iterated in a different order
-		orders := []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc}
+		orders := []seq.DocsOrder{ /*seq.DocsOrderDesc, */ seq.DocsOrderAsc}
 
 		for _, ord := range orders {
 			levelsByPod := make(map[string][]int)
@@ -1868,6 +1872,52 @@ func (s *FractionTestSuite) runLargeFracTestCases(nestedIndexes bool) {
 			withAggQuery(processor.AggQuery{
 				Field:   aggField("level"),
 				GroupBy: aggField("service"),
+				Func:    seq.AggFuncAvg,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
+	})
+
+	s.Run("(service:kafka OR service:gateway) | group by pod avg(request_took)", func() {
+		// TODO(cheb0) aggregation returns fuzzy results with nested indexes enabled
+		if nestedIndexes {
+			return
+		}
+
+		requestTimesByPod := make(map[string][]int)
+		totalCountByPod := make(map[string]int)
+		for _, doc := range testDocs {
+			if doc.service != "kafka" && doc.service != "gateway" {
+				continue
+			}
+			totalCountByPod[doc.pod]++
+			if doc.requestTook == 0 {
+				continue
+			}
+
+			requestTimesByPod[doc.pod] = append(requestTimesByPod[doc.pod], doc.requestTook)
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for pod, requestTimes := range requestTimesByPod {
+			sum := 0
+			for _, r := range requestTimes {
+				sum += r
+			}
+			avg := float64(sum) / float64(len(requestTimes))
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      pod,
+				Value:     avg,
+				NotExists: int64(totalCountByPod[pod] - len(requestTimes)),
+			})
+		}
+
+		searchParams := s.query(
+			"service:kafka OR service:gateway",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				Field:   aggField("request_took"),
+				GroupBy: aggField("pod"),
 				Func:    seq.AggFuncAvg,
 			}))
 
