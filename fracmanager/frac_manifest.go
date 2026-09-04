@@ -22,12 +22,16 @@ import (
 // fracManifest represents a manifest of fraction files
 // Contains information about the presence of various file types for a specific fraction
 type fracManifest struct {
-	basePath  string // base path to fraction files (without extension)
-	hasDocs   bool   // presence of main documents file
-	hasWal    bool   // presence of WAL with meta
-	hasIndex  bool   // presence of index file
-	hasSdocs  bool   // presence of sorted documents
-	hasRemote bool   // presence of remote fraction
+	basePath      string // base path to fraction files (without extension)
+	hasDocs       bool   // presence of main documents file
+	hasWal        bool   // presence of WAL with meta
+	hasIndex      bool   // presence of index file
+	hasSdocs      bool   // presence of sorted documents
+	hasRemote     bool   // presence of remote fraction (legacy)
+	hasRemoteInfo bool   // presence of .remote-info
+
+	// Presence of ._remote-info when offloading was interrupted
+	hasRemoteInfoTmp bool
 
 	// Split index file flags
 	hasInfo    bool
@@ -46,7 +50,15 @@ type fracManifest struct {
 
 // hasAllIndexFiles reports whether all 5 split index files are present.
 func (m *fracManifest) hasAllIndexFiles() bool {
-	return m.hasInfo && m.hasToken && m.hasOffsets && m.hasID && m.hasLID
+	return m.hasInfo && m.hasToken && m.hasOffsets && m.hasID && m.hasLID || m.hasIndex
+}
+
+func (m *fracManifest) hasDocsFile() bool {
+	return m.hasSdocs || m.hasDocs
+}
+
+func (m *fracManifest) hasRemoteFile() bool {
+	return m.hasRemote || m.hasRemoteInfo
 }
 
 // AddExtension adds information about a file with the specified extension
@@ -61,6 +73,8 @@ func (m *fracManifest) AddExtension(ext string) error {
 		m.hasSdocs = true
 	case consts.IndexFileSuffix:
 		m.hasIndex = true
+	case consts.RemoteFractionInfoSuffix:
+		m.hasRemoteInfo = true
 	case consts.RemoteFractionSuffix:
 		m.hasRemote = true
 
@@ -84,6 +98,9 @@ func (m *fracManifest) AddExtension(ext string) error {
 
 	case consts.CompactionPlan:
 		m.hasCompactionPlan = true
+
+	case consts.RemoteFractionInfoTmpSuffix:
+		m.hasRemoteInfoTmp = true
 
 	case consts.IndexTmpFileSuffix, consts.InfoTmpFileSuffix,
 		consts.TokenTmpFileSuffix, consts.OffsetsTmpFileSuffix,
@@ -114,10 +131,10 @@ const (
 // Stage determines the current stage of the fraction based on file presence
 // Key method for making fraction management decisions
 func (m *fracManifest) Stage() fracStage {
-	if m.hasRemote {
+	if m.hasRemoteFile() {
 		return fracStageRemote
 	}
-	if (m.hasAllIndexFiles() || m.hasIndex) && (m.hasSdocs || m.hasDocs) {
+	if m.hasAllIndexFiles() && m.hasDocsFile() {
 		return fracStageSealed
 	}
 	if m.hasWal && m.hasDocs {
@@ -198,6 +215,14 @@ func removeIndexTmp(m *fracManifest) {
 		consts.LIDTmpFileSuffix,
 	} {
 		util.RemoveFile(m.basePath + suffix)
+	}
+}
+
+func removeRemoteTmp(m *fracManifest) {
+	if m.hasRemoteInfoTmp {
+		// TODO: Clean S3 zombies
+		util.RemoveFile(m.basePath + consts.RemoteFractionInfoTmpSuffix)
+		m.hasRemoteInfoTmp = false
 	}
 }
 
@@ -391,6 +416,7 @@ func cleanupTemporary(m *fracManifest) {
 	removeSdocsDel(m)
 	removeDocsDel(m)
 	removeIndexTmp(m)
+	removeRemoteTmp(m)
 	removeDocsTmp(m)
 	removeSdocsTmp(m)
 }
@@ -402,6 +428,7 @@ func removeAllFiles(basePath string) {
 		consts.DocsFileSuffix, consts.DocsDelFileSuffix, consts.DocsTmpFileSuffix,
 		consts.SdocsFileSuffix, consts.SdocsDelFileSuffix, consts.SdocsTmpFileSuffix,
 		consts.IndexFileSuffix, consts.IndexDelFileSuffix, consts.IndexTmpFileSuffix,
+		consts.RemoteFractionInfoSuffix, consts.RemoteFractionInfoTmpSuffix,
 
 		consts.InfoFileSuffix, consts.InfoTmpFileSuffix,
 		consts.TokenFileSuffix, consts.TokenTmpFileSuffix,
@@ -451,6 +478,7 @@ func (f *fracManifest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddBool("hasIndex", f.hasIndex)
 	enc.AddBool("hasSdocs", f.hasSdocs)
 	enc.AddBool("hasRemote", f.hasRemote)
+	enc.AddBool("hasRemoteInfo", f.hasRemoteInfo)
 
 	enc.AddBool("hasInfo", f.hasInfo)
 	enc.AddBool("hasToken", f.hasToken)

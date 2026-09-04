@@ -31,9 +31,23 @@ type SealedSource struct {
 func NewSealedSource(f *Sealed) *SealedSource {
 	f.init(true)
 
-	idReader := f.mustGetReader(f.idReaderProvider)
-	lidReader := f.mustGetReader(f.lidReaderProvider)
-	tokenReader := f.mustGetReader(f.tokenReaderProvider)
+	var (
+		tokenReader storage.IndexReader
+		lidReader   storage.IndexReader
+		idReader    storage.IndexReader
+	)
+
+	isLegacy := f.IsSingleIndex()
+	if isLegacy {
+		legacyReader := f.mustGetReader(f.legacyReaderProvider)
+		tokenReader = legacyReader
+		lidReader = legacyReader
+		idReader = legacyReader
+	} else {
+		tokenReader = f.mustGetReader(f.tokenReaderProvider)
+		lidReader = f.mustGetReader(f.lidReaderProvider)
+		idReader = f.mustGetReader(f.idReaderProvider)
+	}
 
 	return &SealedSource{
 		f: f,
@@ -45,9 +59,9 @@ func NewSealedSource(f *Sealed) *SealedSource {
 			&f.blocksData.IDsTable,
 			f.info.BinaryDataVer,
 		),
-		lidsLoader:       lids.NewLoader(f.Info().BinaryDataVer, &lidReader, f.indexCache.LIDs),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &tokenReader, f.indexCache.TokenTable),
+		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, &lidReader, f.indexCache.LIDs),
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.info.BinaryDataVer, &tokenReader, f.indexCache.Tokens),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.info.BinaryDataVer, isLegacy, &tokenReader, f.indexCache.TokenTable),
 	}
 }
 

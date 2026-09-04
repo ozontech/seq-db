@@ -3,12 +3,14 @@ package frac
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -43,8 +45,6 @@ type Remote struct {
 	docsCache  *cache.Cache[[]byte]
 	docsReader storage.DocsReader
 
-	// IsLegacy is true for fractions that use the old single .index file format.
-	IsLegacy             bool
 	legacyFile           storage.ImmutableFile
 	legacyReaderProvider *storage.ReaderProvider
 
@@ -79,10 +79,9 @@ func NewRemote(
 	indexCache *IndexCache,
 	docsCache *cache.Cache[[]byte],
 	info *common.Info,
-	config *Config,
+	cfg *Config,
 	s3cli *s3.Client,
 	skipMaskProvider skipMaskProvider,
-	isLegacy bool,
 ) *Remote {
 	f := &Remote{
 		ctx: ctx,
@@ -95,12 +94,10 @@ func NewRemote(
 
 		info:         info,
 		BaseFileName: baseFile,
-		Config:       config,
+		Config:       cfg,
 
 		s3cli:            s3cli,
 		skipMaskProvider: skipMaskProvider,
-
-		IsLegacy: isLegacy,
 	}
 
 	// Fast path if fraction-info cache exists AND it has valid index size.
@@ -116,7 +113,7 @@ func NewRemote(
 	// https://github.com/ozontech/seq-db/issues/92
 
 	if err := f.loadInfo(); err != nil {
-		logger.Error(
+		logger.Fatal(
 			"cannot open info file: any subsequent operation will fail",
 			zap.String("fraction", filepath.Base(f.BaseFileName)),
 			zap.Error(err),
@@ -185,7 +182,8 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		idReader    storage.IndexReader
 	)
 
-	if f.IsLegacy {
+	isLegacy := f.IsSingleIndex()
+	if isLegacy {
 		legacyReader := f.mustGetReader(f.legacyReaderProvider)
 		tokenReader = legacyReader
 		lidReader = legacyReader
@@ -206,8 +204,8 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		blocksOffsets:    f.blocksData.BlocksOffsets,
 		lidsTable:        f.blocksData.LIDsTable,
 		lidsLoader:       lids.NewLoader(f.info.BinaryDataVer, &lidReader, f.indexCache.LIDs),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &tokenReader, f.indexCache.TokenTable),
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.info.BinaryDataVer, &tokenReader, f.indexCache.Tokens),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.info.BinaryDataVer, isLegacy, &tokenReader, f.indexCache.TokenTable),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
@@ -235,6 +233,7 @@ func (f *Remote) Suicide() {
 	// Now, we might have fraction leaks in S3 storage since [Suicide] is not atomic.
 
 	util.MustRemoveFileByPath(f.BaseFileName + consts.RemoteFractionSuffix)
+	util.MustRemoveFileByPath(f.BaseFileName + consts.RemoteFractionInfoSuffix)
 
 	f.docsCache.Release()
 	f.indexCache.Release()
@@ -268,27 +267,74 @@ func (f *Remote) String() string {
 	return fracToString(f, "remote")
 }
 
-func (f *Remote) loadInfo() error {
-	var err error
+func (f *Remote) IsSingleIndex() bool {
+	return f.info.BinaryDataVer < config.BinaryDataV3
+}
 
-	if f.IsLegacy {
-		if err := f.openInfoLegacy(); err != nil {
-			return err
-		}
-		if f.info, err = loadInfoLegacy(f.mustGetReader(f.legacyReaderProvider)); err != nil {
-			logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
-		}
+// loadInfo loads the remote fraction information from available sources in priority order:
+//  1. Local *.remote-info file (most up‑to‑date case).
+//  2. Remote .info file on S3 (legacy but still supported).
+//  3. Legacy *.index file on S3 (oldest scenario).
+func (f *Remote) loadInfo() error {
+	err := f.tryLoadInfoLocal()
+	if err == nil {
 		return nil
 	}
 
-	if err := f.openInfo(); err != nil {
-		return err
+	logger.Warn(
+		"cannot open local info file for remote fraction, falling back to S3",
+		zap.String("fraction", f.BaseFileName),
+		zap.Error(err),
+	)
+
+	err = f.tryLoadInfoRemote()
+	if err == nil {
+		return nil
 	}
 
-	if f.info, err = loadInfo(f.infoFile); err != nil {
-		logger.Fatal("error loading Info", zap.String("fraction", f.BaseFileName), zap.Error(err))
+	logger.Warn(
+		"cannot open remote info file, falling back to legacy index",
+		zap.String("fraction", f.BaseFileName),
+		zap.Error(err),
+	)
+
+	return f.loadInfoLegacy()
+}
+
+// tryLoadInfoLocal attempts to load fraction information from a local file
+// with the suffix .remote-info. This is the most preferred and modern approach,
+// where all data is already present on disk.
+func (f *Remote) tryLoadInfoLocal() error {
+	remoteInfoPath := f.BaseFileName + consts.RemoteFractionInfoSuffix
+	file, err := os.Open(remoteInfoPath)
+	if err == nil {
+		defer file.Close()
+		f.info, err = loadInfo(file)
 	}
-	return nil
+	return err
+}
+
+// tryLoadInfoRemote attempts to load fraction information from a remote .info file
+// located on S3. This is an intermediate fallback: it is used when the local
+// .remote-info is absent, but an .info file still exists on S3 (maintained for
+// backward compatibility).
+func (f *Remote) tryLoadInfoRemote() error {
+	err := f.openInfoRemote()
+	if err == nil {
+		f.info, err = loadInfo(f.infoFile)
+	}
+	return err
+}
+
+// loadInfoLegacy loads fraction information from the legacy index stored on S3.
+// This is the oldest fallback, used when only an empty *.remote file exists locally
+// and a single *.index file resides on S3 containing all necessary data.
+func (f *Remote) loadInfoLegacy() error {
+	err := f.openIndexLegacyRemote()
+	if err == nil {
+		f.info, err = loadInfoLegacy(f.mustGetReader(f.legacyReaderProvider))
+	}
+	return err
 }
 
 func (f *Remote) init() error {
@@ -307,7 +353,7 @@ func (f *Remote) init() error {
 		return nil
 	}
 
-	if f.IsLegacy {
+	if f.IsSingleIndex() {
 		(&LegacyLoader{}).Load(&f.blocksData, f.info, f.mustGetReader(f.legacyReaderProvider))
 		f.isInited = true
 		return nil
@@ -324,11 +370,10 @@ func (f *Remote) init() error {
 	return nil
 }
 
-func (f *Remote) openInfoLegacy() error {
+func (f *Remote) openIndexLegacyRemote() error {
 	if f.legacyFile != nil {
 		return nil
 	}
-
 	return f.openRemoteFile(consts.IndexFileSuffix, func(file storage.ImmutableFile) {
 		f.legacyFile = file
 		f.legacyReaderProvider = storage.NewReaderProvider(
@@ -338,30 +383,26 @@ func (f *Remote) openInfoLegacy() error {
 	})
 }
 
-func (f *Remote) openInfo() error {
+func (f *Remote) openInfoRemote() error {
 	if f.infoFile != nil {
 		return nil
 	}
-
-	return f.openRemoteFile(
-		consts.InfoFileSuffix,
-		func(file storage.ImmutableFile) {
-			f.infoFile = file
-		},
-	)
+	return f.openRemoteFile(consts.InfoFileSuffix, func(file storage.ImmutableFile) {
+		f.infoFile = file
+	})
 }
 
 func (f *Remote) openIndex() error {
-	if f.IsLegacy {
-		return f.openInfoLegacy()
+	if f.IsSingleIndex() {
+		return f.openIndexLegacyRemote()
 	}
 
-	if err := f.openInfo(); err != nil {
+	if err := f.openInfoRemote(); err != nil {
 		return err
 	}
 
 	if f.tokenFile == nil {
-		if err := f.openRemoteFile(
+		err := f.openRemoteFile(
 			consts.TokenFileSuffix,
 			func(file storage.ImmutableFile) {
 				f.tokenFile = file
@@ -370,13 +411,14 @@ func (f *Remote) openIndex() error {
 					file, f.indexCache.TokenRegistry,
 				)
 			},
-		); err != nil {
+		)
+		if err != nil {
 			return err
 		}
 	}
 
 	if f.offsetsFile == nil {
-		if err := f.openRemoteFile(
+		err := f.openRemoteFile(
 			consts.OffsetsFileSuffix,
 			func(file storage.ImmutableFile) {
 				f.offsetsFile = file
@@ -385,13 +427,14 @@ func (f *Remote) openIndex() error {
 					file, f.indexCache.OffsetsRegistry,
 				)
 			},
-		); err != nil {
+		)
+		if err != nil {
 			return err
 		}
 	}
 
 	if f.idFile == nil {
-		if err := f.openRemoteFile(
+		err := f.openRemoteFile(
 			consts.IDFileSuffix,
 			func(file storage.ImmutableFile) {
 				f.idFile = file
@@ -400,13 +443,14 @@ func (f *Remote) openIndex() error {
 					file, f.indexCache.IDRegistry,
 				)
 			},
-		); err != nil {
+		)
+		if err != nil {
 			return err
 		}
 	}
 
 	if f.lidFile == nil {
-		if err := f.openRemoteFile(
+		err := f.openRemoteFile(
 			consts.LIDFileSuffix,
 			func(file storage.ImmutableFile) {
 				f.lidFile = file
@@ -415,7 +459,8 @@ func (f *Remote) openIndex() error {
 					file, f.indexCache.LIDRegistry,
 				)
 			},
-		); err != nil {
+		)
+		if err != nil {
 			return err
 		}
 	}
@@ -498,7 +543,7 @@ func (f *Remote) computeIndexSize() {
 		f.lidFile,
 	}
 
-	if f.IsLegacy {
+	if f.IsSingleIndex() {
 		files = []storage.ImmutableFile{
 			f.legacyFile,
 		}
