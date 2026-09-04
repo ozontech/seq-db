@@ -36,16 +36,10 @@ type SealedSource struct {
 func NewSealedSource(f *Sealed) *SealedSource {
 	f.init(true)
 
-	tokenFile, idFile, lidFile := f.tokenFile, f.idFile, f.lidFile
-	if f.IsLegacy {
-		tokenFile, idFile, lidFile = f.legacyFile, f.legacyFile, f.legacyFile
-	}
-
+	ir := f.indexReaders()
 	s := &SealedSource{
-		f:           f,
-		tokenReader: storage.NewIndexReader(f.readLimiter, tokenFile.Name(), tokenFile, cache.NewScan[[]byte]()),
-		idReader:    storage.NewIndexReader(f.readLimiter, idFile.Name(), idFile, cache.NewScan[[]byte]()),
-		lidReader:   storage.NewIndexReader(f.readLimiter, lidFile.Name(), lidFile, cache.NewScan[[]byte]()),
+		f: f, tokenReader: ir.Token,
+		idReader: ir.ID, lidReader: ir.LID,
 	}
 
 	s.idsProvider = seqids.NewProvider(
