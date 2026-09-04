@@ -27,6 +27,7 @@ type LIDBatch interface {
 
 type ManyIter interface {
 	CopyLIDs(dst []LID, tmp []uint32) int
+	// CopyRawLIDs copies raw lids (exactly as they stored)
 	CopyRawLIDs(dst []uint32) int
 }
 

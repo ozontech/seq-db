@@ -1,14 +1,15 @@
 package node
 
-// nodeColumnAgg is a materialized column for aggregation.
-// Size of column is maxLID-minLID+1.
-// column[i] has the (source+1) for ith document in search order, 0 is zero value.
+// nodeColumnAgg is a materialized column for aggregation. Size of column is maxLID-minLID+1.
+// column[i] has the (source+1) for ith document in search order.
+// 0 is zero values which means doc doesn't have a token with the corresponding field.
+// It only properly works for keyword aggregation, i.e. each doc has exactly one source/TID.
 type nodeColumnAgg struct {
 	column []uint64
 	minLID uint32 // inclusive
 	maxLID uint32 // inclusive
 	desc   bool
-	cur    uint32 // next cursor position not processed yet
+	cur    uint32 // next cursor position not yet processed, range [minLID, maxLID]
 	done   bool
 }
 
@@ -79,26 +80,26 @@ func (n *nodeColumnAgg) NextSourcedGeq(nextID LID) (LID, uint32) {
 		return NullLID(), 0
 	}
 
-	from := nextID.Unpack()
+	nextLID := nextID.Unpack()
 	if n.desc {
-		if from < n.minLID {
-			from = n.minLID
+		if nextLID < n.minLID {
+			nextLID = n.minLID
 		}
-		if from > n.maxLID {
+		if nextLID > n.maxLID {
 			n.done = true
 			return NullLID(), 0
 		}
 	} else {
-		if from > n.maxLID {
-			from = n.maxLID
+		if nextLID > n.maxLID {
+			nextLID = n.maxLID
 		}
-		if from < n.minLID {
+		if nextLID < n.minLID {
 			n.done = true
 			return NullLID(), 0
 		}
 	}
 
-	id, source := n.nextGeq(from)
+	id, source := n.nextGeq(nextLID)
 	if id.IsNull() {
 		n.done = true
 		return id, source
@@ -131,12 +132,12 @@ func (n *nodeColumnAgg) nextGeq(from uint32) (LID, uint32) {
 	return n.nextGeqAsc(from)
 }
 
-// nextGeqAsc seeks to nextID, lids flow in ascending order (i.e. nextID increases over time)
-func (n *nodeColumnAgg) nextGeqAsc(from uint32) (LID, uint32) {
-	if from > n.maxLID {
-		from = n.maxLID
+// nextGeqAsc seeks to nextLID, raw lids flow in descending order (i.e. nextLID decreases over time)
+func (n *nodeColumnAgg) nextGeqAsc(nextLID uint32) (LID, uint32) {
+	if nextLID > n.maxLID {
+		nextLID = n.maxLID
 	}
-	for lid := from; ; lid-- {
+	for lid := nextLID; ; lid-- {
 		if lid < n.minLID {
 			break
 		}
@@ -150,12 +151,12 @@ func (n *nodeColumnAgg) nextGeqAsc(from uint32) (LID, uint32) {
 	return NullLID(), 0
 }
 
-// nextGeqDesc seeks to nextID, lids flow in ascending order (i.e. nextID increases over time)
-func (n *nodeColumnAgg) nextGeqDesc(nextID uint32) (LID, uint32) {
-	if nextID < n.minLID {
-		nextID = n.minLID
+// nextGeqDesc seeks to nextLID, raw lids flow in ascending order (i.e. nextLID increases over time)
+func (n *nodeColumnAgg) nextGeqDesc(nextLID uint32) (LID, uint32) {
+	if nextLID < n.minLID {
+		nextLID = n.minLID
 	}
-	for lid := nextID; lid <= n.maxLID; lid++ {
+	for lid := nextLID; lid <= n.maxLID; lid++ {
 		if v := n.column[lid-n.minLID]; v != 0 {
 			return NewLID(lid, false), uint32(v - 1)
 		}
