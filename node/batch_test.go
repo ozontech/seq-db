@@ -246,7 +246,7 @@ func TestBatchManyIter(t *testing.T) {
 
 	for _, impl := range batchFactories {
 		t.Run(impl.name, func(t *testing.T) {
-			t.Run("asc chunked", func(t *testing.T) {
+			t.Run("CopyLIDs asc chunked", func(t *testing.T) {
 				b := impl.build(input)
 				it := b.ManyIter(true)
 				dst := make([]LID, 3)
@@ -266,7 +266,7 @@ func TestBatchManyIter(t *testing.T) {
 				assert.Equal(t, input, got)
 			})
 
-			t.Run("desc chunked", func(t *testing.T) {
+			t.Run("CopyLIDs desc chunked", func(t *testing.T) {
 				b := impl.build(input)
 				it := b.ManyIter(false)
 				dst := make([]LID, 3)
@@ -281,6 +281,44 @@ func TestBatchManyIter(t *testing.T) {
 					assert.LessOrEqual(t, n, 3)
 					for i := 0; i < n; i++ {
 						got = append(got, dst[i].Unpack())
+					}
+				}
+				assert.Equal(t, []uint32{30, 25, 20, 15, 10, 5, 1}, got)
+			})
+
+			t.Run("CopyRawLIDs asc chunked", func(t *testing.T) {
+				b := impl.build(input)
+				it := b.ManyIter(true)
+				tmp := make([]uint32, 3)
+
+				var got []uint32
+				for {
+					n := it.CopyRawLIDs(tmp)
+					if n == 0 {
+						break
+					}
+					assert.LessOrEqual(t, n, 3)
+					for i := 0; i < n; i++ {
+						got = append(got, tmp[i])
+					}
+				}
+				assert.Equal(t, input, got)
+			})
+
+			t.Run("CopyRawLIDs desc chunked", func(t *testing.T) {
+				b := impl.build(input)
+				it := b.ManyIter(false)
+				tmp := make([]uint32, 3)
+
+				var got []uint32
+				for {
+					n := it.CopyRawLIDs(tmp)
+					if n == 0 {
+						break
+					}
+					assert.LessOrEqual(t, n, 3)
+					for i := 0; i < n; i++ {
+						got = append(got, tmp[i])
 					}
 				}
 				assert.Equal(t, []uint32{30, 25, 20, 15, 10, 5, 1}, got)
