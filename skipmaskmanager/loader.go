@@ -18,11 +18,11 @@ type loader struct {
 	filePath     string
 	headers      []lidsBlockHeader
 	file         *os.File
-	headersCache *cache.Cache[[]lidsBlockHeader]
+	headersCache *cache.ConcurrentCache[[]lidsBlockHeader]
 	cashKey      uint32
 }
 
-func newLoader(filePath string, headersCache *cache.Cache[[]lidsBlockHeader]) *loader {
+func newLoader(filePath string, headersCache *cache.ConcurrentCache[[]lidsBlockHeader]) *loader {
 	return &loader{
 		filePath:     filePath,
 		headersCache: headersCache,

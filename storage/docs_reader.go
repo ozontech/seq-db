@@ -10,10 +10,10 @@ import (
 
 type DocsReader struct {
 	reader DocBlocksReader
-	cache  *cache.Cache[[]byte]
+	cache  *cache.ConcurrentCache[[]byte]
 }
 
-func NewDocsReader(limiter *ReadLimiter, reader io.ReaderAt, docsCache *cache.Cache[[]byte]) DocsReader {
+func NewDocsReader(limiter *ReadLimiter, reader io.ReaderAt, docsCache *cache.ConcurrentCache[[]byte]) DocsReader {
 	return DocsReader{
 		reader: NewDocBlocksReader(limiter, reader),
 		cache:  docsCache,

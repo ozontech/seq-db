@@ -43,7 +43,7 @@ func getAllFracs(dataDir string) []string {
 }
 
 func getReader(path string) (storage.IndexReader, *os.File) {
-	c := cache.NewCache[[]byte](nil, nil)
+	c := cache.NewConcurrentCache[[]byte](nil, nil)
 	f, err := os.Open(path)
 	if err != nil {
 		panic(err)

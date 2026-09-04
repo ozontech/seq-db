@@ -325,7 +325,7 @@ func (b *Block) find(from, to int, searcher pattern.Searcher) ([]int, error) {
 type BlockLoader struct {
 	fracName  string
 	fracVer   config.BinaryDataVersion
-	cache     cache.Wrapper[*Block]
+	cache     cache.Cache[*Block]
 	reader    *storage.IndexReader
 	unpackBuf *UnpackBuffer
 	blockBuf  []byte
@@ -335,7 +335,7 @@ func NewBlockLoader(
 	fracName string,
 	fracVer config.BinaryDataVersion,
 	reader *storage.IndexReader,
-	c cache.Wrapper[*Block],
+	c cache.Cache[*Block],
 ) *BlockLoader {
 	return &BlockLoader{
 		fracName:  fracName,

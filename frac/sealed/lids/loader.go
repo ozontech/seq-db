@@ -45,14 +45,14 @@ func (b *UnpackBuffer) Reset(fracVer config.BinaryDataVersion) {
 // NOT THREAD SAFE. Do not use concurrently.
 // Use your own Loader instance for each search query
 type Loader struct {
-	cache     cache.Wrapper[*Block]
+	cache     cache.Cache[*Block]
 	reader    *storage.IndexReader
 	unpackBuf *UnpackBuffer
 	blockBuf  []byte
 	fracVer   config.BinaryDataVersion
 }
 
-func NewLoader(fracVer config.BinaryDataVersion, r *storage.IndexReader, c cache.Wrapper[*Block]) *Loader {
+func NewLoader(fracVer config.BinaryDataVersion, r *storage.IndexReader, c cache.Cache[*Block]) *Loader {
 	return &Loader{
 		cache:     c,
 		reader:    r,

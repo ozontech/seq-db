@@ -14,27 +14,27 @@ func (f LoaderFunc[V]) Load(key uint32) (V, int, error) {
 	return f(key)
 }
 
-type Wrapper[V any] interface {
+type Cache[V any] interface {
 	Get(key uint32, l Loader[V]) (V, error)
 }
 
 var (
-	_ Wrapper[any] = (*Cache[any])(nil)
-	_ Wrapper[any] = (*Session[any])(nil)
-	_ Wrapper[any] = (*Scan[any])(nil)
+	_ Cache[any] = (*ConcurrentCache[any])(nil)
+	_ Cache[any] = (*Session[any])(nil)
+	_ Cache[any] = (*Scan[any])(nil)
 )
 
-// Session is a wrapper for [Cache] which stores local
+// Session is a wrapper for [ConcurrentCache] which stores local
 // copies of [entry] via weak pointers.
 type Session[V any] struct {
-	cache *Cache[V]
+	cache *ConcurrentCache[V]
 	// The reason why [local] hashmap contains weak-pointers
 	// is to prevent memory over-use. Whenever cache will be released
 	// entries will be collected by GC and we will have to go to the cache again.
 	local map[uint32]weak.Pointer[entry[V]]
 }
 
-func NewSession[V any](c *Cache[V]) *Session[V] {
+func NewSession[V any](c *ConcurrentCache[V]) *Session[V] {
 	return &Session[V]{
 		cache: c,
 		local: make(map[uint32]weak.Pointer[entry[V]]),

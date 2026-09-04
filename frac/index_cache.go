@@ -9,42 +9,42 @@ import (
 
 func NewIndexCache() *IndexCache {
 	return &IndexCache{
-		LegacyRegistry: cache.NewCache[[]byte](nil, nil),
+		LegacyRegistry: cache.NewConcurrentCache[[]byte](nil, nil),
 
-		TokenRegistry:   cache.NewCache[[]byte](nil, nil),
-		OffsetsRegistry: cache.NewCache[[]byte](nil, nil),
-		IDRegistry:      cache.NewCache[[]byte](nil, nil),
-		LIDRegistry:     cache.NewCache[[]byte](nil, nil),
+		TokenRegistry:   cache.NewConcurrentCache[[]byte](nil, nil),
+		OffsetsRegistry: cache.NewConcurrentCache[[]byte](nil, nil),
+		IDRegistry:      cache.NewConcurrentCache[[]byte](nil, nil),
+		LIDRegistry:     cache.NewConcurrentCache[[]byte](nil, nil),
 
-		MIDs:   cache.NewCache[[]byte](nil, nil),
-		RIDs:   cache.NewCache[seqids.BlockRIDs](nil, nil),
-		Params: cache.NewCache[seqids.BlockParams](nil, nil),
+		MIDs:   cache.NewConcurrentCache[[]byte](nil, nil),
+		RIDs:   cache.NewConcurrentCache[seqids.BlockRIDs](nil, nil),
+		Params: cache.NewConcurrentCache[seqids.BlockParams](nil, nil),
 
-		Tokens:     cache.NewCache[*token.Block](nil, nil),
-		TokenTable: cache.NewCache[token.Table](nil, nil),
-		LIDs:       cache.NewCache[*lids.Block](nil, nil),
+		Tokens:     cache.NewConcurrentCache[*token.Block](nil, nil),
+		TokenTable: cache.NewConcurrentCache[token.Table](nil, nil),
+		LIDs:       cache.NewConcurrentCache[*lids.Block](nil, nil),
 	}
 }
 
 type IndexCache struct {
 	// Registry cache for legacy sealed fractions.
-	LegacyRegistry *cache.Cache[[]byte]
+	LegacyRegistry *cache.ConcurrentCache[[]byte]
 
 	// Per-file registry caches (each IndexReader needs its own).
-	TokenRegistry   *cache.Cache[[]byte]
-	OffsetsRegistry *cache.Cache[[]byte]
-	IDRegistry      *cache.Cache[[]byte]
-	LIDRegistry     *cache.Cache[[]byte]
+	TokenRegistry   *cache.ConcurrentCache[[]byte]
+	OffsetsRegistry *cache.ConcurrentCache[[]byte]
+	IDRegistry      *cache.ConcurrentCache[[]byte]
+	LIDRegistry     *cache.ConcurrentCache[[]byte]
 
 	// Block-level data caches shared across all readers.
-	MIDs   *cache.Cache[[]byte]
-	RIDs   *cache.Cache[seqids.BlockRIDs]
-	Params *cache.Cache[seqids.BlockParams]
+	MIDs   *cache.ConcurrentCache[[]byte]
+	RIDs   *cache.ConcurrentCache[seqids.BlockRIDs]
+	Params *cache.ConcurrentCache[seqids.BlockParams]
 
-	Tokens     *cache.Cache[*token.Block]
-	TokenTable *cache.Cache[token.Table]
+	Tokens     *cache.ConcurrentCache[*token.Block]
+	TokenTable *cache.ConcurrentCache[token.Table]
 
-	LIDs *cache.Cache[*lids.Block]
+	LIDs *cache.ConcurrentCache[*lids.Block]
 }
 
 func (s *IndexCache) Release() {

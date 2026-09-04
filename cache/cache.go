@@ -57,7 +57,7 @@ func (e *entry[V]) updateGeneration(ng *Generation) {
 	}
 }
 
-type Cache[V any] struct {
+type ConcurrentCache[V any] struct {
 	mu                sync.Mutex // covers all Cache operations
 	maxPayloadSize    int        // max len payload map had
 	payload           map[uint32]*entry[V]
@@ -67,11 +67,11 @@ type Cache[V any] struct {
 	released          bool
 }
 
-func NewCache[V any](cleaner *Cleaner, metrics *Metrics) *Cache[V] {
+func NewConcurrentCache[V any](cleaner *Cleaner, metrics *Metrics) *ConcurrentCache[V] {
 	keySize := unsafe.Sizeof(uint32(0))
 	entrySize := unsafe.Sizeof(entry[V]{}) + unsafe.Sizeof(&entry[V]{})
 
-	res := &Cache[V]{
+	res := &ConcurrentCache[V]{
 		payload:   make(map[uint32]*entry[V]),
 		metrics:   metrics,
 		entrySize: uint64(keySize + entrySize),
@@ -86,7 +86,7 @@ func NewCache[V any](cleaner *Cleaner, metrics *Metrics) *Cache[V] {
 }
 
 // Reset is used in tests only
-func (c *Cache[V]) Reset(generation *Generation) {
+func (c *ConcurrentCache[V]) Reset(generation *Generation) {
 	newPayload := make(map[uint32]*entry[V])
 
 	c.mu.Lock()
@@ -96,13 +96,13 @@ func (c *Cache[V]) Reset(generation *Generation) {
 	c.mu.Unlock()
 }
 
-func (c *Cache[V]) SetGeneration(generation *Generation) {
+func (c *ConcurrentCache[V]) SetGeneration(generation *Generation) {
 	c.mu.Lock()
 	c.currentGeneration = generation
 	c.mu.Unlock()
 }
 
-func (c *Cache[V]) Cleanup() uint64 {
+func (c *ConcurrentCache[V]) Cleanup() uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -130,7 +130,7 @@ func (c *Cache[V]) Cleanup() uint64 {
 	return bytesFreed
 }
 
-func (c *Cache[V]) Evict(key uint32) {
+func (c *ConcurrentCache[V]) Evict(key uint32) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -145,7 +145,7 @@ func (c *Cache[V]) Evict(key uint32) {
 }
 
 // Recreates the payload map. If len is too small, fraction is probably out of date and useless
-func (c *Cache[V]) recreatePayload() {
+func (c *ConcurrentCache[V]) recreatePayload() {
 	if c.maxPayloadSize < recreateThreshold { // not large enough
 		return
 	}
@@ -165,7 +165,7 @@ func (c *Cache[V]) recreatePayload() {
 
 // getOrCreate attempts to get value from cache
 // in case of failure it creates new entry, puts it into cache and returns
-func (c *Cache[V]) getOrCreate(key uint32) (*entry[V], *sync.WaitGroup, bool) {
+func (c *ConcurrentCache[V]) getOrCreate(key uint32) (*entry[V], *sync.WaitGroup, bool) {
 	if !c.mu.TryLock() {
 		// we only need this for metrics
 		c.metrics.reportLockWait()
@@ -209,7 +209,7 @@ func (c *Cache[V]) getOrCreate(key uint32) (*entry[V], *sync.WaitGroup, bool) {
 
 // save is called when everything went well, and we want to save the value in cache
 // refMemSize - this is the size of the memory that the entry refers to
-func (c *Cache[V]) save(e *entry[V], wg *sync.WaitGroup, value V, refMemSize int, latency float64) {
+func (c *ConcurrentCache[V]) save(e *entry[V], wg *sync.WaitGroup, value V, refMemSize int, latency float64) {
 	size := c.entrySize + uint64(refMemSize)
 
 	c.mu.Lock()
@@ -233,7 +233,7 @@ func (c *Cache[V]) save(e *entry[V], wg *sync.WaitGroup, value V, refMemSize int
 }
 
 // recover is called when something went wrong, and we need to recover from unsuccessful attempt
-func (c *Cache[V]) recover(key uint32, wg *sync.WaitGroup) {
+func (c *ConcurrentCache[V]) recover(key uint32, wg *sync.WaitGroup) {
 	c.mu.Lock()
 	delete(c.payload, key)
 	c.mu.Unlock()
@@ -242,7 +242,7 @@ func (c *Cache[V]) recover(key uint32, wg *sync.WaitGroup) {
 }
 
 // handlePanic should be called directly with defer keyword
-func (c *Cache[V]) handlePanic(key uint32, wg *sync.WaitGroup) {
+func (c *ConcurrentCache[V]) handlePanic(key uint32, wg *sync.WaitGroup) {
 	err := recover()
 	if err == nil {
 		return
@@ -253,12 +253,12 @@ func (c *Cache[V]) handlePanic(key uint32, wg *sync.WaitGroup) {
 	panic(err)
 }
 
-func (c *Cache[V]) Get(key uint32, l Loader[V]) (V, error) {
+func (c *ConcurrentCache[V]) Get(key uint32, l Loader[V]) (V, error) {
 	value, _, err := c.get(key, l)
 	return value, err
 }
 
-func (c *Cache[V]) get(key uint32, l Loader[V]) (V, *entry[V], error) {
+func (c *ConcurrentCache[V]) get(key uint32, l Loader[V]) (V, *entry[V], error) {
 	e, wg, success := c.getOrCreate(key)
 	if success {
 		return e.value, e, nil
@@ -279,7 +279,7 @@ func (c *Cache[V]) get(key uint32, l Loader[V]) (V, *entry[V], error) {
 	return value, e, nil
 }
 
-func (c *Cache[V]) Release() {
+func (c *ConcurrentCache[V]) Release() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -297,7 +297,7 @@ func (c *Cache[V]) Release() {
 	c.released = true
 }
 
-func (c *Cache[V]) Released() bool {
+func (c *ConcurrentCache[V]) Released() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

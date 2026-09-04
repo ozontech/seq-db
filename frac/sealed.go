@@ -36,7 +36,7 @@ type Sealed struct {
 	info *common.Info
 
 	docsFile   *os.File
-	docsCache  *cache.Cache[[]byte]
+	docsCache  *cache.ConcurrentCache[[]byte]
 	docsReader storage.DocsReader
 
 	// IsLegacy is true for fractions that use the old single .index file format.
@@ -82,7 +82,7 @@ func NewSealed(
 	baseFile string,
 	readLimiter *storage.ReadLimiter,
 	indexCache *IndexCache,
-	docsCache *cache.Cache[[]byte],
+	docsCache *cache.ConcurrentCache[[]byte],
 	info *common.Info,
 	config *Config,
 	skipMaskProvider skipMaskProvider,
@@ -121,7 +121,7 @@ func NewSealedPreloaded(
 	preloaded *sealed.PreloadedData,
 	rl *storage.ReadLimiter,
 	indexCache *IndexCache,
-	docsCache *cache.Cache[[]byte],
+	docsCache *cache.ConcurrentCache[[]byte],
 	config *Config,
 	skipMaskProvider skipMaskProvider,
 ) *Sealed {

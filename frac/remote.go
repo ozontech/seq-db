@@ -40,7 +40,7 @@ type Remote struct {
 	info *common.Info
 
 	docsFile   storage.ImmutableFile
-	docsCache  *cache.Cache[[]byte]
+	docsCache  *cache.ConcurrentCache[[]byte]
 	docsReader storage.DocsReader
 
 	// IsLegacy is true for fractions that use the old single .index file format.
@@ -77,7 +77,7 @@ func NewRemote(
 	baseFile string,
 	readLimiter *storage.ReadLimiter,
 	indexCache *IndexCache,
-	docsCache *cache.Cache[[]byte],
+	docsCache *cache.ConcurrentCache[[]byte],
 	info *common.Info,
 	config *Config,
 	s3cli *s3.Client,

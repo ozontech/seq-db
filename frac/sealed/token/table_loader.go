@@ -24,7 +24,7 @@ type TableLoader struct {
 	isLegacy bool
 
 	reader *storage.IndexReader
-	cache  cache.Wrapper[Table]
+	cache  cache.Cache[Table]
 
 	once       sync.Once
 	tableIndex uint32
@@ -37,7 +37,7 @@ func NewTableLoader(
 	fracVer config.BinaryDataVersion,
 	isLegacy bool,
 	reader *storage.IndexReader,
-	c cache.Wrapper[Table],
+	c cache.Cache[Table],
 ) *TableLoader {
 	return &TableLoader{
 		fracName: fracName,

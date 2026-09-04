@@ -14,7 +14,7 @@ import (
 func TestCacheSize(t *testing.T) {
 	const SIZE = int(10 * units.MiB)
 	cleaner := NewCleaner(0, nil)
-	c := NewCache[[]byte](cleaner, nil)
+	c := NewConcurrentCache[[]byte](cleaner, nil)
 
 	_, _ = c.Get(1, LoaderFunc[[]byte](func(uint32) ([]byte, int, error) { return make([]byte, SIZE), SIZE, nil }))
 
@@ -31,9 +31,9 @@ func TestClean(t *testing.T) {
 
 	cleaner := NewCleaner(uint64(SizeTotal), nil)
 
-	c1 := NewCache[[]byte](cleaner, nil)
-	c2 := NewCache[[]byte](cleaner, nil)
-	c3 := NewCache[[]byte](cleaner, nil)
+	c1 := NewConcurrentCache[[]byte](cleaner, nil)
+	c2 := NewConcurrentCache[[]byte](cleaner, nil)
+	c3 := NewConcurrentCache[[]byte](cleaner, nil)
 
 	stat := &CleanStat{}
 	_, _ = c1.Get(0, LoaderFunc[[]byte](func(uint32) ([]byte, int, error) { return make([]byte, Size1), int(Size1), nil }))
@@ -54,9 +54,9 @@ func TestClean(t *testing.T) {
 	assert.Equal(t, int(actual), int(bytesTotal), "wrong cache size")
 }
 
-func testStress(size, workers, records int, get func(*Cache[[]uint64], int)) {
+func testStress(size, workers, records int, get func(*ConcurrentCache[[]uint64], int)) {
 	cleaner := NewCleaner(uint64(size), nil)
-	c := NewCache[[]uint64](cleaner, nil)
+	c := NewConcurrentCache[[]uint64](cleaner, nil)
 
 	done := atomic.Bool{}
 	wgClean := sync.WaitGroup{}
@@ -92,7 +92,7 @@ func TestStress(t *testing.T) {
 		getCount  = 100_000
 		cacheSize = 128 * units.KiB
 	)
-	testStress(int(cacheSize), 64, getCount, func(c *Cache[[]uint64], i int) {
+	testStress(int(cacheSize), 64, getCount, func(c *ConcurrentCache[[]uint64], i int) {
 		key := uint32(rand.Intn(objCount))
 		var err interface{}
 		panicFired := false
@@ -130,7 +130,7 @@ func TestStress(t *testing.T) {
 
 func BenchmarkBucketClean(b *testing.B) {
 	cleaner := NewCleaner(0, nil)
-	c := NewCache[int](cleaner, nil)
+	c := NewConcurrentCache[int](cleaner, nil)
 
 	for b.Loop() {
 		b.StopTimer()

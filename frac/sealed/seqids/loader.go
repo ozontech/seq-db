@@ -30,9 +30,9 @@ type Loader struct {
 	reader      *storage.IndexReader
 	table       *Table
 
-	mids   cache.Wrapper[[]byte]
-	rids   cache.Wrapper[BlockRIDs]
-	params cache.Wrapper[BlockParams]
+	mids   cache.Cache[[]byte]
+	rids   cache.Cache[BlockRIDs]
+	params cache.Cache[BlockParams]
 }
 
 type midsLoader Loader
@@ -56,7 +56,6 @@ func (l *Loader) GetMIDsBlock(index uint32, unpackCache *unpackCache) (BlockMIDs
 		return BlockMIDs{}, err
 	}
 
-	// unpack
 	block := BlockMIDs{Values: unpackCache.values[:0]}
 	if err := block.Unpack(data, l.fracVersion, unpackCache); err != nil {
 		return BlockMIDs{}, err
@@ -67,10 +66,14 @@ func (l *Loader) GetMIDsBlock(index uint32, unpackCache *unpackCache) (BlockMIDs
 
 type ridsLoader Loader
 
+func (rl *ridsLoader) ridBlockIndex(index uint32) uint32 {
+	return rl.table.StartBlockIndex + index*3 + 1
+}
+
 func (rl *ridsLoader) Load(index uint32) (BlockRIDs, int, error) {
 	l := (*Loader)(rl)
 
-	data, _, err := l.reader.ReadIndexBlock(l.ridBlockIndex(index), nil)
+	data, _, err := l.reader.ReadIndexBlock(rl.ridBlockIndex(index), nil)
 	if err != nil {
 		return BlockRIDs{}, 0, err
 	}
@@ -99,10 +102,14 @@ func (l *Loader) GetRIDsBlock(index uint32) (BlockRIDs, error) {
 
 type paramsLoader Loader
 
+func (pl *paramsLoader) paramsBlockIndex(index uint32) uint32 {
+	return pl.table.StartBlockIndex + index*3 + 2
+}
+
 func (pl *paramsLoader) Load(index uint32) (BlockParams, int, error) {
 	l := (*Loader)(pl)
 
-	data, _, err := l.reader.ReadIndexBlock(l.paramsBlockIndex(index), nil)
+	data, _, err := l.reader.ReadIndexBlock(pl.paramsBlockIndex(index), nil)
 	if err != nil {
 		return BlockParams{}, 0, err
 	}
@@ -122,12 +129,4 @@ func (pl *paramsLoader) Load(index uint32) (BlockParams, int, error) {
 
 func (l *Loader) GetParamsBlock(index uint32) (BlockParams, error) {
 	return l.params.Get(index, (*paramsLoader)(l))
-}
-
-func (l *Loader) ridBlockIndex(index uint32) uint32 {
-	return l.table.StartBlockIndex + index*3 + 1
-}
-
-func (l *Loader) paramsBlockIndex(index uint32) uint32 {
-	return l.table.StartBlockIndex + index*3 + 2
 }

@@ -18,12 +18,12 @@ type IndexReader struct {
 	reader     io.ReaderAt
 	readerName string
 
-	cache cache.Wrapper[[]byte]
+	cache cache.Cache[[]byte]
 }
 
 func NewIndexReader(
 	limiter *ReadLimiter, readerName string,
-	reader io.ReaderAt, registryCache cache.Wrapper[[]byte],
+	reader io.ReaderAt, registryCache cache.Cache[[]byte],
 ) IndexReader {
 	return IndexReader{
 		limiter:    limiter,
@@ -37,13 +37,20 @@ type registryLoader IndexReader
 
 func (rl *registryLoader) Load(uint32) ([]byte, int, error) {
 	prefix := make([]byte, 16)
+
 	n, err := rl.limiter.ReadAt(rl.reader, prefix, 0)
 	if err != nil {
-		return nil, 0, fmt.Errorf("can't read disk registry, %s", err.Error())
+		return nil, 0, fmt.Errorf(
+			"can't read disk registry from file %s: %s",
+			rl.readerName, err.Error(),
+		)
 	}
 
 	if n == 0 {
-		return nil, 0, fmt.Errorf("can't read disk registry, n=0")
+		return nil, 0, fmt.Errorf(
+			"can't read disk registry from file %s, n=0",
+			rl.readerName,
+		)
 	}
 
 	pos := binary.LittleEndian.Uint64(prefix)
@@ -52,15 +59,24 @@ func (rl *registryLoader) Load(uint32) ([]byte, int, error) {
 	buf := make([]byte, size)
 	n, err = rl.limiter.ReadAt(rl.reader, buf, int64(pos))
 	if err != nil && err != io.EOF {
-		return nil, 0, fmt.Errorf("can't read disk registry, %s", err.Error())
+		return nil, 0, fmt.Errorf(
+			"can't read disk registry from file %s: %s",
+			rl.readerName, err.Error(),
+		)
 	}
 
 	if uint64(n) != size {
-		return nil, 0, fmt.Errorf("can't read disk registry, read=%d, requested=%d", n, size)
+		return nil, 0, fmt.Errorf(
+			"can't read disk registry from file %s: read=%d, requested=%d",
+			rl.readerName, n, size,
+		)
 	}
 
 	if len(buf)%IndexBlockHeaderSize != 0 {
-		return nil, 0, fmt.Errorf("wrong registry format")
+		return nil, 0, fmt.Errorf(
+			"cannot read disk registry from file %s: wrong registry format",
+			rl.readerName,
+		)
 	}
 
 	return buf, cap(buf), nil
