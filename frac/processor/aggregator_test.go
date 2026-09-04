@@ -156,6 +156,10 @@ func (m *MockTokenIndex) GetValByTID(tid uint32, _ string) []byte {
 	return []byte(strconv.Itoa(int(tid)))
 }
 
+func (m *MockTokenIndex) GetFreqsByTIDs(tids []uint32, _ string) []uint32 {
+	return make([]uint32, len(tids))
+}
+
 type IDSourcePair struct {
 	LID    node.LID
 	Source uint32

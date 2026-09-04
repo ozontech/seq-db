@@ -11,7 +11,7 @@ import (
 
 func (g *grpcV1) Search(
 	ctx context.Context, req *seqproxyapi.SearchRequest,
-) (*seqproxyapi.SearchResponse, error) {
+) (_ *seqproxyapi.SearchResponse, retErr error) {
 	ctx, cancel := context.WithTimeout(ctx, g.config.SearchTimeout)
 	defer cancel()
 
@@ -27,7 +27,8 @@ func (g *grpcV1) Search(
 		WithTotal: req.WithTotal,
 		Order:     req.Order,
 	}
-	sResp, err := g.doSearch(ctx, proxyReq, true, nil)
+	sResp, obs, err := g.doSearch(ctx, proxyReq, true, true, nil)
+	defer func() { obs.finish("Search", retErr) }()
 	if err != nil {
 		return nil, err
 	}

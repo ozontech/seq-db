@@ -7,13 +7,13 @@ package mock
 import (
 	context "context"
 	reflect "reflect"
-	time "time"
 
 	gomock "github.com/golang/mock/gomock"
 	metadata "google.golang.org/grpc/metadata"
 
 	seqproxyapi "github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	search "github.com/ozontech/seq-db/proxy/search"
+	query "github.com/ozontech/seq-db/query"
 	querytracer "github.com/ozontech/seq-db/querytracer"
 	seq "github.com/ozontech/seq-db/seq"
 )
@@ -116,12 +116,12 @@ func (mr *MockSearchIngestorMockRecorder) GetAsyncSearchesList(arg0, arg1 interf
 }
 
 // Search mocks base method.
-func (m *MockSearchIngestor) Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, time.Duration, error) {
+func (m *MockSearchIngestor) Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, *search.SearchStats, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Search", ctx, sr, tr)
 	ret0, _ := ret[0].(*seq.QPR)
 	ret1, _ := ret[1].(search.DocsIterator)
-	ret2, _ := ret[2].(time.Duration)
+	ret2, _ := ret[2].(*search.SearchStats)
 	ret3, _ := ret[3].(error)
 	return ret0, ret1, ret2, ret3
 }
@@ -159,6 +159,22 @@ func (m *MockSearchIngestor) Status(ctx context.Context) *search.IngestorStatus 
 func (mr *MockSearchIngestorMockRecorder) Status(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockSearchIngestor)(nil).Status), ctx)
+}
+
+// StreamSearch mocks base method.
+func (m *MockSearchIngestor) StreamSearch(ctx context.Context, sr *search.StreamSearchRequest, tr *querytracer.Tracer) (query.RecordProducer, search.ControlBroadcaster, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StreamSearch", ctx, sr, tr)
+	ret0, _ := ret[0].(query.RecordProducer)
+	ret1, _ := ret[1].(search.ControlBroadcaster)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// StreamSearch indicates an expected call of StreamSearch.
+func (mr *MockSearchIngestorMockRecorder) StreamSearch(ctx, sr, tr interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StreamSearch", reflect.TypeOf((*MockSearchIngestor)(nil).StreamSearch), ctx, sr, tr)
 }
 
 // MockMappingProvider is a mock of MappingProvider interface.
@@ -471,4 +487,123 @@ func (m *MockFetchServer) SetTrailer(arg0 metadata.MD) {
 func (mr *MockFetchServerMockRecorder) SetTrailer(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTrailer", reflect.TypeOf((*MockFetchServer)(nil).SetTrailer), arg0)
+}
+
+// MockExportAsyncSearchServer is a mock of ExportAsyncSearchServer interface.
+type MockExportAsyncSearchServer struct {
+	ctrl     *gomock.Controller
+	recorder *MockExportAsyncSearchServerMockRecorder
+}
+
+// MockExportAsyncSearchServerMockRecorder is the mock recorder for MockExportAsyncSearchServer.
+type MockExportAsyncSearchServerMockRecorder struct {
+	mock *MockExportAsyncSearchServer
+}
+
+// NewMockExportAsyncSearchServer creates a new mock instance.
+func NewMockExportAsyncSearchServer(ctrl *gomock.Controller) *MockExportAsyncSearchServer {
+	mock := &MockExportAsyncSearchServer{ctrl: ctrl}
+	mock.recorder = &MockExportAsyncSearchServerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockExportAsyncSearchServer) EXPECT() *MockExportAsyncSearchServerMockRecorder {
+	return m.recorder
+}
+
+// Context mocks base method.
+func (m *MockExportAsyncSearchServer) Context() context.Context {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Context")
+	ret0, _ := ret[0].(context.Context)
+	return ret0
+}
+
+// Context indicates an expected call of Context.
+func (mr *MockExportAsyncSearchServerMockRecorder) Context() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Context", reflect.TypeOf((*MockExportAsyncSearchServer)(nil).Context))
+}
+
+// RecvMsg mocks base method.
+func (m_2 *MockExportAsyncSearchServer) RecvMsg(m any) error {
+	m_2.ctrl.T.Helper()
+	ret := m_2.ctrl.Call(m_2, "RecvMsg", m)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RecvMsg indicates an expected call of RecvMsg.
+func (mr *MockExportAsyncSearchServerMockRecorder) RecvMsg(m interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecvMsg", reflect.TypeOf((*MockExportAsyncSearchServer)(nil).RecvMsg), m)
+}
+
+// Send mocks base method.
+func (m *MockExportAsyncSearchServer) Send(arg0 *seqproxyapi.ExportResponse) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Send", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Send indicates an expected call of Send.
+func (mr *MockExportAsyncSearchServerMockRecorder) Send(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Send", reflect.TypeOf((*MockExportAsyncSearchServer)(nil).Send), arg0)
+}
+
+// SendHeader mocks base method.
+func (m *MockExportAsyncSearchServer) SendHeader(arg0 metadata.MD) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendHeader", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendHeader indicates an expected call of SendHeader.
+func (mr *MockExportAsyncSearchServerMockRecorder) SendHeader(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendHeader", reflect.TypeOf((*MockExportAsyncSearchServer)(nil).SendHeader), arg0)
+}
+
+// SendMsg mocks base method.
+func (m_2 *MockExportAsyncSearchServer) SendMsg(m any) error {
+	m_2.ctrl.T.Helper()
+	ret := m_2.ctrl.Call(m_2, "SendMsg", m)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendMsg indicates an expected call of SendMsg.
+func (mr *MockExportAsyncSearchServerMockRecorder) SendMsg(m interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendMsg", reflect.TypeOf((*MockExportAsyncSearchServer)(nil).SendMsg), m)
+}
+
+// SetHeader mocks base method.
+func (m *MockExportAsyncSearchServer) SetHeader(arg0 metadata.MD) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetHeader", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetHeader indicates an expected call of SetHeader.
+func (mr *MockExportAsyncSearchServerMockRecorder) SetHeader(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetHeader", reflect.TypeOf((*MockExportAsyncSearchServer)(nil).SetHeader), arg0)
+}
+
+// SetTrailer mocks base method.
+func (m *MockExportAsyncSearchServer) SetTrailer(arg0 metadata.MD) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetTrailer", arg0)
+}
+
+// SetTrailer indicates an expected call of SetTrailer.
+func (mr *MockExportAsyncSearchServerMockRecorder) SetTrailer(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTrailer", reflect.TypeOf((*MockExportAsyncSearchServer)(nil).SetTrailer), arg0)
 }

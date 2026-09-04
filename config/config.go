@@ -75,11 +75,19 @@ type Config struct {
 		Tokens struct {
 			// BlockSize sets max token block size in bytes.
 			BlockSize Bytes `config:"block_size" default:"16KiB"`
+			// FreqThresholdPercentage specifies the minimum posting-list length as a percentage
+			// of the fraction's document count. For example, with 1_000_000 docs and FreqThresholdPercentage=1,
+			// frequency is stored for tokens that appear in at least 10_000 documents.
+			FreqThresholdPercentage float64 `config:"freq_threshold_percentage" default:"0.005"`
 		} `config:"tokens"`
 
 		Lids struct {
 			// BlockSize sets max lids (postings) saved per LIDs block.
 			BlockSize int `config:"block_size" default:"65536"`
+			// BitmapThreshold specifies minimum number of LIDs in the lid list
+			// which are serialized as bitmap. LIDs lists with more elements use bitmap encoding,
+			// while smaller lists use delta encoding. Default value is 0 (disabled).
+			BitmapThreshold int `config:"bitmap_threshold"`
 		} `config:"lids"`
 	} `config:"sealing"`
 
@@ -167,6 +175,15 @@ type Config struct {
 			FractionTokens int `config:"fraction_tokens" default:"100000"`
 		} `config:"aggregation"`
 	} `config:"limits"`
+
+	QueryOptimization struct {
+		BatchExecution struct {
+			Enabled bool `config:"enabled"`
+			// CostThreshold is the minimum estimated non-batched execution cost required to enable batch-at-a-time query
+			// evaluation. Suggestion is to use value which is greater than 3 x LID block size.
+			CostThreshold int `config:"cost_threshold" default:"150000"`
+		} `config:"batch_execution"`
+	} `config:"query_optimization"`
 
 	CircuitBreaker struct {
 		Bulk struct {
@@ -337,6 +354,8 @@ type Config struct {
 		// Specify how many tokens can be checked using regular expressions.
 		// If zero then there is no limit.
 		MaxRegexTokensCheck int `config:"max_regex_tokens_check" default:"0"`
+		// If true, suitable ComplexSearch queries will be served through stream search implementation.
+		UseStreamSearch bool `config:"use_stream_search"`
 	} `config:"experimental"`
 }
 

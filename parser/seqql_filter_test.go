@@ -74,6 +74,9 @@ func TestSeqQLAll(t *testing.T) {
 
 	test("", "*")
 	test("*", "*")
+	test("((*))", "*")
+	test("((*) OR service:foo) AND service:bar", "((* or service:foo) and service:bar)")
+	test("_exists_:*", "_exists_:*")
 
 	// Propagate "not".
 	test(`NOT NOT text:a`, `text:a`)
@@ -104,7 +107,7 @@ func TestSeqQLAll(t *testing.T) {
 	test(`service:"some*thing*"`, `service:some*thing*`)
 	test(`service:some*thing*`, `service:some*thing*`)
 	test(`service:*thing*`, `service:*thing*`)
-	test(`service:"*"`, `service:*`)
+	test(`service:"*"`, `_exists_:service`)
 	test(`service:"cms"*"inter"*"api"`, `service:cms*inter*api`)
 
 	// Test keyword wildcards.
@@ -127,7 +130,7 @@ func TestSeqQLAll(t *testing.T) {
 	test(`keyword:'#''$'"^"`, `keyword:"#$^"`)
 	test(`message:'#''$'"^"`, `message:""`)
 	test(`'#':'#'`, `"#":"#"`)
-	test(`"*":"*"`, `"\*":*`)
+	test(`"*":"*"`, `_exists_:"\*"`)
 	test("`*`:`*`", `"\*":"\*"`)
 	test(`m:a AND OR : r`, `(m:a and "OR":r)`)
 
@@ -141,8 +144,8 @@ func TestSeqQLAll(t *testing.T) {
 	test(`service:a or not service:b or service:c`, `(not (not service:c and (not service:a and service:b)))`)
 	test(`not (service:a or service:c)`, `(not (service:a or service:c))`)
 	test(`NOT Not service:a`, `service:a`)
-	test(`service:*`, `service:*`)
-	test(` service : * `, `service:*`)
+	test(`service:*`, `_exists_:service`)
+	test(` service : * `, `_exists_:service`)
 	test(`service:a or service:b AND NOT service:c`, `(service:a or (not service:c and service:b))`)
 
 	// Test comments.
@@ -160,10 +163,10 @@ service:"wms-svc-logistics-megasort" and level:"#"
 
 	// Test complex search with wildcards.
 	test(`text:"\*\**"`, `text:"\*\*"*`)
-	test(`text:'value=*' AND text:'value="\*"*'`, `((text:value and text:*) and ((text:value and text:"\*") and text:*))`)
-	test(`text:value'="\*\*"*' AND text:"\*\*"`, `(((text:value and text:"\*\*") and text:*) and text:"\*\*")`)
+	test(`text:'value=*' AND text:'value="\*"*'`, `((text:value and _exists_:text) and ((text:value and text:"\*") and _exists_:text))`)
+	test(`text:value'="\*\*"*' AND text:"\*\*"`, `(((text:value and text:"\*\*") and _exists_:text) and text:"\*\*")`)
 	test(`text:'value=*' AND text:'value="\*"*' AND text:'value="\*\*"*' AND text:"\*\*" AND text:"\*\**"`,
-		`(((((text:value and text:*) and ((text:value and text:"\*") and text:*)) and ((text:value and text:"\*\*") and text:*)) and text:"\*\*") and text:"\*\*"*)`)
+		`(((((text:value and _exists_:text) and ((text:value and text:"\*") and _exists_:text)) and ((text:value and text:"\*\*") and _exists_:text)) and text:"\*\*") and text:"\*\*"*)`)
 
 	// Test escape.
 	test("keyword:`+7 995 28 07`", "keyword:\"+7 995 28 07\"")
@@ -213,8 +216,8 @@ service:"wms-svc-logistics-megasort" and level:"#"
 
 	// Test filter 'in'.
 	test(`service:in(auth-api, api-gateway, clickhouse-shard-*)`, `((service:auth-api or service:api-gateway) or service:clickhouse-shard-*)`)
-	test(`service:in(*, *, *)`, `((service:* or service:*) or service:*)`)
-	test(`service:in(*)`, `service:*`)
+	test(`service:in(*, *, *)`, `((_exists_:service or _exists_:service) or _exists_:service)`)
+	test(`service:in(*)`, `_exists_:service`)
 	test(`level:in(1)`, `level:1`)
 	test(`level:in(1, '2', 'three')`, `((level:1 or level:2) or level:three)`)
 	test(`level:in(1, '2', ''*3*"")`, `((level:1 or level:2) or level:*3*)`)
@@ -393,15 +396,19 @@ func TestParseSeqQLError(t *testing.T) {
 	test(`keyword:re()`, "parsing `re` filter: invalid syntax")
 	test(`keyword:re(")`, "parsing `re` filter: invalid syntax")
 	test(`keyword:re(""invalid)`, "parsing `re` filter: expected ')', got \"invalid\"")
-	test(`keyword:re("[invalid")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: missing closing ]: `[invalid)$`")
-	test(`keyword:re("invalid)")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: unexpected ): `^(?i:invalid))$`")
+	test(`keyword:re("[invalid")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: missing closing ]: `[invalid`")
+	test(`keyword:re("invalid)")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: unexpected ): `invalid)`")
 	test(`keyword:re("[z-a]")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: invalid character class range: `z-a`")
 	test(`keyword:re("*invalid")`, "parsing `re` filter: invalid expression for `re` filter: error parsing regexp: missing argument to repetition operator: `*`")
 
 	// Test pipes.
 	test(`message:--||`, `unknown pipe: |`)
 	test(`source_type:access* | fields message | fields except login:admin`, `parsing 'fields' pipe: unexpected symbol ":"`)
-	test(`source_type:access* | fields message | fields login`, `multiple field filters is not allowed`)
+	test(`source_type:access* | stats count by (service), count by (login)`, `parsing 'stats' pipe: stats pipe allows only one aggregation`)
+	test(`source_type:access* | stats count by (service) | stats count by (login)`, `multiple 'stats' pipes are not allowed`)
+	test(`source_type:access* | sort asc | sort desc`, `multiple 'sort' pipes are not allowed`)
+	test(`source_type:access* | limit 10 | limit 20`, `multiple 'limit' pipes are not allowed`)
+	test(`source_type:access* | offset 10 | offset 20`, `multiple 'offset' pipes are not allowed`)
 	test(`* | fields event, `, `parsing 'fields' pipe: trailing comma not allowed`)
 }
 

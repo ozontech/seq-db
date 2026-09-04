@@ -11,7 +11,7 @@ import (
 
 func (g *grpcV1) GetAggregation(
 	ctx context.Context, req *seqproxyapi.GetAggregationRequest,
-) (*seqproxyapi.GetAggregationResponse, error) {
+) (_ *seqproxyapi.GetAggregationResponse, retErr error) {
 	ctx, cancel := context.WithTimeout(ctx, g.config.SearchTimeout)
 	defer cancel()
 
@@ -24,7 +24,20 @@ func (g *grpcV1) GetAggregation(
 		Aggs:  req.Aggs,
 	}
 
-	sResp, err := g.doSearch(ctx, proxyReq, false, nil)
+	if len(req.Aggs) == 1 && shouldUseStreamSearch(g.config.UseStreamSearch, proxyReq) {
+		cResp, err := g.useStreamSearch(ctx, proxyReq, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &seqproxyapi.GetAggregationResponse{
+			Aggs:  cResp.Aggs,
+			Total: cResp.Total,
+			Error: cResp.Error,
+		}, nil
+	}
+
+	sResp, obs, err := g.doSearch(ctx, proxyReq, false, true, nil)
+	defer func() { obs.finish("GetAggregation", retErr) }()
 	if err != nil {
 		return nil, err
 	}

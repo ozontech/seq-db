@@ -25,7 +25,30 @@ func (q *SeqQLQuery) SeqQLString() string {
 	return b.String()
 }
 
+// streamOnlyPipes are the pipes valid only for the StreamSearch method. Non-stream
+// callers reject them via SeqQLQuery.ValidatePipes.
+var streamOnlyPipes = map[string]struct{}{
+	"stats":  {},
+	"filter": {},
+	"sort":   {},
+	"limit":  {},
+	"offset": {},
+}
+
+// ValidateStreamPipes returns an error if the query contains any stream-only pipe (stats, filter,
+// sort, limit, offset). It is used by methods that do not support stream-only pipes
+// to reject them after parsing. ParseSeqQL itself does not perform this check.
+func (q *SeqQLQuery) ValidateStreamPipes() error {
+	for _, p := range q.Pipes {
+		if _, ok := streamOnlyPipes[p.Name()]; ok {
+			return fmt.Errorf("pipe '%s' is not allowed", p.Name())
+		}
+	}
+	return nil
+}
+
 func parse(q string, mapping seq.Mapping) (SeqQLQuery, error) {
+	q = trimOuterParens(q)
 	lex := newLexer(q)
 
 	lex.Next()
@@ -50,6 +73,61 @@ func parse(q string, mapping seq.Mapping) (SeqQLQuery, error) {
 		Root:  root,
 		Pipes: pipes,
 	}, nil
+}
+
+// trimOuterParens removes every layer of parentheses that wraps the entire
+// query, e.g. "(((* | fields level)))" -> "* | fields level". Parentheses that
+// only wrap part of the query (e.g. "(a:1) | fields b") are left untouched.
+func trimOuterParens(q string) string {
+	for {
+		q = strings.TrimSpace(q)
+		if len(q) < 2 || q[0] != '(' || q[len(q)-1] != ')' {
+			return q
+		}
+		if !wrapsWholeQuery(q) {
+			return q
+		}
+		q = q[1 : len(q)-1]
+	}
+}
+
+func wrapsWholeQuery(s string) bool {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\'', '"':
+			// Skip quoted string literals so that parentheses inside them do not affect depth tracking.
+			i += skipQuoted(s[i:])
+		case '`':
+			// Raw strings have no escape sequences: find the closing backtick.
+			if j := strings.IndexByte(s[i+1:], '`'); j >= 0 {
+				i += j + 1
+			} else {
+				i = len(s) - 1
+			}
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 && i != len(s)-1 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func skipQuoted(s string) int {
+	quote := s[0]
+	for i := 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++ // skip the escaped char
+		case quote:
+			return i
+		}
+	}
+	return len(s) - 1
 }
 
 func ParseSeqQL(q string, mapping seq.Mapping) (SeqQLQuery, error) {
@@ -388,7 +466,7 @@ func parseSeqQLSubexpr(lex *lexer, mapping seq.Mapping, depth int) (*ASTNode, er
 		return nil, fmt.Errorf("unexpected end of query")
 	}
 
-	if lex.IsKeyword(string(wildcardRune)) && depth == 0 {
+	if lex.IsKeyword(string(wildcardRune)) {
 		lex.Next()
 		// Query is `*`.
 		return &ASTNode{

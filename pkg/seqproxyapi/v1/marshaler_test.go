@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -144,4 +145,75 @@ func TestFetchAsyncSearchResultResponseMarshalJSON(t *testing.T) {
 		},
 		`{"status":"AsyncSearchStatusCanceled","request":{"retention":"3600s","query":{"query":"message:some_message","from":"2025-07-01T05:20:00Z","to":"2025-08-01T05:20:00Z","explain":false,"downsample":0},"aggs":[],"withDocs":true,"size":"100"},"response":{"docs":[{"id":"46e48be997010000-e70163d0fa7582e4","data":{"message":"some_message","level":3},"time":"2025-07-08T10:19:08.742Z"}],"hist":{}},"progress":1,"disk_usage":"488","started_at":"2025-07-25T12:25:57.672Z","expires_at":"2025-07-25T13:25:57.672Z","canceled_at":"2025-07-25T12:34:26.577Z"}`,
 	)
+}
+
+func TestRecordMarshalJSON(t *testing.T) {
+	r := require.New(t)
+
+	t.Run("documents", func(t *testing.T) {
+		ns := time.Date(2025, 7, 8, 10, 19, 8, 742000000, time.UTC).UnixNano()
+		rec := &Record{RawData: [][]byte{
+			[]byte("46e48be997010000-e70163d0fa7582e4"),
+			encoding.Uint64ToBytes(uint64(ns)),
+			[]byte(`{"message":"some_message","level":3}`),
+		}}
+
+		raw, err := json.Marshal(rec)
+		r.NoError(err)
+		r.Equal(
+			`["46e48be997010000-e70163d0fa7582e4","2025-07-08T10:19:08.742Z",{"message":"some_message","level":3}]`,
+			string(raw),
+		)
+	})
+
+	t.Run("aggregation buckets", func(t *testing.T) {
+		tsNs := time.Date(2025, 7, 8, 10, 19, 8, 742000000, time.UTC).UnixNano()
+		rec := &Record{RawData: [][]byte{
+			[]byte("service-a"),
+			encoding.Float64ToBytes(42.5),
+			encoding.Uint64ToBytes(uint64(tsNs)),
+			encoding.Float64ArrayToBytes(nil), // no quantiles
+		}}
+
+		raw, err := json.Marshal(rec)
+		r.NoError(err)
+		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z",[]]`, string(raw))
+	})
+
+	t.Run("aggregation bucket with quantiles", func(t *testing.T) {
+		tsNs := time.Date(2025, 7, 8, 10, 19, 8, 742000000, time.UTC).UnixNano()
+		rec := &Record{RawData: [][]byte{
+			[]byte("service-a"),
+			encoding.Float64ToBytes(42.5),
+			encoding.Uint64ToBytes(uint64(tsNs)),
+			encoding.Float64ArrayToBytes([]float64{5.5, 9.1}),
+		}}
+
+		raw, err := json.Marshal(rec)
+		r.NoError(err)
+		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z",[5.5,9.1]]`, string(raw))
+	})
+
+	t.Run("aggregation bucket with NaN", func(t *testing.T) {
+		rec := &Record{RawData: [][]byte{
+			[]byte("service-a"),
+			encoding.Float64ToBytes(math.NaN()),
+			make([]byte, 8),
+			encoding.Float64ArrayToBytes(nil),
+		}}
+
+		raw, err := json.Marshal(rec)
+		r.NoError(err)
+		r.Equal(`["service-a","NaN","",[]]`, string(raw))
+	})
+
+	t.Run("unknown layout falls back to raw bytes", func(t *testing.T) {
+		rec := &Record{RawData: [][]byte{[]byte("only"), []byte("two"), []byte("three"), []byte("four"), []byte("five")}}
+		raw, err := json.Marshal(rec)
+		r.NoError(err)
+		// encoding/json marshals [][]byte as an array of base64 strings.
+		var decoded [][]byte
+		r.NoError(json.Unmarshal(raw, &decoded))
+		r.Equal(rec.RawData, decoded)
+	})
 }

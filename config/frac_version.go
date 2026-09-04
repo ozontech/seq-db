@@ -22,8 +22,16 @@ const (
 	// BinaryDataV4 - delta bitpack encoded MIDs and LIDs
 	BinaryDataV4
 
-	// BinaryDataV5 - token blocks have zone maps (eng letters presense, max token length)
+	// BinaryDataV5 - token blocks have zone maps (eng letters presense) and doc frequencies for heavy tokens
 	BinaryDataV5
+
+	// BinaryDataV6
+	// - Keep offsets separate in token block.
+	// - The ID count is no longer stored in the offsets section.
+	// - LID blocks have firstLID/lastLID encoded in ext1.
+	// - isContinued is not used, no legacy TID adjusting.
+	// - Roaring bitmaps for sufficiently large LID lists, hybrid LIDs block format
+	BinaryDataV6
 )
 
-const CurrentFracVersion = BinaryDataV5
+const CurrentFracVersion = BinaryDataV6

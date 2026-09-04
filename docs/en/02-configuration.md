@@ -117,9 +117,10 @@ Settings for fraction sealing.
 
 ### Tokens
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `sealing.tokens.block_size` | Bytes | `16KiB` | Max token block size in bytes |
+| Field                                      | Type    | Default | Description                                                                                                                                     |
+|--------------------------------------------|---------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| `sealing.tokens.block_size`                | Bytes   | `16KiB` | Max token block size in bytes                                                                                                                   |
+| `sealing.tokens.freq_threshold_percentage` | float64 | `0.005` | The minimum posting-list length as a percentage of the fraction's document count a token should have to have a doc frequency stored in fraction |
 
 ### Lids
 

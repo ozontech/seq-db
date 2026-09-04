@@ -184,6 +184,66 @@ func (g *grpcV1) GetAsyncSearchesList(
 	return res, nil
 }
 
+type asyncExportStream struct {
+	ExportAsyncSearchServer
+	size int
+}
+
+func (s *asyncExportStream) Send(resp *seqproxyapi.ExportResponse) error {
+	s.size += len(resp.GetDoc().GetData()) + len(resp.GetDoc().GetId())
+	return s.ExportAsyncSearchServer.Send(resp)
+}
+
+func (g *grpcV1) ExportAsyncSearch(req *seqproxyapi.ExportAsyncSearchRequest, stream seqproxyapi.SeqProxyApi_ExportAsyncSearchServer) error {
+	ctx, cancel := context.WithTimeout(stream.Context(), g.config.ExportTimeout)
+	defer cancel()
+
+	if g.config.AsyncSearchMaxDocumentsPerRequest > 0 && req.Size > g.config.AsyncSearchMaxDocumentsPerRequest {
+		return status.Errorf(codes.InvalidArgument, "too many documents are requested: count=%d, max=%d",
+			req.Size, g.config.AsyncSearchMaxDocumentsPerRequest)
+	}
+
+	const protocol = "grpc"
+	defer func(start time.Time) {
+		asyncsearcher.ExportDuration.WithLabelValues(protocol).Observe(float64(time.Since(start).Milliseconds()))
+	}(time.Now())
+
+	asyncsearcher.CurrentExportersCount.WithLabelValues(protocol).Inc()
+	defer asyncsearcher.CurrentExportersCount.WithLabelValues(protocol).Dec()
+
+	_, docsStream, err := g.searchIngestor.FetchAsyncSearchResult(ctx, search.FetchAsyncSearchResultRequest{
+		ID:     req.SearchId,
+		Size:   int(req.Size),
+		Offset: int(req.Offset),
+	})
+	if err != nil {
+		return err
+	}
+
+	wrapped := asyncExportStream{ExportAsyncSearchServer: stream}
+	defer func() {
+		asyncsearcher.ExportSize.WithLabelValues(protocol).Observe(float64(wrapped.size))
+	}()
+
+	for doc, err := range search.DocsIteratorSeq(docsStream) {
+		if err != nil {
+			return status.Errorf(codes.Internal, "docs reading error: %v", err)
+		}
+		eResp := &seqproxyapi.ExportResponse{
+			Doc: &seqproxyapi.Document{
+				Id:   doc.ID.String(),
+				Data: doc.Data,
+				Time: timestamppb.New(doc.ID.MID.Time()),
+			},
+		}
+		if err = wrapped.Send(eResp); err != nil {
+			return status.Errorf(codes.Internal, "failed to send data: %v", err)
+		}
+	}
+
+	return nil
+}
+
 func (g *grpcV1) CancelAsyncSearch(
 	ctx context.Context,
 	r *seqproxyapi.CancelAsyncSearchRequest,

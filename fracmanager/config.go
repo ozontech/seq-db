@@ -74,23 +74,36 @@ func FillConfigWithDefault(config *Config) *Config {
 	if config.SealParams.TokenTableZstdLevel == 0 {
 		config.SealParams.TokenTableZstdLevel = zstdDefaultLevel
 	}
+	if config.SealParams.TokenFreqThresholdPercentage == 0 {
+		config.SealParams.TokenFreqThresholdPercentage = consts.DefaultTokenFreqThresholdPercentage
+	}
+	if config.SealParams.LIDsBitmapThreshold == 0 {
+		config.SealParams.LIDsBitmapThreshold = consts.DefaultLIDBlockCap
+	}
 	if config.ReplayWorkers == 0 {
 		config.ReplayWorkers = consts.DefaultReplayWorkers
 	}
 
-	if config.SortCacheSize == 0 {
+	// Document sorting is enabled.
+	if !config.Fraction.SkipSortDocs {
 		const (
 			SdocsCacheSizeMultiplier = 8
 			SdocsCacheSizeMaxRatio   = 0.8
 		)
-		config.SortCacheSize = config.FracSize * SdocsCacheSizeMultiplier
+
 		if config.SortCacheSize > config.CacheSize {
-			config.SortCacheSize = uint64(float64(config.CacheSize) * 0.8)
+			logger.Fatal("cache size misconfiguration",
+				zap.Float64("total_cache_size_mb", util.SizeToUnit(config.CacheSize, "mb")),
+				zap.Float64("sort_cache_size_mb", util.SizeToUnit(config.SortCacheSize, "mb")))
 		}
-	} else if config.SortCacheSize > config.CacheSize {
-		logger.Fatal("cache size misconfiguration",
-			zap.Float64("total_cache_size_mb", util.SizeToUnit(config.CacheSize, "mb")),
-			zap.Float64("sort_cache_size_mb", util.SizeToUnit(config.SortCacheSize, "mb")))
+
+		// Set defaults.
+		if config.SortCacheSize == 0 {
+			config.SortCacheSize = config.FracSize * SdocsCacheSizeMultiplier
+			if config.SortCacheSize > config.CacheSize {
+				config.SortCacheSize = uint64(float64(config.CacheSize) * 0.8)
+			}
+		}
 	}
 
 	return config

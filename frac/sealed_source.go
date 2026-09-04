@@ -30,19 +30,24 @@ type SealedSource struct {
 
 func NewSealedSource(f *Sealed) *SealedSource {
 	f.init(true)
+
+	idReader := f.mustGetReader(f.idReaderProvider)
+	lidReader := f.mustGetReader(f.lidReaderProvider)
+	tokenReader := f.mustGetReader(f.tokenReaderProvider)
+
 	return &SealedSource{
 		f: f,
 		idsProvider: seqids.NewProvider(
-			&f.idReader,
+			&idReader,
 			f.indexCache.MIDs,
 			f.indexCache.RIDs,
 			f.indexCache.Params,
 			&f.blocksData.IDsTable,
 			f.info.BinaryDataVer,
 		),
-		lidsLoader:       lids.NewLoader(f.Info().BinaryDataVer, &f.lidReader, f.indexCache.LIDs),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, &f.tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &f.tokenReader, f.indexCache.TokenTable),
+		lidsLoader:       lids.NewLoader(f.Info().BinaryDataVer, &lidReader, f.indexCache.LIDs),
+		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &tokenReader, f.indexCache.Tokens),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &tokenReader, f.indexCache.TokenTable),
 	}
 }
 
@@ -124,7 +129,7 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 					}
 
 					chunkIdx := lidsTable.GetChunkIndex(bi, tid)
-					lidsBuf = append(lidsBuf, lidBlock.GetLIDs(chunkIdx)...)
+					lidsBuf = lidBlock.AppendLIDsTo(chunkIdx, lidsBuf)
 				}
 
 				if !yield(indexwriter.TokenLIDs{First: tokenVal, Second: lidsBuf}, nil) {

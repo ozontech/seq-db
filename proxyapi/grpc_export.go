@@ -12,6 +12,7 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
+	"github.com/ozontech/seq-db/proxy/search"
 )
 
 type metricStream struct {
@@ -24,7 +25,7 @@ func (s *metricStream) Send(resp *seqproxyapi.ExportResponse) error {
 	return s.SeqProxyApi_ExportServer.Send(resp)
 }
 
-func (g *grpcV1) Export(req *seqproxyapi.ExportRequest, stream seqproxyapi.SeqProxyApi_ExportServer) error {
+func (g *grpcV1) Export(req *seqproxyapi.ExportRequest, stream seqproxyapi.SeqProxyApi_ExportServer) (retErr error) {
 	ctx, cancel := context.WithTimeout(stream.Context(), g.config.ExportTimeout)
 	defer cancel()
 
@@ -47,7 +48,8 @@ func (g *grpcV1) Export(req *seqproxyapi.ExportRequest, stream seqproxyapi.SeqPr
 		Offset:    req.Offset,
 		WithTotal: false,
 	}
-	sResp, err := g.doSearch(ctx, proxyReq, true, nil)
+	sResp, obs, err := g.doSearch(ctx, proxyReq, true, true, nil)
+	defer func() { obs.finish("Export", retErr) }()
 	if err != nil {
 		return err
 	}
@@ -63,7 +65,10 @@ func (g *grpcV1) Export(req *seqproxyapi.ExportRequest, stream seqproxyapi.SeqPr
 		metric.ExportSize.WithLabelValues(protocol).Observe(float64(wrapped.size))
 	}()
 
-	for doc, err := sResp.docsStream.Next(); err == nil; doc, err = sResp.docsStream.Next() {
+	for doc, err := range search.DocsIteratorSeq(sResp.docsStream) {
+		if err != nil {
+			return status.Errorf(codes.Internal, "docs reading error: %v", err)
+		}
 		eResp := &seqproxyapi.ExportResponse{
 			Doc: &seqproxyapi.Document{
 				Id:   doc.ID.String(),

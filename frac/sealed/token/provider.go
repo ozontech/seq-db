@@ -74,6 +74,20 @@ func (tp *Provider) FindContains(needle []byte) ([]uint32, error) {
 		})
 }
 
+func (tp *Provider) FindSuffix(suffix []byte) ([]uint32, error) {
+	requiredLetters := util.NewLettersBitset(suffix)
+
+	return tp.findInBlocks(
+		tp.FirstTID(),
+		tp.LastTID(),
+		func(e *TableEntry) bool {
+			return e.Letters.IsNil() || e.Letters.ContainsAll(requiredLetters)
+		},
+		func(b *Block, firstIndex, lastIndex int) ([]int, error) {
+			return b.suffix(firstIndex, lastIndex, suffix)
+		})
+}
+
 func (tp *Provider) FindToken(searcher pattern.Searcher) ([]uint32, error) {
 	return tp.findInBlocks(
 		searcher.FirstTID(),

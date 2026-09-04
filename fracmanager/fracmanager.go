@@ -15,6 +15,7 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 	"github.com/ozontech/seq-db/util"
@@ -155,6 +156,10 @@ func (fm *FracManager) AcquireFraction(name string) (frac.Fraction, func(), bool
 
 func (fm *FracManager) AcquireFractions() (List, func()) {
 	return fm.lc.registry.acquireAllFractions()
+}
+
+func (fm *FracManager) AcquireFractionsInRange(from, to seq.MID) (List, func()) {
+	return fm.lc.registry.acquireFractionsInRange(from, to)
 }
 
 func (fm *FracManager) Oldest() uint64 {

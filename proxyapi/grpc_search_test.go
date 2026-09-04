@@ -96,10 +96,10 @@ func prepareSearchTestData(t *testing.T, cData searchTestCaseData) searchTestDat
 		siSearchMock = &siSearchMockData{
 			sr: sr,
 			ret: siSearchRet{
-				qpr:  qpr,
-				docs: docs,
-				took: time.Second,
-				err:  cData.siErr,
+				qpr:   qpr,
+				docs:  docs,
+				stats: &search.SearchStats{},
+				err:   cData.siErr,
 			},
 		}
 	}
