@@ -88,8 +88,8 @@ func BenchmarkIndexer(b *testing.B) {
 		filepath.Join(b.TempDir(), "test"),
 		idx,
 		storage.NewReadLimiter(1, nil),
-		cache.NewCache[[]byte](nil, nil),
-		cache.NewCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
 		&frac.Config{},
 		testSkipMaskProvider{},
 	)

@@ -128,16 +128,16 @@ func NewCacheMaintainer(totalCacheSize, sortCacheSize uint64, metrics *CacheMain
 	}
 }
 
-func newCache[V any](cm *CacheMaintainer, layerName string) *cache.Cache[V] {
+func newCache[V any](cm *CacheMaintainer, layerName string) *cache.ConcurrentCache[V] {
 	c := cm.layers[layerName]
-	return cache.NewCache[V](c.cleaner, c.metrics)
+	return cache.NewConcurrentCache[V](c.cleaner, c.metrics)
 }
 
-func (cm *CacheMaintainer) CreateDocBlockCache() *cache.Cache[[]byte] {
+func (cm *CacheMaintainer) CreateDocBlockCache() *cache.ConcurrentCache[[]byte] {
 	return newCache[[]byte](cm, docsName)
 }
 
-func (cm *CacheMaintainer) CreateSortDocsCache() *cache.Cache[[]byte] {
+func (cm *CacheMaintainer) CreateSortDocsCache() *cache.ConcurrentCache[[]byte] {
 	return newCache[[]byte](cm, sortName)
 }
 

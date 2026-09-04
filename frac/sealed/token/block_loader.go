@@ -325,7 +325,7 @@ func (b *Block) find(from, to int, searcher pattern.Searcher) ([]int, error) {
 type BlockLoader struct {
 	fracName  string
 	fracVer   config.BinaryDataVersion
-	cache     *cache.Cache[*Block]
+	cache     cache.Cache[*Block]
 	reader    *storage.IndexReader
 	unpackBuf *UnpackBuffer
 	blockBuf  []byte
@@ -335,7 +335,7 @@ func NewBlockLoader(
 	fracName string,
 	fracVer config.BinaryDataVersion,
 	reader *storage.IndexReader,
-	c *cache.Cache[*Block],
+	c cache.Cache[*Block],
 ) *BlockLoader {
 	return &BlockLoader{
 		fracName:  fracName,
@@ -346,19 +346,24 @@ func NewBlockLoader(
 	}
 }
 
-func (l *BlockLoader) Load(index uint32) *Block {
-	block := l.cache.Get(index, func() (*Block, int) {
-		block, err := l.read(index)
-		if err != nil {
-			logger.Panic("error reading tokens block", // todo: get rid of panic here
-				zap.Error(err),
-				zap.Uint32("index", index),
-				zap.String("frac", l.fracName),
-			)
-		}
-		size := block.Size()
-		return block, size
-	})
+func (l *BlockLoader) Load(index uint32) (*Block, int, error) {
+	block, err := l.read(index)
+	if err != nil {
+		return nil, 0, err
+	}
+	size := block.Size()
+	return block, size, nil
+}
+
+func (l *BlockLoader) GetTokenBlock(index uint32) *Block {
+	block, err := l.cache.Get(index, l)
+	if err != nil {
+		logger.Panic("error reading tokens block", // todo: get rid of panic here
+			zap.Error(err),
+			zap.Uint32("index", index),
+			zap.String("frac", l.fracName),
+		)
+	}
 	return block
 }
 

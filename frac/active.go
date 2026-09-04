@@ -48,8 +48,8 @@ type Active struct {
 	docsFile   *os.File
 	docsReader storage.DocsReader
 	sortReader storage.DocsReader
-	docsCache  *cache.Cache[[]byte]
-	sortCache  *cache.Cache[[]byte]
+	docsCache  *cache.ConcurrentCache[[]byte]
+	sortCache  *cache.ConcurrentCache[[]byte]
 
 	walFile   *os.File
 	walReader *storage.WalReader
@@ -64,8 +64,8 @@ func NewActive(
 	baseFileName string,
 	activeIndexer *ActiveIndexer,
 	readLimiter *storage.ReadLimiter,
-	docsCache *cache.Cache[[]byte],
-	sortCache *cache.Cache[[]byte],
+	docsCache *cache.ConcurrentCache[[]byte],
+	sortCache *cache.ConcurrentCache[[]byte],
 	cfg *Config,
 	skipMaskProvider skipMaskProvider,
 ) *Active {

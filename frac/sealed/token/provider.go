@@ -49,7 +49,7 @@ func (tp *Provider) findEntry(tid uint32) *TableEntry {
 func (tp *Provider) findBlock(blockIndex uint32) *Block {
 	if tp.curBlockIndex != blockIndex {
 		tp.curBlockIndex = blockIndex
-		tp.curBlock = tp.loader.Load(blockIndex)
+		tp.curBlock = tp.loader.GetTokenBlock(blockIndex)
 	}
 	return tp.curBlock
 }

@@ -10,71 +10,7 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-type ReaderProvider struct {
-	limiter *ReadLimiter
-
-	reader     io.ReaderAt
-	readerName string
-
-	cache *cache.Cache[[]byte]
-}
-
-func NewReaderProvider(
-	limiter *ReadLimiter,
-	readerName string,
-	reader io.ReaderAt,
-	registryCache *cache.Cache[[]byte],
-) *ReaderProvider {
-	return &ReaderProvider{
-		limiter:    limiter,
-		readerName: readerName,
-		reader:     reader,
-		cache:      registryCache,
-	}
-}
-
-func (r *ReaderProvider) GetReader() (IndexReader, error) {
-	registry, err := r.cache.GetWithError(1, func() ([]byte, int, error) {
-		data, err := r.readRegistry()
-		return data, cap(data), err
-	})
-	if err != nil {
-		return IndexReader{}, err
-	}
-
-	return NewIndexReader(r.limiter, r.readerName, r.reader, registry), nil
-}
-
-func (r *ReaderProvider) readRegistry() ([]byte, error) {
-	numBuf := make([]byte, 16)
-
-	n, err := r.limiter.ReadAt(r.reader, numBuf, 0)
-	if err != nil {
-		return nil, fmt.Errorf("can't read disk registry from file %s: %s", r.readerName, err.Error())
-	}
-	if n == 0 {
-		return nil, fmt.Errorf("can't read disk registry from file %s, n=0", r.readerName)
-	}
-
-	pos := binary.LittleEndian.Uint64(numBuf)
-	l := binary.LittleEndian.Uint64(numBuf[8:])
-	buf := make([]byte, l)
-
-	n, err = r.limiter.ReadAt(r.reader, buf, int64(pos))
-	if err != nil && err != io.EOF {
-		return nil, fmt.Errorf("can't read disk registry from file %s: %s", r.readerName, err.Error())
-	}
-
-	if uint64(n) != l {
-		return nil, fmt.Errorf("can't read disk registry, read=%d, requested=%d in file %s", n, l, r.readerName)
-	}
-
-	if len(buf)%IndexBlockHeaderSize != 0 {
-		return nil, fmt.Errorf("wrong registry format in file %s", r.readerName)
-	}
-
-	return buf, nil
-}
+const registryCacheKey = 1
 
 type IndexReader struct {
 	limiter *ReadLimiter
@@ -82,33 +18,89 @@ type IndexReader struct {
 	reader     io.ReaderAt
 	readerName string
 
-	registry []byte
+	cache cache.Cache[[]byte]
 }
 
 func NewIndexReader(
-	limiter *ReadLimiter,
-	readerName string,
-	reader io.ReaderAt,
-	registry []byte,
+	limiter *ReadLimiter, readerName string,
+	reader io.ReaderAt, registryCache cache.Cache[[]byte],
 ) IndexReader {
 	return IndexReader{
 		limiter:    limiter,
 		reader:     reader,
 		readerName: readerName,
-		registry:   registry,
+		cache:      registryCache,
 	}
 }
 
+type registryLoader IndexReader
+
+func (rl *registryLoader) Load(uint32) ([]byte, int, error) {
+	prefix := make([]byte, 16)
+
+	n, err := rl.limiter.ReadAt(rl.reader, prefix, 0)
+	if err != nil {
+		return nil, 0, fmt.Errorf(
+			"can't read disk registry from file %s: %s",
+			rl.readerName, err.Error(),
+		)
+	}
+
+	if n == 0 {
+		return nil, 0, fmt.Errorf(
+			"can't read disk registry from file %s, n=0",
+			rl.readerName,
+		)
+	}
+
+	pos := binary.LittleEndian.Uint64(prefix)
+	size := binary.LittleEndian.Uint64(prefix[8:])
+
+	buf := make([]byte, size)
+	n, err = rl.limiter.ReadAt(rl.reader, buf, int64(pos))
+	if err != nil && err != io.EOF {
+		return nil, 0, fmt.Errorf(
+			"can't read disk registry from file %s: %s",
+			rl.readerName, err.Error(),
+		)
+	}
+
+	if uint64(n) != size {
+		return nil, 0, fmt.Errorf(
+			"can't read disk registry from file %s: read=%d, requested=%d",
+			rl.readerName, n, size,
+		)
+	}
+
+	if len(buf)%IndexBlockHeaderSize != 0 {
+		return nil, 0, fmt.Errorf(
+			"cannot read disk registry from file %s: wrong registry format",
+			rl.readerName,
+		)
+	}
+
+	return buf, cap(buf), nil
+}
+
+func (r *IndexReader) registry() ([]byte, error) {
+	return r.cache.Get(registryCacheKey, (*registryLoader)(r))
+}
+
 func (r *IndexReader) GetBlockHeader(index uint32) (IndexBlockHeader, error) {
-	if (uint64(index)+1)*IndexBlockHeaderSize > uint64(len(r.registry)) {
+	reg, err := r.registry()
+	if err != nil {
+		return nil, err
+	}
+
+	if (uint64(index)+1)*IndexBlockHeaderSize > uint64(len(reg)) {
 		return nil, fmt.Errorf(
 			"too large index block in file %s, with index %d, registry size %d",
-			r.readerName, index, len(r.registry),
+			r.readerName, index, len(reg),
 		)
 	}
 
 	pos := index * IndexBlockHeaderSize
-	return r.registry[pos : pos+IndexBlockHeaderSize], nil
+	return reg[pos : pos+IndexBlockHeaderSize], nil
 }
 
 func (r *IndexReader) ReadIndexBlock(blockIndex uint32, dst []byte) ([]byte, uint64, error) {
@@ -137,6 +129,11 @@ func (r *IndexReader) ReadIndexBlock(blockIndex uint32, dst []byte) ([]byte, uin
 	return dst, uint64(n), err
 }
 
-func (r *IndexReader) BlocksCount() int {
-	return len(r.registry) / IndexBlockHeaderSize
+func (r *IndexReader) BlocksCount() (int, error) {
+	reg, err := r.registry()
+	if err != nil {
+		return 0, err
+	}
+
+	return len(reg) / IndexBlockHeaderSize, nil
 }

@@ -58,7 +58,7 @@ func TestIteratorAsc(t *testing.T) {
 			err := os.WriteFile(filePath, rawSkipMask, 0o644)
 			require.NoError(t, err)
 
-			loader := newLoader(filePath, cache.NewCache[[]lidsBlockHeader](nil, nil))
+			loader := newLoader(filePath, cache.NewConcurrentCache[[]lidsBlockHeader](nil, nil))
 
 			iterator := (*IteratorAsc)(NewIterator(loader, tc.minLID, tc.maxLID))
 			resLIDs := make([]uint32, 0, len(tc.expected))

@@ -89,7 +89,7 @@ type SkipMaskManager struct {
 	cacheCleanInterval time.Duration
 	cacheGCDelay       time.Duration
 
-	headersCache        *cache.Cache[[]lidsBlockHeader]
+	headersCache        *cache.ConcurrentCache[[]lidsBlockHeader]
 	headersCacheCleaner *cache.Cleaner
 }
 
@@ -130,7 +130,7 @@ func New(
 		maintenanceInterval: defaultMaintenanceInterval,
 		cacheCleanInterval:  defaultCacheCleanInterval,
 		cacheGCDelay:        defaultCacheGCDelay,
-		headersCache:        cache.NewCache[[]lidsBlockHeader](cacheCleaner, nil),
+		headersCache:        cache.NewConcurrentCache[[]lidsBlockHeader](cacheCleaner, nil),
 		headersCacheCleaner: cacheCleaner,
 	}
 }

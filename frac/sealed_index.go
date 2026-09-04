@@ -234,7 +234,7 @@ type sealedTokenIndex struct {
 func (ti *sealedTokenIndex) GetValByTID(tid uint32, field string) []byte {
 	tokenTable := ti.tokenTableLoader.Load()
 	if entry := tokenTable.GetEntryByTID(tid, field); entry != nil {
-		block := ti.tokenBlockLoader.Load(entry.BlockIndex)
+		block := ti.tokenBlockLoader.GetTokenBlock(entry.BlockIndex)
 		return block.GetToken(entry.GetIndexInTokensBlock(tid))
 	}
 	return nil
@@ -290,7 +290,7 @@ func (ti *sealedTokenIndex) GetFreqsByTIDs(tids []uint32, field string) []uint32
 			continue
 		}
 		entry := tokenTable.GetEntryByTID(tid, field)
-		block := ti.tokenBlockLoader.Load(entry.BlockIndex)
+		block := ti.tokenBlockLoader.GetTokenBlock(entry.BlockIndex)
 		freqs[i] = block.GetFreq(entry.GetIndexInTokensBlock(tid))
 	}
 	return freqs

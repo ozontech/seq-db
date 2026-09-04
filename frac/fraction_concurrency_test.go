@@ -71,8 +71,8 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 		fracPath,
 		activeIndexer,
 		storage.NewReadLimiter(numReaders/2, nil),
-		cache.NewCache[[]byte](nil, nil),
-		cache.NewCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
 		&frac.Config{},
 		testSkipMaskProvider{},
 	)
@@ -205,7 +205,7 @@ func TestConcurrentColdQueriesSealedFrac(t *testing.T) {
 			preloaded,
 			storage.NewReadLimiter(128, nil),
 			frac.NewIndexCache(),
-			cache.NewCache[[]byte](nil, nil),
+			cache.NewConcurrentCache[[]byte](nil, nil),
 			&frac.Config{},
 			testSkipMaskProvider{},
 		)
@@ -566,8 +566,8 @@ func createActiveFraction(fracPath string, numIndexWorkers, numReaders int) (*fr
 		fracPath,
 		activeIndexer,
 		storage.NewReadLimiter(numReaders/2, nil),
-		cache.NewCache[[]byte](nil, nil),
-		cache.NewCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
 		&frac.Config{},
 		testSkipMaskProvider{},
 	)
@@ -645,7 +645,7 @@ func seal(active *frac.Active) (*frac.Sealed, error) {
 		preloaded,
 		storage.NewReadLimiter(128, nil),
 		frac.NewIndexCache(),
-		cache.NewCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
 		&frac.Config{},
 		testSkipMaskProvider{},
 	)
