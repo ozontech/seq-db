@@ -7,7 +7,7 @@ import (
 	"github.com/ozontech/seq-db/node"
 )
 
-// IteratorAsc iterates LIDs in ascending order (low to high).
+// IteratorAsc iterates LIDs in ascending order. Used for time order desc (default order).
 type IteratorAsc struct {
 	Cursor
 	it node.Iter
@@ -39,13 +39,13 @@ func (it *IteratorAsc) narrowLIDsRange(tryNextBlock bool) bool {
 	}
 
 	first := it.batch.Min()
-	if it.maxLID < first { // fast path: out-of-bounds 1
+	if first > it.maxLID { // fast path: out-of-bounds 1
 		it.batch = node.EmptyBatch() // stop reading blocks
 		return false
 	}
 
 	last := it.batch.Max()
-	if it.minLID > last { // fast path: out-of-bounds 2; allowed to continue reading blocks
+	if last < it.minLID { // fast path: out-of-bounds 2; allowed to continue reading blocks
 		it.batch = node.EmptyBatch()
 		return tryNextBlock
 	}
