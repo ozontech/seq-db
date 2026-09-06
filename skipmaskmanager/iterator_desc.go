@@ -7,7 +7,7 @@ import (
 	"github.com/ozontech/seq-db/node"
 )
 
-// IteratorDesc iterates skip-mask LIDs in descending order (high to low).
+// IteratorDesc iterates skip-mask LIDs in desc order.
 type IteratorDesc Iterator
 
 func (it *IteratorDesc) String() string {

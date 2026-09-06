@@ -14,8 +14,9 @@ const (
 
 // LID is an encoded representation of LID and order flag made specifically for fast compare operations.
 //
-// For descending LID order the value is inverted as follows: "MaxUint32 - LID" formula using XOR mask.
-// Terminal LID value is 0 instead of MaxUint32 in descending order, but 0 is XORed to MaxUint32.
+// For asc LID order the value is stored as is and mask is zero.
+// For desc LID order the value is inverted as follows: "MaxUint32 - LID" formula using XOR mask.
+// Terminal LID value is 0 instead of MaxUint32 in desc order, but 0 is XORed to MaxUint32.
 // Which means, null value will always have lid field set to 0xFFFFFFFF (math.MaxUint32) regardless of order flag.
 type LID struct {
 	lid  uint32 // do not read this field, use Unpack instead
@@ -27,7 +28,7 @@ func NullLID() LID {
 	return NewAscLID(math.MaxUint32)
 }
 
-// NewAscLID returns LIDs for ascending LID order (low to high).
+// NewAscLID returns LIDs for asc LID order.
 func NewAscLID(lid uint32) LID {
 	return LID{
 		lid:  lid,
@@ -43,7 +44,7 @@ func NewDescZeroLID() LID {
 	return NewDescLID(math.MaxUint32)
 }
 
-// NewDescLID returns LIDs for descending LID order (high to low).
+// NewDescLID returns LIDs for desc LID order.
 func NewDescLID(lid uint32) LID {
 	return LID{
 		lid:  lid ^ descMask,

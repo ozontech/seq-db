@@ -10,12 +10,12 @@ type staticCursor struct {
 	data []uint32
 }
 
-// staticAsc stores lids in data slice in ascending order, and iterates in increasing order
+// staticAsc iterates in asc order. Data is always stored in asc order as well.
 type staticAsc struct {
 	staticCursor
 }
 
-// staticDesc stores lids in data slice in ascending order, but iterates from the end (in descending order)
+// staticDesc iterates in desc order. Data is always stored in asc order.
 type staticDesc struct {
 	staticCursor
 }
@@ -24,8 +24,6 @@ func (n *staticCursor) String() string {
 	return "STATIC"
 }
 
-// NewStatic returns a Node over sorted LID data.
-// asc=true iterates low to high; asc=false iterates high to low.
 func NewStatic(data []uint32, asc bool) Node {
 	if !asc {
 		return &staticDesc{staticCursor: staticCursor{
@@ -41,7 +39,6 @@ func NewStatic(data []uint32, asc bool) Node {
 }
 
 func (n *staticAsc) Next() LID {
-	// LID ascending: return AscLID
 	if n.ptr >= len(n.data) {
 		return NewAscLID(math.MaxUint32)
 	}
@@ -69,7 +66,6 @@ func (n *staticAsc) NextGeq(nextID LID) LID {
 }
 
 func (n *staticDesc) Next() LID {
-	// LID descending: return DescLID
 	if n.ptr < 0 {
 		return NewDescLID(0)
 	}
@@ -113,7 +109,6 @@ type staticBatchedDesc struct {
 }
 
 // NewStaticBatched returns a BatchedNode over sorted LID data.
-// asc=true iterates low to high; asc=false iterates high to low.
 func NewStaticBatched(data []uint32, asc bool) BatchedNode {
 	if !asc {
 		return &staticBatchedDesc{staticCursor: staticCursor{

@@ -7,7 +7,7 @@ import (
 	"github.com/ozontech/seq-db/node"
 )
 
-// BatchedIteratorDesc iterates LID batches in descending order (high to low).
+// BatchedIteratorDesc iterates LID batches in descending order. Used for time order asc (reverse order).
 type BatchedIteratorDesc struct {
 	Cursor
 }

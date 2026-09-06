@@ -7,7 +7,7 @@ import (
 	"github.com/ozontech/seq-db/node"
 )
 
-// IteratorDesc iterates LIDs in descending order (high to low).
+// IteratorDesc iterates LIDs in descending order. Used for time order asc (reverse order).
 type IteratorDesc struct {
 	Cursor
 	it node.Iter
