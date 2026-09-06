@@ -1,5 +1,7 @@
 package node
 
+import "sync"
+
 // nodeColumnAgg is a materialized column for aggregation. Size of column is maxLID-minLID+1.
 // column[i] has the (source+1) for ith document in search order.
 // 0 is zero values which means doc doesn't have a token with the corresponding field.
@@ -13,6 +15,19 @@ type nodeColumnAgg struct {
 	done   bool
 }
 
+var columnAggPool = sync.Pool{}
+
+func getColumn(size int) []uint64 {
+	v, _ := columnAggPool.Get().([]uint64)
+	if cap(v) >= size {
+		col := v[:size]
+		clear(col)
+		return col
+	}
+	// this new column with larger size will replace
+	return make([]uint64, size)
+}
+
 func (*nodeColumnAgg) String() string {
 	return "COLUMN_AGG"
 }
@@ -22,7 +37,7 @@ func NewColumnAgg(cursors []BatchedNode, minLID, maxLID uint32, asc bool) Source
 		return emptyNodeSourced
 	}
 
-	column := make([]uint64, maxLID-minLID+1)
+	column := getColumn(int(maxLID - minLID + 1))
 	tmp := make([]uint32, 4*1024)
 
 	for source, cursor := range cursors {
@@ -60,6 +75,14 @@ func NewColumnAgg(cursors []BatchedNode, minLID, maxLID uint32, asc bool) Source
 		n.cur = maxLID
 	}
 	return n
+}
+
+func (n *nodeColumnAgg) Dispose() {
+	if n.column == nil {
+		return
+	}
+	columnAggPool.Put(n.column[:0])
+	n.column = nil
 }
 
 func (n *nodeColumnAgg) NextSourced() (LID, uint32) {

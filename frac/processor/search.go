@@ -164,6 +164,14 @@ func IndexSearch(
 	total, ids, histMap, aggs, err := iterateEvalTree(ctx, params, index, evalTree, aggSupplier, minLID, maxLID, sw)
 	m.Stop()
 
+	if len(aggs) > 0 {
+		defer func() {
+			for _, agg := range aggs {
+				agg.Dispose()
+			}
+		}()
+	}
+
 	if err != nil {
 		return nil, err
 	}

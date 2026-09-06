@@ -98,6 +98,8 @@ type Aggregator interface {
 	Next(lid node.LID) error
 	// Aggregate processes and returns the final aggregation result.
 	Aggregate() (seq.AggregatableSamples, error)
+	// Dispose releases resources held by the aggregator.
+	Dispose()
 }
 
 type AggLimits struct {
