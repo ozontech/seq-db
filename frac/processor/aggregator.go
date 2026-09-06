@@ -178,6 +178,11 @@ func (n *TwoSourceAggregator) Aggregate() (seq.AggregatableSamples, error) {
 	}, nil
 }
 
+func (n *TwoSourceAggregator) Dispose() {
+	n.field.Dispose()
+	n.groupBy.Dispose()
+}
+
 func parseNum(str string) (float64, error) {
 	// TODO: allow time.Duration and data units (kb, mb, gb, etc) parsing.
 	num, err := strconv.ParseFloat(str, 64)
@@ -265,6 +270,10 @@ func (n *SingleSourceCountAggregator) Aggregate() (seq.AggregatableSamples, erro
 	}, nil
 }
 
+func (n *SingleSourceCountAggregator) Dispose() {
+	n.group.Dispose()
+}
+
 // SingleSourceUniqueAggregator aggregates unique values for a single source.
 type SingleSourceUniqueAggregator struct {
 	values    map[uint32]struct{}
@@ -315,6 +324,10 @@ func (n *SingleSourceUniqueAggregator) Aggregate() (seq.AggregatableSamples, err
 		NotExists:    n.notExists,
 		SamplesByBin: aggMap,
 	}, nil
+}
+
+func (n *SingleSourceUniqueAggregator) Dispose() {
+	n.group.Dispose()
 }
 
 type SingleSourceHistogramAggregator struct {
@@ -381,6 +394,10 @@ func (n *SingleSourceHistogramAggregator) Aggregate() (seq.AggregatableSamples, 
 	}
 
 	return qprHist, nil
+}
+
+func (n *SingleSourceHistogramAggregator) Dispose() {
+	n.field.Dispose()
 }
 
 // SourcedNodeIterator can iterate the sourced node that returns source, which means index in a tids slice.
@@ -476,6 +493,13 @@ func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
 
 func (s *SourcedNodeIterator) UniqueSources() int {
 	return len(s.countBySource)
+}
+
+func (s *SourcedNodeIterator) Dispose() {
+	if s.sourcedNode != nil {
+		s.sourcedNode.Dispose()
+		s.sourcedNode = nil
+	}
 }
 
 func provideExtractTimeFunc(sw *stopwatch.Stopwatch, idx idsIndex, interval int64) ExtractMIDFunc {
