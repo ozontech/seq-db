@@ -7,7 +7,7 @@ import (
 	"github.com/ozontech/seq-db/node"
 )
 
-// IteratorAsc iterates skip-mask LIDs in ascending order (low to high).
+// IteratorAsc iterates skip-mask LIDs in asc order.
 type IteratorAsc Iterator
 
 func (it *IteratorAsc) String() string {
