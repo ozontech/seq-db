@@ -232,6 +232,13 @@ func buildStreamSearchReqFromComplexSearchReq(
 	// stream search serves either documents or a single agg.
 	// shouldUseStreamSearch guarantees single agg and no histogram.
 	if len(req.Aggs) == 1 {
+		// Support legacy format in which field means groupBy.
+		agg := req.Aggs[0]
+		if agg.Func == seqproxyapi.AggFunc_AGG_FUNC_COUNT && agg.Field != "" {
+			agg.GroupBy = agg.Field
+			agg.Field = ""
+		}
+
 		aggQuery, err := convertAggsQuery(req.Aggs)
 		if err != nil {
 			return nil, err
