@@ -359,6 +359,28 @@ func (g *GrpcV1) buildProducer(
 		}
 	}
 
+	if req.OffsetId != "" {
+		// offset_id pagination
+		if offset != 0 {
+			return nil, nil, fmt.Errorf(`only one of "offset" and "offset_id" must be provided`)
+		}
+		offsetId, err := seq.FromString(req.OffsetId)
+		if err != nil {
+			return nil, nil, fmt.Errorf("could not parse offset_id: %s", req.OffsetId)
+		}
+		if len(searchParams.AggQ) > 0 {
+			return nil, nil, fmt.Errorf("offset_id is not supported for aggregation requests")
+		}
+		searchParams.OffsetId = offsetId
+		// fractions take into an account offset id, but we also limit time range here
+		// to filter out unneeded fractions
+		if searchParams.Order == seq.DocsOrderDesc {
+			searchParams.To = offsetId.MID
+		} else {
+			searchParams.From = offsetId.MID
+		}
+	}
+
 	const docDataColIdx = 1
 	var producer query.RecordProducer
 	producer = exec.NewSearcherDataSource(ctx, tr, searchParams, g.fracManager, g.searchData.searcher, g.fetchData.docFetcher)

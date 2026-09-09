@@ -337,6 +337,9 @@ func buildSearchReq(q *seqproxyapi.StreamSearchQuery) (*search.StreamSearchReque
 			streamSearchReq.Size = p.Limit
 			hasOtherPipes = true
 		case *parser.PipeOffset:
+			if q.OffsetId != "" {
+				return nil, fmt.Errorf(`only one of "offset" and "offset_id" must be provided`)
+			}
 			streamSearchReq.Offset = p.Offset
 			hasOtherPipes = true
 		case *parser.PipeSort:

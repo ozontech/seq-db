@@ -81,13 +81,20 @@ func (si *Ingestor) StreamSearch(
 		producers = append(producers, s)
 	}
 
+	// With offset_id pagination each store already starts right after the
+	// offset id, so the regular offset must not be applied on top of it.
+	offset := sr.Offset
+	if sr.OffsetId != "" {
+		offset = 0
+	}
+
 	var mergedStream query.RecordProducer
 	if sr.Agg != nil {
 		mergedStream = exec.NewDistributedAggregator(producers, sr.Agg.Func, sr.Agg.Quantiles)
 	} else {
 		const seqIdColIdx = 0
 		mergedDocsStream := exec.NewNMergedProducers(producers, seqIdColIdx, "", query.DataTypeSeqID, sr.Order)
-		mergedStream = exec.NewLimiter(mergedDocsStream, uint32(sr.Size), uint32(sr.Offset))
+		mergedStream = exec.NewLimiter(mergedDocsStream, uint32(sr.Size), uint32(offset))
 	}
 
 	return mergedStream, broadcaster, partialRespErr
