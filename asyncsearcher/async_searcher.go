@@ -131,10 +131,6 @@ type AsyncSearchRequest struct {
 	WithDocs  bool
 }
 
-type fracSearchState struct {
-	Name string
-}
-
 type asyncSearchInfo struct {
 	Version infoVersion
 
@@ -148,11 +144,12 @@ type asyncSearchInfo struct {
 	Error string `json:",omitempty"`
 
 	CanceledAt time.Time `json:",omitzero"`
-	ctx        context.Context
-	cancel     func()
+	DoneAt     time.Time `json:",omitzero"`
+
+	ctx    context.Context
+	cancel func()
 
 	Request   AsyncSearchRequest
-	Fractions []fracSearchState `json:",omitempty"`
 	StartedAt time.Time
 
 	// merged is true if QPRs have been merged into a single one.
@@ -404,6 +401,7 @@ func (as *AsyncSearcher) doSearch(id string, fracProvider fractionAcquirer) {
 
 	as.updateSearchInfo(id, func(info *asyncSearchInfo) {
 		info.Finished = true
+		info.DoneAt = time.Now()
 	})
 }
 
@@ -517,15 +515,6 @@ func intervalNameFromQPRPath(qprPath string) (string, error) {
 	// parts[1] is interval name
 	// parts[2] is extension
 	return parts[1], nil
-}
-
-func searchIdFromQPRPath(qprPath string) (string, error) {
-	filename := path.Base(qprPath)
-	parts := strings.Split(filename, ".")
-	if len(parts) != 3 {
-		return "", fmt.Errorf("unknown qpr filename format: %s", qprPath)
-	}
-	return parts[0], nil
 }
 
 func (as *AsyncSearcher) findQPRs(id string) ([]string, error) {
@@ -675,36 +664,6 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 		return nil, err
 	}
 
-	// remove old not finished searches' qprs
-	oldSearchIDsToRemove := make(map[string]struct{})
-	for id := range requests {
-		if !requests[id].Finished && len(requests[id].Fractions) > 0 {
-			oldSearchIDsToRemove[id] = struct{}{}
-			logger.Info("mark old per-frac async search to delete", zap.String("id", id))
-		}
-	}
-	qprsToRemove := make([]string, 0)
-	findQPRsToRemove := func(name string) error {
-		searchID, err := searchIdFromQPRPath(name)
-		if err != nil {
-			return nil
-		}
-		if _, ok := oldSearchIDsToRemove[searchID]; !ok {
-			return nil
-		}
-		qprsToRemove = append(qprsToRemove, path.Join(dataDir, name))
-		return nil
-	}
-	if err := util.VisitFilesWithExt(des, asyncSearchExtQPR, findQPRsToRemove); err != nil {
-		return nil, err
-	}
-	for _, qprPath := range qprsToRemove {
-		util.RemoveFile(qprPath)
-	}
-	if len(qprsToRemove) > 0 {
-		util.MustFsyncFile(dataDir)
-	}
-
 	return requests, nil
 }
 
@@ -756,6 +715,7 @@ type FetchSearchResultResponse struct {
 
 	StartedAt time.Time
 	ExpiresAt time.Time
+	DoneAt    time.Time
 
 	FracsDone    int
 	FracsInQueue int
@@ -809,6 +769,7 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		StartedAt:    info.StartedAt,
 		ExpiresAt:    info.Expiration(),
 		CanceledAt:   info.CanceledAt,
+		DoneAt:       info.DoneAt,
 		FracsDone:    intervalsDone,
 		FracsInQueue: intervalsInQueue,
 		DiskUsage:    int(info.infoSize.Load() + info.qprsSize.Load()),
@@ -1061,6 +1022,7 @@ type AsyncSearchesListItem struct {
 	StartedAt  time.Time
 	ExpiresAt  time.Time
 	CanceledAt time.Time
+	DoneAt     time.Time
 
 	FracsDone    int
 	FracsInQueue int
@@ -1122,6 +1084,7 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 			StartedAt:    info.StartedAt,
 			ExpiresAt:    info.Expiration(),
 			CanceledAt:   info.CanceledAt,
+			DoneAt:       info.DoneAt,
 			FracsDone:    intervalsDone,
 			FracsInQueue: intervalsInQueue,
 			DiskUsage:    int(info.infoSize.Load() + info.qprsSize.Load()),

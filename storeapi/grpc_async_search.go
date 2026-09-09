@@ -78,6 +78,10 @@ func (g *GrpcV1) FetchAsyncSearchResult(
 	if !fr.CanceledAt.IsZero() {
 		canceledAt = timestamppb.New(fr.CanceledAt)
 	}
+	var doneAt *timestamppb.Timestamp
+	if !fr.DoneAt.IsZero() {
+		doneAt = timestamppb.New(fr.DoneAt)
+	}
 
 	return &storeapi.FetchAsyncSearchResultResponse{
 		Status:            storeapi.MustProtoAsyncSearchStatus(fr.Status),
@@ -85,6 +89,7 @@ func (g *GrpcV1) FetchAsyncSearchResult(
 		StartedAt:         timestamppb.New(fr.StartedAt),
 		ExpiresAt:         timestamppb.New(fr.ExpiresAt),
 		CanceledAt:        canceledAt,
+		DoneAt:            doneAt,
 		FracsDone:         uint64(fr.FracsDone),
 		FracsQueue:        uint64(fr.FracsInQueue),
 		DiskUsage:         uint64(fr.DiskUsage),
@@ -164,6 +169,10 @@ func convertAsyncSearchesToProto(in []*asyncsearcher.AsyncSearchesListItem) []*s
 		if !s.CanceledAt.IsZero() {
 			canceledAt = timestamppb.New(s.CanceledAt)
 		}
+		var doneAt *timestamppb.Timestamp
+		if !s.DoneAt.IsZero() {
+			doneAt = timestamppb.New(s.DoneAt)
+		}
 
 		res = append(res, &storeapi.AsyncSearchesListItem{
 			SearchId:          s.ID,
@@ -171,6 +180,7 @@ func convertAsyncSearchesToProto(in []*asyncsearcher.AsyncSearchesListItem) []*s
 			StartedAt:         timestamppb.New(s.StartedAt),
 			ExpiresAt:         timestamppb.New(s.ExpiresAt),
 			CanceledAt:        canceledAt,
+			DoneAt:            doneAt,
 			FracsDone:         uint64(s.FracsDone),
 			FracsQueue:        uint64(s.FracsInQueue),
 			DiskUsage:         uint64(s.DiskUsage),
