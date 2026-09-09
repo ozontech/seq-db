@@ -1669,6 +1669,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.Equalf(asyncsearcher.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
 	r.Equal([]seq.ErrorSource(nil), fresp.QPR.Errors)
 	r.True(fresp.ExpiresAt.After(time.Now().UTC()))
+	r.False(fresp.DoneAt.IsZero())
 	r.Equal([]seq.AggregationResult{
 		{
 			Buckets: []seq.AggregationBucket{
@@ -1722,6 +1723,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 		r.Equal(asyncsearcher.AsyncSearchStatusDone, s.Status)
 		r.Equal(startReq, s.Request)
 		r.True(s.ExpiresAt.After(time.Now().UTC()))
+		r.False(s.DoneAt.IsZero())
 		r.Equal(float64(1), s.Progress)
 	}
 

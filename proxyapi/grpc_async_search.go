@@ -82,6 +82,10 @@ func (g *grpcV1) FetchAsyncSearchResult(
 	if !resp.CanceledAt.IsZero() {
 		canceledAt = timestamppb.New(resp.CanceledAt)
 	}
+	var doneAt *timestamppb.Timestamp
+	if !resp.DoneAt.IsZero() {
+		doneAt = timestamppb.New(resp.DoneAt)
+	}
 
 	docs := makeProtoDocs(&resp.QPR, stream)
 
@@ -128,6 +132,7 @@ func (g *grpcV1) FetchAsyncSearchResult(
 		StartedAt:  timestamppb.New(resp.StartedAt),
 		ExpiresAt:  timestamppb.New(resp.ExpiresAt),
 		CanceledAt: canceledAt,
+		DoneAt:     doneAt,
 		Progress:   resp.Progress,
 		DiskUsage:  resp.DiskUsage,
 		Error: &seqproxyapi.Error{
@@ -297,6 +302,10 @@ func makeProtoAsyncSearchesList(in []*search.AsyncSearchesListItem) []*seqproxya
 		if !s.CanceledAt.IsZero() {
 			canceledAt = timestamppb.New(s.CanceledAt)
 		}
+		var doneAt *timestamppb.Timestamp
+		if !s.DoneAt.IsZero() {
+			doneAt = timestamppb.New(s.DoneAt)
+		}
 
 		searchReq := &seqproxyapi.StartAsyncSearchRequest{
 			Retention: durationpb.New(s.Request.Retention),
@@ -328,6 +337,7 @@ func makeProtoAsyncSearchesList(in []*search.AsyncSearchesListItem) []*seqproxya
 			StartedAt:  timestamppb.New(s.StartedAt),
 			ExpiresAt:  timestamppb.New(s.ExpiresAt),
 			CanceledAt: canceledAt,
+			DoneAt:     doneAt,
 			Progress:   s.Progress,
 			DiskUsage:  s.DiskUsage,
 			Error:      reqErr,
