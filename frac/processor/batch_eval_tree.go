@@ -154,7 +154,7 @@ func buildBatchEvalTree(
 	root *parser.ASTNode,
 	minLID, maxLID uint32,
 	stats *searchStats,
-	desc bool,
+	asc bool,
 	newBatchLeaf func(parser.Token) (node.BatchedNode, error),
 ) (node.BatchedNode, error) {
 	if root == nil {
@@ -163,7 +163,7 @@ func buildBatchEvalTree(
 
 	children := make([]node.BatchedNode, 0, len(root.Children))
 	for _, child := range root.Children {
-		childNode, err := buildBatchEvalTree(child, minLID, maxLID, stats, desc, newBatchLeaf)
+		childNode, err := buildBatchEvalTree(child, minLID, maxLID, stats, asc, newBatchLeaf)
 		if err != nil {
 			return nil, err
 		}
@@ -179,11 +179,11 @@ func buildBatchEvalTree(
 		stats.NodesTotal++
 		switch token.Operator {
 		case parser.LogicalAnd:
-			return node.NewAndBatched(children[0], children[1], desc), nil
+			return node.NewAndBatched(children[0], children[1], asc), nil
 		case parser.LogicalOr:
-			return node.NewOrBatched(children[0], children[1], desc), nil
+			return node.NewOrBatched(children[0], children[1], asc), nil
 		case parser.LogicalNAnd:
-			return node.NewNAndBatched(children[0], children[1], desc), nil
+			return node.NewNAndBatched(children[0], children[1], asc), nil
 		default:
 			return nil, fmt.Errorf("unsupported logical operator for batched eval: %v", token.Operator)
 		}

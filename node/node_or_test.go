@@ -10,24 +10,24 @@ import (
 )
 
 func TestNodeOr_NextGeqAscending(t *testing.T) {
-	left := NewStatic([]uint32{2, 7, 10, 20, 25, 26, 30, 50}, false)
-	right := NewStatic([]uint32{1, 3, 4, 7, 9, 30, 40}, false)
+	left := NewStatic([]uint32{2, 7, 10, 20, 25, 26, 30, 50}, true)
+	right := NewStatic([]uint32{1, 3, 4, 7, 9, 30, 40}, true)
 
 	node := NewOr(left, right)
 
-	id := node.NextGeq(NewDescLID(7))
+	id := node.NextGeq(NewAscLID(7))
 	assert.Equal(t, uint32(7), id.Unpack())
 
-	id = node.NextGeq(NewDescLID(7))
+	id = node.NextGeq(NewAscLID(7))
 	assert.Equal(t, uint32(9), id.Unpack())
 
-	id = node.NextGeq(NewDescLID(24))
+	id = node.NextGeq(NewAscLID(24))
 	assert.Equal(t, uint32(25), id.Unpack())
 
-	id = node.NextGeq(NewDescLID(30))
+	id = node.NextGeq(NewAscLID(30))
 	assert.Equal(t, uint32(30), id.Unpack())
 
-	id = node.NextGeq(NewDescLID(51))
+	id = node.NextGeq(NewAscLID(51))
 	assert.True(t, id.IsNull())
 }
 
@@ -48,9 +48,9 @@ func TestNodeOr_NextGeqCompatibility(t *testing.T) {
 
 		var zero uint32
 		if asc {
-			zero = math.MaxUint32
-		} else {
 			zero = 0
+		} else {
+			zero = math.MaxUint32
 		}
 
 		for {
@@ -68,8 +68,8 @@ func TestNodeOr_NextGeqCompatibility(t *testing.T) {
 
 // TestNodeOrAgg_NoDedup tests that nodeOrAgg yields values both from left and right for same lid.
 func TestNodeOrAgg_NoDedup(t *testing.T) {
-	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 5, 7}, false), 1)
-	right := NewSourcedNodeWrapper(NewStatic([]uint32{5, 8}, false), 2)
+	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 5, 7}, true), 1)
+	right := NewSourcedNodeWrapper(NewStatic([]uint32{5, 8}, true), 2)
 
 	orAgg := NewNodeOrAgg(left, right)
 	pairs := readAllSourced(orAgg)
@@ -89,8 +89,8 @@ func TestNodeOrAgg_NoDedup(t *testing.T) {
 }
 
 func TestNodeOrAgg_MergeAscending(t *testing.T) {
-	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 3, 5}, false), 0)
-	right := NewSourcedNodeWrapper(NewStatic([]uint32{2, 4, 6}, false), 1)
+	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 3, 5}, true), 0)
+	right := NewSourcedNodeWrapper(NewStatic([]uint32{2, 4, 6}, true), 1)
 
 	orAgg := NewNodeOrAgg(left, right)
 	got := readAllSourced(orAgg)
@@ -108,8 +108,8 @@ func TestNodeOrAgg_MergeAscending(t *testing.T) {
 }
 
 func TestNodeOrAgg_MergeAscendingWithDups(t *testing.T) {
-	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 2, 3, 5, 8}, false), 0)
-	right := NewSourcedNodeWrapper(NewStatic([]uint32{2, 3, 4, 6, 8}, false), 1)
+	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 2, 3, 5, 8}, true), 0)
+	right := NewSourcedNodeWrapper(NewStatic([]uint32{2, 3, 4, 6, 8}, true), 1)
 
 	orAgg := NewNodeOrAgg(left, right)
 	got := readAllSourced(orAgg)
@@ -133,25 +133,25 @@ func TestNodeOrAgg_MergeAscendingWithDups(t *testing.T) {
 // TestNodeOrAgg_NextSourcedGeq tests we can navigate to a lid with NextGeq and do not skip it from
 // both left and right sides (no deduplication like in ordinary OR tree)
 func TestNodeOrAgg_NextSourcedGeq(t *testing.T) {
-	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 2, 3, 5, 8, 15, 19}, false), 0)
-	right := NewSourcedNodeWrapper(NewStatic([]uint32{2, 3, 4, 6, 8, 14, 20}, false), 1)
+	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 2, 3, 5, 8, 15, 19}, true), 0)
+	right := NewSourcedNodeWrapper(NewStatic([]uint32{2, 3, 4, 6, 8, 14, 20}, true), 1)
 
 	orAgg := NewNodeOrAgg(left, right)
 
-	id, source := orAgg.NextSourcedGeq(NewDescLID(3))
+	id, source := orAgg.NextSourcedGeq(NewAscLID(3))
 	assert.Equal(t, uint32(3), id.Unpack())
 	assert.Equal(t, uint32(1), source)
 
 	// 3 returned again, but with different source - no deduplication
-	id, source = orAgg.NextSourcedGeq(NewDescLID(3))
+	id, source = orAgg.NextSourcedGeq(NewAscLID(3))
 	assert.Equal(t, uint32(3), id.Unpack())
 	assert.Equal(t, uint32(0), source)
 
-	id, source = orAgg.NextSourcedGeq(NewDescLID(6))
+	id, source = orAgg.NextSourcedGeq(NewAscLID(6))
 	assert.Equal(t, uint32(6), id.Unpack())
 	assert.Equal(t, uint32(1), source)
 
-	id, source = orAgg.NextSourcedGeq(NewDescLID(17))
+	id, source = orAgg.NextSourcedGeq(NewAscLID(17))
 	assert.Equal(t, uint32(19), id.Unpack())
 	assert.Equal(t, uint32(0), source)
 }
@@ -159,35 +159,35 @@ func TestNodeOrAgg_NextSourcedGeq(t *testing.T) {
 // TestNodeOrAgg_NextSourcedGeq tests we can navigate to a lid with NextGeq in reverse way and do not skip it from
 // both left and right sides (no deduplication like in ordinary OR tree)
 func TestNodeOrAgg_NextSourcedGeq_Reverse(t *testing.T) {
-	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 2, 3, 5, 8, 15, 19}, true), 0)
-	right := NewSourcedNodeWrapper(NewStatic([]uint32{2, 3, 4, 6, 8, 14, 20}, true), 1)
+	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 2, 3, 5, 8, 15, 19}, false), 0)
+	right := NewSourcedNodeWrapper(NewStatic([]uint32{2, 3, 4, 6, 8, 14, 20}, false), 1)
 
 	orAgg := NewNodeOrAgg(left, right)
 
-	id, source := orAgg.NextSourcedGeq(NewAscLID(8))
+	id, source := orAgg.NextSourcedGeq(NewDescLID(8))
 	assert.Equal(t, uint32(8), id.Unpack())
 	assert.Equal(t, uint32(1), source)
 
 	// 8 returned again, but with different source - no deduplication
-	id, source = orAgg.NextSourcedGeq(NewAscLID(8))
+	id, source = orAgg.NextSourcedGeq(NewDescLID(8))
 	assert.Equal(t, uint32(8), id.Unpack())
 	assert.Equal(t, uint32(0), source)
 
-	id, source = orAgg.NextSourcedGeq(NewAscLID(4))
+	id, source = orAgg.NextSourcedGeq(NewDescLID(4))
 	assert.Equal(t, uint32(4), id.Unpack())
 	assert.Equal(t, uint32(1), source)
 
-	id, source = orAgg.NextSourcedGeq(NewAscLID(1))
+	id, source = orAgg.NextSourcedGeq(NewDescLID(1))
 	assert.Equal(t, uint32(1), id.Unpack())
 	assert.Equal(t, uint32(0), source)
 
-	id, _ = orAgg.NextSourcedGeq(NewAscLID(1))
+	id, _ = orAgg.NextSourcedGeq(NewDescLID(1))
 	assert.True(t, id.IsNull())
 }
 
 func TestNodeOrAgg_MergeDescending(t *testing.T) {
-	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 3, 5}, true), 0)
-	right := NewSourcedNodeWrapper(NewStatic([]uint32{2, 4, 6}, true), 1)
+	left := NewSourcedNodeWrapper(NewStatic([]uint32{1, 3, 5}, false), 0)
+	right := NewSourcedNodeWrapper(NewStatic([]uint32{2, 4, 6}, false), 1)
 
 	orAgg := NewNodeOrAgg(left, right)
 	got := readAllSourced(orAgg)
@@ -206,8 +206,8 @@ func TestNodeOrAgg_MergeDescending(t *testing.T) {
 
 func TestNodeOrAgg_EmptySide(t *testing.T) {
 	t.Run("empty_left", func(t *testing.T) {
-		left := NewSourcedNodeWrapper(NewStatic(nil, false), 0)
-		right := NewSourcedNodeWrapper(NewStatic([]uint32{10, 20}, false), 1)
+		left := NewSourcedNodeWrapper(NewStatic(nil, true), 0)
+		right := NewSourcedNodeWrapper(NewStatic([]uint32{10, 20}, true), 1)
 
 		orAgg := NewNodeOrAgg(left, right)
 		got := readAllSourced(orAgg)
@@ -221,8 +221,8 @@ func TestNodeOrAgg_EmptySide(t *testing.T) {
 	})
 
 	t.Run("empty_right", func(t *testing.T) {
-		left := NewSourcedNodeWrapper(NewStatic([]uint32{10, 20}, false), 0)
-		right := NewSourcedNodeWrapper(NewStatic(nil, false), 1)
+		left := NewSourcedNodeWrapper(NewStatic([]uint32{10, 20}, true), 0)
+		right := NewSourcedNodeWrapper(NewStatic(nil, true), 1)
 
 		orAgg := NewNodeOrAgg(left, right)
 		got := readAllSourced(orAgg)
@@ -236,8 +236,8 @@ func TestNodeOrAgg_EmptySide(t *testing.T) {
 	})
 
 	t.Run("both_empty", func(t *testing.T) {
-		left := NewSourcedNodeWrapper(NewStatic(nil, false), 0)
-		right := NewSourcedNodeWrapper(NewStatic(nil, false), 1)
+		left := NewSourcedNodeWrapper(NewStatic(nil, true), 0)
+		right := NewSourcedNodeWrapper(NewStatic(nil, true), 1)
 
 		orAgg := NewNodeOrAgg(left, right)
 		id, _ := orAgg.NextSourced()

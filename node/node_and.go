@@ -83,19 +83,19 @@ func (n *nodeAnd) NextGeq(nextID LID) LID {
 type nodeAndBatched struct {
 	left  BatchedNode
 	right BatchedNode
-	desc  bool
+	asc   bool
 
 	leftBatch  LIDBatch
 	rightBatch LIDBatch
 }
 
 // NewAndBatched returns a BatchedNode that intersects two batched iterators.
-// desc is the document traversal order for NextBatch / NextBatchGeq.
-func NewAndBatched(left, right BatchedNode, desc bool) BatchedNode {
+// asc is the LID traversal order for NextBatch / NextBatchGeq (true = low to high).
+func NewAndBatched(left, right BatchedNode, asc bool) BatchedNode {
 	return &nodeAndBatched{
 		left:       left,
 		right:      right,
-		desc:       desc,
+		asc:        asc,
 		leftBatch:  EmptyBatch(),
 		rightBatch: EmptyBatch(),
 	}
@@ -106,10 +106,10 @@ func (n *nodeAndBatched) String() string {
 }
 
 func (n *nodeAndBatched) NextBatch() LIDBatch {
-	if n.desc {
-		return n.NextBatchGeq(NewDescZeroLID())
+	if n.asc {
+		return n.NextBatchGeq(NewAscZeroLID())
 	}
-	return n.NextBatchGeq(NewAscZeroLID())
+	return n.NextBatchGeq(NewDescZeroLID())
 }
 
 func (n *nodeAndBatched) NextBatchGeq(nextID LID) LIDBatch {
@@ -124,7 +124,7 @@ func (n *nodeAndBatched) NextBatchGeq(nextID LID) LIDBatch {
 			return EmptyBatch()
 		}
 
-		inter, leftResidual, rightResidual := And(n.leftBatch, n.rightBatch, n.desc)
+		inter, leftResidual, rightResidual := And(n.leftBatch, n.rightBatch, n.asc)
 		n.leftBatch = leftResidual
 		n.rightBatch = rightResidual
 

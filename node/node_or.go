@@ -162,7 +162,7 @@ func (n *nodeOrAgg) NextSourcedGeq(nextID LID) (LID, uint32) {
 type nodeOrBatched struct {
 	left  BatchedNode
 	right BatchedNode
-	desc  bool
+	asc   bool
 
 	leftBatch  LIDBatch
 	rightBatch LIDBatch
@@ -171,12 +171,12 @@ type nodeOrBatched struct {
 }
 
 // NewOrBatched returns a BatchedNode that unions two batched iterators.
-// desc is the document traversal order for NextBatch / NextBatchGeq.
-func NewOrBatched(left, right BatchedNode, desc bool) BatchedNode {
+// asc is the LID traversal order for NextBatch / NextBatchGeq (true = low to high).
+func NewOrBatched(left, right BatchedNode, asc bool) BatchedNode {
 	return &nodeOrBatched{
 		left:       left,
 		right:      right,
-		desc:       desc,
+		asc:        asc,
 		leftBatch:  EmptyBatch(),
 		rightBatch: EmptyBatch(),
 	}
@@ -187,10 +187,10 @@ func (n *nodeOrBatched) String() string {
 }
 
 func (n *nodeOrBatched) NextBatch() LIDBatch {
-	if n.desc {
-		return n.NextBatchGeq(NewDescZeroLID())
+	if n.asc {
+		return n.NextBatchGeq(NewAscZeroLID())
 	}
-	return n.NextBatchGeq(NewAscZeroLID())
+	return n.NextBatchGeq(NewDescZeroLID())
 }
 
 func (n *nodeOrBatched) NextBatchGeq(nextID LID) LIDBatch {
@@ -209,7 +209,7 @@ func (n *nodeOrBatched) NextBatchGeq(nextID LID) LIDBatch {
 			return EmptyBatch()
 		}
 
-		out, leftRes, rightRes := Or(n.leftBatch, n.rightBatch, n.desc)
+		out, leftRes, rightRes := Or(n.leftBatch, n.rightBatch, n.asc)
 		n.leftBatch = leftRes
 		n.rightBatch = rightRes
 
@@ -221,13 +221,13 @@ func (n *nodeOrBatched) NextBatchGeq(nextID LID) LIDBatch {
 
 type nodeOrBatchedMulti struct {
 	children []BatchedNode
-	desc     bool
+	asc      bool
 
 	batches []LIDBatch
 	done    []bool
 }
 
-func NewOrBatchedMulti(children []BatchedNode, desc bool) BatchedNode {
+func NewOrBatchedMulti(children []BatchedNode, asc bool) BatchedNode {
 	if len(children) == 0 {
 		return EmptyBatched()
 	}
@@ -240,7 +240,7 @@ func NewOrBatchedMulti(children []BatchedNode, desc bool) BatchedNode {
 	}
 	return &nodeOrBatchedMulti{
 		children: children,
-		desc:     desc,
+		asc:      asc,
 		batches:  batches,
 		done:     make([]bool, len(children)),
 	}
@@ -251,10 +251,10 @@ func (n *nodeOrBatchedMulti) String() string {
 }
 
 func (n *nodeOrBatchedMulti) NextBatch() LIDBatch {
-	if n.desc {
-		return n.NextBatchGeq(NewDescZeroLID())
+	if n.asc {
+		return n.NextBatchGeq(NewAscZeroLID())
 	}
-	return n.NextBatchGeq(NewAscZeroLID())
+	return n.NextBatchGeq(NewDescZeroLID())
 }
 
 func (n *nodeOrBatchedMulti) NextBatchGeq(nextID LID) LIDBatch {
@@ -274,7 +274,7 @@ func (n *nodeOrBatchedMulti) NextBatchGeq(nextID LID) LIDBatch {
 			return EmptyBatch()
 		}
 
-		out, residuals := OrMulti(n.batches, n.desc)
+		out, residuals := OrMulti(n.batches, n.asc)
 		n.batches = residuals
 
 		if !out.IsEmpty() {
