@@ -27,6 +27,8 @@ type LIDBatch interface {
 
 type ManyIter interface {
 	CopyLIDs(dst []LID, tmp []uint32) int
+	// CopyRawLIDs copies raw lids (exactly as they stored)
+	CopyRawLIDs(dst []uint32) int
 }
 
 type Iter interface {
@@ -147,6 +149,27 @@ func (it *sliceManyIter) CopyLIDs(dst []LID, tmp []uint32) int {
 	n := min(len(dst), len(tmp), it.pos+1)
 	for i := 0; i < n; i++ {
 		dst[i] = NewDescLID(it.lids[it.pos-i])
+	}
+	it.pos -= n
+	return n
+}
+
+func (it *sliceManyIter) CopyRawLIDs(dst []uint32) int {
+	if len(dst) == 0 {
+		return 0
+	}
+	if it.asc {
+		n := min(len(dst), len(it.lids)-it.pos)
+		copy(dst, it.lids[it.pos:it.pos+n])
+		it.pos += n
+		return n
+	}
+	if it.pos < 0 {
+		return 0
+	}
+	n := min(len(dst), it.pos+1)
+	for i := 0; i < n; i++ {
+		dst[i] = it.lids[it.pos-i]
 	}
 	it.pos -= n
 	return n
@@ -277,6 +300,13 @@ func (it *bitmapManyIterAsc) CopyLIDs(dst []LID, tmp []uint32) int {
 	return n
 }
 
+func (it *bitmapManyIterAsc) CopyRawLIDs(dst []uint32) int {
+	if len(dst) == 0 {
+		return 0
+	}
+	return it.it.NextMany(dst)
+}
+
 type bitmapManyIterDesc struct {
 	it roaring.IntIterable
 }
@@ -289,6 +319,18 @@ func (it *bitmapManyIterDesc) CopyLIDs(dst []LID, tmp []uint32) int {
 	limit := min(len(dst), len(tmp))
 	for n < limit && it.it.HasNext() {
 		dst[n] = NewDescLID(it.it.Next())
+		n++
+	}
+	return n
+}
+
+func (it *bitmapManyIterDesc) CopyRawLIDs(dst []uint32) int {
+	if len(dst) == 0 {
+		return 0
+	}
+	n := 0
+	for n < len(dst) && it.it.HasNext() {
+		dst[n] = it.it.Next()
 		n++
 	}
 	return n
@@ -323,6 +365,10 @@ type emptyManyIter struct{}
 var emptyManyIterInstance = emptyManyIter{}
 
 func (emptyManyIter) CopyLIDs([]LID, []uint32) int { return 0 }
+
+func (emptyManyIter) CopyRawLIDs(dst []uint32) int {
+	return 0
+}
 
 type emptyIter struct{}
 

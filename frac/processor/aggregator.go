@@ -11,6 +11,7 @@ import (
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
 )
 
 // AggBin is a container for documents which were written in the same time interval.
@@ -177,6 +178,11 @@ func (n *TwoSourceAggregator) Aggregate() (seq.AggregatableSamples, error) {
 	}, nil
 }
 
+func (n *TwoSourceAggregator) Dispose() {
+	n.field.Dispose()
+	n.groupBy.Dispose()
+}
+
 func parseNum(str string) (float64, error) {
 	// TODO: allow time.Duration and data units (kb, mb, gb, etc) parsing.
 	num, err := strconv.ParseFloat(str, 64)
@@ -264,6 +270,10 @@ func (n *SingleSourceCountAggregator) Aggregate() (seq.AggregatableSamples, erro
 	}, nil
 }
 
+func (n *SingleSourceCountAggregator) Dispose() {
+	n.group.Dispose()
+}
+
 // SingleSourceUniqueAggregator aggregates unique values for a single source.
 type SingleSourceUniqueAggregator struct {
 	values    map[uint32]struct{}
@@ -314,6 +324,10 @@ func (n *SingleSourceUniqueAggregator) Aggregate() (seq.AggregatableSamples, err
 		NotExists:    n.notExists,
 		SamplesByBin: aggMap,
 	}, nil
+}
+
+func (n *SingleSourceUniqueAggregator) Dispose() {
+	n.group.Dispose()
 }
 
 type SingleSourceHistogramAggregator struct {
@@ -380,6 +394,10 @@ func (n *SingleSourceHistogramAggregator) Aggregate() (seq.AggregatableSamples, 
 	}
 
 	return qprHist, nil
+}
+
+func (n *SingleSourceHistogramAggregator) Dispose() {
+	n.field.Dispose()
 }
 
 // SourcedNodeIterator can iterate the sourced node that returns source, which means index in a tids slice.
@@ -477,6 +495,13 @@ func (s *SourcedNodeIterator) UniqueSources() int {
 	return len(s.countBySource)
 }
 
+func (s *SourcedNodeIterator) Dispose() {
+	if s.sourcedNode != nil {
+		s.sourcedNode.Dispose()
+		s.sourcedNode = nil
+	}
+}
+
 func provideExtractTimeFunc(sw *stopwatch.Stopwatch, idx idsIndex, interval int64) ExtractMIDFunc {
 	if interval <= 0 {
 		// Dummy implementation for aggregation without time series.
@@ -492,4 +517,70 @@ func provideExtractTimeFunc(sw *stopwatch.Stopwatch, idx idsIndex, interval int6
 		timer.Stop()
 		return mid - (mid % seq.MillisToMID(uint64(interval)))
 	})
+}
+
+// QueryStats carries search-side statistics used to choose an aggregation plan.
+type QueryStats struct {
+	EstimatedSearchLIDs int
+	LIDRange            int
+}
+
+func NewQueryStats(sample []node.LID, minLID, maxLID uint32) QueryStats {
+	return QueryStats{
+		EstimatedSearchLIDs: estimateSearchLIDs(sample, minLID, maxLID),
+		LIDRange:            int(maxLID - minLID + 1),
+	}
+}
+
+// estimateSearchLIDs extrapolates total matching LIDs from the first search batch density.
+func estimateSearchLIDs(batch []node.LID, minLID, maxLID uint32) int {
+	// TODO check reverse order
+	if len(batch) == 0 {
+		return 0
+	}
+
+	searchRange := int(maxLID - minLID + 1)
+	if searchRange == 0 {
+		return 0
+	}
+
+	firstLID := int(batch[0].Unpack())
+	lastLID := int(batch[len(batch)-1].Unpack())
+	batchRange := util.Abs(lastLID - firstLID)
+
+	if batchRange == 0 {
+		batchRange = 1
+	}
+
+	n := len(batch) * searchRange / batchRange
+	if n < len(batch) {
+		n = len(batch)
+	}
+	if n > searchRange {
+		n = searchRange
+	}
+	return n
+}
+
+// treeAggOps roughly estimates CPU operations (complexity) for OR tree aggregation
+func treeAggOps(searchLids, aggTids int) int {
+	// We overestimate number of CPU operations to be aggTids for each lid pass to an agg tree
+	// instead of log2(aggTids), even though agg tree is a binary tree.
+	// When skipping happens in agg tree we 'NextGeq' each tree node, while log2(tids) complexity is acheived only
+	// when we do not skip lids at all. If no skipping happens, then column plan is way more effective anyway.
+	// Therefore, tids is more realstic estimation than just log2(tids).
+	return searchLids * aggTids
+}
+
+// columnAggOps roughly estimates CPU operations (complexity) for materialized column aggregation
+func columnAggOps(searchLids, aggLids int) int {
+	return searchLids + aggLids
+}
+
+func useColumnAggPlan(stats QueryStats, aggTidsCount int) bool {
+	if aggTidsCount == 0 {
+		return false
+	}
+
+	return columnAggOps(stats.EstimatedSearchLIDs, stats.LIDRange) < treeAggOps(stats.EstimatedSearchLIDs, aggTidsCount)
 }

@@ -112,6 +112,9 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	aggLimits := processor.AggLimits(dp.config.Search.AggLimits)
 	queryOpt := processor.QueryOptimizationConfig{
 		BatchExecution: processor.BatchExecutionConfig(dp.config.Search.QueryOptimization.BatchExecution),
+		MaterializedColumnAgg: processor.MaterializedColumnAggConfig{
+			Enabled: dp.config.Search.QueryOptimization.MaterializedColumnAgg.Enabled,
+		},
 	}
 
 	sw := stopwatch.New()
