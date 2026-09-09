@@ -229,6 +229,13 @@ func buildStreamSearchReqFromComplexSearchReq(
 		Offset:    int(req.Offset),
 	}
 
+	if req.OffsetId != "" && req.Offset != 0 {
+		return nil, fmt.Errorf(`only one of "offset" and "offset_id" must be provided`)
+	}
+	if req.OffsetId != "" && len(req.Aggs) > 0 {
+		return nil, fmt.Errorf("offset_id is not supported for aggregation requests")
+	}
+
 	// stream search serves either documents or a single agg.
 	// shouldUseStreamSearch guarantees single agg and no histogram.
 	if len(req.Aggs) == 1 {
@@ -249,7 +256,8 @@ func buildStreamSearchReqFromComplexSearchReq(
 		if req.Size > 0 {
 			seqql.Pipes = append(seqql.Pipes, &parser.PipeLimit{Limit: int(req.Size)})
 		}
-		if req.Offset > 0 {
+		// with offset_id pagination the offset pipe must not be applied on top of offsetId
+		if req.Offset > 0 && req.OffsetId == "" {
 			seqql.Pipes = append(seqql.Pipes, &parser.PipeOffset{Offset: int(req.Offset)})
 		}
 		seqql.Pipes = append(seqql.Pipes, &parser.PipeSort{Order: orderToPipeString(req.Order)})
