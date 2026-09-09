@@ -238,6 +238,7 @@ type formattedFetchAsyncSearchResultResponse struct {
 	StartedAt  json.RawMessage  `json:"started_at"`
 	ExpiresAt  json.RawMessage  `json:"expires_at"`
 	CanceledAt *json.RawMessage `json:"canceled_at,omitempty"`
+	DoneAt     *json.RawMessage `json:"done_at,omitempty"`
 }
 
 // MarshalJSON overrides timestamp fields and other fields with custom formatting for FetchAsyncSearchResultResponse.
@@ -253,6 +254,10 @@ func (r *FetchAsyncSearchResultResponse) MarshalJSON() ([]byte, error) {
 	if r.CanceledAt != nil {
 		marshaledTime := marshalTime(r.CanceledAt)
 		fetchResponse.CanceledAt = &marshaledTime
+	}
+	if r.DoneAt != nil {
+		marshaledTime := marshalTime(r.DoneAt)
+		fetchResponse.DoneAt = &marshaledTime
 	}
 
 	return json.Marshal(fetchResponse)

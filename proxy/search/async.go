@@ -101,6 +101,7 @@ type FetchAsyncSearchResultResponse struct {
 	Status     asyncsearcher.AsyncSearchStatus
 	QPR        seq.QPR
 	CanceledAt time.Time
+	DoneAt     time.Time
 
 	StartedAt time.Time
 	ExpiresAt time.Time
@@ -127,6 +128,7 @@ type AsyncSearchesListItem struct {
 	StartedAt  time.Time
 	ExpiresAt  time.Time
 	CanceledAt time.Time
+	DoneAt     time.Time
 
 	Progress  float64
 	DiskUsage uint64
@@ -253,6 +255,10 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		t = sr.CanceledAt.AsTime()
 		if sr.CanceledAt != nil && (pr.CanceledAt.IsZero() || pr.CanceledAt.After(t)) {
 			pr.CanceledAt = t
+		}
+		t = sr.DoneAt.AsTime()
+		if sr.DoneAt != nil && (pr.DoneAt.IsZero() || pr.DoneAt.Before(t)) {
+			pr.DoneAt = t
 		}
 
 		qpr := responseToQPR(sr.Response, si.sourceByClient[replica], false)
@@ -447,6 +453,10 @@ func (si *Ingestor) GetAsyncSearchesList(
 			t = sr.CanceledAt.AsTime()
 			if sr.CanceledAt != nil && (search.CanceledAt.IsZero() || search.CanceledAt.After(t)) {
 				search.CanceledAt = t
+			}
+			t = sr.DoneAt.AsTime()
+			if sr.DoneAt != nil && (search.DoneAt.IsZero() || search.DoneAt.Before(t)) {
+				search.DoneAt = t
 			}
 		}
 
