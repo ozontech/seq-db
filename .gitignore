@@ -25,3 +25,5 @@ junit.xml
 /data
 /quickstart/data
 /.devcontainer
+# local perf-loop run artifacts
+.perf-runs/
