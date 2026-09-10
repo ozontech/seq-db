@@ -223,14 +223,14 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		close(respChan)
 	}()
 
-	fracsDone := 0
-	fracsInQueue := 0
+	intervalsDone := 0
+	intervalsInQueue := 0
 	histInterval := seq.MID(0)
 	pr := FetchAsyncSearchResultResponse{}
 	mergeStoreResp := func(sr *storeapi.FetchAsyncSearchResultResponse, replica string) {
 		pr.DiskUsage += sr.DiskUsage
-		fracsInQueue += int(sr.FracsQueue)
-		fracsDone += int(sr.FracsDone)
+		intervalsInQueue += int(sr.IntervalsInQueue)
+		intervalsDone += int(sr.IntervalsDone)
 
 		histInterval = seq.MillisToMID(uint64(sr.HistogramInterval))
 
@@ -311,8 +311,8 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		return FetchAsyncSearchResultResponse{}, nil, status.Error(codes.Internal, combinedErr.Error())
 	}
 
-	if fracsDone != 0 {
-		pr.Progress = float64(fracsDone) / float64(fracsDone+fracsInQueue)
+	if intervalsDone != 0 {
+		pr.Progress = float64(intervalsDone) / float64(intervalsDone+intervalsInQueue)
 	}
 	if pr.Status == asyncsearcher.AsyncSearchStatusDone {
 		pr.Progress = 1
@@ -426,8 +426,8 @@ func (si *Ingestor) GetAsyncSearchesList(
 	searches := make([]*AsyncSearchesListItem, 0)
 
 	for id, items := range responsesByID {
-		fracsDone := 0
-		fracsInQueue := 0
+		intervalsDone := 0
+		intervalsInQueue := 0
 		storeErrs := make([]error, 0)
 		var searchReq *AsyncRequest
 		search := AsyncSearchesListItem{
@@ -436,8 +436,8 @@ func (si *Ingestor) GetAsyncSearchesList(
 
 		mergeListItem := func(sr *storeapi.AsyncSearchesListItem) {
 			search.DiskUsage += sr.DiskUsage
-			fracsInQueue += int(sr.FracsQueue)
-			fracsDone += int(sr.FracsDone)
+			intervalsInQueue += int(sr.IntervalsInQueue)
+			intervalsDone += int(sr.IntervalsDone)
 
 			ss := sr.Status.MustAsyncSearchStatus()
 			search.Status = mergeAsyncSearchStatus(search.Status, ss)
@@ -481,8 +481,8 @@ func (si *Ingestor) GetAsyncSearchesList(
 			}
 		}
 
-		if fracsDone != 0 {
-			search.Progress = float64(fracsDone) / float64(fracsDone+fracsInQueue)
+		if intervalsDone != 0 {
+			search.Progress = float64(intervalsDone) / float64(intervalsDone+intervalsInQueue)
 		}
 		if search.Status == asyncsearcher.AsyncSearchStatusDone {
 			search.Progress = 1

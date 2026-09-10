@@ -90,8 +90,10 @@ func (g *GrpcV1) FetchAsyncSearchResult(
 		ExpiresAt:         timestamppb.New(fr.ExpiresAt),
 		CanceledAt:        canceledAt,
 		DoneAt:            doneAt,
-		FracsDone:         uint64(fr.FracsDone),
-		FracsQueue:        uint64(fr.FracsInQueue),
+		FracsDone:         uint64(fr.IntervalsDone),    // TODO: deprecated
+		FracsQueue:        uint64(fr.IntervalsInQueue), // TODO: deprecated
+		IntervalsDone:     uint64(fr.IntervalsDone),
+		IntervalsInQueue:  uint64(fr.IntervalsInQueue),
 		DiskUsage:         uint64(fr.DiskUsage),
 		Aggs:              convertAggQueriesToProto(fr.AggQueries),
 		HistogramInterval: int64(fr.HistInterval),
@@ -181,8 +183,10 @@ func convertAsyncSearchesToProto(in []*asyncsearcher.AsyncSearchesListItem) []*s
 			ExpiresAt:         timestamppb.New(s.ExpiresAt),
 			CanceledAt:        canceledAt,
 			DoneAt:            doneAt,
-			FracsDone:         uint64(s.FracsDone),
-			FracsQueue:        uint64(s.FracsInQueue),
+			FracsDone:         uint64(s.IntervalsDone),    // TODO: deprecated
+			FracsQueue:        uint64(s.IntervalsInQueue), // TODO: deprecated
+			IntervalsDone:     uint64(s.IntervalsDone),
+			IntervalsInQueue:  uint64(s.IntervalsInQueue),
 			DiskUsage:         uint64(s.DiskUsage),
 			Aggs:              convertAggQueriesToProto(s.AggQueries),
 			HistogramInterval: int64(s.HistInterval),
