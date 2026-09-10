@@ -74,6 +74,40 @@ func TestAsyncSearcherMaintain(t *testing.T) {
 	as.processWg.Wait()
 }
 
+func TestAsyncSearchProgressCountsEmptyIntervals(t *testing.T) {
+	r := require.New(t)
+
+	cfg := AsyncSearcherConfig{DataDir: t.TempDir()}
+	mp, err := mappingprovider.New("", mappingprovider.WithMapping(seq.Mapping{}))
+	r.NoError(err)
+
+	as := MustStartAsync(cfg, mp, nil)
+
+	// Interval that produces no results, but it must be counted as processed
+	provider := &fakeFractionProvider{
+		&fakeFrac{info: common.Info{Path: "1", From: 0, To: seq.DurationToMID(defaultSearchInterval)}},
+	}
+
+	req := AsyncSearchRequest{
+		ID: uuid.New().String(),
+		Params: processor.SearchParams{
+			Limit: 1000,
+			From:  0,
+			To:    seq.DurationToMID(defaultSearchInterval),
+		},
+		Query:     "*",
+		Retention: time.Hour,
+	}
+	r.NoError(as.StartSearch(req, provider))
+	as.processWg.Wait()
+
+	resp, ok := as.FetchSearchResult(FetchSearchResultRequest{ID: req.ID, Limit: 1000, Order: seq.DocsOrderDesc})
+	r.True(ok)
+	r.Equal(AsyncSearchStatusDone, resp.Status)
+	r.Equal(1, resp.FracsDone)
+	r.Equal(0, resp.FracsInQueue)
+}
+
 func TestMerge(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -102,7 +136,6 @@ func TestMerge(t *testing.T) {
 			r.NoError(err)
 
 			as := MustStartAsync(cfg, mp, nil)
-			t.Cleanup(func() { as.readOnly.Store(false) })
 
 			frac1 := &fakeFrac{
 				info: common.Info{Path: "1", From: seq.TimeToMID(now.Add(-time.Minute * 11)), To: seq.TimeToMID(now.Add(-time.Minute * 6))},
@@ -204,6 +237,7 @@ func TestBuildIntervals(t *testing.T) {
 			r := require.New(t)
 			result := buildIntervals(tt.from, tt.to)
 			r.Equal(tt.expected, result)
+			r.Equal(len(result), countIntervals(tt.from, tt.to))
 		})
 	}
 }
