@@ -44,6 +44,10 @@ func (fp fakeFractionProvider) AcquireFractionsInRange(from, to seq.MID) (fracma
 	return fracmanager.List(fp), func() {}
 }
 
+func (fp fakeFractionProvider) AcquireFractions() (fracmanager.List, func()) {
+	return fracmanager.List(fp), func() {}
+}
+
 func TestAsyncSearcherMaintain(t *testing.T) {
 	r := require.New(t)
 
@@ -71,48 +75,69 @@ func TestAsyncSearcherMaintain(t *testing.T) {
 }
 
 func TestMerge(t *testing.T) {
-	r := require.New(t)
-	now := time.Now()
-
-	cfg := AsyncSearcherConfig{DataDir: t.TempDir()}
-	mp, err := mappingprovider.New("", mappingprovider.WithMapping(seq.Mapping{}))
-	r.NoError(err)
-
-	as := MustStartAsync(cfg, mp, nil)
-	t.Cleanup(func() { as.readOnly.Store(false) })
-
-	frac1 := &fakeFrac{
-		info: common.Info{Path: "1", From: seq.TimeToMID(now.Add(-time.Minute * 11)), To: seq.TimeToMID(now.Add(-time.Minute * 6))},
-		dp:   fakeDP{qpr: seq.QPR{IDs: []seq.IDSource{{ID: seq.ID{MID: 1}}}, Total: 1}},
-	}
-	frac2 := &fakeFrac{
-		info: common.Info{Path: "2", From: seq.TimeToMID(now.Add(-time.Minute * 6)), To: seq.TimeToMID(now.Add(-time.Minute * 1))},
-		dp:   fakeDP{qpr: seq.QPR{IDs: []seq.IDSource{{ID: seq.ID{MID: 2}}}, Total: 1}},
-	}
-	provider := &fakeFractionProvider{frac1, frac2}
-
-	req := AsyncSearchRequest{
-		ID: uuid.New().String(),
-		Params: processor.SearchParams{
-			Limit: 1000,
-			Order: seq.DocsOrderDesc,
-			From:  seq.TimeToMID(now.UTC().Add(-time.Minute * 30).Truncate(time.Millisecond)),
-			To:    seq.TimeToMID(now.UTC().Truncate(time.Millisecond)),
+	tests := []struct {
+		name     string
+		order    seq.DocsOrder
+		expected []seq.MID
+	}{
+		{
+			name:     "desc",
+			order:    seq.DocsOrderDesc,
+			expected: []seq.MID{2, 1},
 		},
-		Query:     "*",
-		Retention: time.Hour,
+		{
+			name:     "asc",
+			order:    seq.DocsOrderAsc,
+			expected: []seq.MID{1, 2},
+		},
 	}
-	r.NoError(as.StartSearch(req, provider))
-	as.processWg.Wait()
 
-	as.merge()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			now := time.Now()
 
-	resp, ok := as.FetchSearchResult(FetchSearchResultRequest{ID: req.ID, Limit: 1000, Order: seq.DocsOrderDesc})
-	r.True(ok)
-	r.Equal(AsyncSearchStatusDone, resp.Status)
-	r.Len(resp.QPR.IDs, 2)
-	r.Equal(seq.MID(2), resp.QPR.IDs[0].ID.MID)
-	r.Equal(seq.MID(1), resp.QPR.IDs[1].ID.MID)
+			cfg := AsyncSearcherConfig{DataDir: t.TempDir()}
+			mp, err := mappingprovider.New("", mappingprovider.WithMapping(seq.Mapping{}))
+			r.NoError(err)
+
+			as := MustStartAsync(cfg, mp, nil)
+			t.Cleanup(func() { as.readOnly.Store(false) })
+
+			frac1 := &fakeFrac{
+				info: common.Info{Path: "1", From: seq.TimeToMID(now.Add(-time.Minute * 11)), To: seq.TimeToMID(now.Add(-time.Minute * 6))},
+				dp:   fakeDP{qpr: seq.QPR{IDs: []seq.IDSource{{ID: seq.ID{MID: 1}}}, Total: 1}},
+			}
+			frac2 := &fakeFrac{
+				info: common.Info{Path: "2", From: seq.TimeToMID(now.Add(-time.Minute * 6)), To: seq.TimeToMID(now.Add(-time.Minute * 1))},
+				dp:   fakeDP{qpr: seq.QPR{IDs: []seq.IDSource{{ID: seq.ID{MID: 2}}}, Total: 1}},
+			}
+			provider := &fakeFractionProvider{frac1, frac2}
+
+			req := AsyncSearchRequest{
+				ID: uuid.New().String(),
+				Params: processor.SearchParams{
+					Limit: 1000,
+					Order: tt.order,
+					From:  seq.TimeToMID(now.UTC().Add(-time.Minute * 30).Truncate(time.Millisecond)),
+					To:    seq.TimeToMID(now.UTC().Truncate(time.Millisecond)),
+				},
+				Query:     "*",
+				Retention: time.Hour,
+			}
+			r.NoError(as.StartSearch(req, provider))
+			as.processWg.Wait()
+
+			as.merge()
+
+			resp, ok := as.FetchSearchResult(FetchSearchResultRequest{ID: req.ID, Limit: 1000, Order: tt.order})
+			r.True(ok)
+			r.Equal(AsyncSearchStatusDone, resp.Status)
+			r.Len(resp.QPR.IDs, 2)
+			r.Equal(tt.expected[0], resp.QPR.IDs[0].ID.MID)
+			r.Equal(tt.expected[1], resp.QPR.IDs[1].ID.MID)
+		})
+	}
 }
 
 func TestBuildIntervals(t *testing.T) {
