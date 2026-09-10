@@ -775,9 +775,9 @@ type FetchSearchResultResponse struct {
 	ExpiresAt time.Time
 	DoneAt    time.Time
 
-	FracsDone    int
-	FracsInQueue int
-	DiskUsage    int
+	IntervalsDone    int
+	IntervalsInQueue int
+	DiskUsage        int
 
 	// Stuff that needed seq-db proxy to complete async search response.
 	AggQueries   []processor.AggQuery
@@ -827,24 +827,24 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 	}
 
 	return FetchSearchResultResponse{
-		Status:       info.Status(),
-		QPR:          qpr,
-		StartedAt:    info.StartedAt,
-		ExpiresAt:    info.Expiration(),
-		CanceledAt:   info.CanceledAt,
-		DoneAt:       info.DoneAt,
-		FracsDone:    intervalsDone,
-		FracsInQueue: intervalsInQueue,
-		DiskUsage:    int(info.infoSize.Load() + info.qprsSize.Load()),
-		Error:        info.Error,
-		AggQueries:   info.Request.Params.AggQ,
-		HistInterval: info.Request.Params.HistInterval,
-		Query:        info.Request.Query,
-		From:         info.Request.Params.From,
-		To:           info.Request.Params.To,
-		Retention:    info.Request.Retention,
-		WithDocs:     info.Request.WithDocs,
-		Size:         int64(info.Request.Params.Limit),
+		Status:           info.Status(),
+		QPR:              qpr,
+		StartedAt:        info.StartedAt,
+		ExpiresAt:        info.Expiration(),
+		CanceledAt:       info.CanceledAt,
+		DoneAt:           info.DoneAt,
+		IntervalsDone:    intervalsDone,
+		IntervalsInQueue: intervalsInQueue,
+		DiskUsage:        int(info.infoSize.Load() + info.qprsSize.Load()),
+		Error:            info.Error,
+		AggQueries:       info.Request.Params.AggQ,
+		HistInterval:     info.Request.Params.HistInterval,
+		Query:            info.Request.Query,
+		From:             info.Request.Params.From,
+		To:               info.Request.Params.To,
+		Retention:        info.Request.Retention,
+		WithDocs:         info.Request.WithDocs,
+		Size:             int64(info.Request.Params.Limit),
 	}, true
 }
 
@@ -1109,9 +1109,9 @@ type AsyncSearchesListItem struct {
 	CanceledAt time.Time
 	DoneAt     time.Time
 
-	FracsDone    int
-	FracsInQueue int
-	DiskUsage    int
+	IntervalsDone    int
+	IntervalsInQueue int
+	DiskUsage        int
 
 	// Search request info
 	AggQueries   []processor.AggQuery
@@ -1161,24 +1161,24 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 		}
 
 		items = append(items, &AsyncSearchesListItem{
-			ID:           id,
-			Status:       status,
-			StartedAt:    info.StartedAt,
-			ExpiresAt:    info.Expiration(),
-			CanceledAt:   info.CanceledAt,
-			DoneAt:       info.DoneAt,
-			FracsDone:    intervalsDone,
-			FracsInQueue: intervalsInQueue,
-			DiskUsage:    int(info.infoSize.Load() + info.qprsSize.Load()),
-			AggQueries:   info.Request.Params.AggQ,
-			HistInterval: info.Request.Params.HistInterval,
-			Query:        info.Request.Query,
-			From:         info.Request.Params.From,
-			To:           info.Request.Params.To,
-			Retention:    info.Request.Retention,
-			WithDocs:     info.Request.WithDocs,
-			Size:         int64(info.Request.Params.Limit),
-			Error:        info.Error,
+			ID:               id,
+			Status:           status,
+			StartedAt:        info.StartedAt,
+			ExpiresAt:        info.Expiration(),
+			CanceledAt:       info.CanceledAt,
+			DoneAt:           info.DoneAt,
+			IntervalsDone:    intervalsDone,
+			IntervalsInQueue: intervalsInQueue,
+			DiskUsage:        int(info.infoSize.Load() + info.qprsSize.Load()),
+			AggQueries:       info.Request.Params.AggQ,
+			HistInterval:     info.Request.Params.HistInterval,
+			Query:            info.Request.Query,
+			From:             info.Request.Params.From,
+			To:               info.Request.Params.To,
+			Retention:        info.Request.Retention,
+			WithDocs:         info.Request.WithDocs,
+			Size:             int64(info.Request.Params.Limit),
+			Error:            info.Error,
 		})
 	}
 

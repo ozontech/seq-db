@@ -184,8 +184,8 @@ message FetchAsyncSearchResultResponse {
   google.protobuf.Timestamp started_at = 3;
   google.protobuf.Timestamp expires_at = 4;
   optional google.protobuf.Timestamp canceled_at = 5;
-  uint64 fracs_done = 6;
-  uint64 fracs_queue = 7;
+  uint64 fracs_done = 6 [deprecated = true];
+  uint64 fracs_queue = 7 [deprecated = true];
   uint64 disk_usage = 8;
 
   repeated AggQuery aggs = 9;
@@ -199,6 +199,8 @@ message FetchAsyncSearchResultResponse {
   int64 size = 16;
 
   optional google.protobuf.Timestamp done_at = 17;
+  uint64 intervals_done = 18;
+  uint64 intervals_in_queue = 19;
 }
 
 message CancelAsyncSearchRequest {
@@ -228,8 +230,8 @@ message AsyncSearchesListItem {
   google.protobuf.Timestamp started_at = 3;
   google.protobuf.Timestamp expires_at = 4;
   optional google.protobuf.Timestamp canceled_at = 5;
-  uint64 fracs_done = 6;
-  uint64 fracs_queue = 7;
+  uint64 fracs_done = 6 [deprecated = true];
+  uint64 fracs_queue = 7 [deprecated = true];
   uint64 disk_usage = 8;
 
   repeated AggQuery aggs = 9;
@@ -244,6 +246,8 @@ message AsyncSearchesListItem {
   string error = 17;
 
   optional google.protobuf.Timestamp done_at = 18;
+    uint64 intervals_done = 19;
+  uint64 intervals_in_queue = 20;
 }
 
 message IdWithHint {
