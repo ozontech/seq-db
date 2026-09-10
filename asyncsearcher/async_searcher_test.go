@@ -44,10 +44,6 @@ func (fp fakeFractionProvider) AcquireFractionsInRange(from, to seq.MID) (fracma
 	return fracmanager.List(fp), func() {}
 }
 
-func (fp fakeFractionProvider) AcquireFractions() (fracmanager.List, func()) {
-	return fracmanager.List(fp), func() {}
-}
-
 func TestAsyncSearcherMaintain(t *testing.T) {
 	r := require.New(t)
 
@@ -72,40 +68,6 @@ func TestAsyncSearcherMaintain(t *testing.T) {
 	r.NoError(as.StartSearch(req, fracs))
 
 	as.processWg.Wait()
-}
-
-func TestAsyncSearchProgressCountsEmptyIntervals(t *testing.T) {
-	r := require.New(t)
-
-	cfg := AsyncSearcherConfig{DataDir: t.TempDir()}
-	mp, err := mappingprovider.New("", mappingprovider.WithMapping(seq.Mapping{}))
-	r.NoError(err)
-
-	as := MustStartAsync(cfg, mp, nil)
-
-	// Interval that produces no results, but it must be counted as processed
-	provider := &fakeFractionProvider{
-		&fakeFrac{info: common.Info{Path: "1", From: 0, To: seq.DurationToMID(defaultSearchInterval)}},
-	}
-
-	req := AsyncSearchRequest{
-		ID: uuid.New().String(),
-		Params: processor.SearchParams{
-			Limit: 1000,
-			From:  0,
-			To:    seq.DurationToMID(defaultSearchInterval),
-		},
-		Query:     "*",
-		Retention: time.Hour,
-	}
-	r.NoError(as.StartSearch(req, provider))
-	as.processWg.Wait()
-
-	resp, ok := as.FetchSearchResult(FetchSearchResultRequest{ID: req.ID, Limit: 1000, Order: seq.DocsOrderDesc})
-	r.True(ok)
-	r.Equal(AsyncSearchStatusDone, resp.Status)
-	r.Equal(1, resp.IntervalsDone)
-	r.Equal(0, resp.IntervalsInQueue)
 }
 
 func TestMerge(t *testing.T) {
@@ -181,10 +143,12 @@ func TestBuildIntervals(t *testing.T) {
 		expected []searchInterval
 	}{
 		{
-			name:     "empty_range_from_equals_to",
-			from:     100,
-			to:       100,
-			expected: nil,
+			name: "single_point_range_from_equals_to",
+			from: 100,
+			to:   100,
+			expected: []searchInterval{
+				{100, 100},
+			},
 		},
 		{
 			name: "single_interval_small_range",
@@ -238,6 +202,193 @@ func TestBuildIntervals(t *testing.T) {
 			result := buildIntervals(tt.from, tt.to)
 			r.Equal(tt.expected, result)
 			r.Equal(len(result), countIntervals(tt.from, tt.to))
+		})
+	}
+}
+
+func TestAsyncSearchProgressCountsEmptyIntervals(t *testing.T) {
+	r := require.New(t)
+
+	cfg := AsyncSearcherConfig{DataDir: t.TempDir()}
+	mp, err := mappingprovider.New("", mappingprovider.WithMapping(seq.Mapping{}))
+	r.NoError(err)
+
+	as := MustStartAsync(cfg, mp, nil)
+
+	// Interval that produces no results, but it must be counted as processed
+	provider := &fakeFractionProvider{
+		&fakeFrac{info: common.Info{Path: "1", From: 0, To: seq.DurationToMID(defaultSearchInterval)}},
+	}
+
+	req := AsyncSearchRequest{
+		ID: uuid.New().String(),
+		Params: processor.SearchParams{
+			Limit: 1000,
+			From:  0,
+			To:    seq.DurationToMID(defaultSearchInterval),
+		},
+		Query:     "*",
+		Retention: time.Hour,
+	}
+	r.NoError(as.StartSearch(req, provider))
+	as.processWg.Wait()
+
+	resp, ok := as.FetchSearchResult(FetchSearchResultRequest{ID: req.ID, Limit: 1000, Order: seq.DocsOrderDesc})
+	r.True(ok)
+	r.Equal(AsyncSearchStatusDone, resp.Status)
+	r.Equal(1, resp.IntervalsDone)
+	r.Equal(0, resp.IntervalsInQueue)
+}
+
+// blockingFrac returns ctx.Err() from Search once the context is cancelled,
+// simulating the in-flight search being interrupted by cancellation.
+type blockingFrac struct {
+	frac.Fraction
+	info common.Info
+}
+
+func (f *blockingFrac) Info() *common.Info {
+	return &f.info
+}
+
+func (f *blockingFrac) IsIntersecting(from, to seq.MID) bool {
+	return true
+}
+
+func (f *blockingFrac) Search(ctx context.Context, _ processor.SearchParams) (*seq.QPR, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestAsyncSearchCancelDoesNotSetError(t *testing.T) {
+	r := require.New(t)
+
+	cfg := AsyncSearcherConfig{DataDir: t.TempDir()}
+	mp, err := mappingprovider.New("", mappingprovider.WithMapping(seq.Mapping{}))
+	r.NoError(err)
+
+	as := MustStartAsync(cfg, mp, nil)
+
+	provider := &fakeFractionProvider{
+		&blockingFrac{info: common.Info{Path: "1", From: 0, To: seq.DurationToMID(defaultSearchInterval)}},
+	}
+
+	req := AsyncSearchRequest{
+		ID: uuid.New().String(),
+		Params: processor.SearchParams{
+			Limit: 1000,
+			From:  0,
+			To:    seq.DurationToMID(defaultSearchInterval),
+		},
+		Query:     "*",
+		Retention: time.Hour,
+	}
+	r.NoError(as.StartSearch(req, provider))
+
+	as.CancelSearch(req.ID)
+	as.processWg.Wait()
+
+	resp, ok := as.FetchSearchResult(FetchSearchResultRequest{ID: req.ID, Limit: 1000, Order: seq.DocsOrderDesc})
+	r.True(ok)
+	r.Equal(AsyncSearchStatusCanceled, resp.Status)
+	r.Equal("", resp.Error)
+	r.Equal(0, resp.IntervalsDone)
+	r.Equal(1, resp.IntervalsInQueue)
+}
+
+// rangedFakeFrac intersects with a range only if its info does.
+type rangedFakeFrac struct {
+	frac.Fraction
+	info common.Info
+}
+
+func (f *rangedFakeFrac) Info() *common.Info {
+	return &f.info
+}
+
+func (f *rangedFakeFrac) IsIntersecting(from, to seq.MID) bool {
+	return f.info.IsIntersecting(from, to)
+}
+
+type rangedFakeFractionProvider struct {
+	fracs fracmanager.List
+}
+
+func (fp *rangedFakeFractionProvider) AcquireFractionsInRange(from, to seq.MID) (fracmanager.List, func()) {
+	res := make(fracmanager.List, 0)
+	for _, f := range fp.fracs {
+		if f.IsIntersecting(from, to) {
+			res = append(res, f)
+		}
+	}
+	return res, func() {}
+}
+
+func TestCropSearchInterval(t *testing.T) {
+	interval := seq.DurationToMID(defaultSearchInterval)
+
+	fracs := fracmanager.List{
+		&rangedFakeFrac{info: common.Info{Path: "1", From: interval, To: 2 * interval, DocsTotal: 1}},
+		&rangedFakeFrac{info: common.Info{Path: "2", From: 3 * interval, To: 4 * interval, DocsTotal: 1}},
+	}
+
+	tests := []struct {
+		name     string
+		from     seq.MID
+		to       seq.MID
+		expected []seq.MID // [SearchFrom, SearchTo]
+	}{
+		{
+			name:     "request_inside_one_frac",
+			from:     3 * interval / 2,
+			to:       2 * interval,
+			expected: []seq.MID{3 * interval / 2, 2 * interval},
+		},
+		{
+			name:     "request_from_before_dataset_from",
+			from:     0,
+			to:       2 * interval,
+			expected: []seq.MID{interval, 2 * interval},
+		},
+		{
+			name:     "request_to_after_dataset_to",
+			from:     3 * interval,
+			to:       10 * interval,
+			expected: []seq.MID{3 * interval, 4 * interval},
+		},
+		{
+			name:     "request_wider_than_dataset",
+			from:     0,
+			to:       10 * interval,
+			expected: []seq.MID{interval, 4 * interval},
+		},
+		{
+			name:     "request_between_fracs_is_collapsed",
+			from:     2*interval + 10,
+			to:       3*interval - 10,
+			expected: []seq.MID{3*interval - 10, 3*interval - 10},
+		},
+		{
+			name:     "request_after_dataset_is_collapsed",
+			from:     5 * interval,
+			to:       6 * interval,
+			expected: []seq.MID{6 * interval, 6 * interval},
+		},
+		{
+			name:     "request_before_dataset_is_collapsed",
+			from:     0,
+			to:       10,
+			expected: []seq.MID{10, 10},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			as := AsyncSearcher{}
+			from, to := as.narrowSearchInterval(tt.from, tt.to, &rangedFakeFractionProvider{fracs: fracs})
+			r.Equal(tt.expected[0], from)
+			r.Equal(tt.expected[1], to)
 		})
 	}
 }

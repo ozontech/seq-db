@@ -1610,8 +1610,9 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 		fmt.Sprintf(`{"ts":%q,"ip":"222.36.179.145","method":"GET","uri":"/dashboard","status":404,"size":2683}`, getNextTs()),
 	}
 
-	// Create active and sealed fractions.
-	setup.Bulk(s.T(), env.IngestorBulkAddr(), docs)
+	for chunk := range slices.Chunk(docs, max(1, len(docs)/getBulkIterationsNum(env))) {
+		setup.Bulk(s.T(), env.IngestorBulkAddr(), chunk)
+	}
 	env.WaitIdle()
 
 	searcher := env.Ingestor().Ingestor.SearchIngestor

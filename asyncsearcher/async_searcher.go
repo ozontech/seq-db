@@ -80,7 +80,6 @@ type AsyncSearcherConfig struct {
 
 type fractionAcquirer interface {
 	AcquireFractionsInRange(from, to seq.MID) (_ fracmanager.List, release func())
-	AcquireFractions() (_ fracmanager.List, release func())
 }
 
 func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracProvider fractionAcquirer) *AsyncSearcher {
@@ -157,13 +156,8 @@ type asyncSearchInfo struct {
 	SearchFrom seq.MID
 	SearchTo   seq.MID
 
-	// IntervalsDone is a persisted snapshot of the number of search intervals processed so far.
-	// Updated in batches from intervalsDone, exists so we don't lose the progress after restart.
-	IntervalsDone int
-	// intervalsDone is the live counter of processed intervals. It is updated on every
-	// processed interval, and periodically flushed to the persisted IntervalsDone field.
+	// intervalsDone is the live counter of processed intervals, updated on every processed interval
 	intervalsDone *atomic.Int64
-
 	// merged is true if QPRs have been merged into a single one.
 	merged *atomic.Bool
 	// qprsSize is the total size of mqpr or qpr files on disk.
@@ -244,8 +238,8 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracProvider fraction
 	}
 	r.Params.AST = ast.Root
 
-	// crop search interval to the dataset bounds so we don't search intervals outside of the dataset.
-	from, to := as.cropSearchInterval(r.Params.From, r.Params.To, fracProvider)
+	// narrow search interval to the dataset bounds so we don't search intervals outside of the dataset.
+	from, to := as.narrowSearchInterval(r.Params.From, r.Params.To, fracProvider)
 
 	now := timeNow()
 	if r.Retention < minRetention {
@@ -282,26 +276,17 @@ func (as *AsyncSearcher) saveSearchInfo(r AsyncSearchRequest, from, to seq.MID) 
 	return true
 }
 
-func (as *AsyncSearcher) cropSearchInterval(from, to seq.MID, fracProvider fractionAcquirer) (seq.MID, seq.MID) {
-	crop := func(fracs fracmanager.List) (seq.MID, seq.MID) {
-		fracs.Sort(seq.DocsOrderAsc)
-		return max(from, fracs[0].Info().From), min(to, fracs[len(fracs)-1].Info().To)
-	}
-
+func (as *AsyncSearcher) narrowSearchInterval(from, to seq.MID, fracProvider fractionAcquirer) (seq.MID, seq.MID) {
 	fracs, release := fracProvider.AcquireFractionsInRange(from, to)
 	defer release()
-	if len(fracs) > 0 {
-		return crop(fracs)
+
+	if len(fracs) == 0 {
+		// no data in range, nothing to search
+		return to, to
 	}
 
-	// The requested interval does not intersect any fraction, so the dataset bounds
-	// cannot be derived from it; fall back to the whole dataset bounds.
-	all, releaseAll := fracProvider.AcquireFractions()
-	defer releaseAll()
-	if len(all) == 0 {
-		return from, to
-	}
-	return crop(all)
+	fracs.Sort(seq.DocsOrderAsc)
+	return max(from, fracs[0].Info().From), min(to, fracs[len(fracs)-1].Info().To)
 }
 
 func (as *AsyncSearcher) updateSearchInfo(id string, update func(info *asyncSearchInfo)) {
@@ -350,30 +335,28 @@ func (as *AsyncSearcher) processRequest(asyncSearchID string, fracProvider fract
 	asyncSearchActiveSearches.Add(-1)
 }
 
+// buildIntervals splits [from, to] into consecutive non-overlapping intervals.
+// produces at least one interval, so dataset with from==to still gets searched.
 func buildIntervals(from, to seq.MID) []searchInterval {
 	splitInterval := seq.DurationToMID(defaultSearchInterval)
 
 	var intervals []searchInterval
-	current := from
-
-	for current < to {
-		end := min(current+splitInterval, to)
-		intervals = append(intervals, searchInterval{current, end - seq.MID(1)})
-		current = end
+	start := from
+	for {
+		end := start + splitInterval
+		if end >= to {
+			intervals = append(intervals, searchInterval{start, to})
+			return intervals
+		}
+		intervals = append(intervals, searchInterval{start, end - 1})
+		start = end
 	}
-
-	if len(intervals) > 0 {
-		// close last interval
-		intervals[len(intervals)-1][1] = intervals[len(intervals)-1][1] + seq.MID(1)
-	}
-
-	return intervals
 }
 
 func countIntervals(from, to seq.MID) int {
 	splitInterval := seq.DurationToMID(defaultSearchInterval)
-	diff := to - from
-	return int((diff + splitInterval - 1) / splitInterval)
+	// return at least 1 to match buildIntervals
+	return max(int((to-from+splitInterval-1)/splitInterval), 1)
 }
 
 func intervalName(interval searchInterval) string {
@@ -406,6 +389,9 @@ func (as *AsyncSearcher) doSearch(id string, fracProvider fractionAcquirer) {
 		zap.Object("params", info.Request.Params),
 	)
 
+	// restore count of processed intervals
+	info.intervalsDone.Store(int64(len(processedIntervals)))
+
 	// AST can be nil in case of restarts.
 	if info.Request.Params.AST == nil {
 		ast, err := parser.ParseSeqQL(info.Request.Query, as.mp.GetMapping())
@@ -424,16 +410,21 @@ func (as *AsyncSearcher) doSearch(id string, fracProvider fractionAcquirer) {
 			continue
 		}
 		if as.shouldStopSearch(id) {
+			as.markSearchFinished(id)
 			return
 		}
 
 		as.rateLimit <- struct{}{}
 		if err := as.acquireAndProcessFracsInInterval(interval, info, fracProvider); err != nil {
 			<-as.rateLimit
+			if as.shouldStopSearch(id) && errors.Is(err, context.Canceled) {
+				// request is cancelled so context.Canceled is not a real error, don't store it
+				as.markSearchFinished(id)
+				return
+			}
 			as.updateSearchInfo(id, func(info *asyncSearchInfo) {
 				info.Error = err.Error()
 				info.Finished = true
-				info.IntervalsDone = int(info.intervalsDone.Load())
 			})
 			return
 		}
@@ -441,11 +432,7 @@ func (as *AsyncSearcher) doSearch(id string, fracProvider fractionAcquirer) {
 		<-as.rateLimit
 	}
 
-	as.updateSearchInfo(id, func(info *asyncSearchInfo) {
-		info.Finished = true
-		info.DoneAt = time.Now()
-		info.IntervalsDone = int(info.intervalsDone.Load())
-	})
+	as.markSearchFinished(id)
 }
 
 func (as *AsyncSearcher) shouldStopSearch(id string) bool {
@@ -457,6 +444,13 @@ func (as *AsyncSearcher) shouldStopSearch(id string) bool {
 		return true
 	}
 	return false
+}
+
+func (as *AsyncSearcher) markSearchFinished(id string) {
+	as.updateSearchInfo(id, func(info *asyncSearchInfo) {
+		info.Finished = true
+		info.DoneAt = time.Now()
+	})
 }
 
 func (as *AsyncSearcher) incrementIntervalsDone(id string) {
@@ -713,7 +707,6 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 		info.merged.Store(areQPRsMerged[requestID])
 		info.qprsSize.Store(int64(qprsDuByID[requestID]))
 		info.infoSize.Store(int64(infoDuByID[requestID]))
-		info.intervalsDone.Store(int64(info.IntervalsDone))
 		info.Request.ID = requestID
 		requests[requestID] = info
 		return nil
@@ -810,15 +803,7 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		qpr, _ = as.loadSearchResult(p, r.Limit, r.Order, histInterval)
 	}
 
-	var intervalsDone, intervalsInQueue int
-	totalIntervals := countIntervals(info.SearchFrom, info.SearchTo)
-	if info.Finished || info.merged.Load() {
-		intervalsDone = totalIntervals
-		intervalsInQueue = 0
-	} else {
-		intervalsDone = int(info.intervalsDone.Load())
-		intervalsInQueue = totalIntervals - intervalsDone
-	}
+	intervalsDone, intervalsInQueue := getProgress(info)
 
 	if info.Error != "" {
 		qpr.Errors = append(qpr.Errors, seq.ErrorSource{
@@ -889,7 +874,6 @@ func (as *AsyncSearcher) startMaintenance() {
 		now := timeNow()
 		as.removeExpiredResults(now)
 		as.merge()
-		as.flushIntervalsProgress()
 		as.checkDiskUsage()
 		const maintenanceInterval = 5 * time.Second
 		time.Sleep(maintenanceInterval)
@@ -973,27 +957,6 @@ func (as *AsyncSearcher) mergeQPRs(job mergeJob) {
 		zap.Int("intervals", len(qprs)),
 		zap.Duration("took", time.Since(start)),
 	)
-}
-
-// flushIntervalsProgress writes the in-memory interval counters to .info files.
-func (as *AsyncSearcher) flushIntervalsProgress() {
-	as.requestsMu.Lock()
-	defer as.requestsMu.Unlock()
-
-	for id := range as.requests {
-		info := as.requests[id]
-		if info.Finished {
-			continue
-		}
-
-		done := int(info.intervalsDone.Load())
-		if done == info.IntervalsDone {
-			continue
-		}
-
-		info.IntervalsDone = done
-		as.storeSearchInfoLocked(id, info)
-	}
 }
 
 func (as *AsyncSearcher) removeExpiredResults(now time.Time) {
@@ -1144,21 +1107,12 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 		if _, ok := idsMap[id]; !ok && len(idsMap) > 0 {
 			continue
 		}
-
 		// Filter by status
 		if r.Status != nil && status != *r.Status {
 			continue
 		}
 
-		var intervalsDone, intervalsInQueue int
-		totalIntervals := countIntervals(info.SearchFrom, info.SearchTo)
-		if info.Finished || info.merged.Load() {
-			intervalsDone = totalIntervals
-			intervalsInQueue = 0
-		} else {
-			intervalsDone = int(info.intervalsDone.Load())
-			intervalsInQueue = totalIntervals - intervalsDone
-		}
+		intervalsDone, intervalsInQueue := getProgress(info)
 
 		items = append(items, &AsyncSearchesListItem{
 			ID:               id,
@@ -1188,4 +1142,14 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 	})
 
 	return items
+}
+
+func getProgress(info asyncSearchInfo) (intervalsDone, intervalsInQueue int) {
+	totalIntervals := countIntervals(info.SearchFrom, info.SearchTo)
+	if info.Status() == AsyncSearchStatusDone || info.merged.Load() {
+		return totalIntervals, 0
+	}
+
+	done := int(info.intervalsDone.Load())
+	return done, max(totalIntervals-done, 0)
 }
