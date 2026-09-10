@@ -104,8 +104,8 @@ func TestAsyncSearchProgressCountsEmptyIntervals(t *testing.T) {
 	resp, ok := as.FetchSearchResult(FetchSearchResultRequest{ID: req.ID, Limit: 1000, Order: seq.DocsOrderDesc})
 	r.True(ok)
 	r.Equal(AsyncSearchStatusDone, resp.Status)
-	r.Equal(1, resp.FracsDone)
-	r.Equal(0, resp.FracsInQueue)
+	r.Equal(1, resp.IntervalsDone)
+	r.Equal(0, resp.IntervalsInQueue)
 }
 
 func TestMerge(t *testing.T) {
