@@ -1079,13 +1079,15 @@ func (x *FetchAsyncSearchResultRequest) GetOrder() Order {
 }
 
 type FetchAsyncSearchResultResponse struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	Status            AsyncSearchStatus      `protobuf:"varint,1,opt,name=status,proto3,enum=api.AsyncSearchStatus" json:"status,omitempty"`
-	Response          *SearchResponse        `protobuf:"bytes,2,opt,name=response,proto3" json:"response,omitempty"`
-	StartedAt         *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
-	ExpiresAt         *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	CanceledAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=canceled_at,json=canceledAt,proto3,oneof" json:"canceled_at,omitempty"`
-	FracsDone         uint64                 `protobuf:"varint,6,opt,name=fracs_done,json=fracsDone,proto3" json:"fracs_done,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Status     AsyncSearchStatus      `protobuf:"varint,1,opt,name=status,proto3,enum=api.AsyncSearchStatus" json:"status,omitempty"`
+	Response   *SearchResponse        `protobuf:"bytes,2,opt,name=response,proto3" json:"response,omitempty"`
+	StartedAt  *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	ExpiresAt  *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	CanceledAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=canceled_at,json=canceledAt,proto3,oneof" json:"canceled_at,omitempty"`
+	// Deprecated: Marked as deprecated in storeapi/store_api.proto.
+	FracsDone uint64 `protobuf:"varint,6,opt,name=fracs_done,json=fracsDone,proto3" json:"fracs_done,omitempty"`
+	// Deprecated: Marked as deprecated in storeapi/store_api.proto.
 	FracsQueue        uint64                 `protobuf:"varint,7,opt,name=fracs_queue,json=fracsQueue,proto3" json:"fracs_queue,omitempty"`
 	DiskUsage         uint64                 `protobuf:"varint,8,opt,name=disk_usage,json=diskUsage,proto3" json:"disk_usage,omitempty"`
 	Aggs              []*AggQuery            `protobuf:"bytes,9,rep,name=aggs,proto3" json:"aggs,omitempty"`
@@ -1097,6 +1099,8 @@ type FetchAsyncSearchResultResponse struct {
 	WithDocs          bool                   `protobuf:"varint,15,opt,name=with_docs,json=withDocs,proto3" json:"with_docs,omitempty"`
 	Size              int64                  `protobuf:"varint,16,opt,name=size,proto3" json:"size,omitempty"`
 	DoneAt            *timestamppb.Timestamp `protobuf:"bytes,17,opt,name=done_at,json=doneAt,proto3,oneof" json:"done_at,omitempty"`
+	IntervalsDone     uint64                 `protobuf:"varint,18,opt,name=intervals_done,json=intervalsDone,proto3" json:"intervals_done,omitempty"`
+	IntervalsInQueue  uint64                 `protobuf:"varint,19,opt,name=intervals_in_queue,json=intervalsInQueue,proto3" json:"intervals_in_queue,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1166,6 +1170,7 @@ func (x *FetchAsyncSearchResultResponse) GetCanceledAt() *timestamppb.Timestamp 
 	return nil
 }
 
+// Deprecated: Marked as deprecated in storeapi/store_api.proto.
 func (x *FetchAsyncSearchResultResponse) GetFracsDone() uint64 {
 	if x != nil {
 		return x.FracsDone
@@ -1173,6 +1178,7 @@ func (x *FetchAsyncSearchResultResponse) GetFracsDone() uint64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in storeapi/store_api.proto.
 func (x *FetchAsyncSearchResultResponse) GetFracsQueue() uint64 {
 	if x != nil {
 		return x.FracsQueue
@@ -1248,6 +1254,20 @@ func (x *FetchAsyncSearchResultResponse) GetDoneAt() *timestamppb.Timestamp {
 		return x.DoneAt
 	}
 	return nil
+}
+
+func (x *FetchAsyncSearchResultResponse) GetIntervalsDone() uint64 {
+	if x != nil {
+		return x.IntervalsDone
+	}
+	return 0
+}
+
+func (x *FetchAsyncSearchResultResponse) GetIntervalsInQueue() uint64 {
+	if x != nil {
+		return x.IntervalsInQueue
+	}
+	return 0
 }
 
 type CancelAsyncSearchRequest struct {
@@ -1507,13 +1527,15 @@ func (x *GetAsyncSearchesListResponse) GetSearches() []*AsyncSearchesListItem {
 }
 
 type AsyncSearchesListItem struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	SearchId          string                 `protobuf:"bytes,1,opt,name=search_id,json=searchId,proto3" json:"search_id,omitempty"`
-	Status            AsyncSearchStatus      `protobuf:"varint,2,opt,name=status,proto3,enum=api.AsyncSearchStatus" json:"status,omitempty"`
-	StartedAt         *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
-	ExpiresAt         *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	CanceledAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=canceled_at,json=canceledAt,proto3,oneof" json:"canceled_at,omitempty"`
-	FracsDone         uint64                 `protobuf:"varint,6,opt,name=fracs_done,json=fracsDone,proto3" json:"fracs_done,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	SearchId   string                 `protobuf:"bytes,1,opt,name=search_id,json=searchId,proto3" json:"search_id,omitempty"`
+	Status     AsyncSearchStatus      `protobuf:"varint,2,opt,name=status,proto3,enum=api.AsyncSearchStatus" json:"status,omitempty"`
+	StartedAt  *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	ExpiresAt  *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	CanceledAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=canceled_at,json=canceledAt,proto3,oneof" json:"canceled_at,omitempty"`
+	// Deprecated: Marked as deprecated in storeapi/store_api.proto.
+	FracsDone uint64 `protobuf:"varint,6,opt,name=fracs_done,json=fracsDone,proto3" json:"fracs_done,omitempty"`
+	// Deprecated: Marked as deprecated in storeapi/store_api.proto.
 	FracsQueue        uint64                 `protobuf:"varint,7,opt,name=fracs_queue,json=fracsQueue,proto3" json:"fracs_queue,omitempty"`
 	DiskUsage         uint64                 `protobuf:"varint,8,opt,name=disk_usage,json=diskUsage,proto3" json:"disk_usage,omitempty"`
 	Aggs              []*AggQuery            `protobuf:"bytes,9,rep,name=aggs,proto3" json:"aggs,omitempty"`
@@ -1526,6 +1548,8 @@ type AsyncSearchesListItem struct {
 	Size              int64                  `protobuf:"varint,16,opt,name=size,proto3" json:"size,omitempty"`
 	Error             string                 `protobuf:"bytes,17,opt,name=error,proto3" json:"error,omitempty"`
 	DoneAt            *timestamppb.Timestamp `protobuf:"bytes,18,opt,name=done_at,json=doneAt,proto3,oneof" json:"done_at,omitempty"`
+	IntervalsDone     uint64                 `protobuf:"varint,19,opt,name=intervals_done,json=intervalsDone,proto3" json:"intervals_done,omitempty"`
+	IntervalsInQueue  uint64                 `protobuf:"varint,20,opt,name=intervals_in_queue,json=intervalsInQueue,proto3" json:"intervals_in_queue,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1595,6 +1619,7 @@ func (x *AsyncSearchesListItem) GetCanceledAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in storeapi/store_api.proto.
 func (x *AsyncSearchesListItem) GetFracsDone() uint64 {
 	if x != nil {
 		return x.FracsDone
@@ -1602,6 +1627,7 @@ func (x *AsyncSearchesListItem) GetFracsDone() uint64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in storeapi/store_api.proto.
 func (x *AsyncSearchesListItem) GetFracsQueue() uint64 {
 	if x != nil {
 		return x.FracsQueue
@@ -1684,6 +1710,20 @@ func (x *AsyncSearchesListItem) GetDoneAt() *timestamppb.Timestamp {
 		return x.DoneAt
 	}
 	return nil
+}
+
+func (x *AsyncSearchesListItem) GetIntervalsDone() uint64 {
+	if x != nil {
+		return x.IntervalsDone
+	}
+	return 0
+}
+
+func (x *AsyncSearchesListItem) GetIntervalsInQueue() uint64 {
+	if x != nil {
+		return x.IntervalsInQueue
+	}
+	return 0
 }
 
 type IdWithHint struct {
@@ -3046,7 +3086,7 @@ const file_storeapi_store_api_proto_rawDesc = "" +
 	"\x04size\x18\x02 \x01(\x05R\x04size\x12\x16\n" +
 	"\x06offset\x18\x03 \x01(\x05R\x06offset\x12 \n" +
 	"\x05order\x18\x04 \x01(\x0e2\n" +
-	".api.OrderR\x05order\"\x9c\x06\n" +
+	".api.OrderR\x05order\"\xf9\x06\n" +
 	"\x1eFetchAsyncSearchResultResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x16.api.AsyncSearchStatusR\x06status\x12/\n" +
 	"\bresponse\x18\x02 \x01(\v2\x13.api.SearchResponseR\bresponse\x129\n" +
@@ -3055,10 +3095,10 @@ const file_storeapi_store_api_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12@\n" +
 	"\vcanceled_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\n" +
-	"canceledAt\x88\x01\x01\x12\x1d\n" +
+	"canceledAt\x88\x01\x01\x12!\n" +
 	"\n" +
-	"fracs_done\x18\x06 \x01(\x04R\tfracsDone\x12\x1f\n" +
-	"\vfracs_queue\x18\a \x01(\x04R\n" +
+	"fracs_done\x18\x06 \x01(\x04B\x02\x18\x01R\tfracsDone\x12#\n" +
+	"\vfracs_queue\x18\a \x01(\x04B\x02\x18\x01R\n" +
 	"fracsQueue\x12\x1d\n" +
 	"\n" +
 	"disk_usage\x18\b \x01(\x04R\tdiskUsage\x12!\n" +
@@ -3071,7 +3111,9 @@ const file_storeapi_store_api_proto_rawDesc = "" +
 	"\tretention\x18\x0e \x01(\v2\x19.google.protobuf.DurationR\tretention\x12\x1b\n" +
 	"\twith_docs\x18\x0f \x01(\bR\bwithDocs\x12\x12\n" +
 	"\x04size\x18\x10 \x01(\x03R\x04size\x128\n" +
-	"\adone_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampH\x01R\x06doneAt\x88\x01\x01B\x0e\n" +
+	"\adone_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampH\x01R\x06doneAt\x88\x01\x01\x12%\n" +
+	"\x0eintervals_done\x18\x12 \x01(\x04R\rintervalsDone\x12,\n" +
+	"\x12intervals_in_queue\x18\x13 \x01(\x04R\x10intervalsInQueueB\x0e\n" +
 	"\f_canceled_atB\n" +
 	"\n" +
 	"\b_done_at\"7\n" +
@@ -3086,7 +3128,7 @@ const file_storeapi_store_api_proto_rawDesc = "" +
 	"\x03ids\x18\x02 \x03(\tR\x03idsB\t\n" +
 	"\a_status\"V\n" +
 	"\x1cGetAsyncSearchesListResponse\x126\n" +
-	"\bsearches\x18\x01 \x03(\v2\x1a.api.AsyncSearchesListItemR\bsearches\"\x95\x06\n" +
+	"\bsearches\x18\x01 \x03(\v2\x1a.api.AsyncSearchesListItemR\bsearches\"\xf2\x06\n" +
 	"\x15AsyncSearchesListItem\x12\x1b\n" +
 	"\tsearch_id\x18\x01 \x01(\tR\bsearchId\x12.\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x16.api.AsyncSearchStatusR\x06status\x129\n" +
@@ -3095,10 +3137,10 @@ const file_storeapi_store_api_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12@\n" +
 	"\vcanceled_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\n" +
-	"canceledAt\x88\x01\x01\x12\x1d\n" +
+	"canceledAt\x88\x01\x01\x12!\n" +
 	"\n" +
-	"fracs_done\x18\x06 \x01(\x04R\tfracsDone\x12\x1f\n" +
-	"\vfracs_queue\x18\a \x01(\x04R\n" +
+	"fracs_done\x18\x06 \x01(\x04B\x02\x18\x01R\tfracsDone\x12#\n" +
+	"\vfracs_queue\x18\a \x01(\x04B\x02\x18\x01R\n" +
 	"fracsQueue\x12\x1d\n" +
 	"\n" +
 	"disk_usage\x18\b \x01(\x04R\tdiskUsage\x12!\n" +
@@ -3112,7 +3154,9 @@ const file_storeapi_store_api_proto_rawDesc = "" +
 	"\twith_docs\x18\x0f \x01(\bR\bwithDocs\x12\x12\n" +
 	"\x04size\x18\x10 \x01(\x03R\x04size\x12\x14\n" +
 	"\x05error\x18\x11 \x01(\tR\x05error\x128\n" +
-	"\adone_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampH\x01R\x06doneAt\x88\x01\x01B\x0e\n" +
+	"\adone_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampH\x01R\x06doneAt\x88\x01\x01\x12%\n" +
+	"\x0eintervals_done\x18\x13 \x01(\x04R\rintervalsDone\x12,\n" +
+	"\x12intervals_in_queue\x18\x14 \x01(\x04R\x10intervalsInQueueB\x0e\n" +
 	"\f_canceled_atB\n" +
 	"\n" +
 	"\b_done_at\"0\n" +
