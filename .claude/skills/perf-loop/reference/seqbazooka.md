@@ -51,9 +51,10 @@ port accordingly. The seq-db container is named `seqbench-seqdb[-<suffix>]`.
 All search/aggregation commands first ingest via `--bulk.*`, then benchmark.
 
 ### `bulk` — write load
-Flags: `--bulk.limit` (req/s, required), `--bulk.workers` (required),
-`--bulk.bulk-size` (docs/request, required), `--bulk.dataset-size` (total docs,
-`0`=infinite until `--duration`).
+The standalone `bulk` command uses **unprefixed** flags (the `--bulk.*` prefix
+below is only for scenarios where bulk is a nested ingest phase): `--limit`
+(req/s, required), `--workers` (required), `--bulk-size` (docs/request,
+required), `--dataset-size` (total docs, `0`=infinite until `--duration`).
 
 ### `mixed` — concurrent write + sliding-window search
 `--bulk.*` plus `--search-sliding-window.limit` (req/s, required),
@@ -182,22 +183,45 @@ Extract for comparison, e.g.:
 jq -r '.[] | "\(.query)\t\(.type)\t\([.metrics[]|select(.name=="p(99) (ms)").value]|.[0])"' report.json
 ```
 
-## Collecting seq-db profiles/metrics (seqbazooka does NOT do this)
+## Collecting seq-db profiles/metrics (via the observability stack)
 
-seqbazooka only measures **client-side** latency and only profiles *itself* (on
-`:9201`). To profile **seq-db**, scrape its debug port yourself **while the
-execute phase is running** (the container is destroyed at teardown). Take the
-CPU/fgprof window in the steady middle of `--duration`, not during setup/ingest
-ramp:
+seqbazooka only measures **client-side** latency and does not collect anything
+from seq-db. The perf-loop runs a small observability stack that watches seq-db
+**continuously for the whole run** (far more robust than a single mid-run
+snapshot) — Prometheus for metrics, Pyroscope (fed by Grafana Alloy) for
+profiles. Bring it up once and leave it running across iterations:
 
 ```sh
-curl -s http://localhost:9200/metrics -o metrics.txt
-curl -s "http://localhost:9200/debug/pprof/profile?seconds=30" -o cpu.pprof   # CPU
-curl -s  http://localhost:9200/debug/pprof/heap   -o heap.pprof               # in-use heap
-curl -s  http://localhost:9200/debug/pprof/allocs -o allocs.pprof             # alloc totals
-curl -s "http://localhost:9200/debug/fgprof?seconds=30" -o fgprof.pprof       # wall-clock (incl. off-CPU)
+.claude/skills/perf-loop/scripts/stack.sh up      # also: status | down | nuke
 ```
-`mutex`/`block` profiles are only meaningful if seq-db enabled their sampling.
+
+It exposes: **Prometheus `localhost:9090`** (scrapes seq-db `/metrics` every 5s),
+**Pyroscope `localhost:4040`** (continuous CPU/heap/allocs/goroutine profiles),
+**Alloy `localhost:12345`**. seq-db is only up while a run executes, so these
+targets are simply down between runs.
+
+**Record each run's time window.** seqbazooka has no notion of the stack, so note
+the epoch seconds just before and after the run (`date +%s`) — you slice both
+Prometheus and Pyroscope by `[from,to]`. Setup/ingest ramp is included in the
+window; narrow the range if you want steady-state only.
+
+Two scripts wrap the fiddly `docker`/`profilecli`/`curl` details (and are the
+allowlisted entry points — use them rather than raw commands):
+
+**Metrics** — `scripts/promql.sh <from> <to> <promql> [step]` range-queries the
+local Prometheus and prints raw JSON (pipe to `jq`). Metrics are namespaced
+`seq_db_*` (e.g. `seq_db_main_seals_total`, `seq_db_ingestor_*`,
+`seq_db_store_compaction_*`, `seq_db_common_bytes_pool_*`) plus Go runtime `go_*`:
+```sh
+.claude/skills/perf-loop/scripts/promql.sh "$FROM" "$TO" 'rate(seq_db_main_seals_total[1m])' | jq .
+```
+
+**Profiles** — `scripts/collect-profiles.sh <out_dir> <from> <to> [service]`
+exports merged pprof for the window (CPU, allocs, heap, goroutine) from
+Pyroscope, ready for `go tool pprof`:
+```sh
+.claude/skills/perf-loop/scripts/collect-profiles.sh .perf-runs/001-fix "$FROM" "$TO"
+```
 
 ## Example invocations
 
@@ -208,7 +232,7 @@ seqbazooka bulk \
   --bootstrap.image=seq-db:perf-local \
   --bootstrap.network=host --bootstrap.cpu=4 --bootstrap.memory=8GiB \
   --duration=10m \
-  --bulk.limit=200 --bulk.workers=16 --bulk.bulk-size=1000 --bulk.dataset-size=0 \
+  --limit=200 --workers=16 --bulk-size=1000 --dataset-size=0 \
   --report.path=./report.json --report.format=json
 ```
 
@@ -225,9 +249,15 @@ seqbazooka search-regular \
 ## Gotchas
 
 1. `--bootstrap.config` is an env `key=value` file, not YAML.
-2. Benchmarking local edits requires a **locally built image** + `--bootstrap.image`.
+2. Benchmarking local edits requires a **locally built image** + `--bootstrap.image`
+   (`VERSION=perf-local make build-image` → `ghcr.io/ozontech/seq-db:perf-local`).
+   testcontainers **pulls from the registry if the image is absent locally**, which
+   fails with `manifest unknown` for this never-pushed tag — verify
+   `docker image inspect <tag>` succeeds before a run.
 3. Report `"type"` = temperature (hot/cold), not query kind.
 4. Report `value` can be `null`; `total` is 0 for `bulk`.
 5. Pin `--bootstrap.cpu/--bootstrap.memory` and scenario params across runs, or
    comparisons are meaningless.
-6. Teardown destroys the container + volume — grab profiles mid-run.
+6. Teardown destroys the container + volume. Profiles/metrics are captured
+   continuously by the observability stack, so nothing to grab mid-run — but note
+   the run's `[from,to]` epochs to slice them afterwards.

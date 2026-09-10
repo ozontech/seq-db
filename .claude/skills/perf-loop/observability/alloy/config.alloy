@@ -1,0 +1,32 @@
+// Grafana Alloy: continuously pull Go pprof from seq-db's debug port and push
+// the profiles to Pyroscope. seq-db runs on the host network (localhost:9200);
+// it is only up during a seqbazooka run, so Alloy just reconnects when a run
+// starts and gaps out between runs.
+
+pyroscope.scrape "seqdb" {
+  targets = [
+    {"__address__" = "localhost:9200", "service_name" = "seq-db"},
+  ]
+  forward_to = [pyroscope.write.local.receiver]
+
+  // CPU profile is delta over the scrape window; keep the window a few seconds
+  // so profiles are near-continuous. memory=heap/allocs, goroutine are instant.
+  scrape_interval = "15s"
+  scrape_timeout  = "15s"
+
+  profiling_config {
+    profile.process_cpu { enabled = true }
+    profile.memory      { enabled = true }
+    profile.goroutine   { enabled = true }
+    profile.block       { enabled = false }
+    profile.mutex       { enabled = false }
+    // seq-db does not serve /debug/pprof/delta_* custom endpoints; use the
+    // standard ones Alloy defaults to.
+  }
+}
+
+pyroscope.write "local" {
+  endpoint {
+    url = "http://localhost:4040"
+  }
+}
