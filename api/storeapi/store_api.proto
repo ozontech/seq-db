@@ -246,7 +246,7 @@ message AsyncSearchesListItem {
   string error = 17;
 
   optional google.protobuf.Timestamp done_at = 18;
-    uint64 intervals_done = 19;
+  uint64 intervals_done = 19;
   uint64 intervals_in_queue = 20;
 }
 
