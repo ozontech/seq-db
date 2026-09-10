@@ -80,6 +80,7 @@ type AsyncSearcherConfig struct {
 
 type fractionAcquirer interface {
 	AcquireFractionsInRange(from, to seq.MID) (_ fracmanager.List, release func())
+	AcquireFractions() (_ fracmanager.List, release func())
 }
 
 func MustStartAsync(config AsyncSearcherConfig, mp MappingProvider, fracProvider fractionAcquirer) *AsyncSearcher {
@@ -151,6 +152,10 @@ type asyncSearchInfo struct {
 
 	Request   AsyncSearchRequest
 	StartedAt time.Time
+
+	// real search interval inside the dataset bounds, the original interval is kept in Request.Params
+	SearchFrom seq.MID
+	SearchTo   seq.MID
 
 	// merged is true if QPRs have been merged into a single one.
 	merged *atomic.Bool
@@ -231,6 +236,9 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracProvider fraction
 	}
 	r.Params.AST = ast.Root
 
+	// crop search interval to the dataset bounds so we don't search intervals outside of the dataset.
+	from, to := as.cropSearchInterval(r.Params.From, r.Params.To, fracProvider)
+
 	now := timeNow()
 	if r.Retention < minRetention {
 		return fmt.Errorf("retention time should be at least %s, got %s", minRetention, r.Retention)
@@ -241,7 +249,7 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracProvider fraction
 		return fmt.Errorf("retention time should be less than %s, got %s", maxRetention, r.Retention)
 	}
 
-	if ok := as.saveSearchInfo(r); !ok {
+	if ok := as.saveSearchInfo(r, from, to); !ok {
 		// Request was saved previously, skip it
 		return nil
 	}
@@ -253,15 +261,39 @@ func (as *AsyncSearcher) StartSearch(r AsyncSearchRequest, fracProvider fraction
 	return nil
 }
 
-func (as *AsyncSearcher) saveSearchInfo(r AsyncSearchRequest) bool {
+func (as *AsyncSearcher) saveSearchInfo(r AsyncSearchRequest, from, to seq.MID) bool {
 	as.requestsMu.Lock()
 	defer as.requestsMu.Unlock()
 	if _, ok := as.requests[r.ID]; ok {
 		return false
 	}
 	info := newAsyncSearchInfo(r)
+	info.SearchFrom = from
+	info.SearchTo = to
 	as.storeSearchInfoLocked(r.ID, info)
 	return true
+}
+
+func (as *AsyncSearcher) cropSearchInterval(from, to seq.MID, fracProvider fractionAcquirer) (seq.MID, seq.MID) {
+	crop := func(fracs fracmanager.List) (seq.MID, seq.MID) {
+		fracs.Sort(seq.DocsOrderAsc)
+		return max(from, fracs[0].Info().From), min(to, fracs[len(fracs)-1].Info().To)
+	}
+
+	fracs, release := fracProvider.AcquireFractionsInRange(from, to)
+	defer release()
+	if len(fracs) > 0 {
+		return crop(fracs)
+	}
+
+	// The requested interval does not intersect any fraction, so the dataset bounds
+	// cannot be derived from it; fall back to the whole dataset bounds.
+	all, releaseAll := fracProvider.AcquireFractions()
+	defer releaseAll()
+	if len(all) == 0 {
+		return from, to
+	}
+	return crop(all)
 }
 
 func (as *AsyncSearcher) updateSearchInfo(id string, update func(info *asyncSearchInfo)) {
@@ -378,7 +410,7 @@ func (as *AsyncSearcher) doSearch(id string, fracProvider fractionAcquirer) {
 		info.Request.Params.AST = ast.Root
 	}
 
-	intervals := buildIntervals(info.Request.Params.From, info.Request.Params.To)
+	intervals := buildIntervals(info.SearchFrom, info.SearchTo)
 	for _, interval := range intervals {
 		if _, ok := processedIntervals[intervalName(interval)]; ok {
 			continue
@@ -653,6 +685,12 @@ func loadAsyncRequests(dataDir string) (map[string]asyncSearchInfo, error) {
 			info.Version = infoVersion2
 		}
 
+		if info.SearchFrom == 0 && info.SearchTo == 0 {
+			// the search was created before SearchFrom and SearchTo fields were introduced, restore them
+			info.SearchFrom = info.Request.Params.From
+			info.SearchTo = info.Request.Params.To
+		}
+
 		info.merged.Store(areQPRsMerged[requestID])
 		info.qprsSize.Store(int64(qprsDuByID[requestID]))
 		info.infoSize.Store(int64(infoDuByID[requestID]))
@@ -745,7 +783,7 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 	if info.merged.Load() {
 		p := path.Join(as.config.DataDir, r.ID+asyncSearchExtMergedQPR)
 		qpr, _ = as.loadSearchResult([]string{p}, r.Limit, r.Order, histInterval)
-		intervalsDone = countIntervals(info.Request.Params.From, info.Request.Params.To)
+		intervalsDone = countIntervals(info.SearchFrom, info.SearchTo)
 		intervalsInQueue = 0
 	} else {
 		p, err := as.findQPRs(r.ID)
@@ -754,7 +792,7 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 		}
 		qpr, _ = as.loadSearchResult(p, r.Limit, r.Order, histInterval)
 		intervalsDone = len(p)
-		intervalsInQueue = countIntervals(info.Request.Params.From, info.Request.Params.To) - intervalsDone
+		intervalsInQueue = countIntervals(info.SearchFrom, info.SearchTo) - intervalsDone
 	}
 
 	if info.Error != "" {
@@ -841,7 +879,7 @@ func (as *AsyncSearcher) merge() {
 		if !info.Finished || info.merged.Load() {
 			continue
 		}
-		if countIntervals(info.Request.Params.From, info.Request.Params.To) < 2 {
+		if countIntervals(info.SearchFrom, info.SearchTo) < 2 {
 			// Nothing to merge
 			continue
 		}
@@ -873,7 +911,7 @@ func (as *AsyncSearcher) mergeQPRs(job mergeJob) {
 	var qprs []string
 
 	params := job.Info.Request.Params
-	intervals := buildIntervals(params.From, params.To)
+	intervals := buildIntervals(job.Info.SearchFrom, job.Info.SearchTo)
 
 	for _, i := range intervals {
 		qprFilename := getQPRFilename(job.ID, intervalName(i))
@@ -1067,7 +1105,7 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 
 		var intervalsDone, intervalsInQueue int
 		if info.merged.Load() {
-			intervalsDone = countIntervals(info.Request.Params.From, info.Request.Params.To)
+			intervalsDone = countIntervals(info.SearchFrom, info.SearchTo)
 			intervalsInQueue = 0
 		} else {
 			p, err := as.findQPRs(id)
@@ -1075,7 +1113,7 @@ func (as *AsyncSearcher) GetAsyncSearchesList(r GetAsyncSearchesListRequest) []*
 				logger.Fatal("can't load async search result", zap.String("id", id), zap.Error(err))
 			}
 			intervalsDone = len(p)
-			intervalsInQueue = countIntervals(info.Request.Params.From, info.Request.Params.To) - intervalsDone
+			intervalsInQueue = countIntervals(info.SearchFrom, info.SearchTo) - intervalsDone
 		}
 
 		items = append(items, &AsyncSearchesListItem{
