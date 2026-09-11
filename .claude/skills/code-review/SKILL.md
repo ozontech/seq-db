@@ -26,9 +26,3 @@ relay; you do not read the whole diff yourself.
    output — a clean review is a valid result.
 4. **Do not fix anything unless asked.** Reviewing and editing are separate
    steps. After presenting findings, offer to fix specific ones on request.
-
-## Notes
-
-- The subagent's report is not shown to the user automatically — you must relay
-  what matters.
-- Keep your own commentary minimal; the findings are the deliverable.

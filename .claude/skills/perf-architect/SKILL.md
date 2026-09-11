@@ -34,6 +34,5 @@ Delegate the heavy reading (subsystem + architecture docs + profiles) to the
 
 ## Notes
 
-- The subagent's report is not shown to the user automatically — relay it.
 - If the subagent concludes the current design is already appropriate, report
   that as the result; a "no rewrite needed" answer is valid and valuable.
