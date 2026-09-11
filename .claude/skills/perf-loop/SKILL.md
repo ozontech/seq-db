@@ -24,7 +24,7 @@ that reference; there is no wrapper script for it.
   `perf: <what>` commit so every idea is visible and revertible. If a change
   regresses or is neutral, `git restore`/revert it and record why — do not stack
   unverified edits.
-- **Keep a run log** (`.perf-runs/log.md`) of every iteration: hypothesis, change,
+- **Keep a run log** (`.perf-loop/log.md`) of every iteration: hypothesis, change,
   measured delta, kept/reverted. This log is the real deliverable.
 - **Compare apples to apples.** Pin scenario params and `--bootstrap.cpu`/
   `--bootstrap.memory` for the whole session. Changing the workload invalidates
@@ -38,12 +38,12 @@ that reference; there is no wrapper script for it.
 - Bring up the observability stack and leave it running:
   `.claude/skills/perf-loop/scripts/stack.sh up` (Prometheus `:9090`, Pyroscope
   `:4040`). It persists across iterations.
-- Ensure `.perf-runs/` is git-ignored (add it to `.gitignore` if missing) so run
+- Ensure `.perf-loop/` is git-ignored (add it to `.gitignore` if missing) so run
   artifacts never get committed.
 
 ## Run directory layout
 
-Each run gets `.perf-runs/<NNN>-<label>/` (zero-padded, monotonic) containing:
+Each run gets `.perf-loop/<NNN>-<label>/` (zero-padded, monotonic) containing:
 `report.json` (seqbazooka), the profiles you export from Pyroscope for the run
 window (`cpu.pprof`, `allocs.pprof`, `heap.pprof`, `goroutine.pprof`), a
 `window.env` (the `[from,to]` epochs), and `meta.json` (scenario, all flags, git
@@ -111,4 +111,4 @@ Stop and summarize when any holds:
 
 Report: the branch and its `perf:` commits, per-commit measured delta, total
 improvement vs `000-baseline`, ideas tried-and-reverted (with why), and what to
-try next. Point to `.perf-runs/log.md` for the full trail.
+try next. Point to `.perf-loop/log.md` for the full trail.

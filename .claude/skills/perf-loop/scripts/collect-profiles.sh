@@ -4,7 +4,7 @@
 # (shipped in the Pyroscope image) with the --user/--network flags it needs.
 #
 # usage: collect-profiles.sh <out_dir> <from_epoch> <to_epoch> [service]
-#   e.g. collect-profiles.sh .perf-runs/001-fix 1788976537 1788976666
+#   e.g. collect-profiles.sh .perf-loop/001-fix 1788976537 1788976666
 set -uo pipefail
 
 OUT="${1:?usage: collect-profiles.sh <out_dir> <from_epoch> <to_epoch> [service]}"
