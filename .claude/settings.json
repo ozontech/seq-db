@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(go:*)",
+      "Bash(gofmt:*)",
       "Bash(gopls:*)",
       "Bash(seqbazooka:*)",
       "Bash(jq:*)",

@@ -24,6 +24,4 @@ junit.xml
 /go.work*
 /data
 /quickstart/data
-/.devcontainer
-# local perf-loop run artifacts
-.perf-runs/
+.perf-loop/

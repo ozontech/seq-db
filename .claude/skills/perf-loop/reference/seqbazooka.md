@@ -220,7 +220,7 @@ local Prometheus and prints raw JSON (pipe to `jq`). Metrics are namespaced
 exports merged pprof for the window (CPU, allocs, heap, goroutine) from
 Pyroscope, ready for `go tool pprof`:
 ```sh
-.claude/skills/perf-loop/scripts/collect-profiles.sh .perf-runs/001-fix "$FROM" "$TO"
+.claude/skills/perf-loop/scripts/collect-profiles.sh .perf-loop/001-fix "$FROM" "$TO"
 ```
 
 ## Example invocations
