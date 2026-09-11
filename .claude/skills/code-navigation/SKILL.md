@@ -9,7 +9,7 @@ For Go code, **navigate with `gopls` first.** It resolves symbols semantically �
 across packages, through interfaces, following the type system — which text
 search cannot. `Grep`/`Read` are the fallback, not the default: reach for them
 only when gopls genuinely can't answer (see below). `gopls` is allowlisted, so
-these run without a prompt; on this repo a call is ~0.3s.
+these run without a prompt.
 
 ## Map the question to a gopls command
 
@@ -53,8 +53,6 @@ Add `-json` (on `definition`) when you want machine-readable output to parse.
 
 ## Notes
 
-- `workspace_symbol` / `symbols` need no position — prefer them to grep for
-  *locating* a Go symbol.
 - Point `col` at the start of the identifier, not the line start, or the command
   resolves the wrong (or no) symbol.
 - This is a Go-navigation policy; for text-shaped searches across the tree (any

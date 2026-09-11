@@ -3,13 +3,11 @@ name: perf-analyze
 description: One-shot profile analysis for seq-db — turns pprof profiles (and optional metrics/report) into a ranked list of concrete, profile-grounded optimization opportunities for the code. Delegates to the perf-analyzer subagent and relays its findings. Use when you have profiles and want to know what to optimize (e.g. "analyze these CPU/heap profiles", "what's the hot path costing us?"). This proposes; it does not apply fixes.
 ---
 
-# perf-analyzer
+# perf-analyze
 
-A one-shot, profile-grounded analysis: given profiling artifacts, produce a
-ranked list of local optimization opportunities pointed at specific source.
-
-Delegate the heavy profile reading to the `perf-analyzer` subagent so the pprof
-output stays out of this context; you scope and relay.
+A one-shot, profile-grounded analysis. Delegate the heavy profile reading to the
+`perf-analyzer` subagent so the pprof output stays out of this context; you scope
+and relay.
 
 (For an autonomous run → analyze → apply → measure loop, use the `perf-loop`
 skill, which drives this same subagent per iteration. Use *this* skill for a
@@ -32,9 +30,3 @@ standalone analysis of profiles you already have.)
 
 4. **Do not apply fixes.** After presenting, offer to implement a specific one on
    request.
-
-## Notes
-
-- The subagent's report is not shown to the user automatically — relay it.
-- If the profiles show no actionable code-level win (dominated by genuine I/O or
-  already-tight code), report that plainly.
