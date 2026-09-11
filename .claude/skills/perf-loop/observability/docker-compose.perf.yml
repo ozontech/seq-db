@@ -1,0 +1,49 @@
+# Observability stack for perf-loop. Continuously collects seq-db metrics
+# (Prometheus) and profiles (Pyroscope, fed by Grafana Alloy) for the WHOLE
+# duration of a seqbazooka run, instead of a single mid-run snapshot.
+#
+# seq-db itself is started/stopped by seqbazooka (testcontainers, host network),
+# so this stack does not run seq-db — it only OBSERVES it at localhost:9200.
+# Everything uses host networking so it can reach seq-db at localhost:9200 with
+# no service discovery; ports 9090/4040/12345 don't clash with seq-db's
+# 9002/9004/9200.
+name: seqdb-perf-obs
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    network_mode: host
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    restart: unless-stopped
+
+  pyroscope:
+    image: grafana/pyroscope:2.3.1
+    network_mode: host
+    volumes:
+      - pyro-data:/data
+    restart: unless-stopped
+    # HTTP API + ingest listen on :4040 by default
+
+  alloy:
+    image: grafana/alloy:v1.19.2
+    network_mode: host
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    depends_on:
+      - pyroscope
+    restart: unless-stopped
+
+volumes:
+  prom-data:
+  pyro-data:

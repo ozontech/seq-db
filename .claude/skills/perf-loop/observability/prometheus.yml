@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: seq-db
+    # seq-db exposes Prometheus metrics on its debug port (default :9200).
+    # It is only up while a seqbazooka run is executing; between runs this
+    # target is simply down.
+    static_configs:
+      - targets: ['localhost:9200']
