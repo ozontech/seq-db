@@ -23,7 +23,7 @@ jobs:
         uses: maus007/docker-run-action-fork@v1
         with:
           registry: quay.io
-          image: minio/minio:latest
+          image: alpine/minio:latest-release
           options: |
             --detach
             --publish 9000:9000
