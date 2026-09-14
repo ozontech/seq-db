@@ -2,6 +2,7 @@ package frac
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -246,13 +247,20 @@ var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 func (f *Active) Append(docs storage.DocBlock, metas storage.WalBlock, wg *sync.WaitGroup) (err error) {
 	sw := stopwatch.New()
 	m := sw.Start("append")
+
+	if !validWalBlock(metas) {
+		return errors.New("cannot append an invalid wal block")
+	}
+
 	if err = f.writer.Write(docs, metas, sw); err != nil {
 		m.Stop()
 		wg.Done()
 		return err
 	}
+
 	f.updateDiskStats(uint64(len(docs)), uint64(len(metas)))
 	f.indexer.Index(f, metas, wg, sw)
+
 	m.Stop()
 	sw.Export(bulkStagesSeconds)
 	return nil
@@ -413,4 +421,8 @@ func (f *Active) releaseMem() {
 	f.MIDs = nil
 	f.TokenList = nil
 	f.DocsPositions = nil
+}
+
+func validWalBlock(data []byte) bool {
+	return storage.IsWalBlock(data) && storage.WalBlock(data).IsCorrect()
 }

@@ -65,7 +65,6 @@ func (g *GrpcV1) doBulk(ctx context.Context, req *storeapi.BulkRequest) error {
 	start := time.Now()
 
 	err := g.fracManager.Append(ctx, req.Docs, req.Metas)
-
 	if err != nil {
 		return err
 	}
