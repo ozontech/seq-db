@@ -157,25 +157,69 @@ func NewSealedPreloaded(
 	return f
 }
 
+func (f *Sealed) openInfoLegacy() {
+	if f.legacyFile != nil {
+		return
+	}
+
+	f.openFile(
+		consts.IndexFileSuffix,
+		func(file *os.File) { f.legacyFile = file },
+	)
+}
+
+func (f *Sealed) openInfo() {
+	if f.infoFile != nil {
+		return
+	}
+
+	f.openFile(
+		consts.InfoFileSuffix,
+		func(file *os.File) { f.infoFile = file },
+	)
+}
+
 func (f *Sealed) openIndex() {
 	if f.IsLegacy {
 		// We have exactly one `.index` file for legacy sealed fractions.
 		// So opening only this file is sufficient.
-		f.legacyFile = f.openFileIfNeeded(f.legacyFile, f.BaseFileName+consts.IndexFileSuffix)
+		f.openInfoLegacy()
 		return
 	}
 
-	f.infoFile = f.openFileIfNeeded(f.infoFile, f.BaseFileName+consts.InfoFileSuffix)
-	f.tokenFile = f.openFileIfNeeded(f.tokenFile, f.BaseFileName+consts.TokenFileSuffix)
-	f.offsetsFile = f.openFileIfNeeded(f.offsetsFile, f.BaseFileName+consts.OffsetsFileSuffix)
-	f.idFile = f.openFileIfNeeded(f.idFile, f.BaseFileName+consts.IDFileSuffix)
-	f.lidFile = f.openFileIfNeeded(f.lidFile, f.BaseFileName+consts.LIDFileSuffix)
+	f.openInfo()
+
+	if f.tokenFile == nil {
+		f.openFile(
+			consts.TokenFileSuffix,
+			func(file *os.File) { f.tokenFile = file },
+		)
+	}
+
+	if f.offsetsFile == nil {
+		f.openFile(
+			consts.OffsetsFileSuffix,
+			func(file *os.File) { f.offsetsFile = file },
+		)
+	}
+
+	if f.idFile == nil {
+		f.openFile(
+			consts.IDFileSuffix,
+			func(file *os.File) { f.idFile = file },
+		)
+	}
+
+	if f.lidFile == nil {
+		f.openFile(
+			consts.LIDFileSuffix,
+			func(file *os.File) { f.lidFile = file },
+		)
+	}
 }
 
-func (f *Sealed) openFileIfNeeded(ff *os.File, name string) *os.File {
-	if ff != nil {
-		return ff
-	}
+func (f *Sealed) openFile(suffix string, assign func(*os.File)) {
+	name := f.BaseFileName + suffix
 
 	file, err := os.Open(name)
 	if err != nil {
@@ -186,7 +230,7 @@ func (f *Sealed) openFileIfNeeded(ff *os.File, name string) *os.File {
 		)
 	}
 
-	return file
+	assign(file)
 }
 
 func (f *Sealed) openDocs() {
@@ -222,7 +266,7 @@ func (f *Sealed) loadInfo() {
 	var err error
 
 	if f.IsLegacy {
-		f.legacyFile = f.openFileIfNeeded(f.legacyFile, f.BaseFileName+consts.IndexFileSuffix)
+		f.openInfoLegacy()
 
 		legacyReader := storage.NewIndexReader(
 			f.readLimiter, f.legacyFile.Name(),
@@ -240,7 +284,7 @@ func (f *Sealed) loadInfo() {
 		return
 	}
 
-	f.infoFile = f.openFileIfNeeded(f.infoFile, f.BaseFileName+consts.InfoFileSuffix)
+	f.openInfo()
 	if f.info, err = loadInfo(f.infoFile); err != nil {
 		logger.Fatal(
 			"error loading Info",
