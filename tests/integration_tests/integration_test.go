@@ -1584,7 +1584,6 @@ func (s *IntegrationTestSuite) TestTimeField() {
 func (s *IntegrationTestSuite) TestAsyncSearch() {
 	t := s.T()
 	r := require.New(t)
-	now := time.Now()
 
 	cfg := *s.Config
 	cfg.Mapping = map[string]seq.MappingTypes{
@@ -1597,21 +1596,23 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	env := setup.NewTestingEnv(&cfg)
 	defer env.StopAll()
 
+	getNextTs := getAutoTsGenerator(time.Now(), -time.Minute*10)
 	docs := []string{
-		`{"timestamp":"2009-11-10T22:58:44Z","ip":"226.166.207.153","method":"PUT","uri":"/api/data","status":201,"size":5116}`,
-		`{"timestamp":"2009-11-10T22:54:26Z","ip":"211.170.224.81","method":"GET","uri":"/api/data","status":500,"size":2375}`,
-		`{"timestamp":"2009-11-10T22:57:28Z","ip":"13.30.65.187","method":"POST","uri":"/","status":201,"size":3892}`,
-		`{"timestamp":"2009-11-10T22:44:01Z","ip":"181.10.24.51","method":"GET","uri":"/api/data","status":201,"size":4002}`,
-		`{"timestamp":"2009-11-10T22:53:51Z","ip":"107.2.249.68","method":"PUT","uri":"/dashboard","status":400,"size":4334}`,
-		`{"timestamp":"2009-11-10T22:52:50Z","ip":"70.83.163.58","method":"DELETE","uri":"/","status":400,"size":2525}`,
-		`{"timestamp":"2009-11-10T22:55:31Z","ip":"106.51.48.84","method":"DELETE","uri":"/api/data","status":400,"size":3015}`,
-		`{"timestamp":"2009-11-10T22:58:54Z","ip":"117.81.168.0","method":"GET","uri":"/","status":404,"size":4734}`,
-		`{"timestamp":"2009-11-10T22:58:04Z","ip":"132.240.243.74","method":"PUT","uri":"/login","status":400,"size":1598}`,
-		`{"timestamp":"2009-11-10T22:46:58Z","ip":"222.36.179.145","method":"GET","uri":"/dashboard","status":404,"size":2683}`,
+		fmt.Sprintf(`{"ts":%q,"ip":"226.166.207.153","method":"PUT","uri":"/api/data","status":201,"size":5116}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"211.170.224.81","method":"GET","uri":"/api/data","status":500,"size":2375}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"13.30.65.187","method":"POST","uri":"/","status":201,"size":3892}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"181.10.24.51","method":"GET","uri":"/api/data","status":201,"size":4002}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"107.2.249.68","method":"PUT","uri":"/dashboard","status":400,"size":4334}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"70.83.163.58","method":"DELETE","uri":"/","status":400,"size":2525}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"106.51.48.84","method":"DELETE","uri":"/api/data","status":400,"size":3015}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"117.81.168.0","method":"GET","uri":"/","status":404,"size":4734}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"132.240.243.74","method":"PUT","uri":"/login","status":400,"size":1598}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"222.36.179.145","method":"GET","uri":"/dashboard","status":404,"size":2683}`, getNextTs()),
 	}
 
-	// Create active and sealed fractions.
-	setup.Bulk(s.T(), env.IngestorBulkAddr(), docs)
+	for chunk := range slices.Chunk(docs, max(1, len(docs)/getBulkIterationsNum(env))) {
+		setup.Bulk(s.T(), env.IngestorBulkAddr(), chunk)
+	}
 	env.WaitIdle()
 
 	searcher := env.Ingestor().Ingestor.SearchIngestor
@@ -1624,8 +1625,8 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 
 	startReq := search.AsyncRequest{
 		Query:     "* | fields ip, method, uri",
-		From:      now.UTC().Truncate(time.Millisecond),
-		To:        now.UTC().Add(time.Minute).Truncate(time.Millisecond),
+		From:      time.UnixMilli(0).UTC(),
+		To:        time.Now().UTC().Add(time.Hour).Truncate(time.Millisecond),
 		Retention: time.Minute * 5,
 		Aggregations: []search.AggQuery{
 			{
@@ -1669,6 +1670,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.Equalf(asyncsearcher.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
 	r.Equal([]seq.ErrorSource(nil), fresp.QPR.Errors)
 	r.True(fresp.ExpiresAt.After(time.Now().UTC()))
+	r.False(fresp.DoneAt.IsZero())
 	r.Equal([]seq.AggregationResult{
 		{
 			Buckets: []seq.AggregationBucket{
@@ -1722,6 +1724,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 		r.Equal(asyncsearcher.AsyncSearchStatusDone, s.Status)
 		r.Equal(startReq, s.Request)
 		r.True(s.ExpiresAt.After(time.Now().UTC()))
+		r.False(s.DoneAt.IsZero())
 		r.Equal(float64(1), s.Progress)
 	}
 

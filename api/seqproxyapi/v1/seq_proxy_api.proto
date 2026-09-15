@@ -323,6 +323,7 @@ message FetchAsyncSearchResultResponse {
   // The size of data stored on disk, in bytes.
   uint64 disk_usage = 8;
   Error error = 9;
+  optional google.protobuf.Timestamp done_at = 10;
 }
 
 message CancelAsyncSearchRequest{
@@ -364,6 +365,7 @@ message AsyncSearchesListItem {
   // The size of data stored on disk, in bytes.
   uint64 disk_usage = 8;
   optional string error = 9;
+  optional google.protobuf.Timestamp done_at = 10;
 }
 
 message GetAggregationRequest {
