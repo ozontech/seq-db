@@ -145,3 +145,10 @@ func EnsureSliceSize[T any](src []T, size int) []T {
 	}
 	return src[:size]
 }
+
+func Abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}

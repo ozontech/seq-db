@@ -2,9 +2,11 @@ package frac_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand/v2"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -37,15 +39,16 @@ const (
 )
 
 type testDoc = struct {
-	id        string
-	json      string
-	message   string
-	service   string
-	pod       string
-	clientIp  string
-	level     int
-	traceId   string
-	timestamp time.Time
+	id          string
+	json        string
+	message     string
+	service     string
+	pod         string
+	clientIp    string
+	level       int
+	requestTook int
+	traceId     string
+	timestamp   time.Time
 }
 
 // TestConcurrentAppendAndQuery tests concurrent appends to an active fraction, then concurrent querying an active fraction.
@@ -491,6 +494,12 @@ func generatesMessages(numMessages, bulkSize int, nestedIndexes bool) ([]*testDo
 	for i := 0; i < numMessages; i++ {
 		service := services[rand.IntN(len(services))]
 		message := messages[rand.IntN(len(messages))]
+
+		var requestTook int
+		if message == "request completed" {
+			requestTook = 10 + rand.IntN(1000)
+		}
+
 		// populate message with various unique tokens like ids and hex numbers (matches real installation)
 		x := rand.IntN(20)
 		switch x {
@@ -500,17 +509,6 @@ func generatesMessages(numMessages, bulkSize int, nestedIndexes bool) ([]*testDo
 			message += fmt.Sprintf(" %dus", rand.IntN(10000000))
 		default:
 			message += fmt.Sprintf(" %d", rand.IntN(10000000))
-		}
-
-		var spansJson string
-
-		if nestedIndexes {
-			numSpans := 1 + rand.IntN(5)
-			spans := make([]string, numSpans)
-			for j := 0; j < numSpans; j++ {
-				spans[j] = fmt.Sprintf(`{"span_id":"span-%d"}`, rand.IntN(5000))
-			}
-			spansJson = fmt.Sprintf(`, "spans":[%s]`, strings.Join(spans, ","))
 		}
 
 		level := rand.IntN(6)
@@ -523,20 +521,47 @@ func generatesMessages(numMessages, bulkSize int, nestedIndexes bool) ([]*testDo
 			toTime = timestamp
 		}
 
-		json := fmt.Sprintf(`{"timestamp":%q,"id": %q, "service":%q,"pod":%q,"client_ip":%q,"message":%q,"trace_id": %q,"level":"%d"%s}`,
-			timestamp.Format(time.RFC3339Nano), id, service, pod, clientIp, message, traceId, level, spansJson)
+		docFields := map[string]any{
+			"timestamp": timestamp.Format(time.RFC3339Nano),
+			"id":        id,
+			"service":   service,
+			"pod":       pod,
+			"client_ip": clientIp,
+			"message":   message,
+			"trace_id":  traceId,
+			"level":     strconv.Itoa(level),
+		}
+		if requestTook > 0 {
+			docFields["request_took"] = requestTook
+		}
+		if nestedIndexes {
+			numSpans := 1 + rand.IntN(5)
+			spans := make([]map[string]string, numSpans)
+			for j := 0; j < numSpans; j++ {
+				spans[j] = map[string]string{"span_id": fmt.Sprintf("span-%d", rand.IntN(5000))}
+			}
+			docFields["spans"] = spans
+		}
 
-		docs = append(docs, &testDoc{
-			json:      json,
-			timestamp: timestamp,
-			id:        id,
-			message:   message,
-			service:   service,
-			pod:       pod,
-			clientIp:  clientIp,
-			level:     level,
-			traceId:   traceId,
-		})
+		docJSON, err := json.Marshal(docFields)
+		if err != nil {
+			panic(err)
+		}
+
+		doc := &testDoc{
+			json:        string(docJSON),
+			timestamp:   timestamp,
+			id:          id,
+			message:     message,
+			service:     service,
+			pod:         pod,
+			clientIp:    clientIp,
+			level:       level,
+			requestTook: requestTook,
+			traceId:     traceId,
+		}
+
+		docs = append(docs, doc)
 	}
 
 	var bulks [][]string
