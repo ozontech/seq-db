@@ -101,12 +101,11 @@ func NewRemote(
 		return f
 	}
 
-	// FIXME(dkharms): For now almost any availability issues with S3 will cause seq-db to panic during initialisation phase.
-	// I wrote a small proposal on how we can reduce impact of such events.
-	// https://github.com/ozontech/seq-db/issues/92
-
 	if err := f.loadInfo(); err != nil {
-		logger.Error(
+		// FIXME(dkharms): For now almost any availability issues with S3 will cause seq-db to panic
+		// during initialisation phase. I wrote a small proposal on how we can reduce impact of such
+		// events. https://github.com/ozontech/seq-db/issues/92
+		logger.Fatal(
 			"cannot open info file: any subsequent operation will fail",
 			zap.String("fraction", filepath.Base(f.BaseFileName)),
 			zap.Error(err),
@@ -321,7 +320,7 @@ func (f *Remote) tryLoadInfoLocal() error {
 // .remote-info is absent, but an .info file still exists on S3 (maintained for
 // backward compatibility).
 func (f *Remote) tryLoadInfoRemote() error {
-	infoFile, err := f.openRemoteFile(consts.InfoFileSuffix)
+	infoFile, err := f.openRemoteFile(consts.InfoFileSuffix, true)
 	if err == nil {
 		f.info, err = loadInfo(infoFile)
 	}
@@ -382,7 +381,7 @@ func (f *Remote) init() error {
 
 func (f *Remote) openIndexLegacyRemote() (err error) {
 	if f.legacyFile == nil {
-		f.legacyFile, err = f.openRemoteFile(consts.IndexFileSuffix)
+		f.legacyFile, err = f.openRemoteFile(consts.IndexFileSuffix, true)
 	}
 	return err
 }
@@ -395,25 +394,25 @@ func (f *Remote) openIndex() error {
 	var err error
 
 	if f.tokenFile == nil {
-		if f.tokenFile, err = f.openRemoteFile(consts.TokenFileSuffix); err != nil {
+		if f.tokenFile, err = f.openRemoteFile(consts.TokenFileSuffix, true); err != nil {
 			return err
 		}
 	}
 
 	if f.offsetsFile == nil {
-		if f.offsetsFile, err = f.openRemoteFile(consts.OffsetsFileSuffix); err != nil {
+		if f.offsetsFile, err = f.openRemoteFile(consts.OffsetsFileSuffix, true); err != nil {
 			return err
 		}
 	}
 
 	if f.idFile == nil {
-		if f.idFile, err = f.openRemoteFile(consts.IDFileSuffix); err != nil {
+		if f.idFile, err = f.openRemoteFile(consts.IDFileSuffix, true); err != nil {
 			return err
 		}
 	}
 
 	if f.lidFile == nil {
-		if f.lidFile, err = f.openRemoteFile(consts.LIDFileSuffix); err != nil {
+		if f.lidFile, err = f.openRemoteFile(consts.LIDFileSuffix, true); err != nil {
 			return err
 		}
 	}
@@ -421,7 +420,8 @@ func (f *Remote) openIndex() error {
 	return nil
 }
 
-func (f *Remote) openRemoteFile(suffix string) (storage.ImmutableFile, error) {
+// openRemoteFile returns (nil, nil) if the file is missing and mustExist is false.
+func (f *Remote) openRemoteFile(suffix string, mustExist bool) (storage.ImmutableFile, error) {
 	name := filepath.Base(f.BaseFileName) + suffix
 	ok, err := f.s3cli.Exists(f.ctx, name)
 	if err != nil {
@@ -432,7 +432,10 @@ func (f *Remote) openRemoteFile(suffix string) (storage.ImmutableFile, error) {
 	}
 
 	if !ok {
-		return nil, fmt.Errorf("missing %q file", suffix)
+		if mustExist {
+			return nil, fmt.Errorf("missing %q file", suffix)
+		}
+		return nil, nil
 	}
 
 	return s3.NewReader(f.ctx, f.s3cli, name), nil
@@ -443,38 +446,24 @@ func (f *Remote) openDocs() error {
 		return nil
 	}
 
-	sortedName := filepath.Base(f.BaseFileName) + consts.SdocsFileSuffix
-	unsortedName := filepath.Base(f.BaseFileName) + consts.DocsFileSuffix
-
-	unsortedExists, err := f.s3cli.Exists(f.ctx, unsortedName)
+	docsFile, err := f.openRemoteFile(consts.DocsFileSuffix, false)
 	if err != nil {
-		return fmt.Errorf(
-			"cannot check existence of %q file: %w",
-			consts.DocsFileSuffix, err,
-		)
+		return err
 	}
 
-	if unsortedExists {
-		f.docsFile = s3.NewReader(f.ctx, f.s3cli, unsortedName)
-		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
-		return nil
+	if docsFile == nil {
+		docsFile, err = f.openRemoteFile(consts.SdocsFileSuffix, false)
+		if err != nil {
+			return err
+		}
+		if docsFile == nil {
+			return fmt.Errorf("missing %q and %q files", consts.DocsFileSuffix, consts.SdocsFileSuffix)
+		}
 	}
 
-	sortedExists, err := f.s3cli.Exists(f.ctx, sortedName)
-	if err != nil {
-		return fmt.Errorf(
-			"cannot check existence of %q file: %w",
-			consts.SdocsFileSuffix, err,
-		)
-	}
-
-	if sortedExists {
-		f.docsFile = s3.NewReader(f.ctx, f.s3cli, sortedName)
-		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
-		return nil
-	}
-
-	return fmt.Errorf("missing %q and %q files", consts.DocsFileSuffix, consts.SdocsFileSuffix)
+	f.docsFile = docsFile
+	f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
+	return nil
 }
 
 func (f *Remote) computeIndexSize() {

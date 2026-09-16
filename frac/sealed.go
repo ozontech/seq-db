@@ -324,8 +324,12 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) error {
 
 	infoScr := f.BaseFileName + consts.InfoFileSuffix
 	infoDstTmp := f.BaseFileName + consts.RemoteFractionTmpSuffix
-	if err := util.DurableHardLink(infoScr, infoDstTmp); err != nil { // copy frac.info -> frac._remote
-		return err
+	// persist frac.info -> frac._remote (durable link, survives crash).
+	if err := util.DurableHardLink(infoScr, infoDstTmp); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+		// already exists - it is retry of a previous attempt, not a failure.
 	}
 
 	g, gctx := errgroup.WithContext(ctx)
