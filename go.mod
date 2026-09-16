@@ -37,10 +37,10 @@ require (
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.28.0
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba
-	golang.org/x/sync v0.20.0
-	google.golang.org/genproto/googleapis/api v0.0.0-20251022142026-3a174f9686a8
-	google.golang.org/grpc v1.77.0
-	google.golang.org/protobuf v1.36.10
+	golang.org/x/sync v0.22.0
+	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa
+	google.golang.org/grpc v1.83.2
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 	lukechampine.com/frand v1.5.1
@@ -82,11 +82,11 @@ require (
 	github.com/uber/jaeger-client-go v2.25.0+incompatible // indirect
 	go.shabbyrobe.org/gocovmerge v0.0.0-20230507111327-fa4f82cfbf4d // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
 	google.golang.org/api v0.230.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251022142026-3a174f9686a8 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
