@@ -584,27 +584,29 @@ func (f *Sealed) docsReader() storage.DocsReader {
 
 // computeIndexOnDisk returns the total on-disk size of index files for a local fraction.
 func (f *Sealed) computeIndexSize() {
+	f.openIndex()
+
 	f.info.IndexOnDisk = f.info.InfoOnDisk
-	suffixes := []string{
-		consts.TokenFileSuffix,
-		consts.OffsetsFileSuffix,
-		consts.IDFileSuffix,
-		consts.LIDFileSuffix,
+	files := []*os.File{
+		f.tokenFile,
+		f.offsetsFile,
+		f.idFile,
+		f.lidFile,
 	}
 
 	if f.IsSingleIndex() {
 		f.info.IndexOnDisk = 0
-		suffixes = []string{
-			consts.IndexFileSuffix,
+		files = []*os.File{
+			f.legacyFile,
 		}
 	}
 
-	for _, suffix := range suffixes {
-		st, err := os.Stat(f.info.Path + suffix)
+	for _, file := range files {
+		st, err := file.Stat()
 		if err != nil {
 			logger.Fatal(
 				"can't stat index file",
-				zap.String("file", f.info.Path+suffix),
+				zap.String("file", file.Name()),
 				zap.Error(err),
 			)
 		}
