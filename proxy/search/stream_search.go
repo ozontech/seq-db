@@ -312,13 +312,12 @@ func (it *StreamSearchIterator) Next() *query.Record {
 
 	if len(it.curBatch) == 0 {
 		data, err := it.stream.Recv()
-		if errors.Is(err, io.EOF) {
-			it.done = true
-			return nil
-		}
 		if err != nil {
-			it.err = err
 			it.done = true
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			it.err = err
 			return nil
 		}
 		if err := it.push(data); err != nil {
@@ -326,6 +325,7 @@ func (it *StreamSearchIterator) Next() *query.Record {
 			it.done = true
 			return nil
 		}
+		// check if it.done was modified inside it.push
 		if it.done {
 			return nil
 		}
@@ -376,65 +376,35 @@ func (it *StreamSearchIterator) SendControl(action storeapi.ControlAction) error
 // It is best-effort and safe to call on an already-closed stream; it must not be called concurrently with Next/Finalize.
 func (it *StreamSearchIterator) Close() error {
 	_ = it.SendControl(storeapi.ControlAction_CANCEL)
-	if !it.done {
-		it.drain()
-	}
 	err := it.stream.CloseSend()
-	it.recvTrailer()
+	it.drain()
 	it.tr.Done()
 	return err
 }
 
 func (it *StreamSearchIterator) Finalize() *query.Summary {
+	_ = it.stream.CloseSend()
 	// If the stream was finalized before the data was exhausted, the store's summary may still be in flight.
 	// Drain the remaining messages so the store-reported summary is not lost.
-	if !it.done {
-		it.drain()
-	}
-	_ = it.stream.CloseSend()
-	it.recvTrailer()
+	it.drain()
 	it.tr.Done()
 	return &query.Summary{Total: it.total, Err: it.err}
 }
 
-// recvTrailer performs the final Recv that consumes the gRPC trailer and releases the stream.
-// It must be called only after the last data/summary message has been received.
-func (it *StreamSearchIterator) recvTrailer() {
-	for {
-		_, err := it.stream.Recv()
-		switch {
-		case err == nil:
-			continue
-		case errors.Is(err, io.EOF):
-			return // trailer consumed, the stream is released
-		default:
-			if it.err == nil {
-				it.err = err
-			}
-			return
-		}
-	}
-}
-
-// drain reads the store stream until the summary message (or EOF/error) is
-// received, capturing the store-reported total and error.
+// drain reads the store stream until the EOF is received, capturing the store-reported total and error.
 // It must be called only after the producer has stopped calling Next concurrently.
 func (it *StreamSearchIterator) drain() {
-	for !it.done {
+	for {
 		msg, err := it.stream.Recv()
-		if errors.Is(err, io.EOF) {
-			it.done = true
-			return
-		}
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return
+			}
 			it.err = err
-			it.done = true
 			return
 		}
 		if err := it.push(msg); err != nil {
 			it.err = err
-			it.done = true
-			return
 		}
 	}
 }
