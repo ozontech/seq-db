@@ -75,7 +75,7 @@ func NewSealed(
 	indexCache *IndexCache,
 	docsCache *cache.ConcurrentCache[[]byte],
 	info *common.Info,
-	config *Config,
+	cfg *Config,
 	skipMaskProvider skipMaskProvider,
 ) *Sealed {
 	f := &Sealed{
@@ -87,7 +87,7 @@ func NewSealed(
 
 		info:         info,
 		BaseFileName: baseFile,
-		Config:       config,
+		Config:       cfg,
 
 		PartialSuicideMode: Off,
 
@@ -111,7 +111,7 @@ func NewSealedPreloaded(
 	rl *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.ConcurrentCache[[]byte],
-	config *Config,
+	cfg *Config,
 	skipMaskProvider skipMaskProvider,
 ) *Sealed {
 	f := &Sealed{
@@ -126,7 +126,7 @@ func NewSealedPreloaded(
 
 		info:         preloaded.Info,
 		BaseFileName: baseFile,
-		Config:       config,
+		Config:       cfg,
 
 		skipMaskProvider: skipMaskProvider,
 	}

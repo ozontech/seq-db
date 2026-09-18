@@ -73,7 +73,7 @@ func NewRemote(
 	indexCache *IndexCache,
 	docsCache *cache.ConcurrentCache[[]byte],
 	info *common.Info,
-	config *Config,
+	cfg *Config,
 	s3cli *s3.Client,
 	skipMaskProvider skipMaskProvider,
 ) *Remote {
@@ -88,7 +88,7 @@ func NewRemote(
 
 		info:         info,
 		BaseFileName: baseFile,
-		Config:       config,
+		Config:       cfg,
 
 		s3cli:            s3cli,
 		skipMaskProvider: skipMaskProvider,
@@ -346,7 +346,7 @@ func (f *Remote) tryLoadInfoRemote() error {
 // This is the oldest fallback, used when only an empty *.remote file exists locally
 // and a single *.index file resides on S3 containing all necessary data.
 func (f *Remote) loadInfoLegacy() (err error) {
-	if err = f.openIndexLegacyRemote(); err != nil {
+	if err := f.openIndexLegacyRemote(); err != nil {
 		return err
 	}
 
