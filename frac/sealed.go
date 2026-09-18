@@ -157,14 +157,9 @@ func (f *Sealed) IsSingleIndex() bool {
 }
 
 func (f *Sealed) openIndexLegacy() {
-	if f.legacyFile != nil {
-		return
+	if f.legacyFile == nil {
+		f.legacyFile = f.openFile(consts.IndexFileSuffix)
 	}
-
-	f.openFile(
-		consts.IndexFileSuffix,
-		func(file *os.File) { f.legacyFile = file },
-	)
 }
 
 func (f *Sealed) openIndex() {
@@ -176,35 +171,23 @@ func (f *Sealed) openIndex() {
 	}
 
 	if f.tokenFile == nil {
-		f.openFile(
-			consts.TokenFileSuffix,
-			func(file *os.File) { f.tokenFile = file },
-		)
+		f.tokenFile = f.openFile(consts.TokenFileSuffix)
 	}
 
 	if f.offsetsFile == nil {
-		f.openFile(
-			consts.OffsetsFileSuffix,
-			func(file *os.File) { f.offsetsFile = file },
-		)
+		f.offsetsFile = f.openFile(consts.OffsetsFileSuffix)
 	}
 
 	if f.idFile == nil {
-		f.openFile(
-			consts.IDFileSuffix,
-			func(file *os.File) { f.idFile = file },
-		)
+		f.idFile = f.openFile(consts.IDFileSuffix)
 	}
 
 	if f.lidFile == nil {
-		f.openFile(
-			consts.LIDFileSuffix,
-			func(file *os.File) { f.lidFile = file },
-		)
+		f.lidFile = f.openFile(consts.LIDFileSuffix)
 	}
 }
 
-func (f *Sealed) openFile(suffix string, assign func(*os.File)) {
+func (f *Sealed) openFile(suffix string) *os.File {
 	name := f.BaseFileName + suffix
 
 	file, err := os.Open(name)
@@ -216,7 +199,7 @@ func (f *Sealed) openFile(suffix string, assign func(*os.File)) {
 		)
 	}
 
-	assign(file)
+	return file
 }
 
 func (f *Sealed) openDocs() {
@@ -329,7 +312,7 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) error {
 		if !errors.Is(err, os.ErrExist) {
 			return err
 		}
-		// already exists - it is retry of a previous attempt, not a failure.
+		// frac._remote already exists - it is retry of a previous attempt, not a failure.
 	}
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -353,8 +336,8 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) error {
 		return err
 	}
 
-	infoDst := f.BaseFileName + consts.RemoteFractionInfoSuffix
-	if err := util.DurableRenameFile(infoDstTmp, infoDst); err != nil { // rename frac._remote -> frac.remote_info
+	infoDst := f.BaseFileName + consts.RemoteFractionSuffix
+	if err := util.DurableRenameFile(infoDstTmp, infoDst); err != nil { // rename frac._remote -> frac.remote
 		return err
 	}
 

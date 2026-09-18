@@ -2,6 +2,7 @@ package frac
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -234,7 +235,6 @@ func (f *Remote) Suicide() {
 	// Now, we might have fraction leaks in S3 storage since [Suicide] is not atomic.
 
 	util.MustRemoveFileByPath(f.BaseFileName + consts.RemoteFractionSuffix)
-	util.MustRemoveFileByPath(f.BaseFileName + consts.RemoteFractionInfoSuffix)
 
 	f.docsCache.Release()
 	f.indexCache.Release()
@@ -273,7 +273,7 @@ func (f *Remote) IsSingleIndex() bool {
 }
 
 // loadInfo loads the remote fraction information from available sources in priority order:
-//  1. Local *.remote-info file (most up‑to‑date case).
+//  1. Local non-empty *.remote file (offload stores info inside .remote itself).
 //  2. Remote .info file on S3 (legacy but still supported).
 //  3. Legacy *.index file on S3 (oldest scenario).
 func (f *Remote) loadInfo() error {
@@ -302,22 +302,37 @@ func (f *Remote) loadInfo() error {
 	return f.loadInfoLegacy()
 }
 
-// tryLoadInfoLocal attempts to load fraction information from a local file
-// with the suffix .remote-info. This is the most preferred and modern approach,
-// where all data is already present on disk.
-func (f *Remote) tryLoadInfoLocal() error {
-	remoteInfoPath := f.BaseFileName + consts.RemoteFractionInfoSuffix
-	file, err := os.Open(remoteInfoPath)
-	if err == nil {
-		defer file.Close()
-		f.info, err = loadInfo(file)
+// tryLoadInfoLocal attempts to load fraction information from a local non-empty
+// .remote file. This is the most preferred and modern approach, where all data
+// is already present on disk. An empty .remote is a legacy marker and means the
+// fraction was offloaded before info was stored inside .remote.
+func (f *Remote) tryLoadInfoLocal() (err error) {
+	var (
+		file *os.File
+		stat os.FileInfo
+	)
+
+	if file, err = os.Open(f.BaseFileName + consts.RemoteFractionSuffix); err != nil {
+		return err
 	}
+
+	defer file.Close()
+
+	if stat, err = file.Stat(); err != nil {
+		return err
+	}
+
+	if stat.Size() == 0 {
+		return errors.New("it's a legacy empty *.remote file")
+	}
+
+	f.info, err = loadInfo(file)
 	return err
 }
 
 // tryLoadInfoRemote attempts to load fraction information from a remote .info file
 // located on S3. This is an intermediate fallback: it is used when the local
-// .remote-info is absent, but an .info file still exists on S3 (maintained for
+// .remote is empty, but an .info file still exists on S3 (maintained for
 // backward compatibility).
 func (f *Remote) tryLoadInfoRemote() error {
 	infoFile, err := f.openRemoteFile(consts.InfoFileSuffix, true)

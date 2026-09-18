@@ -18,7 +18,6 @@ import (
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/util"
 )
 
 func setupLoaderTest(t testing.TB, cfg *Config) (*fractionProvider, *Loader, func()) {
@@ -279,6 +278,8 @@ func TestDiscover(t *testing.T) {
 }
 
 // createEmptyRemoteFile creates an empty .remote marker file on disk.
+// An empty .remote means the fraction was offloaded in the legacy format
+// (before info started being stored inside .remote itself).
 func createEmptyRemoteFile(t testing.TB, basePath string) {
 	t.Helper()
 
@@ -286,15 +287,16 @@ func createEmptyRemoteFile(t testing.TB, basePath string) {
 	require.NoError(t, err)
 }
 
-// TestDiscover_RemoteInfoExists verifies that a fraction with .remote-info is detected
+// TestDiscover_RemoteFileWithInfo verifies that a fraction with non-empty .remote
+// (created by offload, which stores info inside .remote itself) is detected
 // as remote with the new split format (no S3 request needed).
 // No .frac-cache
-func TestDiscover_RemoteInfoExists(t *testing.T) {
+func TestDiscover_RemoteFileWithInfo(t *testing.T) {
 	fp, loader, tearDown := setupLoaderTest(t, nil)
 	defer tearDown()
 
-	// Create a sealed fraction and offload it — this creates .remote-info on disk
-	// and uploads all files to S3.
+	// Create a sealed fraction and offload it — this creates non-empty .remote on disk
+	// (with serialized info) and uploads all files to S3.
 	a := fp.CreateActive()
 	appendDocsToActive(t, a, 10)
 	s, err := fp.Seal(a)
@@ -315,8 +317,11 @@ func TestDiscover_RemoteInfoExists(t *testing.T) {
 
 	remote := remotes[0]
 	assert.Equal(t, r.Info().Name(), remote.Info().Name(), "remote fraction name should match")
-	assert.False(t, remote.IsSingleIndex(), "remote fraction with .remote-info should be non-legacy")
-	assert.True(t, util.FileExists(remote.BaseFileName+consts.RemoteFractionInfoSuffix), "file .remote-info must exists")
+	assert.False(t, remote.IsSingleIndex(), "remote fraction with info in .remote should be non-legacy")
+
+	stat, err := os.Stat(remote.BaseFileName + consts.RemoteFractionSuffix)
+	require.NoError(t, err, "file .remote must exists")
+	assert.Greater(t, stat.Size(), int64(0), ".remote must contain serialized info")
 }
 
 // TestDiscover_EmptyRemote_NewIndex verifies that a fraction with empty .remote
@@ -339,9 +344,7 @@ func TestDiscover_EmptyRemote_NewIndex(t *testing.T) {
 
 	basePath := r.BaseFileName
 
-	// Remove .remote-info and create empty .remote marker instead.
-	err = os.Remove(basePath + consts.RemoteFractionInfoSuffix)
-	require.NoError(t, err)
+	// Overwrite .remote with an empty marker to simulate legacy offload format.
 	createEmptyRemoteFile(t, basePath)
 
 	// Discover from FS.
@@ -377,9 +380,7 @@ func TestDiscover_EmptyRemote_CacheLegacy(t *testing.T) {
 	basePath := r.BaseFileName
 	baseName := r.Info().Name()
 
-	// Remove .remote-info and create empty .remote marker instead.
-	err = os.Remove(basePath + consts.RemoteFractionInfoSuffix)
-	require.NoError(t, err)
+	// Overwrite .remote with an empty marker to simulate legacy offload format.
 	createEmptyRemoteFile(t, basePath)
 
 	// Add cached Info with BinaryDataVer < V3 (simulating legacy)
@@ -431,10 +432,8 @@ func TestDiscover_EmptyRemote_CacheNew(t *testing.T) {
 	require.NotNil(t, r)
 	s.Suicide()
 
-	// Remove .remote-info and create empty .remote marker instead.
+	// Overwrite .remote with an empty marker to simulate legacy offload format.
 	basePath := r.BaseFileName
-	err = os.Remove(basePath + consts.RemoteFractionInfoSuffix)
-	require.NoError(t, err)
 	createEmptyRemoteFile(t, basePath)
 
 	// Discover from FS.
