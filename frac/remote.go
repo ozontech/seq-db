@@ -39,9 +39,8 @@ type Remote struct {
 
 	info *common.Info
 
-	docsFile   storage.ImmutableFile
-	docsCache  *cache.ConcurrentCache[[]byte]
-	docsReader storage.DocsReader
+	docsFile  storage.ImmutableFile
+	docsCache *cache.ConcurrentCache[[]byte]
 
 	// IsLegacy is true for fractions that use the old single .index file format.
 	IsLegacy   bool
@@ -170,10 +169,9 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		ctx:               ctx,
 		fractionTypeLabel: "remote",
 
-		info:          f.info,
-		config:        f.Config,
-		docsReader:    &f.docsReader,
-		blocksOffsets: f.blocksData.BlocksOffsets,
+		info:       f.info,
+		config:     f.Config,
+		docsReader: f.docsReader(),
 
 		lidsTable:  f.blocksData.LIDsTable,
 		lidsLoader: lids.NewLoader(f.info.BinaryDataVer, &ir.LID, cache.NewSession(f.indexCache.LIDs)),
@@ -224,6 +222,13 @@ func (f *Remote) indexReaders() IndexReaders {
 			cache.NewSession(f.indexCache.LIDRegistry),
 		),
 	}
+}
+
+func (f *Remote) docsReader() storage.DocsReader {
+	return storage.NewDocsReader(
+		f.readLimiter, f.docsFile,
+		f.docsCache, f.blocksData.BlocksOffsets,
+	)
 }
 
 func (f *Remote) Info() *common.Info {
@@ -454,7 +459,6 @@ func (f *Remote) openDocs() error {
 
 	if unsortedExists {
 		f.docsFile = s3.NewReader(f.ctx, f.s3cli, unsortedName)
-		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
 		return nil
 	}
 
@@ -468,7 +472,6 @@ func (f *Remote) openDocs() error {
 
 	if sortedExists {
 		f.docsFile = s3.NewReader(f.ctx, f.s3cli, sortedName)
-		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
 		return nil
 	}
 
