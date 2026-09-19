@@ -25,10 +25,9 @@ type activeDataProvider struct {
 
 	tokenList *TokenList
 
-	blocksOffsets []uint64
 	docsPositions *DocsPositions
 	idsToLids     *ActiveLIDs
-	docsReader    *storage.DocsReader
+	docsReader    storage.DocsReader
 
 	idsIndex *activeIDsIndex
 
@@ -79,10 +78,9 @@ func (dp *activeDataProvider) Fetch(ids []seq.ID, noSkipMasks bool) ([][]byte, e
 	res := make([][]byte, len(ids))
 
 	indexes := []activeFetchIndex{{
-		blocksOffsets:    dp.blocksOffsets,
 		docsPositions:    dp.docsPositions,
 		idsToLids:        dp.idsToLids,
-		docsReader:       dp.docsReader,
+		docsReader:       &dp.docsReader,
 		skipMaskProvider: dp.skipMaskProvider,
 		fracName:         dp.info.Name(),
 	}}
@@ -295,16 +293,11 @@ func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint
 }
 
 type activeFetchIndex struct {
-	blocksOffsets    []uint64
 	docsPositions    *DocsPositions
 	idsToLids        *ActiveLIDs
 	docsReader       *storage.DocsReader
 	skipMaskProvider skipMaskProvider
 	fracName         string
-}
-
-func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
-	return di.blocksOffsets[num]
 }
 
 func (di *activeFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.DocPos, error) {
@@ -343,6 +336,6 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.Doc
 	return docsPos, nil
 }
 
-func (di *activeFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
-	return di.docsReader.ReadDocs(blockOffset, docOffsets)
+func (di *activeFetchIndex) ReadDocs(blockIndex uint32, docOffsets []uint64) ([][]byte, error) {
+	return di.docsReader.ReadDocs(blockIndex, docOffsets)
 }

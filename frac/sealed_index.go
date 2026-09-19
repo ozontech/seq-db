@@ -43,8 +43,7 @@ type sealedDataProvider struct {
 	tokenBlockLoader *token.BlockLoader
 	tokenTableLoader *token.TableLoader
 
-	blocksOffsets []uint64
-	docsReader    *storage.DocsReader
+	docsReader storage.DocsReader
 
 	// fractionTypeLabel can be either 'sealed' or 'remote'.
 	// This value is used in metrics to distinguish between operations over local and remote fractions.
@@ -65,8 +64,7 @@ func (dp *sealedDataProvider) getFetchIndex() *sealedFetchIndex {
 	return &sealedFetchIndex{
 		fracName:         dp.info.Name(),
 		idsIndex:         dp.getIDsIndex(),
-		docsReader:       dp.docsReader,
-		blocksOffsets:    dp.blocksOffsets,
+		docsReader:       &dp.docsReader,
 		skipMaskProvider: dp.skipMaskProvider,
 	}
 }
@@ -362,12 +360,7 @@ type sealedFetchIndex struct {
 	fracName         string
 	idsIndex         *sealedIDsIndex
 	docsReader       *storage.DocsReader
-	blocksOffsets    []uint64
 	skipMaskProvider skipMaskProvider
-}
-
-func (fi *sealedFetchIndex) GetBlocksOffsets(num uint32) uint64 {
-	return fi.blocksOffsets[num]
 }
 
 func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.DocPos, error) {
@@ -406,8 +399,8 @@ func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.Doc
 	return fi.getDocPosByLIDs(allLids), nil
 }
 
-func (fi *sealedFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
-	return fi.docsReader.ReadDocs(blockOffset, docOffsets)
+func (fi *sealedFetchIndex) ReadDocs(blockIndex uint32, docOffsets []uint64) ([][]byte, error) {
+	return fi.docsReader.ReadDocs(blockIndex, docOffsets)
 }
 
 // findLIDs returns a slice of LIDs. If seq.ID is not found, LID has the value 0 at the corresponding position
