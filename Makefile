@@ -22,6 +22,13 @@ build-image:
 		-t ${IMAGE}:${VERSION} \
 		.
 
+.PHONY: build
+build:
+	CGO_ENABLED=1 \
+	go build -tags 'netgo osusergo' \
+		-o ${LOCAL_BIN}/${OS}-${ARCH}/ \
+		./cmd/...
+
 .PHONY: build-debug
 build-debug:
 	CGO_ENABLED=0 \
@@ -30,7 +37,7 @@ build-debug:
 		./cmd/...
 
 .PHONY: run
-run: build-debug
+run: build
 	SEQDB_STORAGE_DATA_DIR=$(shell mktemp -d) \
 	${LOCAL_BIN}/${OS}-${ARCH}/seq-db \
 		--mode=single \
