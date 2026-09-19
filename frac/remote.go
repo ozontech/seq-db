@@ -2,13 +2,16 @@ package frac
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -43,16 +46,13 @@ type Remote struct {
 	docsCache  *cache.ConcurrentCache[[]byte]
 	docsReader storage.DocsReader
 
-	// IsLegacy is true for fractions that use the old single .index file format.
-	IsLegacy   bool
-	legacyFile storage.ImmutableFile
-
 	// Per-section index files (new split format only).
-	infoFile    storage.ImmutableFile
 	tokenFile   storage.ImmutableFile
 	offsetsFile storage.ImmutableFile
 	idFile      storage.ImmutableFile
 	lidFile     storage.ImmutableFile
+
+	legacyFile storage.ImmutableFile
 
 	indexCache *IndexCache
 
@@ -73,10 +73,9 @@ func NewRemote(
 	indexCache *IndexCache,
 	docsCache *cache.ConcurrentCache[[]byte],
 	info *common.Info,
-	config *Config,
+	cfg *Config,
 	s3cli *s3.Client,
 	skipMaskProvider skipMaskProvider,
-	isLegacy bool,
 ) *Remote {
 	f := &Remote{
 		ctx: ctx,
@@ -89,12 +88,10 @@ func NewRemote(
 
 		info:         info,
 		BaseFileName: baseFile,
-		Config:       config,
+		Config:       cfg,
 
 		s3cli:            s3cli,
 		skipMaskProvider: skipMaskProvider,
-
-		IsLegacy: isLegacy,
 	}
 
 	// Fast path if fraction-info cache exists AND it has valid index size.
@@ -105,12 +102,11 @@ func NewRemote(
 		return f
 	}
 
-	// FIXME(dkharms): For now almost any availability issues with S3 will cause seq-db to panic during initialisation phase.
-	// I wrote a small proposal on how we can reduce impact of such events.
-	// https://github.com/ozontech/seq-db/issues/92
-
 	if err := f.loadInfo(); err != nil {
-		logger.Error(
+		// FIXME(dkharms): For now almost any availability issues with S3 will cause seq-db to panic
+		// during initialisation phase. I wrote a small proposal on how we can reduce impact of such
+		// events. https://github.com/ozontech/seq-db/issues/92
+		logger.Fatal(
 			"cannot open info file: any subsequent operation will fail",
 			zap.String("fraction", filepath.Base(f.BaseFileName)),
 			zap.Error(err),
@@ -179,7 +175,7 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		lidsLoader: lids.NewLoader(f.info.BinaryDataVer, &ir.LID, cache.NewSession(f.indexCache.LIDs)),
 
 		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &ir.Token, cache.NewSession(f.indexCache.Tokens)),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &ir.Token, cache.NewSession(f.indexCache.TokenTable)),
+		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsSingleIndex(), &ir.Token, cache.NewSession(f.indexCache.TokenTable)),
 
 		idsTable: &f.blocksData.IDsTable,
 		idsProvider: seqids.NewProvider(
@@ -195,7 +191,7 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 }
 
 func (f *Remote) indexReaders() IndexReaders {
-	if f.IsLegacy {
+	if f.IsSingleIndex() {
 		r := storage.NewIndexReader(
 			f.readLimiter, f.legacyFile.Name(), f.legacyFile,
 			cache.NewSession(f.indexCache.LegacyRegistry),
@@ -272,43 +268,95 @@ func (f *Remote) String() string {
 	return fracToString(f, "remote")
 }
 
+func (f *Remote) IsSingleIndex() bool {
+	return f.info.BinaryDataVer < config.BinaryDataV3
+}
+
+// loadInfo loads the remote fraction information from available sources in priority order:
+//  1. Local non-empty *.remote file (offload stores info inside .remote itself).
+//  2. Remote .info file on S3 (legacy but still supported).
+//  3. Legacy *.index file on S3 (oldest scenario).
 func (f *Remote) loadInfo() error {
-	var err error
-
-	if f.IsLegacy {
-		if err := f.openInfoLegacy(); err != nil {
-			return err
-		}
-
-		legacyReader := storage.NewIndexReader(
-			f.readLimiter, f.legacyFile.Name(),
-			f.legacyFile, f.indexCache.LegacyRegistry,
-		)
-
-		if f.info, err = loadInfoLegacy(legacyReader); err != nil {
-			logger.Fatal(
-				"error loading Info",
-				zap.String("fraction", f.BaseFileName),
-				zap.Error(err),
-			)
-		}
-
+	err := f.tryLoadInfoLocal()
+	if err == nil {
 		return nil
 	}
 
-	if err := f.openInfo(); err != nil {
+	logger.Warn(
+		"cannot open local info file for remote fraction, falling back to S3",
+		zap.String("fraction", f.BaseFileName),
+		zap.Error(err),
+	)
+
+	err = f.tryLoadInfoRemote()
+	if err == nil {
+		return nil
+	}
+
+	logger.Warn(
+		"cannot open remote info file, falling back to legacy index",
+		zap.String("fraction", f.BaseFileName),
+		zap.Error(err),
+	)
+
+	return f.loadInfoLegacy()
+}
+
+// tryLoadInfoLocal attempts to load fraction information from a local non-empty
+// .remote file. This is the most preferred and modern approach, where all data
+// is already present on disk. An empty .remote is a legacy marker and means the
+// fraction was offloaded before info was stored inside .remote.
+func (f *Remote) tryLoadInfoLocal() (err error) {
+	var (
+		file *os.File
+		stat os.FileInfo
+	)
+
+	if file, err = os.Open(f.BaseFileName + consts.RemoteFractionSuffix); err != nil {
 		return err
 	}
 
-	if f.info, err = loadInfo(f.infoFile); err != nil {
-		logger.Fatal(
-			"error loading Info",
-			zap.String("fraction", f.BaseFileName),
-			zap.Error(err),
-		)
+	defer file.Close()
+
+	if stat, err = file.Stat(); err != nil {
+		return err
 	}
 
-	return nil
+	if stat.Size() == 0 {
+		return errors.New("it's a legacy empty *.remote file")
+	}
+
+	f.info, err = loadInfo(file)
+	return err
+}
+
+// tryLoadInfoRemote attempts to load fraction information from a remote .info file
+// located on S3. This is an intermediate fallback: it is used when the local
+// .remote is empty, but an .info file still exists on S3 (maintained for
+// backward compatibility).
+func (f *Remote) tryLoadInfoRemote() error {
+	infoFile, err := f.openRemoteFile(consts.InfoFileSuffix, true)
+	if err == nil {
+		f.info, err = loadInfo(infoFile)
+	}
+	return err
+}
+
+// loadInfoLegacy loads fraction information from the legacy index stored on S3.
+// This is the oldest fallback, used when only an empty *.remote file exists locally
+// and a single *.index file resides on S3 containing all necessary data.
+func (f *Remote) loadInfoLegacy() (err error) {
+	if err := f.openIndexLegacyRemote(); err != nil {
+		return err
+	}
+
+	reader := storage.NewIndexReader(
+		f.readLimiter, f.legacyFile.Name(), f.legacyFile,
+		cache.NewSession(f.indexCache.LegacyRegistry),
+	)
+
+	f.info, err = loadInfoLegacy(reader)
+	return err
 }
 
 func (f *Remote) init() error {
@@ -327,12 +375,12 @@ func (f *Remote) init() error {
 		return nil
 	}
 
-	if f.IsLegacy {
+	if f.IsSingleIndex() {
 		(&LegacyLoader{}).Load(
 			&f.blocksData, f.info,
 			storage.NewIndexReader(
-				f.readLimiter, f.legacyFile.Name(),
-				f.legacyFile, f.indexCache.LegacyRegistry,
+				f.readLimiter, f.legacyFile.Name(), f.legacyFile,
+				cache.NewSession(f.indexCache.LegacyRegistry),
 			),
 		)
 
@@ -346,70 +394,40 @@ func (f *Remote) init() error {
 	return nil
 }
 
-func (f *Remote) openInfoLegacy() error {
-	if f.legacyFile != nil {
-		return nil
+func (f *Remote) openIndexLegacyRemote() (err error) {
+	if f.legacyFile == nil {
+		f.legacyFile, err = f.openRemoteFile(consts.IndexFileSuffix, true)
 	}
-
-	return f.openRemoteFile(consts.IndexFileSuffix, func(file storage.ImmutableFile) {
-		f.legacyFile = file
-	})
-}
-
-func (f *Remote) openInfo() error {
-	if f.infoFile != nil {
-		return nil
-	}
-
-	return f.openRemoteFile(
-		consts.InfoFileSuffix,
-		func(file storage.ImmutableFile) {
-			f.infoFile = file
-		},
-	)
+	return err
 }
 
 func (f *Remote) openIndex() error {
-	if f.IsLegacy {
-		return f.openInfoLegacy()
+	if f.IsSingleIndex() {
+		return f.openIndexLegacyRemote()
 	}
 
-	if err := f.openInfo(); err != nil {
-		return err
-	}
+	var err error
 
 	if f.tokenFile == nil {
-		if err := f.openRemoteFile(
-			consts.TokenFileSuffix,
-			func(file storage.ImmutableFile) { f.tokenFile = file },
-		); err != nil {
+		if f.tokenFile, err = f.openRemoteFile(consts.TokenFileSuffix, true); err != nil {
 			return err
 		}
 	}
 
 	if f.offsetsFile == nil {
-		if err := f.openRemoteFile(
-			consts.OffsetsFileSuffix,
-			func(file storage.ImmutableFile) { f.offsetsFile = file },
-		); err != nil {
+		if f.offsetsFile, err = f.openRemoteFile(consts.OffsetsFileSuffix, true); err != nil {
 			return err
 		}
 	}
 
 	if f.idFile == nil {
-		if err := f.openRemoteFile(
-			consts.IDFileSuffix,
-			func(file storage.ImmutableFile) { f.idFile = file },
-		); err != nil {
+		if f.idFile, err = f.openRemoteFile(consts.IDFileSuffix, true); err != nil {
 			return err
 		}
 	}
 
 	if f.lidFile == nil {
-		if err := f.openRemoteFile(
-			consts.LIDFileSuffix,
-			func(file storage.ImmutableFile) { f.lidFile = file },
-		); err != nil {
+		if f.lidFile, err = f.openRemoteFile(consts.LIDFileSuffix, true); err != nil {
 			return err
 		}
 	}
@@ -417,23 +435,25 @@ func (f *Remote) openIndex() error {
 	return nil
 }
 
-func (f *Remote) openRemoteFile(suffix string, assign func(storage.ImmutableFile)) error {
+// openRemoteFile returns (nil, nil) if the file is missing and mustExist is false.
+func (f *Remote) openRemoteFile(suffix string, mustExist bool) (storage.ImmutableFile, error) {
 	name := filepath.Base(f.BaseFileName) + suffix
-
 	ok, err := f.s3cli.Exists(f.ctx, name)
 	if err != nil {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"cannot check existence of %q file: %w",
 			suffix, err,
 		)
 	}
 
 	if !ok {
-		return fmt.Errorf("missing %q file", suffix)
+		if mustExist {
+			return nil, fmt.Errorf("missing %q file", suffix)
+		}
+		return nil, nil
 	}
 
-	assign(s3.NewReader(f.ctx, f.s3cli, name))
-	return nil
+	return s3.NewReader(f.ctx, f.s3cli, name), nil
 }
 
 func (f *Remote) openDocs() error {
@@ -441,38 +461,24 @@ func (f *Remote) openDocs() error {
 		return nil
 	}
 
-	sortedName := filepath.Base(f.BaseFileName) + consts.SdocsFileSuffix
-	unsortedName := filepath.Base(f.BaseFileName) + consts.DocsFileSuffix
-
-	unsortedExists, err := f.s3cli.Exists(f.ctx, unsortedName)
+	docsFile, err := f.openRemoteFile(consts.DocsFileSuffix, false)
 	if err != nil {
-		return fmt.Errorf(
-			"cannot check existence of %q file: %w",
-			consts.DocsFileSuffix, err,
-		)
+		return err
 	}
 
-	if unsortedExists {
-		f.docsFile = s3.NewReader(f.ctx, f.s3cli, unsortedName)
-		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
-		return nil
+	if docsFile == nil {
+		docsFile, err = f.openRemoteFile(consts.SdocsFileSuffix, false)
+		if err != nil {
+			return err
+		}
+		if docsFile == nil {
+			return fmt.Errorf("missing %q and %q files", consts.DocsFileSuffix, consts.SdocsFileSuffix)
+		}
 	}
 
-	sortedExists, err := f.s3cli.Exists(f.ctx, sortedName)
-	if err != nil {
-		return fmt.Errorf(
-			"cannot check existence of %q file: %w",
-			consts.SdocsFileSuffix, err,
-		)
-	}
-
-	if sortedExists {
-		f.docsFile = s3.NewReader(f.ctx, f.s3cli, sortedName)
-		f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
-		return nil
-	}
-
-	return fmt.Errorf("missing %q and %q files", consts.DocsFileSuffix, consts.SdocsFileSuffix)
+	f.docsFile = docsFile
+	f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
+	return nil
 }
 
 func (f *Remote) computeIndexSize() {
@@ -484,21 +490,21 @@ func (f *Remote) computeIndexSize() {
 		return
 	}
 
+	f.info.IndexOnDisk = f.info.InfoOnDisk
 	files := []storage.ImmutableFile{
-		f.infoFile,
 		f.tokenFile,
 		f.offsetsFile,
 		f.idFile,
 		f.lidFile,
 	}
 
-	if f.IsLegacy {
+	if f.IsSingleIndex() {
+		f.info.IndexOnDisk = 0
 		files = []storage.ImmutableFile{
 			f.legacyFile,
 		}
 	}
 
-	f.info.IndexOnDisk = 0
 	for _, file := range files {
 		st, err := file.Stat()
 		if err != nil {
