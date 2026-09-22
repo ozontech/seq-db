@@ -41,13 +41,15 @@ podLabels: {}
 podSecurityContext: {}
   # fsGroup: 2000
 
-securityContext: {}
+securityContext:
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
   # capabilities:
   #   drop:
   #   - ALL
   # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
 
 podManagementPolicy: "Parallel"
 updateStrategy: "RollingUpdate"
@@ -169,7 +171,15 @@ seqproxy:
   podSecurityContext: {}
     # fsGroup: 2000
 
-  securityContext: {}
+  securityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    # capabilities:
+    #   drop:
+    #   - ALL
+    # readOnlyRootFilesystem: true
     # capabilities:
     #   drop:
     #   - ALL
