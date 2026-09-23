@@ -255,19 +255,22 @@ func NewNMergedProducers(
 	dataType query.DataType,
 	order seq.DocsOrder,
 ) query.RecordProducer {
-	if len(producers) == 0 {
+	l := len(producers)
+	if l == 0 {
 		return &emptyRecordProducer{}
 	}
-
-	if len(producers) == 1 {
+	if l == 1 {
 		return NewMerger(producers[0], &emptyRecordProducer{}, colIdx, field, dataType, order)
 	}
-
-	merged := NewMerger(producers[0], producers[1], colIdx, field, dataType, order)
-	for _, p := range producers[2:] {
-		merged = NewMerger(merged, p, colIdx, field, dataType, order)
+	if l == 2 {
+		return NewMerger(producers[0], producers[1], colIdx, field, dataType, order)
 	}
-	return merged
+
+	half := l / 2
+	a := NewNMergedProducers(producers[:half], colIdx, field, dataType, order)
+	b := NewNMergedProducers(producers[half:], colIdx, field, dataType, order)
+
+	return NewMerger(a, b, colIdx, field, dataType, order)
 }
 
 type emptyRecordProducer struct{}
