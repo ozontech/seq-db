@@ -242,10 +242,10 @@ func checkControl(
 		if !ok {
 			return outcomeNone, false
 		}
-		if c.GetAction() == storeapi.ControlAction_CANCEL {
-			return outcomeCancel, true
+		if c.GetAction() == storeapi.ControlAction_FINALIZE {
+			return outcomeFinalize, true
 		}
-		return outcomeFinalize, true
+		return outcomeNone, false
 	case err, ok := <-recvErrCh:
 		if !ok {
 			return outcomeNone, false

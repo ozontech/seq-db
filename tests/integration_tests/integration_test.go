@@ -2093,23 +2093,20 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 
 		sendStreamSearchQuery(t, stream, streamQuery(totalDocs))
 
-		// Send CANCEL as soon as the first data batch arrives, then keep reading
-		// until the stream ends. The server must terminate without a summary.
+		// Cancel the stream as soon as the first data batch arrives, then keep
+		// reading until the stream ends. The server must terminate without a summary.
 		canceled := false
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
-				r.ErrorIs(err, io.EOF, "cancel must terminate the stream with EOF")
+				// The canceled context kills the client side of the RPC too, so the client sees a Canceled status, not EOF.
+				r.Equal(codes.Canceled, status.Code(err), "cancel must terminate the stream without a summary")
 				return
 			}
 			switch resp.ResponseType.(type) {
 			case *seqproxyapi.StreamSearchResponse_Data:
 				if !canceled {
-					require.NoError(t, stream.Send(&seqproxyapi.StreamSearchRequest{
-						RequestType: &seqproxyapi.StreamSearchRequest_Control{
-							Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_CANCEL},
-						},
-					}))
+					cancel()
 					canceled = true
 				}
 			case *seqproxyapi.StreamSearchResponse_Summary:
