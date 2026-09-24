@@ -296,6 +296,10 @@ func (r *fractionRegistry) evictLocal(sizeLimit uint64) ([]*refCountedSealed, er
 			r.sealed.Del(info.Name())
 
 			evicted = append(evicted, s)
+
+			if totalUsedSize-releasingSize <= sizeLimit {
+				break
+			}
 		}
 	}
 
