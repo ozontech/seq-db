@@ -246,7 +246,7 @@ func TestBatchManyIter(t *testing.T) {
 
 	for _, impl := range batchFactories {
 		t.Run(impl.name, func(t *testing.T) {
-			t.Run("desc chunked", func(t *testing.T) {
+			t.Run("asc chunked", func(t *testing.T) {
 				b := impl.build(input)
 				it := b.ManyIter(true)
 				dst := make([]LID, 3)
@@ -266,7 +266,7 @@ func TestBatchManyIter(t *testing.T) {
 				assert.Equal(t, input, got)
 			})
 
-			t.Run("asc chunked", func(t *testing.T) {
+			t.Run("desc chunked", func(t *testing.T) {
 				b := impl.build(input)
 				it := b.ManyIter(false)
 				dst := make([]LID, 3)
@@ -286,7 +286,7 @@ func TestBatchManyIter(t *testing.T) {
 				assert.Equal(t, []uint32{30, 25, 20, 15, 10, 5, 1}, got)
 			})
 
-			t.Run("empty tmp yields zero for desc", func(t *testing.T) {
+			t.Run("empty tmp yields zero for asc", func(t *testing.T) {
 				b := impl.build(input)
 				n := b.ManyIter(true).CopyLIDs(make([]LID, 8), nil)
 				assert.Equal(t, 0, n)
