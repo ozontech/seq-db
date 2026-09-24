@@ -431,6 +431,9 @@ func (m *FetchAsyncSearchResultResponse) CloneVT() *FetchAsyncSearchResultRespon
 	r.Retention = (*durationpb.Duration)((*durationpb1.Duration)(m.Retention).CloneVT())
 	r.WithDocs = m.WithDocs
 	r.Size = m.Size
+	r.DoneAt = (*timestamppb.Timestamp)((*timestamppb1.Timestamp)(m.DoneAt).CloneVT())
+	r.IntervalsDone = m.IntervalsDone
+	r.IntervalsInQueue = m.IntervalsInQueue
 	if rhs := m.Aggs; rhs != nil {
 		tmpContainer := make([]*AggQuery, len(rhs))
 		for k, v := range rhs {
@@ -584,6 +587,9 @@ func (m *AsyncSearchesListItem) CloneVT() *AsyncSearchesListItem {
 	r.WithDocs = m.WithDocs
 	r.Size = m.Size
 	r.Error = m.Error
+	r.DoneAt = (*timestamppb.Timestamp)((*timestamppb1.Timestamp)(m.DoneAt).CloneVT())
+	r.IntervalsDone = m.IntervalsDone
+	r.IntervalsInQueue = m.IntervalsInQueue
 	if rhs := m.Aggs; rhs != nil {
 		tmpContainer := make([]*AggQuery, len(rhs))
 		for k, v := range rhs {
@@ -1614,6 +1620,15 @@ func (this *FetchAsyncSearchResultResponse) EqualVT(that *FetchAsyncSearchResult
 	if this.Size != that.Size {
 		return false
 	}
+	if !(*timestamppb1.Timestamp)(this.DoneAt).EqualVT((*timestamppb1.Timestamp)(that.DoneAt)) {
+		return false
+	}
+	if this.IntervalsDone != that.IntervalsDone {
+		return false
+	}
+	if this.IntervalsInQueue != that.IntervalsInQueue {
+		return false
+	}
 	return string(this.unknownFields) == string(that.unknownFields)
 }
 
@@ -1824,6 +1839,15 @@ func (this *AsyncSearchesListItem) EqualVT(that *AsyncSearchesListItem) bool {
 		return false
 	}
 	if this.Error != that.Error {
+		return false
+	}
+	if !(*timestamppb1.Timestamp)(this.DoneAt).EqualVT((*timestamppb1.Timestamp)(that.DoneAt)) {
+		return false
+	}
+	if this.IntervalsDone != that.IntervalsDone {
+		return false
+	}
+	if this.IntervalsInQueue != that.IntervalsInQueue {
 		return false
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
@@ -3877,6 +3901,32 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVT(dAtA []byte) (in
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.IntervalsInQueue != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.IntervalsInQueue))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x98
+	}
+	if m.IntervalsDone != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.IntervalsDone))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x90
+	}
+	if m.DoneAt != nil {
+		size, err := (*timestamppb1.Timestamp)(m.DoneAt).MarshalToSizedBufferVT(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x8a
+	}
 	if m.Size != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Size))
 		i--
@@ -4278,6 +4328,32 @@ func (m *AsyncSearchesListItem) MarshalToSizedBufferVT(dAtA []byte) (int, error)
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.IntervalsInQueue != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.IntervalsInQueue))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0xa0
+	}
+	if m.IntervalsDone != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.IntervalsDone))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x98
+	}
+	if m.DoneAt != nil {
+		size, err := (*timestamppb1.Timestamp)(m.DoneAt).MarshalToSizedBufferVT(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x92
 	}
 	if len(m.Error) > 0 {
 		i -= len(m.Error)
@@ -6341,6 +6417,32 @@ func (m *FetchAsyncSearchResultResponse) MarshalToSizedBufferVTStrict(dAtA []byt
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.IntervalsInQueue != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.IntervalsInQueue))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x98
+	}
+	if m.IntervalsDone != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.IntervalsDone))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x90
+	}
+	if m.DoneAt != nil {
+		size, err := (*timestamppb1.Timestamp)(m.DoneAt).MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x8a
+	}
 	if m.Size != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Size))
 		i--
@@ -6742,6 +6844,32 @@ func (m *AsyncSearchesListItem) MarshalToSizedBufferVTStrict(dAtA []byte) (int, 
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if m.IntervalsInQueue != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.IntervalsInQueue))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0xa0
+	}
+	if m.IntervalsDone != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.IntervalsDone))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x98
+	}
+	if m.DoneAt != nil {
+		size, err := (*timestamppb1.Timestamp)(m.DoneAt).MarshalToSizedBufferVTStrict(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x92
 	}
 	if len(m.Error) > 0 {
 		i -= len(m.Error)
@@ -8279,6 +8407,16 @@ func (m *FetchAsyncSearchResultResponse) SizeVT() (n int) {
 	if m.Size != 0 {
 		n += 2 + protohelpers.SizeOfVarint(uint64(m.Size))
 	}
+	if m.DoneAt != nil {
+		l = (*timestamppb1.Timestamp)(m.DoneAt).SizeVT()
+		n += 2 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.IntervalsDone != 0 {
+		n += 2 + protohelpers.SizeOfVarint(uint64(m.IntervalsDone))
+	}
+	if m.IntervalsInQueue != 0 {
+		n += 2 + protohelpers.SizeOfVarint(uint64(m.IntervalsInQueue))
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -8434,6 +8572,16 @@ func (m *AsyncSearchesListItem) SizeVT() (n int) {
 	l = len(m.Error)
 	if l > 0 {
 		n += 2 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.DoneAt != nil {
+		l = (*timestamppb1.Timestamp)(m.DoneAt).SizeVT()
+		n += 2 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.IntervalsDone != 0 {
+		n += 2 + protohelpers.SizeOfVarint(uint64(m.IntervalsDone))
+	}
+	if m.IntervalsInQueue != 0 {
+		n += 2 + protohelpers.SizeOfVarint(uint64(m.IntervalsInQueue))
 	}
 	n += len(m.unknownFields)
 	return n
@@ -12063,6 +12211,80 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVT(dAtA []byte) error {
 					break
 				}
 			}
+		case 17:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DoneAt", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.DoneAt == nil {
+				m.DoneAt = &timestamppb.Timestamp{}
+			}
+			if err := (*timestamppb1.Timestamp)(m.DoneAt).UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 18:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntervalsDone", wireType)
+			}
+			m.IntervalsDone = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.IntervalsDone |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 19:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntervalsInQueue", wireType)
+			}
+			m.IntervalsInQueue = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.IntervalsInQueue |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -13050,6 +13272,80 @@ func (m *AsyncSearchesListItem) UnmarshalVT(dAtA []byte) error {
 			}
 			m.Error = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 18:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DoneAt", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.DoneAt == nil {
+				m.DoneAt = &timestamppb.Timestamp{}
+			}
+			if err := (*timestamppb1.Timestamp)(m.DoneAt).UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 19:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntervalsDone", wireType)
+			}
+			m.IntervalsDone = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.IntervalsDone |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 20:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntervalsInQueue", wireType)
+			}
+			m.IntervalsInQueue = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.IntervalsInQueue |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -18240,6 +18536,80 @@ func (m *FetchAsyncSearchResultResponse) UnmarshalVTUnsafe(dAtA []byte) error {
 					break
 				}
 			}
+		case 17:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DoneAt", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.DoneAt == nil {
+				m.DoneAt = &timestamppb.Timestamp{}
+			}
+			if err := (*timestamppb1.Timestamp)(m.DoneAt).UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 18:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntervalsDone", wireType)
+			}
+			m.IntervalsDone = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.IntervalsDone |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 19:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntervalsInQueue", wireType)
+			}
+			m.IntervalsInQueue = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.IntervalsInQueue |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -19251,6 +19621,80 @@ func (m *AsyncSearchesListItem) UnmarshalVTUnsafe(dAtA []byte) error {
 			}
 			m.Error = stringValue
 			iNdEx = postIndex
+		case 18:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DoneAt", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.DoneAt == nil {
+				m.DoneAt = &timestamppb.Timestamp{}
+			}
+			if err := (*timestamppb1.Timestamp)(m.DoneAt).UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 19:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntervalsDone", wireType)
+			}
+			m.IntervalsDone = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.IntervalsDone |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 20:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntervalsInQueue", wireType)
+			}
+			m.IntervalsInQueue = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.IntervalsInQueue |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
