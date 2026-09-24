@@ -40,13 +40,14 @@ func (si *Ingestor) StreamSearch(
 	ctx context.Context,
 	sr *StreamSearchRequest,
 	tr *querytracer.Tracer,
-) (query.RecordProducer, ControlBroadcaster, error) {
+) (query.RecordProducer, func(), error) {
 	searchStores := si.config.HotStores
 	if si.config.HotReadStores != nil && len(si.config.HotReadStores.Shards) > 0 {
 		searchStores = si.config.HotReadStores
 	}
 
 	var partialRespErr error
+	cancelStreams := func() {}
 
 	streams, err := si.streamSearchStores(ctx, sr, searchStores, tr)
 	if err != nil {
@@ -54,7 +55,7 @@ func (si *Ingestor) StreamSearch(
 		case errors.Is(err, consts.ErrIngestorQueryWantsOldData):
 			if len(si.config.ReadStores.Shards) == 0 {
 				logger.Error("no cold stores, but hot mode is enabled, bad configuration of stores!")
-				return nil, nil, err
+				return nil, cancelStreams, err
 			}
 			metric.SearchColdTotal.Inc()
 			streams, err = si.streamSearchStores(ctx, sr, si.config.ReadStores, tr)
@@ -64,18 +65,17 @@ func (si *Ingestor) StreamSearch(
 					partialRespErr = err // consider partial response from cold stores as a result
 				} else {
 					// errors from both hot and cold stores, return error
-					return nil, nil, err
+					return nil, cancelStreams, err
 				}
 			}
 		case errors.Is(err, consts.ErrPartialResponse):
 			partialRespErr = err // consider partial response from hot stores as a result
 		default:
 			// unexpected error on all hot replica sets (usually bad query)
-			return nil, nil, err
+			return nil, cancelStreams, err
 		}
 	}
 
-	broadcaster := newControlBroadcaster(streams)
 	producers := make([]query.RecordProducer, 0, len(streams))
 	for _, s := range streams {
 		producers = append(producers, s)
@@ -97,7 +97,13 @@ func (si *Ingestor) StreamSearch(
 		mergedStream = exec.NewLimiter(mergedDocsStream, uint32(sr.Size), uint32(offset))
 	}
 
-	return mergedStream, broadcaster, partialRespErr
+	cancelStreams = func() {
+		for _, s := range streams {
+			s.Close()
+		}
+	}
+
+	return mergedStream, cancelStreams, partialRespErr
 }
 
 func (si *Ingestor) streamSearchStores(
@@ -147,7 +153,7 @@ func (si *Ingestor) streamSearchStores(
 					earlyErr = err
 				}
 				if resp.Stream != nil {
-					_ = resp.Stream.Close()
+					resp.Stream.Close()
 				}
 				continue
 			}
@@ -229,41 +235,47 @@ func (si *Ingestor) streamSearchHost(
 		},
 	}
 
-	stream, err := client.StreamSearch(ctx,
+	hostCtx, cancel := context.WithCancel(ctx)
+	stream, err := client.StreamSearch(hostCtx,
 		grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
 		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
 	)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("can't open stream: %s", err.Error())
 	}
 
 	err = stream.Send(req)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("can't send stream request: %s", err.Error())
 	}
 
 	msg, err := stream.Recv()
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
 	switch v := msg.ResponseType.(type) {
 	case *storeapi.StreamSearchResponse_Header:
-		return NewStreamSearchIterator(tr, v.Header, stream)
+		return NewStreamSearchIterator(tr, v.Header, stream, cancel)
 	case *storeapi.StreamSearchResponse_Summary:
 		// The store refused the request before sending any data.
+		cancel()
 		if s := v.Summary; s != nil && s.Error != nil {
 			return nil, storeCodeToError(s.Error.Code)
 		}
 		return nil, fmt.Errorf("can't read header: store sent summary without data")
 	default:
+		cancel()
 		return nil, fmt.Errorf("can't read header")
 	}
 }
 
 func closeStreams(streams []*StreamSearchIterator) {
 	for _, s := range streams {
-		_ = s.Close()
+		s.Close()
 	}
 }
 
@@ -275,8 +287,9 @@ func NewStreamSearchIterator(
 	tr *querytracer.Tracer,
 	header *storeapi.ResponseHeader,
 	stream storeapi.StoreApi_StreamSearchClient,
+	cancel context.CancelFunc,
 ) (*StreamSearchIterator, error) {
-	it := &StreamSearchIterator{tr: tr, typing: header.Typing, stream: stream}
+	it := &StreamSearchIterator{tr: tr, typing: header.Typing, stream: stream, cancel: cancel}
 
 	msg, err := stream.Recv()
 	if errors.Is(err, io.EOF) {
@@ -303,6 +316,8 @@ type StreamSearchIterator struct {
 	total uint64
 	err   error
 	done  bool
+
+	cancel context.CancelFunc
 }
 
 func (it *StreamSearchIterator) Next() *query.Record {
@@ -373,16 +388,13 @@ func (it *StreamSearchIterator) SendControl(action storeapi.ControlAction) error
 }
 
 // Close releases the store stream when the iterator is discarded without being finalized.
-// It is best-effort and safe to call on an already-closed stream; it must not be called concurrently with Next/Finalize.
-func (it *StreamSearchIterator) Close() error {
-	_ = it.SendControl(storeapi.ControlAction_CANCEL)
-	err := it.stream.CloseSend()
-	it.drain()
+func (it *StreamSearchIterator) Close() {
+	it.cancel()
 	it.tr.Done()
-	return err
 }
 
 func (it *StreamSearchIterator) Finalize() *query.Summary {
+	_ = it.SendControl(storeapi.ControlAction_FINALIZE)
 	_ = it.stream.CloseSend()
 	// If the stream was finalized before the data was exhausted, the store's summary may still be in flight.
 	// Drain the remaining messages so the store-reported summary is not lost.
@@ -406,27 +418,6 @@ func (it *StreamSearchIterator) drain() {
 		if err := it.push(msg); err != nil {
 			it.err = err
 		}
-	}
-}
-
-// ControlBroadcaster fans a control action out to every store stream backing a search.
-type ControlBroadcaster interface {
-	SendControl(storeapi.ControlAction)
-}
-
-type controlBroadcaster struct {
-	streams []*StreamSearchIterator
-}
-
-func newControlBroadcaster(streams []*StreamSearchIterator) ControlBroadcaster {
-	return &controlBroadcaster{streams: streams}
-}
-
-func (b *controlBroadcaster) SendControl(action storeapi.ControlAction) {
-	for _, s := range b.streams {
-		// Best-effort: a store that already terminated the stream returns an
-		// error here, which we intentionally ignore.
-		_ = s.SendControl(action)
 	}
 }
 

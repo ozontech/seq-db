@@ -13,7 +13,6 @@ import (
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
-	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/query/encoding"
@@ -62,21 +61,17 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	tr := querytracer.New(q.Explain, "proxy/StreamSearch")
 
 	var partialErr error
-	storesStream, broadcaster, err := g.searchIngestor.StreamSearch(ctx, searchReq, tr)
+	storesStream, cancelStreams, err := g.searchIngestor.StreamSearch(ctx, searchReq, tr)
 	if err != nil {
 		if errors.Is(err, consts.ErrPartialResponse) {
 			if shouldFailPartialResponse(ctx) {
-				if broadcaster != nil {
-					broadcaster.SendControl(storeapi.ControlAction_CANCEL)
-				}
+				cancelStreams()
 				return status.Error(codes.Internal, "partial response: not all shards returned results")
 			}
 			partialErr = err
 			metric.SearchPartial.Inc()
 		} else {
-			if broadcaster != nil {
-				broadcaster.SendControl(storeapi.ControlAction_CANCEL)
-			}
+			cancelStreams()
 			return status.Error(codes.Internal, err.Error())
 		}
 	}
@@ -120,18 +115,17 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	outcome, err := g.streamSearchRecords(stream, storesStream, typing, toRecord, controlCh, recvErrCh, ctx)
 	if err != nil {
 		// Streaming failed: cancel the stores so they stop producing.
-		broadcaster.SendControl(storeapi.ControlAction_CANCEL)
+		cancelStreams()
 		return err
 	}
 
 	// CANCEL: terminate immediately, no summary.
 	if outcome == outcomeCancel {
-		broadcaster.SendControl(storeapi.ControlAction_CANCEL)
+		cancelStreams()
 		return nil
 	}
 
 	// FINALIZE or data exhausted without an explicit control action: send the summary gathered from the store stream.
-	broadcaster.SendControl(storeapi.ControlAction_FINALIZE)
 	summary := storesStream.Finalize()
 	if summary == nil {
 		summary = &query.Summary{}
@@ -199,10 +193,10 @@ func checkControl(
 		if !ok {
 			return outcomeNone, false
 		}
-		if c.GetAction() == seqproxyapi.ControlAction_CANCEL {
-			return outcomeCancel, true
+		if c.GetAction() == seqproxyapi.ControlAction_FINALIZE {
+			return outcomeFinalize, true
 		}
-		return outcomeFinalize, true
+		return outcomeNone, false
 	case err, ok := <-recvErrCh:
 		if !ok {
 			return outcomeNone, false
