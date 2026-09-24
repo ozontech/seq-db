@@ -63,7 +63,7 @@ func NewSealedSource(f *Sealed) *SealedSource {
 
 	s.tokenTableLoader = token.NewTableLoader(
 		f.BaseFileName, f.Info().BinaryDataVer,
-		f.IsLegacy, &s.tokenReader, cache.NewScan[token.Table](),
+		f.IsSingleIndex(), &s.tokenReader, cache.NewScan[token.Table](),
 	)
 
 	return s

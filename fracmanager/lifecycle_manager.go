@@ -181,10 +181,8 @@ func (lc *lifecycleManager) tryOffload(ctx context.Context, sealed *frac.Sealed)
 		return nil, err
 	}
 
-	if remote != nil {
-		offloadingTotal.WithLabelValues("success").Inc()
-		offloadingDurationSeconds.Observe(float64(offloadingDuration))
-	}
+	offloadingTotal.WithLabelValues("success").Inc()
+	offloadingDurationSeconds.Observe(float64(offloadingDuration))
 
 	return remote, nil
 }
