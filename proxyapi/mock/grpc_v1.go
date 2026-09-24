@@ -162,11 +162,11 @@ func (mr *MockSearchIngestorMockRecorder) Status(ctx interface{}) *gomock.Call {
 }
 
 // StreamSearch mocks base method.
-func (m *MockSearchIngestor) StreamSearch(ctx context.Context, sr *search.StreamSearchRequest, tr *querytracer.Tracer) (query.RecordProducer, search.ControlBroadcaster, error) {
+func (m *MockSearchIngestor) StreamSearch(ctx context.Context, sr *search.StreamSearchRequest, tr *querytracer.Tracer) (query.RecordProducer, func(), error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StreamSearch", ctx, sr, tr)
 	ret0, _ := ret[0].(query.RecordProducer)
-	ret1, _ := ret[1].(search.ControlBroadcaster)
+	ret1, _ := ret[1].(func())
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2
 }

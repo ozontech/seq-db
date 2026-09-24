@@ -467,7 +467,6 @@ message StreamControl {
 enum ControlAction {
   CONTROL_ACTION_UNSPECIFIED = 0;
   FINALIZE = 1;   // Indicates correct stream termination, will get Summary after
-  CANCEL = 2;     // Some client error, termination stream immediately, no need for Summary
 }
 
 message StreamSearchResponse {
