@@ -284,6 +284,16 @@ func (si *activeTokenIndex) GetBatchedLIDsFromTIDs(tids []uint32, _ lids.Counter
 	return nodes
 }
 
+func (si *activeTokenIndex) GetLIDsByField(tids []uint32, _ lids.Counter, minLID, maxLID uint32) processor.FieldLIDs {
+	sources := make([][]uint32, 0, len(tids))
+	for _, tid := range tids {
+		tidLIDs := si.tokenList.Provide(tid)
+		unmapped := tidLIDs.GetLIDs(si.mids, si.rids)
+		sources = append(sources, inverseLIDs(unmapped, si.inverser, minLID, maxLID))
+	}
+	return NewFieldIterator(sources)
+}
+
 func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint32 {
 	result := make([]uint32, 0, len(unmapped))
 	for _, v := range unmapped {

@@ -246,10 +246,10 @@ func iteratorFromLiteral(
 
 	var sourcedNode node.Sourced
 	if useColumnAgg {
-		m = sw.Start("get_batched_lids_from_tids")
-		batchedLIDs := ti.GetBatchedLIDsFromTIDs(tids, stats, minLID, maxLID, order)
+		m = sw.Start("get_field_postings")
+		postings := ti.GetLIDsByField(tids, stats, minLID, maxLID)
 		m.Stop()
-		sourcedNode = node.NewColumnAgg(batchedLIDs, minLID, maxLID, order.IsDesc())
+		sourcedNode = node.NewColumnAgg(postings, minLID, maxLID, order.IsDesc())
 		aggColumnFracsTotal.Inc()
 	} else {
 		m = sw.Start("get_lids_from_tids")
