@@ -37,7 +37,7 @@ func (p *DocProjector) Next() *query.Record {
 		return nil
 	}
 
-	decoder := r.Vals[p.colIdx].Decoded().(*insaneJSON.Root)
+	decoder := r.Vals[p.colIdx].AsDoc()
 
 	var newRecord *query.Record
 	if !p.filter.AllowList {

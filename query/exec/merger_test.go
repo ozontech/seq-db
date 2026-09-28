@@ -6,8 +6,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	insaneJSON "github.com/ozontech/insane-json"
-
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/ozontech/seq-db/seq"
@@ -545,7 +543,7 @@ func makeMergerSeqIDRecords(values []seq.ID) []*query.Record {
 func extractUint32Values(records []*query.Record) []uint32 {
 	out := make([]uint32, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(uint32))
+		out = append(out, r.Vals[0].AsUint32())
 	}
 	return out
 }
@@ -553,7 +551,7 @@ func extractUint32Values(records []*query.Record) []uint32 {
 func extractUint64Values(records []*query.Record) []uint64 {
 	out := make([]uint64, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(uint64))
+		out = append(out, r.Vals[0].AsUint64())
 	}
 	return out
 }
@@ -561,7 +559,7 @@ func extractUint64Values(records []*query.Record) []uint64 {
 func extractInt32Values(records []*query.Record) []int32 {
 	out := make([]int32, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(int32))
+		out = append(out, r.Vals[0].AsInt32())
 	}
 	return out
 }
@@ -569,7 +567,7 @@ func extractInt32Values(records []*query.Record) []int32 {
 func extractInt64Values(records []*query.Record) []int64 {
 	out := make([]int64, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(int64))
+		out = append(out, r.Vals[0].AsInt64())
 	}
 	return out
 }
@@ -577,7 +575,7 @@ func extractInt64Values(records []*query.Record) []int64 {
 func extractFloat64Values(records []*query.Record) []float64 {
 	out := make([]float64, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(float64))
+		out = append(out, r.Vals[0].AsFloat64())
 	}
 	return out
 }
@@ -585,7 +583,7 @@ func extractFloat64Values(records []*query.Record) []float64 {
 func extractStringValues(records []*query.Record) []string {
 	out := make([]string, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(string))
+		out = append(out, r.Vals[0].AsString())
 	}
 	return out
 }
@@ -593,7 +591,7 @@ func extractStringValues(records []*query.Record) []string {
 func extractSeqIDValues(records []*query.Record) []seq.ID {
 	out := make([]seq.ID, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(seq.ID))
+		out = append(out, r.Vals[0].AsSeqID())
 	}
 	return out
 }
@@ -675,7 +673,7 @@ func collectRecords(p query.RecordProducer) []*query.Record {
 func extractFieldValues(records []*query.Record, field string) []string {
 	out := make([]string, 0, len(records))
 	for _, r := range records {
-		val := r.Vals[1].Decoded().(*insaneJSON.Root).Dig(field).AsString()
+		val := r.Vals[1].AsDoc().Dig(field).AsString()
 		out = append(out, val)
 	}
 	return out
