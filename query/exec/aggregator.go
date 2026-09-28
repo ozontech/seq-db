@@ -137,8 +137,8 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 		}
 
 		key := aggKey{
-			token: r.Vals[0].Decoded().(string),
-			ts:    r.Vals[6].Decoded().(uint64),
+			token: r.Vals[0].AsString(),
+			ts:    r.Vals[6].AsUint64(),
 		}
 
 		a.mu.Lock()
@@ -146,18 +146,18 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 		s, exists := a.buckets[key]
 		if !exists {
 			s = seq.NewSamplesContainers()
-			s.Min = r.Vals[1].Decoded().(float64)
-			s.Max = r.Vals[2].Decoded().(float64)
+			s.Min = r.Vals[1].AsFloat64()
+			s.Max = r.Vals[2].AsFloat64()
 		} else {
-			s.Min = min(s.Min, r.Vals[1].Decoded().(float64))
-			s.Max = max(s.Max, r.Vals[2].Decoded().(float64))
+			s.Min = min(s.Min, r.Vals[1].AsFloat64())
+			s.Max = max(s.Max, r.Vals[2].AsFloat64())
 		}
 
-		s.Sum += r.Vals[3].Decoded().(float64)
-		s.Total += int64(r.Vals[4].Decoded().(uint64))
+		s.Sum += r.Vals[3].AsFloat64()
+		s.Total += int64(r.Vals[4].AsUint64())
 
 		if a.aggFunc == seq.AggFuncQuantile {
-			for _, v := range r.Vals[7].Decoded().([]float64) {
+			for _, v := range r.Vals[7].AsFloat64Array() {
 				s.InsertSample(v)
 			}
 		}
@@ -171,7 +171,7 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 				m = make(map[string]struct{})
 				a.values[key] = m
 			}
-			for _, v := range r.Vals[8].Decoded().([]string) {
+			for _, v := range r.Vals[8].AsStringArray() {
 				m[v] = struct{}{}
 			}
 		}
@@ -203,17 +203,17 @@ func sortBuckets(aggFunc seq.AggFunc, buckets []*query.Record) {
 	// where MID comes first. Within the same ts buckets are ordered by value.
 	sortByTsValueDescNameAsc := func(left, right *query.Record) int {
 		return cmp.Or(
-			cmp.Compare(left.Vals[2].Decoded().(uint64), right.Vals[2].Decoded().(uint64)),
-			cmp.Compare(right.Vals[1].Decoded().(float64), left.Vals[1].Decoded().(float64)),
-			cmp.Compare(left.Vals[0].Decoded().(string), right.Vals[0].Decoded().(string)),
+			cmp.Compare(left.Vals[2].AsUint64(), right.Vals[2].AsUint64()),
+			cmp.Compare(right.Vals[1].AsFloat64(), left.Vals[1].AsFloat64()),
+			cmp.Compare(left.Vals[0].AsString(), right.Vals[0].AsString()),
 		)
 	}
 
 	sortByTsValueNameAsc := func(left, right *query.Record) int {
 		return cmp.Or(
-			cmp.Compare(left.Vals[2].Decoded().(uint64), right.Vals[2].Decoded().(uint64)),
-			cmp.Compare(left.Vals[1].Decoded().(float64), right.Vals[1].Decoded().(float64)),
-			cmp.Compare(left.Vals[0].Decoded().(string), right.Vals[0].Decoded().(string)),
+			cmp.Compare(left.Vals[2].AsUint64(), right.Vals[2].AsUint64()),
+			cmp.Compare(left.Vals[1].AsFloat64(), right.Vals[1].AsFloat64()),
+			cmp.Compare(left.Vals[0].AsString(), right.Vals[0].AsString()),
 		)
 	}
 

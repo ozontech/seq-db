@@ -28,10 +28,10 @@ func TestDistributedAggregator_Count(t *testing.T) {
 	results := collectRecords(agg)
 
 	assert.Len(t, results, 2)
-	assert.Equal(t, "key1", results[0].Vals[0].Decoded().(string))
-	assert.Equal(t, float64(2), results[0].Vals[1].Decoded().(float64))
-	assert.Equal(t, "key2", results[1].Vals[0].Decoded().(string))
-	assert.Equal(t, float64(2), results[1].Vals[1].Decoded().(float64))
+	assert.Equal(t, "key1", results[0].Vals[0].AsString())
+	assert.Equal(t, float64(2), results[0].Vals[1].AsFloat64())
+	assert.Equal(t, "key2", results[1].Vals[0].AsString())
+	assert.Equal(t, float64(2), results[1].Vals[1].AsFloat64())
 }
 
 func TestDistributedAggregator_Sum(t *testing.T) {
@@ -52,10 +52,10 @@ func TestDistributedAggregator_Sum(t *testing.T) {
 	results := collectRecords(agg)
 
 	assert.Len(t, results, 2)
-	assert.Equal(t, "key2", results[0].Vals[0].Decoded().(string))
-	assert.Equal(t, float64(70.0), results[0].Vals[1].Decoded().(float64))
-	assert.Equal(t, "key1", results[1].Vals[0].Decoded().(string))
-	assert.Equal(t, float64(30.0), results[1].Vals[1].Decoded().(float64))
+	assert.Equal(t, "key2", results[0].Vals[0].AsString())
+	assert.Equal(t, float64(70.0), results[0].Vals[1].AsFloat64())
+	assert.Equal(t, "key1", results[1].Vals[0].AsString())
+	assert.Equal(t, float64(30.0), results[1].Vals[1].AsFloat64())
 }
 
 func TestDistributedAggregator_Min(t *testing.T) {
@@ -76,10 +76,10 @@ func TestDistributedAggregator_Min(t *testing.T) {
 	results := collectRecords(agg)
 
 	assert.Len(t, results, 2)
-	assert.Equal(t, "key1", results[0].Vals[0].Decoded().(string))
-	assert.Equal(t, float64(10.0), results[0].Vals[1].Decoded().(float64))
-	assert.Equal(t, "key2", results[1].Vals[0].Decoded().(string))
-	assert.Equal(t, float64(20.0), results[1].Vals[1].Decoded().(float64))
+	assert.Equal(t, "key1", results[0].Vals[0].AsString())
+	assert.Equal(t, float64(10.0), results[0].Vals[1].AsFloat64())
+	assert.Equal(t, "key2", results[1].Vals[0].AsString())
+	assert.Equal(t, float64(20.0), results[1].Vals[1].AsFloat64())
 }
 
 func TestDistributedAggregator_Max(t *testing.T) {
@@ -100,10 +100,10 @@ func TestDistributedAggregator_Max(t *testing.T) {
 	results := collectRecords(agg)
 
 	assert.Len(t, results, 2)
-	assert.Equal(t, "key1", results[0].Vals[0].Decoded().(string))
-	assert.Equal(t, float64(50.0), results[0].Vals[1].Decoded().(float64))
-	assert.Equal(t, "key2", results[1].Vals[0].Decoded().(string))
-	assert.Equal(t, float64(30.0), results[1].Vals[1].Decoded().(float64))
+	assert.Equal(t, "key1", results[0].Vals[0].AsString())
+	assert.Equal(t, float64(50.0), results[0].Vals[1].AsFloat64())
+	assert.Equal(t, "key2", results[1].Vals[0].AsString())
+	assert.Equal(t, float64(30.0), results[1].Vals[1].AsFloat64())
 }
 
 func TestDistributedAggregator_Avg(t *testing.T) {
@@ -124,10 +124,10 @@ func TestDistributedAggregator_Avg(t *testing.T) {
 	results := collectRecords(agg)
 
 	assert.Len(t, results, 2)
-	assert.Equal(t, "key2", results[0].Vals[0].Decoded().(string))
-	assert.Equal(t, float64(30.0), results[0].Vals[1].Decoded().(float64))
-	assert.Equal(t, "key1", results[1].Vals[0].Decoded().(string))
-	assert.Equal(t, float64(20.0), results[1].Vals[1].Decoded().(float64))
+	assert.Equal(t, "key2", results[0].Vals[0].AsString())
+	assert.Equal(t, float64(30.0), results[0].Vals[1].AsFloat64())
+	assert.Equal(t, "key1", results[1].Vals[0].AsString())
+	assert.Equal(t, float64(20.0), results[1].Vals[1].AsFloat64())
 }
 
 func TestDistributedAggregator_EmptyInput(t *testing.T) {
@@ -225,10 +225,10 @@ func TestDistributedAggregator_Quantile(t *testing.T) {
 
 	results := collectRecords(agg)
 	assert.Len(t, results, 1)
-	assert.Equal(t, "key", results[0].Vals[0].Decoded().(string))
+	assert.Equal(t, "key", results[0].Vals[0].AsString())
 
-	gotValue := results[0].Vals[1].Decoded().(float64)
-	gotQuantiles := results[0].Vals[3].Decoded().([]float64)
+	gotValue := results[0].Vals[1].AsFloat64()
+	gotQuantiles := results[0].Vals[3].AsFloat64Array()
 	assert.Len(t, gotQuantiles, len(quantiles))
 	assert.Equal(t, gotQuantiles[0], gotValue)
 
@@ -250,8 +250,8 @@ func TestDistributedAggregator_UniqueCount(t *testing.T) {
 
 	results := collectRecords(agg)
 	assert.Len(t, results, 1)
-	assert.Equal(t, "key", results[0].Vals[0].Decoded().(string))
-	assert.Equal(t, float64(4), results[0].Vals[1].Decoded().(float64))
+	assert.Equal(t, "key", results[0].Vals[0].AsString())
+	assert.Equal(t, float64(4), results[0].Vals[1].AsFloat64())
 }
 
 func TestDistributedAggregatorFinalize(t *testing.T) {
@@ -293,9 +293,9 @@ func decodeAggOutputs(t *testing.T, a *DistributedAggregator) []aggOutput {
 	out := make([]aggOutput, 0)
 	for r := a.Next(); r != nil; r = a.Next() {
 		out = append(out, aggOutput{
-			key:   r.Vals[0].Decoded().(string),
-			value: r.Vals[1].Decoded().(float64),
-			ts:    r.Vals[2].Decoded().(uint64),
+			key:   r.Vals[0].AsString(),
+			value: r.Vals[1].AsFloat64(),
+			ts:    r.Vals[2].AsUint64(),
 		})
 	}
 	return out
