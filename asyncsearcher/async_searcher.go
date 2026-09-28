@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -285,8 +286,13 @@ func (as *AsyncSearcher) narrowSearchInterval(from, to seq.MID, fracProvider fra
 		return to, to
 	}
 
-	fracs.Sort(seq.DocsOrderAsc)
-	return max(from, fracs[0].Info().From), min(to, fracs[len(fracs)-1].Info().To)
+	minFrom := seq.MID(math.MaxUint64)
+	maxTo := seq.MID(0)
+	for _, frac := range fracs {
+		minFrom = min(minFrom, frac.Info().From)
+		maxTo = max(maxTo, frac.Info().To)
+	}
+	return max(from, minFrom), min(to, maxTo)
 }
 
 func (as *AsyncSearcher) updateSearchInfo(id string, update func(info *asyncSearchInfo)) {

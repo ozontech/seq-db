@@ -324,7 +324,7 @@ func (fp *rangedFakeFractionProvider) AcquireFractionsInRange(from, to seq.MID) 
 	return res, func() {}
 }
 
-func TestCropSearchInterval(t *testing.T) {
+func TestNarrowSearchInterval(t *testing.T) {
 	interval := seq.DurationToMID(defaultSearchInterval)
 
 	fracs := fracmanager.List{
