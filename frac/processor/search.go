@@ -49,7 +49,7 @@ type tokenIndex interface {
 //   - isFirstLID: true when the first list in the batch begins in this block
 //     (false when it continues a list split across the previous block)
 //
-// Exhausted when len(offsets) < 2.
+// Exhausted when len(lids) == 0.
 type FieldLIDs interface {
 	NextBatch(lids, offsets []uint32) (outLids, outOffsets []uint32, isFirstLID bool)
 }

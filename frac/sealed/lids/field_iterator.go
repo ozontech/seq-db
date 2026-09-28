@@ -38,7 +38,7 @@ func NewFieldIterator(
 // NextBatch returns lids and offsets for the next LID block.
 // isFirstLID is true when the first posting list in the batch begins in this block
 // (as opposed to continuing a list split across the previous block).
-// Exhausted when len(offsets) < 2.
+// Exhausted when len(lids) == 0.
 func (c *FieldIterator) NextBatch(lids, offsets []uint32) ([]uint32, []uint32, bool) {
 	for {
 		block, blockIdx, blockMinTID, firstListIdx, lastListIdx := c.loadNextBlock()
