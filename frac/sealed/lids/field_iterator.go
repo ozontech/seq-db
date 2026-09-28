@@ -13,7 +13,7 @@ type FieldIterator struct {
 	counter      Counter
 	firstTID     uint32 // inclusive
 	lastTID      uint32 // inclusive
-	blockIdx     uint32
+	nextBlockIdx uint32 // next (not yet processed) block id to load LIDs from
 	lastBlockIdx uint32
 	done         bool
 }
@@ -30,7 +30,7 @@ func NewFieldIterator(
 		counter:      counter,
 		firstTID:     firstTID,
 		lastTID:      lastTID,
-		blockIdx:     table.GetFirstBlockIndexForTID(firstTID),
+		nextBlockIdx: table.GetFirstBlockIndexForTID(firstTID),
 		lastBlockIdx: table.GetLastBlockIndexForTID(lastTID),
 	}
 }
@@ -41,8 +41,8 @@ func NewFieldIterator(
 // Exhausted when len(offsets) < 2.
 func (c *FieldIterator) NextBatch(lids, offsets []uint32) ([]uint32, []uint32, bool) {
 	for {
-		block, blockIdx, blockMinTID, firstListIdx, lastListIdx, ok := c.loadNextBlock()
-		if !ok {
+		block, blockIdx, blockMinTID, firstListIdx, lastListIdx := c.loadNextBlock()
+		if block == nil {
 			return nil, nil, false
 		}
 
@@ -64,42 +64,42 @@ func (c *FieldIterator) NextBatch(lids, offsets []uint32) ([]uint32, []uint32, b
 	}
 }
 
-func (c *FieldIterator) loadNextBlock() (block *Block, blockIdx, blockMinTID uint32, firstListIdx, lastListIdx int, ok bool) {
-	for !c.done {
-		if c.blockIdx > c.lastBlockIdx {
-			c.done = true
-			return nil, 0, 0, 0, 0, false
-		}
+func (c *FieldIterator) loadNextBlock() (block *Block, blockIdx, blockMinTID uint32, firstListIdx, lastListIdx int) {
+	if c.done {
+		return nil, 0, 0, 0, 0
+	}
 
-		blockIdx = c.blockIdx
-		c.blockIdx++
+	if c.nextBlockIdx > c.lastBlockIdx {
+		c.done = true
+		return nil, 0, 0, 0, 0
+	}
 
-		var err error
-		block, err = c.loader.GetLIDsBlock(c.table.StartBlockIndex + blockIdx)
-		if err != nil {
-			logger.Panic("error loading LIDs block", zap.Error(err))
-		}
+	blockIdx = c.nextBlockIdx
+	c.nextBlockIdx++
 
-		numLists := int(c.table.GetChunksCount(blockIdx))
-		if block.GetCount() != numLists {
-			logger.Panic("unexpected LIDs count")
-		}
+	var err error
+	block, err = c.loader.GetLIDsBlock(c.table.StartBlockIndex + blockIdx)
+	if err != nil {
+		logger.Panic("error loading LIDs block", zap.Error(err))
+	}
 
-		blockMinTID = c.table.GetAdjustedMinTID(blockIdx)
-		firstListIdx = 0
-		if blockMinTID < c.firstTID {
-			firstListIdx = int(c.firstTID - blockMinTID)
-			if firstListIdx > numLists {
-				firstListIdx = numLists
-			}
-		}
-		lastListIdx = min(numLists, int(c.lastTID-blockMinTID+1))
+	numLists := int(c.table.GetChunksCount(blockIdx))
 
-		if firstListIdx < lastListIdx {
-			return block, blockIdx, blockMinTID, firstListIdx, lastListIdx, true
+	blockMinTID = c.table.GetAdjustedMinTID(blockIdx)
+	firstListIdx = 0
+	if blockMinTID < c.firstTID {
+		firstListIdx = int(c.firstTID - blockMinTID)
+		if firstListIdx > numLists {
+			firstListIdx = numLists
 		}
 	}
-	return nil, 0, 0, 0, 0, false
+	lastListIdx = min(numLists, int(c.lastTID-blockMinTID+1))
+
+	if firstListIdx < lastListIdx {
+		return block, blockIdx, blockMinTID, firstListIdx, lastListIdx
+	}
+
+	return nil, 0, 0, 0, 0
 }
 
 // copyDeltaBlock fills the batch for delta-encoded block. Copies entire offsets and lids from LIDs block,
