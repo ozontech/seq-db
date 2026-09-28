@@ -55,7 +55,7 @@ func NewColumnAgg(postings LIDsIter, minLID, maxLID uint32, asc bool) Sourced {
 		offsets = offsets[:0]
 		var isFirstLID bool
 		lids, offsets, isFirstLID = postings.NextBatch(lids, offsets)
-		if len(offsets) < 2 {
+		if len(lids) == 0 {
 			break
 		}
 		for idx := 0; idx < len(offsets)-1; idx++ {
