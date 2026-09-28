@@ -140,10 +140,11 @@ func TestFetchAsyncSearchResultResponseMarshalJSON(t *testing.T) {
 			StartedAt:  timestamppb.New(time.Date(2025, 7, 25, 12, 25, 57, 672000000, time.UTC)),
 			ExpiresAt:  timestamppb.New(time.Date(2025, 7, 25, 13, 25, 57, 672000000, time.UTC)),
 			CanceledAt: timestamppb.New(time.Date(2025, 7, 25, 12, 34, 26, 577000000, time.UTC)),
+			DoneAt:     timestamppb.New(time.Date(2025, 7, 25, 12, 34, 26, 577000000, time.UTC)),
 			Progress:   1,
 			DiskUsage:  488,
 		},
-		`{"status":"AsyncSearchStatusCanceled","request":{"retention":"3600s","query":{"query":"message:some_message","from":"2025-07-01T05:20:00Z","to":"2025-08-01T05:20:00Z","explain":false,"downsample":0},"aggs":[],"withDocs":true,"size":"100"},"response":{"docs":[{"id":"46e48be997010000-e70163d0fa7582e4","data":{"message":"some_message","level":3},"time":"2025-07-08T10:19:08.742Z"}],"hist":{}},"progress":1,"disk_usage":"488","started_at":"2025-07-25T12:25:57.672Z","expires_at":"2025-07-25T13:25:57.672Z","canceled_at":"2025-07-25T12:34:26.577Z"}`,
+		`{"status":"AsyncSearchStatusCanceled","request":{"retention":"3600s","query":{"query":"message:some_message","from":"2025-07-01T05:20:00Z","to":"2025-08-01T05:20:00Z","explain":false,"downsample":0},"aggs":[],"withDocs":true,"size":"100"},"response":{"docs":[{"id":"46e48be997010000-e70163d0fa7582e4","data":{"message":"some_message","level":3},"time":"2025-07-08T10:19:08.742Z"}],"hist":{}},"progress":1,"disk_usage":"488","started_at":"2025-07-25T12:25:57.672Z","expires_at":"2025-07-25T13:25:57.672Z","canceled_at":"2025-07-25T12:34:26.577Z","done_at":"2025-07-25T12:34:26.577Z"}`,
 	)
 }
 
