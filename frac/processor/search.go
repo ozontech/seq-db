@@ -39,6 +39,19 @@ type tokenIndex interface {
 	GetFreqsByTIDs(tids []uint32, field string) []uint32
 	GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node
 	GetBatchedLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.BatchedNode
+	GetLIDsByField(tids []uint32, stats lids.Counter, minLID, maxLID uint32) FieldLIDs
+}
+
+// FieldLIDs iterates LID lists of one field in TID (source) order.
+// NextBatch returns:
+//   - lids: concatenated LID values
+//   - offsets: list boundaries in lids (same layout as lids.Block)
+//   - isFirstLID: true when the first list in the batch begins in this block
+//     (false when it continues a list split across the previous block)
+//
+// Exhausted when len(offsets) < 2.
+type FieldLIDs interface {
+	NextBatch(lids, offsets []uint32) (outLids, outOffsets []uint32, isFirstLID bool)
 }
 
 type searchIndex interface {
