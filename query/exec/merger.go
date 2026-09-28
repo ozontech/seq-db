@@ -47,8 +47,6 @@ func NewMerger(
 	dataType query.DataType,
 	order seq.DocsOrder,
 ) *Merger {
-	cmpFunc := createCmpFunc()
-
 	return &Merger{
 		left:     left,
 		right:    right,
@@ -56,7 +54,7 @@ func NewMerger(
 		field:    field,
 		dataType: dataType,
 		order:    order,
-		cmp:      cmpFunc,
+		cmp:      createCmpFunc(dataType),
 		dedup:    dataType == query.DataTypeSeqID,
 		curLeft:  nil,
 		curRight: nil,
@@ -217,11 +215,11 @@ func (m *Merger) extractValue(r *query.Record) any {
 	}
 }
 
-func createCmpFunc() func(any, any) int {
-	return func(a, b any) int {
-		switch v := a.(type) {
-		case seq.ID:
-			w := b.(seq.ID)
+func createCmpFunc(dataType query.DataType) func(any, any) int {
+	switch dataType {
+	case query.DataTypeSeqID:
+		return func(a, b any) int {
+			v, w := a.(seq.ID), b.(seq.ID)
 			switch {
 			case seq.Less(v, w):
 				return -1
@@ -230,21 +228,24 @@ func createCmpFunc() func(any, any) int {
 			default:
 				return 0
 			}
-		case uint32:
-			return cmp.Compare(v, b.(uint32))
-		case uint64:
-			return cmp.Compare(v, b.(uint64))
-		case int32:
-			return cmp.Compare(v, b.(int32))
-		case int64:
-			return cmp.Compare(v, b.(int64))
-		case float64:
-			return cmp.Compare(v, b.(float64))
-		case string:
-			return cmp.Compare(v, b.(string))
-		default:
-			return 0
 		}
+	case query.DataTypeDocument:
+		// document field's values are extracted as strings
+		return func(a, b any) int { return cmp.Compare(a.(string), b.(string)) }
+	case query.DataTypeUint32:
+		return func(a, b any) int { return cmp.Compare(a.(uint32), b.(uint32)) }
+	case query.DataTypeUint64:
+		return func(a, b any) int { return cmp.Compare(a.(uint64), b.(uint64)) }
+	case query.DataTypeInt32:
+		return func(a, b any) int { return cmp.Compare(a.(int32), b.(int32)) }
+	case query.DataTypeInt64:
+		return func(a, b any) int { return cmp.Compare(a.(int64), b.(int64)) }
+	case query.DataTypeFloat64:
+		return func(a, b any) int { return cmp.Compare(a.(float64), b.(float64)) }
+	case query.DataTypeString:
+		return func(a, b any) int { return cmp.Compare(a.(string), b.(string)) }
+	default:
+		return func(a, b any) int { return 0 }
 	}
 }
 
