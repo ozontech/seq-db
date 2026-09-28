@@ -25,3 +25,4 @@ junit.xml
 /data
 /quickstart/data
 /.devcontainer
+.perf-loop/
