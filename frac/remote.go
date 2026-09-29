@@ -42,9 +42,8 @@ type Remote struct {
 
 	info *common.Info
 
-	docsFile   storage.ImmutableFile
-	docsCache  *cache.ConcurrentCache[[]byte]
-	docsReader storage.DocsReader
+	docsFile  storage.ImmutableFile
+	docsCache *cache.ConcurrentCache[[]byte]
 
 	// Per-section index files (new split format only).
 	tokenFile   storage.ImmutableFile
@@ -166,10 +165,9 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 		ctx:               ctx,
 		fractionTypeLabel: "remote",
 
-		info:          f.info,
-		config:        f.Config,
-		docsReader:    &f.docsReader,
-		blocksOffsets: f.blocksData.BlocksOffsets,
+		info:       f.info,
+		config:     f.Config,
+		docsReader: f.docsReader(),
 
 		lidsTable:  f.blocksData.LIDsTable,
 		lidsLoader: lids.NewLoader(f.info.BinaryDataVer, &ir.LID, cache.NewSession(f.indexCache.LIDs)),
@@ -220,6 +218,13 @@ func (f *Remote) indexReaders() IndexReaders {
 			cache.NewSession(f.indexCache.LIDRegistry),
 		),
 	}
+}
+
+func (f *Remote) docsReader() storage.DocsReader {
+	return storage.NewDocsReader(
+		f.readLimiter, f.docsFile,
+		f.docsCache, f.blocksData.BlocksOffsets,
+	)
 }
 
 func (f *Remote) Info() *common.Info {
@@ -477,7 +482,6 @@ func (f *Remote) openDocs() error {
 	}
 
 	f.docsFile = docsFile
-	f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
 	return nil
 }
 

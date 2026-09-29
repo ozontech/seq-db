@@ -35,9 +35,8 @@ type Sealed struct {
 
 	info *common.Info
 
-	docsFile   *os.File
-	docsCache  *cache.ConcurrentCache[[]byte]
-	docsReader storage.DocsReader
+	docsFile  *os.File
+	docsCache *cache.ConcurrentCache[[]byte]
 
 	// Per-section index files and their readers (new split format only).
 	tokenFile   *os.File
@@ -227,8 +226,6 @@ func (f *Sealed) openDocs() {
 			)
 		}
 	}
-
-	f.docsReader = storage.NewDocsReader(f.readLimiter, f.docsFile, f.docsCache)
 }
 
 func (f *Sealed) loadInfo() {
@@ -510,10 +507,9 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 		ctx:               ctx,
 		fractionTypeLabel: "sealed",
 
-		info:          f.info,
-		config:        f.Config,
-		docsReader:    &f.docsReader,
-		blocksOffsets: f.blocksData.BlocksOffsets,
+		info:       f.info,
+		config:     f.Config,
+		docsReader: f.docsReader(),
 
 		lidsTable:  f.blocksData.LIDsTable,
 		lidsLoader: lids.NewLoader(f.info.BinaryDataVer, &ir.LID, cache.NewSession(f.indexCache.LIDs)),
@@ -577,6 +573,13 @@ func (f *Sealed) indexReaders() IndexReaders {
 			cache.NewSession(f.indexCache.LIDRegistry),
 		),
 	}
+}
+
+func (f *Sealed) docsReader() storage.DocsReader {
+	return storage.NewDocsReader(
+		f.readLimiter, f.docsFile,
+		f.docsCache, f.blocksData.BlocksOffsets,
+	)
 }
 
 // computeIndexOnDisk returns the total on-disk size of index files for a local fraction.
