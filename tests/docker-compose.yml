@@ -1,6 +1,6 @@
 services:
   minio:
-    image: quay.io/minio/minio:latest
+    image: alpine/minio:latest-release
     ports:
       - 9000:9000  # API
       - 9001:9001  # WebUI
