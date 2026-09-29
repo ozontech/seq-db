@@ -135,12 +135,11 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 			for tid := entry.StartTID; tid <= entry.GetLastTID(); tid++ {
 				lidsBuf = lidsBuf[:0]
 
-				tokenVal := block.GetToken(entry.GetIndexInTokensBlock(tid))
-				firstBlock := lidsTable.GetFirstBlockIndexForTID(tid)
-				lastBlock := lidsTable.GetLastBlockIndexForTID(tid)
+				from := lidsTable.GetFirstBlockIndexForTID(tid)
+				to := lidsTable.GetLastBlockIndexForTID(tid)
 
-				for bi := firstBlock; bi <= lastBlock; bi++ {
-					lidBlock, err := s.lidsLoader.GetLIDsBlock(bi)
+				for bi := from; bi <= to; bi++ {
+					lidBlock, err := s.lidsLoader.GetLIDsBlock(lidsTable.StartBlockIndex + bi)
 					if err != nil {
 						yield(indexwriter.TokenLIDs{}, err)
 						return
@@ -150,6 +149,7 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 					lidsBuf = lidBlock.AppendLIDsTo(chunkIdx, lidsBuf)
 				}
 
+				tokenVal := block.GetToken(entry.GetIndexInTokensBlock(tid))
 				if !yield(indexwriter.TokenLIDs{First: tokenVal, Second: lidsBuf}, nil) {
 					return
 				}
