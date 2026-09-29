@@ -1,6 +1,10 @@
 package node
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/ozontech/seq-db/consts"
+)
 
 // nodeColumnAgg is a materialized column for aggregation. Size of column is maxLID-minLID+1.
 // column[i] has the (source+1) for ith document in search order.
@@ -13,6 +17,10 @@ type nodeColumnAgg struct {
 	asc    bool
 	cur    uint32 // next cursor position not yet processed, range [minLID, maxLID]
 	done   bool
+}
+
+type LIDsIter interface {
+	NextBatch(lids, offsets []uint32) (outLids, outOffsets []uint32, isFirstLID bool)
 }
 
 var columnAggPool = sync.Pool{}
@@ -32,33 +40,39 @@ func (*nodeColumnAgg) String() string {
 	return "COLUMN_AGG"
 }
 
-func NewColumnAgg(cursors []BatchedNode, minLID, maxLID uint32, asc bool) Sourced {
-	if maxLID < minLID {
+func NewColumnAgg(postings LIDsIter, minLID, maxLID uint32, asc bool) Sourced {
+	if postings == nil || maxLID < minLID {
 		return emptyNodeSourced
 	}
 
 	column := getColumn(int(maxLID - minLID + 1))
-	tmp := make([]uint32, 4*1024)
-
-	for source, cursor := range cursors {
-		for {
-			batch := cursor.NextBatch()
-			if batch.IsEmpty() {
-				break
+	lids := make([]uint32, 0, consts.DefaultLIDBlockCap)
+	offsets := make([]uint32, 0, consts.DefaultLIDBlockCap+1)
+	var source uint32
+	started := false
+	for {
+		lids = lids[:0]
+		offsets = offsets[:0]
+		var isFirstLID bool
+		lids, offsets, isFirstLID = postings.NextBatch(lids, offsets)
+		if len(lids) == 0 {
+			break
+		}
+		for idx := 0; idx < len(offsets)-1; idx++ {
+			if !started {
+				started = true
+			} else if idx > 0 || isFirstLID {
+				source++
 			}
-			// we drain all lid lists and do not care about order, hence asc=true
-			iter := batch.ManyIter(true)
-			for {
-				n := iter.CopyRawLIDs(tmp)
-				if n == 0 {
-					break
+			src := uint64(source) + 1
+			start := offsets[idx]
+			end := offsets[idx+1]
+			for j := start; j < end; j++ {
+				lid := lids[j]
+				if lid < minLID || lid > maxLID {
+					continue
 				}
-				for _, lid := range tmp[:n] {
-					if lid < minLID || lid > maxLID {
-						continue
-					}
-					column[lid-minLID] = uint64(source) + 1
-				}
+				column[lid-minLID] = src
 			}
 		}
 	}
