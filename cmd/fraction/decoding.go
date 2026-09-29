@@ -298,10 +298,13 @@ func loadInfo(fracName string) (*common.Info, error) {
 		consts.TokenFileSuffix, consts.OffsetsFileSuffix,
 		consts.IDFileSuffix, consts.LIDFileSuffix,
 	} {
-		st, err := os.Stat(fracName + suffix)
+		fileName := fracName + suffix
+
+		st, err := os.Stat(fileName)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("cannot stats %s: %w", fileName, err)
 		}
+
 		bi.Info.IndexOnDisk += uint64(st.Size())
 	}
 
