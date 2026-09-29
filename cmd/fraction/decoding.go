@@ -6,15 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
-	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/storage"
 )
 
@@ -108,17 +105,12 @@ func decodeFraction(
 		return err
 	}
 
-	info, err := loadInfo(fracName)
-	if err != nil {
-		return err
-	}
-
 	f := frac.NewSealed(
 		fracName,
 		storage.NewReadLimiter(1, nil),
 		frac.NewIndexCache(),
 		cache.NewConcurrentCache[[]byte](nil, nil),
-		info,
+		nil,
 		&frac.Config{},
 		stubSkipMaskProvider{},
 	)
@@ -137,7 +129,7 @@ func decodeFraction(
 
 		switch kind {
 		case kindInfo:
-			err = enc.Encode(infoRecord{Kind: kind, Info: info})
+			err = enc.Encode(infoRecord{Kind: kind, Info: f.Info()})
 		case kindDoc:
 			err = writeDocs(src, enc)
 		case kindID:
@@ -239,79 +231,4 @@ func writeTokens(src *frac.SealedSource, enc *json.Encoder, withoutPostings bool
 	}
 
 	return nil
-}
-
-// loadInfo reads the fraction info and rewrites its recorded path with the
-// actual one, so a fraction moved on disk still opens: frac.Sealed resolves
-// file locations through info.Path, not through the name it was given.
-// Legacy fractions keep info in the first block of their .index file, so
-// the .info file is not expected to exist there.
-func loadInfo(fracName string) (*common.Info, error) {
-	if exists(fracName + consts.IndexFileSuffix) {
-		legacyFile, err := os.Open(fracName + consts.IndexFileSuffix)
-		if err != nil {
-			return nil, fmt.Errorf("cannot open index file: %w", err)
-		}
-		defer legacyFile.Close()
-
-		legacyReader := storage.NewIndexReader(
-			storage.NewReadLimiter(1, nil),
-			legacyFile.Name(),
-			legacyFile,
-			cache.NewConcurrentCache[[]byte](nil, nil),
-		)
-
-		block, _, err := legacyReader.ReadIndexBlock(0, nil)
-		if err != nil {
-			return nil, fmt.Errorf("cannot read info block: %w", err)
-		}
-
-		var bi sealed.BlockInfo
-		if err := bi.Unpack(block); err != nil {
-			return nil, fmt.Errorf("cannot unpack info block: %w", err)
-		}
-
-		bi.Info.Path = fracName
-
-		st, err := legacyFile.Stat()
-		if err != nil {
-			return nil, fmt.Errorf("cannot stat index file: %w", err)
-		}
-		bi.Info.IndexOnDisk = uint64(st.Size())
-
-		return bi.Info, nil
-	}
-
-	data, err := os.ReadFile(fracName + consts.InfoFileSuffix)
-	if err != nil {
-		return nil, fmt.Errorf("cannot load info: %w", err)
-	}
-
-	var bi sealed.BlockInfo
-	if err := bi.Unpack(data); err != nil {
-		return nil, fmt.Errorf("cannot unpack info block: %w", err)
-	}
-
-	bi.Info.Path = fracName
-
-	for _, suffix := range []string{
-		consts.TokenFileSuffix, consts.OffsetsFileSuffix,
-		consts.IDFileSuffix, consts.LIDFileSuffix,
-	} {
-		fileName := fracName + suffix
-
-		st, err := os.Stat(fileName)
-		if err != nil {
-			return nil, fmt.Errorf("cannot stats %s: %w", fileName, err)
-		}
-
-		bi.Info.IndexOnDisk += uint64(st.Size())
-	}
-
-	return bi.Info, nil
-}
-
-func exists(name string) bool {
-	_, err := os.Stat(name)
-	return err == nil
 }
