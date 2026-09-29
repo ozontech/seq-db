@@ -2881,7 +2881,6 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *frac
 		nil,
 		s.config,
 		testSkipMaskProvider{},
-		false,
 	)
 
 	s.fraction = sealed
@@ -2929,9 +2928,8 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 		)
 		s.Require().NoError(err, "s3 client setup failed")
 
-		offloaded, err := sealed.Offload(context.Background(), s3.NewUploader(s3cli))
+		err = sealed.Offload(context.Background(), s3.NewUploader(s3cli))
 		s.Require().NoError(err, "offload failed")
-		s.Require().True(offloaded, "didn't offload frac")
 
 		remoteFrac := frac.NewRemote(
 			context.Background(),
@@ -2943,7 +2941,6 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			s.config,
 			s3cli,
 			testSkipMaskProvider{},
-			false,
 		)
 
 		s.fraction = remoteFrac
