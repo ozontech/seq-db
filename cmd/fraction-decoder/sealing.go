@@ -10,6 +10,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/alecthomas/units"
+
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
