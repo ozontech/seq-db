@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/query/encoding"
@@ -30,6 +31,8 @@ type aggKey struct {
 type DistributedAggregator struct {
 	state  ExecutorState
 	inputs []query.RecordProducer
+
+	mu sync.Mutex
 
 	aggFunc   seq.AggFunc
 	quantiles []float64
@@ -59,58 +62,13 @@ func NewDistributedAggregator(
 
 func (a *DistributedAggregator) Next() *query.Record {
 	if a.state == ExecutorStateReadingInput {
-		// TODO: read from all inputs simultaneously (???)
+		var wg sync.WaitGroup
 		for _, input := range a.inputs {
-			for {
-				r := input.Next()
-				if r == nil {
-					break
-				}
-
-				key := aggKey{
-					token: r.Vals[0].Decoded().(string),
-					ts:    r.Vals[6].Decoded().(uint64),
-				}
-
-				s, exists := a.buckets[key]
-				if !exists {
-					s = seq.NewSamplesContainers()
-				}
-
-				if !exists {
-					s.Min = r.Vals[1].Decoded().(float64)
-					s.Max = r.Vals[2].Decoded().(float64)
-				} else {
-					s.Min = min(s.Min, r.Vals[1].Decoded().(float64))
-					s.Max = max(s.Max, r.Vals[2].Decoded().(float64))
-				}
-
-				s.Sum += r.Vals[3].Decoded().(float64)
-				s.Total += int64(r.Vals[4].Decoded().(uint64))
-
-				if a.aggFunc == seq.AggFuncQuantile {
-					for _, v := range r.Vals[7].Decoded().([]float64) {
-						s.InsertSample(v)
-					}
-				}
-
-				if a.aggFunc == seq.AggFuncUniqueCount {
-					if a.values == nil {
-						a.values = make(map[aggKey]map[string]struct{})
-					}
-					m, ok := a.values[key]
-					if !ok {
-						m = make(map[string]struct{})
-						a.values[key] = m
-					}
-					for _, v := range r.Vals[8].Decoded().([]string) {
-						m[v] = struct{}{}
-					}
-				}
-
-				a.buckets[key] = s
-			}
+			wg.Go(func() {
+				a.drainInput(input)
+			})
 		}
+		wg.Wait()
 
 		a.state = ExecutorStateProcessingData
 	}
@@ -169,6 +127,59 @@ func (a *DistributedAggregator) Next() *query.Record {
 	a.curIdx++
 
 	return r
+}
+
+func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
+	for {
+		r := input.Next()
+		if r == nil {
+			break
+		}
+
+		key := aggKey{
+			token: r.Vals[0].Decoded().(string),
+			ts:    r.Vals[6].Decoded().(uint64),
+		}
+
+		a.mu.Lock()
+
+		s, exists := a.buckets[key]
+		if !exists {
+			s = seq.NewSamplesContainers()
+			s.Min = r.Vals[1].Decoded().(float64)
+			s.Max = r.Vals[2].Decoded().(float64)
+		} else {
+			s.Min = min(s.Min, r.Vals[1].Decoded().(float64))
+			s.Max = max(s.Max, r.Vals[2].Decoded().(float64))
+		}
+
+		s.Sum += r.Vals[3].Decoded().(float64)
+		s.Total += int64(r.Vals[4].Decoded().(uint64))
+
+		if a.aggFunc == seq.AggFuncQuantile {
+			for _, v := range r.Vals[7].Decoded().([]float64) {
+				s.InsertSample(v)
+			}
+		}
+
+		if a.aggFunc == seq.AggFuncUniqueCount {
+			if a.values == nil {
+				a.values = make(map[aggKey]map[string]struct{})
+			}
+			m, ok := a.values[key]
+			if !ok {
+				m = make(map[string]struct{})
+				a.values[key] = m
+			}
+			for _, v := range r.Vals[8].Decoded().([]string) {
+				m[v] = struct{}{}
+			}
+		}
+
+		a.buckets[key] = s
+
+		a.mu.Unlock()
+	}
 }
 
 func (a *DistributedAggregator) Finalize() *query.Summary {
