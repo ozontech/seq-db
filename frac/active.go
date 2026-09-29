@@ -46,11 +46,11 @@ type Active struct {
 	DocsPositions *DocsPositions
 	IDsToLIDs     *ActiveLIDs
 
-	docsFile   *os.File
-	docsReader storage.DocsReader
-	sortReader storage.DocsReader
-	docsCache  *cache.ConcurrentCache[[]byte]
-	sortCache  *cache.ConcurrentCache[[]byte]
+	docsFile  *os.File
+	docsCache *cache.ConcurrentCache[[]byte]
+	sortCache *cache.ConcurrentCache[[]byte]
+
+	readLimiter *storage.ReadLimiter
 
 	walFile   *os.File
 	walReader *storage.WalReader
@@ -81,11 +81,11 @@ func NewActive(
 		RIDs:          NewIDs(),
 		DocBlocks:     NewIDs(),
 
-		docsFile:   docsFile,
-		docsCache:  docsCache,
-		sortCache:  sortCache,
-		docsReader: storage.NewDocsReader(readLimiter, docsFile, docsCache),
-		sortReader: storage.NewDocsReader(readLimiter, docsFile, sortCache),
+		docsFile:  docsFile,
+		docsCache: docsCache,
+		sortCache: sortCache,
+
+		readLimiter: readLimiter,
 
 		walFile:   walFile,
 		walReader: walReader,
@@ -357,10 +357,13 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 		rids:      f.RIDs,
 		tokenList: f.TokenList,
 
-		blocksOffsets: f.DocBlocks.GetVals(),
-		docsPositions: f.DocsPositions,
 		idsToLids:     f.IDsToLIDs,
-		docsReader:    &f.docsReader,
+		docsPositions: f.DocsPositions,
+
+		docsReader: storage.NewDocsReader(
+			f.readLimiter, f.docsFile,
+			f.docsCache, f.DocBlocks.GetVals(),
+		),
 
 		skipMaskProvider: f.skipMaskProvider,
 	}

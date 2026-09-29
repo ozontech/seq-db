@@ -51,7 +51,7 @@ type ActiveSealingSource struct {
 
 	docPosMap    map[seq.ID]seq.DocPos // Original document positions
 	docPosSorted []seq.DocPos          // Document positions after sorting
-	docsReader   *storage.DocsReader   // Document storage reader
+	docsReader   storage.DocsReader    // Document storage reader
 }
 
 func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSealingSource, error) {
@@ -79,7 +79,9 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 
 		docPosMap:     active.DocsPositions.idToPos,
 		blocksOffsets: active.DocBlocks.vals,
-		docsReader:    &active.sortReader,
+		docsReader: storage.NewDocsReader(
+			active.readLimiter, active.docsFile, active.sortCache, active.DocBlocks.vals,
+		),
 	}
 
 	src.prepareInfo()
@@ -265,11 +267,10 @@ func (src *ActiveSealingSource) Docs() iter.Seq2[Document, error] {
 // doc reads a document from storage by its position.
 func (src *ActiveSealingSource) doc(pos seq.DocPos) ([]byte, error) {
 	blockIndex, docOffset := pos.Unpack()
-	blockOffset := src.blocksOffsets[blockIndex]
 
 	var doc []byte
 	err := src.docsReader.ReadDocsFunc(
-		blockOffset, []uint64{docOffset},
+		blockIndex, []uint64{docOffset},
 		func(b []byte) error {
 			doc = b
 			return nil
