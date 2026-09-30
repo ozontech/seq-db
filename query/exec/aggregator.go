@@ -20,6 +20,23 @@ const (
 	ExecutorStateDone
 )
 
+var (
+	aggColTokenIn   = query.StringColumn(0)
+	aggColMinIn     = query.Float64Column(1)
+	aggColMaxIn     = query.Float64Column(2)
+	aggColSumIn     = query.Float64Column(3)
+	aggColTotalIn   = query.Uint64Column(4)
+	aggColTsIn      = query.Uint64Column(6)
+	aggColSamplesIn = query.Float64ArrayColumn(7)
+	aggColValuesIn  = query.StringArrayColumn(8)
+)
+
+var (
+	aggColTokenOut = query.StringColumn(0)
+	aggColValueOut = query.Float64Column(1)
+	aggColTsOut    = query.Uint64Column(2)
+)
+
 // aggKey identifies a single timeseries bin: the grouping token plus the
 // (floored) timestamp. ts is 0 (DummyMID) for non-timeseries aggregations, so
 // all samples for the same token collapse into one bucket.
@@ -137,8 +154,8 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 		}
 
 		key := aggKey{
-			token: r.Vals[0].AsString(),
-			ts:    r.Vals[6].AsUint64(),
+			token: aggColTokenIn.Val(r),
+			ts:    aggColTsIn.Val(r),
 		}
 
 		a.mu.Lock()
@@ -146,18 +163,18 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 		s, exists := a.buckets[key]
 		if !exists {
 			s = seq.NewSamplesContainers()
-			s.Min = r.Vals[1].AsFloat64()
-			s.Max = r.Vals[2].AsFloat64()
+			s.Min = aggColMinIn.Val(r)
+			s.Max = aggColMaxIn.Val(r)
 		} else {
-			s.Min = min(s.Min, r.Vals[1].AsFloat64())
-			s.Max = max(s.Max, r.Vals[2].AsFloat64())
+			s.Min = min(s.Min, aggColMinIn.Val(r))
+			s.Max = max(s.Max, aggColMaxIn.Val(r))
 		}
 
-		s.Sum += r.Vals[3].AsFloat64()
-		s.Total += int64(r.Vals[4].AsUint64())
+		s.Sum += aggColSumIn.Val(r)
+		s.Total += int64(aggColTotalIn.Val(r))
 
 		if a.aggFunc == seq.AggFuncQuantile {
-			for _, v := range r.Vals[7].AsFloat64Array() {
+			for _, v := range aggColSamplesIn.Val(r) {
 				s.InsertSample(v)
 			}
 		}
@@ -171,7 +188,7 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 				m = make(map[string]struct{})
 				a.values[key] = m
 			}
-			for _, v := range r.Vals[8].AsStringArray() {
+			for _, v := range aggColValuesIn.Val(r) {
 				m[v] = struct{}{}
 			}
 		}
@@ -199,21 +216,21 @@ func (a *DistributedAggregator) Finalize() *query.Summary {
 }
 
 func sortBuckets(aggFunc seq.AggFunc, buckets []*query.Record) {
-	// ts (Vals[2]) is the primary key (ASC), matching seq/qpr.go sortBuckets
+	// ts is the primary key (ASC), matching seq/qpr.go sortBuckets
 	// where MID comes first. Within the same ts buckets are ordered by value.
 	sortByTsValueDescNameAsc := func(left, right *query.Record) int {
 		return cmp.Or(
-			cmp.Compare(left.Vals[2].AsUint64(), right.Vals[2].AsUint64()),
-			cmp.Compare(right.Vals[1].AsFloat64(), left.Vals[1].AsFloat64()),
-			cmp.Compare(left.Vals[0].AsString(), right.Vals[0].AsString()),
+			cmp.Compare(aggColTsOut.Val(left), aggColTsOut.Val(right)),
+			cmp.Compare(aggColValueOut.Val(right), aggColValueOut.Val(left)),
+			cmp.Compare(aggColTokenOut.Val(left), aggColTokenOut.Val(right)),
 		)
 	}
 
 	sortByTsValueNameAsc := func(left, right *query.Record) int {
 		return cmp.Or(
-			cmp.Compare(left.Vals[2].AsUint64(), right.Vals[2].AsUint64()),
-			cmp.Compare(left.Vals[1].AsFloat64(), right.Vals[1].AsFloat64()),
-			cmp.Compare(left.Vals[0].AsString(), right.Vals[0].AsString()),
+			cmp.Compare(aggColTsOut.Val(left), aggColTsOut.Val(right)),
+			cmp.Compare(aggColValueOut.Val(left), aggColValueOut.Val(right)),
+			cmp.Compare(aggColTokenOut.Val(left), aggColTokenOut.Val(right)),
 		)
 	}
 

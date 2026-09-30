@@ -15,18 +15,18 @@ type FieldsFilter struct {
 
 type DocProjector struct {
 	input  query.RecordProducer
-	colIdx int
+	col    query.Column[*insaneJSON.Root]
 	filter *FieldsFilter
 }
 
 func NewDocProjector(
 	input query.RecordProducer,
-	colIdx int,
+	col query.Column[*insaneJSON.Root],
 	filter *FieldsFilter,
 ) *DocProjector {
 	return &DocProjector{
 		input:  input,
-		colIdx: colIdx,
+		col:    col,
 		filter: filter,
 	}
 }
@@ -37,7 +37,7 @@ func (p *DocProjector) Next() *query.Record {
 		return nil
 	}
 
-	decoder := r.Vals[p.colIdx].AsDoc()
+	decoder := p.col.Val(r)
 
 	var newRecord *query.Record
 	if !p.filter.AllowList {
@@ -77,7 +77,7 @@ func (p *DocProjector) makeRecordWithNewVals(old *query.Record, newRawData []byt
 	newRecordVals := make([]*query.RecordVals, len(old.Vals))
 	for i := range len(old.Vals) {
 		rawData := old.Vals[i].RawData()
-		if i == p.colIdx {
+		if i == p.col.Idx() {
 			rawData = newRawData
 		}
 		newRecordVals[i] = query.NewRecordVals(old.Vals[i].Type, rawData)
