@@ -12,14 +12,10 @@ type FilterExpr[T any] interface {
 	Eval(T) bool
 }
 
-type ValGetter[T any] func(*query.RecordVals) T
-
 type Filter[T any] struct {
 	input query.RecordProducer
-
-	colIdx int
-	getVal ValGetter[T]
-	expr   FilterExpr[T]
+	col   query.Column[T]
+	expr  FilterExpr[T]
 
 	// withTotal requests the accurate total of records that pass the filter.
 	// When true, Finalize drains the (possibly partially consumed) input to the
@@ -30,7 +26,7 @@ type Filter[T any] struct {
 	// draining the remaining input.
 	passed uint64
 
-	// roots holds every record whose colIdx val has been decoded (and thus
+	// roots holds every record whose val has been decoded (and thus
 	// Spawn'd an insaneJSON root). They are released back to the library pool in
 	// Finalize. Record.Release is idempotent, so records that were forwarded
 	// downstream (and released there too) are safe to release here as well.
@@ -39,15 +35,13 @@ type Filter[T any] struct {
 
 func NewFilter[T any](
 	input query.RecordProducer,
-	colIdx int,
-	get ValGetter[T],
+	col query.Column[T],
 	expr FilterExpr[T],
 	withTotal bool,
 ) *Filter[T] {
 	return &Filter[T]{
 		input:     input,
-		colIdx:    colIdx,
-		getVal:    get,
+		col:       col,
 		expr:      expr,
 		withTotal: withTotal,
 	}
@@ -60,7 +54,7 @@ func (f *Filter[T]) Next() *query.Record {
 			return nil
 		}
 
-		passes := f.expr.Eval(f.getVal(r.Vals[f.colIdx]))
+		passes := f.expr.Eval(f.col.Val(r))
 		// The decoded root is now cached; keep a reference so Finalize can release it.
 		f.roots = append(f.roots, r)
 		if passes {
