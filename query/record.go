@@ -214,13 +214,14 @@ func (rv *RecordVals) AsStringArray() []string {
 }
 
 // Release returns the insaneJSON root allocated in AsDoc back to the library's
-// internal pool. It is idempotent: after the first call rv.doc is cleared, so
-// repeated calls are a no-op. Calling it on a non-document val or a
-// not-yet-decoded val is also a no-op. Safe to invoke from every executor that
-// has touched the val — the first caller wins.
+// internal pool and invalidates the cache. It is idempotent: after
+// the first call the cache is cleared, so repeated calls are a no-op. Calling
+// it on a non-document val or a not-yet-decoded val is also a no-op. Safe to
+// invoke from every executor that has touched the val — the first caller wins.
 func (rv *RecordVals) Release() {
-	if rv.doc != nil {
+	if rv.decoded {
 		insaneJSON.Release(rv.doc)
-		rv.doc = nil
 	}
+	rv.doc = nil
+	rv.decoded = false
 }
