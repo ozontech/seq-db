@@ -52,11 +52,12 @@ type docRecord struct {
 }
 
 type idRecord struct {
-	Kind string `json:"kind"`
-	LID  uint32 `json:"lid"`
-	MID  uint64 `json:"mid"`
-	RID  uint64 `json:"rid"`
-	Pos  uint64 `json:"pos"`
+	Kind       string `json:"kind"`
+	LID        uint32 `json:"lid"`
+	MID        uint64 `json:"mid"`
+	RID        uint64 `json:"rid"`
+	BlockIndex uint32 `json:"block_idx"`
+	Offset     uint64 `json:"offset"`
 }
 
 type tokenRecord struct {
@@ -187,12 +188,15 @@ func writeIDs(src *frac.SealedSource, enc *json.Encoder) error {
 			return err
 		}
 
+		blockIndex, offset := loc.Second.Unpack()
+
 		if err := enc.Encode(idRecord{
-			Kind: kindID,
-			LID:  lid,
-			MID:  uint64(loc.First.MID),
-			RID:  uint64(loc.First.RID),
-			Pos:  uint64(loc.Second),
+			Kind:       kindID,
+			LID:        lid,
+			MID:        uint64(loc.First.MID),
+			RID:        uint64(loc.First.RID),
+			BlockIndex: blockIndex,
+			Offset:     offset,
 		}); err != nil {
 			return err
 		}

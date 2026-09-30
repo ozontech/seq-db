@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,11 +198,15 @@ func TestSealAndDecode(t *testing.T) {
 				require.Len(t, content.IDs, 4)
 				assert.Equal(t, uint64(seq.SystemMID), content.IDs[0].MID)
 				assert.Equal(t, uint64(seq.SystemRID), content.IDs[0].RID)
-				assert.Zero(t, content.IDs[0].Pos)
+				// the system id keeps DocPos 0, which unpacks to sentinel values
+				assert.Equal(t, uint32(math.MaxUint32), content.IDs[0].BlockIndex)
+				assert.Equal(t, uint64(1<<30-1), content.IDs[0].Offset)
 				for i, id := range content.IDs[1:] {
 					assert.Equal(t, uint32(i+1), id.LID)
 					assert.Greater(t, content.IDs[i].MID, id.MID)
-					assert.Positive(t, id.Pos)
+					// offset must fit into the 30-bit doc offset field
+					assert.Less(t, id.Offset, uint64(1<<30))
+					assert.Positive(t, id.Offset)
 				}
 			},
 		},
