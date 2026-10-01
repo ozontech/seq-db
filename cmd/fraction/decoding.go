@@ -21,6 +21,8 @@ const (
 	kindID      = "id"
 	kindToken   = "token"
 	kindOffsets = "offsets"
+
+	kindInfoJSONPrefix = `{"kind":"` + kindInfo + `",`
 )
 
 var decodableKinds = []string{kindInfo, kindDoc, kindID, kindToken, kindOffsets}
@@ -38,8 +40,8 @@ func (r infoRecord) MarshalJSON() ([]byte, error) {
 
 	// splice the kind field in front of the info fields, keeping
 	// the record flat and the kind first
-	out := make([]byte, 0, len(info)+len(`{"kind":"info",`))
-	out = append(out, `{"kind":"`+kindInfo+`",`...)
+	out := make([]byte, 0, len(info)+len(kindInfoJSONPrefix))
+	out = append(out, kindInfoJSONPrefix...)
 	out = append(out, info[1:]...) // drop the opening '{'
 
 	return out, nil
@@ -47,7 +49,6 @@ func (r infoRecord) MarshalJSON() ([]byte, error) {
 
 type docRecord struct {
 	Kind string `json:"kind"`
-	LID  uint32 `json:"lid"`
 	Doc  string `json:"doc"`
 }
 
@@ -149,7 +150,6 @@ func decodeFraction(
 }
 
 func writeDocs(src *frac.SealedSource, enc *json.Encoder) error {
-	lid := uint32(0)
 	for loc, err := range src.DocBlocks() {
 		if err != nil {
 			return err
@@ -167,7 +167,6 @@ func writeDocs(src *frac.SealedSource, enc *json.Encoder) error {
 			if l > 0 {
 				if err := enc.Encode(docRecord{
 					Kind: kindDoc,
-					LID:  lid,
 					Doc:  string(payload[4 : 4+l]),
 				}); err != nil {
 					return err
@@ -175,7 +174,6 @@ func writeDocs(src *frac.SealedSource, enc *json.Encoder) error {
 			}
 
 			payload = payload[4+l:]
-			lid++
 		}
 	}
 	return nil

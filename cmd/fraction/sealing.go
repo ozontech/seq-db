@@ -22,6 +22,11 @@ import (
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
+const (
+	docsCompressLevel = 3
+	metaCompressLevel = -1
+)
+
 // sealFraction reads JSON documents (one per line) from r, indexes them
 // through the same active-fraction pipeline the store uses, and seals the
 // result into the fraction files at <frac>. Used to produce fractions for
@@ -54,12 +59,14 @@ func sealFraction(fracName, mappingPath string, r io.Reader) error {
 		storage.NewReadLimiter(1, nil),
 		cache.NewConcurrentCache[[]byte](nil, nil),
 		cache.NewConcurrentCache[[]byte](nil, nil),
-		&frac.Config{},
+		&frac.Config{
+			SkipSortDocs: true,
+		},
 		stubSkipMaskProvider{},
 	)
 
 	proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
-	compressor := indexer.GetDocsMetasCompressor(3, 3)
+	compressor := indexer.GetDocsMetasCompressor(docsCompressLevel, metaCompressLevel)
 
 	var wg sync.WaitGroup
 	_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, docs.readNext)

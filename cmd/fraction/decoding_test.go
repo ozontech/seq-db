@@ -153,9 +153,6 @@ func TestSealAndDecode(t *testing.T) {
 			check: func(t *testing.T, content *collectedContent) {
 				require.Len(t, content.Docs, 3)
 				assert.ElementsMatch(t, docLines(t, testDocs), docTexts(content.Docs))
-				for i, doc := range content.Docs {
-					assert.Equal(t, uint32(i+1), doc.LID)
-				}
 			},
 		},
 		{
