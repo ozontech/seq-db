@@ -24,7 +24,12 @@ type cmdSeal struct {
 }
 
 func (c *cmdSeal) run() error {
-	return sealFraction(c.frac, c.mapping, os.Stdin)
+	return sealFraction(
+		c.frac,
+		c.mapping,
+		os.Stdin,
+		defaultDocsPerDocBlock,
+	)
 }
 
 // Launch as:

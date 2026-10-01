@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"math"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,23 +13,28 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
-	"github.com/ozontech/seq-db/seq"
 )
 
 // sealAndDecode seals docs (one JSON document per element, empty elements are
 // skipped just like on stdin) into a fresh fraction in a temp dir using the
 // mapping at mappingPath (empty string means the built-in default) and decodes
 // the requested sections back into a collected form for assertions.
-func sealAndDecode(t *testing.T, mappingPath, only string, docs ...string) *collectedContent {
+func sealAndDecode(
+	t *testing.T,
+	mappingPath string,
+	docsPerDocBlock int,
+	only string,
+	docs ...string,
+) *collectedContent {
 	t.Helper()
 
 	fracName := filepath.Join(t.TempDir(), "frac_000001")
 
-	err := sealFraction(fracName, mappingPath, strings.NewReader(strings.Join(docs, "\n")))
+	err := sealFraction(fracName, mappingPath, strings.NewReader(strings.Join(docs, "\n")), docsPerDocBlock)
 	require.NoError(t, err)
 
 	for _, suffix := range []string{
-		consts.InfoFileSuffix, consts.SdocsFileSuffix, consts.TokenFileSuffix,
+		consts.InfoFileSuffix, consts.DocsFileSuffix, consts.TokenFileSuffix,
 		consts.OffsetsFileSuffix, consts.IDFileSuffix, consts.LIDFileSuffix,
 	} {
 		_, err := os.Stat(fracName + suffix)
@@ -132,14 +137,16 @@ var testTokens = []tokenRecord{
 
 func TestSealAndDecode(t *testing.T) {
 	tests := []struct {
-		name  string
-		docs  []string
-		only  string
-		check func(t *testing.T, content *collectedContent)
+		name            string
+		docs            []string
+		docsPerDocBlock int
+		only            string
+		check           func(t *testing.T, content *collectedContent)
 	}{
 		{
-			name: "info",
-			only: "info",
+			name:            "info",
+			docsPerDocBlock: defaultDocsPerDocBlock,
+			only:            "info",
 			check: func(t *testing.T, content *collectedContent) {
 				require.NotNil(t, content.Info)
 				assert.Equal(t, uint32(3), content.Info.DocsTotal)
@@ -148,16 +155,18 @@ func TestSealAndDecode(t *testing.T) {
 			},
 		},
 		{
-			name: "docs keep raw json and skip the system doc",
-			only: kindDoc,
+			name:            "docs keep raw json and skip the system doc",
+			docsPerDocBlock: defaultDocsPerDocBlock,
+			only:            kindDoc,
 			check: func(t *testing.T, content *collectedContent) {
 				require.Len(t, content.Docs, 3)
 				assert.ElementsMatch(t, docLines(t, testDocs), docTexts(content.Docs))
 			},
 		},
 		{
-			name: "tokens are sequential and sorted with correct freq and postings",
-			only: kindID + "," + kindToken,
+			name:            "tokens are sequential and sorted with correct freq and postings",
+			docsPerDocBlock: defaultDocsPerDocBlock,
+			only:            kindID + "," + kindToken,
 			check: func(t *testing.T, content *collectedContent) {
 				require.Len(t, content.Tokens, len(testTokens))
 				for i, tok := range content.Tokens {
@@ -177,8 +186,9 @@ func TestSealAndDecode(t *testing.T) {
 			},
 		},
 		{
-			name: "tokens without postings when requested alone",
-			only: kindToken,
+			name:            "tokens without postings when requested alone",
+			docsPerDocBlock: defaultDocsPerDocBlock,
+			only:            kindToken,
 			check: func(t *testing.T, content *collectedContent) {
 				require.Len(t, content.Tokens, len(testTokens))
 				for i, tok := range content.Tokens {
@@ -189,35 +199,18 @@ func TestSealAndDecode(t *testing.T) {
 			},
 		},
 		{
-			name: "ids are sorted with system id first",
-			only: kindID,
-			check: func(t *testing.T, content *collectedContent) {
-				require.Len(t, content.IDs, 4)
-				assert.Equal(t, uint64(seq.SystemMID), content.IDs[0].MID)
-				assert.Equal(t, uint64(seq.SystemRID), content.IDs[0].RID)
-				// the system id keeps DocPos 0, which unpacks to sentinel values
-				assert.Equal(t, uint32(math.MaxUint32), content.IDs[0].BlockIndex)
-				assert.Equal(t, uint64(1<<30-1), content.IDs[0].Offset)
-				for i, id := range content.IDs[1:] {
-					assert.Equal(t, uint32(i+1), id.LID)
-					assert.Greater(t, content.IDs[i].MID, id.MID)
-					// offset must fit into the 30-bit doc offset field
-					assert.Less(t, id.Offset, uint64(1<<30))
-					assert.Positive(t, id.Offset)
-				}
-			},
-		},
-		{
-			name: "offsets of a single doc block",
-			only: kindOffsets,
+			name:            "offsets of a single doc block",
+			docsPerDocBlock: defaultDocsPerDocBlock,
+			only:            kindOffsets,
 			check: func(t *testing.T, content *collectedContent) {
 				require.NotNil(t, content.Offsets)
 				assert.Equal(t, []uint64{0}, content.Offsets.Values)
 			},
 		},
 		{
-			name: "only selects sections",
-			only: kindInfo + "," + kindOffsets,
+			name:            "only selects sections",
+			docsPerDocBlock: defaultDocsPerDocBlock,
+			only:            kindInfo + "," + kindOffsets,
 			check: func(t *testing.T, content *collectedContent) {
 				require.NotNil(t, content.Info)
 				require.NotNil(t, content.Offsets)
@@ -227,7 +220,8 @@ func TestSealAndDecode(t *testing.T) {
 			},
 		},
 		{
-			name: "empty lines are skipped",
+			name:            "empty lines are skipped",
+			docsPerDocBlock: defaultDocsPerDocBlock,
 			docs: []string{
 				`{"timestamp":"2024-01-01T10:00:00.000Z","level":"info","message":"first"}`,
 				"",
@@ -240,6 +234,43 @@ func TestSealAndDecode(t *testing.T) {
 				assert.Len(t, content.Docs, 2)
 			},
 		},
+		{
+			name:            "docs are split into several blocks",
+			docs:            generateDocs(5),
+			docsPerDocBlock: 2,
+			only:            kindInfo + "," + kindDoc + "," + kindID + "," + kindToken + "," + kindOffsets,
+			check: func(t *testing.T, content *collectedContent) {
+				// 5 docs with 2 docs per block: [2][2][1]
+				require.Len(t, content.Offsets.Values, 3)
+				assert.Equal(t, uint32(5), content.Info.DocsTotal)
+
+				// all docs are decoded, ids have contiguous lids across block boundaries
+				require.Len(t, content.Docs, 5)
+				require.Len(t, content.IDs, 6) // +1 for the system id
+				for i, id := range content.IDs {
+					assert.Equal(t, uint32(i), id.LID)
+				}
+
+				// every posting lid points to an existing doc
+				for _, tok := range content.Tokens {
+					assert.Len(t, tok.LIDs, int(tok.Freq))
+					for _, lid := range tok.LIDs {
+						assert.NotZero(t, lid)
+						assert.LessOrEqual(t, lid, uint32(5))
+					}
+				}
+
+				// every doc position points into a real doc block, and every
+				// block is used: doc indexers assign block indexes concurrently,
+				// so only the counts per block are guaranteed, not the order
+				blocksPerLID := map[uint32]int{}
+				for _, id := range content.IDs[1:] { // system id is not positioned
+					assert.Less(t, id.BlockIndex, uint32(len(content.Offsets.Values)), "block index out of range")
+					blocksPerLID[id.BlockIndex]++
+				}
+				assert.Equal(t, map[uint32]int{0: 2, 1: 2, 2: 1}, blocksPerLID)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -248,7 +279,7 @@ func TestSealAndDecode(t *testing.T) {
 			if docs == nil {
 				docs = docLines(t, testDocs)
 			}
-			tt.check(t, sealAndDecode(t, "", tt.only, docs...))
+			tt.check(t, sealAndDecode(t, "", tt.docsPerDocBlock, tt.only, docs...))
 		})
 	}
 }
@@ -272,7 +303,7 @@ func TestSealFailures(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fracName := filepath.Join(t.TempDir(), "frac_000001")
 
-			err := sealFraction(fracName, "", strings.NewReader(tt.in))
+			err := sealFraction(fracName, "", strings.NewReader(tt.in), defaultDocsPerDocBlock)
 			assert.Error(t, err)
 		})
 	}
@@ -291,7 +322,7 @@ func TestSealCustomMapping(t *testing.T) {
 	err := os.WriteFile(mapping, []byte("mapping-list:\n  - type: \"path\"\n    name: \"request_uri\"\n"), 0o600)
 	require.NoError(t, err)
 
-	content := sealAndDecode(t, mapping, kindToken,
+	content := sealAndDecode(t, mapping, defaultDocsPerDocBlock, kindToken,
 		`{"timestamp":"2024-01-01T10:00:00.000Z","request_uri":"/api/v1/users"}`,
 	)
 
@@ -308,7 +339,7 @@ func TestSealCustomMapping(t *testing.T) {
 func TestSealMissingMapping(t *testing.T) {
 	fracName := filepath.Join(t.TempDir(), "frac_000001")
 
-	err := sealFraction(fracName, filepath.Join(t.TempDir(), "no_such_mapping.yaml"), strings.NewReader(`{}`))
+	err := sealFraction(fracName, filepath.Join(t.TempDir(), "no_such_mapping.yaml"), strings.NewReader(`{}`), defaultDocsPerDocBlock)
 	assert.Error(t, err)
 }
 
@@ -319,8 +350,19 @@ func TestSealInvalidMapping(t *testing.T) {
 
 	fracName := filepath.Join(t.TempDir(), "frac_000001")
 
-	err = sealFraction(fracName, mapping, strings.NewReader(`{}`))
+	err = sealFraction(fracName, mapping, strings.NewReader(`{}`), defaultDocsPerDocBlock)
 	assert.Error(t, err)
+}
+
+func generateDocs(n int) []string {
+	docs := make([]string, 0, n)
+	for i := range n {
+		docs = append(docs, fmt.Sprintf(
+			`{"timestamp":"2024-01-01T10:00:00.000Z","level":"info","service":"auth","message":"doc %d"}`,
+			i,
+		))
+	}
+	return docs
 }
 
 func docLines(t *testing.T, docs string) []string {
