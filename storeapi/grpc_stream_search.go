@@ -388,7 +388,7 @@ func (g *GrpcV1) buildProducer(
 		return producer, typing, nil
 	}
 	if docFilter != nil {
-		producer = exec.NewFilter(producer, docDataColIdx, docFilter, req.WithTotal)
+		producer = exec.NewFilter(producer, docDataColIdx, (*query.RecordVals).AsDoc, docFilter, req.WithTotal)
 	}
 	if fieldsFilter != nil {
 		producer = exec.NewDocProjector(producer, docDataColIdx, fieldsFilter)

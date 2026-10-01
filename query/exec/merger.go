@@ -3,8 +3,6 @@ package exec
 import (
 	"cmp"
 
-	insaneJSON "github.com/ozontech/insane-json"
-
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -188,28 +186,27 @@ func combineSummaries(left, right *query.Summary) *query.Summary {
 
 func (m *Merger) extractValue(r *query.Record) any {
 	val := r.Vals[m.colIdx]
-	decoded := val.Decoded()
 
 	switch m.dataType {
 	case query.DataTypeSeqID:
-		return decoded.(seq.ID)
+		return val.AsSeqID()
 	case query.DataTypeDocument:
 		if m.field == "" {
-			return decoded
+			return val.AsDoc()
 		}
-		return decoded.(*insaneJSON.Root).Dig(m.field).AsString()
+		return val.AsDoc().Dig(m.field).AsString()
 	case query.DataTypeString:
-		return decoded.(string)
+		return val.AsString()
 	case query.DataTypeUint32:
-		return decoded.(uint32)
+		return val.AsUint32()
 	case query.DataTypeUint64:
-		return decoded.(uint64)
+		return val.AsUint64()
 	case query.DataTypeInt32:
-		return decoded.(int32)
+		return val.AsInt32()
 	case query.DataTypeInt64:
-		return decoded.(int64)
+		return val.AsInt64()
 	case query.DataTypeFloat64:
-		return decoded.(float64)
+		return val.AsFloat64()
 	default:
 		return ""
 	}
