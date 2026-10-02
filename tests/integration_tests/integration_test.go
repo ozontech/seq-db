@@ -2121,6 +2121,30 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 		}
 	})
 
+	t.Run("query with filter", func(t *testing.T) {
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		sendStreamSearchQuery(t, stream, `service:a | filter service:a | limit 10`)
+		docs, summary := collectStreamData(t, stream)
+		r.Len(docs, 10)
+
+		gotDocs := make([]string, 0, len(docs))
+		for _, d := range docs {
+			gotDocs = append(gotDocs, string(d))
+		}
+		wantDocs := make([]string, 0, len(origDocs))
+		for _, d := range origDocs {
+			wantDocs = append(wantDocs, d)
+		}
+		r.Equal(wantDocs[:10], gotDocs, "streamed documents must match the ingested ones")
+
+		r.NotNil(summary)
+		r.Equal(uint64(totalDocs), summary.GetTotal(), "summary total must match the document count")
+		r.Equal(seqproxyapi.ErrorCode_ERROR_CODE_NO, summary.GetError().GetCode())
+	})
+
 	t.Run("aggregation stream", func(t *testing.T) {
 		stream, conn, _, cancel := newStreamSearchClient(t, env)
 		defer cancel()

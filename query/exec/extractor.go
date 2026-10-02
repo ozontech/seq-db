@@ -13,14 +13,15 @@ type DocFieldsExtractor struct {
 	// extractFields lists scalar JSON fields to extract out of the document column as string values.
 	extractFields []string
 
-	// roots holds insaneJSON.Root for every record whose document val has been decoded
+	// roots holds every record whose val has been decoded (spawned an insaneJSON root).
+	// They are released back to the library pool in Finalize.
 	roots []*query.Record
 }
 
 func NewDocFieldsExtractor(
 	input query.RecordProducer,
 	docCol query.Column[*insaneJSON.Root],
-	extractFields []string,
+	extractFields ...string,
 ) *DocFieldsExtractor {
 	return &DocFieldsExtractor{
 		input:         input,

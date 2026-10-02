@@ -75,6 +75,11 @@ func (si *Ingestor) StreamSearch(
 		}
 	}
 
+	if len(streams) == 0 {
+		// nothing to read from, return an empty stream
+		return exec.NewNMergedProducers(nil, query.SeqIDColumn(0), sr.Order), newControlBroadcaster(streams), partialRespErr
+	}
+
 	broadcaster := newControlBroadcaster(streams)
 	producers := make([]query.RecordProducer, 0, len(streams))
 	for _, s := range streams {
@@ -88,12 +93,28 @@ func (si *Ingestor) StreamSearch(
 		offset = 0
 	}
 
+	// TODO: store can change docs' schema in case of filter pipe, need to handle it on proxy.
+	var expectedSchema *query.Schema
+	if sr.Agg != nil {
+		expectedSchema = query.AggsSchema
+	}
+	// Shard schemas come off the wire, so validate them before any consumer reads records.
+	if err := validateShardSchemas(streams, expectedSchema); err != nil {
+		closeStreams(streams)
+		return nil, nil, err
+	}
+
 	var mergedStream query.RecordProducer
 	if sr.Agg != nil {
 		mergedStream = exec.NewDistributedAggregator(producers, sr.Agg.Func, sr.Agg.Quantiles)
 	} else {
-		const seqIdColIdx = 0
-		mergedDocsStream := exec.NewNMergedProducers(producers, query.SeqIDColumn(seqIdColIdx), sr.Order)
+		// streams[0] is safe - streams len is already checked
+		idCol, err := streams[0].OutSchema().Column[seq.ID](query.DocsIDCol)
+		if err != nil {
+			closeStreams(streams)
+			return nil, nil, err
+		}
+		mergedDocsStream := exec.NewNMergedProducers(producers, idCol, sr.Order)
 		mergedStream = exec.NewLimiter(mergedDocsStream, uint32(sr.Size), uint32(offset))
 	}
 
@@ -267,6 +288,40 @@ func closeStreams(streams []*StreamSearchIterator) {
 	}
 }
 
+func schemaFromTyping(typing []*storeapi.Typing) (*query.Schema, []query.DataType, error) {
+	cols := make([]query.ColumnDesc, 0, len(typing))
+	types := make([]query.DataType, 0, len(typing))
+	for _, t := range typing {
+		dt, err := t.GetType().ToQueryDataType()
+		if err != nil {
+			return nil, nil, err
+		}
+		cols = append(cols, query.ColumnDesc{Name: t.GetTitle(), Type: dt})
+		types = append(types, dt)
+	}
+	schema, err := query.NewSchema(cols...)
+	if err != nil {
+		return nil, nil, err
+	}
+	return schema, types, nil
+}
+
+func validateShardSchemas(streams []*StreamSearchIterator, expected *query.Schema) error {
+	if len(streams) == 0 {
+		return nil
+	}
+	base := streams[0].OutSchema()
+	for _, s := range streams[1:] {
+		if !s.OutSchema().Equal(base) {
+			return fmt.Errorf("shard schemas mismatch: %v vs %v", base.Cols(), s.OutSchema().Cols())
+		}
+	}
+	if expected != nil && !base.Equal(expected) {
+		return fmt.Errorf("shard schema mismatch: got %v, want %v", base.Cols(), expected.Cols())
+	}
+	return nil
+}
+
 // NewStreamSearchIterator reads one message ahead after the header so that a
 // summary-with-error sent immediately after the header (before any data) is
 // detected on the open-stream phase and can trigger fail-fast in the
@@ -276,7 +331,11 @@ func NewStreamSearchIterator(
 	header *storeapi.ResponseHeader,
 	stream storeapi.StoreApi_StreamSearchClient,
 ) (*StreamSearchIterator, error) {
-	it := &StreamSearchIterator{tr: tr, typing: header.Typing, stream: stream}
+	schema, types, err := schemaFromTyping(header.Typing)
+	if err != nil {
+		return nil, fmt.Errorf("bad response header: %w", err)
+	}
+	it := &StreamSearchIterator{tr: tr, schema: schema, types: types, stream: stream}
 
 	msg, err := stream.Recv()
 	if errors.Is(err, io.EOF) {
@@ -295,7 +354,8 @@ func NewStreamSearchIterator(
 type StreamSearchIterator struct {
 	tr *querytracer.Tracer
 
-	typing []*storeapi.Typing
+	schema *query.Schema
+	types  []query.DataType
 	stream storeapi.StoreApi_StreamSearchClient
 
 	curBatch []*storeapi.Record
@@ -336,9 +396,13 @@ func (it *StreamSearchIterator) Next() *query.Record {
 
 	recordVals := make([]*query.RecordVals, 0, len(record.RawData))
 	for i, rawData := range record.RawData {
-		recordVals = append(recordVals, query.NewRecordVals(query.DataType(it.typing[i].Type), rawData))
+		recordVals = append(recordVals, query.NewRecordVals(it.types[i], rawData))
 	}
 	return query.NewRecord(recordVals)
+}
+
+func (it *StreamSearchIterator) OutSchema() *query.Schema {
+	return it.schema
 }
 
 // push handles a single message received from the store stream.

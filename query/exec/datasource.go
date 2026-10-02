@@ -288,7 +288,7 @@ func makeAggRecord(bin *storeapi.SearchResponse_Bin, valuesPool []string) *query
 	}
 	return &query.Record{
 		Vals: []*query.RecordVals{
-			query.NewRecordVals(query.DataTypeBytes, []byte(bin.Label)),
+			query.NewRecordVals(query.DataTypeString, []byte(bin.Label)),
 			query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(bin.Hist.Min)),
 			query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(bin.Hist.Max)),
 			query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(bin.Hist.Sum)),

@@ -19,7 +19,7 @@ func TestDocFieldsExtractorExtractsScalars(t *testing.T) {
 	extractor := NewDocFieldsExtractor(
 		input,
 		query.DocColumn(1),
-		[]string{"service", "level", "active", "absent"},
+		"service", "level", "active", "absent",
 	)
 
 	r1 := extractor.Next()
@@ -47,7 +47,7 @@ func TestDocFieldsExtractorMissingFieldYieldsEmpty(t *testing.T) {
 		`{"service":"svc-1"}`,
 	})}
 
-	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), []string{"nope"})
+	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), "nope")
 
 	r := extractor.Next()
 	assert.NotNil(t, r)
@@ -62,7 +62,7 @@ func TestDocFieldsExtractorObjectAndArrayFields(t *testing.T) {
 		`{"service":"svc-1","obj":{"a":1},"arr":[1,2]}`,
 	})}
 
-	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), []string{"obj", "arr"})
+	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), "obj", "arr")
 
 	r := extractor.Next()
 	assert.NotNil(t, r)
@@ -74,7 +74,7 @@ func TestDocFieldsExtractorNoFields(t *testing.T) {
 	docs := []string{`{"service":"svc-1"}`, `{"service":"svc-2"}`}
 	input := &testProducer{data: makeExtractorInputRecords(docs)}
 
-	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), nil)
+	extractor := NewDocFieldsExtractor(input, query.DocColumn(1))
 
 	count := 0
 	for r := extractor.Next(); r != nil; r = extractor.Next() {
@@ -91,7 +91,7 @@ func TestDocFieldsExtractorFinalize(t *testing.T) {
 		`{"service":"svc-2"}`,
 	}), total: 2}
 
-	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), []string{"service"})
+	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), "service")
 	for r := extractor.Next(); r != nil; r = extractor.Next() {
 	}
 
@@ -107,7 +107,7 @@ func TestDocFieldsExtractorPipeline(t *testing.T) {
 	inputData := makeTestInputRecords(10)
 	input := &testProducer{data: inputData}
 
-	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), []string{field})
+	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), field)
 	podCol := query.StringColumn(2)
 
 	for r := extractor.Next(); r != nil; r = extractor.Next() {

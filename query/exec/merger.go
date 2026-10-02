@@ -1,7 +1,7 @@
 package exec
 
 import (
-	"cmp"
+	"fmt"
 
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
@@ -14,13 +14,14 @@ type Merger[T any] struct {
 
 	col   query.Column[T]
 	order seq.DocsOrder
-	cmp   func(any, any) int
+	cmp   func(T, T) int
 
 	// dedup drops records whose sort key repeats the previously emitted one.
 	// It is enabled only for the seq.ID merge: shards may match the same
 	// document, and the merged document stream must contain each seq.ID once.
 	dedup   bool
-	lastVal any
+	hasLast bool
+	lastVal T
 	// dups counts records dropped by dedup so Finalize can subtract it from the merged total.
 	dups uint64
 
@@ -33,12 +34,16 @@ func NewMerger[T any](
 	col query.Column[T],
 	order seq.DocsOrder,
 ) *Merger[T] {
+	if col.Cmp() == nil {
+		panic(fmt.Sprintf("BUG: %s column cannot be merged", col.DataType()))
+	}
+
 	return &Merger[T]{
 		left:     left,
 		right:    right,
 		col:      col,
 		order:    order,
-		cmp:      createCmpFunc(col.DataType()),
+		cmp:      col.Cmp(),
 		dedup:    col.DataType() == query.DataTypeSeqID,
 		curLeft:  nil,
 		curRight: nil,
@@ -60,12 +65,13 @@ func (m *Merger[T]) Next() *query.Record {
 			return r
 		}
 		val := m.col.Val(r)
-		if m.lastVal != nil && m.cmp(val, m.lastVal) == 0 {
+		if m.hasLast && m.cmp(val, m.lastVal) == 0 {
 			// Skip duplicate.
 			m.dups++
 			continue
 		}
 		m.lastVal = val
+		m.hasLast = true
 		return r
 	}
 }
@@ -142,37 +148,6 @@ func combineSummaries(left, right *query.Summary) *query.Summary {
 		summary.Err = right.Err
 	}
 	return summary
-}
-
-func createCmpFunc(dataType query.DataType) func(any, any) int {
-	switch dataType {
-	case query.DataTypeSeqID:
-		return func(a, b any) int {
-			v, w := a.(seq.ID), b.(seq.ID)
-			switch {
-			case seq.Less(v, w):
-				return -1
-			case seq.Less(w, v):
-				return 1
-			default:
-				return 0
-			}
-		}
-	case query.DataTypeUint32:
-		return func(a, b any) int { return cmp.Compare(a.(uint32), b.(uint32)) }
-	case query.DataTypeUint64:
-		return func(a, b any) int { return cmp.Compare(a.(uint64), b.(uint64)) }
-	case query.DataTypeInt32:
-		return func(a, b any) int { return cmp.Compare(a.(int32), b.(int32)) }
-	case query.DataTypeInt64:
-		return func(a, b any) int { return cmp.Compare(a.(int64), b.(int64)) }
-	case query.DataTypeFloat64:
-		return func(a, b any) int { return cmp.Compare(a.(float64), b.(float64)) }
-	case query.DataTypeString:
-		return func(a, b any) int { return cmp.Compare(a.(string), b.(string)) }
-	default:
-		return func(a, b any) int { return 0 }
-	}
 }
 
 func NewNMergedProducers[T any](
