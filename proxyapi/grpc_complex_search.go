@@ -15,7 +15,6 @@ import (
 	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
-	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/querytracer"
@@ -105,21 +104,17 @@ func (g *grpcV1) useStreamSearch(
 	}
 
 	var partialErr error
-	storesStream, broadcaster, err := g.searchIngestor.StreamSearch(ctx, streamSearchReq, tr)
+	storesStream, cancelStreams, err := g.searchIngestor.StreamSearch(ctx, streamSearchReq, tr)
 	if err != nil {
 		if errors.Is(err, consts.ErrPartialResponse) {
 			if shouldFailPartialResponse(ctx) {
-				if broadcaster != nil {
-					broadcaster.SendControl(storeapi.ControlAction_CANCEL)
-				}
+				cancelStreams()
 				return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
 			}
 			partialErr = err
 			metric.SearchPartial.Inc()
 		} else {
-			if broadcaster != nil {
-				broadcaster.SendControl(storeapi.ControlAction_CANCEL)
-			}
+			cancelStreams()
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	}
@@ -133,8 +128,6 @@ func (g *grpcV1) useStreamSearch(
 	}
 
 	// finalize to get summary
-	broadcaster.SendControl(storeapi.ControlAction_FINALIZE)
-
 	summary := storesStream.Finalize()
 	if summary == nil {
 		summary = &query.Summary{}
