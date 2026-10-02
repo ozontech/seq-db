@@ -1,6 +1,8 @@
 package query
 
 import (
+	"cmp"
+
 	insaneJSON "github.com/ozontech/insane-json"
 
 	"github.com/ozontech/seq-db/seq"
@@ -10,6 +12,7 @@ type Column[T any] struct {
 	idx      int
 	dataType DataType
 	get      func(*RecordVals) T
+	cmp      func(T, T) int
 }
 
 func (c Column[T]) Idx() int {
@@ -18,6 +21,10 @@ func (c Column[T]) Idx() int {
 
 func (c Column[T]) DataType() DataType {
 	return c.dataType
+}
+
+func (c Column[T]) Cmp() func(T, T) int {
+	return c.cmp
 }
 
 // Val returns value of r's column at c.idx index
@@ -35,6 +42,18 @@ func SeqIDColumn(idx int) Column[seq.ID] {
 		idx:      idx,
 		dataType: DataTypeSeqID,
 		get:      (*RecordVals).AsSeqID,
+		cmp:      cmpSeqID,
+	}
+}
+
+func cmpSeqID(a, b seq.ID) int {
+	switch {
+	case seq.Less(a, b):
+		return -1
+	case seq.Less(b, a):
+		return 1
+	default:
+		return 0
 	}
 }
 
@@ -51,6 +70,7 @@ func StringColumn(idx int) Column[string] {
 		idx:      idx,
 		dataType: DataTypeString,
 		get:      (*RecordVals).AsString,
+		cmp:      cmp.Compare[string],
 	}
 }
 
@@ -67,6 +87,7 @@ func Float64Column(idx int) Column[float64] {
 		idx:      idx,
 		dataType: DataTypeFloat64,
 		get:      (*RecordVals).AsFloat64,
+		cmp:      cmp.Compare[float64],
 	}
 }
 
@@ -75,6 +96,7 @@ func Uint64Column(idx int) Column[uint64] {
 		idx:      idx,
 		dataType: DataTypeUint64,
 		get:      (*RecordVals).AsUint64,
+		cmp:      cmp.Compare[uint64],
 	}
 }
 
@@ -83,6 +105,7 @@ func Int64Column(idx int) Column[int64] {
 		idx:      idx,
 		dataType: DataTypeInt64,
 		get:      (*RecordVals).AsInt64,
+		cmp:      cmp.Compare[int64],
 	}
 }
 
@@ -91,6 +114,7 @@ func Uint32Column(idx int) Column[uint32] {
 		idx:      idx,
 		dataType: DataTypeUint32,
 		get:      (*RecordVals).AsUint32,
+		cmp:      cmp.Compare[uint32],
 	}
 }
 
@@ -99,6 +123,7 @@ func Int32Column(idx int) Column[int32] {
 		idx:      idx,
 		dataType: DataTypeInt32,
 		get:      (*RecordVals).AsInt32,
+		cmp:      cmp.Compare[int32],
 	}
 }
 
