@@ -2073,7 +2073,7 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 				if !finalizeSent {
 					require.NoError(t, stream.Send(&seqproxyapi.StreamSearchRequest{
 						RequestType: &seqproxyapi.StreamSearchRequest_Control{
-							Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_FINALIZE},
+							Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_CONTROL_ACTION_FINALIZE},
 						},
 					}))
 					finalizeSent = true
@@ -2305,7 +2305,7 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 
 		require.NoError(t, stream.Send(&seqproxyapi.StreamSearchRequest{
 			RequestType: &seqproxyapi.StreamSearchRequest_Control{
-				Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_FINALIZE},
+				Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_CONTROL_ACTION_FINALIZE},
 			},
 		}))
 		_, err := stream.Recv()

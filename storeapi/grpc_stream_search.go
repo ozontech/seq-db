@@ -242,7 +242,7 @@ func checkControl(
 		if !ok {
 			return outcomeNone, false
 		}
-		if c.GetAction() == storeapi.ControlAction_FINALIZE {
+		if c.GetAction() == storeapi.ControlAction_CONTROL_ACTION_FINALIZE {
 			return outcomeFinalize, true
 		}
 		return outcomeNone, false
@@ -404,23 +404,23 @@ func (g *GrpcV1) buildProducer(
 // hardcoded schema
 func docsTyping() []*storeapi.Typing {
 	return []*storeapi.Typing{
-		{Title: "id", Type: storeapi.DataType_SEQ_ID},
-		{Title: "data", Type: storeapi.DataType_RAW_DOCUMENT},
+		{Title: "id", Type: storeapi.DataType_DATA_TYPE_SEQ_ID},
+		{Title: "data", Type: storeapi.DataType_DATA_TYPE_RAW_DOCUMENT},
 	}
 }
 
 // hardcoded schema
 func aggsTyping() []*storeapi.Typing {
 	return []*storeapi.Typing{
-		{Title: "token", Type: storeapi.DataType_STRING},
-		{Title: "min", Type: storeapi.DataType_FLOAT64},
-		{Title: "max", Type: storeapi.DataType_FLOAT64},
-		{Title: "sum", Type: storeapi.DataType_FLOAT64},
-		{Title: "total", Type: storeapi.DataType_UINT64},
-		{Title: "not_exists", Type: storeapi.DataType_UINT64},
-		{Title: "ts", Type: storeapi.DataType_UINT64},
-		{Title: "samples", Type: storeapi.DataType_FLOAT64_ARRAY},
-		{Title: "values", Type: storeapi.DataType_STRING_ARRAY},
+		{Title: "token", Type: storeapi.DataType_DATA_TYPE_STRING},
+		{Title: "min", Type: storeapi.DataType_DATA_TYPE_FLOAT64},
+		{Title: "max", Type: storeapi.DataType_DATA_TYPE_FLOAT64},
+		{Title: "sum", Type: storeapi.DataType_DATA_TYPE_FLOAT64},
+		{Title: "total", Type: storeapi.DataType_DATA_TYPE_UINT64},
+		{Title: "not_exists", Type: storeapi.DataType_DATA_TYPE_UINT64},
+		{Title: "ts", Type: storeapi.DataType_DATA_TYPE_UINT64},
+		{Title: "samples", Type: storeapi.DataType_DATA_TYPE_FLOAT64_ARRAY},
+		{Title: "values", Type: storeapi.DataType_DATA_TYPE_STRING_ARRAY},
 	}
 }
 

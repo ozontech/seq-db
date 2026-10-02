@@ -394,7 +394,7 @@ func (it *StreamSearchIterator) Close() {
 }
 
 func (it *StreamSearchIterator) Finalize() *query.Summary {
-	_ = it.SendControl(storeapi.ControlAction_FINALIZE)
+	_ = it.SendControl(storeapi.ControlAction_CONTROL_ACTION_FINALIZE)
 	_ = it.stream.CloseSend()
 	// If the stream was finalized before the data was exhausted, the store's summary may still be in flight.
 	// Drain the remaining messages so the store-reported summary is not lost.

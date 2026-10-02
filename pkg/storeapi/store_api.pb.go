@@ -254,18 +254,18 @@ type ControlAction int32
 
 const (
 	ControlAction_CONTROL_ACTION_UNSPECIFIED ControlAction = 0
-	ControlAction_FINALIZE                   ControlAction = 1 // Indicates correct stream termination, will get Summary after
+	ControlAction_CONTROL_ACTION_FINALIZE    ControlAction = 1 // Indicates correct stream termination, will get Summary after
 )
 
 // Enum value maps for ControlAction.
 var (
 	ControlAction_name = map[int32]string{
 		0: "CONTROL_ACTION_UNSPECIFIED",
-		1: "FINALIZE",
+		1: "CONTROL_ACTION_FINALIZE",
 	}
 	ControlAction_value = map[string]int32{
 		"CONTROL_ACTION_UNSPECIFIED": 0,
-		"FINALIZE":                   1,
+		"CONTROL_ACTION_FINALIZE":    1,
 	}
 )
 
@@ -299,46 +299,46 @@ func (ControlAction) EnumDescriptor() ([]byte, []int) {
 type DataType int32
 
 const (
-	DataType_BYTES         DataType = 0
-	DataType_SEQ_ID        DataType = 1
-	DataType_RAW_DOCUMENT  DataType = 2
-	DataType_STRING        DataType = 3
-	DataType_UINT32        DataType = 4
-	DataType_UINT64        DataType = 5
-	DataType_INT32         DataType = 6
-	DataType_INT64         DataType = 7
-	DataType_FLOAT64       DataType = 8
-	DataType_FLOAT64_ARRAY DataType = 9
-	DataType_STRING_ARRAY  DataType = 10
+	DataType_DATA_TYPE_BYTES         DataType = 0
+	DataType_DATA_TYPE_SEQ_ID        DataType = 1
+	DataType_DATA_TYPE_RAW_DOCUMENT  DataType = 2
+	DataType_DATA_TYPE_STRING        DataType = 3
+	DataType_DATA_TYPE_UINT32        DataType = 4
+	DataType_DATA_TYPE_UINT64        DataType = 5
+	DataType_DATA_TYPE_INT32         DataType = 6
+	DataType_DATA_TYPE_INT64         DataType = 7
+	DataType_DATA_TYPE_FLOAT64       DataType = 8
+	DataType_DATA_TYPE_FLOAT64_ARRAY DataType = 9
+	DataType_DATA_TYPE_STRING_ARRAY  DataType = 10
 )
 
 // Enum value maps for DataType.
 var (
 	DataType_name = map[int32]string{
-		0:  "BYTES",
-		1:  "SEQ_ID",
-		2:  "RAW_DOCUMENT",
-		3:  "STRING",
-		4:  "UINT32",
-		5:  "UINT64",
-		6:  "INT32",
-		7:  "INT64",
-		8:  "FLOAT64",
-		9:  "FLOAT64_ARRAY",
-		10: "STRING_ARRAY",
+		0:  "DATA_TYPE_BYTES",
+		1:  "DATA_TYPE_SEQ_ID",
+		2:  "DATA_TYPE_RAW_DOCUMENT",
+		3:  "DATA_TYPE_STRING",
+		4:  "DATA_TYPE_UINT32",
+		5:  "DATA_TYPE_UINT64",
+		6:  "DATA_TYPE_INT32",
+		7:  "DATA_TYPE_INT64",
+		8:  "DATA_TYPE_FLOAT64",
+		9:  "DATA_TYPE_FLOAT64_ARRAY",
+		10: "DATA_TYPE_STRING_ARRAY",
 	}
 	DataType_value = map[string]int32{
-		"BYTES":         0,
-		"SEQ_ID":        1,
-		"RAW_DOCUMENT":  2,
-		"STRING":        3,
-		"UINT32":        4,
-		"UINT64":        5,
-		"INT32":         6,
-		"INT64":         7,
-		"FLOAT64":       8,
-		"FLOAT64_ARRAY": 9,
-		"STRING_ARRAY":  10,
+		"DATA_TYPE_BYTES":         0,
+		"DATA_TYPE_SEQ_ID":        1,
+		"DATA_TYPE_RAW_DOCUMENT":  2,
+		"DATA_TYPE_STRING":        3,
+		"DATA_TYPE_UINT32":        4,
+		"DATA_TYPE_UINT64":        5,
+		"DATA_TYPE_INT32":         6,
+		"DATA_TYPE_INT64":         7,
+		"DATA_TYPE_FLOAT64":       8,
+		"DATA_TYPE_FLOAT64_ARRAY": 9,
+		"DATA_TYPE_STRING_ARRAY":  10,
 	}
 )
 
@@ -2334,7 +2334,7 @@ func (x *Typing) GetType() DataType {
 	if x != nil {
 		return x.Type
 	}
-	return DataType_BYTES
+	return DataType_DATA_TYPE_BYTES
 }
 
 type ResponseData struct {
@@ -3241,26 +3241,22 @@ const file_storeapi_store_api_proto_rawDesc = "" +
 	"\x1bAsyncSearchStatusInProgress\x10\x00\x12\x19\n" +
 	"\x15AsyncSearchStatusDone\x10\x01\x12\x1d\n" +
 	"\x19AsyncSearchStatusCanceled\x10\x02\x12\x1a\n" +
-	"\x16AsyncSearchStatusError\x10\x03*=\n" +
+	"\x16AsyncSearchStatusError\x10\x03*L\n" +
 	"\rControlAction\x12\x1e\n" +
-	"\x1aCONTROL_ACTION_UNSPECIFIED\x10\x00\x12\f\n" +
-	"\bFINALIZE\x10\x01*\x9f\x01\n" +
-	"\bDataType\x12\t\n" +
-	"\x05BYTES\x10\x00\x12\n" +
-	"\n" +
-	"\x06SEQ_ID\x10\x01\x12\x10\n" +
-	"\fRAW_DOCUMENT\x10\x02\x12\n" +
-	"\n" +
-	"\x06STRING\x10\x03\x12\n" +
-	"\n" +
-	"\x06UINT32\x10\x04\x12\n" +
-	"\n" +
-	"\x06UINT64\x10\x05\x12\t\n" +
-	"\x05INT32\x10\x06\x12\t\n" +
-	"\x05INT64\x10\a\x12\v\n" +
-	"\aFLOAT64\x10\b\x12\x11\n" +
-	"\rFLOAT64_ARRAY\x10\t\x12\x10\n" +
-	"\fSTRING_ARRAY\x10\n" +
+	"\x1aCONTROL_ACTION_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17CONTROL_ACTION_FINALIZE\x10\x01*\x8d\x02\n" +
+	"\bDataType\x12\x13\n" +
+	"\x0fDATA_TYPE_BYTES\x10\x00\x12\x14\n" +
+	"\x10DATA_TYPE_SEQ_ID\x10\x01\x12\x1a\n" +
+	"\x16DATA_TYPE_RAW_DOCUMENT\x10\x02\x12\x14\n" +
+	"\x10DATA_TYPE_STRING\x10\x03\x12\x14\n" +
+	"\x10DATA_TYPE_UINT32\x10\x04\x12\x14\n" +
+	"\x10DATA_TYPE_UINT64\x10\x05\x12\x13\n" +
+	"\x0fDATA_TYPE_INT32\x10\x06\x12\x13\n" +
+	"\x0fDATA_TYPE_INT64\x10\a\x12\x15\n" +
+	"\x11DATA_TYPE_FLOAT64\x10\b\x12\x1b\n" +
+	"\x17DATA_TYPE_FLOAT64_ARRAY\x10\t\x12\x1a\n" +
+	"\x16DATA_TYPE_STRING_ARRAY\x10\n" +
 	"2\xe7\x05\n" +
 	"\bStoreApi\x122\n" +
 	"\x04Bulk\x12\x10.api.BulkRequest\x1a\x16.google.protobuf.Empty\"\x00\x123\n" +

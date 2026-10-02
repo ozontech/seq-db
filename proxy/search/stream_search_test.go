@@ -63,7 +63,7 @@ func TestStreamSearchIteratorSummaryAfterExhausted(t *testing.T) {
 	assert.Equal(t, uint64(42), summary.Total)
 	assert.False(t, stream.isCanceled())
 	require.Len(t, stream.sent, 1)
-	assert.Equal(t, storeapi.ControlAction_FINALIZE, stream.sent[0].GetControl().GetAction())
+	assert.Equal(t, storeapi.ControlAction_CONTROL_ACTION_FINALIZE, stream.sent[0].GetControl().GetAction())
 }
 
 func TestStreamSearchIteratorFinalizeMidStream(t *testing.T) {
@@ -180,8 +180,8 @@ func TestNewStreamSearchIteratorEOFOnPrefetch(t *testing.T) {
 
 func testTyping() []*storeapi.Typing {
 	return []*storeapi.Typing{
-		{Title: "id", Type: storeapi.DataType_SEQ_ID},
-		{Title: "data", Type: storeapi.DataType_RAW_DOCUMENT},
+		{Title: "id", Type: storeapi.DataType_DATA_TYPE_SEQ_ID},
+		{Title: "data", Type: storeapi.DataType_DATA_TYPE_RAW_DOCUMENT},
 	}
 }
 

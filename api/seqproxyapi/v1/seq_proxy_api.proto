@@ -468,7 +468,7 @@ message StreamControl {
 
 enum ControlAction {
   CONTROL_ACTION_UNSPECIFIED = 0;
-  FINALIZE = 1;   // Indicates correct stream termination, will get Summary after
+  CONTROL_ACTION_FINALIZE = 1;   // Indicates correct stream termination, will get Summary after
 }
 
 message StreamSearchResponse {
@@ -489,17 +489,17 @@ message Typing {
 }
 
 enum DataType {
-  BYTES = 0;
-  SEQ_ID = 1;
-  RAW_DOCUMENT = 2;
-  STRING = 3;
-  UINT32 = 4;
-  UINT64 = 5;
-  INT32 = 6;
-  INT64 = 7;
-  FLOAT64 = 8;
-  FLOAT64_ARRAY = 9;
-  STRING_ARRAY = 10;
+  DATA_TYPE_BYTES = 0;
+  DATA_TYPE_SEQ_ID = 1;
+  DATA_TYPE_RAW_DOCUMENT = 2;
+  DATA_TYPE_STRING = 3;
+  DATA_TYPE_UINT32 = 4;
+  DATA_TYPE_UINT64 = 5;
+  DATA_TYPE_INT32 = 6;
+  DATA_TYPE_INT64 = 7;
+  DATA_TYPE_FLOAT64 = 8;
+  DATA_TYPE_FLOAT64_ARRAY = 9;
+  DATA_TYPE_STRING_ARRAY = 10;
 }
 
 message ResponseData {

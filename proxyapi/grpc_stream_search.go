@@ -193,7 +193,7 @@ func checkControl(
 		if !ok {
 			return outcomeNone, false
 		}
-		if c.GetAction() == seqproxyapi.ControlAction_FINALIZE {
+		if c.GetAction() == seqproxyapi.ControlAction_CONTROL_ACTION_FINALIZE {
 			return outcomeFinalize, true
 		}
 		return outcomeNone, false
@@ -264,19 +264,19 @@ func sendRecords(stream seqproxyapi.SeqProxyApi_StreamSearchServer, records []*s
 // hardcoded schema
 func docsTyping() []*seqproxyapi.Typing {
 	return []*seqproxyapi.Typing{
-		{Title: "id", Type: seqproxyapi.DataType_SEQ_ID},
-		{Title: "time", Type: seqproxyapi.DataType_UINT64},
-		{Title: "data", Type: seqproxyapi.DataType_RAW_DOCUMENT},
+		{Title: "id", Type: seqproxyapi.DataType_DATA_TYPE_SEQ_ID},
+		{Title: "time", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
+		{Title: "data", Type: seqproxyapi.DataType_DATA_TYPE_RAW_DOCUMENT},
 	}
 }
 
 // hardcoded schema
 func aggsTyping() []*seqproxyapi.Typing {
 	return []*seqproxyapi.Typing{
-		{Title: "key", Type: seqproxyapi.DataType_STRING},
-		{Title: "value", Type: seqproxyapi.DataType_FLOAT64},
-		{Title: "ts", Type: seqproxyapi.DataType_UINT64},
-		{Title: "quantiles", Type: seqproxyapi.DataType_FLOAT64_ARRAY},
+		{Title: "key", Type: seqproxyapi.DataType_DATA_TYPE_STRING},
+		{Title: "value", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64},
+		{Title: "ts", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
+		{Title: "quantiles", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64_ARRAY},
 	}
 }
 
