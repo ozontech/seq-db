@@ -48,25 +48,41 @@ MAPPING="${MAPPING:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 
+# Era commit discovery needs history; a PR checkout has no local "main"
+# branch (detached HEAD), so prefer origin/main, then main, then HEAD.
+history_ref() {
+	for ref in origin/main main HEAD; do
+		if git -C "$REPO" rev-parse -q --verify "$ref" >/dev/null; then
+			echo "$ref"
+			return
+		fi
+	done
+	echo "no git history ref found (tried origin/main, main, HEAD)" >&2
+	return 1
+}
+
 # the mapping file is opened by sealers running from other cwd's
 [[ -z "$MAPPING" || "$MAPPING" == /* ]] || MAPPING="$(pwd)/$MAPPING"
 
 # Last commit of version's era: the parent of the first commit that
 # introduced the next version (BinaryDataV<n+1>) in config/frac_version.go.
 # When the next version is not committed yet (e.g. a locally added V7),
-# the era has not ended: fall back to the last commit of main. Versions
-# whose next one appeared before the file existed (v0, v1) are not
-# discoverable and are not supported.
+# the era has not ended: fall back to the history ref tip. Versions whose
+# next one appeared before the file existed (v0, v1) are not discoverable
+# and are not supported. Requires real history: in a shallow CI clone the
+# caller must fetch it first (fetch-depth: 0 or git fetch --unshallow).
 era_commit() {
 	local next=$((VERSION_NUM + 1))
-	for commit in $(git -C "$REPO" rev-list --reverse main -- config/frac_version.go); do
+	local history
+	history="$(history_ref)"
+	for commit in $(git -C "$REPO" rev-list --reverse "$history" -- config/frac_version.go); do
 		if git -C "$REPO" show "${commit}:config/frac_version.go" 2>/dev/null | grep -q "BinaryDataV${next}\b"; then
 			git -C "$REPO" rev-parse --short "${commit}^"
 			return
 		fi
 	done
 	if [[ "$VERSION_NUM" -ge "$(max_known_version_num)" ]]; then
-		git -C "$REPO" rev-parse --short main
+		git -C "$REPO" rev-parse --short "$history"
 		return
 	fi
 	echo "cannot find the commit introducing BinaryDataV${next}: version $VERSION is too old (supported: v2+)" >&2
@@ -75,7 +91,9 @@ era_commit() {
 
 # The highest BinaryDataVN declared in the current config/frac_version.go.
 max_known_version_num() {
-	git -C "$REPO" show "main:config/frac_version.go" | grep -oE 'BinaryDataV[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1
+	local history
+	history="$(history_ref)"
+	git -C "$REPO" show "${history}:config/frac_version.go" | grep -oE 'BinaryDataV[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1
 }
 
 # Patches the shared sealer for a given pre-v6 format era: replaces the
