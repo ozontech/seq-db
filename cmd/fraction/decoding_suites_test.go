@@ -2,8 +2,8 @@ package main
 
 // The suites run the same decode checks against fractions from different
 // sources: sealed on the fly by the current code (default) or sealed by
-// the era's own code for every legacy format version ("legacy",
-// see testdata/legacy/seal-fraction.sh).
+// the era's own code for every legacy format version
+// (see testdata/legacy/seal-fraction.sh).
 
 import (
 	"fmt"
