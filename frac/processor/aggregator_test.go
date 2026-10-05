@@ -40,7 +40,10 @@ func TestSingleSourceCountAggregator(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assert.Equal(t, []int64{2, 0, 4}, agg.counter.(*plainSourceCounter).counts)
+	counter := agg.counter.(*plainSourceCounter)
+	require.Len(t, counter.counts, 1)
+	require.NotNil(t, counter.counts[0])
+	assert.Equal(t, [sourceChunkSize]uint64{2, 0, 4}, *counter.counts[0])
 
 	assert.Equal(t, int64(1), agg.counter.notExists())
 }

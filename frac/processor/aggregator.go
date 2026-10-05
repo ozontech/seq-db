@@ -215,14 +215,18 @@ type sourceCounter interface {
 	notExists() int64
 }
 
+const sourceChunkSize = 1024
+const sourceChunkMask = sourceChunkSize - 1
+
 // plainSourceCounter is a counter used in ordinary aggregations.
 type plainSourceCounter struct {
-	counts       []int64
+	counts       []*[sourceChunkSize]uint64
 	notExistsCnt int64
 }
 
 func newPlainSourceCounter(n int) *plainSourceCounter {
-	return &plainSourceCounter{counts: make([]int64, n)}
+	chunks := (n + sourceChunkSize - 1) / sourceChunkSize
+	return &plainSourceCounter{counts: make([]*[sourceChunkSize]uint64, chunks)}
 }
 
 func (c *plainSourceCounter) update(sources []int, mids []seq.MID) {
@@ -231,25 +235,38 @@ func (c *plainSourceCounter) update(sources []int, mids []seq.MID) {
 			c.notExistsCnt++
 			continue
 		}
-		c.counts[sources[i]]++
+		chunkIdx := sources[i] / sourceChunkSize
+		chunk := c.counts[chunkIdx]
+		if chunk == nil {
+			chunk = &[sourceChunkSize]uint64{}
+			c.counts[chunkIdx] = chunk
+		}
+		chunk[sources[i]&sourceChunkMask]++
 	}
 }
 
 func (c *plainSourceCounter) get(group *SourcedNodeIterator) map[seq.AggBin]*seq.SamplesContainer {
 	dst := make(map[seq.AggBin]*seq.SamplesContainer, group.UniqueSources())
 
-	for source, cnt := range c.counts {
-		if cnt == 0 {
+	for chunkID, chunk := range c.counts {
+		if chunk == nil {
 			continue
 		}
-		aggBin := seq.AggBin{
-			Token: group.ValueBySource(uint32(source)),
-			MID:   consts.DummyMID,
+
+		for offset, cnt := range chunk {
+			if cnt == 0 {
+				continue
+			}
+			source := chunkID*sourceChunkSize + offset
+			aggBin := seq.AggBin{
+				Token: group.ValueBySource(uint32(source)),
+				MID:   consts.DummyMID,
+			}
+			if dst[aggBin] == nil {
+				dst[aggBin] = seq.NewSamplesContainers()
+			}
+			dst[aggBin].Total = int64(cnt)
 		}
-		if dst[aggBin] == nil {
-			dst[aggBin] = seq.NewSamplesContainers()
-		}
-		dst[aggBin].Total = cnt
 	}
 
 	if c.notExistsCnt > 0 {
