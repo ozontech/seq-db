@@ -5,6 +5,11 @@
 # Usage:
 #   seal-fraction.sh <version> <frac-base-name> < docs.jsonl
 #
+# Optional flag:
+#   --mapping=<file>  mapping YAML for the indexed fields; the file must
+#                     be readable by the era's seq.ReadMapping. Without
+#                     the flag a built-in default mapping is used.
+#
 # <version> is a fraction version: v2, v3, v4, v5, ... or "current".
 #   v2..v5   — a git worktree is created at the last commit of that
 #              version's era (found dynamically: the parent of the first
@@ -28,11 +33,23 @@
 
 set -euo pipefail
 
-VERSION="${1:?usage: seal-fraction.sh <version> <frac-base-name> < docs.jsonl}"
-FRAC="${2:?usage: seal-fraction.sh <version> <frac-base-name> < docs.jsonl}"
+VERSION=""
+FRAC=""
+for arg in "$@"; do
+	case "$arg" in
+	--mapping=*) MAPPING="${arg#--mapping=}" ;;
+	*) if [[ -z "$VERSION" ]]; then VERSION="$arg"; else FRAC="$arg"; fi ;;
+	esac
+done
+VERSION="${VERSION:?usage: seal-fraction.sh [--mapping=file] <version> <frac-base-name> < docs.jsonl}"
+FRAC="${FRAC:?usage: seal-fraction.sh [--mapping=file] <version> <frac-base-name> < docs.jsonl}"
+MAPPING="${MAPPING:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+
+# the mapping file is opened by sealers running from other cwd's
+[[ -z "$MAPPING" || "$MAPPING" == /* ]] || MAPPING="$(pwd)/$MAPPING"
 
 # Last commit of version's era: the parent of the first commit that
 # introduced the next version (BinaryDataV<n+1>) in config/frac_version.go.
@@ -93,7 +110,11 @@ patch_sealer() {
 }
 
 if [[ "$VERSION" == "current" ]]; then
-	(cd "$REPO" && go run ./cmd/fraction seal "$FRAC")
+	if [[ -n "$MAPPING" ]]; then
+		(cd "$REPO" && go run ./cmd/fraction seal --mapping="$MAPPING" "$FRAC")
+	else
+		(cd "$REPO" && go run ./cmd/fraction seal "$FRAC")
+	fi
 else
 	[[ "$VERSION" =~ ^v[0-9]+$ ]] || {
 		echo "unknown version: $VERSION (expected vN or current)" >&2
@@ -116,7 +137,11 @@ else
 
 	if [[ "$VERSION_NUM" -ge 6 ]]; then
 		# v6+ eras have their own cmd/fraction seal
-		(cd "$wt" && go run ./cmd/fraction seal "$FRAC")
+		if [[ -n "$MAPPING" ]]; then
+			(cd "$wt" && go run ./cmd/fraction seal --mapping="$MAPPING" "$FRAC")
+		else
+			(cd "$wt" && go run ./cmd/fraction seal "$FRAC")
+		fi
 	else
 		sealer="$SCRIPT_DIR/sealer/main.go"
 		[[ -f "$sealer" ]] || {
@@ -127,7 +152,11 @@ else
 		mkdir -p "$wt/sealer"
 		patch_sealer "$VERSION" "$sealer" > "$wt/sealer/main.go"
 
-		(cd "$wt" && CGO_ENABLED=0 go run ./sealer "$FRAC")
+		if [[ -n "$MAPPING" ]]; then
+			(cd "$wt" && CGO_ENABLED=0 go run ./sealer "$FRAC" --mapping="$MAPPING")
+		else
+			(cd "$wt" && CGO_ENABLED=0 go run ./sealer "$FRAC")
+		fi
 	fi
 fi
 

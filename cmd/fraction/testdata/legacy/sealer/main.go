@@ -1,18 +1,19 @@
 package main
 
-// Standalone sealer for the legacy fraction formats (V3..V5): seals JSON
+// Standalone sealer for the legacy fraction formats (V2..V5): seals JSON
 // documents from stdin, one per line. Built against the era commit of a
 // format: testdata/legacy/seal-fraction.sh copies this file into a
 // checked-out worktree of that commit, patching the few lines that
-// differ between the eras (imports, SealParams fields). Do not build it
-// in the main module: the era code it compiles against is older than
-// the current one.
+// differ between the eras (imports, SealParams fields, flags). Do not
+// build it in the main module: the era code it compiles against is
+// older than the current one.
 
 import (
 	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,11 +44,28 @@ func (stubSkipMaskProvider) GetIDsBitmapByFrac(_ string, _, _ uint32) (*roaring.
 func (stubSkipMaskProvider) RemoveFrac(_ string) {}
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: sealer <frac-base-name> < docs.jsonl")
+	var mappingPath, fracName string
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--mapping":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "--mapping requires a value")
+				os.Exit(2)
+			}
+			i++
+			mappingPath = args[i]
+		case strings.HasPrefix(arg, "--mapping="):
+			mappingPath = strings.TrimPrefix(arg, "--mapping=")
+		default:
+			fracName = arg
+		}
+	}
+	if fracName == "" {
+		fmt.Fprintln(os.Stderr, "usage: sealer <frac-base-name> [--mapping=mapping.yaml] < docs.jsonl")
 		os.Exit(2)
 	}
-	fracName := os.Args[1]
 
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
@@ -66,14 +84,24 @@ func main() {
 		return line, nil
 	}
 
-	mapping := seq.Mapping{
-		"level":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"service": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"message": seq.NewSingleType(seq.TokenizerTypeText, "", 0),
+	mapping := defaultMapping()
+	if mappingPath != "" {
+		data, err := os.ReadFile(mappingPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cannot read mapping: %s\n", err)
+			os.Exit(2)
+		}
+		mapping, err = seq.ReadMapping(data)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cannot parse mapping: %s\n", err)
+			os.Exit(2)
+		}
 	}
 	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(20, false, true),
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 100),
+		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(512, false, true),
+		seq.TokenizerTypeExists:  tokenizer.NewExistsTokenizer(),
 	}
 
 	activeIndexer, stopIndexer := frac.NewActiveIndexer(4, 10)
@@ -136,4 +164,12 @@ func main() {
 
 	files, _ := filepath.Glob(fracName + "*")
 	fmt.Fprintf(os.Stderr, "sealed: %v\n", files)
+}
+
+func defaultMapping() seq.Mapping {
+	return seq.Mapping{
+		"level":   seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"service": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
+		"message": seq.NewSingleType(seq.TokenizerTypeText, "", 0),
+	}
 }
