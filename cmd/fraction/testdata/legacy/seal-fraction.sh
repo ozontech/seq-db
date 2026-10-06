@@ -7,17 +7,17 @@
 #
 # Optional flag:
 #   --mapping=<file>  mapping YAML for the indexed fields; the file must
-#                     be readable by the era's seq.ReadMapping. Without
+#                     be readable by the version's seq.ReadMapping. Without
 #                     the flag a built-in default mapping is used.
 #
 # <version> is a fraction version: v2, v3, v4, v5, ... or "current".
 #   v2..v5   — a git worktree is created at that version's sealer commit
-#              (an era commit with cmd/sealer added on top, see the
+#              (a version commit with cmd/sealer added on top, see the
 #              sealer_commit table below) and the committed standalone
 #              sealer is run there; old code has no `fraction seal`.
-#   v6+      — a git worktree is created at the era commit found
+#   v6+      — a git worktree is created at the version commit found
 #              dynamically (the parent of the first commit introducing
-#              the next version in config/frac_version.go) and the era's
+#              the next version in config/frac_version.go) and the version's
 #              own `go run ./cmd/fraction seal` is used (it exists since
 #              v6 and seals in the code's current format). Needs no
 #              per-version support: a new vN+1 works with zero script
@@ -46,7 +46,7 @@ MAPPING="${MAPPING:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 
-# Era commit discovery needs history; a PR checkout has no local "main"
+# Version commit discovery needs history; a PR checkout has no local "main"
 # branch (detached HEAD), so prefer origin/main, then main, then HEAD.
 history_ref() {
 	for ref in origin/main main HEAD; do
@@ -62,13 +62,13 @@ history_ref() {
 # the mapping file is opened by sealers running from other cwd's
 [[ -z "$MAPPING" || "$MAPPING" == /* ]] || MAPPING="$(pwd)/$MAPPING"
 
-# Last commit of version's era: the parent of the first commit that
+# Last commit of version: the parent of the first commit that
 # introduced the next version (BinaryDataV<n+1>) in config/frac_version.go.
 # When the next version is not committed yet (e.g. a locally added V7),
-# the era has not ended: fall back to the history ref tip. Requires real
+# fall back to the history ref tip. Requires real
 # history: in a shallow CI clone the caller must fetch it first
 # (fetch-depth: 0 or git fetch --unshallow).
-era_commit() {
+version_commit() {
 	local next=$((VERSION_NUM + 1))
 	local history
 	history="$(history_ref)"
@@ -93,7 +93,7 @@ max_known_version_num() {
 	git -C "$REPO" show "${history}:config/frac_version.go" | grep -oE 'BinaryDataV[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1
 }
 
-# Sealer commits for the pre-v6 formats: an era commit with the
+# Sealer commits for the pre-v6 formats: version commit with the
 # standalone sealer (cmd/sealer) committed on top.
 sealer_commit() {
 	case "$VERSION" in
@@ -122,8 +122,8 @@ else
 	}
 
 	if [[ "$VERSION_NUM" -ge 6 ]]; then
-		# v6+ eras seal with their own cmd/fraction at the era commit
-		commit="$(era_commit)"
+		# v6+ seal with their own cmd/fraction
+		commit="$(version_commit)"
 	else
 		commit="$(sealer_commit)"
 		[[ -n "$commit" ]] || {
@@ -141,14 +141,14 @@ else
 	fi
 
 	if [[ "$VERSION_NUM" -ge 6 ]]; then
-		# v6+ eras have their own cmd/fraction seal
+		# v6+ have their own cmd/fraction seal
 		if [[ -n "$MAPPING" ]]; then
 			(cd "$wt" && go run ./cmd/fraction seal --mapping="$MAPPING" "$FRAC")
 		else
 			(cd "$wt" && go run ./cmd/fraction seal "$FRAC")
 		fi
 	else
-		# the sealer is committed at the era commit (cmd/sealer)
+		# the sealer is committed at (cmd/sealer)
 		if [[ -n "$MAPPING" ]]; then
 			(cd "$wt" && CGO_ENABLED=0 go run ./cmd/sealer "$FRAC" --mapping="$MAPPING")
 		else
