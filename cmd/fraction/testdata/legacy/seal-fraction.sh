@@ -11,19 +11,17 @@
 #                     the flag a built-in default mapping is used.
 #
 # <version> is a fraction version: v2, v3, v4, v5, ... or "current".
-#   v2..v5   — a git worktree is created at the last commit of that
-#              version's era (found dynamically: the parent of the first
-#              commit introducing the next version in config/frac_version.go)
-#              and a standalone sealer is run there; old code has no
-#              `fraction seal`. The sealer is the single shared file
-#              (testdata/legacy/sealer/main.go), patched for the
-#              era: the few lines that differ between the eras are
-#              replaced with sed.
-#   v6+      — a git worktree is created at the era commit the same way,
-#              but the era's own `go run ./cmd/fraction seal` is used
-#              (it exists since v6 and seals in the code's current
-#              format). Needs no per-version support: a new vN+1 works
-#              with zero script changes.
+#   v2..v5   — a git worktree is created at that version's sealer commit
+#              (an era commit with cmd/sealer added on top, see the
+#              sealer_commit table below) and the committed standalone
+#              sealer is run there; old code has no `fraction seal`.
+#   v6+      — a git worktree is created at the era commit found
+#              dynamically (the parent of the first commit introducing
+#              the next version in config/frac_version.go) and the era's
+#              own `go run ./cmd/fraction seal` is used (it exists since
+#              v6 and seals in the code's current format). Needs no
+#              per-version support: a new vN+1 works with zero script
+#              changes.
 #   current  — the local code's own `go run ./cmd/fraction seal` is used.
 #
 # <frac-base-name> is the output fraction base name (without suffixes).
@@ -67,10 +65,9 @@ history_ref() {
 # Last commit of version's era: the parent of the first commit that
 # introduced the next version (BinaryDataV<n+1>) in config/frac_version.go.
 # When the next version is not committed yet (e.g. a locally added V7),
-# the era has not ended: fall back to the history ref tip. Versions whose
-# next one appeared before the file existed (v0, v1) are not discoverable
-# and are not supported. Requires real history: in a shallow CI clone the
-# caller must fetch it first (fetch-depth: 0 or git fetch --unshallow).
+# the era has not ended: fall back to the history ref tip. Requires real
+# history: in a shallow CI clone the caller must fetch it first
+# (fetch-depth: 0 or git fetch --unshallow).
 era_commit() {
 	local next=$((VERSION_NUM + 1))
 	local history
@@ -85,7 +82,7 @@ era_commit() {
 		git -C "$REPO" rev-parse --short "$history"
 		return
 	fi
-	echo "cannot find the commit introducing BinaryDataV${next}: version $VERSION is too old (supported: v2+)" >&2
+	echo "cannot find the commit introducing BinaryDataV${next}: version $VERSION is too old (supported: v6+)" >&2
 	return 1
 }
 
@@ -96,35 +93,15 @@ max_known_version_num() {
 	git -C "$REPO" show "${history}:config/frac_version.go" | grep -oE 'BinaryDataV[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1
 }
 
-# Patches the shared sealer for a given pre-v6 format era: replaces the
-# lines that differ between the eras. The file as committed targets the
-# newest sealer era (v5); older eras get a sed-reduced version. v6+ eras
-# do not reach this function: they seal with their own cmd/fraction.
-patch_sealer() {
-	local ver="$1" file="$2"
-	if [[ "$ver" == "v5" || "$ver" == "v4" ]]; then
-		# v4 sealer is identical to the v5 one
-		cat "$file"
-		return
-	fi
-	if [[ "$ver" == "v3" ]]; then
-		# v3: sealing lived in frac/sealed/sealing, and SealParams
-		# had no LIDBlockSize/TokenBlockSize
-		sed -e 's|"github.com/ozontech/seq-db/sealing"|"github.com/ozontech/seq-db/frac/sealed/sealing"|' \
-			-e '/LIDBlockSize:/d' -e '/TokenBlockSize:/d' \
-			"$file"
-		return
-	fi
-	# v2: on top of the v3 differences, the skip mask provider interface
-	# had no GetIDsBitmapByFrac (and roaring is not in the go.mod), and
-	# GetIDsIteratorByFrac returned no cleanup func
-	sed -e 's|"github.com/ozontech/seq-db/sealing"|"github.com/ozontech/seq-db/frac/sealed/sealing"|' \
-		-e '/LIDBlockSize:/d' -e '/TokenBlockSize:/d' -e '/LIDsBitmapThreshold:/d' \
-		-e '/"github.com\/RoaringBitmap\/roaring\/v2"/d' \
-		-e '/GetIDsBitmapByFrac(_ string, _, _ uint32)/,/^}/d' \
-		-e 's|return node.NewStatic(nil, reverse), false, func() error { return nil }, nil|return node.NewStatic(nil, reverse), false, nil|' \
-		-e 's|(_ string, _, _ uint32, reverse bool) (node.Node, bool, func() error, error)|(_ string, _, _ uint32, reverse bool) (node.Node, bool, error)|' \
-		"$file"
+# Sealer commits for the pre-v6 formats: an era commit with the
+# standalone sealer (cmd/sealer) committed on top.
+sealer_commit() {
+	case "$VERSION" in
+	v2) echo "98d29f2af902ee37ac24da18255a0a69a0da8266" ;;
+	v3) echo "1e214d0a282f29f577f38dcc920a8b8c6d95eab1" ;;
+	v4) echo "113f8663b80ce44149c12f1333237313b535e1d1" ;;
+	v5) echo "02e864f6a26b193fbfdcc973a5de3b8b9dd15f60" ;;
+	esac
 }
 
 if [[ "$VERSION" == "current" ]]; then
@@ -144,7 +121,17 @@ else
 		exit 2
 	}
 
-	commit="$(era_commit)"
+	if [[ "$VERSION_NUM" -ge 6 ]]; then
+		# v6+ eras seal with their own cmd/fraction at the era commit
+		commit="$(era_commit)"
+	else
+		commit="$(sealer_commit)"
+		[[ -n "$commit" ]] || {
+			echo "no sealer commit for version $VERSION" >&2
+			exit 2
+		}
+	fi
+
 	wt="${TMPDIR:-/tmp}/fraction-seal-$VERSION"
 
 	if [[ -d "$wt/.git" || -f "$wt/.git" ]]; then
@@ -161,19 +148,11 @@ else
 			(cd "$wt" && go run ./cmd/fraction seal "$FRAC")
 		fi
 	else
-		sealer="$SCRIPT_DIR/sealer/main.go"
-		[[ -f "$sealer" ]] || {
-			echo "standalone sealer is missing: $sealer" >&2
-			exit 2
-		}
-
-		mkdir -p "$wt/sealer"
-		patch_sealer "$VERSION" "$sealer" > "$wt/sealer/main.go"
-
+		# the sealer is committed at the era commit (cmd/sealer)
 		if [[ -n "$MAPPING" ]]; then
-			(cd "$wt" && CGO_ENABLED=0 go run ./sealer "$FRAC" --mapping="$MAPPING")
+			(cd "$wt" && CGO_ENABLED=0 go run ./cmd/sealer "$FRAC" --mapping="$MAPPING")
 		else
-			(cd "$wt" && CGO_ENABLED=0 go run ./sealer "$FRAC")
+			(cd "$wt" && CGO_ENABLED=0 go run ./cmd/sealer "$FRAC")
 		fi
 	fi
 fi
