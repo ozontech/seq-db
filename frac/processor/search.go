@@ -39,7 +39,11 @@ type tokenIndex interface {
 	GetFreqsByTIDs(tids []uint32, field string) []uint32
 	GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node
 	GetBatchedLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.BatchedNode
-	GetLIDsByField(tids []uint32, stats lids.Counter, minLID, maxLID uint32) FieldLIDs
+}
+
+type sealedTokenIndex interface {
+	tokenIndex
+	FieldIterator(tids []uint32, stats lids.Counter) FieldLIDs
 }
 
 // FieldLIDs iterates LID lists of one field in TID (source) order.

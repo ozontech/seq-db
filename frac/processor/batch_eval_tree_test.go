@@ -77,10 +77,6 @@ func (d *testTokenIndex) GetBatchedLIDsFromTIDs(tids []uint32, stats lids.Counte
 	return nodes
 }
 
-func (d *testTokenIndex) GetLIDsByField(tids []uint32, stats lids.Counter, minLID, maxLID uint32) FieldLIDs {
-	return nil
-}
-
 func (d *testTokenIndex) GetTIDsByTokenExpr(token parser.Token) ([]uint32, error) {
 	key := parser.GetField(token) + ":" + parser.GetHint(token)
 	return d.tids[key], nil
