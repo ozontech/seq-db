@@ -4,6 +4,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/util"
 )
 
 // FieldIterator allows to batch-scroll through all LID lists for a particular field.
@@ -14,7 +15,7 @@ type FieldIterator struct {
 	firstTID     uint32 // inclusive
 	lastTID      uint32 // inclusive
 	nextBlockIdx uint32 // next (not yet processed) block id to load LIDs from
-	lastBlockIdx uint32
+	lastBlockIdx uint32 // index of the last block which has LIDs for this field
 	done         bool
 }
 
@@ -40,28 +41,26 @@ func NewFieldIterator(
 // (as opposed to continuing a list split across the previous block).
 // Exhausted when len(lids) == 0.
 func (c *FieldIterator) NextBatch(lids, offsets []uint32) ([]uint32, []uint32, bool) {
-	for {
-		block, blockIdx, blockMinTID, firstListIdx, lastListIdx := c.loadNextBlock()
-		if block == nil {
-			return nil, nil, false
-		}
-
-		lids = lids[:0]
-		offsets = offsets[:0]
-		if block.IsDeltaEncoded() {
-			lids, offsets = copyDeltaBlock(block, firstListIdx, lastListIdx, lids, offsets)
-		} else {
-			lids, offsets = copyHybridBlock(block, firstListIdx, lastListIdx, lids, offsets)
-		}
-
-		if c.counter != nil {
-			c.counter.AddLIDsCount(len(lids))
-		}
-
-		firstTIDInBatch := blockMinTID + uint32(firstListIdx)
-		isFirstLID := !c.table.HasTIDInPrevBlock(blockIdx, firstTIDInBatch)
-		return lids, offsets, isFirstLID
+	block, blockIdx, blockMinTID, firstListIdx, lastListIdx := c.loadNextBlock()
+	if block == nil {
+		return nil, nil, false
 	}
+
+	lids = lids[:0]
+	offsets = offsets[:0]
+	if block.IsDeltaEncoded() {
+		lids, offsets = copyDeltaBlock(block, firstListIdx, lastListIdx, lids, offsets)
+	} else {
+		lids, offsets = copyHybridBlock(block, firstListIdx, lastListIdx, lids, offsets)
+	}
+
+	if c.counter != nil {
+		c.counter.AddLIDsCount(len(lids))
+	}
+
+	firstTIDInBatch := blockMinTID + uint32(firstListIdx)
+	isFirstLID := !c.table.HasTIDInPrevBlock(blockIdx, firstTIDInBatch)
+	return lids, offsets, isFirstLID
 }
 
 func (c *FieldIterator) loadNextBlock() (block *Block, blockIdx, blockMinTID uint32, firstListIdx, lastListIdx int) {
@@ -84,16 +83,10 @@ func (c *FieldIterator) loadNextBlock() (block *Block, blockIdx, blockMinTID uin
 	}
 
 	numLists := int(c.table.GetChunksCount(blockIdx))
-
 	blockMinTID = c.table.GetAdjustedMinTID(blockIdx)
-	firstListIdx = 0
-	if blockMinTID < c.firstTID {
-		firstListIdx = int(c.firstTID - blockMinTID)
-		if firstListIdx > numLists {
-			firstListIdx = numLists
-		}
-	}
-	lastListIdx = min(numLists, int(c.lastTID-blockMinTID+1))
+	// find LID list indexes within current block where [firstTID,lastTID] interval overlaps with the block
+	firstListIdx = min(numLists, max(0, int(c.firstTID)-int(blockMinTID)))
+	lastListIdx = min(numLists, int(c.lastTID)-int(blockMinTID)+1)
 
 	if firstListIdx < lastListIdx {
 		return block, blockIdx, blockMinTID, firstListIdx, lastListIdx
@@ -113,17 +106,16 @@ func copyDeltaBlock(
 	firstOffset := block.offsets[firstListIdx]
 	numLIDs := int(block.offsets[lastListIdx] - block.offsets[firstListIdx])
 
-	lids = ensureCap(lids, numLIDs)
+	lids = util.EnsureSliceSize(lids, numLIDs)
 	copy(lids, block.lids[block.offsets[firstListIdx]:block.offsets[lastListIdx]])
 
-	offsets = ensureCap(offsets, numLists+1)
+	offsets = util.EnsureSliceSize(offsets, numLists+1)
+	copy(offsets, block.offsets[firstListIdx:lastListIdx+1])
 
-	if firstListIdx == 0 {
-		copy(offsets, block.offsets[:lastListIdx+1])
-	} else {
-		srcOff := block.offsets[firstListIdx : lastListIdx+1]
-		for i := 0; i <= numLists; i++ {
-			offsets[i] = srcOff[i] - firstOffset
+	// adjust offsets if copied not from the beginning of the block
+	if firstListIdx != 0 {
+		for i := range offsets {
+			offsets[i] -= firstOffset
 		}
 	}
 
@@ -139,19 +131,8 @@ func copyHybridBlock(
 	offsets = append(offsets, 0)
 
 	for idx := firstListIdx; idx < lastListIdx; idx++ {
-		var n int
-		lids, n = block.AppendLIDsTo(idx, lids)
-		if n == 0 {
-			continue
-		}
+		lids, _ = block.AppendLIDsTo(idx, lids)
 		offsets = append(offsets, uint32(len(lids)))
 	}
 	return lids, offsets
-}
-
-func ensureCap(s []uint32, n int) []uint32 {
-	if cap(s) >= n {
-		return s[:n]
-	}
-	return make([]uint32, n)
 }

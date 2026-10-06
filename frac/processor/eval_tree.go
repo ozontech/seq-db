@@ -242,12 +242,13 @@ func iteratorFromLiteral(
 		)
 	}
 
-	useColumnAgg := queryOpt.MaterializedColumnAgg.Enabled && useColumnAggPlan(queryStats, len(tids))
+	sealedIndex, isSealed := ti.(sealedTokenIndex)
+	useColumnAgg := queryOpt.MaterializedColumnAgg.Enabled && isSealed && useColumnAggPlan(queryStats, len(tids))
 
 	var sourcedNode node.Sourced
 	if useColumnAgg {
 		m = sw.Start("get_field_postings")
-		postings := ti.GetLIDsByField(tids, stats, minLID, maxLID)
+		postings := sealedIndex.FieldIterator(tids, stats)
 		m.Stop()
 		sourcedNode = node.NewColumnAgg(postings, minLID, maxLID, order.IsDesc())
 		aggColumnFracsTotal.Inc()
