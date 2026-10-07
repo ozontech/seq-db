@@ -215,59 +215,36 @@ type sourceCounter interface {
 	notExists() int64
 }
 
-const sourceChunkSize = 1024
-const sourceChunkMask = sourceChunkSize - 1
-
-// plainSourceCounter is a counter used in ordinary aggregations.
+// plainSourceCounter is a counter used in ordinary aggregations. It currently relies on SourcedNodeIterator's
+// countBySource internal per-source counter.
 type plainSourceCounter struct {
-	counts       []*[sourceChunkSize]uint64
 	notExistsCnt int64
 }
 
-func newPlainSourceCounter(n int) *plainSourceCounter {
-	chunks := (n + sourceChunkSize - 1) / sourceChunkSize
-	return &plainSourceCounter{counts: make([]*[sourceChunkSize]uint64, chunks)}
+func newPlainSourceCounter() *plainSourceCounter {
+	return &plainSourceCounter{}
 }
 
-func (c *plainSourceCounter) update(sources []int, mids []seq.MID) {
+func (c *plainSourceCounter) update(sources []int, _ []seq.MID) {
 	for i := range sources {
 		if sources[i] < 0 {
 			c.notExistsCnt++
-			continue
 		}
-		chunkIdx := sources[i] / sourceChunkSize
-		chunk := c.counts[chunkIdx]
-		if chunk == nil {
-			chunk = &[sourceChunkSize]uint64{}
-			c.counts[chunkIdx] = chunk
-		}
-		chunk[sources[i]&sourceChunkMask]++
 	}
 }
 
 func (c *plainSourceCounter) get(group *SourcedNodeIterator) map[seq.AggBin]*seq.SamplesContainer {
 	dst := make(map[seq.AggBin]*seq.SamplesContainer, group.UniqueSources())
-
-	for chunkID, chunk := range c.counts {
-		if chunk == nil {
-			continue
+	group.countBySource.forEach(func(source uint32, cnt uint64) {
+		aggBin := seq.AggBin{
+			Token: group.ValueBySource(source),
+			MID:   consts.DummyMID,
 		}
-
-		for offset, cnt := range chunk {
-			if cnt == 0 {
-				continue
-			}
-			source := chunkID*sourceChunkSize + offset
-			aggBin := seq.AggBin{
-				Token: group.ValueBySource(uint32(source)),
-				MID:   consts.DummyMID,
-			}
-			if dst[aggBin] == nil {
-				dst[aggBin] = seq.NewSamplesContainers()
-			}
-			dst[aggBin].Total = int64(cnt)
+		if dst[aggBin] == nil {
+			dst[aggBin] = seq.NewSamplesContainers()
 		}
-	}
+		dst[aggBin].Total = int64(cnt)
+	})
 
 	if c.notExistsCnt > 0 {
 		// Handle non-existent sources in legacy format.
@@ -355,7 +332,7 @@ func NewSingleSourceCountAggregator(
 	if timeseries {
 		counts = newTsSourceCounter()
 	} else {
-		counts = newPlainSourceCounter(len(iterator.tids))
+		counts = newPlainSourceCounter()
 	}
 	return &SingleSourceCountAggregator{
 		counter:    counts,
@@ -527,6 +504,11 @@ func (n *SingleSourceHistogramAggregator) Dispose() {
 	n.field.Dispose()
 }
 
+const (
+	sourceChunkSize = 1024
+	sourceChunkMask = sourceChunkSize - 1
+)
+
 // SourcedNodeIterator can iterate the sourced node that returns source, which means index in a tids slice.
 type SourcedNodeIterator struct {
 	sourcedNode node.Sourced
@@ -537,7 +519,7 @@ type SourcedNodeIterator struct {
 	tokensCache map[uint32]string
 
 	uniqSourcesLimit iteratorLimit
-	countBySource    map[uint32]int
+	countBySource    sourceCountMap
 
 	lastID     node.LID
 	lastSource uint32
@@ -554,7 +536,7 @@ func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, 
 		field:            field,
 		tokensCache:      make(map[uint32]string),
 		uniqSourcesLimit: limit,
-		countBySource:    make(map[uint32]int),
+		countBySource:    newSourceCountMap(len(tids)),
 		lastID:           lastID,
 		lastSource:       lastSource,
 	}
@@ -577,8 +559,8 @@ func (s *SourcedNodeIterator) ConsumeTokenSource(lids []node.LID) ([]int, error)
 			continue
 		}
 
-		s.countBySource[s.lastSource]++
-		if s.uniqSourcesLimit.limit > 0 && len(s.countBySource) > s.uniqSourcesLimit.limit {
+		isNewSource := s.countBySource.add(s.lastSource)
+		if isNewSource && s.uniqSourcesLimit.limit > 0 && s.countBySource.size > s.uniqSourcesLimit.limit {
 			s.sourcesBuf[i] = -1
 			return nil, fmt.Errorf("%w: iterator limit is exceeded", s.uniqSourcesLimit.err)
 		}
@@ -590,21 +572,19 @@ func (s *SourcedNodeIterator) ConsumeTokenSource(lids []node.LID) ([]int, error)
 }
 
 func (s *SourcedNodeIterator) prefetchTokenValues() {
-	if s.ti == nil || len(s.countBySource) == 0 {
+	if s.ti == nil || s.countBySource.size == 0 {
 		return
 	}
 
-	// NOTE(dkharms): Since `countBySource` is a hashmap and
-	// its iteration order is not determined, we lose benefits
-	// of kernel read-ahead.
-	//
+	// NOTE(dkharms): Source indices are ordered by their positions in tids,
+	// not by the tids themselves, which loses benefits of kernel read-ahead.
 	// In this method we establish the order again.
-	sources := make([]uint32, 0, len(s.countBySource))
-	for source := range s.countBySource {
+	sources := make([]uint32, 0, s.countBySource.size)
+	s.countBySource.forEach(func(source uint32, _ uint64) {
 		if _, ok := s.tokensCache[source]; !ok {
 			sources = append(sources, source)
 		}
-	}
+	})
 
 	slices.SortFunc(sources, func(a, b uint32) int {
 		return cmp.Compare(s.tids[a], s.tids[b])
@@ -621,7 +601,7 @@ func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
 	}
 
 	const useCacheThreshold = 2
-	if s.countBySource[source] < useCacheThreshold {
+	if s.countBySource.count(source) < useCacheThreshold {
 		return string(s.ti.GetValByTID(s.tids[source], s.field))
 	}
 
@@ -632,13 +612,67 @@ func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
 }
 
 func (s *SourcedNodeIterator) UniqueSources() int {
-	return len(s.countBySource)
+	return s.countBySource.size
 }
 
 func (s *SourcedNodeIterator) Dispose() {
 	if s.sourcedNode != nil {
 		s.sourcedNode.Dispose()
 		s.sourcedNode = nil
+	}
+}
+
+// sourceCountMap keeps a number of occurrences for each source. It uses a chunked array
+// for better performance.
+type sourceCountMap struct {
+	chunks []*[sourceChunkSize]uint64
+	size   int
+}
+
+func newSourceCountMap(size int) sourceCountMap {
+	return sourceCountMap{
+		chunks: make([]*[sourceChunkSize]uint64, (size+sourceChunkSize-1)/sourceChunkSize),
+	}
+}
+
+// add increments a counter by source and returns if it was previously zero
+func (c *sourceCountMap) add(source uint32) bool {
+	chunkIdx := int(source / sourceChunkSize)
+	chunk := c.chunks[chunkIdx]
+	if chunk == nil {
+		chunk = &[sourceChunkSize]uint64{}
+		c.chunks[chunkIdx] = chunk
+	}
+
+	offset := source & sourceChunkMask
+	isNew := chunk[offset] == 0
+	chunk[offset]++
+	if isNew {
+		c.size++
+	}
+
+	return isNew
+}
+
+func (c *sourceCountMap) count(source uint32) uint64 {
+	chunk := c.chunks[source/sourceChunkSize]
+	if chunk == nil {
+		return 0
+	}
+	return chunk[source&sourceChunkMask]
+}
+
+func (c *sourceCountMap) forEach(fn func(source uint32, count uint64)) {
+	for chunkId, chunk := range c.chunks {
+		if chunk == nil {
+			continue
+		}
+		for offset, count := range chunk {
+			if count == 0 {
+				continue
+			}
+			fn(uint32(chunkId*sourceChunkSize+offset), count)
+		}
 	}
 }
 

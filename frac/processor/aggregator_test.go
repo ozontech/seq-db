@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"math/rand"
@@ -8,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,10 +42,9 @@ func TestSingleSourceCountAggregator(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	counter := agg.counter.(*plainSourceCounter)
-	require.Len(t, counter.counts, 1)
-	require.NotNil(t, counter.counts[0])
-	assert.Equal(t, [sourceChunkSize]uint64{2, 0, 4}, *counter.counts[0])
+	require.Len(t, iter.countBySource.chunks, 1)
+	require.NotNil(t, iter.countBySource.chunks[0])
+	assert.Equal(t, [sourceChunkSize]uint64{2, 0, 4}, *iter.countBySource.chunks[0])
 
 	assert.Equal(t, int64(1), agg.counter.notExists())
 }
@@ -341,4 +342,64 @@ func TestAggregatorLimitExceeded(t *testing.T) {
 		assert.Equal(t, limit, limitIteration)
 		assert.ErrorIs(t, limitErr, expectedErr)
 	}
+}
+
+func TestSourceCountMap(t *testing.T) {
+	counts := newSourceCountMap(5000)
+
+	require.Len(t, counts.chunks, 5)
+
+	counts.add(uint32(100))
+	assert.Equal(t, 1, counts.size)
+
+	counts.add(uint32(100))
+	assert.Equal(t, 1, counts.size)
+	assert.Equal(t, uint64(2), counts.count(uint32(100)))
+
+	counts.add(uint32(1100))
+	assert.Equal(t, 2, counts.size)
+
+	got := make(map[uint32]uint64)
+	counts.forEach(func(source uint32, count uint64) {
+		got[source] = count
+	})
+
+	assert.Equal(t, map[uint32]uint64{100: 2, 1100: 1}, got)
+}
+
+func TestSourceCountMapAgainstBuiltinMap(t *testing.T) {
+	const (
+		sources = 5_000
+		updates = 15_000
+	)
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	counts := newSourceCountMap(sources)
+	want := make(map[uint32]uint64)
+
+	for range updates {
+		source := uint32(r.Intn(sources))
+		counts.add(source)
+		want[source]++
+	}
+
+	type sourceCount struct {
+		source uint32
+		count  uint64
+	}
+	wantPairs := make([]sourceCount, 0, len(want))
+	for source, count := range want {
+		wantPairs = append(wantPairs, sourceCount{source: source, count: count})
+	}
+	slices.SortFunc(wantPairs, func(a, b sourceCount) int {
+		return cmp.Compare(a.source, b.source)
+	})
+
+	gotPairs := make([]sourceCount, 0, counts.size)
+	counts.forEach(func(source uint32, count uint64) {
+		gotPairs = append(gotPairs, sourceCount{source: source, count: count})
+	})
+
+	require.Len(t, gotPairs, counts.size)
+	assert.Equal(t, wantPairs, gotPairs)
 }
