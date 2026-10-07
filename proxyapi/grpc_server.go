@@ -5,13 +5,13 @@ import (
 	"net"
 	"time"
 
-	"github.com/alecthomas/units"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/encoding/gzip" // Register gzip compressor
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/network/grpcutil"
 	"github.com/ozontech/seq-db/network/ratelimiter"
@@ -56,8 +56,8 @@ func initServer() *grpc.Server {
 		grpc.ChainUnaryInterceptor(interceptors...),
 		grpc.ChainStreamInterceptor(streamInterceptors...),
 		// Proxy can now act like a store, so max msg size is same as for store
-		grpc.MaxRecvMsgSize(int(units.MiB) * 256),
-		grpc.MaxSendMsgSize(int(units.MiB) * 256),
+		grpc.MaxRecvMsgSize(config.MaxGrpcMessageSizeBytes),
+		grpc.MaxSendMsgSize(config.MaxGrpcMessageSizeBytes),
 		grpc.StatsHandler(&tracing.ServerHandler{}),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			MaxConnectionIdle:     time.Minute * 2,

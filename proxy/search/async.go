@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alecthomas/units"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -176,8 +175,8 @@ func (si *Ingestor) FetchAsyncSearchResult(
 				var md metadata.MD
 				storeResp, err := si.clients[replica].FetchAsyncSearchResult(
 					storesCtx, &req,
-					grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
-					grpc.MaxCallSendMsgSize(256*int(units.MiB)),
+					grpc.MaxCallRecvMsgSize(config.MaxGrpcMessageSizeBytes),
+					grpc.MaxCallSendMsgSize(config.MaxGrpcMessageSizeBytes),
 					grpc.UseCompressor(gzip.Name),
 					grpc.Header(&md),
 				)
