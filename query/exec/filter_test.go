@@ -16,7 +16,7 @@ func TestFilterEq(t *testing.T) {
 
 	filterExpr := NewEq[uint32](cond)
 
-	testFilter(t, 0, (*query.RecordVals).AsUint32, filterExpr, func(r *query.Record) bool {
+	testFilter(t, query.Uint32Column(0), filterExpr, func(r *query.Record) bool {
 		return r.Vals[0].AsUint32() == uint32(cond)
 	})
 }
@@ -26,7 +26,7 @@ func TestFilterGt(t *testing.T) {
 
 	filterExpr := NewGt[uint32](cond)
 
-	testFilter(t, 0, (*query.RecordVals).AsUint32, filterExpr, func(r *query.Record) bool {
+	testFilter(t, query.Uint32Column(0), filterExpr, func(r *query.Record) bool {
 		return r.Vals[0].AsUint32() > uint32(cond)
 	})
 }
@@ -36,7 +36,7 @@ func TestFilterLt(t *testing.T) {
 
 	filterExpr := NewLt[uint32](cond)
 
-	testFilter(t, 0, (*query.RecordVals).AsUint32, filterExpr, func(r *query.Record) bool {
+	testFilter(t, query.Uint32Column(0), filterExpr, func(r *query.Record) bool {
 		return r.Vals[0].AsUint32() < uint32(cond)
 	})
 }
@@ -49,7 +49,7 @@ func TestDocumentFilter(t *testing.T) {
 
 	filterExpr := NewDocFilter(field, NewEq(cond))
 
-	testFilter(t, 1, (*query.RecordVals).AsDoc, filterExpr, func(r *query.Record) bool {
+	testFilter(t, query.DocColumn(1), filterExpr, func(r *query.Record) bool {
 		field := r.Vals[1].AsDoc().Dig(field)
 		return field.AsString() == cond
 	})
@@ -57,8 +57,7 @@ func TestDocumentFilter(t *testing.T) {
 
 func testFilter[T any](
 	t *testing.T,
-	colIdx int,
-	get ValGetter[T],
+	col query.Column[T],
 	filterExpr FilterExpr[T],
 	wantFilterFunc func(*query.Record) bool,
 ) {
@@ -74,7 +73,7 @@ func testFilter[T any](
 		}
 	}
 
-	filter := NewFilter(&input, colIdx, get, filterExpr, false)
+	filter := NewFilter(&input, col, filterExpr, false)
 
 	outputData := make([]*query.Record, 0)
 	for r := filter.Next(); r != nil; r = filter.Next() {
@@ -101,7 +100,7 @@ func TestFilterTotalDrainsInput(t *testing.T) {
 		}
 	}
 
-	filter := NewFilter(&input, 0, (*query.RecordVals).AsUint32, filterExpr, true)
+	filter := NewFilter(&input, query.Uint32Column(0), filterExpr, true)
 	outputData := make([]*query.Record, 0)
 	for i := 0; i < len(wantData); i++ {
 		r := filter.Next()
@@ -126,7 +125,7 @@ func TestFilterTotalErrorPropagated(t *testing.T) {
 		err:   assertErr,
 	}
 
-	filter := NewFilter(&input, 0, (*query.RecordVals).AsUint32, filterExpr, true)
+	filter := NewFilter(&input, query.Uint32Column(0), filterExpr, true)
 	for r := filter.Next(); r != nil; r = filter.Next() {
 	}
 

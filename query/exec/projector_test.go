@@ -19,7 +19,7 @@ func TestDocProjectorFields(t *testing.T) {
 	)
 }
 
-func TestProjectorFieldsExcepr(t *testing.T) {
+func TestProjectorFieldsExcept(t *testing.T) {
 	testDocProjector(
 		t,
 		&FieldsFilter{Fields: []string{"level"}, AllowList: false},
@@ -36,7 +36,7 @@ func testDocProjector(t *testing.T, fieldsFilter *FieldsFilter, wantDocs []strin
 	inputData := makeTestInputRecords(2)
 	input := testProducer{data: inputData}
 
-	projector := NewDocProjector(&input, 1, fieldsFilter)
+	projector := NewDocProjector(&input, query.DocColumn(1), fieldsFilter)
 
 	outputData := make([]*query.Record, 0)
 	for r := projector.Next(); r != nil; r = projector.Next() {
