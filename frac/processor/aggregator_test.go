@@ -403,3 +403,35 @@ func TestSourceCountMapAgainstBuiltinMap(t *testing.T) {
 	require.Len(t, gotPairs, counts.size)
 	assert.Equal(t, wantPairs, gotPairs)
 }
+
+// TestSourceCountMapForEachOrderedBySource tests that forEach iteration is asc ordered by source.
+func TestSourceCountMapForEachOrderedBySource(t *testing.T) {
+	const (
+		sources = 10_000
+		updates = 5_000
+	)
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	counts := newSourceCountMap(sources)
+	want := make(map[uint32]struct{}, updates)
+
+	for range updates {
+		source := uint32(r.Intn(sources))
+		counts.add(source)
+		want[source] = struct{}{}
+	}
+
+	wantSources := make([]uint32, 0, len(want))
+	for source := range want {
+		wantSources = append(wantSources, source)
+	}
+	slices.Sort(wantSources)
+
+	gotSources := make([]uint32, 0, counts.size)
+	counts.forEach(func(source uint32, _ uint64) {
+		gotSources = append(gotSources, source)
+	})
+
+	require.Len(t, gotSources, counts.size)
+	assert.Equal(t, wantSources, gotSources)
+}

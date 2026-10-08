@@ -1,7 +1,6 @@
 package processor
 
 import (
-	"cmp"
 	"fmt"
 	"math"
 	"slices"
@@ -575,24 +574,9 @@ func (s *SourcedNodeIterator) prefetchTokenValues() {
 	if s.ti == nil || s.countBySource.size == 0 {
 		return
 	}
-
-	// NOTE(dkharms): Source indices are ordered by their positions in tids,
-	// not by the tids themselves, which loses benefits of kernel read-ahead.
-	// In this method we establish the order again.
-	sources := make([]uint32, 0, s.countBySource.size)
 	s.countBySource.forEach(func(source uint32, _ uint64) {
-		if _, ok := s.tokensCache[source]; !ok {
-			sources = append(sources, source)
-		}
-	})
-
-	slices.SortFunc(sources, func(a, b uint32) int {
-		return cmp.Compare(s.tids[a], s.tids[b])
-	})
-
-	for _, source := range sources {
 		s.tokensCache[source] = string(s.ti.GetValByTID(s.tids[source], s.field))
-	}
+	})
 }
 
 func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
