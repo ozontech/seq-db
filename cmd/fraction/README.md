@@ -49,7 +49,7 @@ requested alone, token records are written without the `lids` arrays
 | `kind`     | Content                                                                     |
 |------------|-----------------------------------------------------------------------------|
 | `info`     | fraction metadata (`common.Info` fields, flattened)                         |
-| `doc`      | document text with its LID; the system document (lid 0) is not included     |
+| `doc`      | document text      |
 | `id`       | every fraction ID: LID, MID, RID and the document position (DocPos)          |
 | `token`    | inverted index: TID, field, token, frequency and the LID list (postings)     |
 | `offsets`  | doc block offsets in the documents file, single record                      |
@@ -60,8 +60,8 @@ Records look like this:
 
 ```json
 {"kind":"info","name":"frac_000001","docs_total":3,"index_on_disk":888,...}
-{"kind":"doc","lid":1,"doc":"{\"level\":\"error\",\"service\":\"api\",\"message\":\"db timeout\"}"}
-{"kind":"id","lid":1,"mid":1704103202000000000,"rid":6530305922915827712,"pos":5}
+{"kind":"doc","doc":"{\"level\":\"error\",\"service\":\"api\",\"message\":\"db timeout\"}"}
+{"kind":"id","mid":1704103202000000000,"rid":6530305922915827712,"pos":5}
 {"kind":"token","tid":5,"field":"level","token":"error","freq":1,"lids":[1]}
 {"kind":"offsets","values":[0,132,264]}
 ```

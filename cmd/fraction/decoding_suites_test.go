@@ -2,7 +2,7 @@ package main
 
 // The suites run the same decode checks against fractions from different
 // sources: sealed on the fly by the current code (default) or sealed by
-// the era's own code for every legacy format version
+// the version's own code for every legacy format version
 // (see testdata/legacy/seal-fraction.sh).
 
 import (
@@ -22,7 +22,7 @@ import (
 // FractionDecoderTestSuite holds the decode checks. The source of the
 // fraction is decided by the embedded suite: the current-version suite
 // seals it with the local code, the legacy one seals it per version with
-// the era's code via testdata/legacy/seal-fraction.sh.
+// the version's code via testdata/legacy/seal-fraction.sh.
 type FractionDecoderTestSuite struct {
 	suite.Suite
 
@@ -42,7 +42,7 @@ func (s *FractionDecoderTestSuite) sealDocs(docsPerDocBlock int) {
 	s.expectedVer = config.CurrentFracVersion
 }
 
-func (s *FractionDecoderTestSuite) sealDocsEra(v config.BinaryDataVersion) {
+func (s *FractionDecoderTestSuite) sealDocsVersion(v config.BinaryDataVersion) {
 	s.fracName = filepath.Join(s.T().TempDir(), fmt.Sprintf("frac_v%d", v))
 
 	cmd := exec.Command("bash", "testdata/legacy/seal-fraction.sh", fmt.Sprintf("v%d", v), s.fracName)
@@ -152,7 +152,7 @@ func (s *CurrentVersionSuite) SetupTest() {
 }
 
 // LegacyVersionsSuite runs the same checks against a fraction sealed by
-// the era's own code. The suite is instantiated per version by
+// the version's own code. The suite is instantiated per version by
 // TestFractionDecoderLegacy; a future v7 in config/frac_version.go
 // automatically adds v6 there. Versions older than v2 are not
 // discoverable and are skipped.
@@ -163,7 +163,7 @@ type LegacyVersionsSuite struct {
 }
 
 func (s *LegacyVersionsSuite) SetupTest() {
-	s.sealDocsEra(s.Version)
+	s.sealDocsVersion(s.Version)
 }
 
 func TestFractionDecoderCurrent(t *testing.T) {
