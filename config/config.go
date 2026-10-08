@@ -183,6 +183,9 @@ type Config struct {
 			// evaluation. Suggestion is to use value which is greater than 3 x LID block size.
 			CostThreshold int `config:"cost_threshold" default:"150000"`
 		} `config:"batch_execution"`
+		MaterializedColumnAgg struct {
+			Enabled bool `config:"enabled"`
+		} `config:"materialized_column_agg"`
 	} `config:"query_optimization"`
 
 	CircuitBreaker struct {
