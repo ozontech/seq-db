@@ -26,3 +26,4 @@ junit.xml
 /quickstart/data
 /.devcontainer
 .perf-loop/
+.codegraph/

@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"io"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -18,19 +21,25 @@ type IndexReader struct {
 	reader     io.ReaderAt
 	readerName string
 
-	cache cache.Cache[[]byte]
+	registry []byte
 }
 
 func NewIndexReader(
 	limiter *ReadLimiter, readerName string,
 	reader io.ReaderAt, registryCache cache.Cache[[]byte],
 ) IndexReader {
-	return IndexReader{
+	r := IndexReader{
 		limiter:    limiter,
 		reader:     reader,
 		readerName: readerName,
-		cache:      registryCache,
 	}
+
+	var err error
+	if r.registry, err = registryCache.Get(registryCacheKey, (*registryLoader)(&r)); err != nil {
+		logger.Fatal("can't init IndexReader", zap.Error(err))
+	}
+
+	return r
 }
 
 type registryLoader IndexReader
@@ -82,25 +91,16 @@ func (rl *registryLoader) Load(uint32) ([]byte, int, error) {
 	return buf, cap(buf), nil
 }
 
-func (r *IndexReader) registry() ([]byte, error) {
-	return r.cache.Get(registryCacheKey, (*registryLoader)(r))
-}
-
 func (r *IndexReader) GetBlockHeader(index uint32) (IndexBlockHeader, error) {
-	reg, err := r.registry()
-	if err != nil {
-		return nil, err
-	}
-
-	if (uint64(index)+1)*IndexBlockHeaderSize > uint64(len(reg)) {
+	if (uint64(index)+1)*IndexBlockHeaderSize > uint64(len(r.registry)) {
 		return nil, fmt.Errorf(
 			"too large index block in file %s, with index %d, registry size %d",
-			r.readerName, index, len(reg),
+			r.readerName, index, len(r.registry),
 		)
 	}
 
 	pos := index * IndexBlockHeaderSize
-	return reg[pos : pos+IndexBlockHeaderSize], nil
+	return r.registry[pos : pos+IndexBlockHeaderSize], nil
 }
 
 func (r *IndexReader) ReadIndexBlock(blockIndex uint32, dst []byte) ([]byte, uint64, error) {
@@ -129,11 +129,6 @@ func (r *IndexReader) ReadIndexBlock(blockIndex uint32, dst []byte) ([]byte, uin
 	return dst, uint64(n), err
 }
 
-func (r *IndexReader) BlocksCount() (int, error) {
-	reg, err := r.registry()
-	if err != nil {
-		return 0, err
-	}
-
-	return len(reg) / IndexBlockHeaderSize, nil
+func (r *IndexReader) BlocksCount() int {
+	return len(r.registry) / IndexBlockHeaderSize
 }
