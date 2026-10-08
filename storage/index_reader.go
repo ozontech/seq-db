@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"io"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/util"
-	"go.uber.org/zap"
 )
 
 const registryCacheKey = 1
