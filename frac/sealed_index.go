@@ -359,6 +359,13 @@ func (ti *sealedTokenIndex) GetBatchedLIDsFromTIDs(tids []uint32, stats lids.Cou
 	return nodes
 }
 
+func (ti *sealedTokenIndex) FieldIterator(tids []uint32, stats lids.Counter) processor.FieldLIDs {
+	if len(tids) == 0 {
+		return nil
+	}
+	return lids.NewFieldIterator(ti.lidsTable, ti.lidsLoader, tids[0], tids[len(tids)-1], stats)
+}
+
 type sealedFetchIndex struct {
 	fracName         string
 	idsIndex         *sealedIDsIndex

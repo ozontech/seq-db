@@ -6,6 +6,28 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+type mockLIDsIter struct {
+	lids [][]uint32
+	done bool
+}
+
+func (p *mockLIDsIter) NextBatch(lids, offsets []uint32) ([]uint32, []uint32, bool) {
+	if p.done {
+		return nil, nil, false
+	}
+	p.done = true
+
+	offsets = append(offsets, 0)
+	for _, list := range p.lids {
+		lids = append(lids, list...)
+		offsets = append(offsets, uint32(len(lids)))
+	}
+	if len(offsets) < 2 {
+		return nil, nil, false
+	}
+	return lids, offsets, true
+}
+
 func TestColumnAgg_MatchesOrTree(t *testing.T) {
 	sources := [][]uint32{
 		{1, 3, 5},
@@ -13,11 +35,7 @@ func TestColumnAgg_MatchesOrTree(t *testing.T) {
 	}
 
 	tree := BuildORTreeAgg(MakeStaticNodes(sources))
-	cursors := make([]BatchedNode, len(sources))
-	for i, src := range sources {
-		cursors[i] = NewStaticBatched(src, true)
-	}
-	column := NewColumnAgg(cursors, 1, 6, true)
+	column := NewColumnAgg(&mockLIDsIter{lids: sources}, 1, 6, true)
 
 	for _, lid := range []uint32{1, 2, 3, 4, 5, 6, 7} {
 		treeID, treeSource, treeOK := consumeAt(tree, lid, true)
@@ -40,11 +58,7 @@ func TestColumnAgg_MatchesOrTree_DescLIDOrder(t *testing.T) {
 		NewStatic(sources[0], false),
 		NewStatic(sources[1], false),
 	})
-	cursors := make([]BatchedNode, len(sources))
-	for i, src := range sources {
-		cursors[i] = NewStaticBatched(src, false)
-	}
-	column := NewColumnAgg(cursors, 1, 6, false)
+	column := NewColumnAgg(&mockLIDsIter{lids: sources}, 1, 6, false)
 
 	// Desc LID order (docs order asc): consume from high LID to low.
 	for _, lid := range []uint32{6, 5, 4, 3, 2, 1, 0} {
@@ -64,11 +78,7 @@ func TestColumnAgg_NextSourcedGeq(t *testing.T) {
 		{2, 3, 4, 6, 8, 14, 20},
 	}
 
-	cursors := make([]BatchedNode, len(sources))
-	for i, src := range sources {
-		cursors[i] = NewStaticBatched(src, true)
-	}
-	column := NewColumnAgg(cursors, 1, 20, true)
+	column := NewColumnAgg(&mockLIDsIter{lids: sources}, 1, 20, true)
 
 	id, source := column.NextSourcedGeq(NewAscLID(3))
 	assert.Equal(t, uint32(3), id.Unpack())
@@ -90,11 +100,7 @@ func TestColumnAgg_NextSourcedGeq_DescLIDOrder(t *testing.T) {
 		{2, 3, 4, 6, 8, 14, 20},
 	}
 
-	cursors := make([]BatchedNode, len(sources))
-	for i, src := range sources {
-		cursors[i] = NewStaticBatched(src, false)
-	}
-	column := NewColumnAgg(cursors, 1, 20, false)
+	column := NewColumnAgg(&mockLIDsIter{lids: sources}, 1, 20, false)
 
 	id, source := column.NextSourcedGeq(NewDescLID(17))
 	assert.Equal(t, uint32(15), id.Unpack())
