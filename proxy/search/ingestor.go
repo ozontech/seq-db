@@ -707,8 +707,8 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 
 	var md metadata.MD
 	data, err := client.Search(ctx, req,
-		grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
-		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
+		grpc.MaxCallRecvMsgSize(config.MaxGrpcMessageSizeBytes),
+		grpc.MaxCallSendMsgSize(config.MaxGrpcMessageSizeBytes),
 		grpc.UseCompressor(gzip.Name),
 		grpc.Header(&md),
 	)
