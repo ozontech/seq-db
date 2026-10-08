@@ -147,13 +147,9 @@ func (l *TableLoader) loadBlocksLegacy() ([]TableBlock, error) {
 }
 
 func (l *TableLoader) loadBlocks() ([]TableBlock, error) {
-	blocksCount, err := l.reader.BlocksCount()
-	if err != nil {
-		return nil, err
-	}
-
 	var blocks []TableBlock
-	for blockIndex := l.tableIndex; blockIndex < uint32(blocksCount); blockIndex++ {
+	blocksCount := uint32(l.reader.BlocksCount())
+	for blockIndex := l.tableIndex; blockIndex < blocksCount; blockIndex++ {
 		data, err := l.readBlock(blockIndex)
 		if err != nil {
 			return nil, err
