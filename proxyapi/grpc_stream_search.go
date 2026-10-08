@@ -282,7 +282,7 @@ func aggsTyping() []*seqproxyapi.Typing {
 
 // converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
 func docToRecord(r *query.Record) *seqproxyapi.Record {
-	id := r.Vals[0].Decoded().(seq.ID)
+	id := r.Vals[0].AsSeqID()
 
 	return &seqproxyapi.Record{
 		RawData: [][]byte{

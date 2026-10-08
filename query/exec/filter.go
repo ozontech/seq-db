@@ -12,10 +12,13 @@ type FilterExpr[T any] interface {
 	Eval(T) bool
 }
 
+type ValGetter[T any] func(*query.RecordVals) T
+
 type Filter[T any] struct {
 	input query.RecordProducer
 
 	colIdx int
+	getVal ValGetter[T]
 	expr   FilterExpr[T]
 
 	// withTotal requests the accurate total of records that pass the filter.
@@ -37,12 +40,14 @@ type Filter[T any] struct {
 func NewFilter[T any](
 	input query.RecordProducer,
 	colIdx int,
+	get ValGetter[T],
 	expr FilterExpr[T],
 	withTotal bool,
 ) *Filter[T] {
 	return &Filter[T]{
 		input:     input,
 		colIdx:    colIdx,
+		getVal:    get,
 		expr:      expr,
 		withTotal: withTotal,
 	}
@@ -55,7 +60,7 @@ func (f *Filter[T]) Next() *query.Record {
 			return nil
 		}
 
-		passes := f.expr.Eval(r.Vals[f.colIdx].Decoded().(T))
+		passes := f.expr.Eval(f.getVal(r.Vals[f.colIdx]))
 		// The decoded root is now cached; keep a reference so Finalize can release it.
 		f.roots = append(f.roots, r)
 		if passes {
