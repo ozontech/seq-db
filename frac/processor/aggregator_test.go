@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"math/rand"
@@ -8,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,20 +31,22 @@ func TestSingleSourceCountAggregator(t *testing.T) {
 	}
 
 	source := node.BuildORTreeAgg(node.MakeStaticNodes(sources))
-	iter := NewSourcedNodeIterator(source, nil, nil, "", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
-	agg := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
-	for _, id := range searchDocs {
-		if err := agg.Next(node.NewAscLID(id)); err != nil {
-			t.Fatal(err)
-		}
+	iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(sources)), "", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
+	agg := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0), false)
+
+	lids := make([]node.LID, len(searchDocs))
+	for i, id := range searchDocs {
+		lids[i] = node.NewAscLID(id)
+	}
+	if err := agg.Next(lids); err != nil {
+		t.Fatal(err)
 	}
 
-	assert.Equal(t, map[AggBin[uint32]]int64{
-		{Source: 0}: 2,
-		{Source: 2}: 4,
-	}, agg.countBySource)
+	require.Len(t, iter.countBySource.chunks, 1)
+	require.NotNil(t, iter.countBySource.chunks[0])
+	assert.Equal(t, [sourceChunkSize]uint64{2, 0, 4}, *iter.countBySource.chunks[0])
 
-	assert.Equal(t, int64(1), agg.notExists)
+	assert.Equal(t, int64(1), agg.counter.notExists())
 }
 
 func TestSingleSourceCountAggregatorWithInterval(t *testing.T) {
@@ -57,26 +61,31 @@ func TestSingleSourceCountAggregatorWithInterval(t *testing.T) {
 	}
 
 	source := node.BuildORTreeAgg(node.MakeStaticNodes(sources))
-	iter := NewSourcedNodeIterator(source, nil, nil, "", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
+	iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(sources)), "", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 
-	agg := NewSingleSourceCountAggregator(iter, func(l seq.LID) seq.MID {
-		return seq.MID(l) % 3
-	})
-
-	for _, id := range searchDocs {
-		if err := agg.Next(node.NewAscLID(id)); err != nil {
-			t.Fatal(err)
+	agg := NewSingleSourceCountAggregator(iter, func(lids []node.LID, dst []seq.MID) []seq.MID {
+		for _, lid := range lids {
+			dst = append(dst, seq.MID(lid.ToSeqLID())%3)
 		}
+		return dst
+	}, true)
+
+	lids := make([]node.LID, len(searchDocs))
+	for i, id := range searchDocs {
+		lids[i] = node.NewAscLID(id)
+	}
+	if err := agg.Next(lids); err != nil {
+		t.Fatal(err)
 	}
 
-	assert.Equal(t, map[AggBin[uint32]]int64{
+	assert.Equal(t, map[AggBin[int]]int64{
 		{Source: 0, MID: 0}: 1,
 		{Source: 2, MID: 0}: 1,
 		{Source: 0, MID: 1}: 1,
 		{Source: 2, MID: 2}: 3,
-	}, agg.countBySource)
+	}, agg.counter.(*tsSourceCounter).counts)
 
-	assert.Equal(t, int64(1), agg.notExists)
+	assert.Equal(t, int64(1), agg.counter.notExists())
 }
 
 const benchRandSeed int64 = 1
@@ -100,14 +109,16 @@ func BenchmarkAggDeep(b *testing.B) {
 			v, _ := Generate(r, s)
 			src := node.NewSourcedNodeWrapper(node.NewStatic(v, true), 0)
 			iter := NewSourcedNodeIterator(src, nil, make([]uint32, 1), "", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
-			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
+			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0), false)
 			vals, _ := Generate(r, s)
+			lids := make([]node.LID, len(vals))
+			for i, v := range vals {
+				lids[i] = node.NewAscLID(v)
+			}
 
 			for b.Loop() {
-				for _, v := range vals {
-					if err := n.Next(node.NewAscLID(v)); err != nil {
-						b.Fatal(err)
-					}
+				if err := n.Next(lids); err != nil {
+					b.Fatal(err)
 				}
 			}
 		})
@@ -134,14 +145,16 @@ func BenchmarkAggWide(b *testing.B) {
 			source := node.BuildORTreeAgg(node.MakeStaticNodes(wide))
 
 			iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(wide)), "", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
-			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
+			n := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0), false)
 			vals, _ := Generate(r, s)
+			lids := make([]node.LID, len(vals))
+			for i, v := range vals {
+				lids[i] = node.NewAscLID(v)
+			}
 
 			for b.Loop() {
-				for _, v := range vals {
-					if err := n.Next(node.NewAscLID(v)); err != nil {
-						b.Fatal(err)
-					}
+				if err := n.Next(lids); err != nil {
+					b.Fatal(err)
 				}
 			}
 		})
@@ -225,8 +238,7 @@ func TestTwoSourceAggregator(t *testing.T) {
 	)
 
 	// Call Next for two data points.
-	r.NoError(aggregator.Next(node.NewAscLID(1)))
-	r.NoError(aggregator.Next(node.NewAscLID(2)))
+	r.NoError(aggregator.Next([]node.LID{node.NewAscLID(1), node.NewAscLID(2)}))
 
 	// Verify countBySource map.
 	expectedCountBySource := map[twoSources]int64{
@@ -271,9 +283,9 @@ func TestSingleTreeCountAggregator(t *testing.T) {
 	}
 
 	iter := NewSourcedNodeIterator(field, dp, []uint32{0}, "field", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
-	aggregator := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
+	aggregator := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0), false)
 
-	r.NoError(aggregator.Next(node.NewAscLID(1)))
+	r.NoError(aggregator.Next([]node.LID{node.NewAscLID(1)}))
 
 	result, err := aggregator.Aggregate()
 	if err != nil {
@@ -308,14 +320,19 @@ func TestAggregatorLimitExceeded(t *testing.T) {
 
 	for _, expectedErr := range []error{consts.ErrTooManyGroupTokens, consts.ErrTooManyFieldTokens} {
 		source := node.BuildORTreeAgg(node.MakeStaticNodes(sources))
-		iter := NewSourcedNodeIterator(source, nil, nil, "", iteratorLimit{limit: limit, err: expectedErr})
-		agg := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0))
+		iter := NewSourcedNodeIterator(source, nil, make([]uint32, len(sources)), "", iteratorLimit{limit: limit, err: expectedErr})
+		agg := NewSingleSourceCountAggregator(iter, provideExtractTimeFunc(nil, nil, 0), false)
 
 		var limitErr error
 		var limitIteration int
 
+		lids := make([]node.LID, len(searchDocs))
 		for i, id := range searchDocs {
-			if err := agg.Next(node.NewAscLID(id)); err != nil {
+			lids[i] = node.NewAscLID(id)
+		}
+
+		for i := range lids {
+			if err := agg.Next(lids[i : i+1]); err != nil {
 				limitErr = err
 				limitIteration = i
 				break
@@ -325,4 +342,96 @@ func TestAggregatorLimitExceeded(t *testing.T) {
 		assert.Equal(t, limit, limitIteration)
 		assert.ErrorIs(t, limitErr, expectedErr)
 	}
+}
+
+func TestSourceCountMap(t *testing.T) {
+	counts := newSourceCountMap(5000)
+
+	require.Len(t, counts.chunks, 5)
+
+	counts.add(uint32(100))
+	assert.Equal(t, 1, counts.size)
+
+	counts.add(uint32(100))
+	assert.Equal(t, 1, counts.size)
+	assert.Equal(t, uint64(2), counts.count(uint32(100)))
+
+	counts.add(uint32(1100))
+	assert.Equal(t, 2, counts.size)
+
+	got := make(map[uint32]uint64)
+	counts.forEach(func(source uint32, count uint64) {
+		got[source] = count
+	})
+
+	assert.Equal(t, map[uint32]uint64{100: 2, 1100: 1}, got)
+}
+
+func TestSourceCountMapAgainstBuiltinMap(t *testing.T) {
+	const (
+		sources = 5_000
+		updates = 15_000
+	)
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	counts := newSourceCountMap(sources)
+	want := make(map[uint32]uint64)
+
+	for range updates {
+		source := uint32(r.Intn(sources))
+		counts.add(source)
+		want[source]++
+	}
+
+	type sourceCount struct {
+		source uint32
+		count  uint64
+	}
+	wantPairs := make([]sourceCount, 0, len(want))
+	for source, count := range want {
+		wantPairs = append(wantPairs, sourceCount{source: source, count: count})
+	}
+	slices.SortFunc(wantPairs, func(a, b sourceCount) int {
+		return cmp.Compare(a.source, b.source)
+	})
+
+	gotPairs := make([]sourceCount, 0, counts.size)
+	counts.forEach(func(source uint32, count uint64) {
+		gotPairs = append(gotPairs, sourceCount{source: source, count: count})
+	})
+
+	require.Len(t, gotPairs, counts.size)
+	assert.Equal(t, wantPairs, gotPairs)
+}
+
+// TestSourceCountMapForEachOrderedBySource tests that forEach iteration is asc ordered by source.
+func TestSourceCountMapForEachOrderedBySource(t *testing.T) {
+	const (
+		sources = 10_000
+		updates = 5_000
+	)
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	counts := newSourceCountMap(sources)
+	want := make(map[uint32]struct{}, updates)
+
+	for range updates {
+		source := uint32(r.Intn(sources))
+		counts.add(source)
+		want[source] = struct{}{}
+	}
+
+	wantSources := make([]uint32, 0, len(want))
+	for source := range want {
+		wantSources = append(wantSources, source)
+	}
+	slices.Sort(wantSources)
+
+	gotSources := make([]uint32, 0, counts.size)
+	counts.forEach(func(source uint32, _ uint64) {
+		gotSources = append(gotSources, source)
+	})
+
+	require.Len(t, gotSources, counts.size)
+	assert.Equal(t, wantSources, gotSources)
 }

@@ -94,8 +94,8 @@ func evalSkipLIDs(root, skipLIDsIterator node.Node, stats *searchStats) node.Nod
 }
 
 type Aggregator interface {
-	// Next iterates to count the next lid.
-	Next(lid node.LID) error
+	// Next processes a batch of lids and updates aggregation state.
+	Next(lids []node.LID) error
 	// Aggregate processes and returns the final aggregation result.
 	Aggregate() (seq.AggregatableSamples, error)
 	// Dispose releases resources held by the aggregator.
@@ -157,7 +157,7 @@ func evalAgg(
 		}
 
 		if query.Func == seq.AggFuncCount {
-			return NewSingleSourceCountAggregator(groupIterator, extractMID), nil
+			return NewSingleSourceCountAggregator(groupIterator, extractMID, query.Interval > 0), nil
 		}
 
 		return NewSingleSourceUniqueAggregator(groupIterator), nil
