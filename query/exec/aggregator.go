@@ -20,21 +20,22 @@ const (
 	ExecutorStateDone
 )
 
+// Input and output columns are resolved from existing hardcoded schemas.
 var (
-	aggColTokenIn   = query.StringColumn(0)
-	aggColMinIn     = query.Float64Column(1)
-	aggColMaxIn     = query.Float64Column(2)
-	aggColSumIn     = query.Float64Column(3)
-	aggColTotalIn   = query.Uint64Column(4)
-	aggColTsIn      = query.Uint64Column(6)
-	aggColSamplesIn = query.Float64ArrayColumn(7)
-	aggColValuesIn  = query.StringArrayColumn(8)
+	aggColTokenIn   = query.AggsSchema.MustColumn[string]("token")
+	aggColMinIn     = query.AggsSchema.MustColumn[float64]("min")
+	aggColMaxIn     = query.AggsSchema.MustColumn[float64]("max")
+	aggColSumIn     = query.AggsSchema.MustColumn[float64]("sum")
+	aggColTotalIn   = query.AggsSchema.MustColumn[uint64]("total")
+	aggColTsIn      = query.AggsSchema.MustColumn[uint64]("ts")
+	aggColSamplesIn = query.AggsSchema.MustColumn[[]float64]("samples")
+	aggColValuesIn  = query.AggsSchema.MustColumn[[]string]("values")
 )
 
 var (
-	aggColTokenOut = query.StringColumn(0)
-	aggColValueOut = query.Float64Column(1)
-	aggColTsOut    = query.Uint64Column(2)
+	aggColTokenOut = query.AggResultSchema.MustColumn[string]("token")
+	aggColValueOut = query.AggResultSchema.MustColumn[float64]("value")
+	aggColTsOut    = query.AggResultSchema.MustColumn[uint64]("ts")
 )
 
 // aggKey identifies a single timeseries bin: the grouping token plus the
@@ -123,6 +124,7 @@ func (a *DistributedAggregator) Next() *query.Record {
 				panic(fmt.Errorf("unimplemented aggregation func"))
 			}
 
+			// val order must match query.AggResultSchema
 			a.sortingBuf = append(a.sortingBuf, query.NewRecord([]*query.RecordVals{
 				query.NewRecordVals(query.DataTypeString, []byte(key.token)),
 				query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(value)),

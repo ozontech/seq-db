@@ -20,6 +20,7 @@ import (
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/query/exec"
+	"github.com/ozontech/seq-db/query/plan"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tracing"
@@ -117,7 +118,7 @@ func (g *GrpcV1) doStreamSearch(
 	parseQueryTr.Done()
 
 	buildProducerTr := tr.NewChild("build producer")
-	producer, typing, err := g.buildProducer(ctx, req, tr, seqql)
+	producer, schema, err := g.buildProducer(ctx, req, tr, seqql)
 	if err != nil {
 		buildProducerTr.Done()
 		return fmt.Errorf("can't build record producer: %w", err)
@@ -127,7 +128,7 @@ func (g *GrpcV1) doStreamSearch(
 	err = stream.Send(&storeapi.StreamSearchResponse{
 		ResponseType: &storeapi.StreamSearchResponse_Header{
 			Header: &storeapi.ResponseHeader{
-				Typing: typing,
+				Typing: schemaToTyping(schema),
 			},
 		},
 	})
@@ -308,196 +309,75 @@ func sendSummary(
 	return nil
 }
 
+// buildProducer translates the logical plan into the physical one. Returns the plan's output schema.
 func (g *GrpcV1) buildProducer(
 	ctx context.Context,
 	req *storeapi.StreamSearchQuery,
 	tr *querytracer.Tracer,
 	seqql parser.SeqQLQuery,
-) (query.RecordProducer, []*storeapi.Typing, error) {
-	// The data source is limitless and walks the matched set via cursor pagination;
-	// the real request limit is applied by a Limiter executor.
-	searchParams := processor.SearchParams{
-		AST:       seqql.Root,
+) (query.RecordProducer, *query.Schema, error) {
+	p, err := plan.Build(plan.BuildParams{
+		SeqQL:     &seqql,
+		Input:     query.DocsSchema,
+		DocField:  query.DocsDataCol,
 		From:      seq.MillisToMID(uint64(seq.TimeToMID(req.From.AsTime()))),
 		To:        seq.MillisToMID(uint64(seq.TimeToMID(req.To.AsTime()))),
+		OffsetID:  req.OffsetId,
 		WithTotal: req.WithTotal,
-	}
-
-	typing := docsTyping()
-	var offset int
-	var fieldsFilter *exec.FieldsFilter
-	var docFilter *exec.DocFilter
-
-	for _, pipe := range seqql.Pipes {
-		switch p := pipe.(type) {
-		case *parser.PipeLimit:
-			searchParams.Limit = p.Limit
-		case *parser.PipeOffset:
-			offset = p.Offset
-		case *parser.PipeSort:
-			order := seq.DocsOrderAsc
-			if p.Order == "desc" {
-				order = seq.DocsOrderDesc
-			}
-			searchParams.Order = order
-		case *parser.PipeStats:
-			aggQ, err := convertStatsAggToAggQuery(p.Agg)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to convert stats aggs: %w", err)
-			}
-			searchParams.AggQ = []processor.AggQuery{aggQ}
-			typing = aggsTyping()
-		case *parser.PipeFilter:
-			docFilter = exec.NewDocFilter(p.Condition.Field, exec.NewEq(p.Condition.Value))
-		case *parser.PipeFields:
-			fieldsFilter = &exec.FieldsFilter{
-				Fields:    p.Fields,
-				AllowList: !p.Except,
-			}
-		default:
-			continue
-		}
-	}
-
-	if req.OffsetId != "" {
-		// offset_id pagination
-		if offset != 0 {
-			return nil, nil, fmt.Errorf(`only one of "offset" and "offset_id" must be provided`)
-		}
-		offsetId, err := seq.FromString(req.OffsetId)
-		if err != nil {
-			return nil, nil, fmt.Errorf("could not parse offset_id: %s", req.OffsetId)
-		}
-		if len(searchParams.AggQ) > 0 {
-			return nil, nil, fmt.Errorf("offset_id is not supported for aggregation requests")
-		}
-		searchParams.OffsetId = offsetId
-		// fractions take into an account offset id, but we also limit time range here
-		// to filter out unneeded fractions
-		if searchParams.Order == seq.DocsOrderDesc {
-			searchParams.To = offsetId.MID
-		} else {
-			searchParams.From = offsetId.MID
-		}
-	}
-
-	const docDataColIdx = 1
-	var producer query.RecordProducer
-	producer = exec.NewSearcherDataSource(ctx, tr, searchParams, g.fracManager, g.searchData.searcher, g.fetchData.docFetcher)
-	if len(searchParams.AggQ) > 0 {
-		return producer, typing, nil
-	}
-	if docFilter != nil {
-		producer = exec.NewFilter(producer, query.DocColumn(docDataColIdx), docFilter, req.WithTotal)
-	}
-	if fieldsFilter != nil {
-		producer = exec.NewDocProjector(producer, query.DocColumn(docDataColIdx), fieldsFilter)
-	}
-	if searchParams.Limit > 0 {
-		// set limit=limit+offset and offset=0 to merge stores' results correctly on proxy
-		producer = exec.NewLimiter(producer, uint32(searchParams.Limit+offset), 0)
-	}
-
-	return producer, typing, nil
-}
-
-// hardcoded schema
-func docsTyping() []*storeapi.Typing {
-	return []*storeapi.Typing{
-		{Title: "id", Type: storeapi.DataType_SEQ_ID},
-		{Title: "data", Type: storeapi.DataType_RAW_DOCUMENT},
-	}
-}
-
-// hardcoded schema
-func aggsTyping() []*storeapi.Typing {
-	return []*storeapi.Typing{
-		{Title: "token", Type: storeapi.DataType_STRING},
-		{Title: "min", Type: storeapi.DataType_FLOAT64},
-		{Title: "max", Type: storeapi.DataType_FLOAT64},
-		{Title: "sum", Type: storeapi.DataType_FLOAT64},
-		{Title: "total", Type: storeapi.DataType_UINT64},
-		{Title: "not_exists", Type: storeapi.DataType_UINT64},
-		{Title: "ts", Type: storeapi.DataType_UINT64},
-		{Title: "samples", Type: storeapi.DataType_FLOAT64_ARRAY},
-		{Title: "values", Type: storeapi.DataType_STRING_ARRAY},
-	}
-}
-
-func convertStatsAggToAggQuery(statsAgg parser.StatsAgg) (processor.AggQuery, error) {
-	aggFunc, err := convertStringToAggFunc(statsAgg.Func)
+	})
 	if err != nil {
-		return processor.AggQuery{}, err
+		return nil, nil, err
 	}
 
-	// 'groupBy' is required for Count and Unique.
-	if statsAgg.GroupBy == "" && (aggFunc == seq.AggFuncCount || aggFunc == seq.AggFuncUnique) {
-		return processor.AggQuery{}, fmt.Errorf("%w: groupBy is required for %s func", consts.ErrInvalidAggQuery, aggFunc)
+	// The data source is limitless and walks the matched set via cursor pagination;
+	// the real request limit is applied by a Limiter executor. The limit op
+	// also caps the per-batch scan size.
+	searchParams := processor.SearchParams{
+		AST:       p.Scan.AST,
+		From:      p.Scan.From,
+		To:        p.Scan.To,
+		WithTotal: p.Scan.WithTotal,
+		Order:     p.Scan.Order,
+		OffsetId:  p.Scan.OffsetID,
+		AggQ:      p.Scan.AggQ,
 	}
-
-	// 'field' is required for stat functions like sum, avg, max and min.
-	if statsAgg.Field == "" && aggFunc != seq.AggFuncCount && aggFunc != seq.AggFuncUnique {
-		return processor.AggQuery{}, fmt.Errorf("%w: field is required for %s func", consts.ErrInvalidAggQuery, aggFunc)
-	}
-
-	// Check 'quantiles' is not empty for Quantile func.
-	if len(statsAgg.Quantiles) == 0 && aggFunc == seq.AggFuncQuantile {
-		return processor.AggQuery{}, fmt.Errorf("%w: expect an argument for Quantile func", consts.ErrInvalidAggQuery)
-	}
-
-	var field *parser.Literal
-	if statsAgg.Field != "" {
-		field = &parser.Literal{
-			Field: statsAgg.Field,
-			Terms: searchAll,
+	for _, op := range p.Ops {
+		if op, ok := op.(*plan.LimitOp); ok {
+			searchParams.Limit = op.Limit
 		}
 	}
 
-	var groupBy *parser.Literal
-	if statsAgg.GroupBy != "" {
-		groupBy = &parser.Literal{
-			Field: statsAgg.GroupBy,
-			Terms: searchAll,
-		}
+	var producer query.RecordProducer = exec.NewSearcherDataSource(
+		ctx,
+		tr,
+		searchParams,
+		g.fracManager,
+		g.searchData.searcher,
+		g.fetchData.docFetcher,
+	)
+
+	if p.IsAgg() {
+		return producer, p.Schema, nil
 	}
 
-	procAgg := processor.AggQuery{
-		Field:     field,
-		GroupBy:   groupBy,
-		Func:      aggFunc,
-		Quantiles: statsAgg.Quantiles,
+	// ops wrap the source, the schema flows through them so an op that changes the record
+	// shape extends it here and downstream ops resolve their columns from the extension
+	schema := p.Schema
+	for _, op := range p.Ops {
+		producer, schema = op.Apply(producer, schema)
 	}
 
-	if statsAgg.Interval != "" {
-		interval, err := util.ParseDuration(statsAgg.Interval)
-		if err != nil {
-			return processor.AggQuery{}, fmt.Errorf("failed to parse interval: %w", err)
-		}
-		procAgg.Interval = int64(seq.MIDToMillis(seq.MID(interval.Nanoseconds())))
-	}
-
-	return procAgg, nil
+	return producer, schema, nil
 }
 
-func convertStringToAggFunc(funcName string) (seq.AggFunc, error) {
-	switch funcName {
-	case "count":
-		return seq.AggFuncCount, nil
-	case "sum":
-		return seq.AggFuncSum, nil
-	case "min":
-		return seq.AggFuncMin, nil
-	case "max":
-		return seq.AggFuncMax, nil
-	case "avg":
-		return seq.AggFuncAvg, nil
-	case "quantile":
-		return seq.AggFuncQuantile, nil
-	case "unique":
-		return seq.AggFuncUnique, nil
-	case "unique_count":
-		return seq.AggFuncUniqueCount, nil
-	default:
-		return 0, fmt.Errorf("unknown aggregation function: %s", funcName)
+func schemaToTyping(s *query.Schema) []*storeapi.Typing {
+	cols := s.Cols()
+	out := make([]*storeapi.Typing, 0, len(cols))
+	for _, c := range cols {
+		out = append(out, &storeapi.Typing{
+			Title: c.Name,
+			Type:  storeapi.MustProtoDataType(c.Type),
+		})
 	}
+	return out
 }
