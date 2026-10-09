@@ -302,6 +302,9 @@ type Config struct {
 		// Retention sets TTL for [frac.Remote] fractions.
 		// By default no retention is configured and all [frac.Remote] fractions are kept forever.
 		Retention time.Duration `config:"retention"`
+		// RemoteTotalSize specifies upper bound of how much disk space can be occupied
+		// by sealed fractions before they get deleted from S3.
+		RemoteTotalSize uint64 `config:"remote_total_size"`
 
 		// Endpoint configures S3 endpoint for S3 client.
 		Endpoint string `config:"endpoint" default:"https://s3.us-east-1.amazonaws.com/"`

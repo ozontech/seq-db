@@ -50,7 +50,11 @@ func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.
 		if cfg.OffloadingQueueSize > 0 {
 			lc.removeOverflowed(cfg.OffloadingQueueSize, wg)
 		}
-		lc.cleanRemote(cfg.OffloadingRetention, wg)
+		lc.cleanRemote(
+			cfg.OffloadingRetention,
+			cfg.OffloadingRemoteTotalSize,
+			wg,
+		)
 	} else {
 		lc.cleanLocal(cfg.TotalSize, wg)
 	}
@@ -188,8 +192,19 @@ func (lc *lifecycleManager) tryOffload(ctx context.Context, sealed *frac.Sealed)
 }
 
 // cleanRemote deletes outdated remote fractions based on retention policy.
-func (lc *lifecycleManager) cleanRemote(retention time.Duration, wg *sync.WaitGroup) {
-	toDelete := lc.registry.evictRemote(retention)
+func (lc *lifecycleManager) cleanRemote(
+	retention time.Duration,
+	sizeLimitS3 uint64,
+	wg *sync.WaitGroup,
+) {
+	toDelete := lc.registry.evictRemote(retention, sizeLimitS3)
+
+	if len(toDelete) > 0 && !lc.flags.IsCapacityExceeded() {
+		if err := lc.flags.setCapacityExceeded(true); err != nil {
+			logger.Fatal("can't set capacity_exceeded flag", zap.Error(err))
+		}
+	}
+
 	wg.Add(len(toDelete))
 	for _, remote := range toDelete {
 		go func() {
