@@ -34,6 +34,10 @@ type sealedDataProvider struct {
 	info   *common.Info
 	config *Config
 
+	// tokenCache is request-scoped state shared by all searches of the same
+	// sealed fraction within one request; travels in the search context.
+	tokenCache *processor.TokenExprCache
+
 	idsTable    *seqids.Table
 	idsProvider *seqids.Provider
 
@@ -72,6 +76,8 @@ func (dp *sealedDataProvider) getFetchIndex() *sealedFetchIndex {
 func (dp *sealedDataProvider) getTokenIndex() *sealedTokenIndex {
 	return &sealedTokenIndex{
 		ctx:              dp.ctx,
+		fracName:         dp.info.Name(),
+		tokenCache:       dp.tokenCache,
 		lidsLoader:       dp.lidsLoader,
 		lidsTable:        dp.lidsTable,
 		tokenTableLoader: dp.tokenTableLoader,
@@ -223,6 +229,8 @@ func (ii *sealedIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 
 type sealedTokenIndex struct {
 	ctx              context.Context
+	fracName         string
+	tokenCache       *processor.TokenExprCache
 	lidsTable        *lids.Table
 	lidsLoader       *lids.Loader
 	tokenTableLoader *token.TableLoader
@@ -258,12 +266,20 @@ func (ti *sealedTokenIndex) GetTIDsByField(field string) ([]uint32, error) {
 }
 
 func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
+	// A sealed fraction's tokens never change, so the result of this lookup
+	// is the same for every search over this fraction; async searches rely
+	// on the cache to avoid repeating it for each interval.
+	if tids, ok := ti.tokenCache.Get(ti.fracName, t); ok {
+		return tids, nil
+	}
+
 	field := parser.GetField(t)
 	searchStr := parser.GetHint(t)
 
 	tokenTable := ti.tokenTableLoader.Load()
 	entries := tokenTable.SelectEntries(field, searchStr)
 	if len(entries) == 0 {
+		ti.tokenCache.Put(ti.fracName, t, nil)
 		return nil, nil
 	}
 
@@ -273,6 +289,7 @@ func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error)
 	if err != nil {
 		return nil, fmt.Errorf("search error: %s field: %s, query: %s", err, field, searchStr)
 	}
+	ti.tokenCache.Put(ti.fracName, t, tids)
 	return tids, nil
 }
 
@@ -457,5 +474,5 @@ type sealedSearchIndex struct {
 }
 
 func (si *sealedSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
-	return si.skipMaskProvider.GetIDsIteratorByFrac(si.fracName, minLID, maxLID, reverse)
+	return si.skipMaskProvider.GetIDsIteratorByFrac(si.sealedIDsIndex.fracName, minLID, maxLID, reverse)
 }

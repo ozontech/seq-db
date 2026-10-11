@@ -505,6 +505,7 @@ func (f *Sealed) createDataProvider(sc processor.SearchContext) *sealedDataProvi
 	ir := f.indexReaders()
 	return &sealedDataProvider{
 		ctx:               sc,
+		tokenCache:        sc.TokenCache,
 		fractionTypeLabel: "sealed",
 
 		info:       f.info,

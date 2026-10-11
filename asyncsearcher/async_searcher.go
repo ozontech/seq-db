@@ -77,6 +77,10 @@ type AsyncSearcherConfig struct {
 
 	MaxSize           int
 	MaxSizePerRequest int
+
+	// MaxTokenCacheSize limits memory used by per-request caching of token
+	// TID lookups; non-positive disables caching.
+	MaxTokenCacheSize int
 }
 
 type fractionAcquirer interface {
@@ -412,7 +416,10 @@ func (as *AsyncSearcher) doSearch(id string, fracProvider fractionAcquirer) {
 
 	intervals := buildIntervals(info.SearchFrom, info.SearchTo)
 
+	// One fraction usually covers many intervals, and each search over it
+	// repeats the same token lookups; share their results across intervals.
 	sc := processor.NewSearchContext(info.ctx)
+	sc.TokenCache = processor.NewTokenExprCache(as.config.MaxTokenCacheSize)
 
 	for _, interval := range intervals {
 		if _, ok := processedIntervals[intervalName(interval)]; ok {

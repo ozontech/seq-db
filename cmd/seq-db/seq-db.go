@@ -320,6 +320,7 @@ func startStore(
 					Workers:           cfg.AsyncSearch.Concurrency,
 					MaxSize:           int(cfg.AsyncSearch.MaxTotalSize),
 					MaxSizePerRequest: int(cfg.AsyncSearch.MaxSizePerRequest),
+					MaxTokenCacheSize: int(cfg.AsyncSearch.MaxTokenCacheSize),
 				},
 			},
 			Fetch: storeapi.FetchConfig{

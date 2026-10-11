@@ -163,6 +163,7 @@ func (f *Remote) createDataProvider(sc processor.SearchContext) (*sealedDataProv
 	ir := f.indexReaders()
 	return &sealedDataProvider{
 		ctx:               sc,
+		tokenCache:        sc.TokenCache,
 		fractionTypeLabel: "remote",
 
 		info:       f.info,

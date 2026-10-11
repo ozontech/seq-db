@@ -326,6 +326,10 @@ type Config struct {
 		MaxTotalSize           Bytes  `config:"max_total_size" default:"1GiB"`
 		MaxSizePerRequest      Bytes  `config:"max_size_per_request" default:"100MiB"`
 		MaxDocumentsPerRequest int64  `config:"max_documents_per_request" default:"100000"`
+		// MaxTokenCacheSize limits per-request caching of token TID lookups
+		// (avoids repeating them for every interval a fraction falls into).
+		// Zero disables the cache.
+		MaxTokenCacheSize Bytes `config:"max_token_cache_size" default:"64MiB"`
 	} `config:"async_search"`
 
 	API struct {
