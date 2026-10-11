@@ -411,6 +411,9 @@ func (as *AsyncSearcher) doSearch(id string, fracProvider fractionAcquirer) {
 	}
 
 	intervals := buildIntervals(info.SearchFrom, info.SearchTo)
+
+	sc := processor.NewSearchContext(info.ctx)
+
 	for _, interval := range intervals {
 		if _, ok := processedIntervals[intervalName(interval)]; ok {
 			continue
@@ -421,7 +424,7 @@ func (as *AsyncSearcher) doSearch(id string, fracProvider fractionAcquirer) {
 		}
 
 		as.rateLimit <- struct{}{}
-		if err := as.acquireAndProcessFracsInInterval(interval, info, fracProvider); err != nil {
+		if err := as.acquireAndProcessFracsInInterval(sc, interval, info, fracProvider); err != nil {
 			<-as.rateLimit
 			if as.shouldStopSearch(id) && errors.Is(err, context.Canceled) {
 				// request is cancelled so context.Canceled is not a real error, don't store it
@@ -487,6 +490,7 @@ func compressQPR(qpr *seq.QPR, cb func(compressed []byte) error) error {
 }
 
 func (as *AsyncSearcher) acquireAndProcessFracsInInterval(
+	sc processor.SearchContext,
 	interval searchInterval,
 	searchInfo asyncSearchInfo,
 	fracProvider fractionAcquirer,
@@ -499,7 +503,7 @@ func (as *AsyncSearcher) acquireAndProcessFracsInInterval(
 
 	qpr := &seq.QPR{}
 	for _, f := range fracs {
-		fracQPR, err := as.processFrac(f, searchInfo, interval)
+		fracQPR, err := as.processFrac(f, sc, searchInfo, interval)
 		if err != nil {
 			return err
 		}
@@ -535,6 +539,7 @@ func (as *AsyncSearcher) acquireAndProcessFracsInInterval(
 
 func (as *AsyncSearcher) processFrac(
 	f frac.Fraction,
+	sc processor.SearchContext,
 	info asyncSearchInfo,
 	interval searchInterval,
 ) (qpr *seq.QPR, err error) {
@@ -547,7 +552,7 @@ func (as *AsyncSearcher) processFrac(
 	// use interval's from and to
 	info.Request.Params.From = interval[0]
 	info.Request.Params.To = interval[1]
-	return f.Search(info.ctx, info.Request.Params)
+	return f.Search(sc, info.Request.Params)
 }
 
 func getQPRFilename(id, intervalName string) string {

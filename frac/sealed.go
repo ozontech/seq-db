@@ -481,30 +481,30 @@ func (f *Sealed) String() string {
 }
 
 func (f *Sealed) Fetch(ctx context.Context, ids []seq.ID, noSkipMasks bool) ([][]byte, error) {
-	dp := f.createDataProvider(ctx)
+	dp := f.createDataProvider(processor.NewSearchContext(ctx))
 	defer dp.release()
 	return dp.Fetch(ids, noSkipMasks)
 }
 
-func (f *Sealed) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
-	dp := f.createDataProvider(ctx)
+func (f *Sealed) Search(sc processor.SearchContext, params processor.SearchParams) (*seq.QPR, error) {
+	dp := f.createDataProvider(sc)
 	defer dp.release()
 	return dp.Search(params)
 }
 
 func (f *Sealed) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
-	dp := f.createDataProvider(ctx)
+	dp := f.createDataProvider(processor.NewSearchContext(ctx))
 	defer dp.release()
 
 	return dp.FindLIDs(ids)
 }
 
-func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
+func (f *Sealed) createDataProvider(sc processor.SearchContext) *sealedDataProvider {
 	f.init(true)
 
 	ir := f.indexReaders()
 	return &sealedDataProvider{
-		ctx:               ctx,
+		ctx:               sc,
 		fractionTypeLabel: "sealed",
 
 		info:       f.info,

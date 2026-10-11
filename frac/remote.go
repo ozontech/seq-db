@@ -121,7 +121,7 @@ func (f *Remote) Contains(mid seq.MID) bool {
 }
 
 func (f *Remote) Fetch(ctx context.Context, ids []seq.ID, noSkipMasks bool) ([][]byte, error) {
-	dp, err := f.createDataProvider(ctx)
+	dp, err := f.createDataProvider(processor.NewSearchContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -130,8 +130,8 @@ func (f *Remote) Fetch(ctx context.Context, ids []seq.ID, noSkipMasks bool) ([][
 	return dp.Fetch(ids, noSkipMasks)
 }
 
-func (f *Remote) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
-	dp, err := f.createDataProvider(ctx)
+func (f *Remote) Search(sc processor.SearchContext, params processor.SearchParams) (*seq.QPR, error) {
+	dp, err := f.createDataProvider(sc)
 	if err != nil {
 		return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, err
 	}
@@ -141,7 +141,7 @@ func (f *Remote) Search(ctx context.Context, params processor.SearchParams) (*se
 }
 
 func (f *Remote) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) {
-	dp, err := f.createDataProvider(ctx)
+	dp, err := f.createDataProvider(processor.NewSearchContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (f *Remote) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) 
 	return dp.FindLIDs(ids)
 }
 
-func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, error) {
+func (f *Remote) createDataProvider(sc processor.SearchContext) (*sealedDataProvider, error) {
 	if err := f.init(); err != nil {
 		logger.Error(
 			"will create empty data provider: cannot load remote fraction",
@@ -162,7 +162,7 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 
 	ir := f.indexReaders()
 	return &sealedDataProvider{
-		ctx:               ctx,
+		ctx:               sc,
 		fractionTypeLabel: "remote",
 
 		info:       f.info,

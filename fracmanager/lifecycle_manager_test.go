@@ -209,7 +209,7 @@ func TestPendingDestroy(t *testing.T) {
 	}
 
 	for _, f := range fractions1 {
-		qpr, err := f.Search(t.Context(), params)
+		qpr, err := f.Search(processor.NewSearchContext(t.Context()), params)
 		assert.NoError(t, err, "failed to search")
 		assert.Equal(t, docsPerFrac, len(qpr.IDs))
 	}
@@ -230,7 +230,7 @@ func TestPendingDestroy(t *testing.T) {
 			continue
 		}
 		assert.Panics(t, func() {
-			_, _ = f.Search(t.Context(), params)
+			_, _ = f.Search(processor.NewSearchContext(t.Context()), params)
 		}, "searching by destroyed faction is expected to trigger a panic")
 	}
 	release2()

@@ -45,7 +45,7 @@ func NewSearcher(maxWorkersNum int, cfg SearcherCfg) *Searcher {
 	}
 }
 
-func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params processor.SearchParams, tr *querytracer.Tracer) (*seq.QPR, error) {
+func (s *Searcher) SearchDocs(sc processor.SearchContext, fracs []frac.Fraction, params processor.SearchParams, tr *querytracer.Tracer) (*seq.QPR, error) {
 	start := time.Now()
 	remainingFracs, err := s.prepareFracs(fracs, params)
 	if err != nil {
@@ -77,7 +77,7 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 	for len(remainingFracs) > 0 && (scanAll || params.Limit > 0) {
 		chunk := remainingFracs.Shift(fracsChunkSize)
 
-		subQPRs, searchTimeNanos, waitTimeNanos, err := s.searchDocsAsync(ctx, chunk, params)
+		subQPRs, searchTimeNanos, waitTimeNanos, err := s.searchDocsAsync(sc, chunk, params)
 		if err != nil {
 			return nil, err
 		}
@@ -183,9 +183,12 @@ func calcEnsuredIDsCount(ids seq.IDSources, remainingFracs List, order seq.DocsO
 	return sort.Search(len(ids), func(i int) bool { return ids[i].ID.MID <= nextFracInfo.To })
 }
 
-func (s *Searcher) searchDocsAsync(ctx context.Context, fracs []frac.Fraction, params processor.SearchParams) ([]*seq.QPR, int64, int64, error) {
-	ctx, cancel := context.WithCancel(ctx)
+func (s *Searcher) searchDocsAsync(sc processor.SearchContext, fracs []frac.Fraction, params processor.SearchParams) ([]*seq.QPR, int64, int64, error) {
+	// derive a cancellable context so a failing fraction stops the others;
+	// the request-scoped state must survive the derivation
+	ctx, cancel := context.WithCancel(sc)
 	defer cancel()
+	sc.Context = ctx
 
 	var err error
 
@@ -207,7 +210,7 @@ loop:
 			go func() {
 				searchStart := time.Now()
 				var fracErr error
-				if qprs[i], fracErr = s.fracSearch(ctx, params, frac); fracErr != nil {
+				if qprs[i], fracErr = s.fracSearch(sc, params, frac); fracErr != nil {
 					once.Do(func() {
 						err = fracErr
 						cancel()
@@ -243,11 +246,11 @@ loop:
 	return qprs, totalSearchTimeNanos, totalWaitTimeNanos, nil
 }
 
-func (s *Searcher) fracSearch(ctx context.Context, params processor.SearchParams, f frac.Fraction) (_ *seq.QPR, err error) {
+func (s *Searcher) fracSearch(sc processor.SearchContext, params processor.SearchParams, f frac.Fraction) (_ *seq.QPR, err error) {
 	defer func() {
 		if panicData := util.RecoverToError(recover(), metric.StorePanics); panicData != nil {
 			err = fmt.Errorf("internal error: search panicked on fraction %s, error=%w", f.Info().Name(), panicData)
 		}
 	}()
-	return f.Search(ctx, params)
+	return f.Search(sc, params)
 }

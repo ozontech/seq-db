@@ -555,7 +555,7 @@ func (smm *SkipMaskManager) processSkipMask(skipMask *SkipMask, fracProvider fra
 // to local IDs (LIDs), and writes the serialized skip mask to disk.
 // The .queue file is replaced with a .skipmask file upon completion.
 func (smm *SkipMaskManager) processFrac(f frac.Fraction, skipMask *SkipMask) error {
-	qpr, err := f.Search(smm.ctx, processor.SearchParams{
+	qpr, err := f.Search(processor.NewSearchContext(smm.ctx), processor.SearchParams{
 		AST:   skipMask.ast.Root,
 		From:  skipMask.params.From,
 		To:    skipMask.params.To,

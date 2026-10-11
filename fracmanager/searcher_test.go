@@ -57,7 +57,7 @@ func (f *testFakeFrac) Fetch(_ context.Context, ids []seq.ID, _ bool) ([][]byte,
 	return docs, nil
 }
 
-func (f *testFakeFrac) Search(context.Context, processor.SearchParams) (*seq.QPR, error) {
+func (f *testFakeFrac) Search(processor.SearchContext, processor.SearchParams) (*seq.QPR, error) {
 	f.searchesCount++
 	return f.qpr, nil
 }
@@ -96,11 +96,11 @@ func TestSearcher_MaxFractionHitsExceeded(t *testing.T) {
 	frac3 := newFakeFrac(150, 250, newFakeQPR(150, 200))
 
 	params := processor.SearchParams{From: 0, To: 300, Limit: 100}
-	_, err := searcher.SearchDocs(context.Background(), []frac.Fraction{frac2, frac1, frac3}, params, nil)
+	_, err := searcher.SearchDocs(processor.NewSearchContext(context.Background()), []frac.Fraction{frac2, frac1, frac3}, params, nil)
 	assert.ErrorContains(t, err, "too many fractions hit", "unexpected error")
 
 	params = processor.SearchParams{From: 101, To: 300, Limit: 100}
-	qpr, err := searcher.SearchDocs(context.Background(), []frac.Fraction{frac2, frac1, frac3}, params, nil)
+	qpr, err := searcher.SearchDocs(processor.NewSearchContext(context.Background()), []frac.Fraction{frac2, frac1, frac3}, params, nil)
 	assert.NoError(t, err)
 	assertQPR(t, []int{200, 150, 100, 60}, qpr.IDs)
 }
@@ -113,7 +113,7 @@ func TestSearcher_ShouldSkipOutOfRangeFractions(t *testing.T) {
 
 	params := processor.SearchParams{From: 100, To: 200, Limit: 100}
 
-	qpr, err := searcher.SearchDocs(context.Background(), []frac.Fraction{frac2, frac1, frac3}, params, nil)
+	qpr, err := searcher.SearchDocs(processor.NewSearchContext(context.Background()), []frac.Fraction{frac2, frac1, frac3}, params, nil)
 
 	assert.NoError(t, err)
 	// fracs with MID range outside of query range must not be called
@@ -129,7 +129,7 @@ func TestSearcher_MergeQPRWithIDs_NonOverlappingFracs(t *testing.T) {
 	frac2 := newFakeFrac(11, 20, newFakeQPR(5, 4))
 	params := processor.SearchParams{From: 0, To: 20, Limit: 100, Order: seq.DocsOrderDesc}
 
-	qpr, err := searcher.SearchDocs(context.Background(), []frac.Fraction{frac1, frac2}, params, nil)
+	qpr, err := searcher.SearchDocs(processor.NewSearchContext(context.Background()), []frac.Fraction{frac1, frac2}, params, nil)
 
 	assert.NoError(t, err)
 	assertQPR(t, []int{5, 4, 3, 2, 1}, qpr.IDs)
@@ -142,7 +142,7 @@ func TestSearcher_MergeQPRWithIDs_OverlappingFracs(t *testing.T) {
 	frac3 := newFakeFrac(20, 120, newFakeQPR(70, 40, 20))
 	params := processor.SearchParams{From: 0, To: 150, Limit: 5, Order: seq.DocsOrderDesc}
 
-	qpr, err := searcher.SearchDocs(context.Background(), []frac.Fraction{frac1, frac2, frac3}, params, nil)
+	qpr, err := searcher.SearchDocs(processor.NewSearchContext(context.Background()), []frac.Fraction{frac1, frac2, frac3}, params, nil)
 
 	assert.NoError(t, err)
 	assertQPR(t, []int{90, 70, 60, 50, 40}, qpr.IDs)
@@ -155,7 +155,7 @@ func TestSearcher_WithLimitAndTotal(t *testing.T) {
 
 	params := processor.SearchParams{From: 0, To: 100, Limit: 3}
 
-	qpr, err := searcher.SearchDocs(context.Background(), []frac.Fraction{frac1, frac2}, params, nil)
+	qpr, err := searcher.SearchDocs(processor.NewSearchContext(context.Background()), []frac.Fraction{frac1, frac2}, params, nil)
 
 	assert.NoError(t, err)
 	assertQPR(t, []int{4, 3, 2}, qpr.IDs)
@@ -171,7 +171,7 @@ func TestSearcher_ShouldNotSearchIfLimitIsFilled(t *testing.T) {
 
 	params := processor.SearchParams{From: 0, To: 100, Limit: 4}
 
-	qpr, err := searcher.SearchDocs(context.Background(), []frac.Fraction{frac1, frac2, frac3}, params, nil)
+	qpr, err := searcher.SearchDocs(processor.NewSearchContext(context.Background()), []frac.Fraction{frac1, frac2, frac3}, params, nil)
 
 	assert.NoError(t, err)
 	assertQPR(t, []int{18, 17, 16, 15}, qpr.IDs)
@@ -190,7 +190,7 @@ func TestSearcher_ShouldNotSearchIfLimitIsFilled_OrderAsc(t *testing.T) {
 
 	params := processor.SearchParams{From: 0, To: 100, Limit: 4, Order: seq.DocsOrderAsc}
 
-	qpr, err := searcher.SearchDocs(context.Background(), []frac.Fraction{frac1, frac2, frac3}, params, nil)
+	qpr, err := searcher.SearchDocs(processor.NewSearchContext(context.Background()), []frac.Fraction{frac1, frac2, frac3}, params, nil)
 
 	assert.NoError(t, err)
 	assertQPR(t, []int{1, 9, 15, 17}, qpr.IDs)
@@ -234,7 +234,7 @@ func TestSearcher_MergeHistograms(t *testing.T) {
 		HistInterval: 10,
 	}
 
-	qpr, err := searcher.SearchDocs(context.Background(), []frac.Fraction{frac1, frac2, frac3, frac4}, params, nil)
+	qpr, err := searcher.SearchDocs(processor.NewSearchContext(context.Background()), []frac.Fraction{frac1, frac2, frac3, frac4}, params, nil)
 
 	assert.NoError(t, err)
 	// frac1 is outside of query range, and therefore frac1 histogram doesn't contribute to the final result
@@ -275,7 +275,7 @@ func TestSearcher_MergeAggregations(t *testing.T) {
 		},
 	}
 
-	qpr, err := searcher.SearchDocs(context.Background(), []frac.Fraction{frac1, frac2}, params, nil)
+	qpr, err := searcher.SearchDocs(processor.NewSearchContext(context.Background()), []frac.Fraction{frac1, frac2}, params, nil)
 
 	assert.NoError(t, err)
 	assert.Len(t, qpr.Aggs, 1)
@@ -324,7 +324,7 @@ func TestEmptyFracs(t *testing.T) {
 		Limit: 100,
 	}
 
-	qpr, err := searcher.SearchDocs(ctx, List{&testFakeFrac{}}, params, nil)
+	qpr, err := searcher.SearchDocs(processor.NewSearchContext(ctx), List{&testFakeFrac{}}, params, nil)
 	assert.NoError(t, err)
 
 	assert.Empty(t, qpr.IDs)

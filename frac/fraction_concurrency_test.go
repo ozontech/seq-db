@@ -148,7 +148,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 					}
 					searchParams.AST = ast.Root
 
-					_, err = active.Search(t.Context(), searchParams)
+					_, err = active.Search(processor.NewSearchContext(t.Context()), searchParams)
 					if err != nil {
 						return err
 					}
@@ -297,7 +297,7 @@ func readTestUniqueQueries(t *testing.T, fraction frac.Fraction, numReaders int,
 	warmupQueryParams.From = seq.MID(0)
 	warmupQueryParams.To = seq.TimeToMID(toTime)
 	warmupQueryParams.Limit = 1
-	_, _ = fraction.Search(context.Background(), warmupQueryParams)
+	_, _ = fraction.Search(processor.NewSearchContext(context.Background()), warmupQueryParams)
 
 	readersGroup, ctx := errgroup.WithContext(t.Context())
 
@@ -322,7 +322,7 @@ func readTestUniqueQueries(t *testing.T, fraction frac.Fraction, numReaders int,
 			searchParams.To = seq.TimeToMID(toTime)
 			searchParams.Limit = 1000
 
-			qpr, err := fraction.Search(ctx, searchParams)
+			qpr, err := fraction.Search(processor.NewSearchContext(ctx), searchParams)
 			if err != nil {
 				return fmt.Errorf("search failed: %w", err)
 			}
@@ -440,7 +440,7 @@ func readTest(t *testing.T, fraction frac.Fraction, numReaders, numQueries int, 
 				searchParams.To = seq.TimeToMID(queryTime)
 				searchParams.Limit = 1000
 
-				qpr, err := fraction.Search(ctx, searchParams)
+				qpr, err := fraction.Search(processor.NewSearchContext(ctx), searchParams)
 				if err != nil {
 					return fmt.Errorf("search failed: %w", err)
 				}

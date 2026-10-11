@@ -318,19 +318,19 @@ func (f *Active) Fetch(ctx context.Context, ids []seq.ID, noSkipMasks bool) ([][
 		return nil, nil
 	}
 
-	dp := f.createDataProvider(ctx)
+	dp := f.createDataProvider(processor.NewSearchContext(ctx))
 	defer dp.release()
 
 	return dp.Fetch(ids, noSkipMasks)
 }
 
-func (f *Active) Search(ctx context.Context, params processor.SearchParams) (*seq.QPR, error) {
+func (f *Active) Search(sc processor.SearchContext, params processor.SearchParams) (*seq.QPR, error) {
 	if f.Info().DocsTotal == 0 { // it is empty active fraction state
 		metric.CountersTotal.WithLabelValues("empty_data_provider").Inc()
 		return &seq.QPR{Aggs: make([]seq.AggregatableSamples, len(params.AggQ))}, nil
 	}
 
-	dp := f.createDataProvider(ctx)
+	dp := f.createDataProvider(sc)
 	defer dp.release()
 
 	return dp.Search(params)
@@ -341,15 +341,15 @@ func (f *Active) FindLIDs(ctx context.Context, ids []seq.ID) ([]seq.LID, error) 
 		return nil, nil
 	}
 
-	dp := f.createDataProvider(ctx)
+	dp := f.createDataProvider(processor.NewSearchContext(ctx))
 	defer dp.release()
 
 	return dp.FindLIDs(ids)
 }
 
-func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
+func (f *Active) createDataProvider(sc processor.SearchContext) *activeDataProvider {
 	return &activeDataProvider{
-		ctx:    ctx,
+		ctx:    sc,
 		config: f.Config,
 		info:   f.Info(),
 

@@ -602,7 +602,7 @@ func (s *FractionTestSuite) TestSearchWithOffsetId() {
 		ids := make(map[seq.ID]bool)
 
 		for {
-			qpr, err := s.fraction.Search(context.Background(), *searchParams)
+			qpr, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *searchParams)
 			s.Require().NoError(err, "search failed")
 			if len(qpr.IDs) == 0 {
 				break
@@ -638,12 +638,12 @@ func (s *FractionTestSuite) TestSearchWithTotal() {
 
 	s.insertDocuments(docs)
 
-	qpr, err := s.fraction.Search(context.Background(), *s.query("message:apple", withLimit(3), withTotal()))
+	qpr, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *s.query("message:apple", withLimit(3), withTotal()))
 	s.Require().NoError(err, "search failed")
 	s.Require().Equal(uint64(6), qpr.Total)
 	s.Require().Equal(3, qpr.IDs.Len())
 
-	qpr, err = s.fraction.Search(context.Background(), *s.query("message:*", withLimit(4), withTotal()))
+	qpr, err = s.fraction.Search(processor.NewSearchContext(context.Background()), *s.query("message:*", withLimit(4), withTotal()))
 	s.Require().NoError(err, "search failed")
 	s.Require().Equal(uint64(12), qpr.Total)
 	s.Require().Equal(4, qpr.IDs.Len())
@@ -753,7 +753,7 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 	s.insertDocuments(docs)
 
 	assertAggSearch := func(searchParams *processor.SearchParams, expected []map[string]uint64) {
-		qpr, err := s.fraction.Search(context.Background(), *searchParams)
+		qpr, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *searchParams)
 		s.Require().NoError(err, "search failed")
 
 		s.Require().Equal(len(expected), len(qpr.Aggs))
@@ -1946,7 +1946,7 @@ func (s *FractionTestSuite) runLargeFracTestCases(nestedIndexes bool) {
 			totalIDsScrolled := 0
 
 			for {
-				qpr, err := s.fraction.Search(context.Background(), *searchParams)
+				qpr, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *searchParams)
 
 				s.Require().NoError(err, "search failed")
 
@@ -2163,13 +2163,13 @@ func (s *FractionTestSuite) TestSearchDownsample() {
 	}
 
 	// Step 1: verify that all documents are indexed and searchable
-	allResult, err := s.fraction.Search(context.Background(), *s.query(queryAll, baseOpts...))
+	allResult, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *s.query(queryAll, baseOpts...))
 	s.Require().NoError(err, "search for all documents should succeed")
 	s.Require().Equal(totalDocs, allResult.IDs.Len(), "all %d documents should be found without downsample", totalDocs)
 
 	// Step 2: find how many documents match the filtered query (message:started)
 	// This count serves as the baseline for downsample expectations.
-	filteredResult, err := s.fraction.Search(context.Background(), *s.query(queryFiltered, baseOpts...))
+	filteredResult, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *s.query(queryFiltered, baseOpts...))
 	s.Require().NoError(err, "search for filtered documents should succeed")
 	filteredDocCount := filteredResult.IDs.Len()
 	s.Require().Greater(filteredDocCount, 0, "at least one document should match %q", queryFiltered)
@@ -2184,7 +2184,7 @@ func (s *FractionTestSuite) TestSearchDownsample() {
 		actCnt := 0
 		query := s.query(q, append(baseOpts, withDownsample(uint32(ds)))...)
 		for range 100 {
-			result, err := s.fraction.Search(s.T().Context(), *query)
+			result, err := s.fraction.Search(processor.NewSearchContext(s.T().Context()), *query)
 			s.Require().NoError(err, "search with downsample=%d should succeed", ds)
 			actSum += result.IDs.Len()
 			actCnt++
@@ -2228,7 +2228,7 @@ func (s *FractionTestSuite) TestSearchDownsampleWithTotal() {
 			actSum := 0
 			actCnt := 0
 			for range 100 {
-				result, err := s.fraction.Search(s.T().Context(), *params)
+				result, err := s.fraction.Search(processor.NewSearchContext(s.T().Context()), *params)
 				s.Require().NoError(err, "search with downsample=%d failed", ds)
 				s.Require().Equal(totalDocs, int(result.Total), "total should not be affected by downsample")
 				actSum += result.IDs.Len()
@@ -2262,7 +2262,7 @@ func (s *FractionTestSuite) TestSearchDownsampleZeroAndOne() {
 	searchAndAssertIDs := func(name string, opts ...searchOption) {
 		s.T().Run(name, func(t *testing.T) {
 			params := s.query(queryAll, append(baseOpts, opts...)...)
-			qpr, err := s.fraction.Search(context.Background(), *params)
+			qpr, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *params)
 			s.Require().NoError(err, "%s: search failed", name)
 			s.Require().NotNil(qpr, "%s: search result must not be nil", name)
 			s.Require().Equal(totalDocs, qpr.IDs.Len(),
@@ -2303,7 +2303,7 @@ func (s *FractionTestSuite) TestSearchDownsampleWithAggAndHist() {
 
 	s.T().Run("without downsample", func(t *testing.T) {
 		paramsNoDS := s.query("message:started", commonOpts...)
-		qprNoDS, err := s.fraction.Search(context.Background(), *paramsNoDS)
+		qprNoDS, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *paramsNoDS)
 		s.Require().NoError(err, "search without downsample failed")
 		s.Require().NotNil(qprNoDS, "search result must not be nil")
 		s.Require().Greater(len(qprNoDS.Aggs), 0, "should have aggregation results")
@@ -2317,7 +2317,7 @@ func (s *FractionTestSuite) TestSearchDownsampleWithAggAndHist() {
 
 		s.T().Run("with downsample", func(t *testing.T) {
 			paramsDS := s.query("message:started", append(commonOpts, withDownsample(downsample))...)
-			qprDS, err := s.fraction.Search(context.Background(), *paramsDS)
+			qprDS, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *paramsDS)
 			s.Require().NoError(err, "search with downsample=%d failed", downsample)
 			s.Require().NotNil(qprDS, "search result must not be nil")
 			assertSampledAggs(s, qprNoDS.Aggs, qprDS.Aggs, downsample)
@@ -2552,7 +2552,7 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 	for _, order := range sortOrders {
 		params.Order = order
 
-		qpr, err := s.fraction.Search(context.Background(), *params)
+		qpr, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *params)
 		s.Require().NoError(err, "search failed for query with order=%v", order)
 		s.Require().Equal(len(expectedIndexes), qpr.IDs.Len(), "doc count doesn't match")
 		if expectedTotal != nil {
@@ -2583,7 +2583,7 @@ func (s *FractionTestSuite) AssertAggregation(
 	aggregate seq.AggregateArgs,
 	expectedBuckets []seq.AggregationBucket,
 ) {
-	qpr, err := s.fraction.Search(context.Background(), *searchParams)
+	qpr, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *searchParams)
 	s.Require().NoError(err, "search failed")
 
 	aggResults := qpr.Aggregate([]seq.AggregateArgs{aggregate})
@@ -2614,7 +2614,7 @@ func (s *FractionTestSuite) AssertHist(
 	searchParams *processor.SearchParams,
 	expectedHist map[string]uint64,
 ) {
-	qpr, err := s.fraction.Search(context.Background(), *searchParams)
+	qpr, err := s.fraction.Search(processor.NewSearchContext(context.Background()), *searchParams)
 	s.Require().NoError(err, "search failed")
 	s.Require().Equal(len(expectedHist), len(qpr.Histogram), "histogram count doesn't match")
 

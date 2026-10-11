@@ -1,7 +1,6 @@
 package asyncsearcher
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -30,7 +29,7 @@ func (f *fakeFrac) IsIntersecting(from, to seq.MID) bool {
 	return true
 }
 
-func (f *fakeFrac) Search(context.Context, processor.SearchParams) (*seq.QPR, error) {
+func (f *fakeFrac) Search(processor.SearchContext, processor.SearchParams) (*seq.QPR, error) {
 	return &f.dp.qpr, nil
 }
 
@@ -255,9 +254,9 @@ func (f *blockingFrac) IsIntersecting(from, to seq.MID) bool {
 	return true
 }
 
-func (f *blockingFrac) Search(ctx context.Context, _ processor.SearchParams) (*seq.QPR, error) {
-	<-ctx.Done()
-	return nil, ctx.Err()
+func (f *blockingFrac) Search(sc processor.SearchContext, _ processor.SearchParams) (*seq.QPR, error) {
+	<-sc.Done()
+	return nil, sc.Err()
 }
 
 func TestAsyncSearchCancelDoesNotSetError(t *testing.T) {

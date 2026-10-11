@@ -169,7 +169,7 @@ func (s *SearcherDataSource) scanBatch() error {
 		params.OffsetId = lastID
 	}
 
-	qpr, err := s.searcher.SearchDocs(s.Ctx(), s.fracs, params, s.tr)
+	qpr, err := s.searcher.SearchDocs(processor.NewSearchContext(s.Ctx()), s.fracs, params, s.tr)
 	if err != nil {
 		return err
 	}
@@ -195,7 +195,7 @@ func (s *SearcherDataSource) scanBatch() error {
 func (s *SearcherDataSource) scanAgg() error {
 	s.fracs, s.release = s.fracManager.AcquireFractionsInRange(s.searchParams.From, s.searchParams.To)
 
-	qpr, err := s.searcher.SearchDocs(s.Ctx(), s.fracs, s.searchParams, s.tr)
+	qpr, err := s.searcher.SearchDocs(processor.NewSearchContext(s.Ctx()), s.fracs, s.searchParams, s.tr)
 	if err != nil {
 		return err
 	}

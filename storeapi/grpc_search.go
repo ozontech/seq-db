@@ -235,7 +235,7 @@ func (g *GrpcV1) searchDocs(ctx context.Context, sp processor.SearchParams, tr *
 	fracs, release := g.fracManager.AcquireFractions()
 	defer release()
 
-	return g.searchData.searcher.SearchDocs(ctx, fracs, sp, tr)
+	return g.searchData.searcher.SearchDocs(processor.NewSearchContext(ctx), fracs, sp, tr)
 }
 
 func (g *GrpcV1) parseQuery(query string) (*parser.ASTNode, error) {
