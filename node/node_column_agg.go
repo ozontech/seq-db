@@ -7,7 +7,7 @@ import "sync"
 // 0 is zero values which means doc doesn't have a token with the corresponding field.
 // It only properly works for keyword aggregation, i.e. each doc has exactly one source/TID.
 type nodeColumnAgg struct {
-	column []uint64
+	column []uint32
 	minLID uint32 // inclusive
 	maxLID uint32 // inclusive
 	asc    bool
@@ -17,15 +17,15 @@ type nodeColumnAgg struct {
 
 var columnAggPool = sync.Pool{}
 
-func getColumn(size int) []uint64 {
-	v, _ := columnAggPool.Get().([]uint64)
+func getColumn(size int) []uint32 {
+	v, _ := columnAggPool.Get().([]uint32)
 	if cap(v) >= size {
 		col := v[:size]
 		clear(col)
 		return col
 	}
 	// this new column with larger size will replace
-	return make([]uint64, size)
+	return make([]uint32, size)
 }
 
 func (*nodeColumnAgg) String() string {
@@ -57,7 +57,7 @@ func NewColumnAgg(cursors []BatchedNode, minLID, maxLID uint32, asc bool) Source
 					if lid < minLID || lid > maxLID {
 						continue
 					}
-					column[lid-minLID] = uint64(source) + 1
+					column[lid-minLID] = uint32(source) + 1
 				}
 			}
 		}
@@ -77,7 +77,7 @@ func NewColumnAgg(cursors []BatchedNode, minLID, maxLID uint32, asc bool) Source
 	return n
 }
 
-func (n *nodeColumnAgg) Dispose() {
+func (n *nodeColumnAgg) Release() {
 	if n.column == nil {
 		return
 	}

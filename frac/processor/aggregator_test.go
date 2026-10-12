@@ -195,7 +195,7 @@ func (m *MockNode) NextSourcedGeq(minLID node.LID) (node.LID, uint32) {
 	return first.LID, first.Source
 }
 
-func (*MockNode) Dispose() {}
+func (*MockNode) Release() {}
 
 func TestTwoSourceAggregator(t *testing.T) {
 	r := require.New(t)

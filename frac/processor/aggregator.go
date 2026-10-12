@@ -497,7 +497,7 @@ func (s *SourcedNodeIterator) UniqueSources() int {
 
 func (s *SourcedNodeIterator) Dispose() {
 	if s.sourcedNode != nil {
-		s.sourcedNode.Dispose()
+		s.sourcedNode.Release()
 		s.sourcedNode = nil
 	}
 }

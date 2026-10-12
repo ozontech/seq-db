@@ -159,9 +159,9 @@ func (n *nodeOrAgg) NextSourcedGeq(nextID LID) (LID, uint32) {
 	return n.NextSourced()
 }
 
-func (n *nodeOrAgg) Dispose() {
-	n.left.Dispose()
-	n.right.Dispose()
+func (n *nodeOrAgg) Release() {
+	n.left.Release()
+	n.right.Release()
 }
 
 type nodeOrBatched struct {
