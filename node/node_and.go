@@ -59,6 +59,14 @@ func (n *nodeAnd) Next() LID {
 
 func (n *nodeAnd) NextGeq(nextID LID) LID {
 	for {
+		if n.leftID.Less(nextID) {
+			n.readLeftGeq(nextID)
+		}
+
+		if n.rightID.Less(nextID) {
+			n.readRightGeq(nextID)
+		}
+
 		for !n.leftID.IsNull() && !n.rightID.IsNull() && !n.leftID.Eq(n.rightID) {
 			for !n.rightID.IsNull() && n.leftID.Less(n.rightID) {
 				n.readLeftGeq(Max(n.rightID, nextID))
@@ -71,9 +79,11 @@ func (n *nodeAnd) NextGeq(nextID LID) LID {
 		if n.leftID.IsNull() || n.rightID.IsNull() {
 			return NullLID()
 		}
+
 		cur := n.leftID
 		n.readLeft()
 		n.readRight()
+
 		if nextID.LessOrEq(cur) {
 			return cur
 		}
