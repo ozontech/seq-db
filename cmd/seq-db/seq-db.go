@@ -303,7 +303,7 @@ func startStore(
 			OffloadingRetention:       cfg.Offloading.Retention,
 			OffloadingRetryDelay:      cfg.Offloading.RetryDelay,
 			OffloadingQueueSize:       uint64(float64(cfg.Storage.TotalSize) * cfg.Offloading.QueueSizePercent / 100),
-			OffloadingRemoteTotalSize: cfg.Offloading.RemoteTotalSize,
+			OffloadingRemoteTotalSize: uint64(cfg.Offloading.RemoteTotalSize),
 			CompactionEnabled:         cfg.Compaction.Enabled,
 		},
 		API: storeapi.APIConfig{

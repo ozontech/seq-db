@@ -361,7 +361,7 @@ func (r *fractionRegistry) evictRemote(
 	r.rebuildSnapshot()
 
 	// check if enough space will be freed
-	if sizeLimit != 0 && totalUsedSize-releasingSize > sizeLimit {
+	if totalUsedSize-releasingSize > sizeLimit {
 		logger.Error(
 			fmt.Sprintf(
 				"insufficient size on s3: need to free %d more bytes (total: %d, releasing: %d, limit: %d)",
