@@ -23,7 +23,7 @@ RUN CGO_ENABLED=${CGO_ENABLED} GOEXPERIMENT=${GOEXPERIMENT} go build -trimpath \
     -ldflags "-w -s  \
     -X github.com/ozontech/seq-db/buildinfo.Version=${VERSION}  \
     -X github.com/ozontech/seq-db/buildinfo.BuildTime=${BUILD_TIME}" \
-    -o seq-db ./cmd/seq-db
+    -o ./ ./cmd/...
 
 # Deploy
 FROM $APP_IMAGE
@@ -31,5 +31,7 @@ FROM $APP_IMAGE
 WORKDIR /seq-db
 
 COPY --from=build /seq-db/seq-db /seq-db/seq-db
+COPY --from=build /seq-db/unpacker /seq-db/unpacker
+COPY --from=build /seq-db/inserter /seq-db/inserter
 
 ENTRYPOINT [ "./seq-db" ]
