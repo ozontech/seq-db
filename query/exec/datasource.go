@@ -10,7 +10,6 @@ import (
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/query"
-	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -270,8 +269,8 @@ func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
 func makeDocumentRecord(id seq.ID, payload []byte) *query.Record {
 	return &query.Record{
 		Vals: []*query.RecordVals{
-			query.NewRecordVals(query.DataTypeSeqID, encoding.SeqIDToBytes(id)),
-			query.NewRecordVals(query.DataTypeDocument, payload),
+			query.NewSeqIDVals(id),
+			query.NewDocVals(payload),
 		},
 	}
 }
@@ -288,15 +287,15 @@ func makeAggRecord(bin *storeapi.SearchResponse_Bin, valuesPool []string) *query
 	}
 	return &query.Record{
 		Vals: []*query.RecordVals{
-			query.NewRecordVals(query.DataTypeBytes, []byte(bin.Label)),
-			query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(bin.Hist.Min)),
-			query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(bin.Hist.Max)),
-			query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(bin.Hist.Sum)),
-			query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(uint64(bin.Hist.Total))),
-			query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(uint64(bin.Hist.NotExists))),
-			query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(uint64(bin.Ts.AsTime().UnixNano()))),
-			query.NewRecordVals(query.DataTypeFloat64Array, encoding.Float64ArrayToBytes(bin.Hist.Samples)),
-			query.NewRecordVals(query.DataTypeStringArray, encoding.StringArrayToBytes(values)),
+			query.NewBytesVals([]byte(bin.Label)),
+			query.NewFloat64Vals(bin.Hist.Min),
+			query.NewFloat64Vals(bin.Hist.Max),
+			query.NewFloat64Vals(bin.Hist.Sum),
+			query.NewUint64Vals(uint64(bin.Hist.Total)),
+			query.NewUint64Vals(uint64(bin.Hist.NotExists)),
+			query.NewUint64Vals(uint64(bin.Ts.AsTime().UnixNano())),
+			query.NewFloat64ArrayVals(bin.Hist.Samples),
+			query.NewStringArrayVals(values),
 		},
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/query"
-	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -434,8 +433,8 @@ func makeMergerTestRecords(values []string) []*query.Record {
 		doc := fmt.Sprintf(`{"service":%q,"level":3}`, v)
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeUint32, encoding.Uint32ToBytes(1)),
-				query.NewRecordVals(query.DataTypeDocument, []byte(doc)),
+				query.NewUint32Vals(1),
+				query.NewDocVals([]byte(doc)),
 			},
 		})
 	}
@@ -449,7 +448,7 @@ func makeMergerUint32Records(values []uint32) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeUint32, encoding.Uint32ToBytes(v)),
+				query.NewUint32Vals(v),
 			},
 		})
 	}
@@ -463,7 +462,7 @@ func makeMergerUint64Records(values []uint64) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(v)),
+				query.NewUint64Vals(v),
 			},
 		})
 	}
@@ -477,7 +476,7 @@ func makeMergerInt32Records(values []int32) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeInt32, encoding.Int32ToBytes(v)),
+				query.NewInt32Vals(v),
 			},
 		})
 	}
@@ -491,7 +490,7 @@ func makeMergerInt64Records(values []int64) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeInt64, encoding.Int64ToBytes(v)),
+				query.NewInt64Vals(v),
 			},
 		})
 	}
@@ -505,7 +504,7 @@ func makeMergerFloat64Records(values []float64) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(v)),
+				query.NewFloat64Vals(v),
 			},
 		})
 	}
@@ -519,7 +518,7 @@ func makeMergerStringRecords(values []string) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeString, []byte(v)),
+				query.NewStringVals(v),
 			},
 		})
 	}
@@ -532,7 +531,7 @@ func makeMergerSeqIDRecords(values []seq.ID) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeSeqID, encoding.SeqIDToBytes(v)),
+				query.NewSeqIDVals(v),
 			},
 		})
 	}

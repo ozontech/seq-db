@@ -31,11 +31,11 @@ func TestStreamSearchIteratorReadsAllRecords(t *testing.T) {
 
 	got := collectAll(it)
 	require.Len(t, got, 3)
-	assert.Equal(t, id1, got[0].Vals[0].Decoded().(seq.ID))
+	assert.Equal(t, id1, got[0].Vals[0].AsSeqID())
 	assert.Equal(t, "doc1", string(got[0].Vals[1].RawData()))
-	assert.Equal(t, id2, got[1].Vals[0].Decoded().(seq.ID))
+	assert.Equal(t, id2, got[1].Vals[0].AsSeqID())
 	assert.Equal(t, "doc2", string(got[1].Vals[1].RawData()))
-	assert.Equal(t, id3, got[2].Vals[0].Decoded().(seq.ID))
+	assert.Equal(t, id3, got[2].Vals[0].AsSeqID())
 	assert.Equal(t, "doc3", string(got[2].Vals[1].RawData()))
 }
 

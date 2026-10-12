@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/ozontech/seq-db/query"
-	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -107,10 +106,10 @@ func (a *DistributedAggregator) Next() *query.Record {
 			}
 
 			a.sortingBuf = append(a.sortingBuf, query.NewRecord([]*query.RecordVals{
-				query.NewRecordVals(query.DataTypeString, []byte(key.token)),
-				query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(value)),
-				query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(key.ts)),
-				query.NewRecordVals(query.DataTypeFloat64Array, encoding.Float64ArrayToBytes(quantiles)),
+				query.NewStringVals(key.token),
+				query.NewFloat64Vals(value),
+				query.NewUint64Vals(key.ts),
+				query.NewFloat64ArrayVals(quantiles),
 			}))
 		}
 

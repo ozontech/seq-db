@@ -74,23 +74,19 @@ const (
 type RecordVals struct {
 	Type DataType
 
-	// decoded marks whether the cache below has been filled.
+	// decoded marks whether the doc/f64s/strs cache has been filled.
 	// Exactly one cache field is used per val so a single flag covers all types.
 	decoded bool
 
 	// for lazy decoding
 	rawData []byte // raw data
 
-	doc   *insaneJSON.Root
-	str   string
-	f64s  []float64
-	strs  []string
-	seqID seq.ID
-	u64   uint64
-	i64   int64
-	f64   float64
-	u32   uint32
-	i32   int32
+	// Scalars are decoded from rawData on every access — the decode is a
+	// single load, caching it in a struct field costs more (bigger struct,
+	// extra branch) than it saves.
+	doc  *insaneJSON.Root
+	f64s []float64
+	strs []string
 }
 
 func NewRecordVals(dataType DataType, rawData []byte) *RecordVals {
@@ -98,6 +94,57 @@ func NewRecordVals(dataType DataType, rawData []byte) *RecordVals {
 		Type:    dataType,
 		rawData: rawData,
 	}
+}
+
+// Typed constructors below encode the passed value into rawData themselves;
+// prefer them over NewRecordVals when a typed value is at hand.
+
+func NewBytesVals(data []byte) *RecordVals {
+	return &RecordVals{Type: DataTypeBytes, rawData: data}
+}
+
+// NewStringVals aliases s — no copy, so s must outlive the val.
+func NewStringVals(s string) *RecordVals {
+	return &RecordVals{Type: DataTypeString, rawData: encoding.StringToBytes(s)}
+}
+
+func NewSeqIDVals(id seq.ID) *RecordVals {
+	return &RecordVals{Type: DataTypeSeqID, rawData: encoding.SeqIDToBytes(id)}
+}
+
+func NewUint32Vals(v uint32) *RecordVals {
+	return &RecordVals{Type: DataTypeUint32, rawData: encoding.Uint32ToBytes(v)}
+}
+
+func NewUint64Vals(v uint64) *RecordVals {
+	return &RecordVals{Type: DataTypeUint64, rawData: encoding.Uint64ToBytes(v)}
+}
+
+func NewInt32Vals(v int32) *RecordVals {
+	return &RecordVals{Type: DataTypeInt32, rawData: encoding.Int32ToBytes(v)}
+}
+
+func NewInt64Vals(v int64) *RecordVals {
+	return &RecordVals{Type: DataTypeInt64, rawData: encoding.Int64ToBytes(v)}
+}
+
+func NewFloat64Vals(v float64) *RecordVals {
+	return &RecordVals{Type: DataTypeFloat64, rawData: encoding.Float64ToBytes(v)}
+}
+
+func NewFloat64ArrayVals(v []float64) *RecordVals {
+	return &RecordVals{Type: DataTypeFloat64Array, rawData: encoding.Float64ArrayToBytes(v)}
+}
+
+func NewStringArrayVals(v []string) *RecordVals {
+	return &RecordVals{Type: DataTypeStringArray, rawData: encoding.StringArrayToBytes(v)}
+}
+
+// NewDocVals aliases payload — no copy. The payload must stay unmodified until
+// the val is decoded (decoding is lazy: AsDoc may run in a downstream executor
+// long after this call) — so pooled or reused buffers are unsafe here.
+func NewDocVals(payload []byte) *RecordVals {
+	return &RecordVals{Type: DataTypeDocument, rawData: payload}
 }
 
 func (rv *RecordVals) RawData() []byte {
@@ -117,11 +164,7 @@ func (rv *RecordVals) AsBytes() []byte {
 
 func (rv *RecordVals) AsSeqID() seq.ID {
 	rv.mustBe(DataTypeSeqID)
-	if !rv.decoded {
-		rv.seqID = encoding.SeqIDFromBytes(rv.rawData)
-		rv.decoded = true
-	}
-	return rv.seqID
+	return encoding.SeqIDFromBytes(rv.rawData)
 }
 
 func (rv *RecordVals) AsDoc() *insaneJSON.Root {
@@ -143,56 +186,32 @@ func (rv *RecordVals) AsDoc() *insaneJSON.Root {
 
 func (rv *RecordVals) AsString() string {
 	rv.mustBe(DataTypeString)
-	if !rv.decoded {
-		rv.str = encoding.StringFromBytes(rv.rawData)
-		rv.decoded = true
-	}
-	return rv.str
+	return encoding.StringFromBytes(rv.rawData)
 }
 
 func (rv *RecordVals) AsUint32() uint32 {
 	rv.mustBe(DataTypeUint32)
-	if !rv.decoded {
-		rv.u32 = encoding.Uint32FromBytes(rv.rawData)
-		rv.decoded = true
-	}
-	return rv.u32
+	return encoding.Uint32FromBytes(rv.rawData)
 }
 
 func (rv *RecordVals) AsUint64() uint64 {
 	rv.mustBe(DataTypeUint64)
-	if !rv.decoded {
-		rv.u64 = encoding.Uint64FromBytes(rv.rawData)
-		rv.decoded = true
-	}
-	return rv.u64
+	return encoding.Uint64FromBytes(rv.rawData)
 }
 
 func (rv *RecordVals) AsInt32() int32 {
 	rv.mustBe(DataTypeInt32)
-	if !rv.decoded {
-		rv.i32 = encoding.Int32FromBytes(rv.rawData)
-		rv.decoded = true
-	}
-	return rv.i32
+	return encoding.Int32FromBytes(rv.rawData)
 }
 
 func (rv *RecordVals) AsInt64() int64 {
 	rv.mustBe(DataTypeInt64)
-	if !rv.decoded {
-		rv.i64 = encoding.Int64FromBytes(rv.rawData)
-		rv.decoded = true
-	}
-	return rv.i64
+	return encoding.Int64FromBytes(rv.rawData)
 }
 
 func (rv *RecordVals) AsFloat64() float64 {
 	rv.mustBe(DataTypeFloat64)
-	if !rv.decoded {
-		rv.f64 = encoding.Float64FromBytes(rv.rawData)
-		rv.decoded = true
-	}
-	return rv.f64
+	return encoding.Float64FromBytes(rv.rawData)
 }
 
 func (rv *RecordVals) AsFloat64Array() []float64 {

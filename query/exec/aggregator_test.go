@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/query"
-	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -269,15 +268,15 @@ func TestDistributedAggregatorFinalize(t *testing.T) {
 
 func makeAggInputRecord(token string, mn, mx, sum float64, total, ts uint64, samples []float64, values []string) *query.Record {
 	return query.NewRecord([]*query.RecordVals{
-		query.NewRecordVals(query.DataTypeString, []byte(token)),
-		query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(mn)),
-		query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(mx)),
-		query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(sum)),
-		query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(total)),
-		query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(0)), // not_exists, unused by aggregator
-		query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(ts)),
-		query.NewRecordVals(query.DataTypeFloat64Array, encoding.Float64ArrayToBytes(samples)),
-		query.NewRecordVals(query.DataTypeStringArray, encoding.StringArrayToBytes(values)),
+		query.NewStringVals(token),
+		query.NewFloat64Vals(mn),
+		query.NewFloat64Vals(mx),
+		query.NewFloat64Vals(sum),
+		query.NewUint64Vals(total),
+		query.NewUint64Vals(0), // not_exists, unused by aggregator
+		query.NewUint64Vals(ts),
+		query.NewFloat64ArrayVals(samples),
+		query.NewStringArrayVals(values),
 	})
 }
 
