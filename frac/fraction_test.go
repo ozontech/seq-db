@@ -22,8 +22,6 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/ozontech/seq-db/cache"
@@ -51,27 +49,6 @@ func (testSkipMaskProvider) GetIDsBitmapByFrac(fracName string, minLID, maxLID u
 	return nil, nil
 }
 func (testSkipMaskProvider) RemoveFrac(_ string) {}
-
-func testMapping() seq.Mapping {
-	return seq.Mapping{
-		"id":            seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_namespace": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_container": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"message":       seq.NewSingleType(seq.TokenizerTypeText, "", 0),
-		"level":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"client_ip":     seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"service":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"pod":           seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"source":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"trace_id":      seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"request_uri":   seq.NewSingleType(seq.TokenizerTypePath, "", 0),
-		"spans":         seq.NewSingleType(seq.TokenizerTypeNested, "", 0),
-		"spans.span_id": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"v":             seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-	}
-}
 
 var testMappingYAML = []byte(`mapping-list:
   - type: keyword
@@ -108,12 +85,6 @@ var testMappingYAML = []byte(`mapping-list:
   - type: keyword
     name: v
 `)
-
-func TestMappingYAMLMatchesMapping(t *testing.T) {
-	back, err := seq.ReadMapping(testMappingYAML)
-	require.NoError(t, err)
-	assert.Equal(t, testMapping(), back)
-}
 
 type FractionTestSuite struct {
 	suite.Suite
@@ -152,8 +123,12 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 100),
 		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(512, false, true),
 	}
-	s.mapping = testMapping()
 	s.mappingYAML = testMappingYAML
+
+	var err error
+	s.mapping, err = seq.ReadMapping(s.mappingYAML)
+	s.Require().NoError(err)
+
 	s.sealParams = common.SealParams{
 		IDsZstdLevel:           1,
 		LIDsZstdLevel:          1,
@@ -167,7 +142,6 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		LIDsBitmapThreshold:    25,
 	}
 
-	var err error
 	s.tmpDir, err = os.MkdirTemp(os.TempDir(), "fraction_test_*")
 	s.Require().NoError(err)
 }
