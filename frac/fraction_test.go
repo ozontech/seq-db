@@ -67,6 +67,8 @@ var testMappingYAML = []byte(`mapping-list:
     name: message
   - type: keyword
     name: pod
+  - type: keyword
+    name: request_took
   - type: path
     name: request_uri
   - type: keyword
@@ -116,6 +118,9 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		BatchExecution: frac.BatchExecutionConfig{
 			Enabled:       true,
 			CostThreshold: 1000,
+		},
+		MaterializedColumnAgg: frac.MaterializedColumnAggConfig{
+			Enabled: true,
 		},
 	}
 	s.tokenizers = map[seq.TokenizerType]tokenizer.Tokenizer{
@@ -1895,6 +1900,52 @@ func (s *FractionTestSuite) runLargeFracTestCases(nestedIndexes bool) {
 			withAggQuery(processor.AggQuery{
 				Field:   aggField("level"),
 				GroupBy: aggField("service"),
+				Func:    seq.AggFuncAvg,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
+	})
+
+	s.Run("(service:kafka OR service:gateway) | group by pod avg(request_took)", func() {
+		// TODO(cheb0) aggregation returns fuzzy results with nested indexes enabled
+		if nestedIndexes {
+			return
+		}
+
+		requestTimesByPod := make(map[string][]int)
+		totalCountByPod := make(map[string]int)
+		for _, doc := range testDocs {
+			if doc.service != "kafka" && doc.service != "gateway" {
+				continue
+			}
+			totalCountByPod[doc.pod]++
+			if doc.requestTook == 0 {
+				continue
+			}
+
+			requestTimesByPod[doc.pod] = append(requestTimesByPod[doc.pod], doc.requestTook)
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for pod, requestTimes := range requestTimesByPod {
+			sum := 0
+			for _, r := range requestTimes {
+				sum += r
+			}
+			avg := float64(sum) / float64(len(requestTimes))
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      pod,
+				Value:     avg,
+				NotExists: int64(totalCountByPod[pod] - len(requestTimes)),
+			})
+		}
+
+		searchParams := s.query(
+			"service:kafka OR service:gateway",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				Field:   aggField("request_took"),
+				GroupBy: aggField("pod"),
 				Func:    seq.AggFuncAvg,
 			}))
 

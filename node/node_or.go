@@ -159,6 +159,11 @@ func (n *nodeOrAgg) NextSourcedGeq(nextID LID) (LID, uint32) {
 	return n.NextSourced()
 }
 
+func (n *nodeOrAgg) Release() {
+	n.left.Release()
+	n.right.Release()
+}
+
 type nodeOrBatched struct {
 	left  BatchedNode
 	right BatchedNode

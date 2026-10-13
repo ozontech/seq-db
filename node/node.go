@@ -24,4 +24,6 @@ type Sourced interface {
 	// aggregation need source
 	NextSourced() (id LID, source uint32)
 	NextSourcedGeq(nextLID LID) (id LID, source uint32)
+	// Release releases resources held by the sourced node (e.g. pooled buffers).
+	Release()
 }
