@@ -12,27 +12,29 @@ type Pipe interface {
 }
 
 // pipeOrder defines the allowed order of pipes in a SeqQL query:
-// stats | fields | sort | limit | offset. Any pipe may be omitted, but the
+// stats | filter | fields | sort | limit | offset. Any pipe may be omitted, but the
 // present ones must appear in this exact sequence. The value is the position of
 // the pipe in that sequence.
 var pipeOrder = map[string]int{
 	"stats":  0,
-	"fields": 1,
-	"sort":   2,
-	"limit":  3,
-	"offset": 4,
+	"filter": 1,
+	"fields": 2,
+	"sort":   3,
+	"limit":  4,
+	"offset": 5,
 }
 
 var pipeNameFromOrder = map[int]string{
 	0: "stats",
-	1: "fields",
-	2: "sort",
-	3: "limit",
-	4: "offset",
+	1: "filter",
+	2: "fields",
+	3: "sort",
+	4: "limit",
+	5: "offset",
 }
 
 // parsePipes parses the pipe stage of a SeqQL query. The pipes must appear in
-// the fixed order stats | fields | sort | limit | offset; pipes may be omitted,
+// the fixed order stats | filter | fields | sort | limit | offset; pipes may be omitted,
 // but none may appear out of order.
 func parsePipes(lex *lexer) ([]Pipe, error) {
 	seen := make(map[string]struct{})
@@ -53,6 +55,13 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 			p, err := parsePipeFields(lex)
 			if err != nil {
 				return nil, fmt.Errorf("parsing 'fields' pipe: %s", err)
+			}
+			pipes = append(pipes, p)
+		case lex.IsKeyword("filter"):
+			name = "filter"
+			p, err := parsePipeFilter(lex)
+			if err != nil {
+				return nil, fmt.Errorf("parsing 'filter' pipe: %s", err)
 			}
 			pipes = append(pipes, p)
 		case lex.IsKeyword("stats"):
@@ -99,6 +108,62 @@ func parsePipes(lex *lexer) ([]Pipe, error) {
 	}
 
 	return pipes, nil
+}
+
+type FilterCondition struct {
+	Field string
+	Value string
+}
+
+type PipeFilter struct {
+	Condition FilterCondition
+}
+
+func (f *PipeFilter) Name() string {
+	return "filter"
+}
+
+func (f *PipeFilter) DumpSeqQL(o *strings.Builder) {
+	o.WriteString("filter ")
+	o.WriteString(quoteTokenIfNeeded(f.Condition.Field))
+	o.WriteString(":")
+	o.WriteString(quoteTokenIfNeeded(f.Condition.Value))
+}
+
+func parsePipeFilter(lex *lexer) (*PipeFilter, error) {
+	if !lex.IsKeyword("filter") {
+		return nil, fmt.Errorf("missing 'filter' keyword")
+	}
+	lex.Next()
+
+	field, err := parseCompositeTokenReplaceWildcards(lex)
+	if err != nil {
+		return nil, fmt.Errorf("parsing field name: %s", err)
+	}
+	if field == "" {
+		return nil, fmt.Errorf("empty field name")
+	}
+
+	if !lex.IsKeyword(":") {
+		return nil, fmt.Errorf("missing ':' after %q", field)
+	}
+	lex.Next()
+
+	if lex.IsKeyword("") {
+		return nil, fmt.Errorf("missing filter value for field %q", field)
+	}
+
+	value, err := parseCompositeTokenReplaceWildcards(lex)
+	if err != nil {
+		return nil, fmt.Errorf("parsing filter value: %s", err)
+	}
+
+	return &PipeFilter{
+		Condition: FilterCondition{
+			Field: field,
+			Value: value,
+		},
+	}, nil
 }
 
 type PipeFields struct {
@@ -457,7 +522,7 @@ var reservedKeywords = uniqueTokens([]string{
 	"|",
 
 	// Pipe specific keywords.
-	"fields", "except", "limit", "offset", "sort", "stats", "by", "interval", "unique_count", "asc", "desc",
+	"fields", "except", "filter", "limit", "offset", "sort", "stats", "by", "interval", "unique_count", "asc", "desc",
 })
 
 func needQuoteToken(s string) bool {

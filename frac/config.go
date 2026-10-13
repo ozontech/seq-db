@@ -8,7 +8,8 @@ type Config struct {
 }
 
 type SearchConfig struct {
-	AggLimits AggLimits
+	AggLimits         AggLimits
+	QueryOptimization QueryOptimizationConfig
 }
 
 type AggLimits struct {
@@ -16,4 +17,20 @@ type AggLimits struct {
 	MaxFieldValues     int // MaxFieldValues max AggQuery.Field uniq values to hold per aggregation request.
 	MaxGroupTokens     int // MaxGroupTokens max AggQuery.GroupBy unique values.
 	MaxTIDsPerFraction int // MaxTIDsPerFraction max number of tokens per fraction.
+}
+
+type QueryOptimizationConfig struct {
+	BatchExecution        BatchExecutionConfig
+	MaterializedColumnAgg MaterializedColumnAggConfig
+}
+
+type BatchExecutionConfig struct {
+	Enabled bool
+	// CostThreshold is the minimum estimated non-batched iteration
+	// cost required to enable batch-at-a-time query evaluation.
+	CostThreshold int
+}
+
+type MaterializedColumnAggConfig struct {
+	Enabled bool
 }

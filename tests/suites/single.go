@@ -36,11 +36,11 @@ func (s *Single) Bulk(docs []string) {
 }
 
 func (s *Single) SearchDocs(query string, size int, order seq.DocsOrder) []string {
-	_, docs1, _, err := s.Env.Search(query, size, setup.WithOrder(order))
+	_, docs1, err := s.Env.Search(query, size, setup.WithOrder(order))
 	s.Require().NoError(err)
 	r1 := common.ToStringSlice(docs1)
 
-	_, docs2, _, err := s.Env.Search(query, size, setup.WithTotal(false), setup.WithOrder(order))
+	_, docs2, err := s.Env.Search(query, size, setup.WithTotal(false), setup.WithOrder(order))
 	s.Require().NoError(err)
 	r2 := common.ToStringSlice(docs2)
 

@@ -53,6 +53,21 @@ func (tp *activeTokenProvider) FindContains(needle []byte) ([]uint32, error) {
 	return tids, nil
 }
 
+// FindSuffix finds tids of tokens which end with a provided suffix.
+func (tp *activeTokenProvider) FindSuffix(suffix []byte) ([]uint32, error) {
+	if len(suffix) == 0 {
+		return nil, nil
+	}
+	var tids []uint32
+	for tid := tp.FirstTID(); tid <= tp.LastTID(); tid++ {
+		token := tp.GetToken(tid)
+		if len(token) >= len(suffix) && bytes.Equal(token[len(token)-len(suffix):], suffix) {
+			tids = append(tids, tid)
+		}
+	}
+	return tids, nil
+}
+
 // FindToken finds tids of tokens which suffice a provided searcher (predicate).
 func (tp *activeTokenProvider) FindToken(searcher pattern.Searcher) ([]uint32, error) {
 	firstTID := searcher.FirstTID()

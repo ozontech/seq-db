@@ -82,6 +82,10 @@ func (g *grpcV1) FetchAsyncSearchResult(
 	if !resp.CanceledAt.IsZero() {
 		canceledAt = timestamppb.New(resp.CanceledAt)
 	}
+	var doneAt *timestamppb.Timestamp
+	if !resp.DoneAt.IsZero() {
+		doneAt = timestamppb.New(resp.DoneAt)
+	}
 
 	docs := makeProtoDocs(&resp.QPR, stream)
 
@@ -128,6 +132,7 @@ func (g *grpcV1) FetchAsyncSearchResult(
 		StartedAt:  timestamppb.New(resp.StartedAt),
 		ExpiresAt:  timestamppb.New(resp.ExpiresAt),
 		CanceledAt: canceledAt,
+		DoneAt:     doneAt,
 		Progress:   resp.Progress,
 		DiskUsage:  resp.DiskUsage,
 		Error: &seqproxyapi.Error{
@@ -225,7 +230,10 @@ func (g *grpcV1) ExportAsyncSearch(req *seqproxyapi.ExportAsyncSearchRequest, st
 		asyncsearcher.ExportSize.WithLabelValues(protocol).Observe(float64(wrapped.size))
 	}()
 
-	for doc, err := docsStream.Next(); err == nil; doc, err = docsStream.Next() {
+	for doc, err := range search.DocsIteratorSeq(docsStream) {
+		if err != nil {
+			return status.Errorf(codes.Internal, "docs reading error: %v", err)
+		}
 		eResp := &seqproxyapi.ExportResponse{
 			Doc: &seqproxyapi.Document{
 				Id:   doc.ID.String(),
@@ -294,6 +302,10 @@ func makeProtoAsyncSearchesList(in []*search.AsyncSearchesListItem) []*seqproxya
 		if !s.CanceledAt.IsZero() {
 			canceledAt = timestamppb.New(s.CanceledAt)
 		}
+		var doneAt *timestamppb.Timestamp
+		if !s.DoneAt.IsZero() {
+			doneAt = timestamppb.New(s.DoneAt)
+		}
 
 		searchReq := &seqproxyapi.StartAsyncSearchRequest{
 			Retention: durationpb.New(s.Request.Retention),
@@ -325,6 +337,7 @@ func makeProtoAsyncSearchesList(in []*search.AsyncSearchesListItem) []*seqproxya
 			StartedAt:  timestamppb.New(s.StartedAt),
 			ExpiresAt:  timestamppb.New(s.ExpiresAt),
 			CanceledAt: canceledAt,
+			DoneAt:     doneAt,
 			Progress:   s.Progress,
 			DiskUsage:  s.DiskUsage,
 			Error:      reqErr,

@@ -86,6 +86,8 @@ func defaultSealingParams() common.SealParams {
 		DocsPositionsZstdLevel: minZstdLevel,
 		TokenTableZstdLevel:    minZstdLevel,
 		DocBlocksZstdLevel:     minZstdLevel,
+		LIDBlockSize:           16 * 1024,
+		LIDsBitmapThreshold:    16 * 1024,
 		DocBlockSize:           128 * int(units.KiB),
 	}
 }

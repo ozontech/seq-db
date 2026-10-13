@@ -125,13 +125,17 @@ func parseFulltextSearchFilter(lex *lexer, fieldName string, t seq.TokenizerType
 		if err != nil {
 			return nil, fmt.Errorf("parsing keyword for field %q: %s", fieldName, err)
 		}
-		return &ASTNode{Value: &Literal{Field: fieldName, Terms: terms}}, nil
+
+		lit := Literal{Field: fieldName, Terms: terms}
+		return &ASTNode{Value: lit.Optimize()}, nil
+
 	case seq.TokenizerTypeText:
 		tokens, err := parseSeqQLText(fieldName, value, caseSensitive)
 		if err != nil {
 			return nil, fmt.Errorf("parsing text for field %q: %s", fieldName, err)
 		}
 		return buildAndTree(tokens), nil
+
 	default:
 		panic(fmt.Errorf("BUG: unexpected index type: %d", t))
 	}
@@ -288,8 +292,12 @@ func parseSeqQLKeyword(token string, caseSensitive bool) ([]Term, error) {
 
 func parseSeqQLText(field, token string, sensitive bool) ([]Token, error) {
 	if token == "" {
-		return []Token{&Literal{Field: field, Terms: []Term{newTextTerm("")}}}, nil
+		return []Token{&Literal{
+			Field: field,
+			Terms: []Term{newTextTerm("")}},
+		}, nil
 	}
+
 	var tokens []Token
 	current := &Literal{Field: field}
 
@@ -318,17 +326,19 @@ func parseSeqQLText(field, token string, sensitive bool) ([]Token, error) {
 		// So create new literal.
 
 		if len(current.Terms) != 0 {
-			tokens = append(tokens, current)
+			tokens = append(tokens, current.Optimize())
 			current = &Literal{Field: field}
 		}
+
 		token = token[size:]
 	}
+
 	if term.Data != "" {
 		current.appendTerm(term, sensitive)
 	}
 
 	if current != nil && len(current.Terms) > 0 {
-		tokens = append(tokens, current)
+		tokens = append(tokens, current.Optimize())
 	}
 
 	if len(tokens) == 0 {
@@ -338,5 +348,6 @@ func parseSeqQLText(field, token string, sensitive bool) ([]Token, error) {
 			Terms: []Term{{Kind: TermText, Data: ""}},
 		})
 	}
+
 	return tokens, nil
 }

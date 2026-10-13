@@ -25,10 +25,9 @@ type activeDataProvider struct {
 
 	tokenList *TokenList
 
-	blocksOffsets []uint64
 	docsPositions *DocsPositions
 	idsToLids     *ActiveLIDs
-	docsReader    *storage.DocsReader
+	docsReader    storage.DocsReader
 
 	idsIndex *activeIDsIndex
 
@@ -79,10 +78,9 @@ func (dp *activeDataProvider) Fetch(ids []seq.ID, noSkipMasks bool) ([][]byte, e
 	res := make([][]byte, len(ids))
 
 	indexes := []activeFetchIndex{{
-		blocksOffsets:    dp.blocksOffsets,
 		docsPositions:    dp.docsPositions,
 		idsToLids:        dp.idsToLids,
-		docsReader:       dp.docsReader,
+		docsReader:       &dp.docsReader,
 		skipMaskProvider: dp.skipMaskProvider,
 		fracName:         dp.info.Name(),
 	}}
@@ -110,6 +108,12 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	params.To = min(params.To, dp.info.To)
 
 	aggLimits := processor.AggLimits(dp.config.Search.AggLimits)
+	queryOpt := processor.QueryOptimizationConfig{
+		BatchExecution: processor.BatchExecutionConfig(dp.config.Search.QueryOptimization.BatchExecution),
+		MaterializedColumnAgg: processor.MaterializedColumnAggConfig{
+			Enabled: dp.config.Search.QueryOptimization.MaterializedColumnAgg.Enabled,
+		},
+	}
 
 	sw := stopwatch.New()
 
@@ -132,7 +136,7 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	qprs := make([]*seq.QPR, 0, len(indexes))
 
 	for _, si := range indexes {
-		qpr, err := processor.IndexSearch(dp.ctx, params, &si, aggLimits, sw)
+		qpr, err := processor.IndexSearch(dp.ctx, dp.info.BinaryDataVer, params, &si, aggLimits, queryOpt, sw)
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +233,7 @@ func (si *activeSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (n
 	// we need to sort inversed values since they may be out of order after replay of active fraction
 	slices.Sort(res)
 
-	return node.NewStatic(res, reverse), has, release, nil
+	return node.NewStatic(res, !reverse), has, release, nil
 }
 
 type activeTokenIndex struct {
@@ -252,13 +256,28 @@ func (si *activeTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error)
 	return si.tokenList.FindPattern(si.ctx, t)
 }
 
+func (si *activeTokenIndex) GetFreqsByTIDs(tids []uint32, field string) []uint32 {
+	return make([]uint32, len(tids))
+}
+
 func (si *activeTokenIndex) GetLIDsFromTIDs(tids []uint32, _ lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
 	nodes := make([]node.Node, 0, len(tids))
 	for _, tid := range tids {
 		tlids := si.tokenList.Provide(tid)
 		unmapped := tlids.GetLIDs(si.mids, si.rids)
 		inverse := inverseLIDs(unmapped, si.inverser, minLID, maxLID)
-		nodes = append(nodes, node.NewStatic(inverse, order.IsReverse()))
+		nodes = append(nodes, node.NewStatic(inverse, order.IsDesc()))
+	}
+	return nodes
+}
+
+func (si *activeTokenIndex) GetBatchedLIDsFromTIDs(tids []uint32, _ lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.BatchedNode {
+	nodes := make([]node.BatchedNode, 0, len(tids))
+	for _, tid := range tids {
+		tlids := si.tokenList.Provide(tid)
+		unmapped := tlids.GetLIDs(si.mids, si.rids)
+		inverse := inverseLIDs(unmapped, si.inverser, minLID, maxLID)
+		nodes = append(nodes, node.NewStaticBatched(inverse, order.IsDesc()))
 	}
 	return nodes
 }
@@ -277,16 +296,11 @@ func inverseLIDs(unmapped []uint32, inv *inverser, minLID, maxLID uint32) []uint
 }
 
 type activeFetchIndex struct {
-	blocksOffsets    []uint64
 	docsPositions    *DocsPositions
 	idsToLids        *ActiveLIDs
 	docsReader       *storage.DocsReader
 	skipMaskProvider skipMaskProvider
 	fracName         string
-}
-
-func (di *activeFetchIndex) GetBlocksOffsets(num uint32) uint64 {
-	return di.blocksOffsets[num]
 }
 
 func (di *activeFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.DocPos, error) {
@@ -325,6 +339,6 @@ func (di *activeFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.Doc
 	return docsPos, nil
 }
 
-func (di *activeFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
-	return di.docsReader.ReadDocs(blockOffset, docOffsets)
+func (di *activeFetchIndex) ReadDocs(blockIndex uint32, docOffsets []uint64) ([][]byte, error) {
+	return di.docsReader.ReadDocs(blockIndex, docOffsets)
 }

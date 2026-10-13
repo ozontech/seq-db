@@ -1,11 +1,11 @@
 package indexwriter
 
 import (
-	"encoding/binary"
 	"iter"
 	"math"
 	"unsafe"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -26,17 +26,18 @@ type unpackedTokenBlock struct {
 	payload token.Block // Actual token data payload
 }
 
-// lidExt represents the range and continuation status of LID blocks.
+// lidExt represents the range of LID blocks.
 type lidExt struct {
-	minTID      uint32 // First token ID in the LID block
-	maxTID      uint32 // Last token ID in the LID block
-	isContinued bool   // Whether LID sequence continues in next block
+	minTID   uint32 // First token ID in the LID block
+	maxTID   uint32 // Last token ID in the LID block
+	firstLID uint32 // First LID value in the block
+	lastLID  uint32 // Last LID value in the block
 }
 
 // unpackedLIDBlock represents a sealed block containing LID (Local ID) data.
 type unpackedLIDBlock struct {
-	ext     lidExt     // LIDs block metadata for registry marking
-	payload lids.Block // LID data payload
+	ext     lidExt             // LIDs block metadata for registry marking
+	payload lids.UnpackedBlock // LID data payload
 }
 
 // unpackedIDBlock represents a sealed block containing various identifier types.
@@ -56,6 +57,7 @@ func tokenBlock(
 			blockIdx  uint32
 			blockSize int
 		)
+		block.payload.FracVer = config.BinaryDataV6
 
 		var (
 			currentTID         uint32
@@ -123,9 +125,13 @@ func tokenBlock(
 					}
 				}
 
-				tokenIndex := uint32(len(block.payload.Offsets))
-				block.payload.Offsets = append(block.payload.Offsets, uint32(len(block.payload.Payload)))
-				block.payload.Payload = binary.LittleEndian.AppendUint32(block.payload.Payload, uint32(len(tok)))
+				offsets := block.payload.Offsets
+				if len(offsets) == 0 {
+					offsets = append(offsets, 0)
+				}
+				tokenIndex := uint32(len(offsets) - 1)
+				offsets = append(offsets, offsets[len(offsets)-1]+uint32(len(tok)))
+				block.payload.Offsets = offsets
 				block.payload.Payload = append(block.payload.Payload, tok...)
 
 				if len(tlids) >= tokenFreqAbsThreshold {

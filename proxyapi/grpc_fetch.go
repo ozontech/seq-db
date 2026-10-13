@@ -60,7 +60,10 @@ func (g *grpcV1) Fetch(req *seqproxyapi.FetchRequest, stream seqproxyapi.SeqProx
 	if err != nil {
 		return status.Errorf(codes.Internal, "can't fetch: %v", err)
 	}
-	for doc, err := docsStream.Next(); err == nil; doc, err = docsStream.Next() {
+	for doc, err := range search.DocsIteratorSeq(docsStream) {
+		if err != nil {
+			return status.Errorf(codes.Internal, "docs reading error: %v", err)
+		}
 		err := stream.Send(&seqproxyapi.Document{
 			Id:   doc.ID.String(),
 			Data: doc.Data,

@@ -89,7 +89,7 @@ type SkipMaskManager struct {
 	cacheCleanInterval time.Duration
 	cacheGCDelay       time.Duration
 
-	headersCache        *cache.Cache[[]lidsBlockHeader]
+	headersCache        *cache.ConcurrentCache[[]lidsBlockHeader]
 	headersCacheCleaner *cache.Cleaner
 }
 
@@ -130,7 +130,7 @@ func New(
 		maintenanceInterval: defaultMaintenanceInterval,
 		cacheCleanInterval:  defaultCacheCleanInterval,
 		cacheGCDelay:        defaultCacheGCDelay,
-		headersCache:        cache.NewCache[[]lidsBlockHeader](cacheCleaner, nil),
+		headersCache:        cache.NewConcurrentCache[[]lidsBlockHeader](cacheCleaner, nil),
 		headersCacheCleaner: cacheCleaner,
 	}
 }
@@ -224,9 +224,9 @@ func (smm *SkipMaskManager) GetIDsIteratorByFrac(
 		loader := newLoader(f, smm.headersCache)
 		releaseFuncs[i] = loader.release
 		if reverse {
-			iterators = append(iterators, (*IteratorAsc)(NewIterator(loader, minLID, maxLID)))
-		} else {
 			iterators = append(iterators, (*IteratorDesc)(NewIterator(loader, minLID, maxLID)))
+		} else {
+			iterators = append(iterators, (*IteratorAsc)(NewIterator(loader, minLID, maxLID)))
 		}
 	}
 

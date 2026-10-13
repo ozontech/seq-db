@@ -2,6 +2,8 @@ package fracmanager
 
 import (
 	"iter"
+	"maps"
+	"slices"
 
 	"github.com/ozontech/seq-db/util"
 )
@@ -66,15 +68,15 @@ func (c *PartitionedCollection[T]) MinPartition() uint64 {
 	return 0
 }
 
-// GetByPartition returns all objects in the specified partition.
+// GetByPartition returns all objects in the specified partition, ordered by key.
 func (c *PartitionedCollection[T]) GetByPartition(partitionID uint64) []T {
 	partitionMap, ok := c.byPartition[partitionID]
 	if !ok {
 		return nil
 	}
 	res := make([]T, 0, len(partitionMap))
-	for _, obj := range partitionMap {
-		res = append(res, obj)
+	for _, key := range slices.Sorted(maps.Keys(partitionMap)) {
+		res = append(res, partitionMap[key])
 	}
 	return res
 }

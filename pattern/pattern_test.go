@@ -13,8 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/parser"
 )
+
+const fieldName = "m"
 
 type testTokenProvider struct {
 	ordered  *simpleTokenProvider
@@ -113,6 +116,20 @@ func (tp *simpleTokenProvider) FindContains(needle []byte) ([]uint32, error) {
 	return tids, nil
 }
 
+func (tp *simpleTokenProvider) FindSuffix(suffix []byte) ([]uint32, error) {
+	if len(suffix) == 0 {
+		return nil, nil
+	}
+	var tids []uint32
+	for t := tp.FirstTID(); t <= tp.LastTID(); t++ {
+		token := tp.GetToken(t)
+		if len(token) >= len(suffix) && bytes.Equal(token[len(token)-len(suffix):], suffix) {
+			tids = append(tids, t)
+		}
+	}
+	return tids, nil
+}
+
 func (tp *simpleTokenProvider) FindToken(searcher Searcher) ([]uint32, error) {
 	firstTID := searcher.FirstTID()
 	lastTID := searcher.LastTID()
@@ -155,15 +172,28 @@ func parseSingleTokenForTests(query string) (parser.Token, error) {
 
 func search(t *testing.T, tp *simpleTokenProvider, req string, expect []string) {
 	searchType := "full"
+
 	if tp.Ordered() {
 		searchType = "narrow"
 	}
 
-	token, err := parseSingleTokenForTests("m:" + req)
+	token, err := parseSingleTokenForTests(fieldName + ":" + req)
 	require.NoError(t, err)
-	s := newSearcher(token, tp)
+
+	// When parsing query we perform following rewrite:
+	//   foo:* --> _exists_:foo
+	// This is workaround for that so we could really
+	// test the pattern checking.
+	if req == "*" {
+		token = &parser.Literal{
+			Field: fieldName,
+			Terms: []parser.Term{{Kind: parser.TermSymbol}},
+		}
+	}
 
 	res := []string{}
+	s := newSearcher(token, tp)
+
 	for i := s.FirstTID(); i <= s.LastTID(); i++ {
 		val := tp.GetToken(i)
 
@@ -176,8 +206,8 @@ func search(t *testing.T, tp *simpleTokenProvider, req string, expect []string) 
 			res = append(res, string(val))
 		}
 	}
-	sort.Strings(res)
 
+	sort.Strings(res)
 	assert.Equal(t, expect, res, "%s search request %q failed", searchType, req)
 }
 
@@ -330,6 +360,28 @@ func TestPatternSuffix2(t *testing.T) {
 		{"aba*caba", []string{"abacaba"}},
 		{"abac*caba", []string{}},
 		{"*caba", []string{"abacaba", "caba"}},
+	}
+
+	testAll(t, tp, tests)
+}
+
+func TestPatternSuffixOnly(t *testing.T) {
+	tp := newTestTokenProvider([]string{
+		"abc",
+		"xabc",
+		"xyabc",
+		"xyzabc",
+		"abcx",
+		"xabcx",
+		"notabc",
+		"nothing",
+	})
+
+	tests := []testCase{
+		{"*abc", []string{"abc", "notabc", "xabc", "xyabc", "xyzabc"}},
+		{"*x", []string{"abcx", "xabcx"}},
+		{"*ng", []string{"nothing"}},
+		{"*g", []string{"nothing"}},
 	}
 
 	testAll(t, tp, tests)
@@ -496,6 +548,24 @@ func TestPatternSymbols(t *testing.T) {
 }
 
 func TestPatternRe(t *testing.T) {
+	t.Run("match-simple", func(t *testing.T) {
+		needles := []string{"simple"}
+
+		data := append(
+			[]string{"not-uuid", "not uuid as well"},
+			needles...,
+		)
+
+		tp := newTestTokenProvider(data)
+
+		testAll(t, tp, []testCase{
+			{
+				`re("simple")`,
+				needles,
+			},
+		})
+	})
+
 	t.Run("match-uuid", func(t *testing.T) {
 		needles := []string{
 			"7313c25b-2eae-4839-b773-91dff1f24f1f",
@@ -564,12 +634,12 @@ func TestPatternRe(t *testing.T) {
 
 	t.Run("match-level", func(t *testing.T) {
 		needles := []string{
-			"[ERROR] connection refused",
-			"[WARN] timeout exceeded",
+			"[error] connection refused",
+			"[warn] timeout exceeded",
 		}
 
 		data := append(
-			[]string{"[INFO] all good", "[DEBUG] trace value"},
+			[]string{"[info] all good", "[debug] trace value"},
 			needles...,
 		)
 
@@ -577,7 +647,7 @@ func TestPatternRe(t *testing.T) {
 
 		testAll(t, tp, []testCase{
 			{
-				`re("\[(ERROR|WARN)\].*")`,
+				`re("\[(error|warn)\].*")`,
 				needles,
 			},
 		})
@@ -649,12 +719,12 @@ func TestPatternRe(t *testing.T) {
 
 	t.Run("match-anchored", func(t *testing.T) {
 		needles := []string{
-			"ERROR: disk empty",
-			"ERROR: disk full",
+			"error: disk empty",
+			"error: disk full",
 		}
 
 		data := append(
-			[]string{"some ERROR in the middle", "info: no error"},
+			[]string{"some error in the middle", "info: no error"},
 			needles...,
 		)
 
@@ -662,7 +732,7 @@ func TestPatternRe(t *testing.T) {
 
 		testAll(t, tp, []testCase{
 			{
-				`re("^ERROR: disk (empty|full)$")`,
+				`re("^error: disk (empty|full)$")`,
 				needles,
 			},
 		})
@@ -716,7 +786,10 @@ func TestPatternRe(t *testing.T) {
 		})
 	})
 
-	t.Run("match-case-insensitive", func(t *testing.T) {
+	t.Run("match-case-sensitive", func(t *testing.T) {
+		defer func(v bool) { config.CaseSensitive = v }(config.CaseSensitive)
+		config.CaseSensitive = true
+
 		needles := []string{
 			"Error occurred",
 			"ERROR occurred",
@@ -732,8 +805,22 @@ func TestPatternRe(t *testing.T) {
 
 		testAll(t, tp, []testCase{
 			{
-				`re("(?i)error.*")`,
+				`re("(?i)error.*red")`,
 				needles,
+			},
+		})
+
+		testAll(t, tp, []testCase{
+			{
+				`re("error.*")`,
+				[]string{needles[2]},
+			},
+		})
+
+		testAll(t, tp, []testCase{
+			{
+				`re("error.*RED")`,
+				[]string{},
 			},
 		})
 	})

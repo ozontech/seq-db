@@ -4,6 +4,7 @@ import (
 	"iter"
 	"slices"
 
+	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
@@ -21,6 +22,10 @@ type DocBlockLocation = util.Pair[[]byte, uint64]
 type SealedSource struct {
 	f *Sealed
 
+	tokenReader storage.IndexReader
+	idReader    storage.IndexReader
+	lidReader   storage.IndexReader
+
 	idsProvider *seqids.Provider
 	lidsLoader  *lids.Loader
 
@@ -31,24 +36,37 @@ type SealedSource struct {
 func NewSealedSource(f *Sealed) *SealedSource {
 	f.init(true)
 
-	idReader := f.mustGetReader(f.idReaderProvider)
-	lidReader := f.mustGetReader(f.lidReaderProvider)
-	tokenReader := f.mustGetReader(f.tokenReaderProvider)
-
-	return &SealedSource{
-		f: f,
-		idsProvider: seqids.NewProvider(
-			&idReader,
-			f.indexCache.MIDs,
-			f.indexCache.RIDs,
-			f.indexCache.Params,
-			&f.blocksData.IDsTable,
-			f.info.BinaryDataVer,
-		),
-		lidsLoader:       lids.NewLoader(f.Info().BinaryDataVer, &lidReader, f.indexCache.LIDs),
-		tokenBlockLoader: token.NewBlockLoader(f.BaseFileName, f.Info().BinaryDataVer, &tokenReader, f.indexCache.Tokens),
-		tokenTableLoader: token.NewTableLoader(f.BaseFileName, f.Info().BinaryDataVer, f.IsLegacy, &tokenReader, f.indexCache.TokenTable),
+	ir := f.indexReaders()
+	s := &SealedSource{
+		f: f, tokenReader: ir.Token,
+		idReader: ir.ID, lidReader: ir.LID,
 	}
+
+	s.idsProvider = seqids.NewProvider(
+		&s.idReader,
+		cache.NewScan[[]byte](),
+		cache.NewScan[seqids.BlockRIDs](),
+		cache.NewScan[seqids.BlockParams](),
+		&f.blocksData.IDsTable,
+		f.info.BinaryDataVer,
+	)
+
+	s.lidsLoader = lids.NewLoader(
+		f.Info().BinaryDataVer,
+		&s.lidReader, cache.NewScan[*lids.Block](),
+	)
+
+	s.tokenBlockLoader = token.NewBlockLoader(
+		f.BaseFileName, f.Info().BinaryDataVer,
+		&s.tokenReader, cache.NewScan[*token.Block](),
+	)
+
+	s.tokenTableLoader = token.NewTableLoader(
+		f.BaseFileName, f.Info().BinaryDataVer,
+		f.IsSingleIndex(), &s.tokenReader, cache.NewScan[token.Table](),
+	)
+
+	return s
 }
 
 func (s *SealedSource) Info() *common.Info {
@@ -112,26 +130,26 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 	var lidsBuf []uint32
 	return func(yield func(indexwriter.TokenLIDs, error) bool) {
 		for _, entry := range tokenTable[field].Entries {
-			block := s.tokenBlockLoader.Load(entry.BlockIndex)
+			block := s.tokenBlockLoader.GetTokenBlock(entry.BlockIndex)
 
 			for tid := entry.StartTID; tid <= entry.GetLastTID(); tid++ {
 				lidsBuf = lidsBuf[:0]
 
-				tokenVal := block.GetToken(entry.GetIndexInTokensBlock(tid))
-				firstBlock := lidsTable.GetFirstBlockIndexForTID(tid)
-				lastBlock := lidsTable.GetLastBlockIndexForTID(tid)
+				from := lidsTable.GetFirstBlockIndexForTID(tid)
+				to := lidsTable.GetLastBlockIndexForTID(tid)
 
-				for bi := firstBlock; bi <= lastBlock; bi++ {
-					lidBlock, err := s.lidsLoader.GetLIDsBlock(bi)
+				for bi := from; bi <= to; bi++ {
+					lidBlock, err := s.lidsLoader.GetLIDsBlock(lidsTable.StartBlockIndex + bi)
 					if err != nil {
 						yield(indexwriter.TokenLIDs{}, err)
 						return
 					}
 
 					chunkIdx := lidsTable.GetChunkIndex(bi, tid)
-					lidsBuf = append(lidsBuf, lidBlock.GetLIDs(chunkIdx)...)
+					lidsBuf, _ = lidBlock.AppendLIDsTo(chunkIdx, lidsBuf)
 				}
 
+				tokenVal := block.GetToken(entry.GetIndexInTokensBlock(tid))
 				if !yield(indexwriter.TokenLIDs{First: tokenVal, Second: lidsBuf}, nil) {
 					return
 				}

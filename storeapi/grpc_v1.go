@@ -157,6 +157,9 @@ func parseStoreError(e error) (storeapi.SearchErrorCode, bool) {
 		metric.RejectedRequests.WithLabelValues("search", "fracs_exceeding").Inc()
 		return storeapi.SearchErrorCode_TOO_MANY_FRACTIONS_HIT, true
 	}
+	if errors.Is(e, consts.ErrIngestorQueryWantsOldData) {
+		return storeapi.SearchErrorCode_INGESTOR_QUERY_WANTS_OLD_DATA, true
+	}
 
 	return 0, false
 }

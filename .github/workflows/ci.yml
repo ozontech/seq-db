@@ -23,7 +23,7 @@ jobs:
         uses: maus007/docker-run-action-fork@v1
         with:
           registry: quay.io
-          image: minio/minio:latest
+          image: alpine/minio:latest-release
           options: |
             --detach
             --publish 9000:9000
@@ -31,6 +31,8 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install Go
         uses: actions/setup-go@v6
@@ -73,7 +75,7 @@ jobs:
           name: coverage
 
       - name: Send coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: profile.out.clean

@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go:*)",
+      "Bash(gofmt:*)",
+      "Bash(gopls:*)",
+      "Bash(seqbazooka:*)",
+      "Bash(jq:*)",
+
+      "Bash(make test:*)",
+      "Bash(make ci-tests:*)",
+      "Bash(make ci-tests-race:*)",
+      "Bash(make test-deps:*)",
+      "Bash(make lint:*)",
+      "Bash(make imports:*)",
+      "Bash(make build-debug:*)",
+      "Bash(make build-image:*)",
+      "Bash(make proto:*)",
+      "Bash(make mock:*)",
+      "Bash(make bin-deps:*)",
+      "Bash(make get-version:*)",
+      "Bash(make build-docs:*)",
+      "Bash(make serve-docs:*)",
+
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git describe:*)",
+      "Bash(git blame:*)",
+      "Bash(git shortlog:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git for-each-ref:*)",
+      "Bash(git show-ref:*)",
+      "Bash(git cat-file:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote:*)"
+    ]
+  }
+}

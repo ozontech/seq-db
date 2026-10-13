@@ -15,6 +15,7 @@ const (
 
 func Parse(path string) (Config, error) {
 	var c Config
+	c.QueryOptimization.MaterializedColumnAgg.Enabled = true
 
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -84,6 +85,10 @@ type Config struct {
 		Lids struct {
 			// BlockSize sets max lids (postings) saved per LIDs block.
 			BlockSize int `config:"block_size" default:"65536"`
+			// BitmapThreshold specifies minimum number of LIDs in the lid list
+			// which are serialized as bitmap. LIDs lists with more elements use bitmap encoding,
+			// while smaller lists use delta encoding. Default value is 0 (disabled).
+			BitmapThreshold int `config:"bitmap_threshold"`
 		} `config:"lids"`
 	} `config:"sealing"`
 
@@ -171,6 +176,19 @@ type Config struct {
 			FractionTokens int `config:"fraction_tokens" default:"100000"`
 		} `config:"aggregation"`
 	} `config:"limits"`
+
+	QueryOptimization struct {
+		BatchExecution struct {
+			Enabled bool `config:"enabled"`
+			// CostThreshold is the minimum estimated non-batched execution cost required to enable batch-at-a-time query
+			// evaluation. Suggestion is to use value which is greater than 3 x LID block size.
+			CostThreshold int `config:"cost_threshold" default:"150000"`
+		} `config:"batch_execution"`
+		MaterializedColumnAgg struct {
+			// Enabled enables materializing a column for high-cardinality aggregations. Enabled by default.
+			Enabled bool `config:"enabled"`
+		} `config:"materialized_column_agg"`
+	} `config:"query_optimization"`
 
 	CircuitBreaker struct {
 		Bulk struct {
@@ -341,6 +359,8 @@ type Config struct {
 		// Specify how many tokens can be checked using regular expressions.
 		// If zero then there is no limit.
 		MaxRegexTokensCheck int `config:"max_regex_tokens_check" default:"0"`
+		// If true, suitable ComplexSearch queries will be served through stream search implementation.
+		UseStreamSearch bool `config:"use_stream_search"`
 	} `config:"experimental"`
 }
 

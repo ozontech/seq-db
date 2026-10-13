@@ -216,3 +216,23 @@ func (mr *MockStoreApiClientMockRecorder) Status(arg0, arg1 interface{}, arg2 ..
 	varargs := append([]interface{}{arg0, arg1}, arg2...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockStoreApiClient)(nil).Status), varargs...)
 }
+
+// StreamSearch mocks base method.
+func (m *MockStoreApiClient) StreamSearch(arg0 context.Context, arg1 ...grpc.CallOption) (storeapi.StoreApi_StreamSearchClient, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0}
+	for _, a := range arg1 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "StreamSearch", varargs...)
+	ret0, _ := ret[0].(storeapi.StoreApi_StreamSearchClient)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StreamSearch indicates an expected call of StreamSearch.
+func (mr *MockStoreApiClientMockRecorder) StreamSearch(arg0 interface{}, arg1 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0}, arg1...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StreamSearch", reflect.TypeOf((*MockStoreApiClient)(nil).StreamSearch), varargs...)
+}

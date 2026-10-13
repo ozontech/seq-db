@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,6 +35,7 @@ import (
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search"
+	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/skipmaskmanager"
 	"github.com/ozontech/seq-db/tests/common"
@@ -85,28 +87,28 @@ func (s *IntegrationTestSuite) TestSearchOne() {
 		}
 
 		// search first
-		qpr, docs, _, err := env.Search(`service:a`, 1000, setup.WithTotal(withTotal))
+		qpr, docs, err := env.Search(`service:a`, 1000, setup.WithTotal(withTotal))
 		assertSearch(qpr, err)
 		if assert.Greater(s.T(), len(docs), 0, "no docs found") {
 			assert.Equal(s.T(), origDocs[0], string(docs[0]), "wrong doc content")
 		}
 
 		// search first with _exists_
-		qpr, docs, _, err = env.Search(`_exists_:service`, 1000, setup.WithTotal(withTotal))
+		qpr, docs, err = env.Search(`_exists_:service`, 1000, setup.WithTotal(withTotal))
 		assertSearch(qpr, err)
 		if assert.Greater(s.T(), len(docs), 0, "no docs found") {
 			assert.Equal(s.T(), origDocs[0], string(docs[0]), "wrong doc content")
 		}
 
 		// search first with NOT _exists_
-		qpr, docs, _, err = env.Search(`NOT _exists_:k8s_pod`, 1000, setup.WithTotal(withTotal))
+		qpr, docs, err = env.Search(`NOT _exists_:k8s_pod`, 1000, setup.WithTotal(withTotal))
 		assertSearch(qpr, err)
 		if assert.Greater(s.T(), len(docs), 0, "no docs found") {
 			assert.Equal(s.T(), origDocs[0], string(docs[0]), "wrong doc content")
 		}
 
 		// search second
-		qpr, docs, _, err = env.Search(`k8s_pod:sq-toloka-loader-1788964-dryrun-58hmw`, 1000, setup.WithTotal(withTotal))
+		qpr, docs, err = env.Search(`k8s_pod:sq-toloka-loader-1788964-dryrun-58hmw`, 1000, setup.WithTotal(withTotal))
 		assertSearch(qpr, err)
 		if assert.Greater(s.T(), len(docs), 0, "no docs found") {
 			assert.Equal(s.T(), origDocs[1], string(docs[0]), "wrong doc content")
@@ -254,7 +256,7 @@ func (s *IntegrationTestSuite) TestSearchNothing() {
 
 	setup.Bulk(s.T(), env.IngestorBulkAddr(), origDocs)
 
-	qpr, _, _, err := env.Search(`k8s_pod:NO`, 1000, setup.NoFetch())
+	qpr, _, err := env.Search(`k8s_pod:NO`, 1000, setup.NoFetch())
 	assert.NoError(s.T(), err, "should be no errors")
 	assert.Len(s.T(), qpr.IDs, 0, "wrong doc count")
 	assert.Equal(s.T(), uint64(0), qpr.Total, "wrong doc count")
@@ -283,7 +285,7 @@ func (s *IntegrationTestSuite) TestSearchSequence() {
 
 	for _, o := range []seq.DocsOrder{seq.DocsOrderAsc, seq.DocsOrderDesc} {
 		for _, withTotal := range []bool{true, false} {
-			qpr, _, _, err := env.Search(`service:a`, math.MaxInt32, setup.NoFetch(), setup.WithTotal(withTotal), setup.WithOrder(o))
+			qpr, _, err := env.Search(`service:a`, math.MaxInt32, setup.NoFetch(), setup.WithTotal(withTotal), setup.WithOrder(o))
 			assert.NoError(s.T(), err, "should be no errors")
 			assert.Len(s.T(), qpr.IDs, bulks*bulkSize, "wrong doc count")
 			assert.Equal(s.T(), getTotal(bulks*bulkSize, withTotal), qpr.Total, "wrong doc count")
@@ -326,7 +328,7 @@ func (s *IntegrationTestSuite) TestSearchMany() {
 	env.WaitIdle()
 
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`service:a`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err := env.Search(`service:a`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(n, withTotal), qpr.Total, "wrong doc count")
 	}
@@ -377,7 +379,7 @@ func (s *IntegrationTestSuite) TestFetch() {
 	env, origDocs := s.envWithDummyDocs(16)
 	env.WaitIdle()
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`service:a`, 10, setup.WithTotal(withTotal))
+		qpr, _, err := env.Search(`service:a`, 10, setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(len(origDocs), withTotal), qpr.Total, "wrong doc count")
 	}
@@ -399,7 +401,7 @@ func (s *IntegrationTestSuite) TestFetch() {
 		}
 
 		for _, withTotal := range []bool{true, false} {
-			qpr, docs, _, err := env.Search(`service:a`, size, setup.WithTotal(withTotal), setup.WithOrder(o))
+			qpr, docs, err := env.Search(`service:a`, size, setup.WithTotal(withTotal), setup.WithOrder(o))
 
 			assert.NoError(s.T(), err, "should be no errors")
 			assert.Equal(s.T(), size, len(docs))
@@ -450,7 +452,7 @@ func (s *IntegrationTestSuite) TestMulti() {
 	env.WaitIdle()
 
 	// search
-	qpr, _, _, err := env.Search(`service:*`, 10)
+	qpr, _, err := env.Search(`service:*`, 10)
 	assert.NoError(s.T(), err, "should be no errors")
 	assert.Equal(s.T(), uint64(len(origDocs)), qpr.Total, "wrong doc count")
 	assert.Equal(s.T(), len(origDocs), len(qpr.IDs), "wrong doc count")
@@ -494,31 +496,31 @@ func (s *IntegrationTestSuite) TestSearchNot() {
 	env.WaitIdle()
 
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`NOT service:b`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err := env.Search(`NOT service:b`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(2*n*bulksNum, withTotal), qpr.Total, "wrong doc count")
 
-		qpr, _, _, err = env.Search(`NOT service:x`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`NOT service:x`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(n*bulksNum, withTotal), qpr.Total, "wrong doc count")
 
-		qpr, _, _, err = env.Search(`NOT service:a AND NOT service:x`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`NOT service:a AND NOT service:x`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), 0, int(qpr.Total), "wrong doc count")
 
-		qpr, _, _, err = env.Search(`NOT _exists_:service`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`NOT _exists_:service`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), 0, int(qpr.Total), "wrong doc count")
 
-		qpr, _, _, err = env.Search(`NOT _exists_:k8s_pod`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`NOT _exists_:k8s_pod`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
 
-		qpr, _, _, err = env.Search(`NOT _exists_:k8s_pod`, -1, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`NOT _exists_:k8s_pod`, -1, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.ErrorIs(s.T(), err, consts.ErrInvalidArgument)
 		assert.Nil(s.T(), qpr)
 
-		qpr, _, _, err = env.Search(`NOT _exists_:k8s_pod`, 1, setup.WithOffset(-1),
+		qpr, _, err = env.Search(`NOT _exists_:k8s_pod`, 1, setup.WithOffset(-1),
 			setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.ErrorIs(s.T(), err, consts.ErrInvalidArgument)
 		assert.Nil(s.T(), qpr)
@@ -528,19 +530,19 @@ func (s *IntegrationTestSuite) TestSearchNot() {
 
 	for _, withTotal := range []bool{true, false} {
 
-		qpr, _, _, err := env.Search(`NOT service:x`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err := env.Search(`NOT service:x`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(n*bulksNum, withTotal), qpr.Total, "wrong doc count")
 
-		qpr, _, _, err = env.Search(`NOT service:a AND NOT service:x`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`NOT service:a AND NOT service:x`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), 0, int(qpr.Total), "wrong doc count")
 
-		qpr, _, _, err = env.Search(`NOT _exists_:service`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`NOT _exists_:service`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), 0, int(qpr.Total), "wrong doc count")
 
-		qpr, _, _, err = env.Search(`NOT _exists_:k8s_pod`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`NOT _exists_:k8s_pod`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
 	}
@@ -566,7 +568,7 @@ func (s *IntegrationTestSuite) TestSearchPattern() {
 	env.WaitIdle()
 
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`service:x*`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err := env.Search(`service:x*`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
 	}
@@ -574,7 +576,7 @@ func (s *IntegrationTestSuite) TestSearchPattern() {
 	env.SealAll()
 
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`service:x*`, 10, setup.WithTotal(withTotal))
+		qpr, _, err := env.Search(`service:x*`, 10, setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
 	}
@@ -604,7 +606,7 @@ func (s *IntegrationTestSuite) TestSearchSimple() {
 	env.WaitIdle()
 
 	for _, token := range tokens {
-		qpr, _, _, err := env.Search("message:"+token, 10, setup.NoFetch(), setup.WithTotal(true))
+		qpr, _, err := env.Search("message:"+token, 10, setup.NoFetch(), setup.WithTotal(true))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), bulksNum, int(qpr.Total), "wrong doc count for token "+token)
 	}
@@ -612,7 +614,7 @@ func (s *IntegrationTestSuite) TestSearchSimple() {
 	env.SealAll()
 
 	for _, token := range tokens {
-		qpr, _, _, err := env.Search("message:"+token, 10, setup.NoFetch(), setup.WithTotal(true))
+		qpr, _, err := env.Search("message:"+token, 10, setup.NoFetch(), setup.WithTotal(true))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), bulksNum, int(qpr.Total), "wrong doc count for token "+token)
 	}
@@ -632,7 +634,7 @@ func (s *IntegrationTestSuite) TestManySearchRequests() {
 	env.WaitIdle()
 
 	for x := 0; x < 5000; x++ {
-		qpr, _, _, err := env.Search(`service:x`, 10, setup.NoFetch())
+		qpr, _, err := env.Search(`service:x`, 10, setup.NoFetch())
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), uint64(n), qpr.Total, "wrong doc count")
 	}
@@ -660,13 +662,13 @@ func (s *IntegrationTestSuite) TestAgg() {
 
 	r := require.New(t)
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`service:x1`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err := env.Search(`service:x1`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
 		r.NotNil(qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}], qpr.Aggs[0].SamplesByBin)
 		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
 
-		qpr, _, _, err = env.Search(`service:x*`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`service:x*`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
 		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
@@ -675,14 +677,14 @@ func (s *IntegrationTestSuite) TestAgg() {
 			"service",
 			"k8s_pod",
 		)
-		qpr, _, _, err = env.Search(`service:x1`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`service:x1`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
 		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
 		r.Equal(int64(allDocsNum/3), qpr.Aggs[1].SamplesByBin[seq.AggBin{Token: "y1"}].Total, "wrong doc count")
 
-		qpr, _, _, err = env.Search(`service:x*`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`service:x*`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
@@ -693,12 +695,12 @@ func (s *IntegrationTestSuite) TestAgg() {
 	env.SealAll()
 
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`service:x1`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err := env.Search(`service:x1`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
 		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
 
-		qpr, _, _, err = env.Search(`service:x*`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`service:x*`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
 		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
@@ -707,14 +709,14 @@ func (s *IntegrationTestSuite) TestAgg() {
 			"service",
 			"k8s_pod",
 		)
-		qpr, _, _, err = env.Search(`service:x1`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`service:x1`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
 		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
 		r.Equal(int64(allDocsNum/3), qpr.Aggs[1].SamplesByBin[seq.AggBin{Token: "y1"}].Total, "wrong doc count")
 
-		qpr, _, _, err = env.Search(`service:x*`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err = env.Search(`service:x*`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
@@ -772,7 +774,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 	t.Run("count", func(t *testing.T) {
 		bulkDataset("nginx-count", func(int) int { return 1 })
 
-		qpr, _, _, err := env.Search(`service:"nginx-count"`, 1024, setup.WithAggQuery(search.AggQuery{
+		qpr, _, err := env.Search(`service:"nginx-count"`, 1024, setup.WithAggQuery(search.AggQuery{
 			GroupBy:  "level",
 			Func:     seq.AggFuncCount,
 			Interval: seq.DurationToMID(30 * time.Second),
@@ -791,7 +793,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 	t.Run("min", func(t *testing.T) {
 		bulkDataset("nginx-min", func(i int) int { return i })
 
-		qpr, _, _, err := env.Search(`service:"nginx-min"`, 1024, setup.WithAggQuery(search.AggQuery{
+		qpr, _, err := env.Search(`service:"nginx-min"`, 1024, setup.WithAggQuery(search.AggQuery{
 			Field:    "level",
 			GroupBy:  "service",
 			Func:     seq.AggFuncMin,
@@ -812,7 +814,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 	t.Run("max", func(t *testing.T) {
 		bulkDataset("nginx-max", func(i int) int { return i })
 
-		qpr, _, _, err := env.Search(`service:"nginx-max"`, 1024, setup.WithAggQuery(search.AggQuery{
+		qpr, _, err := env.Search(`service:"nginx-max"`, 1024, setup.WithAggQuery(search.AggQuery{
 			Field:    "level",
 			Func:     seq.AggFuncMax,
 			Interval: seq.DurationToMID(30 * time.Second),
@@ -831,7 +833,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 	t.Run("avg", func(t *testing.T) {
 		bulkDataset("nginx-avg", func(int) int { return 1 })
 
-		qpr, _, _, err := env.Search(`service:"nginx-avg"`, 1024, setup.WithAggQuery(search.AggQuery{
+		qpr, _, err := env.Search(`service:"nginx-avg"`, 1024, setup.WithAggQuery(search.AggQuery{
 			Field:    "level",
 			Func:     seq.AggFuncAvg,
 			Interval: seq.DurationToMID(30 * time.Second),
@@ -850,7 +852,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 	t.Run("sum", func(t *testing.T) {
 		bulkDataset("nginx-sum", func(int) int { return 1 })
 
-		qpr, _, _, err := env.Search(`service:"nginx-sum"`, 1024, setup.WithAggQuery(search.AggQuery{
+		qpr, _, err := env.Search(`service:"nginx-sum"`, 1024, setup.WithAggQuery(search.AggQuery{
 			Field:    "level",
 			Func:     seq.AggFuncSum,
 			Interval: seq.DurationToMID(30 * time.Second),
@@ -869,7 +871,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 	t.Run("quantile", func(t *testing.T) {
 		bulkDataset("nginx-quantile", func(i int) int { return i })
 
-		qpr, _, _, err := env.Search(`service:"nginx-quantile"`, 1024, setup.WithAggQuery(search.AggQuery{
+		qpr, _, err := env.Search(`service:"nginx-quantile"`, 1024, setup.WithAggQuery(search.AggQuery{
 			Field:     "level",
 			Func:      seq.AggFuncQuantile,
 			Quantiles: []float64{0.5},
@@ -889,7 +891,7 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 	t.Run("unique_count", func(t *testing.T) {
 		bulkDataset("nginx-unique-count", func(i int) int { return i % nextBin })
 
-		qpr, _, _, err := env.Search(`service:"nginx-unique-count"`, 1024, setup.WithAggQuery(search.AggQuery{
+		qpr, _, err := env.Search(`service:"nginx-unique-count"`, 1024, setup.WithAggQuery(search.AggQuery{
 			Field:    "level",
 			GroupBy:  "service",
 			Func:     seq.AggFuncUniqueCount,
@@ -956,7 +958,7 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 
 	env.WaitIdle()
 
-	searchNoTotal := func(agg string, interval time.Duration) (*seq.QPR, [][]byte, time.Duration, error) {
+	searchNoTotal := func(agg string, interval time.Duration) (*seq.QPR, [][]byte, error) {
 		options := []setup.SearchOption{setup.WithInterval(interval), setup.NoFetch(), setup.WithTotal(false)}
 		if agg != "" {
 			options = append(options, setup.WithAggQuery(agg))
@@ -964,7 +966,7 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 		return env.Search(`service:x*`, size, options...)
 	}
 
-	searchWithTotal := func(agg string, interval time.Duration) (*seq.QPR, [][]byte, time.Duration, error) {
+	searchWithTotal := func(agg string, interval time.Duration) (*seq.QPR, [][]byte, error) {
 		options := []setup.SearchOption{setup.WithInterval(interval), setup.NoFetch()}
 		if agg != "" {
 			options = append(options, setup.WithAggQuery(agg))
@@ -974,18 +976,18 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 
 	test := func(t *testing.T) {
 		// search
-		qpr, _, _, err := searchWithTotal("", 0)
+		qpr, _, err := searchWithTotal("", 0)
 		require.NoError(t, err, "should be no errors")
 		assert.Equal(t, uint64(allDocsNum), qpr.Total, "we must scann all docs in withTotal=true mode")
 		assert.Equal(t, size, len(qpr.IDs), "we must get only size ids")
 
-		qpr, _, _, err = searchNoTotal("", 0)
+		qpr, _, err = searchNoTotal("", 0)
 		require.NoError(t, err, "should be no errors")
 		assert.Equal(t, uint64(0), qpr.Total, "we must get Total = 0 in withTotal=false mode")
 		assert.Equal(t, size, len(qpr.IDs), "we must get only size ids")
 
 		// aggregation
-		qpr, _, _, err = searchWithTotal("service", 0)
+		qpr, _, err = searchWithTotal("service", 0)
 		require.NoError(t, err, "should be no errors")
 		assert.Equal(t, uint64(allDocsNum), qpr.Total, "we must scan all docs in withTotal=true mode")
 		assert.Equal(t, size, len(qpr.IDs), "we must get only size ids")
@@ -994,7 +996,7 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 			assert.Equal(t, int(aggCnt), int(qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: k}].Total), "we expect 1/%d of all documents", parts)
 		}
 
-		qpr, _, _, err = searchNoTotal("service", 0)
+		qpr, _, err = searchNoTotal("service", 0)
 		require.NoError(t, err, "should be no errors")
 		assert.Equal(t, uint64(0), qpr.Total, "we must get Total = 0 in withTotal=false mode")
 		assert.Equal(t, size, len(qpr.IDs), "we must get only size ids")
@@ -1004,7 +1006,7 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 		}
 
 		// histogram
-		qpr, _, _, err = searchWithTotal("", histInterval)
+		qpr, _, err = searchWithTotal("", histInterval)
 		require.NoError(t, err, "should be no errors")
 		assert.Equal(t, uint64(allDocsNum), qpr.Total, "we must scann all docs in withTotal=true mode")
 		assert.Equal(t, size, len(qpr.IDs), "we must get only size ids")
@@ -1015,7 +1017,7 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 		}
 		assert.Equal(t, uint64(allDocsNum), histSum, "the sum of the histogram should be equal to the number of all documents")
 
-		qpr, _, _, err = searchNoTotal("", histInterval)
+		qpr, _, err = searchNoTotal("", histInterval)
 		require.NoError(t, err, "should be no errors")
 		assert.Equal(t, uint64(0), qpr.Total, "we must get Total = 0 in withTotal=false mode")
 		assert.Equal(t, size, len(qpr.IDs), "we must get only size ids")
@@ -1074,7 +1076,7 @@ func (s *IntegrationTestSuite) TestSeal() {
 
 	env.WaitIdle()
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`status:200`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err := env.Search(`status:200`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(result, withTotal), qpr.Total, "wrong doc count")
 	}
@@ -1083,7 +1085,7 @@ func (s *IntegrationTestSuite) TestSeal() {
 	env.SealAll()
 
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`status:200`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err := env.Search(`status:200`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(result, withTotal), qpr.Total, "wrong doc count")
 	}
@@ -1096,7 +1098,7 @@ func (s *IntegrationTestSuite) TestSeal() {
 	defer env.StopAll()
 
 	for _, withTotal := range []bool{true, false} {
-		qpr, _, _, err := env.Search(`status:200`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
+		qpr, _, err := env.Search(`status:200`, 10, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.NoError(s.T(), err, "should be no errors")
 		assert.Equal(s.T(), getTotal(result, withTotal), qpr.Total, "wrong doc count")
 	}
@@ -1114,7 +1116,7 @@ func (s *IntegrationTestSuite) TestQueryErr() {
 	setup.Bulk(s.T(), env.IngestorBulkAddr(), origDocs)
 
 	for _, withTotal := range []bool{true, false} {
-		_, _, _, err := env.Search(`service:a:`, 1000, setup.NoFetch(), setup.WithTotal(withTotal))
+		_, _, err := env.Search(`service:a:`, 1000, setup.NoFetch(), setup.WithTotal(withTotal))
 		assert.True(s.T(), err != nil, "should be an error")
 	}
 }
@@ -1140,7 +1142,7 @@ func (s *IntegrationTestSuite) TestConnectionRefused() {
 			return next, nil
 		})
 	}()
-	_, _, _, err := env.Search(`service:a`, 1000, setup.NoFetch())
+	_, _, err := env.Search(`service:a`, 1000, setup.NoFetch())
 
 	if assert.True(s.T(), err != nil, "should be an error") {
 		assert.True(s.T(), strings.Contains(err.Error(), "connection refused"), "error should be connection refused")
@@ -1235,7 +1237,7 @@ func (s *IntegrationTestSuite) TestBulkBadTimestamp() {
 
 	for _, o := range []seq.DocsOrder{seq.DocsOrderAsc, seq.DocsOrderDesc} {
 		for _, withTotal := range []bool{true, false} {
-			qpr, docs, _, err := env.Search(`service:a`, 1000, setup.WithTotal(withTotal), setup.WithOrder(o))
+			qpr, docs, err := env.Search(`service:a`, 1000, setup.WithTotal(withTotal), setup.WithOrder(o))
 			assert.NoError(s.T(), err, "should be no errors")
 
 			if o.IsReverse() {
@@ -1409,7 +1411,7 @@ func (s *IntegrationTestSuite) TestDocuments() {
 	env.WaitIdle()
 
 	for _, o := range []seq.DocsOrder{seq.DocsOrderAsc, seq.DocsOrderDesc} {
-		qpr, _, _, err := env.Search(`service:a`, n, setup.WithTotal(true), setup.NoFetch(), setup.WithOrder(o))
+		qpr, _, err := env.Search(`service:a`, n, setup.WithTotal(true), setup.NoFetch(), setup.WithOrder(o))
 		s.Assert().NoError(err)
 		s.Assert().Equal(getTotal(len(origDocs), true), qpr.Total, "wrong doc count")
 
@@ -1420,11 +1422,10 @@ func (s *IntegrationTestSuite) TestDocuments() {
 
 		actualDocs := []string{}
 		actualIDs := []seq.ID{}
-		for doc, err := docsStream.Next(); err == nil; doc, err = docsStream.Next() {
+		for doc := range search.DocsIteratorSeq(docsStream) {
 			actualIDs = append(actualIDs, doc.ID)
 			actualDocs = append(actualDocs, string(doc.Data))
 		}
-
 		s.Assert().Equal(qpr.IDs.IDs(), actualIDs)
 
 		copyDocs := copySlice(origDocs)
@@ -1476,7 +1477,7 @@ func (s *IntegrationTestSuite) TestSearchFieldsWithMultipleTypes() {
 
 	test := func(tc testCase) func(t *testing.T) {
 		return func(t *testing.T) {
-			qpr, _, _, err := env.Search(tc.request, 100, setup.WithTotal(true))
+			qpr, _, err := env.Search(tc.request, 100, setup.WithTotal(true))
 			require.NoError(t, err)
 			assert.Len(t, qpr.IDs, tc.cnt)
 			assert.Equal(t, tc.cnt, int(qpr.Total))
@@ -1518,7 +1519,7 @@ func (s *IntegrationTestSuite) TestAggregateFieldsWithMultipleTypes() {
 	setup.Bulk(s.T(), env.IngestorBulkAddr(), docs)
 	env.WaitIdle()
 
-	qpr, _, _, err := env.Search(
+	qpr, _, err := env.Search(
 		"level:error",
 		100,
 		setup.WithAggQuery(search.AggQuery{Field: "message.keyword", Func: seq.AggFuncCount}),
@@ -1583,7 +1584,6 @@ func (s *IntegrationTestSuite) TestTimeField() {
 func (s *IntegrationTestSuite) TestAsyncSearch() {
 	t := s.T()
 	r := require.New(t)
-	now := time.Now()
 
 	cfg := *s.Config
 	cfg.Mapping = map[string]seq.MappingTypes{
@@ -1596,21 +1596,23 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	env := setup.NewTestingEnv(&cfg)
 	defer env.StopAll()
 
+	getNextTs := getAutoTsGenerator(time.Now(), -time.Minute*10)
 	docs := []string{
-		`{"timestamp":"2009-11-10T22:58:44Z","ip":"226.166.207.153","method":"PUT","uri":"/api/data","status":201,"size":5116}`,
-		`{"timestamp":"2009-11-10T22:54:26Z","ip":"211.170.224.81","method":"GET","uri":"/api/data","status":500,"size":2375}`,
-		`{"timestamp":"2009-11-10T22:57:28Z","ip":"13.30.65.187","method":"POST","uri":"/","status":201,"size":3892}`,
-		`{"timestamp":"2009-11-10T22:44:01Z","ip":"181.10.24.51","method":"GET","uri":"/api/data","status":201,"size":4002}`,
-		`{"timestamp":"2009-11-10T22:53:51Z","ip":"107.2.249.68","method":"PUT","uri":"/dashboard","status":400,"size":4334}`,
-		`{"timestamp":"2009-11-10T22:52:50Z","ip":"70.83.163.58","method":"DELETE","uri":"/","status":400,"size":2525}`,
-		`{"timestamp":"2009-11-10T22:55:31Z","ip":"106.51.48.84","method":"DELETE","uri":"/api/data","status":400,"size":3015}`,
-		`{"timestamp":"2009-11-10T22:58:54Z","ip":"117.81.168.0","method":"GET","uri":"/","status":404,"size":4734}`,
-		`{"timestamp":"2009-11-10T22:58:04Z","ip":"132.240.243.74","method":"PUT","uri":"/login","status":400,"size":1598}`,
-		`{"timestamp":"2009-11-10T22:46:58Z","ip":"222.36.179.145","method":"GET","uri":"/dashboard","status":404,"size":2683}`,
+		fmt.Sprintf(`{"ts":%q,"ip":"226.166.207.153","method":"PUT","uri":"/api/data","status":201,"size":5116}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"211.170.224.81","method":"GET","uri":"/api/data","status":500,"size":2375}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"13.30.65.187","method":"POST","uri":"/","status":201,"size":3892}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"181.10.24.51","method":"GET","uri":"/api/data","status":201,"size":4002}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"107.2.249.68","method":"PUT","uri":"/dashboard","status":400,"size":4334}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"70.83.163.58","method":"DELETE","uri":"/","status":400,"size":2525}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"106.51.48.84","method":"DELETE","uri":"/api/data","status":400,"size":3015}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"117.81.168.0","method":"GET","uri":"/","status":404,"size":4734}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"132.240.243.74","method":"PUT","uri":"/login","status":400,"size":1598}`, getNextTs()),
+		fmt.Sprintf(`{"ts":%q,"ip":"222.36.179.145","method":"GET","uri":"/dashboard","status":404,"size":2683}`, getNextTs()),
 	}
 
-	// Create active and sealed fractions.
-	setup.Bulk(s.T(), env.IngestorBulkAddr(), docs)
+	for chunk := range slices.Chunk(docs, max(1, len(docs)/getBulkIterationsNum(env))) {
+		setup.Bulk(s.T(), env.IngestorBulkAddr(), chunk)
+	}
 	env.WaitIdle()
 
 	searcher := env.Ingestor().Ingestor.SearchIngestor
@@ -1623,8 +1625,8 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 
 	startReq := search.AsyncRequest{
 		Query:     "* | fields ip, method, uri",
-		From:      now.UTC().Truncate(time.Millisecond),
-		To:        now.UTC().Add(time.Minute).Truncate(time.Millisecond),
+		From:      time.UnixMilli(0).UTC(),
+		To:        time.Now().UTC().Add(time.Hour).Truncate(time.Millisecond),
 		Retention: time.Minute * 5,
 		Aggregations: []search.AggQuery{
 			{
@@ -1668,6 +1670,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 	r.Equalf(asyncsearcher.AsyncSearchStatusDone, fresp.Status, "unexpected status code=%d with error=%q", fresp.Status, fresp.QPR.Errors)
 	r.Equal([]seq.ErrorSource(nil), fresp.QPR.Errors)
 	r.True(fresp.ExpiresAt.After(time.Now().UTC()))
+	r.False(fresp.DoneAt.IsZero())
 	r.Equal([]seq.AggregationResult{
 		{
 			Buckets: []seq.AggregationBucket{
@@ -1721,6 +1724,7 @@ func (s *IntegrationTestSuite) TestAsyncSearch() {
 		r.Equal(asyncsearcher.AsyncSearchStatusDone, s.Status)
 		r.Equal(startReq, s.Request)
 		r.True(s.ExpiresAt.After(time.Now().UTC()))
+		r.False(s.DoneAt.IsZero())
 		r.Equal(float64(1), s.Progress)
 	}
 
@@ -1763,7 +1767,7 @@ func (s *IntegrationTestSuite) TestPaginationWithOffsetAndSize() {
 
 	for _, order := range []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc} {
 		for {
-			qpr, docs, _, err := env.Search(`service:*`, pageSize, setup.WithOffset(offset), setup.WithOrder(order))
+			qpr, docs, err := env.Search(`service:*`, pageSize, setup.WithOffset(offset), setup.WithOrder(order))
 			r.NoError(err, "search failed")
 
 			if len(qpr.IDs) == 0 {
@@ -1815,7 +1819,7 @@ func (s *IntegrationTestSuite) TestPaginationWithOffsetId() {
 		fetchedDocs := make(map[string]bool)
 		var offsetId string
 		for {
-			qpr, docs, _, err := env.Search(`service:*`, pageSize, setup.WithOffsetId(offsetId), setup.WithOrder(order))
+			qpr, docs, err := env.Search(`service:*`, pageSize, setup.WithOffsetId(offsetId), setup.WithOrder(order))
 			r.NoError(err, "search failed")
 
 			if len(qpr.IDs) == 0 {
@@ -1860,7 +1864,7 @@ func (s *IntegrationTestSuite) TestSkipMaskManager() {
 	setup.Bulk(t, env.IngestorBulkAddr(), docs)
 
 	// save hidden doc ids to test fetch later
-	qpr, _, _, err := env.Search(`service:hidden`, 10, setup.WithTotal(true))
+	qpr, _, err := env.Search(`service:hidden`, 10, setup.WithTotal(true))
 	r.NoError(err)
 	hiddenDocIDs := qpr.IDs.IDs()
 
@@ -1895,11 +1899,11 @@ func (s *IntegrationTestSuite) TestSkipMaskManager() {
 
 	// test search
 
-	qpr, _, _, err = env.Search(`service:hidden`, 10, setup.WithTotal(true))
+	qpr, _, err = env.Search(`service:hidden`, 10, setup.WithTotal(true))
 	r.NoError(err)
 	r.Equal(uint64(0), qpr.Total)
 
-	qpr, _, _, err = env.Search(`service:*`, 10, setup.WithTotal(true))
+	qpr, _, err = env.Search(`service:*`, 10, setup.WithTotal(true))
 	r.NoError(err)
 	r.Equal(uint64(4), qpr.Total)
 
@@ -1922,7 +1926,7 @@ func (s *IntegrationTestSuite) TestSkipMaskManager() {
 		return checkSkipMasksStatus(env.HotStores) && checkSkipMasksStatus(env.ColdStores)
 	}, 5*time.Second, 100*time.Millisecond)
 
-	qpr, _, _, err = env.Search(`service:hidden`, 10, setup.WithTotal(true))
+	qpr, _, err = env.Search(`service:hidden`, 10, setup.WithTotal(true))
 	r.NoError(err)
 	r.Equal(uint64(0), qpr.Total)
 }
@@ -1957,6 +1961,7 @@ func sendStreamSearchQuery(t *testing.T, stream seqproxyapi.SeqProxyApi_StreamSe
 				From:      timestamppb.New(now.Add(-time.Hour)),
 				To:        timestamppb.New(now.Add(time.Hour)),
 				WithTotal: true,
+				Explain:   true,
 			},
 		},
 	}))
@@ -2010,7 +2015,11 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 	for i := range totalDocs {
 		origDocs[i] = fmt.Sprintf(`{"service":"a", "trace_id":"%d", "ts":%q}`, i, getNextTs())
 	}
-	setup.Bulk(t, env.IngestorBulkAddr(), origDocs)
+	const bulkBatchSize = 1000
+	for i := 0; i < totalDocs; i += bulkBatchSize {
+		end := min(i+bulkBatchSize, totalDocs)
+		setup.Bulk(t, env.IngestorBulkAddr(), origDocs[i:end])
+	}
 	env.WaitIdle()
 
 	streamQuery := func(limit int) string {
@@ -2064,7 +2073,7 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 				if !finalizeSent {
 					require.NoError(t, stream.Send(&seqproxyapi.StreamSearchRequest{
 						RequestType: &seqproxyapi.StreamSearchRequest_Control{
-							Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_FINALIZE},
+							Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_CONTROL_ACTION_FINALIZE},
 						},
 					}))
 					finalizeSent = true
@@ -2073,6 +2082,8 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 				r.True(finalizeSent, "got summary without finalize")
 				r.Greater(gotRecordsCount, 0)
 				r.Less(gotRecordsCount, totalDocs, "finalize should stop the stream before all data is sent")
+				r.Equal(uint64(totalDocs), v.Summary.GetTotal(), "finalize must not lose the store-reported total")
+				r.Equal(seqproxyapi.ErrorCode_ERROR_CODE_NO, v.Summary.GetError().GetCode())
 				return
 			}
 		}
@@ -2085,23 +2096,20 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 
 		sendStreamSearchQuery(t, stream, streamQuery(totalDocs))
 
-		// Send CANCEL as soon as the first data batch arrives, then keep reading
-		// until the stream ends. The server must terminate without a summary.
+		// Cancel the stream as soon as the first data batch arrives, then keep
+		// reading until the stream ends. The server must terminate without a summary.
 		canceled := false
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
-				r.ErrorIs(err, io.EOF, "cancel must terminate the stream with EOF")
+				// The canceled context kills the client side of the RPC too, so the client sees a Canceled status, not EOF.
+				r.Equal(codes.Canceled, status.Code(err), "cancel must terminate the stream without a summary")
 				return
 			}
 			switch resp.ResponseType.(type) {
 			case *seqproxyapi.StreamSearchResponse_Data:
 				if !canceled {
-					require.NoError(t, stream.Send(&seqproxyapi.StreamSearchRequest{
-						RequestType: &seqproxyapi.StreamSearchRequest_Control{
-							Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_CANCEL},
-						},
-					}))
+					cancel()
 					canceled = true
 				}
 			case *seqproxyapi.StreamSearchResponse_Summary:
@@ -2133,6 +2141,163 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 		r.Equal(totalDocs, gotBucketsCount, "each distinct `trace_id` value should produce one bucket")
 	})
 
+	t.Run("timeseries aggregation stream", func(t *testing.T) {
+		// Ingest documents for a distinct service spread across two
+		// minute-aligned bins so the interval(1m) stats produce separate
+		// (trace_id, ts) buckets.
+		base := time.Now().Truncate(time.Minute)
+		bin0 := base.Add(-2 * time.Minute)
+		bin1 := base.Add(-time.Minute)
+		const docsPerBin = 5
+		tsDocs := make([]string, 0, 2*docsPerBin)
+		for i := range docsPerBin {
+			tsDocs = append(
+				tsDocs,
+				fmt.Sprintf(`{"service":"ts", "trace_id":"t0", "ts":%q}`,
+					bin0.Add(time.Duration(i)*time.Second).Format(time.RFC3339Nano),
+				),
+			)
+		}
+		for i := range docsPerBin {
+			tsDocs = append(
+				tsDocs,
+				fmt.Sprintf(`{"service":"ts", "trace_id":"t0", "ts":%q}`,
+					bin1.Add(time.Duration(i)*time.Second).Format(time.RFC3339Nano),
+				),
+			)
+		}
+		setup.Bulk(t, env.IngestorBulkAddr(), tsDocs)
+		env.WaitIdle()
+
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		sendStreamSearchQuery(t, stream, `service:ts | stats count by (trace_id) interval(1m)`)
+
+		got := make(map[uint64]float64) // ts -> summed count
+		var gotBuckets int
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				break
+			}
+			switch v := resp.ResponseType.(type) {
+			case *seqproxyapi.StreamSearchResponse_Data:
+				for _, rec := range v.Data.GetBatch().GetRecords() {
+					raw := rec.GetRawData()
+					// [key:STRING, value:FLOAT64, ts:UINT64, quantiles:FLOAT64_ARRAY] — proxy agg schema.
+					r.Len(raw, 4)
+					value := math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
+					ts := binary.LittleEndian.Uint64(raw[2])
+					got[ts] += value
+					gotBuckets++
+				}
+			case *seqproxyapi.StreamSearchResponse_Summary:
+				// Two minute bins, each with 5 documents -> two buckets.
+				r.Equal(2, gotBuckets, "expected one bucket per minute bin")
+				r.Len(got, 2, "expected two distinct ts bins")
+
+				wantBins := []time.Time{bin0, bin1}
+				for _, want := range wantBins {
+					wantMID := uint64(seq.MID(seq.TimeToMID(want)))
+					// Floor to the minute boundary the aggregator bins by.
+					wantBin := wantMID - wantMID%uint64(seq.MID(seq.DurationToMID(time.Minute)))
+					r.Contains(got, wantBin, "missing bin for %s", want)
+					r.Equal(float64(docsPerBin), got[wantBin], "bin %s count mismatch", want)
+				}
+			}
+		}
+	})
+
+	t.Run("quantile aggregation stream", func(t *testing.T) {
+		const quantDocs = 10
+		qDocs := make([]string, 0, quantDocs)
+		for i := range quantDocs {
+			qDocs = append(qDocs, fmt.Sprintf(`{"service":"q","level":%d}`, i))
+		}
+		setup.Bulk(t, env.IngestorBulkAddr(), qDocs)
+		env.WaitIdle()
+
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		sendStreamSearchQuery(t, stream, `service:q | stats quantile(level, 0, 0.5, 1) by (service)`)
+
+		var gotRecords int
+		var value float64
+		var quantiles []float64
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				break
+			}
+			switch v := resp.ResponseType.(type) {
+			case *seqproxyapi.StreamSearchResponse_Data:
+				for _, rec := range v.Data.GetBatch().GetRecords() {
+					raw := rec.GetRawData()
+					// [key:STRING, value:FLOAT64, ts:UINT64, quantiles:FLOAT64_ARRAY].
+					r.Len(raw, 4)
+					gotRecords++
+					value = math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
+					quantiles = encoding.Float64ArrayFromBytes(raw[3])
+				}
+			case *seqproxyapi.StreamSearchResponse_Summary:
+				r.Equal(1, gotRecords, "one bucket per `service` group")
+				r.Len(quantiles, 3)
+				r.Equal(0.0, value)
+				r.Equal(0.0, quantiles[0], "q=0 -> min")
+				r.Equal(9.0, quantiles[2], "q=1 -> max")
+				r.Equal(5.0, quantiles[1], "q=0.5 -> median")
+				return
+			}
+		}
+		r.Fail("expected a summary message")
+	})
+
+	t.Run("unique_count aggregation stream", func(t *testing.T) {
+		const uniqLevels = 5
+		const reps = 2
+		uDocs := make([]string, 0, uniqLevels*reps)
+		for i := range uniqLevels {
+			for range reps {
+				uDocs = append(uDocs, fmt.Sprintf(`{"service":"uc","level":%d}`, i))
+			}
+		}
+		setup.Bulk(t, env.IngestorBulkAddr(), uDocs)
+		env.WaitIdle()
+
+		stream, conn, _, cancel := newStreamSearchClient(t, env)
+		defer cancel()
+		defer conn.Close()
+
+		sendStreamSearchQuery(t, stream, `service:uc | stats unique_count(level) by (service)`)
+
+		var gotRecords int
+		var value float64
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				break
+			}
+			switch v := resp.ResponseType.(type) {
+			case *seqproxyapi.StreamSearchResponse_Data:
+				for _, rec := range v.Data.GetBatch().GetRecords() {
+					raw := rec.GetRawData()
+					r.Len(raw, 4)
+					gotRecords++
+					value = math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
+				}
+			case *seqproxyapi.StreamSearchResponse_Summary:
+				r.Equal(1, gotRecords, "one bucket per `service` group")
+				r.Equal(float64(uniqLevels), value, "value = number of unique levels")
+				return
+			}
+		}
+		r.Fail("expected a summary message")
+	})
+
 	t.Run("missing query is rejected", func(t *testing.T) {
 		stream, conn, _, cancel := newStreamSearchClient(t, env)
 		defer cancel()
@@ -2140,7 +2305,7 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 
 		require.NoError(t, stream.Send(&seqproxyapi.StreamSearchRequest{
 			RequestType: &seqproxyapi.StreamSearchRequest_Control{
-				Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_FINALIZE},
+				Control: &seqproxyapi.StreamControl{Action: seqproxyapi.ControlAction_CONTROL_ACTION_FINALIZE},
 			},
 		}))
 		_, err := stream.Recv()

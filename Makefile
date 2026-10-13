@@ -22,6 +22,13 @@ build-image:
 		-t ${IMAGE}:${VERSION} \
 		.
 
+.PHONY: build
+build:
+	CGO_ENABLED=1 \
+	go build -tags 'netgo osusergo' \
+		-o ${LOCAL_BIN}/${OS}-${ARCH}/ \
+		./cmd/...
+
 .PHONY: build-debug
 build-debug:
 	CGO_ENABLED=0 \
@@ -30,7 +37,7 @@ build-debug:
 		./cmd/...
 
 .PHONY: run
-run: build-debug
+run: build
 	SEQDB_STORAGE_DATA_DIR=$(shell mktemp -d) \
 	${LOCAL_BIN}/${OS}-${ARCH}/seq-db \
 		--mode=single \
@@ -58,15 +65,13 @@ test-deps:
 test: test-deps
 	LOG_LEVEL=ERROR go test ./... -count 1
 
-.bin-deps: export GOBIN := $(LOCAL_BIN)
 .bin-deps:
 	$(info Installing binary dependencies...)
 
-	go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.26.1
-	go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.26.1
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.5
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
-	go install github.com/planetscale/vtprotobuf/cmd/protoc-gen-go-vtproto@v0.6.1-0.20240319094008-0393e58bdf10
+	go build -o ${LOCAL_BIN}/ \
+		google.golang.org/protobuf/cmd/protoc-gen-go \
+		github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway \
+		github.com/planetscale/vtprotobuf/cmd/protoc-gen-go-vtproto
 
 .PHONY: bin-deps
 bin-deps: .bin-deps

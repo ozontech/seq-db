@@ -43,6 +43,9 @@ func request_StoreApi_Bulk_0(ctx context.Context, marshaler runtime.Marshaler, c
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.Bulk(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 }
@@ -66,6 +69,9 @@ func request_StoreApi_Search_0(ctx context.Context, marshaler runtime.Marshaler,
 	)
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
 	}
 	msg, err := client.Search(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
@@ -91,6 +97,9 @@ func request_StoreApi_StartAsyncSearch_0(ctx context.Context, marshaler runtime.
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.StartAsyncSearch(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 }
@@ -114,6 +123,9 @@ func request_StoreApi_FetchAsyncSearchResult_0(ctx context.Context, marshaler ru
 	)
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
 	}
 	msg, err := client.FetchAsyncSearchResult(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
@@ -139,6 +151,9 @@ func request_StoreApi_CancelAsyncSearch_0(ctx context.Context, marshaler runtime
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.CancelAsyncSearch(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 }
@@ -162,6 +177,9 @@ func request_StoreApi_DeleteAsyncSearch_0(ctx context.Context, marshaler runtime
 	)
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
 	}
 	msg, err := client.DeleteAsyncSearch(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
@@ -187,6 +205,9 @@ func request_StoreApi_GetAsyncSearchesList_0(ctx context.Context, marshaler runt
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.GetAsyncSearchesList(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 }
@@ -211,6 +232,9 @@ func request_StoreApi_Fetch_0(ctx context.Context, marshaler runtime.Marshaler, 
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	stream, err := client.Fetch(ctx, &protoReq)
 	if err != nil {
 		return nil, metadata, err
@@ -231,6 +255,9 @@ func request_StoreApi_Status_0(ctx context.Context, marshaler runtime.Marshaler,
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
 	msg, err := client.Status(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 }
@@ -245,6 +272,49 @@ func local_request_StoreApi_Status_0(ctx context.Context, marshaler runtime.Mars
 	}
 	msg, err := server.Status(ctx, &protoReq)
 	return msg, metadata, err
+}
+
+func request_StoreApi_StreamSearch_0(ctx context.Context, marshaler runtime.Marshaler, client StoreApiClient, req *http.Request, pathParams map[string]string) (StoreApi_StreamSearchClient, runtime.ServerMetadata, error) {
+	var metadata runtime.ServerMetadata
+	stream, err := client.StreamSearch(ctx)
+	if err != nil {
+		grpclog.Errorf("Failed to start streaming: %v", err)
+		return nil, metadata, err
+	}
+	dec := marshaler.NewDecoder(req.Body)
+	handleSend := func() error {
+		var protoReq StreamSearchRequest
+		err := dec.Decode(&protoReq)
+		if errors.Is(err, io.EOF) {
+			return err
+		}
+		if err != nil {
+			grpclog.Errorf("Failed to decode request: %v", err)
+			return status.Errorf(codes.InvalidArgument, "Failed to decode request: %v", err)
+		}
+		if err := stream.Send(&protoReq); err != nil {
+			grpclog.Errorf("Failed to send request: %v", err)
+			return err
+		}
+		return nil
+	}
+	go func() {
+		for {
+			if err := handleSend(); err != nil {
+				break
+			}
+		}
+		if err := stream.CloseSend(); err != nil {
+			grpclog.Errorf("Failed to terminate client stream: %v", err)
+		}
+	}()
+	header, err := stream.Header()
+	if err != nil {
+		grpclog.Errorf("Failed to get header from client: %v", err)
+		return nil, metadata, err
+	}
+	metadata.HeaderMD = header
+	return stream, metadata, nil
 }
 
 // RegisterStoreApiHandlerServer registers the http handlers for service StoreApi to "mux".
@@ -419,6 +489,13 @@ func RegisterStoreApiHandlerServer(ctx context.Context, mux *runtime.ServeMux, s
 			return
 		}
 		forward_StoreApi_Status_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+
+	mux.Handle(http.MethodPost, pattern_StoreApi_StreamSearch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
+		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+		return
 	})
 
 	return nil
@@ -613,6 +690,23 @@ func RegisterStoreApiHandlerClient(ctx context.Context, mux *runtime.ServeMux, c
 		}
 		forward_StoreApi_Status_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_StoreApi_StreamSearch_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/api.StoreApi/StreamSearch", runtime.WithHTTPPathPattern("/api.StoreApi/StreamSearch"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_StoreApi_StreamSearch_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_StoreApi_StreamSearch_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
@@ -626,6 +720,7 @@ var (
 	pattern_StoreApi_GetAsyncSearchesList_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "GetAsyncSearchesList"}, ""))
 	pattern_StoreApi_Fetch_0                  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "Fetch"}, ""))
 	pattern_StoreApi_Status_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "Status"}, ""))
+	pattern_StoreApi_StreamSearch_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"api.StoreApi", "StreamSearch"}, ""))
 )
 
 var (
@@ -638,4 +733,5 @@ var (
 	forward_StoreApi_GetAsyncSearchesList_0   = runtime.ForwardResponseMessage
 	forward_StoreApi_Fetch_0                  = runtime.ForwardResponseStream
 	forward_StoreApi_Status_0                 = runtime.ForwardResponseMessage
+	forward_StoreApi_StreamSearch_0           = runtime.ForwardResponseStream
 )

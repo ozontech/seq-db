@@ -5,10 +5,10 @@ import (
 	"encoding/binary"
 	"io"
 	"iter"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/units"
@@ -51,7 +51,7 @@ type ActiveSealingSource struct {
 
 	docPosMap    map[seq.ID]seq.DocPos // Original document positions
 	docPosSorted []seq.DocPos          // Document positions after sorting
-	docsReader   *storage.DocsReader   // Document storage reader
+	docsReader   storage.DocsReader    // Document storage reader
 }
 
 func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSealingSource, error) {
@@ -79,7 +79,9 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 
 		docPosMap:     active.DocsPositions.idToPos,
 		blocksOffsets: active.DocBlocks.vals,
-		docsReader:    &active.sortReader,
+		docsReader: storage.NewDocsReader(
+			active.readLimiter, active.docsFile, active.sortCache, active.DocBlocks.vals,
+		),
 	}
 
 	src.prepareInfo()
@@ -96,9 +98,17 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 }
 
 func sortFields(tl *TokenList) ([]string, [][]uint32) {
-	fields := slices.Collect(maps.Keys(tl.FieldTIDs))
-	slices.Sort(fields)
+	fields := make([]string, 0, len(tl.FieldTIDs))
 
+	for field := range tl.FieldTIDs {
+		// NOTE(dkharms): Detach the field name from the shared token buffer so the
+		// buffer can be released once the active fraction is dropped.
+		//
+		// For more information take a look at [tokenLIDsWorker].
+		fields = append(fields, strings.Clone(field))
+	}
+
+	slices.Sort(fields)
 	fieldTIDs := make([][]uint32, len(tl.FieldTIDs))
 	for i, field := range fields {
 		// Make a copy because this memory is shared
@@ -257,11 +267,10 @@ func (src *ActiveSealingSource) Docs() iter.Seq2[Document, error] {
 // doc reads a document from storage by its position.
 func (src *ActiveSealingSource) doc(pos seq.DocPos) ([]byte, error) {
 	blockIndex, docOffset := pos.Unpack()
-	blockOffset := src.blocksOffsets[blockIndex]
 
 	var doc []byte
 	err := src.docsReader.ReadDocsFunc(
-		blockOffset, []uint64{docOffset},
+		blockIndex, []uint64{docOffset},
 		func(b []byte) error {
 			doc = b
 			return nil

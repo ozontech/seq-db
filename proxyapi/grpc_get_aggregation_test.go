@@ -105,9 +105,9 @@ func prepareGetAggregationTestData(t *testing.T, cData getAggregationTestCaseDat
 		siSearchMock = &siSearchMockData{
 			sr: sr,
 			ret: siSearchRet{
-				qpr:  qpr,
-				took: time.Second,
-				err:  cData.siErr,
+				qpr:   qpr,
+				stats: &search.SearchStats{},
+				err:   cData.siErr,
 			},
 		}
 	}

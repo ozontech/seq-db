@@ -2,25 +2,28 @@ package proxyapi
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"math"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/metric"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
+	"github.com/ozontech/seq-db/query"
+	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
 )
 
 // streamSearchBatchSize limits the number of records sent in a single
 // StreamSearchResponse data message.
-const streamSearchBatchSize = 50
+const streamSearchBatchSize = 100
 
 // controlOutcome describes how the data streaming phase ended.
 type controlOutcome int
@@ -31,14 +34,14 @@ const (
 	outcomeCancel                         // client canceled or disconnected
 )
 
-func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer) error {
+func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer) (retErr error) {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 
 	// The first message must carry the search query.
 	req, err := stream.Recv()
 	if err == io.EOF {
-		return nil // Client closed the stream gracefully.
+		return nil
 	}
 	if err != nil {
 		return err
@@ -48,27 +51,29 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 		return status.Error(codes.InvalidArgument, "first message must be a search query")
 	}
 
-	proxyReq, err := buildProxyReq(q)
+	metric.SearchOverall.Add(1)
+
+	searchReq, err := buildSearchReq(q)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, fmt.Sprintf("error parsing query: %s", err.Error()))
 	}
-	if proxyReq.Size <= 0 && len(proxyReq.Aggs) == 0 {
-		return status.Error(codes.InvalidArgument, `one of "limit" or "stats" must be provided`)
-	}
-	if len(proxyReq.Aggs) > 1 {
-		return status.Error(codes.InvalidArgument, `must be only one aggregation`)
-	}
 
 	tr := querytracer.New(q.Explain, "proxy/StreamSearch")
-	sResp, err := g.doSearch(ctx, proxyReq, true, false, tr)
+
+	var partialErr error
+	storesStream, cancelStreams, err := g.searchIngestor.StreamSearch(ctx, searchReq, tr)
 	if err != nil {
-		return err
-	}
-	if sResp.err != nil && sResp.err.Code == seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE && shouldFailPartialResponse(ctx) {
-		return status.Error(codes.Internal, "partial response: not all shards returned results")
-	}
-	if sResp.err != nil && !shouldHaveResponse(sResp.err.Code) {
-		return errors.New(sResp.err.Message)
+		if errors.Is(err, consts.ErrPartialResponse) {
+			if shouldFailPartialResponse(ctx) {
+				cancelStreams()
+				return status.Error(codes.Internal, "partial response: not all shards returned results")
+			}
+			partialErr = err
+			metric.SearchPartial.Inc()
+		} else {
+			cancelStreams()
+			return status.Error(codes.Internal, err.Error())
+		}
 	}
 
 	// Read control messages from the client concurrently with sending data.
@@ -80,8 +85,7 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 		for {
 			msg, err := stream.Recv()
 			if err != nil {
-				// io.EOF or any read error means the client is done. Signal it
-				// and stop reading.
+				// io.EOF or any read error means the client is done. Signal it and stop reading
 				select {
 				case recvErrCh <- err:
 				case <-ctx.Done():
@@ -99,38 +103,81 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 		}
 	}()
 
-	var outcome controlOutcome
-	if len(proxyReq.Aggs) > 0 {
-		outcome, err = g.streamSearchAggs(stream, proxyReq.Aggs, sResp, tr, controlCh, recvErrCh, ctx)
+	var typing []*seqproxyapi.Typing
+	var toRecord func(*query.Record) *seqproxyapi.Record
+	if searchReq.Agg != nil {
+		typing = aggsTyping()
+		toRecord = aggToRecord
 	} else {
-		outcome, err = g.streamSearchDocs(stream, sResp, controlCh, recvErrCh, ctx)
+		typing = docsTyping()
+		toRecord = docToRecord
 	}
+	outcome, err := g.streamSearchRecords(stream, storesStream, typing, toRecord, controlCh, recvErrCh, ctx)
 	if err != nil {
+		// Streaming failed: cancel the stores so they stop producing.
+		cancelStreams()
 		return err
 	}
 
 	// CANCEL: terminate immediately, no summary.
 	if outcome == outcomeCancel {
+		cancelStreams()
 		return nil
 	}
 
-	// FINALIZE or data exhausted without an explicit control action: send the
-	// summary.
-	summary := &seqproxyapi.ResponseSummary{Total: sResp.qpr.Total}
-	if sResp.err != nil {
-		summary.Error = sResp.err
-	} else {
-		summary.Error = &seqproxyapi.Error{Code: seqproxyapi.ErrorCode_ERROR_CODE_NO}
+	// FINALIZE or data exhausted without an explicit control action: send the summary gathered from the store stream.
+	summary := storesStream.Finalize()
+	if summary == nil {
+		summary = &query.Summary{}
 	}
-	tr.Done()
-	summary.Explain = tracerSpanToExplainEntry(tr.ToSpan())
+	if partialErr != nil && summary.Err == nil {
+		summary.Err = partialErr
+	}
+	return g.sendSummary(stream, summary, tr, q.Explain)
+}
+
+func (g *grpcV1) sendSummary(
+	stream seqproxyapi.SeqProxyApi_StreamSearchServer,
+	meta *query.Summary,
+	tr *querytracer.Tracer,
+	explain bool,
+) error {
+	summary := &seqproxyapi.ResponseSummary{
+		Error: &seqproxyapi.Error{Code: seqproxyapi.ErrorCode_ERROR_CODE_NO},
+	}
+
+	if meta != nil {
+		summary.Total = meta.Total
+		if meta.Err != nil {
+			summary.Error = &seqproxyapi.Error{
+				Code:    mapProxyErrorCode(meta.Err),
+				Message: meta.Err.Error(),
+			}
+		}
+	}
+
+	if explain {
+		tr.Done()
+		summary.Explain = tracerSpanToExplainEntry(tr.ToSpan())
+	}
+
 	if err := stream.Send(&seqproxyapi.StreamSearchResponse{
 		ResponseType: &seqproxyapi.StreamSearchResponse_Summary{Summary: summary},
 	}); err != nil {
 		return status.Errorf(codes.Internal, "failed to send summary: %v", err)
 	}
-
 	return nil
+}
+
+func mapProxyErrorCode(err error) seqproxyapi.ErrorCode {
+	switch {
+	case errors.Is(err, consts.ErrPartialResponse):
+		return seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE
+	case errors.Is(err, consts.ErrTooManyFractionsHit):
+		return seqproxyapi.ErrorCode_ERROR_CODE_TOO_MANY_FRACTIONS_HIT
+	default:
+		return seqproxyapi.ErrorCode_ERROR_CODE_UNSPECIFIED
+	}
 }
 
 // checkControl peeks at the control/recv channels without blocking. It returns
@@ -142,12 +189,21 @@ func checkControl(
 	ctx context.Context,
 ) (controlOutcome, bool) {
 	select {
-	case c := <-controlCh:
-		if c.GetAction() == seqproxyapi.ControlAction_CANCEL {
-			return outcomeCancel, true
+	case c, ok := <-controlCh:
+		if !ok {
+			return outcomeNone, false
 		}
-		return outcomeFinalize, true
-	case <-recvErrCh:
+		if c.GetAction() == seqproxyapi.ControlAction_CONTROL_ACTION_FINALIZE {
+			return outcomeFinalize, true
+		}
+		return outcomeNone, false
+	case err, ok := <-recvErrCh:
+		if !ok {
+			return outcomeNone, false
+		}
+		if errors.Is(err, io.EOF) {
+			return outcomeNone, false
+		}
 		return outcomeCancel, true
 	case <-ctx.Done():
 		return outcomeCancel, true
@@ -156,16 +212,16 @@ func checkControl(
 	}
 }
 
-// streamSearchDocs streams matched documents as batches of records. Each record
-// carries three columns: id (SEQ_ID), time (UINT64 nanoseconds) and data (RAW_DOCUMENT).
-func (g *grpcV1) streamSearchDocs(
+func (g *grpcV1) streamSearchRecords(
 	stream seqproxyapi.SeqProxyApi_StreamSearchServer,
-	sResp *proxySearchResponse,
+	storesStream query.RecordProducer,
+	typing []*seqproxyapi.Typing,
+	toRecord func(*query.Record) *seqproxyapi.Record,
 	controlCh <-chan *seqproxyapi.StreamControl,
 	recvErrCh <-chan error,
 	ctx context.Context,
 ) (controlOutcome, error) {
-	header := &seqproxyapi.ResponseHeader{Typing: docsTyping()}
+	header := &seqproxyapi.ResponseHeader{Typing: typing}
 	if err := stream.Send(&seqproxyapi.StreamSearchResponse{
 		ResponseType: &seqproxyapi.StreamSearchResponse_Header{Header: header},
 	}); err != nil {
@@ -173,15 +229,15 @@ func (g *grpcV1) streamSearchDocs(
 	}
 
 	var batch []*seqproxyapi.Record
-	for doc, err := sResp.docsStream.Next(); err == nil; doc, err = sResp.docsStream.Next() {
-		batch = append(batch, docToRecord(doc))
+	for doc := storesStream.Next(); doc != nil; doc = storesStream.Next() {
+		batch = append(batch, toRecord(doc))
 		if len(batch) >= streamSearchBatchSize {
 			if err := sendRecords(stream, batch); err != nil {
 				return outcomeNone, err
 			}
 			batch = batch[:0]
-			if outcome, stop := checkControl(controlCh, recvErrCh, ctx); stop {
-				return outcome, nil
+			if curOutcome, stop := checkControl(controlCh, recvErrCh, ctx); stop {
+				return curOutcome, nil
 			}
 		}
 	}
@@ -190,52 +246,7 @@ func (g *grpcV1) streamSearchDocs(
 			return outcomeNone, err
 		}
 	}
-	return outcomeNone, nil
-}
-
-// streamSearchAggs streams aggregation buckets as batches of records. Each
-// record carries two columns: key (STRING) and value (FLOAT64).
-func (g *grpcV1) streamSearchAggs(
-	stream seqproxyapi.SeqProxyApi_StreamSearchServer,
-	aggs []*seqproxyapi.AggQuery,
-	sResp *proxySearchResponse,
-	tr *querytracer.Tracer,
-	controlCh <-chan *seqproxyapi.StreamControl,
-	recvErrCh <-chan error,
-	ctx context.Context,
-) (controlOutcome, error) {
-	header := &seqproxyapi.ResponseHeader{Typing: aggsTyping()}
-	if err := stream.Send(&seqproxyapi.StreamSearchResponse{
-		ResponseType: &seqproxyapi.StreamSearchResponse_Header{Header: header},
-	}); err != nil {
-		return outcomeNone, status.Errorf(codes.Internal, "failed to send header: %v", err)
-	}
-
-	aggTr := tr.NewChild("aggregate")
-	allAggregations := sResp.qpr.Aggregate(aggregationArgsFromProto(aggs))
-	aggTr.Done()
-
-	var batch []*seqproxyapi.Record
-	for _, agg := range allAggregations {
-		for _, item := range agg.Buckets {
-			batch = append(batch, aggBucketToRecord(item))
-			if len(batch) >= streamSearchBatchSize {
-				if err := sendRecords(stream, batch); err != nil {
-					return outcomeNone, err
-				}
-				batch = batch[:0]
-				if outcome, stop := checkControl(controlCh, recvErrCh, ctx); stop {
-					return outcome, nil
-				}
-			}
-		}
-	}
-	if len(batch) > 0 {
-		if err := sendRecords(stream, batch); err != nil {
-			return outcomeNone, err
-		}
-	}
-	return outcomeNone, nil
+	return outcomeFinalize, nil
 }
 
 func sendRecords(stream seqproxyapi.SeqProxyApi_StreamSearchServer, records []*seqproxyapi.Record) error {
@@ -250,118 +261,139 @@ func sendRecords(stream seqproxyapi.SeqProxyApi_StreamSearchServer, records []*s
 	return nil
 }
 
-func docToRecord(doc search.StreamingDoc) *seqproxyapi.Record {
-	return &seqproxyapi.Record{
-		RawData: [][]byte{
-			[]byte(doc.ID.String()),
-			Uint64ToBytes(uint64(doc.ID.MID)),
-			doc.Data,
-		},
-	}
-}
-
-func aggBucketToRecord(aggBucket seq.AggregationBucket) *seqproxyapi.Record {
-	return &seqproxyapi.Record{
-		RawData: [][]byte{
-			[]byte(aggBucket.Name),
-			Uint64ToBytes(math.Float64bits(aggBucket.Value)),
-			Uint64ToBytes(uint64(aggBucket.MID)),
-		},
-	}
-}
-
 // hardcoded schema
 func docsTyping() []*seqproxyapi.Typing {
 	return []*seqproxyapi.Typing{
-		{Title: "id", Type: seqproxyapi.DataType_SEQ_ID},
-		{Title: "time", Type: seqproxyapi.DataType_UINT64},
-		{Title: "data", Type: seqproxyapi.DataType_RAW_DOCUMENT},
+		{Title: "id", Type: seqproxyapi.DataType_DATA_TYPE_SEQ_ID},
+		{Title: "time", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
+		{Title: "data", Type: seqproxyapi.DataType_DATA_TYPE_RAW_DOCUMENT},
 	}
 }
 
 // hardcoded schema
 func aggsTyping() []*seqproxyapi.Typing {
 	return []*seqproxyapi.Typing{
-		{Title: "key", Type: seqproxyapi.DataType_STRING},
-		{Title: "value", Type: seqproxyapi.DataType_FLOAT64},
-		{Title: "ts", Type: seqproxyapi.DataType_UINT64},
+		{Title: "key", Type: seqproxyapi.DataType_DATA_TYPE_STRING},
+		{Title: "value", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64},
+		{Title: "ts", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
+		{Title: "quantiles", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64_ARRAY},
 	}
 }
 
-func buildProxyReq(q *seqproxyapi.StreamSearchQuery) (*seqproxyapi.ComplexSearchRequest, error) {
+// converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
+func docToRecord(r *query.Record) *seqproxyapi.Record {
+	id := r.Vals[0].Decoded().(seq.ID)
+
+	return &seqproxyapi.Record{
+		RawData: [][]byte{
+			[]byte(id.String()),                    // id
+			encoding.Uint64ToBytes(uint64(id.MID)), // time
+			r.Vals[1].RawData(),                    // data
+		},
+	}
+}
+
+// converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
+func aggToRecord(r *query.Record) *seqproxyapi.Record {
+	return &seqproxyapi.Record{
+		RawData: [][]byte{
+			r.Vals[0].RawData(), // key
+			r.Vals[1].RawData(), // value
+			r.Vals[2].RawData(), // ts
+			r.Vals[3].RawData(), // quantiles
+		},
+	}
+}
+
+func buildSearchReq(q *seqproxyapi.StreamSearchQuery) (*search.StreamSearchRequest, error) {
 	seqql, err := parser.ParseSeqQL(q.Query, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	proxyReq := &seqproxyapi.ComplexSearchRequest{
-		Query: &seqproxyapi.SearchQuery{
-			Query:   q.Query,
-			From:    q.From,
-			To:      q.To,
-			Explain: q.Explain,
-		},
+	streamSearchReq := &search.StreamSearchRequest{
+		Query:     q.Query,
+		From:      seq.TimeToMID(q.From.AsTime()),
+		To:        seq.TimeToMID(q.To.AsTime()),
+		Explain:   q.Explain,
 		WithTotal: q.WithTotal,
 		OffsetId:  q.OffsetId,
 	}
 
+	var (
+		hasStatsPipe  bool
+		hasOtherPipes bool
+	)
+
 	for _, pipe := range seqql.Pipes {
 		switch p := pipe.(type) {
 		case *parser.PipeLimit:
-			proxyReq.Size = int64(p.Limit)
+			streamSearchReq.Size = p.Limit
+			hasOtherPipes = true
 		case *parser.PipeOffset:
-			proxyReq.Offset = int64(p.Offset)
-		case *parser.PipeSort:
-			order := seqproxyapi.Order_ORDER_DESC
-			if p.Order == "asc" {
-				order = seqproxyapi.Order_ORDER_ASC
+			if q.OffsetId != "" {
+				return nil, fmt.Errorf(`only one of "offset" and "offset_id" must be provided`)
 			}
-			proxyReq.Order = order
+			streamSearchReq.Offset = p.Offset
+			hasOtherPipes = true
+		case *parser.PipeSort:
+			order := seq.DocsOrderDesc
+			if p.Order == "asc" {
+				order = seq.DocsOrderAsc
+			}
+			streamSearchReq.Order = order
+			hasOtherPipes = true
+		case *parser.PipeFilter, *parser.PipeFields:
+			hasOtherPipes = true
 		case *parser.PipeStats:
 			agg := p.Agg
-			proxyReqAgg := &seqproxyapi.AggQuery{
+			proxyReqAgg := &search.AggQuery{
 				Field:     agg.Field,
 				GroupBy:   agg.GroupBy,
 				Func:      mustConvertStringToAggFunc(agg.Func),
 				Quantiles: agg.Quantiles,
 			}
 			if agg.Interval != "" {
-				proxyReqAgg.Interval = &agg.Interval
+				interval, err := util.ParseDuration(agg.Interval)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse interval: %w", err)
+				}
+				proxyReqAgg.Interval = seq.DurationToMID(interval)
 			}
-			proxyReq.Aggs = append(proxyReq.Aggs, proxyReqAgg)
+			streamSearchReq.Agg = proxyReqAgg
+			hasStatsPipe = true
 		default:
 			continue
 		}
 	}
 
-	return proxyReq, nil
+	// for now we don't allow to combine stats with other pipes
+	if hasStatsPipe && hasOtherPipes {
+		return nil, errors.New("must be no other pipes if `stats` is present")
+	}
+
+	return streamSearchReq, nil
 }
 
-func mustConvertStringToAggFunc(funcName string) seqproxyapi.AggFunc {
+func mustConvertStringToAggFunc(funcName string) seq.AggFunc {
 	switch funcName {
 	case "count":
-		return seqproxyapi.AggFunc_AGG_FUNC_COUNT
+		return seq.AggFuncCount
 	case "sum":
-		return seqproxyapi.AggFunc_AGG_FUNC_SUM
+		return seq.AggFuncSum
 	case "min":
-		return seqproxyapi.AggFunc_AGG_FUNC_MIN
+		return seq.AggFuncMin
 	case "max":
-		return seqproxyapi.AggFunc_AGG_FUNC_MAX
+		return seq.AggFuncMax
 	case "avg":
-		return seqproxyapi.AggFunc_AGG_FUNC_AVG
+		return seq.AggFuncAvg
 	case "quantile":
-		return seqproxyapi.AggFunc_AGG_FUNC_QUANTILE
+		return seq.AggFuncQuantile
 	case "unique":
-		return seqproxyapi.AggFunc_AGG_FUNC_UNIQUE
+		return seq.AggFuncUnique
 	case "unique_count":
-		return seqproxyapi.AggFunc_AGG_FUNC_UNIQUE_COUNT
+		return seq.AggFuncUniqueCount
 	default:
 		panic(fmt.Errorf("unknown aggregation function: %s", funcName))
 	}
-}
-
-func Uint64ToBytes(val uint64) []byte {
-	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, val)
-	return b
 }

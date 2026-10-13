@@ -7,13 +7,13 @@ package mock
 import (
 	context "context"
 	reflect "reflect"
-	time "time"
 
 	gomock "github.com/golang/mock/gomock"
 	metadata "google.golang.org/grpc/metadata"
 
 	seqproxyapi "github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	search "github.com/ozontech/seq-db/proxy/search"
+	query "github.com/ozontech/seq-db/query"
 	querytracer "github.com/ozontech/seq-db/querytracer"
 	seq "github.com/ozontech/seq-db/seq"
 )
@@ -116,12 +116,12 @@ func (mr *MockSearchIngestorMockRecorder) GetAsyncSearchesList(arg0, arg1 interf
 }
 
 // Search mocks base method.
-func (m *MockSearchIngestor) Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, time.Duration, error) {
+func (m *MockSearchIngestor) Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, *search.SearchStats, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Search", ctx, sr, tr)
 	ret0, _ := ret[0].(*seq.QPR)
 	ret1, _ := ret[1].(search.DocsIterator)
-	ret2, _ := ret[2].(time.Duration)
+	ret2, _ := ret[2].(*search.SearchStats)
 	ret3, _ := ret[3].(error)
 	return ret0, ret1, ret2, ret3
 }
@@ -159,6 +159,22 @@ func (m *MockSearchIngestor) Status(ctx context.Context) *search.IngestorStatus 
 func (mr *MockSearchIngestorMockRecorder) Status(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockSearchIngestor)(nil).Status), ctx)
+}
+
+// StreamSearch mocks base method.
+func (m *MockSearchIngestor) StreamSearch(ctx context.Context, sr *search.StreamSearchRequest, tr *querytracer.Tracer) (query.RecordProducer, func(), error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StreamSearch", ctx, sr, tr)
+	ret0, _ := ret[0].(query.RecordProducer)
+	ret1, _ := ret[1].(func())
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// StreamSearch indicates an expected call of StreamSearch.
+func (mr *MockSearchIngestorMockRecorder) StreamSearch(ctx, sr, tr interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StreamSearch", reflect.TypeOf((*MockSearchIngestor)(nil).StreamSearch), ctx, sr, tr)
 }
 
 // MockMappingProvider is a mock of MappingProvider interface.

@@ -188,6 +188,7 @@ func startProxy(
 			EsVersion:                         cfg.API.ESVersion,
 			GatewayAddr:                       cfg.Address.GRPC,
 			AsyncSearchMaxDocumentsPerRequest: cfg.AsyncSearch.MaxDocumentsPerRequest,
+			UseStreamSearch:                   cfg.Experimental.UseStreamSearch,
 		},
 		Search: search.Config{
 			HotStores:       hotStores,
@@ -275,6 +276,7 @@ func startStore(
 				DocBlocksZstdLevel:           cfg.Compression.DocBlockZstdCompressionLevel,
 				DocBlockSize:                 int(cfg.DocsSorting.DocBlockSize),
 				TokenFreqThresholdPercentage: cfg.Sealing.Tokens.FreqThresholdPercentage,
+				LIDsBitmapThreshold:          cfg.Sealing.Lids.BitmapThreshold,
 			},
 			Fraction: frac.Config{
 				Search: frac.SearchConfig{
@@ -283,6 +285,15 @@ func startStore(
 						MaxFieldValues:     cfg.Limits.Aggregation.FieldValues,
 						MaxGroupTokens:     cfg.Limits.Aggregation.GroupTokens,
 						MaxTIDsPerFraction: cfg.Limits.Aggregation.FractionTokens,
+					},
+					QueryOptimization: frac.QueryOptimizationConfig{
+						BatchExecution: frac.BatchExecutionConfig{
+							Enabled:       cfg.QueryOptimization.BatchExecution.Enabled,
+							CostThreshold: cfg.QueryOptimization.BatchExecution.CostThreshold,
+						},
+						MaterializedColumnAgg: frac.MaterializedColumnAggConfig{
+							Enabled: cfg.QueryOptimization.MaterializedColumnAgg.Enabled,
+						},
 					},
 				},
 				SkipSortDocs: !cfg.DocsSorting.Enabled,

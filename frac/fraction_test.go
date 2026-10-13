@@ -5,10 +5,12 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"math"
 	"math/rand/v2"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/compaction"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -40,18 +43,57 @@ import (
 type testSkipMaskProvider struct{}
 
 func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
-	return node.NewStatic([]uint32{}, false), false, func() error { return nil }, nil
+	return node.NewStatic([]uint32{}, true), false, func() error { return nil }, nil
 }
 func (testSkipMaskProvider) GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error) {
 	return nil, nil
 }
 func (testSkipMaskProvider) RemoveFrac(_ string) {}
 
+var testMappingYAML = []byte(`mapping-list:
+  - type: keyword
+    name: client_ip
+  - type: keyword
+    name: id
+  - type: keyword
+    name: k8s_container
+  - type: keyword
+    name: k8s_namespace
+  - type: keyword
+    name: k8s_pod
+  - type: keyword
+    name: level
+  - type: text
+    name: message
+  - type: keyword
+    name: pod
+  - type: keyword
+    name: request_took
+  - type: path
+    name: request_uri
+  - type: keyword
+    name: service
+  - type: keyword
+    name: source
+  - type: nested
+    name: spans
+    mapping-list:
+      - type: keyword
+        name: span_id
+  - type: keyword
+    name: status
+  - type: keyword
+    name: trace_id
+  - type: keyword
+    name: v
+`)
+
 type FractionTestSuite struct {
 	suite.Suite
 	tmpDir        string
 	config        *frac.Config
 	mapping       seq.Mapping
+	mappingYAML   []byte
 	tokenizers    map[seq.TokenizerType]tokenizer.Tokenizer
 	activeIndexer *frac.ActiveIndexer
 	stopIndexer   func()
@@ -72,29 +114,26 @@ func (s *FractionTestSuite) TearDownSuiteCommon() {
 
 func (s *FractionTestSuite) SetupTestCommon() {
 	s.config = &frac.Config{}
+	s.config.Search.QueryOptimization = frac.QueryOptimizationConfig{
+		BatchExecution: frac.BatchExecutionConfig{
+			Enabled:       true,
+			CostThreshold: 1000,
+		},
+		MaterializedColumnAgg: frac.MaterializedColumnAggConfig{
+			Enabled: true,
+		},
+	}
 	s.tokenizers = map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(20, false, true),
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 100),
 		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(512, false, true),
 	}
-	s.mapping = seq.Mapping{
-		"id":            seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_namespace": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_container": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"message":       seq.NewSingleType(seq.TokenizerTypeText, "", 0),
-		"level":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"client_ip":     seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"service":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"pod":           seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"source":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"trace_id":      seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"request_uri":   seq.NewSingleType(seq.TokenizerTypePath, "", 0),
-		"spans":         seq.NewSingleType(seq.TokenizerTypeNested, "", 0),
-		"spans.span_id": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"v":             seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-	}
+	s.mappingYAML = testMappingYAML
+
+	var err error
+	s.mapping, err = seq.ReadMapping(s.mappingYAML)
+	s.Require().NoError(err)
+
 	s.sealParams = common.SealParams{
 		IDsZstdLevel:           1,
 		LIDsZstdLevel:          1,
@@ -102,12 +141,12 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		DocsPositionsZstdLevel: 1,
 		TokenTableZstdLevel:    1,
 		DocBlocksZstdLevel:     1,
-		LIDBlockSize:           512,
+		LIDBlockSize:           256,
 		TokenBlockSize:         128,
 		DocBlockSize:           128 * int(units.KiB),
+		LIDsBitmapThreshold:    25,
 	}
 
-	var err error
 	s.tmpDir, err = os.MkdirTemp(os.TempDir(), "fraction_test_*")
 	s.Require().NoError(err)
 }
@@ -352,7 +391,7 @@ func (s *FractionTestSuite) TestSearchRe() {
 	s.AssertSearch(`v:re("^\[(ERROR|FATAL)\]$")`, docs, []int{6})
 	// In tests we transform keyword token to lower-case.
 	// So case-sensitive expression will always yield nothing.
-	s.AssertSearch(`v:re("(?-i)^\[(ERROR|FATAL)\]$")`, docs, []int{})
+	s.AssertSearch(`v:re("(?-i)^\[(ERROR|FATAL)\]$")`, docs, []int{6})
 }
 
 func (s *FractionTestSuite) TestSearchIPRange() {
@@ -1222,9 +1261,18 @@ func (s *FractionTestSuite) TestSearchMultipleBulks() {
 	s.AssertSearch(s.query("message:request"), docs, []int{6, 5, 3, 0})
 }
 
-// This test checks search on a large frac. Doc count is set to 25000 which results in ~200 kbyte docs file (3 doc blocks)
+// This test checks search on a large frac
 func (s *FractionTestSuite) TestSearchLargeFrac() {
-	testDocs, bulks, fromTime, toTime := generatesMessages(25000, 1000)
+	s.runLargeFracTestCases(false)
+}
+
+// This test checks search on a large frac with nested indexes
+func (s *FractionTestSuite) TestSearchLargeFracNestedIndexes() {
+	s.runLargeFracTestCases(true)
+}
+
+func (s *FractionTestSuite) runLargeFracTestCases(nestedIndexes bool) {
+	testDocs, bulks, fromTime, toTime := generatesMessages(25000, 1000, nestedIndexes)
 	midTime := fromTime.Add(time.Duration(len(testDocs)/2) * time.Millisecond)
 
 	s.insertDocuments(bulks...)
@@ -1237,12 +1285,13 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 	type docFilter func(doc *testDoc) bool
 
 	searchTestCases := []struct {
-		name     string
-		query    string
-		filter   docFilter
-		fromTime time.Time
-		toTime   time.Time
-		limit    int
+		name      string
+		query     string
+		filter    docFilter
+		fromTime  time.Time
+		toTime    time.Time
+		limit     int
+		withTotal bool
 	}{
 		{
 			name:     "message:request",
@@ -1259,12 +1308,29 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   midTime,
 		},
 		{
+			name:      "message:request (time range + total)",
+			query:     "message:request",
+			filter:    func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
+			fromTime:  fromTime,
+			toTime:    midTime,
+			withTotal: true,
+		},
+		{
 			name:     "message:request (time range + limit)",
 			query:    "message:request",
 			filter:   func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
 			fromTime: fromTime,
 			toTime:   midTime,
 			limit:    100,
+		},
+		{
+			name:      "message:request (time range + limit + total)",
+			query:     "message:request",
+			filter:    func(doc *testDoc) bool { return strings.Contains(doc.message, "request") },
+			fromTime:  fromTime,
+			toTime:    midTime,
+			limit:     100,
+			withTotal: true,
 		},
 		{
 			name:     "service:bus",
@@ -1352,13 +1418,22 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   toTime,
 		},
 		{
+			name:      "trace_id:trace-4999 (limit + total)",
+			query:     "trace_id:trace-4999",
+			filter:    func(doc *testDoc) bool { return doc.traceId == "trace-4999" },
+			fromTime:  fromTime,
+			toTime:    toTime,
+			limit:     1,
+			withTotal: true,
+		},
+		{
 			name:     "trace_id:trace-2025 (time range)",
 			query:    "trace_id:trace-2025",
 			filter:   func(doc *testDoc) bool { return doc.traceId == "trace-2025" },
 			fromTime: fromTime,
 			toTime:   midTime,
 		},
-		// AND operator queries
+		// AND operator queries (intersection)
 		{
 			name:  "message:request AND message:failed",
 			query: "message:request AND message:failed",
@@ -1367,6 +1442,72 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			},
 			fromTime: fromTime,
 			toTime:   toTime,
+		},
+		// block skipping scenarios
+		{
+			name:  "service:gateway AND trace_id:trace-2026",
+			query: "service:gateway AND trace_id:trace-2026",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && doc.traceId == "trace-2026"
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND (trace_id:trace-0 OR trace_id:trace-2500 OR trace_id:trace-4999)",
+			query: "service:gateway AND (trace_id:trace-0 OR trace_id:trace-2500 OR trace_id:trace-4999)",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && (doc.traceId == "trace-0" || doc.traceId == "trace-2500" || doc.traceId == "trace-4999")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND pod:pod-5",
+			query: "service:gateway AND pod:pod-5",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && doc.pod == "pod-5"
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND pod:pod-5 AND message:failed",
+			query: "service:gateway AND pod:pod-5 AND message:failed",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && doc.pod == "pod-5" && strings.Contains(doc.message, "failed")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND level:5",
+			query: "service:gateway AND level:5",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && doc.level == 5
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		{
+			name:  "service:gateway AND level:5 AND message:processing (time range)",
+			query: "service:gateway AND level:5 AND message:processing",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && doc.level == 5 && strings.Contains(doc.message, "processing")
+			},
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+		{
+			name:  "service:gateway AND level:5 AND message:processing (time range + limit + total)",
+			query: "service:gateway AND level:5 AND message:processing",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && doc.level == 5 && strings.Contains(doc.message, "processing")
+			},
+			fromTime:  fromTime,
+			toTime:    midTime,
+			limit:     100,
+			withTotal: true,
 		},
 		{
 			name:  "service:gateway AND message:processing AND message:retry AND level:5",
@@ -1379,6 +1520,17 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			toTime:   toTime,
 		},
 		// OR operator queries
+		{
+			name:  "(service OR) AND (trace_id OR)",
+			query: "(service:bus OR service:kafka) AND (trace_id:trace-1000 OR trace_id:trace-1500 OR trace_id:trace-2000)",
+			filter: func(doc *testDoc) bool {
+				return (doc.service == bus || doc.service == kafka) && (doc.traceId == "trace-1000" ||
+					doc.traceId == "trace-1500" ||
+					doc.traceId == "trace-2000")
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
 		{
 			name:  "trace_id OR",
 			query: "trace_id:trace-1000 OR trace_id:trace-1500 OR trace_id:trace-2000 OR trace_id:trace-2500 OR trace_id:trace-3000",
@@ -1415,6 +1567,37 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			},
 			fromTime: fromTime,
 			toTime:   toTime,
+		},
+		{
+			name: "complex AND+OR 2",
+			query: "(service:gateway OR service:proxy OR service:scheduler) AND " +
+				"(message:request OR message:failed) AND (level:1 OR level:2 OR level:3)",
+			filter: func(doc *testDoc) bool {
+				return (doc.service == gateway || doc.service == proxy || doc.service == "scheduler") &&
+					(strings.Contains(doc.message, "request") || strings.Contains(doc.message, "failed")) &&
+					(doc.level >= 1 && doc.level <= 3)
+			},
+			fromTime: fromTime,
+			toTime:   toTime,
+		},
+		// AND NOT
+		{
+			name:  "service:gateway AND NOT message:request",
+			query: "service:gateway AND NOT message:request",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && !strings.Contains(doc.message, "request")
+			},
+			fromTime: fromTime,
+			toTime:   midTime,
+		},
+		{
+			name:  "service:gateway AND NOT message:request AND NOT level:3",
+			query: "service:gateway AND NOT message:request AND NOT level:3",
+			filter: func(doc *testDoc) bool {
+				return doc.service == gateway && !strings.Contains(doc.message, "request") && doc.level != 3
+			},
+			fromTime: fromTime,
+			toTime:   midTime,
 		},
 		{
 			name:  "service:gateway AND NOT (message:request OR message:timed OR level:[0 to 3])",
@@ -1518,6 +1701,7 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 	for _, tc := range searchTestCases {
 		s.Run(tc.name, func() {
 			var expectedIndexes []int
+			var expectedTotal uint64
 			for i := len(testDocs) - 1; i >= 0; i-- {
 				doc := testDocs[i]
 
@@ -1529,10 +1713,13 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 				}
 
 				if tc.filter(doc) {
-					expectedIndexes = append(expectedIndexes, i)
-					if tc.limit > 0 && len(expectedIndexes) >= tc.limit {
+					if tc.limit == 0 || len(expectedIndexes) < tc.limit {
+						expectedIndexes = append(expectedIndexes, i)
+					}
+					if tc.limit > 0 && len(expectedIndexes) == tc.limit && !tc.withTotal {
 						break
 					}
+					expectedTotal++
 				}
 			}
 
@@ -1541,12 +1728,24 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 			if tc.limit > 0 {
 				options = append(options, withLimit(tc.limit))
 			}
+			if tc.withTotal {
+				options = append(options, withTotal())
+			}
 
-			s.AssertSearch(s.query(tc.query, options...), docJsons, expectedIndexes)
+			// TODO(cheb) total returns fuzzy results for nested indexes
+			if tc.withTotal && !nestedIndexes {
+				s.AssertSearchWithTotal(s.query(tc.query, options...), docJsons, expectedIndexes, expectedTotal)
+			} else {
+				s.AssertSearch(s.query(tc.query, options...), docJsons, expectedIndexes)
+			}
 		})
 	}
 
 	s.Run("service:kafka | group by pod unique_count(client_ip)", func() {
+		// TODO(cheb0) aggregation returns fuzzy results with nested indexes enabled
+		if nestedIndexes {
+			return
+		}
 		// Check both sort orders simply for aggTree to be iterated in a different order
 		orders := []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc}
 
@@ -1587,6 +1786,11 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 	})
 
 	s.Run("service:scheduler | group by pod avg(level)", func() {
+		// TODO(cheb0) aggregation returns fuzzy results with nested indexes enabled
+		if nestedIndexes {
+			return
+		}
+
 		// Check both sort orders simply for aggTree to be iterated in a different order
 		orders := []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc}
 
@@ -1630,6 +1834,11 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 
 	// Test large QPR with 25000 groups (all ids are unique)
 	s.Run("_exists_:service | group by id count()", func() {
+		// TODO(cheb0) aggregation returns fuzzy results with nested indexes enabled
+		if nestedIndexes {
+			return
+		}
+
 		countById := make(map[string]int)
 		for _, doc := range testDocs {
 			countById[doc.id]++
@@ -1656,6 +1865,11 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 	})
 
 	s.Run("NOT message:retry | group by service avg(level)", func() {
+		// TODO(cheb0) aggregation returns fuzzy results with nested indexes enabled
+		if nestedIndexes {
+			return
+		}
+
 		levelsByService := make(map[string][]int)
 		for _, doc := range testDocs {
 			// our query for agg will be `NOT message:retry`
@@ -1692,7 +1906,58 @@ func (s *FractionTestSuite) TestSearchLargeFrac() {
 		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
 	})
 
+	s.Run("(service:kafka OR service:gateway) | group by pod avg(request_took)", func() {
+		// TODO(cheb0) aggregation returns fuzzy results with nested indexes enabled
+		if nestedIndexes {
+			return
+		}
+
+		requestTimesByPod := make(map[string][]int)
+		totalCountByPod := make(map[string]int)
+		for _, doc := range testDocs {
+			if doc.service != "kafka" && doc.service != "gateway" {
+				continue
+			}
+			totalCountByPod[doc.pod]++
+			if doc.requestTook == 0 {
+				continue
+			}
+
+			requestTimesByPod[doc.pod] = append(requestTimesByPod[doc.pod], doc.requestTook)
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for pod, requestTimes := range requestTimesByPod {
+			sum := 0
+			for _, r := range requestTimes {
+				sum += r
+			}
+			avg := float64(sum) / float64(len(requestTimes))
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      pod,
+				Value:     avg,
+				NotExists: int64(totalCountByPod[pod] - len(requestTimes)),
+			})
+		}
+
+		searchParams := s.query(
+			"service:kafka OR service:gateway",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				Field:   aggField("request_took"),
+				GroupBy: aggField("pod"),
+				Func:    seq.AggFuncAvg,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
+	})
+
 	s.Run("service:database AND level:3 | hist 1s", func() {
+		// TODO(cheb0) histogram returns fuzzy results with nested indexes enabled
+		if nestedIndexes {
+			return
+		}
+
 		// Check both sort orders simply for lid tree to be iterated in a different order
 		orders := []seq.DocsOrder{seq.DocsOrderDesc, seq.DocsOrderAsc}
 
@@ -1967,7 +2232,7 @@ func (s *FractionTestSuite) TestSearchDownsample() {
 		eps           = 0.1
 	)
 
-	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
+	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize, false)
 	s.insertDocuments(bulks...)
 
 	baseOpts := []searchOption{
@@ -2022,7 +2287,7 @@ func (s *FractionTestSuite) TestSearchDownsampleWithTotal() {
 		eps       = 0.1
 	)
 
-	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
+	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize, false)
 	s.insertDocuments(bulks...)
 
 	// downsample values to test: each should return ~1/ds of total documents
@@ -2062,7 +2327,7 @@ func (s *FractionTestSuite) TestSearchDownsampleZeroAndOne() {
 		queryAll  = "message:*"
 	)
 
-	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
+	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize, false)
 	s.insertDocuments(bulks...)
 
 	baseOpts := []searchOption{
@@ -2101,7 +2366,7 @@ func (s *FractionTestSuite) TestSearchDownsampleWithAggAndHist() {
 		downsample = 3
 	)
 
-	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize)
+	_, bulks, fromTime, toTime := generatesMessages(totalDocs, bulkSize, false)
 	s.insertDocuments(bulks...)
 
 	commonOpts := []searchOption{
@@ -2332,9 +2597,20 @@ func mustParseTime(timeStr string) time.Time {
 func (s *FractionTestSuite) AssertSearch(queryObject any, originalDocs []string, expectedIndexes []int) {
 	switch q := queryObject.(type) {
 	case string:
-		s.AssertSearchWithSearchParams(s.query(q), originalDocs, expectedIndexes)
+		s.AssertSearchWithSearchParams(s.query(q), originalDocs, expectedIndexes, nil)
 	case *processor.SearchParams:
-		s.AssertSearchWithSearchParams(q, originalDocs, expectedIndexes)
+		s.AssertSearchWithSearchParams(q, originalDocs, expectedIndexes, nil)
+	default:
+		s.Require().Fail("type for query object not supported")
+	}
+}
+
+func (s *FractionTestSuite) AssertSearchWithTotal(queryObject any, originalDocs []string, expectedIndexes []int, expectedTotal uint64) {
+	switch q := queryObject.(type) {
+	case string:
+		s.AssertSearchWithSearchParams(s.query(q), originalDocs, expectedIndexes, &expectedTotal)
+	case *processor.SearchParams:
+		s.AssertSearchWithSearchParams(q, originalDocs, expectedIndexes, &expectedTotal)
 	default:
 		s.Require().Fail("type for query object not supported")
 	}
@@ -2344,6 +2620,7 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 	params *processor.SearchParams,
 	originalDocs []string,
 	expectedIndexes []int,
+	expectedTotal *uint64,
 ) {
 	sortOrders := []seq.DocsOrder{params.Order}
 	if params.Order == seq.DocsOrderDesc && params.Limit == math.MaxInt32 {
@@ -2356,6 +2633,9 @@ func (s *FractionTestSuite) AssertSearchWithSearchParams(
 		qpr, err := s.fraction.Search(context.Background(), *params)
 		s.Require().NoError(err, "search failed for query with order=%v", order)
 		s.Require().Equal(len(expectedIndexes), qpr.IDs.Len(), "doc count doesn't match")
+		if expectedTotal != nil {
+			s.Require().Equal(*expectedTotal, qpr.Total, "total doesn't match")
+		}
 
 		docs, err := s.fraction.Fetch(context.Background(), qpr.IDs.IDs(), false)
 		s.Require().NoError(err, "failed to fetch docs")
@@ -2437,8 +2717,8 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
 		baseName,
 		s.activeIndexer,
 		storage.NewReadLimiter(1, nil),
-		cache.NewCache[[]byte](nil, nil),
-		cache.NewCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
 		s.config,
 		testSkipMaskProvider{},
 	)
@@ -2491,7 +2771,7 @@ func (s *FractionTestSuite) newSealed(bulks ...[]string) *frac.Sealed {
 		preloaded,
 		storage.NewReadLimiter(1, nil),
 		frac.NewIndexCache(),
-		cache.NewCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
 		s.config,
 		testSkipMaskProvider{},
 	)
@@ -2570,8 +2850,8 @@ func (s *ActiveReplayedFractionTestSuite) Replay(f *frac.Active) frac.Fraction {
 		fracFileName,
 		s.activeIndexer,
 		storage.NewReadLimiter(1, nil),
-		cache.NewCache[[]byte](nil, nil),
-		cache.NewCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
 		&frac.Config{},
 		testSkipMaskProvider{},
 	)
@@ -2675,11 +2955,10 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *frac
 		sealed.BaseFileName,
 		storage.NewReadLimiter(1, nil),
 		frac.NewIndexCache(),
-		cache.NewCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
 		nil,
 		s.config,
 		testSkipMaskProvider{},
-		false,
 	)
 
 	s.fraction = sealed
@@ -2727,21 +3006,19 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 		)
 		s.Require().NoError(err, "s3 client setup failed")
 
-		offloaded, err := sealed.Offload(context.Background(), s3.NewUploader(s3cli))
+		err = sealed.Offload(context.Background(), s3.NewUploader(s3cli))
 		s.Require().NoError(err, "offload failed")
-		s.Require().True(offloaded, "didn't offload frac")
 
 		remoteFrac := frac.NewRemote(
 			context.Background(),
 			sealed.BaseFileName,
 			storage.NewReadLimiter(1, nil),
 			frac.NewIndexCache(),
-			cache.NewCache[[]byte](nil, nil),
+			cache.NewConcurrentCache[[]byte](nil, nil),
 			sealed.Info(),
 			s.config,
 			s3cli,
 			testSkipMaskProvider{},
-			false,
 		)
 
 		s.fraction = remoteFrac
@@ -2837,7 +3114,7 @@ func (s *CompactedFractionTestSuite) newCompacted(bulks ...[]string) *frac.Seale
 			preloaded,
 			storage.NewReadLimiter(1, nil),
 			frac.NewIndexCache(),
-			cache.NewCache[[]byte](nil, nil),
+			cache.NewConcurrentCache[[]byte](nil, nil),
 			s.config,
 			testSkipMaskProvider{},
 		)
@@ -2870,6 +3147,90 @@ func (s *CompactedFractionTestSuite) TestFractionInfo() {
 	s.Require().True(info.IndexOnDisk > 0, "index on disk should be non-zero")
 }
 
+/*
+LegacySealedLoadedFractionTestSuite run tests for legacy sealed fraction
+*/
+type LegacySealedLoadedFractionTestSuite struct {
+	FractionTestSuite
+
+	Version config.BinaryDataVersion
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) SetupTest() {
+	s.SetupTestCommon()
+
+	s.insertDocuments = func(bulks ...[]string) {
+		if s.fraction != nil {
+			s.Require().Fail("can insert docs only once")
+		}
+		s.fraction = s.newLegacySealedLoaded(bulks...)
+	}
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) TearDownTest() {
+	if sealed, ok := s.fraction.(*frac.Sealed); ok {
+		sealed.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
+	}
+
+	s.TearDownTestCommon()
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) sealDocs(bulks ...[]string) string {
+	fracName := filepath.Join(s.T().TempDir(), fmt.Sprintf("frac_v%d", s.Version))
+
+	mappingPath := filepath.Join(s.T().TempDir(), "mapping.yaml")
+	err := os.WriteFile(mappingPath, s.mappingYAML, 0o600)
+	s.Require().NoError(err)
+
+	cmd := exec.Command(
+		"bash",
+		"../cmd/fraction/testdata/legacy/seal-fraction.sh",
+		"--mapping="+mappingPath,
+		fmt.Sprintf("v%d", s.Version),
+		fracName,
+	)
+	cmd.Stdin = readerFromBulks(bulks...)
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err, "seal-fraction.sh failed:\n%s", out)
+
+	return fracName
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) newLegacySealedLoaded(bulks ...[]string) *frac.Sealed {
+	filename := s.sealDocs(bulks...)
+
+	sealed := frac.NewSealed(
+		filename,
+		storage.NewReadLimiter(1, nil),
+		frac.NewIndexCache(),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		nil,
+		s.config,
+		testSkipMaskProvider{},
+	)
+
+	s.fraction = sealed
+	return sealed
+}
+
+func readerFromBulks(bulks ...[]string) io.Reader {
+	var readers []io.Reader
+	for _, batch := range bulks {
+		readers = append(readers, strings.NewReader(strings.Join(batch, "\n")+"\n"))
+	}
+	return io.MultiReader(readers...)
+}
+
 func TestActiveFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(ActiveFractionTestSuite))
 }
@@ -2892,4 +3253,12 @@ func TestRemoteFractionTestSuite(t *testing.T) {
 
 func TestCompactedFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(CompactedFractionTestSuite))
+}
+
+func TestLegacySealedFractionTestSuite(t *testing.T) {
+	for ver := config.BinaryDataV2; ver < config.CurrentFracVersion; ver++ {
+		t.Run(fmt.Sprintf("v%d", ver), func(t *testing.T) {
+			suite.Run(t, &LegacySealedLoadedFractionTestSuite{Version: config.BinaryDataVersion(ver)})
+		})
+	}
 }

@@ -618,15 +618,15 @@ func (t *TestingEnv) HTTPSearch(tt *testing.T, q string, size int, options ...Se
 	})
 }
 
-func (t *TestingEnv) Search(q string, size int, options ...SearchOption) (*seq.QPR, [][]byte, time.Duration, error) {
+func (t *TestingEnv) Search(q string, size int, options ...SearchOption) (*seq.QPR, [][]byte, error) {
 	sr := t.buildRequest(q, size, options...)
 
 	var docs [][]byte
-	qpr, docsStream, duration, err := t.Ingestor().SearchIngestor.Search(context.Background(), sr, nil)
+	qpr, docsStream, _, err := t.Ingestor().SearchIngestor.Search(context.Background(), sr, nil)
 	if docsStream != nil {
 		docs = search.ReadAll(docsStream)
 	}
-	return qpr, docs, duration, err
+	return qpr, docs, err
 }
 
 func (t *TestingEnv) Fetch(ids []seq.ID) ([][]byte, error) {

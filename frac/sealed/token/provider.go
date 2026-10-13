@@ -49,7 +49,7 @@ func (tp *Provider) findEntry(tid uint32) *TableEntry {
 func (tp *Provider) findBlock(blockIndex uint32) *Block {
 	if tp.curBlockIndex != blockIndex {
 		tp.curBlockIndex = blockIndex
-		tp.curBlock = tp.loader.Load(blockIndex)
+		tp.curBlock = tp.loader.GetTokenBlock(blockIndex)
 	}
 	return tp.curBlock
 }
@@ -71,6 +71,20 @@ func (tp *Provider) FindContains(needle []byte) ([]uint32, error) {
 		},
 		func(b *Block, firstIndex, lastIndex int) ([]int, error) {
 			return b.contains(firstIndex, lastIndex, needle)
+		})
+}
+
+func (tp *Provider) FindSuffix(suffix []byte) ([]uint32, error) {
+	requiredLetters := util.NewLettersBitset(suffix)
+
+	return tp.findInBlocks(
+		tp.FirstTID(),
+		tp.LastTID(),
+		func(e *TableEntry) bool {
+			return e.Letters.IsNil() || e.Letters.ContainsAll(requiredLetters)
+		},
+		func(b *Block, firstIndex, lastIndex int) ([]int, error) {
+			return b.suffix(firstIndex, lastIndex, suffix)
 		})
 }
 

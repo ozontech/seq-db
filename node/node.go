@@ -13,10 +13,10 @@ type Node interface {
 
 type BatchedNode interface {
 	fmt.Stringer
-	// NextBatch returns next batch. Returns nil when exhausted.
+	// NextBatch returns next batch. Returns empty batch when exhausted.
 	NextBatch() LIDBatch
-	// NextBatchGeq returns next batch (LIDs >= minLID). Returns nil when exhausted.
-	NextBatchGeq(nextLID LID) LIDBatch
+	// NextBatchGeq returns next batch (LIDs >= minLID). Returns empty batch when exhausted.
+	NextBatchGeq(nextID LID) LIDBatch
 }
 
 type Sourced interface {
@@ -24,4 +24,6 @@ type Sourced interface {
 	// aggregation need source
 	NextSourced() (id LID, source uint32)
 	NextSourcedGeq(nextLID LID) (id LID, source uint32)
+	// Release releases resources held by the sourced node (e.g. pooled buffers).
+	Release()
 }

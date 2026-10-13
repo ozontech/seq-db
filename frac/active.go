@@ -2,6 +2,7 @@ package frac
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,11 +46,11 @@ type Active struct {
 	DocsPositions *DocsPositions
 	IDsToLIDs     *ActiveLIDs
 
-	docsFile   *os.File
-	docsReader storage.DocsReader
-	sortReader storage.DocsReader
-	docsCache  *cache.Cache[[]byte]
-	sortCache  *cache.Cache[[]byte]
+	docsFile  *os.File
+	docsCache *cache.ConcurrentCache[[]byte]
+	sortCache *cache.ConcurrentCache[[]byte]
+
+	readLimiter *storage.ReadLimiter
 
 	walFile   *os.File
 	walReader *storage.WalReader
@@ -64,8 +65,8 @@ func NewActive(
 	baseFileName string,
 	activeIndexer *ActiveIndexer,
 	readLimiter *storage.ReadLimiter,
-	docsCache *cache.Cache[[]byte],
-	sortCache *cache.Cache[[]byte],
+	docsCache *cache.ConcurrentCache[[]byte],
+	sortCache *cache.ConcurrentCache[[]byte],
 	cfg *Config,
 	skipMaskProvider skipMaskProvider,
 ) *Active {
@@ -80,11 +81,11 @@ func NewActive(
 		RIDs:          NewIDs(),
 		DocBlocks:     NewIDs(),
 
-		docsFile:   docsFile,
-		docsCache:  docsCache,
-		sortCache:  sortCache,
-		docsReader: storage.NewDocsReader(readLimiter, docsFile, docsCache),
-		sortReader: storage.NewDocsReader(readLimiter, docsFile, sortCache),
+		docsFile:  docsFile,
+		docsCache: docsCache,
+		sortCache: sortCache,
+
+		readLimiter: readLimiter,
 
 		walFile:   walFile,
 		walReader: walReader,
@@ -246,13 +247,20 @@ var bulkStagesSeconds = promauto.NewHistogramVec(prometheus.HistogramOpts{
 func (f *Active) Append(docs storage.DocBlock, metas storage.WalBlock, wg *sync.WaitGroup) (err error) {
 	sw := stopwatch.New()
 	m := sw.Start("append")
+
+	if !validWalBlock(metas) {
+		return errors.New("cannot append an invalid wal block")
+	}
+
 	if err = f.writer.Write(docs, metas, sw); err != nil {
 		m.Stop()
 		wg.Done()
 		return err
 	}
+
 	f.updateDiskStats(uint64(len(docs)), uint64(len(metas)))
 	f.indexer.Index(f, metas, wg, sw)
+
 	m.Stop()
 	sw.Export(bulkStagesSeconds)
 	return nil
@@ -349,10 +357,13 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 		rids:      f.RIDs,
 		tokenList: f.TokenList,
 
-		blocksOffsets: f.DocBlocks.GetVals(),
-		docsPositions: f.DocsPositions,
 		idsToLids:     f.IDsToLIDs,
-		docsReader:    &f.docsReader,
+		docsPositions: f.DocsPositions,
+
+		docsReader: storage.NewDocsReader(
+			f.readLimiter, f.docsFile,
+			f.docsCache, f.DocBlocks.GetVals(),
+		),
 
 		skipMaskProvider: f.skipMaskProvider,
 	}
@@ -413,4 +424,8 @@ func (f *Active) releaseMem() {
 	f.MIDs = nil
 	f.TokenList = nil
 	f.DocsPositions = nil
+}
+
+func validWalBlock(data []byte) bool {
+	return storage.IsWalBlock(data) && storage.WalBlock(data).IsCorrect()
 }

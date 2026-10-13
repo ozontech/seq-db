@@ -43,8 +43,7 @@ type sealedDataProvider struct {
 	tokenBlockLoader *token.BlockLoader
 	tokenTableLoader *token.TableLoader
 
-	blocksOffsets []uint64
-	docsReader    *storage.DocsReader
+	docsReader storage.DocsReader
 
 	// fractionTypeLabel can be either 'sealed' or 'remote'.
 	// This value is used in metrics to distinguish between operations over local and remote fractions.
@@ -65,8 +64,7 @@ func (dp *sealedDataProvider) getFetchIndex() *sealedFetchIndex {
 	return &sealedFetchIndex{
 		fracName:         dp.info.Name(),
 		idsIndex:         dp.getIDsIndex(),
-		docsReader:       dp.docsReader,
-		blocksOffsets:    dp.blocksOffsets,
+		docsReader:       &dp.docsReader,
 		skipMaskProvider: dp.skipMaskProvider,
 	}
 }
@@ -111,6 +109,12 @@ func (dp *sealedDataProvider) Fetch(ids []seq.ID, noSkipMasks bool) ([][]byte, e
 
 func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, error) {
 	aggLimits := processor.AggLimits(dp.config.Search.AggLimits)
+	queryOpt := processor.QueryOptimizationConfig{
+		BatchExecution: processor.BatchExecutionConfig(dp.config.Search.QueryOptimization.BatchExecution),
+		MaterializedColumnAgg: processor.MaterializedColumnAggConfig{
+			Enabled: dp.config.Search.QueryOptimization.MaterializedColumnAgg.Enabled,
+		},
+	}
 
 	// Limit the parameter range to data boundaries to prevent histogram overflow
 	params.From = max(params.From, dp.info.From)
@@ -126,7 +130,7 @@ func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	t := sw.Start("total")
 	defer t.Stop()
 
-	qpr, err := processor.IndexSearch(dp.ctx, params, dp.getSearchIndex(), aggLimits, sw)
+	qpr, err := processor.IndexSearch(dp.ctx, dp.info.BinaryDataVer, params, dp.getSearchIndex(), aggLimits, queryOpt, sw)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +235,7 @@ type sealedTokenIndex struct {
 func (ti *sealedTokenIndex) GetValByTID(tid uint32, field string) []byte {
 	tokenTable := ti.tokenTableLoader.Load()
 	if entry := tokenTable.GetEntryByTID(tid, field); entry != nil {
-		block := ti.tokenBlockLoader.Load(entry.BlockIndex)
+		block := ti.tokenBlockLoader.GetTokenBlock(entry.BlockIndex)
 		return block.GetToken(entry.GetIndexInTokensBlock(tid))
 	}
 	return nil
@@ -275,6 +279,24 @@ func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error)
 	return tids, nil
 }
 
+func (ti *sealedTokenIndex) GetFreqsByTIDs(tids []uint32, field string) []uint32 {
+	freqs := make([]uint32, len(tids))
+	if len(tids) == 0 {
+		return freqs
+	}
+
+	tokenTable := ti.tokenTableLoader.Load()
+	for i, tid := range tids {
+		if tid == 0 {
+			continue
+		}
+		entry := tokenTable.GetEntryByTID(tid, field)
+		block := ti.tokenBlockLoader.GetTokenBlock(entry.BlockIndex)
+		freqs[i] = block.GetFreq(entry.GetIndexInTokensBlock(tid))
+	}
+	return freqs
+}
+
 func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.Node {
 	var (
 		getBlockIndex   func(tid uint32) uint32
@@ -284,12 +306,12 @@ func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 	if order.IsReverse() {
 		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetLastBlockIndexForTID(tid) }
 		getLIDsIterator = func(startIndex uint32, tid uint32) node.Node {
-			return (*lids.IteratorAsc)(lids.NewLIDsCursor(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
+			return lids.NewIteratorDesc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID)
 		}
 	} else {
 		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetFirstBlockIndexForTID(tid) }
 		getLIDsIterator = func(startIndex uint32, tid uint32) node.Node {
-			return (*lids.IteratorDesc)(lids.NewLIDsCursor(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
+			return lids.NewIteratorAsc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID)
 		}
 	}
 
@@ -306,16 +328,49 @@ func (ti *sealedTokenIndex) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 	return nodes
 }
 
+func (ti *sealedTokenIndex) GetBatchedLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.BatchedNode {
+	var (
+		getBlockIndex          func(tid uint32) uint32
+		getBatchedLIDsIterator func(uint32, uint32) node.BatchedNode
+	)
+
+	if order.IsReverse() {
+		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetLastBlockIndexForTID(tid) }
+		getBatchedLIDsIterator = func(startIndex uint32, tid uint32) node.BatchedNode {
+			return lids.NewBatchedIteratorDesc(lids.NewIteratorDesc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
+		}
+	} else {
+		getBlockIndex = func(tid uint32) uint32 { return ti.lidsTable.GetFirstBlockIndexForTID(tid) }
+		getBatchedLIDsIterator = func(startIndex uint32, tid uint32) node.BatchedNode {
+			return lids.NewBatchedIteratorAsc(lids.NewIteratorAsc(ti.lidsTable, ti.lidsLoader, startIndex, tid, stats, minLID, maxLID))
+		}
+	}
+
+	startIndexes := make([]uint32, len(tids))
+	for i, tid := range tids {
+		startIndexes[i] = getBlockIndex(tid)
+	}
+
+	nodes := make([]node.BatchedNode, len(tids))
+	for i, tid := range tids {
+		nodes[i] = getBatchedLIDsIterator(startIndexes[i], tid)
+	}
+
+	return nodes
+}
+
+func (ti *sealedTokenIndex) FieldIterator(tids []uint32, stats lids.Counter) processor.FieldLIDs {
+	if len(tids) == 0 {
+		return nil
+	}
+	return lids.NewFieldIterator(ti.lidsTable, ti.lidsLoader, tids[0], tids[len(tids)-1], stats)
+}
+
 type sealedFetchIndex struct {
 	fracName         string
 	idsIndex         *sealedIDsIndex
 	docsReader       *storage.DocsReader
-	blocksOffsets    []uint64
 	skipMaskProvider skipMaskProvider
-}
-
-func (fi *sealedFetchIndex) GetBlocksOffsets(num uint32) uint64 {
-	return fi.blocksOffsets[num]
 }
 
 func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.DocPos, error) {
@@ -354,8 +409,8 @@ func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.Doc
 	return fi.getDocPosByLIDs(allLids), nil
 }
 
-func (fi *sealedFetchIndex) ReadDocs(blockOffset uint64, docOffsets []uint64) ([][]byte, error) {
-	return fi.docsReader.ReadDocs(blockOffset, docOffsets)
+func (fi *sealedFetchIndex) ReadDocs(blockIndex uint32, docOffsets []uint64) ([][]byte, error) {
+	return fi.docsReader.ReadDocs(blockIndex, docOffsets)
 }
 
 // findLIDs returns a slice of LIDs. If seq.ID is not found, LID has the value 0 at the corresponding position

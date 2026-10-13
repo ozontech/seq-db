@@ -93,10 +93,36 @@ limits:
 			expectErr: true,
 		},
 		{
+			name:      "Negative sealing.lids.bitmap_threshold",
+			cfg:       baseCfg,
+			env:       map[string]string{"SEQDB_SEALING_LIDS_BITMAP_THRESHOLD": "-1"},
+			expectErr: true,
+		},
+		{
 			name:      "Valid sealing.lids.block_size",
 			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_SEALING_LIDS_BLOCK_SIZE": "8192"},
 			expectErr: false,
+		},
+		{
+			name: "Valid sealing.lids.bitmap_threshold",
+			cfg: createCfgFile(t, base+`
+sealing:
+  lids:
+    block_size: 100
+    bitmap_threshold: 100
+`),
+			expectErr: false,
+		},
+		{
+			name: "Invalid sealing.lids.bitmap_threshold",
+			cfg: createCfgFile(t, base+`
+sealing:
+  lids:
+    block_size: 100
+    bitmap_threshold: 101
+`),
+			expectErr: true,
 		},
 		{
 			name: "Invalid sealing.tokens.block_size",
@@ -178,6 +204,18 @@ sealing:
 		})
 	}
 
+}
+
+func TestDefaults(t *testing.T) {
+	cfg := `storage:
+  data_dir: /seq-db-data
+mapping:
+  path: /configs/mapping.yaml
+`
+
+	c, err := Parse(createCfgFile(t, cfg))
+	assert.NoError(t, err)
+	assert.Equal(t, true, c.QueryOptimization.MaterializedColumnAgg.Enabled)
 }
 
 func createCfgFile(t *testing.T, data string) string {
