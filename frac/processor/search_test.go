@@ -46,7 +46,7 @@ func TestIterateEvalTreeDuplicateIDsAtBatchBoundary(t *testing.T) {
 	}}
 
 	// Single batch with 6 LIDs, longer than the limit.
-	evalTree := node.NewStaticBatched([]uint32{1, 2, 3, 4, 5, 6}, seq.DocsOrderDesc.IsReverse())
+	evalTree := node.NewStaticBatched([]uint32{1, 2, 3, 4, 5, 6}, seq.DocsOrderDesc.IsDesc())
 
 	params := SearchParams{
 		Limit: 3,

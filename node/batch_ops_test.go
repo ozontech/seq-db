@@ -11,7 +11,7 @@ type batchCase struct {
 	name         string
 	left         []uint32
 	right        []uint32
-	desc         bool
+	asc          bool
 	wantResult   []uint32
 	wantLeftRes  []uint32
 	wantRightRes []uint32
@@ -30,55 +30,55 @@ var opsBatchFactories = []struct {
 func TestLIDBatch_And(t *testing.T) {
 	testCases := []batchCase{
 		{
-			name:         "desc overlap left has upper tail",
+			name:         "asc overlap left has upper tail",
 			left:         []uint32{1, 2, 3, 7, 8, 11, 15},
 			right:        []uint32{1, 3, 7, 10},
-			desc:         true,
+			asc:          true,
 			wantResult:   []uint32{1, 3, 7},
 			wantLeftRes:  []uint32{1, 2, 3, 7, 8, 11, 15},
 			wantRightRes: nil,
 		},
 		{
-			name:         "desc overlap right has upper tail",
+			name:         "asc overlap right has upper tail",
 			left:         []uint32{1, 3, 7, 10},
 			right:        []uint32{1, 2, 3, 7, 8, 11, 15},
-			desc:         true,
+			asc:          true,
 			wantResult:   []uint32{1, 3, 7},
 			wantLeftRes:  nil,
 			wantRightRes: []uint32{1, 2, 3, 7, 8, 11, 15},
 		},
 		{
-			name:         "desc disjoint lower vs upper",
+			name:         "asc disjoint lower vs upper",
 			left:         []uint32{1, 2, 3},
 			right:        []uint32{10, 11},
-			desc:         true,
+			asc:          true,
 			wantResult:   nil,
 			wantLeftRes:  nil,
 			wantRightRes: []uint32{10, 11},
 		},
 		{
-			name:         "asc overlap left has lower tail",
+			name:         "desc overlap left has lower tail",
 			left:         []uint32{1, 2, 3, 7, 8, 11, 15},
 			right:        []uint32{1, 3, 7, 10},
-			desc:         false,
+			asc:          false,
 			wantResult:   []uint32{1, 3, 7},
 			wantLeftRes:  nil,
 			wantRightRes: nil,
 		},
 		{
-			name:         "asc overlap right has lower tail",
+			name:         "desc overlap right has lower tail",
 			left:         []uint32{1, 3, 7, 10},
 			right:        []uint32{1, 2, 3, 7, 8, 11, 15},
-			desc:         false,
+			asc:          false,
 			wantResult:   []uint32{1, 3, 7},
 			wantLeftRes:  nil,
 			wantRightRes: nil,
 		},
 		{
-			name:         "asc disjoint lower vs upper",
+			name:         "desc disjoint lower vs upper",
 			left:         []uint32{1, 2, 3},
 			right:        []uint32{10, 11},
-			desc:         false,
+			asc:          false,
 			wantResult:   nil,
 			wantLeftRes:  []uint32{1, 2, 3},
 			wantRightRes: nil,
@@ -87,7 +87,7 @@ func TestLIDBatch_And(t *testing.T) {
 			name:         "identical inputs have no residuals",
 			left:         []uint32{2, 4, 9},
 			right:        []uint32{2, 4, 9},
-			desc:         true,
+			asc:          true,
 			wantResult:   []uint32{2, 4, 9},
 			wantLeftRes:  nil,
 			wantRightRes: nil,
@@ -96,7 +96,7 @@ func TestLIDBatch_And(t *testing.T) {
 			name:         "empty left",
 			left:         nil,
 			right:        []uint32{5, 6},
-			desc:         true,
+			asc:          true,
 			wantResult:   nil,
 			wantLeftRes:  nil,
 			wantRightRes: nil,
@@ -110,7 +110,7 @@ func TestLIDBatch_And(t *testing.T) {
 					left := impl.fn(tc.left)
 					right := impl.fn(tc.right)
 
-					result, leftRes, rightRes := And(left, right, tc.desc)
+					result, leftRes, rightRes := And(left, right, tc.asc)
 
 					assertSameSet(t, tc.wantResult, toSlice(result))
 					assertSameSet(t, tc.wantLeftRes, toSlice(leftRes))
@@ -124,55 +124,55 @@ func TestLIDBatch_And(t *testing.T) {
 func TestLIDBatch_Or(t *testing.T) {
 	testCases := []batchCase{
 		{
-			name:         "desc overlap left has upper tail",
+			name:         "asc overlap left has upper tail",
 			left:         []uint32{1, 2, 3, 7, 8, 11, 15},
 			right:        []uint32{1, 3, 7, 10},
-			desc:         true,
+			asc:          true,
 			wantResult:   []uint32{1, 2, 3, 7, 8, 10},
 			wantLeftRes:  []uint32{11, 15},
 			wantRightRes: nil,
 		},
 		{
-			name:         "desc overlap right has upper tail",
+			name:         "asc overlap right has upper tail",
 			left:         []uint32{1, 3, 7, 10},
 			right:        []uint32{1, 2, 3, 7, 8, 11, 15},
-			desc:         true,
+			asc:          true,
 			wantResult:   []uint32{1, 2, 3, 7, 8, 10},
 			wantLeftRes:  nil,
 			wantRightRes: []uint32{11, 15},
 		},
 		{
-			name:         "desc disjoint lower vs upper",
+			name:         "asc disjoint lower vs upper",
 			left:         []uint32{1, 2, 3},
 			right:        []uint32{10, 11},
-			desc:         true,
+			asc:          true,
 			wantResult:   []uint32{1, 2, 3},
 			wantLeftRes:  nil,
 			wantRightRes: []uint32{10, 11},
 		},
 		{
-			name:         "asc overlap left has lower tail",
+			name:         "desc overlap left has lower tail",
 			left:         []uint32{1, 2, 3, 7, 8, 11, 15},
 			right:        []uint32{1, 3, 7, 10},
-			desc:         false,
+			asc:          false,
 			wantResult:   []uint32{1, 2, 3, 7, 8, 10, 11, 15},
 			wantLeftRes:  nil,
 			wantRightRes: nil,
 		},
 		{
-			name:         "asc overlap right has lower tail",
+			name:         "desc overlap right has lower tail",
 			left:         []uint32{1, 3, 7, 10},
 			right:        []uint32{1, 2, 3, 7, 8, 11, 15},
-			desc:         false,
+			asc:          false,
 			wantResult:   []uint32{1, 2, 3, 7, 8, 10, 11, 15},
 			wantLeftRes:  nil,
 			wantRightRes: nil,
 		},
 		{
-			name:         "asc disjoint lower vs upper",
+			name:         "desc disjoint lower vs upper",
 			left:         []uint32{1, 2, 3},
 			right:        []uint32{10, 11},
-			desc:         false,
+			asc:          false,
 			wantResult:   []uint32{10, 11},
 			wantLeftRes:  []uint32{1, 2, 3},
 			wantRightRes: nil,
@@ -181,7 +181,7 @@ func TestLIDBatch_Or(t *testing.T) {
 			name:         "empty left",
 			left:         nil,
 			right:        []uint32{5, 6},
-			desc:         false,
+			asc:          false,
 			wantResult:   []uint32{5, 6},
 			wantLeftRes:  nil,
 			wantRightRes: nil,
@@ -195,7 +195,7 @@ func TestLIDBatch_Or(t *testing.T) {
 					left := impl.fn(tc.left)
 					right := impl.fn(tc.right)
 
-					result, leftRes, rightRes := Or(left, right, tc.desc)
+					result, leftRes, rightRes := Or(left, right, tc.asc)
 
 					assertSameSet(t, tc.wantResult, toSlice(result))
 					assertSameSet(t, tc.wantLeftRes, toSlice(leftRes))
@@ -209,55 +209,55 @@ func TestLIDBatch_Or(t *testing.T) {
 func TestLIDBatch_AndNot(t *testing.T) {
 	testCases := []batchCase{
 		{
-			name:         "desc overlap reg has upper tail",
+			name:         "asc overlap reg has upper tail",
 			left:         []uint32{1, 2, 3, 7, 8, 11, 15},
 			right:        []uint32{1, 3, 7, 10},
-			desc:         true,
+			asc:          true,
 			wantResult:   []uint32{2, 8},
 			wantLeftRes:  []uint32{11, 15},
 			wantRightRes: nil,
 		},
 		{
-			name:         "desc overlap neg has upper tail",
+			name:         "asc overlap neg has upper tail",
 			left:         []uint32{1, 3, 7, 10},
 			right:        []uint32{1, 2, 3, 7, 8, 11, 15},
-			desc:         true,
+			asc:          true,
 			wantResult:   []uint32{10},
 			wantLeftRes:  nil,
 			wantRightRes: []uint32{11, 15},
 		},
 		{
-			name:         "desc disjoint lower reg vs upper neg",
+			name:         "asc disjoint lower reg vs upper neg",
 			left:         []uint32{1, 2, 3},
 			right:        []uint32{10, 11},
-			desc:         true,
+			asc:          true,
 			wantResult:   []uint32{1, 2, 3},
 			wantLeftRes:  nil,
 			wantRightRes: []uint32{10, 11},
 		},
 		{
-			name:         "asc overlap reg has lower tail",
+			name:         "desc overlap reg has lower tail",
 			left:         []uint32{1, 2, 3, 7, 8, 11, 15},
 			right:        []uint32{1, 3, 7, 10},
-			desc:         false,
+			asc:          false,
 			wantResult:   []uint32{2, 8, 11, 15},
 			wantLeftRes:  nil,
 			wantRightRes: nil,
 		},
 		{
-			name:         "asc overlap neg has lower tail",
+			name:         "desc overlap neg has lower tail",
 			left:         []uint32{1, 3, 7, 10},
 			right:        []uint32{1, 2, 3, 7, 8, 11, 15},
-			desc:         false,
+			asc:          false,
 			wantResult:   []uint32{10},
 			wantLeftRes:  nil,
 			wantRightRes: nil,
 		},
 		{
-			name:         "asc disjoint lower reg vs upper neg",
+			name:         "desc disjoint lower reg vs upper neg",
 			left:         []uint32{1, 2, 3},
 			right:        []uint32{10, 11},
-			desc:         false,
+			asc:          false,
 			wantResult:   nil,
 			wantLeftRes:  []uint32{1, 2, 3},
 			wantRightRes: nil,
@@ -266,7 +266,7 @@ func TestLIDBatch_AndNot(t *testing.T) {
 			name:         "empty reg",
 			left:         nil,
 			right:        []uint32{5, 6},
-			desc:         false,
+			asc:          false,
 			wantResult:   nil,
 			wantLeftRes:  nil,
 			wantRightRes: []uint32{5, 6},
@@ -275,7 +275,7 @@ func TestLIDBatch_AndNot(t *testing.T) {
 			name:         "empty neg",
 			left:         []uint32{5, 6},
 			right:        nil,
-			desc:         false,
+			asc:          false,
 			wantResult:   []uint32{5, 6},
 			wantLeftRes:  nil,
 			wantRightRes: nil,
@@ -289,7 +289,7 @@ func TestLIDBatch_AndNot(t *testing.T) {
 					reg := impl.fn(tc.left)
 					neg := impl.fn(tc.right)
 
-					result, regRes, negRes := AndNot(reg, neg, tc.desc)
+					result, regRes, negRes := AndNot(reg, neg, tc.asc)
 
 					assertSameSet(t, tc.wantResult, toSlice(result))
 					assertSameSet(t, tc.wantLeftRes, toSlice(regRes))
@@ -325,7 +325,7 @@ func TestLIDBatch_OrMixedTypes(t *testing.T) {
 func TestLIDBatch_OrMulti(t *testing.T) {
 	type orMultiCase struct {
 		name          string
-		desc          bool
+		asc           bool
 		inputs        [][]uint32
 		wantResult    []uint32
 		wantResiduals [][]uint32
@@ -333,8 +333,8 @@ func TestLIDBatch_OrMulti(t *testing.T) {
 
 	testCases := []orMultiCase{
 		{
-			name:       "desc overlap with one residual",
-			desc:       true,
+			name:       "asc overlap with one residual",
+			asc:        true,
 			inputs:     [][]uint32{{1, 2, 3, 7, 8, 11, 15}, {1, 3, 7, 10}, {2, 3, 5, 8, 10}},
 			wantResult: []uint32{1, 2, 3, 5, 7, 8, 10},
 			wantResiduals: [][]uint32{
@@ -344,8 +344,8 @@ func TestLIDBatch_OrMulti(t *testing.T) {
 			},
 		},
 		{
-			name:       "asc overlap with one residual",
-			desc:       false,
+			name:       "desc overlap with one residual",
+			asc:        false,
 			inputs:     [][]uint32{{1, 2, 3, 7, 8, 11, 15}, {1, 3, 7, 10}, {2, 3, 5, 8, 10}},
 			wantResult: []uint32{2, 3, 5, 7, 8, 10, 11, 15},
 			wantResiduals: [][]uint32{
@@ -356,7 +356,7 @@ func TestLIDBatch_OrMulti(t *testing.T) {
 		},
 		{
 			name:       "single non-empty behaves as pass-through",
-			desc:       true,
+			asc:        true,
 			inputs:     [][]uint32{nil, {4, 7, 9}, nil},
 			wantResult: []uint32{4, 7, 9},
 			wantResiduals: [][]uint32{
@@ -376,7 +376,7 @@ func TestLIDBatch_OrMulti(t *testing.T) {
 						batches[i] = impl.fn(lids)
 					}
 
-					result, residuals := OrMulti(batches, tc.desc)
+					result, residuals := OrMulti(batches, tc.asc)
 
 					assertSameSet(t, tc.wantResult, toSlice(result))
 					assert.Len(t, residuals, len(tc.wantResiduals))

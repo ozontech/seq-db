@@ -10,12 +10,12 @@ type staticCursor struct {
 	data []uint32
 }
 
-// staticAsc stores lids in data slice in ascending order, and iterates in increasing order
+// staticAsc iterates in asc order. Data is always stored in asc order as well.
 type staticAsc struct {
 	staticCursor
 }
 
-// staticAsc stores lids in data slice in ascending order, but iterates from the end (in descending order)
+// staticDesc iterates in desc order. Data is always stored in asc order.
 type staticDesc struct {
 	staticCursor
 }
@@ -24,8 +24,8 @@ func (n *staticCursor) String() string {
 	return "STATIC"
 }
 
-func NewStatic(data []uint32, reverse bool) Node {
-	if reverse {
+func NewStatic(data []uint32, asc bool) Node {
+	if !asc {
 		return &staticDesc{staticCursor: staticCursor{
 			ptr:  len(data) - 1,
 			data: data,
@@ -39,13 +39,12 @@ func NewStatic(data []uint32, reverse bool) Node {
 }
 
 func (n *staticAsc) Next() LID {
-	// staticAsc is used in docs order desc, hence we return LID with desc order
 	if n.ptr >= len(n.data) {
-		return NewDescLID(math.MaxUint32)
+		return NewAscLID(math.MaxUint32)
 	}
 	cur := n.data[n.ptr]
 	n.ptr++
-	return NewDescLID(cur)
+	return NewAscLID(cur)
 }
 
 // NextGeq finds next greater or equals since iteration is in ascending order
@@ -63,17 +62,16 @@ func (n *staticAsc) NextGeq(nextID LID) LID {
 	i := from + idx
 	cur := n.data[i]
 	n.ptr = i + 1
-	return NewDescLID(cur)
+	return NewAscLID(cur)
 }
 
 func (n *staticDesc) Next() LID {
-	// staticDesc is used in docs order asc, hence we return LID with asc order
 	if n.ptr < 0 {
-		return NewAscLID(0)
+		return NewDescLID(0)
 	}
 	cur := n.data[n.ptr]
 	n.ptr--
-	return NewAscLID(cur)
+	return NewDescLID(cur)
 }
 
 // NextGeq finds next less or equals since iteration is in descending order
@@ -88,14 +86,14 @@ func (n *staticDesc) NextGeq(nextID LID) LID {
 
 	cur := n.data[idx]
 	n.ptr = idx - 1
-	return NewAscLID(cur)
+	return NewDescLID(cur)
 }
 
 // MakeStaticNodes is currently used only for tests
 func MakeStaticNodes(data [][]uint32) []Node {
 	nodes := make([]Node, len(data))
 	for i, values := range data {
-		nodes[i] = NewStatic(values, false)
+		nodes[i] = NewStatic(values, true)
 	}
 	return nodes
 }
@@ -110,8 +108,9 @@ type staticBatchedDesc struct {
 	batch LIDBatch
 }
 
-func NewStaticBatched(data []uint32, reverse bool) BatchedNode {
-	if reverse {
+// NewStaticBatched returns a BatchedNode over sorted LID data.
+func NewStaticBatched(data []uint32, asc bool) BatchedNode {
+	if !asc {
 		return &staticBatchedDesc{staticCursor: staticCursor{
 			ptr:  len(data) - 1,
 			data: data,
@@ -129,7 +128,7 @@ func (n *staticBatchedAsc) String() string {
 }
 
 func (n *staticBatchedAsc) NextBatch() LIDBatch {
-	return n.NextBatchGeq(NewDescZeroLID())
+	return n.NextBatchGeq(NewAscZeroLID())
 }
 
 func (n *staticBatchedAsc) NextBatchGeq(nextID LID) LIDBatch {
@@ -161,7 +160,7 @@ func (n *staticBatchedDesc) String() string {
 }
 
 func (n *staticBatchedDesc) NextBatch() LIDBatch {
-	return n.NextBatchGeq(NewAscZeroLID())
+	return n.NextBatchGeq(NewDescZeroLID())
 }
 
 func (n *staticBatchedDesc) NextBatchGeq(nextID LID) LIDBatch {
