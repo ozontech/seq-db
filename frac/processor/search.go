@@ -383,10 +383,8 @@ func updateAggs(
 	defer timer.Stop()
 
 	for i := range aggs {
-		for _, lid := range lidsSlice {
-			if err := aggs[i].Next(lid); err != nil {
-				return aggs, err
-			}
+		if err := aggs[i].Next(lidsSlice); err != nil {
+			return aggs, err
 		}
 	}
 	return aggs, nil
