@@ -249,20 +249,21 @@ func iteratorFromLiteral(
 		m = sw.Start("get_batched_lids_from_tids")
 		batchedLIDs := ti.GetBatchedLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 		m.Stop()
+
 		sourcedNode = node.NewColumnAgg(batchedLIDs, minLID, maxLID, order.IsDesc())
 		aggColumnFracsTotal.Inc()
-	} else {
-		m = sw.Start("get_lids_from_tids")
-		lidsTids := ti.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
-		m.Stop()
-
-		if len(lidsTids) > 0 {
-			stats.AggNodesTotal += len(lidsTids)*2 - 1
-		}
-
-		sourcedNode = node.BuildORTreeAgg(lidsTids)
-		aggOrTreeFracsTotal.Inc()
+		return NewSourcedNodeIterator(sourcedNode, ti, tids, literal.Field, iteratorLimit), nil
 	}
 
+	m = sw.Start("get_lids_from_tids")
+	lidsTids := ti.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
+	m.Stop()
+
+	if len(lidsTids) > 0 {
+		stats.AggNodesTotal += len(lidsTids)*2 - 1
+	}
+
+	sourcedNode = node.BuildORTreeAgg(lidsTids)
+	aggOrTreeFracsTotal.Inc()
 	return NewSourcedNodeIterator(sourcedNode, ti, tids, literal.Field, iteratorLimit), nil
 }
