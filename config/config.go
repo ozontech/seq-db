@@ -15,6 +15,7 @@ const (
 
 func Parse(path string) (Config, error) {
 	var c Config
+	c.QueryOptimization.MaterializedColumnAgg.Enabled = true
 
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -184,6 +185,7 @@ type Config struct {
 			CostThreshold int `config:"cost_threshold" default:"150000"`
 		} `config:"batch_execution"`
 		MaterializedColumnAgg struct {
+			// Enabled enables materializing a column for high-cardinality aggregations. Enabled by default.
 			Enabled bool `config:"enabled"`
 		} `config:"materialized_column_agg"`
 	} `config:"query_optimization"`

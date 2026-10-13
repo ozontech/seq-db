@@ -206,6 +206,18 @@ sealing:
 
 }
 
+func TestDefaults(t *testing.T) {
+	cfg := `storage:
+  data_dir: /seq-db-data
+mapping:
+  path: /configs/mapping.yaml
+`
+
+	c, err := Parse(createCfgFile(t, cfg))
+	assert.NoError(t, err)
+	assert.Equal(t, true, c.QueryOptimization.MaterializedColumnAgg.Enabled)
+}
+
 func createCfgFile(t *testing.T, data string) string {
 	f := path.Join(t.TempDir(), "config.yaml")
 	err := os.WriteFile(f, []byte(data), 0o666)
