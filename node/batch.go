@@ -196,8 +196,7 @@ func (it *sliceIter) NextGeq(geq uint32) (uint32, bool) {
 		return 0, false
 	}
 	rest := it.lids[it.idx:]
-	off := sort.Search(len(rest), func(i int) bool { return rest[i] >= geq })
-	it.idx += off
+	it.idx += searchGeqGallop(rest, geq)
 	return it.Next()
 }
 
@@ -220,7 +219,7 @@ func (it *sliceReverseIter) NextGeq(leq uint32) (uint32, bool) {
 		return 0, false
 	}
 	right := it.idx + 1
-	idx := sort.Search(right, func(i int) bool { return it.lids[i] > leq }) - 1
+	idx := searchGtGallopTail(it.lids[:right], leq) - 1
 	if idx < 0 {
 		it.idx = -1
 		return 0, false

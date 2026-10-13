@@ -93,7 +93,6 @@ func (it *IteratorDesc) Next() node.LID {
 // NextGeq returns the next (in descending iteration order) LID that is <= maxLID.
 func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
 	for {
-		// idx := searchGeqGallop(it.lids, nextID.Unpack())
 		lid, ok := it.it.NextGeq(nextID.Unpack())
 		if ok {
 			return node.NewDescLID(lid)
@@ -102,7 +101,6 @@ func (it *IteratorDesc) NextGeq(nextID node.LID) node.LID {
 			return node.NullLID()
 		}
 
-		// idx := searchGeqGallop(it.lids, nextID.Unpack())
 		it.blockIndex = it.table.SeekBlockLeq(it.blockIndex, it.tid, nextID.Unpack())
 		it.loadNextLIDsBlock()
 	}

@@ -1,4 +1,4 @@
-package lids
+package node
 
 // Galloping (exponential) searches for the NextGeq hot path: zigzag targets
 // are monotone and the chunk slice narrows from the consumption edge, so the
@@ -7,7 +7,7 @@ package lids
 // binary search over the remainder, which pays log2(len) regardless of d).
 
 // searchGeqGallop returns the index of the first element >= t, probing from
-// the front (IteratorDesc consumes the slice front-to-back).
+// the front (sliceIter consumes the slice front-to-back).
 func searchGeqGallop(a []uint32, t uint32) int {
 	n := len(a)
 	if n == 0 || a[0] >= t {
@@ -35,7 +35,7 @@ func searchGeqGallop(a []uint32, t uint32) int {
 }
 
 // searchGtGallopTail returns the index of the first element > t, probing from
-// the back (IteratorAsc consumes the slice back-to-front).
+// the back (sliceReverseIter consumes the slice back-to-front).
 func searchGtGallopTail(a []uint32, t uint32) int {
 	n := len(a)
 	if n == 0 {

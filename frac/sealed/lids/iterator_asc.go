@@ -101,7 +101,6 @@ func (it *IteratorAsc) NextGeq(nextID node.LID) node.LID {
 			return node.NullLID()
 		}
 
-		// idx := searchGtGallopTail(it.lids, nextID.Unpack()) - 1
 		it.blockIndex = it.table.SeekBlockGeq(it.blockIndex, it.tid, nextID.Unpack())
 		it.loadNextLIDsBlock()
 	}
