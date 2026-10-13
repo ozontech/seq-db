@@ -78,12 +78,17 @@ func TestSingleSourceCountAggregatorWithInterval(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assert.Equal(t, map[AggBin[int]]int64{
+	counter := agg.counter.(*tsSourceCounter)
+	got := make(map[AggBin[int]]uint32)
+	for source, bin := range counter.counts.all() {
+		got[AggBin[int]{Source: int(source), MID: bin.MID}] = bin.count
+	}
+	assert.Equal(t, map[AggBin[int]]uint32{
 		{Source: 0, MID: 0}: 1,
 		{Source: 2, MID: 0}: 1,
 		{Source: 0, MID: 1}: 1,
 		{Source: 2, MID: 2}: 3,
-	}, agg.counter.(*tsSourceCounter).counts)
+	}, got)
 
 	assert.Equal(t, int64(1), agg.counter.notExists())
 }
@@ -367,6 +372,7 @@ func TestSourceCountMap(t *testing.T) {
 	assert.Equal(t, map[uint32]uint64{100: 2, 1100: 1}, got)
 }
 
+// // TestSourceCountMapAgainstBuiltinMap validates result of using sourceCountMap against a builtin map
 func TestSourceCountMapAgainstBuiltinMap(t *testing.T) {
 	const (
 		sources = 5_000
@@ -434,4 +440,72 @@ func TestSourceCountMapAllOrderedBySource(t *testing.T) {
 
 	require.Len(t, gotSources, counts.size)
 	assert.Equal(t, wantSources, gotSources)
+}
+
+func TestTsSourceCountMap(t *testing.T) {
+	counts := newTsSourceCountMap(5000)
+
+	require.Len(t, counts.chunks, 5)
+
+	counts.add(uint32(100), 14000000)
+	counts.add(uint32(100), 14000000)
+	counts.add(uint32(1100), 20000000)
+
+	got := make(map[AggBin[int]]uint32)
+	for source, bin := range counts.all() {
+		got[AggBin[int]{Source: int(source), MID: bin.MID}] = bin.count
+	}
+
+	assert.Equal(t, map[AggBin[int]]uint32{
+		{Source: 100, MID: 14000000}:  2,
+		{Source: 1100, MID: 20000000}: 1,
+	}, got)
+}
+
+func TestTsSourceCountMap_MigrateToMap(t *testing.T) {
+	counts := newTsSourceCountMap(5000)
+
+	require.Len(t, counts.chunks, 5)
+
+	for i := 0; i < 10; i++ {
+		counts.add(uint32(100), seq.MID(10000000*i))
+	}
+
+	got := make(map[AggBin[int]]uint32)
+	for source, bin := range counts.all() {
+		got[AggBin[int]{Source: int(source), MID: bin.MID}] = bin.count
+	}
+
+	for i := 0; i < 10; i++ {
+		assert.Equal(t, uint32(1), got[AggBin[int]{Source: 100, MID: seq.MID(10000000 * i)}])
+	}
+}
+
+// TestTsSourceCountMapAgainstBuiltinMap validates result of using tsSourceCountMap against a builtin map
+func TestTsSourceCountMapAgainstBuiltinMap(t *testing.T) {
+	const (
+		sources = 5_000
+		mids    = 20
+		updates = 50_000
+	)
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	counts := newTsSourceCountMap(sources)
+	want := make(map[AggBin[int]]uint32)
+
+	for range updates {
+		bin := AggBin[int]{
+			Source: r.Intn(sources),
+			MID:    seq.MID(r.Intn(mids)),
+		}
+		counts.add(uint32(bin.Source), bin.MID)
+		want[bin]++
+	}
+
+	got := make(map[AggBin[int]]uint32, len(want))
+	for source, bin := range counts.all() {
+		got[AggBin[int]{Source: int(source), MID: bin.MID}] = bin.count
+	}
+
+	assert.Equal(t, want, got)
 }
