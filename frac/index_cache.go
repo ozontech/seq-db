@@ -7,6 +7,14 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/token"
 )
 
+// ExprTIDs is a value of the ExprTIDs cache layer: TIDs matched by a
+// token expression of the immutable fraction. Key keeps the original
+// parser.TokenKey string to detect uint32 hash collisions.
+type ExprTIDs struct {
+	Key  string
+	TIDs []uint32
+}
+
 func NewIndexCache() *IndexCache {
 	return &IndexCache{
 		LegacyRegistry: cache.NewConcurrentCache[[]byte](nil, nil),
@@ -23,6 +31,8 @@ func NewIndexCache() *IndexCache {
 		Tokens:     cache.NewConcurrentCache[*token.Block](nil, nil),
 		TokenTable: cache.NewConcurrentCache[token.Table](nil, nil),
 		LIDs:       cache.NewConcurrentCache[*lids.Block](nil, nil),
+
+		ExprTIDs: cache.NewConcurrentCache[ExprTIDs](nil, nil),
 	}
 }
 
@@ -45,6 +55,11 @@ type IndexCache struct {
 	TokenTable *cache.ConcurrentCache[token.Table]
 
 	LIDs *cache.ConcurrentCache[*lids.Block]
+
+	// ExprTIDs caches GetTIDsByTokenExpr results of the immutable
+	// fraction; keyed by the hash of parser.TokenKey, evicted by the
+	// shared cleaner.
+	ExprTIDs *cache.ConcurrentCache[ExprTIDs]
 }
 
 func (s *IndexCache) Release() {
@@ -63,4 +78,6 @@ func (s *IndexCache) Release() {
 	s.TokenTable.Release()
 
 	s.LIDs.Release()
+
+	s.ExprTIDs.Release()
 }
