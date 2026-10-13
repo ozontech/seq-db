@@ -22,13 +22,13 @@ func TestGallopAgainstSortSearch(t *testing.T) {
 		q := uint32(r.IntN(int(v) + 3))
 
 		wantGeq := sort.Search(len(a), func(k int) bool { return a[k] >= q })
-		if got := searchGeqGallop(a, q); got != wantGeq {
-			t.Fatalf("searchGeqGallop(%v, %d) = %d, want %d", a, q, got, wantGeq)
+		if got := searchGeqGallopAsc(a, q); got != wantGeq {
+			t.Fatalf("searchGeqGallopAsc(%v, %d) = %d, want %d", a, q, got, wantGeq)
 		}
 
 		wantGt := sort.Search(len(a), func(k int) bool { return a[k] > q })
-		if got := searchGtGallopTail(a, q); got != wantGt {
-			t.Fatalf("searchGtGallopTail(%v, %d) = %d, want %d", a, q, got, wantGt)
+		if got := searchGtGallopDesc(a, q); got != wantGt {
+			t.Fatalf("searchGtGallopDesc(%v, %d) = %d, want %d", a, q, got, wantGt)
 		}
 	}
 }
@@ -46,10 +46,10 @@ func TestGallopBoundaries(t *testing.T) {
 		}
 		for _, q := range queries {
 			wantGeq := sort.Search(len(a), func(i int) bool { return a[i] >= q })
-			assert.Equal(t, wantGeq, searchGeqGallop(a, q), "GEQ a=%v, q=%v", a, q)
+			assert.Equal(t, wantGeq, searchGeqGallopAsc(a, q), "GEQ a=%v, q=%v", a, q)
 
 			wantGt := sort.Search(len(a), func(i int) bool { return a[i] > q })
-			assert.Equal(t, wantGt, searchGtGallopTail(a, q), "GT a=%v, q=%v", a, q)
+			assert.Equal(t, wantGt, searchGtGallopDesc(a, q), "GT a=%v, q=%v", a, q)
 		}
 	}
 }

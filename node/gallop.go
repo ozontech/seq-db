@@ -6,9 +6,9 @@ package node
 // from the edge costs ~2*log2(d) for an answer d away (bounded by ~2x a full
 // binary search over the remainder, which pays log2(len) regardless of d).
 
-// searchGeqGallop returns the index of the first element >= t, probing from
+// searchGeqGallopAsc returns the index of the first element >= t, probing from
 // the front (sliceIter consumes the slice front-to-back).
-func searchGeqGallop(a []uint32, t uint32) int {
+func searchGeqGallopAsc(a []uint32, t uint32) int {
 	n := len(a)
 	if n == 0 || a[0] >= t {
 		return 0
@@ -34,9 +34,9 @@ func searchGeqGallop(a []uint32, t uint32) int {
 	return lo
 }
 
-// searchGtGallopTail returns the index of the first element > t, probing from
+// searchGtGallopDesc returns the index of the first element > t, probing from
 // the back (sliceReverseIter consumes the slice back-to-front).
-func searchGtGallopTail(a []uint32, t uint32) int {
+func searchGtGallopDesc(a []uint32, t uint32) int {
 	n := len(a)
 	if n == 0 {
 		return 0
