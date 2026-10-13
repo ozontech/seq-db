@@ -202,7 +202,7 @@ func TestFieldIterator_MiddleBlocks(t *testing.T) {
 	assert.Equal(t, []uint32{0, 1, 2}, offsets)
 	assert.True(t, isFirst)
 
-	lids, offsets, isFirst = iterator.NextBatch(lids, offsets)
+	lids, _, _ = iterator.NextBatch(lids, offsets)
 	assert.Empty(t, lids)
 }
 
@@ -217,11 +217,11 @@ func (c stubBlockCache) Get(blockIndex uint32, _ cache.Loader[*Block]) (*Block, 
 }
 
 func newFieldIteratorLoader(startBlockIndex uint32, blocks ...*Block) *Loader {
-	cache := stubBlockCache{}
+	stubCache := stubBlockCache{}
 	for i, block := range blocks {
-		cache[startBlockIndex+uint32(i)] = block
+		stubCache[startBlockIndex+uint32(i)] = block
 	}
-	return &Loader{cache: cache, fracVer: config.CurrentFracVersion}
+	return &Loader{cache: stubCache, fracVer: config.CurrentFracVersion}
 }
 
 type testCounter struct {
