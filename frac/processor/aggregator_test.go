@@ -42,9 +42,11 @@ func TestSingleSourceCountAggregator(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	require.Len(t, iter.countBySource.chunks, 1)
-	require.NotNil(t, iter.countBySource.chunks[0])
-	assert.Equal(t, [sourceChunkSize]uint64{2, 0, 4}, *iter.countBySource.chunks[0])
+	counter := agg.counter.(*plainSourceCounter)
+	require.Len(t, counter.countBySource.chunks, 1)
+	require.NotNil(t, counter.countBySource.chunks[0])
+	assert.Equal(t, [sourceChunkSize]uint64{2, 0, 4}, *counter.countBySource.chunks[0])
+	assert.Equal(t, 2, iter.UniqueSources())
 
 	assert.Equal(t, int64(1), agg.counter.notExists())
 }
@@ -355,14 +357,11 @@ func TestSourceCountMap(t *testing.T) {
 	require.Len(t, counts.chunks, 5)
 
 	counts.add(uint32(100))
-	assert.Equal(t, 1, counts.size)
 
 	counts.add(uint32(100))
-	assert.Equal(t, 1, counts.size)
 	assert.Equal(t, uint64(2), counts.count(uint32(100)))
 
 	counts.add(uint32(1100))
-	assert.Equal(t, 2, counts.size)
 
 	got := make(map[uint32]uint64)
 	for source, count := range counts.all() {
@@ -401,12 +400,12 @@ func TestSourceCountMapAgainstBuiltinMap(t *testing.T) {
 		return cmp.Compare(a.source, b.source)
 	})
 
-	gotPairs := make([]sourceCount, 0, counts.size)
+	gotPairs := make([]sourceCount, 0, len(want))
 	for source, count := range counts.all() {
 		gotPairs = append(gotPairs, sourceCount{source: source, count: count})
 	}
 
-	require.Len(t, gotPairs, counts.size)
+	require.Len(t, gotPairs, len(want))
 	assert.Equal(t, wantPairs, gotPairs)
 	for _, pair := range gotPairs {
 		assert.Greater(t, pair.count, uint64(0))
@@ -436,12 +435,12 @@ func TestSourceCountMapAllOrderedBySource(t *testing.T) {
 	}
 	slices.Sort(wantSources)
 
-	gotSources := make([]uint32, 0, counts.size)
+	gotSources := make([]uint32, 0, len(want))
 	for source := range counts.all() {
 		gotSources = append(gotSources, source)
 	}
 
-	require.Len(t, gotSources, counts.size)
+	require.Len(t, gotSources, len(want))
 	assert.Equal(t, wantSources, gotSources)
 }
 
@@ -482,6 +481,31 @@ func TestTsSourceCountMap_MigrateToMap(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		assert.Equal(t, uint32(1), got[AggBin[int]{Source: 100, MID: seq.MID(10000000 * i)}])
 	}
+}
+
+func TestTsSourceCountMapAllOrderedWithMigratedBins(t *testing.T) {
+	counts := newTsSourceCountMap(4096)
+
+	for i := range 9 {
+		counts.add(100, seq.MID(i))
+	}
+	counts.add(1100, 100)
+	counts.add(2100, 200)
+	for i := range 9 {
+		counts.add(3100, seq.MID(i))
+	}
+
+	var gotSources []uint32
+	for source := range counts.all() {
+		gotSources = append(gotSources, source)
+	}
+
+	expectedSources := make([]uint32, 0, 20)
+	expectedSources = append(expectedSources, slices.Repeat([]uint32{100}, 9)...)
+	expectedSources = append(expectedSources, 1100, 2100)
+	expectedSources = append(expectedSources, slices.Repeat([]uint32{3100}, 9)...)
+
+	assert.Equal(t, expectedSources, gotSources)
 }
 
 // TestTsSourceCountMapAgainstBuiltinMap validates result of using tsSourceCountMap against a builtin map
