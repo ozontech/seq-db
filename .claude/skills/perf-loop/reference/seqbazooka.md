@@ -4,9 +4,9 @@
 container** (by default in the **host network namespace**), runs a scenario
 against it, and writes a JSON report of per-operation latencies
 
-Every scenario has the same lifecycle: **Setup** → **Execute** (bounded by
-`--duration`) → **Teardown** (always runs; writes the report, then removes the
-container). Teardown removes the container **and its data volume**.
+Every scenario has the same lifecycle: **Setup** (incl. ingestion for search
+scenarios) → **Execute** (bounded by `--duration`) → **Teardown** (always runs; writes the report, then removes the
+container). A named `--seqdb.data-volume` survives teardown.
 
 ## seq-db ports (host network → localhost)
 
@@ -19,67 +19,81 @@ pprof and Prometheus metrics are **always on** and live on the debug port. If th
 bootstrap config sets `SEQDB_ADDRESS_DEBUG` to a non-default value, adjust the
 port accordingly. The seq-db container is named `seqbench-seqdb[-<suffix>]`.
 
-## Bootstrap (how seq-db is started)
+## seq-db container (`--seqdb.*`)
 
-- `--bootstrap.image=<tag>` — run a prebuilt image. **Takes precedence over
-  `--bootstrap.reference`.** This is how you benchmark **local code**: build an
-  image from the working tree and pass its tag here (`--bootstrap.reference`
-  only fetches published git refs from GitHub and cannot see local edits).
-- `--bootstrap.reference=<ref>` — build from a seq-db git branch/commit/tag
+- `--seqdb.image=<tag>` — run a prebuilt image instead of building one. This is
+  how you benchmark **local code**: build an image from the working tree and
+  pass its tag here (`--seqdb.ref` only fetches published git refs from GitHub
+  and cannot see local edits).
+- `--seqdb.ref=<ref>` — build from a seq-db git branch/commit/tag
   (downloads the GitHub tarball, builds `build/package/Dockerfile`).
-- `--bootstrap.config=<path>` — **required.** An env-style `key=value` file
-  (NOT YAML; `#` comments allowed), schemes `file://`, `https://`, or bare path.
-  Its keys become the container's **environment variables** (seq-db is
-  configured via `SEQDB_*` env vars). seq-db also gets a hardcoded
-  `api: {es_version: 8.9.0}` YAML and an embedded `/etc/mapping.yaml`.
-- `--bootstrap.network=host` (default) — exposes `9002` and `9200` on localhost.
-- `--bootstrap.cpu=4`, `--bootstrap.memory=8GiB` — container limits. **Pin these
-  across runs** so measurements are comparable.
-- `--bootstrap.suffix=<s>` — container name suffix.
-- `--bootstrap.data-volume=<name>` — named volume at `/var/seqdb`. Note: cleanup
-  force-removes volumes, so data does not survive a normal run.
+- `--seqdb.env-file=<path>` — **required** by every scenario. An env-style `KEY=VALUE` file (NOT YAML; `#`
+  comments allowed), schemes `file://`, `https://`, or bare path. Its keys
+  become the container's **environment variables** (seq-db is configured via
+  `SEQDB_*` env vars). seq-db also gets a hardcoded `api: {es_version: 8.9.0}`
+  YAML and an embedded `/etc/mapping.yaml`.
+- `--seqdb.network=host` (default) — exposes `9002` and `9200` on localhost.
+- `--seqdb.cpu-limit=4`, `--seqdb.memory-limit=8GiB` — container limits. **Pin
+  these across runs** so measurements are comparable.
+- `--seqdb.name-suffix=<s>` — container name suffix.
+- `--seqdb.data-volume=<name>` — named volume mounted as the data dir. It
+  **survives the run**, so a later search run can reuse the dataset with
+  `--bulk.skip` instead of re-ingesting.
 
-## Global / report flags
+## Report / duration flags (all scenario commands)
 
-- `--duration=<dur>` — max duration of the **execute** phase (`0` = unbounded).
-  Setup/teardown are not bounded by it.
-- `--report.path=<path>` (default `report.seqbazooka`).
+- `--duration=<dur>` — how long to measure (`0` = unbounded). Ingestion of
+  search scenarios and setup/teardown do not count towards it.
+- `--report.path=<path>` (default `report.<format>`).
 - `--report.format=json|md|gfm` (default `json`).
 
 ## Commands
 
-All search/aggregation commands first ingest via `--bulk.*`, then benchmark.
-
 ### `bulk` — write load
-The standalone `bulk` command uses **unprefixed** flags (the `--bulk.*` prefix
-below is only for scenarios where bulk is a nested ingest phase): `--limit`
-(req/s, required), `--workers` (required), `--bulk-size` (docs/request,
-required), `--dataset-size` (total docs, `0`=infinite until `--duration`).
+`--bulk.rps` (req/s, `0` = unlimited, required), `--bulk.workers` (in-flight
+requests, required), `--bulk.batch-size` (docs/request, required),
+`--bulk.documents` (stop after N docs, `0` = until `--duration`).
 
 ### `mixed` — concurrent write + sliding-window search
-`--bulk.*` plus `--search-sliding-window.limit` (req/s, required),
-`--search-sliding-window.workers` (required), `--search-sliding-window.size`
-(docs/req, default 1), `--search-sliding-window.window` (default `1m`).
+`--bulk.*` as above plus `--search.rps` (default `0` = unlimited),
+`--search.workers` (default 1), `--search.window` (each request searches the
+newest documents written, `[newest-window; newest]`, default `1m`).
+
+### Ingest phase of search commands (`--bulk.*`)
+All `search-*` commands first ingest, then benchmark; the same `--bulk.*` flags
+configure the ingestion, with defaults: `--bulk.rps=32` (`0` = unlimited),
+`--bulk.workers=16`, `--bulk.batch-size=4096`, `--bulk.documents=10000000`
+(ingest this many before searching). `--bulk.skip` skips ingestion entirely
+(other `--bulk.*` are ignored) and benchmarks the dataset already in
+`--seqdb.data-volume`.
 
 ### `search-logbench` — catalog, cold+hot
-Ingests once, then benchmarks a built-in catalog of ~36 queries (filters, regex,
-`in()`, ranges, histograms, aggregations), each sampled **cold then hot**.
-`--bulk.*` plus `--size` (docs/req, default 1), `--iterations` (passes, default
-1), `--repeats` (hot samples per query after 1 cold, default 5).
+Benchmarks a built-in catalog of ~36 queries (filters, regex, `in()`, ranges,
+histograms, aggregations), each sampled **cold then hot**. `--bulk.*` plus
+`--passes` (walks over the catalog, default 1), `--hot-repeats` (hot samples
+per query after 1 cold, default 5).
 
 ### `search-regular` — one query in a loop
-`--bulk.*` plus `--query` (seqql, required), `--cold` (restart+flush before each
-sample), `--workers` (default 1, hot only), `--limit` (default 1000, hot only),
-`--size` (default 1).
+`--bulk.*` plus `--query` (seqql, required), `--cold` (restart+flush before
+each sample), `--search.workers` (default 1, hot only), `--search.rps`
+(default `0` = unlimited, hot only).
 
 ### `search-aggregation` — one aggregation in a loop
 `--bulk.*` plus `--func` (`count|sum|avg|min|max|quantile|unique`, required),
-`--field` (repeatable; first aggregated, rest group-by), `--query` (filter,
-default `*`), plus `--cold`/`--workers`/`--limit`/`--size` as above.
+`--field` (aggregated field; `count` takes none), `--group-by` (repeated or
+comma-separated; several fields put several aggregations into the **same
+request**), `--query` (filter, default `*`), plus
+`--cold`/`--search.workers`/`--search.rps` as above.
+
+### `compare <baseline> <comparison>` — diff two reports
+Diffs two JSON reports. Takes only `--format` (default `json`) and `--output`
+(default `-` = stdout) — not the `--report.*`/`--seqdb.*` flags. Use it to
+compare a run against its baseline.
 
 **cold vs hot**: cold = measured right after page-cache flush + container
 restart (empty OS + in-process caches); hot = warm caches. In `--cold`
-single-query modes `--workers`/`--limit` are ignored (sequential samples).
+single-query modes `--search.workers`/`--search.rps` are ignored (sequential
+samples).
 
 ## Dataset & document schema (needed to write `--query`)
 
@@ -146,7 +160,7 @@ selective search (`transaction_id:tx-needle-*`).
 - **Rare / needle** (highly selective): `transaction_id:tx-needle-*`.
 
 For aggregation scenarios, group by a low/medium-cardinality keyword
-(`service`, `k8s_pod`, `method`, `status`), e.g. `--func=count --field=service`
+(`service`, `k8s_pod`, `method`, `status`), e.g. `--func=count --group-by=service`
 → `* | group by (service) | count`. Grouping by a per-doc field
 (`trace_id`, `order_id`) explodes cardinality — use only to stress that path on
 purpose.
@@ -228,36 +242,42 @@ Pyroscope, ready for `go tool pprof`:
 Write scenario against a locally built image, 10-minute execute:
 ```sh
 seqbazooka bulk \
-  --bootstrap.config=file://./seqdb.env \
-  --bootstrap.image=seq-db:perf-local \
-  --bootstrap.network=host --bootstrap.cpu=4 --bootstrap.memory=8GiB \
+  --seqdb.env-file=file://./seqdb.env \
+  --seqdb.image=ghcr.io/ozontech/seq-db:perf-local \
+  --seqdb.network=host --seqdb.cpu-limit=4 --seqdb.memory-limit=8GiB \
   --duration=10m \
-  --limit=200 --workers=16 --bulk-size=1000 --dataset-size=0 \
+  --bulk.rps=200 --bulk.workers=16 --bulk.batch-size=1000 --bulk.documents=0 \
   --report.path=./report.json --report.format=json
 ```
 
 Single-query search, ingest 1M docs then hot-loop:
 ```sh
 seqbazooka search-regular \
-  --bootstrap.config=file://./seqdb.env --bootstrap.image=seq-db:perf-local \
-  --bulk.limit=200 --bulk.workers=8 --bulk.bulk-size=500 --bulk.dataset-size=1000000 \
-  --query='service:payment AND k8s_namespace:prod' \
-  --workers=4 --limit=500 --size=10 --duration=5m \
+  --seqdb.env-file=file://./seqdb.env --seqdb.image=ghcr.io/ozontech/seq-db:perf-local \
+  --bulk.rps=200 --bulk.workers=8 --bulk.batch-size=500 --bulk.documents=1000000 \
+  --query='service:payment-backend-eu and level:3' \
+  --search.workers=4 --search.rps=500 --duration=5m \
   --report.path=./report.json
+```
+
+Diff a run against its baseline:
+```sh
+seqbazooka compare .perf-loop/000-baseline/report.json .perf-loop/001-fix/report.json \
+  --format=md
 ```
 
 ## Gotchas
 
-1. `--bootstrap.config` is an env `key=value` file, not YAML.
-2. Benchmarking local edits requires a **locally built image** + `--bootstrap.image`
+1. `--seqdb.env-file` is an env `KEY=VALUE` file, not YAML.
+2. Benchmarking local edits requires a **locally built image** + `--seqdb.image`
    (`VERSION=perf-local make build-image` → `ghcr.io/ozontech/seq-db:perf-local`).
    testcontainers **pulls from the registry if the image is absent locally**, which
    fails with `manifest unknown` for this never-pushed tag — verify
    `docker image inspect <tag>` succeeds before a run.
 3. Report `"type"` = temperature (hot/cold), not query kind.
 4. Report `value` can be `null`; `total` is 0 for `bulk`.
-5. Pin `--bootstrap.cpu/--bootstrap.memory` and scenario params across runs, or
-   comparisons are meaningless.
-6. Teardown destroys the container + volume. Profiles/metrics are captured
+5. Pin `--seqdb.cpu-limit/--seqdb.memory-limit` and scenario params across
+   runs, or comparisons are meaningless.
+6. Teardown destroys the container (a named `--seqdb.data-volume` survives). Profiles/metrics are captured
    continuously by the observability stack, so nothing to grab mid-run — but note
    the run's `[from,to]` epochs to slice them afterwards.
