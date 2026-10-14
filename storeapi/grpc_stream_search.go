@@ -388,10 +388,10 @@ func (g *GrpcV1) buildProducer(
 		return producer, typing, nil
 	}
 	if docFilter != nil {
-		producer = exec.NewFilter(producer, docDataColIdx, (*query.RecordVals).AsDoc, docFilter, req.WithTotal)
+		producer = exec.NewFilter(producer, query.DocColumn(docDataColIdx), docFilter, req.WithTotal)
 	}
 	if fieldsFilter != nil {
-		producer = exec.NewDocProjector(producer, docDataColIdx, fieldsFilter)
+		producer = exec.NewDocProjector(producer, query.DocColumn(docDataColIdx), fieldsFilter)
 	}
 	if searchParams.Limit > 0 {
 		// set limit=limit+offset and offset=0 to merge stores' results correctly on proxy

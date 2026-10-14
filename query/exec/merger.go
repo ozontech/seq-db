@@ -7,16 +7,14 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
-type Merger struct {
+type Merger[T any] struct {
 	left, right query.RecordProducer
 
 	curLeft, curRight *query.Record
 
-	colIdx   int
-	field    string
-	dataType query.DataType
-	order    seq.DocsOrder
-	cmp      func(any, any) int
+	col   query.Column[T]
+	order seq.DocsOrder
+	cmp   func(any, any) int
 
 	// dedup drops records whose sort key repeats the previously emitted one.
 	// It is enabled only for the seq.ID merge: shards may match the same
@@ -26,41 +24,29 @@ type Merger struct {
 	// dups counts records dropped by dedup so Finalize can subtract it from the merged total.
 	dups uint64
 
-	// roots holds records whose colIdx val has been decoded (Spawn'd an
-	// insaneJSON root) while comparing during the merge. They leave the merger
-	// once chosen, so this is the last owner and Finalize releases them. On the
-	// documents path the merger compares by SeqID and the vals stay undecoded,
-	// so roots stays empty; the DataTypeDocument path is handled for
-	// correctness.
-	roots []*query.Record
-
 	done bool
 }
 
-func NewMerger(
+func NewMerger[T any](
 	left query.RecordProducer,
 	right query.RecordProducer,
-	colIdx int,
-	field string,
-	dataType query.DataType,
+	col query.Column[T],
 	order seq.DocsOrder,
-) *Merger {
-	return &Merger{
+) *Merger[T] {
+	return &Merger[T]{
 		left:     left,
 		right:    right,
-		colIdx:   colIdx,
-		field:    field,
-		dataType: dataType,
+		col:      col,
 		order:    order,
-		cmp:      createCmpFunc(dataType),
-		dedup:    dataType == query.DataTypeSeqID,
+		cmp:      createCmpFunc(col.DataType()),
+		dedup:    col.DataType() == query.DataTypeSeqID,
 		curLeft:  nil,
 		curRight: nil,
 		done:     false,
 	}
 }
 
-func (m *Merger) Next() *query.Record {
+func (m *Merger[T]) Next() *query.Record {
 	if m.done {
 		return nil
 	}
@@ -73,7 +59,7 @@ func (m *Merger) Next() *query.Record {
 		if !m.dedup {
 			return r
 		}
-		val := m.extractValue(r)
+		val := m.col.Val(r)
 		if m.lastVal != nil && m.cmp(val, m.lastVal) == 0 {
 			// Skip duplicate.
 			m.dups++
@@ -84,7 +70,7 @@ func (m *Merger) Next() *query.Record {
 	}
 }
 
-func (m *Merger) mergeNext() *query.Record {
+func (m *Merger[T]) mergeNext() *query.Record {
 	if m.curLeft == nil {
 		m.curLeft = m.left.Next()
 	}
@@ -109,8 +95,8 @@ func (m *Merger) mergeNext() *query.Record {
 		return r
 	}
 
-	leftVal := m.extractValue(m.curLeft)
-	rightVal := m.extractValue(m.curRight)
+	leftVal := m.col.Val(m.curLeft)
+	rightVal := m.col.Val(m.curRight)
 
 	compared := m.cmp(leftVal, rightVal)
 	chooseLeft := compared <= 0
@@ -121,31 +107,15 @@ func (m *Merger) mergeNext() *query.Record {
 	if chooseLeft {
 		r := m.curLeft
 		m.curLeft = m.left.Next()
-		m.trackRoot(r)
 		return r
 	}
 
 	r := m.curRight
 	m.curRight = m.right.Next()
-	m.trackRoot(r)
 	return r
 }
 
-func (m *Merger) Finalize() *query.Summary {
-	for _, r := range m.roots {
-		r.Release()
-	}
-	// The lookahead cursors may still hold partially consumed records whose
-	// colIdx val extractValue has decoded.
-	if m.dataType == query.DataTypeDocument {
-		if m.curLeft != nil {
-			m.curLeft.Release()
-		}
-		if m.curRight != nil {
-			m.curRight.Release()
-		}
-	}
-
+func (m *Merger[T]) Finalize() *query.Summary {
 	left := m.left.Finalize()
 	right := m.right.Finalize()
 	summary := combineSummaries(left, right)
@@ -153,16 +123,6 @@ func (m *Merger) Finalize() *query.Summary {
 		summary.Total -= m.dups
 	}
 	return summary
-}
-
-// trackRoot records a record leaving the merger if its colIdx val may have been
-// decoded by extractValue, so Finalize can release the spawned insaneJSON root.
-// Non-document types never decode an insaneJSON root, so tracking them is
-// unnecessary (but harmless — Record.Release is a no-op for them).
-func (m *Merger) trackRoot(r *query.Record) {
-	if m.dataType == query.DataTypeDocument {
-		m.roots = append(m.roots, r)
-	}
 }
 
 // combineSummaries merges the final summaries of two merged branches. The
@@ -184,34 +144,6 @@ func combineSummaries(left, right *query.Summary) *query.Summary {
 	return summary
 }
 
-func (m *Merger) extractValue(r *query.Record) any {
-	val := r.Vals[m.colIdx]
-
-	switch m.dataType {
-	case query.DataTypeSeqID:
-		return val.AsSeqID()
-	case query.DataTypeDocument:
-		if m.field == "" {
-			return val.AsDoc()
-		}
-		return val.AsDoc().Dig(m.field).AsString()
-	case query.DataTypeString:
-		return val.AsString()
-	case query.DataTypeUint32:
-		return val.AsUint32()
-	case query.DataTypeUint64:
-		return val.AsUint64()
-	case query.DataTypeInt32:
-		return val.AsInt32()
-	case query.DataTypeInt64:
-		return val.AsInt64()
-	case query.DataTypeFloat64:
-		return val.AsFloat64()
-	default:
-		return ""
-	}
-}
-
 func createCmpFunc(dataType query.DataType) func(any, any) int {
 	switch dataType {
 	case query.DataTypeSeqID:
@@ -226,9 +158,6 @@ func createCmpFunc(dataType query.DataType) func(any, any) int {
 				return 0
 			}
 		}
-	case query.DataTypeDocument:
-		// document field's values are extracted as strings
-		return func(a, b any) int { return cmp.Compare(a.(string), b.(string)) }
 	case query.DataTypeUint32:
 		return func(a, b any) int { return cmp.Compare(a.(uint32), b.(uint32)) }
 	case query.DataTypeUint64:
@@ -246,11 +175,9 @@ func createCmpFunc(dataType query.DataType) func(any, any) int {
 	}
 }
 
-func NewNMergedProducers(
+func NewNMergedProducers[T any](
 	producers []query.RecordProducer,
-	colIdx int,
-	field string,
-	dataType query.DataType,
+	col query.Column[T],
 	order seq.DocsOrder,
 ) query.RecordProducer {
 	l := len(producers)
@@ -258,17 +185,17 @@ func NewNMergedProducers(
 		return &emptyRecordProducer{}
 	}
 	if l == 1 {
-		return NewMerger(producers[0], &emptyRecordProducer{}, colIdx, field, dataType, order)
+		return NewMerger(producers[0], &emptyRecordProducer{}, col, order)
 	}
 	if l == 2 {
-		return NewMerger(producers[0], producers[1], colIdx, field, dataType, order)
+		return NewMerger(producers[0], producers[1], col, order)
 	}
 
 	half := l / 2
-	a := NewNMergedProducers(producers[:half], colIdx, field, dataType, order)
-	b := NewNMergedProducers(producers[half:], colIdx, field, dataType, order)
+	a := NewNMergedProducers(producers[:half], col, order)
+	b := NewNMergedProducers(producers[half:], col, order)
 
-	return NewMerger(a, b, colIdx, field, dataType, order)
+	return NewMerger(a, b, col, order)
 }
 
 type emptyRecordProducer struct{}
