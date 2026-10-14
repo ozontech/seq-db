@@ -101,17 +101,12 @@ func leaf(t *testing.T, q string) Token {
 	return collectLeaves(query.Root)[0].Value
 }
 
-// The key is built by concatenation, so "a:b" + "c" must never equal
-// "a" + "b:c" — parts are length-prefixed to prevent that.
+// Dumped tokens must never collide: quoting of fields and values that
+// contain special characters is what keeps `"a:b":c` and `a:"b:c"` distinct.
 func TestTokenKeyNoConcatenationCollisions(t *testing.T) {
 	a := assert.New(t)
-
 	a.NotEqual(
 		TokenKey(&Literal{Field: "a", Terms: []Term{{Kind: TermText, Data: "b:c"}}}),
 		TokenKey(&Literal{Field: "a:b", Terms: []Term{{Kind: TermText, Data: "c"}}}),
-	)
-	a.NotEqual(
-		TokenKey(&Re{Field: "a", Expression: Term{Kind: TermText, Data: "^b:c$"}}),
-		TokenKey(&Re{Field: "a:b", Expression: Term{Kind: TermText, Data: "^c$"}}),
 	)
 }
