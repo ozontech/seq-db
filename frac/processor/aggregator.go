@@ -468,14 +468,12 @@ func (n *SingleSourceCountAggregator) Dispose() {
 
 // SingleSourceUniqueAggregator aggregates unique values for a single source.
 type SingleSourceUniqueAggregator struct {
-	values    map[int]struct{}
 	group     *SourcedNodeIterator
 	notExists int64
 }
 
 func NewSingleSourceUniqueAggregator(iterator *SourcedNodeIterator) *SingleSourceUniqueAggregator {
 	return &SingleSourceUniqueAggregator{
-		values:    make(map[int]struct{}),
 		notExists: 0,
 		group:     iterator,
 	}
@@ -490,7 +488,6 @@ func (n *SingleSourceUniqueAggregator) Next(lids []node.LID) error {
 
 	for i := range lids {
 		if sources[i] >= 0 {
-			n.values[sources[i]] = struct{}{}
 			continue
 		}
 
@@ -504,9 +501,9 @@ func (n *SingleSourceUniqueAggregator) Aggregate() (seq.AggregatableSamples, err
 
 	aggMap := make(map[seq.AggBin]*seq.SamplesContainer, n.group.UniqueSources())
 
-	for val := range n.values {
+	for source := range n.group.countBySource.all() {
 		aggBin := seq.AggBin{
-			Token: n.group.ValueBySource(uint32(val)),
+			Token: n.group.ValueBySource(source),
 		}
 
 		if aggMap[aggBin] == nil {
