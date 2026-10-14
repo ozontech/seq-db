@@ -8,8 +8,10 @@ import (
 )
 
 // ExprTIDs is a value of the ExprTIDs cache layer: TIDs matched by a
-// token expression of the immutable fraction. Key keeps the original
-// parser.TokenKey string to detect uint32 hash collisions.
+// scan-heavy token expression (wildcard, regex, range) of the immutable
+// fraction. Key keeps the original parser.TokenKey string to detect
+// uint32 hash collisions. Exact-match literals are resolved by binary
+// search alone and never enter this cache.
 type ExprTIDs struct {
 	Key  string
 	TIDs []uint32
@@ -57,7 +59,8 @@ type IndexCache struct {
 	LIDs *cache.ConcurrentCache[*lids.Block]
 
 	// ExprTIDs caches GetTIDsByTokenExpr results of the immutable
-	// fraction; keyed by the hash of parser.TokenKey, evicted by the
+	// fraction for scan-heavy token expressions (see ExprTIDs);
+	// keyed by the hash of parser.TokenKey, evicted by the
 	// shared cleaner.
 	ExprTIDs *cache.ConcurrentCache[ExprTIDs]
 }

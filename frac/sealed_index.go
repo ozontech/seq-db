@@ -270,23 +270,33 @@ func (ti *sealedTokenIndex) GetTIDsByField(field string) ([]uint32, error) {
 }
 
 func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
-	// An immutable fraction's tokens never change, so the result of this
-	// lookup is the same for every search over this fraction; the token
-	// cache layer of IndexCache lets searches reuse it across requests,
-	// and the cache single-flights concurrent loads of the same key.
-	// The cache key is the uint32 hash of the canonical parser.TokenKey;
-	// the value keeps the original string to detect collisions.
+	if isExactLiteral(t) {
+		// `field:value` resolves via binary search alone (token table hint,
+		// then literalSearch) — cheap enough to repeat on every search, so
+		// skip the cache; only scan-heavy expressions are cached below.
+		return ti.lookupTIDs(t)
+	}
+	// Sealed tokens never change, so scan-heavy lookups reuse results
+	// across searches: key = hash of parser.TokenKey, value keeps the
+	// key string to detect hash collisions; loads are single-flighted.
 	key := parser.TokenKey(t)
 	res, err := ti.exprTIDsCache.Get(tokenKeyHash(key), tokenTIDsLoader{ti: ti, t: t, key: key})
 	if err != nil {
 		return nil, err
 	}
 	if res.Key != key {
-		// uint32 hash collision with an unrelated query: cached TIDs
-		// belong to another token, compute without caching
+		// uint32 hash collision: cached TIDs belong to another token
 		return ti.lookupTIDs(t)
 	}
 	return res.TIDs, nil
+}
+
+// isExactLiteral reports whether t is a plain `field:value` literal — the
+// only expression resolved without scanning tokens; see
+// pattern.newLiteralSearch for the same condition.
+func isExactLiteral(t parser.Token) bool {
+	lit, ok := t.(*parser.Literal)
+	return ok && len(lit.Terms) == 1 && lit.Terms[0].Kind == parser.TermText
 }
 
 type tokenTIDsLoader struct {
