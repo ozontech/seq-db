@@ -8,16 +8,11 @@ import (
 
 type Token any
 
-// TokenKey returns a canonical string uniquely identifying the lookup
-// semantics of the token: two tokens yield the same key if and only if they
-// select the same field and match tokens the same way. This holds because
-// every field a search reads (Literal.Terms, Range bounds, IPRange bounds,
-// Re.Expression) is normalized at parse time, so the key depends only on
-// parsed values, not on the identity of the AST node — unlike a direct map
-// key, it is stable across independently parsed but equal queries.
-//
-// String parts are length-prefixed, so keys of different tokens cannot
-// collide through concatenation.
+// TokenKey returns a canonical string uniquely identifying the
+// lookup semantics of the token. The mapping is injective — distinct
+// tokens never produce the same key — because every variable part is
+// length-prefixed (writeKeyPart) and type tags are mutually prefix-free;
+// preserve both invariants when extending the switch below.
 func TokenKey(t Token) string {
 	var b strings.Builder
 	switch t := t.(type) {
@@ -45,15 +40,11 @@ func TokenKey(t Token) string {
 			b.WriteByte('I')
 		}
 	case *IPRange:
-		// From and To are canonicalized to netip strings at parse time.
 		b.WriteString("ip_range")
 		writeKeyPart(&b, t.Field)
 		writeKeyPart(&b, t.From.Data)
 		writeKeyPart(&b, t.To.Data)
 	case *Re:
-		// CompiledExpression and Prefix/Middle/Suffix are derived from
-		// Expression.Data at parse time, so the latter fully determines
-		// the search behavior.
 		b.WriteString("re")
 		writeKeyPart(&b, t.Field)
 		writeKeyPart(&b, t.Expression.Data)

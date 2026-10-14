@@ -36,9 +36,6 @@ type sealedDataProvider struct {
 	info   *common.Info
 	config *Config
 
-	// exprTIDsCache is the ExprTIDs layer of the fraction's IndexCache;
-	// the fraction is immutable, so cached lookups are valid for the
-	// fraction's whole lifetime.
 	exprTIDsCache cache.Cache[ExprTIDs]
 
 	idsTable    *seqids.Table
@@ -271,29 +268,20 @@ func (ti *sealedTokenIndex) GetTIDsByField(field string) ([]uint32, error) {
 
 func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
 	if isExactLiteral(t) {
-		// `field:value` resolves via binary search alone (token table hint,
-		// then literalSearch) — cheap enough to repeat on every search, so
-		// skip the cache; only scan-heavy expressions are cached below.
 		return ti.lookupTIDs(t)
 	}
-	// Sealed tokens never change, so scan-heavy lookups reuse results
-	// across searches: key = hash of parser.TokenKey, value keeps the
-	// key string to detect hash collisions; loads are single-flighted.
 	key := parser.TokenKey(t)
 	res, err := ti.exprTIDsCache.Get(tokenKeyHash(key), tokenTIDsLoader{ti: ti, t: t, key: key})
 	if err != nil {
 		return nil, err
 	}
-	if res.Key != key {
-		// uint32 hash collision: cached TIDs belong to another token
+	if res.Key != key { // uint32 hash collision
 		return ti.lookupTIDs(t)
 	}
 	return res.TIDs, nil
 }
 
-// isExactLiteral reports whether t is a plain `field:value` literal — the
-// only expression resolved without scanning tokens; see
-// pattern.newLiteralSearch for the same condition.
+// isExactLiteral reports whether t is a plain `field:value` literal
 func isExactLiteral(t parser.Token) bool {
 	lit, ok := t.(*parser.Literal)
 	return ok && len(lit.Terms) == 1 && lit.Terms[0].Kind == parser.TermText
@@ -313,8 +301,6 @@ func (l tokenTIDsLoader) Load(uint32) (ExprTIDs, int, error) {
 	return ExprTIDs{Key: l.key, TIDs: tids}, len(l.key) + len(tids)*4, nil
 }
 
-// tokenKeyHashSeed is fixed per process, which is enough: the hash keys
-// only the in-memory ExprTIDs cache.
 var tokenKeyHashSeed = maphash.MakeSeed()
 
 func tokenKeyHash(key string) uint32 {
