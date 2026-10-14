@@ -267,7 +267,7 @@ func (ti *sealedTokenIndex) GetTIDsByField(field string) ([]uint32, error) {
 }
 
 func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
-	if isExactLiteral(t) {
+	if pattern.IsExactLiteral(t) {
 		return ti.lookupTIDs(t)
 	}
 	key := parser.TokenKey(t)
@@ -279,12 +279,6 @@ func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error)
 		return ti.lookupTIDs(t)
 	}
 	return res.TIDs, nil
-}
-
-// isExactLiteral reports whether t is a plain `field:value` literal
-func isExactLiteral(t parser.Token) bool {
-	lit, ok := t.(*parser.Literal)
-	return ok && len(lit.Terms) == 1 && lit.Terms[0].Kind == parser.TermText
 }
 
 type tokenTIDsLoader struct {
