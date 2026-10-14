@@ -15,7 +15,7 @@ func StringToBytes(val string) []byte {
 }
 
 func StringFromBytes(val []byte) string {
-	return string(val)
+	return util.ByteToStringUnsafe(val)
 }
 
 func SeqIDToBytes(id seq.ID) []byte {
@@ -134,7 +134,7 @@ func StringArrayFromBytes(b []byte) []string {
 	for i := range n {
 		slen := binary.LittleEndian.Uint64(b[offset:])
 		offset += 8
-		v[i] = string(b[offset : offset+int(slen)])
+		v[i] = util.ByteToStringUnsafe(b[offset : offset+int(slen)])
 		offset += int(slen)
 	}
 	return v
