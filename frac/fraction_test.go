@@ -3028,7 +3028,7 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 
 func (s *RemoteFractionTestSuite) TearDownTest() {
 	if remote, ok := s.fraction.(*frac.Remote); ok {
-		remote.Suicide()
+		s.Require().NoError(remote.Suicide())
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Remote type")
 	}

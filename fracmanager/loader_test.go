@@ -245,7 +245,7 @@ func TestDiscover(t *testing.T) {
 		if rand.Intn(2) != 0 {
 			continue
 		}
-		r.Suicide()
+		assert.NoError(t, r.Suicide())
 		delete(expectedRemote, n)
 	}
 
