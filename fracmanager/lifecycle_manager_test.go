@@ -1,8 +1,10 @@
 package fracmanager
 
 import (
+	"context"
 	"math"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -11,10 +13,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
+	"github.com/ozontech/seq-db/storage/s3"
 )
 
 func setupLifecycle(t testing.TB, cfg *Config) (*lifecycleManager, func()) {
@@ -22,7 +28,7 @@ func setupLifecycle(t testing.TB, cfg *Config) (*lifecycleManager, func()) {
 	dataDir := provider.config.DataDir
 	infoCache := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 
-	registry, err := NewFractionRegistry(provider.CreateActive(), nil, nil)
+	registry, err := NewFractionRegistry(provider.CreateActive(), nil, nil, nil)
 	assert.NoError(t, err)
 
 	storageState, err := NewStateManager(dataDir, defaultStorageState)
@@ -234,4 +240,105 @@ func TestPendingDestroy(t *testing.T) {
 		}, "searching by destroyed faction is expected to trigger a panic")
 	}
 	release2()
+}
+
+// makeOffloadedFraction creates a sealed fraction, offloads it to S3 and
+// returns it as a remote reference with a .remote marker on disk.
+func makeOffloadedFraction(t testing.TB, lc *lifecycleManager) *refCountedRemote {
+	a := lc.provider.CreateActive()
+	appendDocsToActive(t, a, 10)
+
+	wg := sync.WaitGroup{}
+	lc.rotate(0, &wg)
+	wg.Wait()
+
+	sealed, err := lc.provider.Seal(a)
+	require.NoError(t, err, "seal failed")
+
+	remote, err := lc.provider.Offload(t.Context(), sealed)
+	require.NoError(t, err, "offload failed")
+	require.NotNil(t, remote)
+
+	return &refCountedRemote{Remote: remote}
+}
+
+// newBrokenS3Client returns an S3 client pointing to a closed address:
+// every request fails, simulating remote storage unavailability.
+func newBrokenS3Client(t testing.TB) *s3.Client {
+	s3cli, err := s3.NewClient(
+		"http://127.0.0.1:1", // nothing listens here
+		"ACCESS_KEY",
+		"SECRET_KEY",
+		"eu-west-3",
+		"bucket",
+	)
+	require.NoError(t, err, "broken s3 client setup failed")
+	return s3cli
+}
+
+func TestRemoveRemoteAsync(t *testing.T) {
+	lc, tearDown := setupLifecycle(t, nil)
+	defer tearDown()
+
+	ref := makeOffloadedFraction(t, lc)
+	lc.infoCache.Add(ref.Info())
+
+	wg := sync.WaitGroup{}
+	lc.removeRemoteAsync(t.Context(), ref, &wg, time.Second)
+	wg.Wait()
+
+	// Remote files are deleted from S3.
+	for _, suffix := range []string{
+		consts.DocsFileSuffix, consts.SdocsFileSuffix, consts.IndexFileSuffix,
+		consts.InfoFileSuffix, consts.TokenFileSuffix, consts.OffsetsFileSuffix,
+		consts.IDFileSuffix, consts.LIDFileSuffix,
+	} {
+		exists, err := lc.provider.s3cli.Exists(t.Context(), filepath.Base(ref.BaseFileName)+suffix)
+		require.NoError(t, err)
+		assert.False(t, exists, "remote file %s must be deleted", suffix)
+	}
+
+	// The .remote marker is removed and the fraction is dropped from the info cache.
+	_, err := os.Stat(ref.BaseFileName + consts.RemoteFractionSuffix)
+	assert.True(t, os.IsNotExist(err), ".remote marker must be removed")
+	_, found := lc.infoCache.Get(ref.Info().Name())
+	assert.False(t, found, "fraction must be dropped from the info cache")
+}
+
+func TestRemoveRemoteAsyncCanceled(t *testing.T) {
+	lc, tearDown := setupLifecycle(t, nil)
+	defer tearDown()
+
+	ref := makeOffloadedFraction(t, lc)
+
+	// Replace the fraction with one whose S3 client always fails, so
+	// the first attempt fails and the loop exits via ctx instead.
+	broken := &refCountedRemote{Remote: frac.NewRemote(
+		t.Context(),
+		ref.BaseFileName,
+		storage.NewReadLimiter(1, nil),
+		frac.NewIndexCache(),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		ref.Info(),
+		&lc.provider.config.Fraction,
+		newBrokenS3Client(t),
+		testSkipMaskProvider{},
+	)}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	wg := sync.WaitGroup{}
+	lc.removeRemoteAsync(ctx, broken, &wg, time.Second)
+	wg.Wait()
+
+	// The failed attempt committed the deletion intent (marker rename),
+	// remote files must survive for the next retry: after restart the
+	// fraction is discovered via the ._remote-del marker.
+	_, err := os.Stat(ref.BaseFileName + consts.RemoteFractionDeletingSuffix)
+	assert.NoError(t, err, "._remote-del marker must survive canceled deletion")
+
+	exists, err := lc.provider.s3cli.Exists(t.Context(), filepath.Base(ref.BaseFileName)+consts.DocsFileSuffix)
+	require.NoError(t, err)
+	assert.True(t, exists, "remote files must survive canceled deletion")
 }

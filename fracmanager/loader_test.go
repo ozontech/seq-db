@@ -254,7 +254,7 @@ func TestDiscover(t *testing.T) {
 	appendDocsToActive(t, a, 10+rand.Intn(10))
 
 	// discover from FS
-	actives, locals, remotes, err := loader.discover(t.Context())
+	actives, locals, remotes, _, err := loader.discover(t.Context())
 	assert.NoError(t, err)
 
 	// checks
@@ -308,7 +308,7 @@ func TestDiscover_RemoteFileWithInfo(t *testing.T) {
 	s.Suicide()
 
 	// Now discover from FS.
-	actives, locals, remotes, err := loader.discover(t.Context())
+	actives, locals, remotes, _, err := loader.discover(t.Context())
 	require.NoError(t, err)
 
 	assert.Empty(t, actives, "no active fractions expected")
@@ -348,7 +348,7 @@ func TestDiscover_EmptyRemote_NewIndex(t *testing.T) {
 	createEmptyRemoteFile(t, basePath)
 
 	// Discover from FS.
-	actives, locals, remotes, err := loader.discover(t.Context())
+	actives, locals, remotes, _, err := loader.discover(t.Context())
 	require.NoError(t, err)
 
 	assert.Empty(t, actives, "no active fractions expected")
@@ -396,7 +396,7 @@ func TestDiscover_EmptyRemote_CacheLegacy(t *testing.T) {
 	require.NoError(t, err)
 
 	// Discover from FS.
-	actives, locals, remotes, err := loader.discover(t.Context())
+	actives, locals, remotes, _, err := loader.discover(t.Context())
 	require.NoError(t, err)
 
 	assert.Empty(t, actives, "no active fractions expected")
@@ -437,7 +437,7 @@ func TestDiscover_EmptyRemote_CacheNew(t *testing.T) {
 	createEmptyRemoteFile(t, basePath)
 
 	// Discover from FS.
-	actives, locals, remotes, err := loader.discover(t.Context())
+	actives, locals, remotes, _, err := loader.discover(t.Context())
 	require.NoError(t, err)
 
 	assert.Empty(t, actives, "no active fractions expected")
@@ -471,4 +471,165 @@ func TestLoadRemote_Legacy(t *testing.T) {
 	remote := loader.loadRemote(t.Context(), basePath, loadedInfoCache)
 	require.NotNil(t, remote)
 	assert.True(t, remote.IsSingleIndex(), "should be legacy")
+}
+
+// TestDiscover_ZombieRemote verifies recovery of an interrupted offloading:
+// ._remote without .remote and without local files is a remote zombie - it
+// is not loaded as searchable, its local leftovers are dropped, and it is
+// returned for remote deletion (performed by maintenance ticks).
+func TestDiscover_ZombieRemote(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	// Create a sealed fraction and offload it — this creates real files in S3.
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 10)
+	s, err := fp.Seal(a)
+	require.NoError(t, err)
+
+	r, err := fp.Offload(t.Context(), s)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+
+	// Simulate a lost fraction: local files are gone (removed after commit,
+	// as cleanupRemoteFrac does), but the .remote marker was left as a
+	// leftover ._remote intent marker.
+	basePath := r.BaseFileName
+	for _, suffix := range []string{
+		consts.DocsFileSuffix, consts.SdocsFileSuffix,
+		consts.InfoFileSuffix, consts.TokenFileSuffix,
+		consts.OffsetsFileSuffix, consts.IDFileSuffix, consts.LIDFileSuffix,
+	} {
+		err := os.Remove(basePath + suffix)
+		if err != nil && !os.IsNotExist(err) {
+			require.NoError(t, err)
+		}
+	}
+	err = os.Rename(basePath+consts.RemoteFractionSuffix, basePath+consts.RemoteFractionTmpSuffix)
+	require.NoError(t, err)
+
+	// Discover from FS: the zombie must be scheduled for remote deletion.
+	// Note: the zombie fraction is a stub (no info loaded), so only its
+	// base name is asserted.
+	actives, locals, remotes, remotesRemoving, err := loader.discover(t.Context())
+	require.NoError(t, err)
+
+	assert.Empty(t, actives, "no active fractions expected")
+	assert.Empty(t, locals, "no local fractions expected")
+	assert.Empty(t, remotes, "zombie fraction must not be loaded as remote")
+	require.Len(t, remotesRemoving, 1, "zombie must be scheduled for remote deletion")
+	assert.Equal(t, filepath.Base(basePath), remotesRemoving[0].Info().Name())
+
+	// Local leftovers must be dropped, but the ._remote marker must survive
+	// until the remote deletion succeeds.
+	_, statErr := os.Stat(basePath + consts.RemoteFractionTmpSuffix)
+	assert.NoError(t, statErr, "._remote marker must survive discovery")
+
+	// Partial remote files must still be there: deletion happens on ticks.
+	exists, err := fp.s3cli.Exists(t.Context(), filepath.Base(basePath)+consts.DocsFileSuffix)
+	require.NoError(t, err)
+	assert.True(t, exists, "zombie files must stay until a maintenance tick removes them")
+}
+
+// TestDiscover_InterruptedOffloadingWithLocalFiles verifies that a fraction
+// with ._remote (no .remote) but with local files intact is treated as a
+// regular sealed fraction - the ordinary offloading cycle will retry it.
+func TestDiscover_InterruptedOffloadingWithLocalFiles(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	// Create a sealed fraction without offloading it.
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 10)
+	s, err := fp.Seal(a)
+	require.NoError(t, err)
+
+	// Simulate an interrupted offloading: intent marker without commit.
+	basePath := s.BaseFileName
+	err = os.WriteFile(basePath+consts.RemoteFractionTmpSuffix, nil, 0o644)
+	require.NoError(t, err)
+
+	// Discover from FS: the fraction must be loaded as local sealed.
+	actives, locals, remotes, _, err := loader.discover(t.Context())
+	require.NoError(t, err)
+
+	assert.Empty(t, actives, "no active fractions expected")
+	assert.Empty(t, remotes, "no remote fractions expected")
+	require.Len(t, locals, 1, "fraction with local files must be loaded as sealed")
+	assert.Equal(t, s.Info().Name(), locals[0].Info().Name())
+
+	// The intent marker must survive discovery for later retry.
+	_, statErr := os.Stat(basePath + consts.RemoteFractionTmpSuffix)
+	assert.NoError(t, statErr, "._remote marker must survive discovery")
+}
+
+// TestDiscover_InterruptedDeletion verifies that a fraction with a
+// ._remote-del marker (remote deletion was interrupted after the
+// marker rename) is scheduled for remote deletion: it is not searchable
+// and must not be loaded as remote.
+func TestDiscover_InterruptedDeletion(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	// Create a sealed fraction and offload it — this creates real files in S3.
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 10)
+	s, err := fp.Seal(a)
+	require.NoError(t, err)
+
+	r, err := fp.Offload(t.Context(), s)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+
+	// Simulate an interrupted deletion: the marker was renamed to
+	// ._remote-del, but remote files were not deleted yet.
+	basePath := r.BaseFileName
+	err = os.Rename(
+		basePath+consts.RemoteFractionSuffix,
+		basePath+consts.RemoteFractionDeletingSuffix,
+	)
+	require.NoError(t, err)
+
+	// Discover from FS: the fraction must be scheduled for remote deletion.
+	actives, locals, remotes, remotesRemoving, err := loader.discover(t.Context())
+	require.NoError(t, err)
+
+	assert.Empty(t, actives, "no active fractions expected")
+	assert.Empty(t, locals, "no local fractions expected")
+	assert.Empty(t, remotes, "fraction pending deletion must not be loaded as remote")
+	require.Len(t, remotesRemoving, 1, "fraction must be scheduled for remote deletion")
+	assert.Equal(t, filepath.Base(basePath), remotesRemoving[0].Info().Name())
+
+	// The deleting marker must survive discovery until the deletion succeeds.
+	_, statErr := os.Stat(basePath + consts.RemoteFractionDeletingSuffix)
+	assert.NoError(t, statErr, "._remote-deleting marker must survive discovery")
+}
+
+// TestDiscover_ZombieRemote_S3Unavailable verifies that a zombie fraction is
+// discovered even when remote storage is unreachable at startup: the zombie
+// stub skips info loading entirely, so the store must not fail to start.
+func TestDiscover_ZombieRemote_S3Unavailable(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	// Create a zombie: ._remote intent marker without local files.
+	basePath := fp.fractionName()
+	require.NoError(t, os.WriteFile(basePath+consts.RemoteFractionTmpSuffix, nil, 0o644))
+
+	// Make S3 unreachable before discovery.
+	fp.s3cli = newBrokenS3Client(t)
+
+	// Discover from FS: the zombie must still be scheduled for deletion.
+	actives, locals, remotes, remotesRemoving, err := loader.discover(t.Context())
+	require.NoError(t, err, "unreachable S3 must not prevent zombie discovery")
+
+	assert.Empty(t, actives)
+	assert.Empty(t, locals)
+	assert.Empty(t, remotes)
+	require.Len(t, remotesRemoving, 1, "zombie must be scheduled for remote deletion")
+	assert.Equal(t, filepath.Base(basePath), remotesRemoving[0].Info().Name())
+
+	// The intent marker must survive discovery.
+	_, statErr := os.Stat(basePath + consts.RemoteFractionTmpSuffix)
+	assert.NoError(t, statErr, "._remote marker must survive discovery")
 }

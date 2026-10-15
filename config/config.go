@@ -321,6 +321,8 @@ type Config struct {
 		QueueSizePercent float64 `config:"queue_size_percent" default:"5"`
 		// Delay duration between consecutive offloading retries
 		RetryDelay time.Duration `config:"retry_delay" default:"2s"`
+		// Delay duration between consecutive removing from S3 retries
+		RemoteRemoveRetryDelay time.Duration `config:"remote_remove_retry_delay" default:"2s"`
 	} `config:"offloading"`
 
 	AsyncSearch struct {

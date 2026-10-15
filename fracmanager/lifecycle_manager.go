@@ -50,7 +50,7 @@ func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.
 		if cfg.OffloadingQueueSize > 0 {
 			lc.removeOverflowed(cfg.OffloadingQueueSize, wg)
 		}
-		lc.cleanRemote(cfg.OffloadingRetention, wg)
+		lc.cleanRemote(ctx, cfg.OffloadingRetention, wg, cfg.RemoteRemoveRetryDelay)
 	} else {
 		lc.cleanLocal(cfg.TotalSize, wg)
 	}
@@ -188,19 +188,70 @@ func (lc *lifecycleManager) tryOffload(ctx context.Context, sealed *frac.Sealed)
 }
 
 // cleanRemote deletes outdated remote fractions based on retention policy.
-func (lc *lifecycleManager) cleanRemote(retention time.Duration, wg *sync.WaitGroup) {
+// Selected fractions are moved to the remotesRemoving queue; their deletion
+// from remote storage is performed by removeRemoteZombies and retried every
+// tick until it succeeds.
+func (lc *lifecycleManager) cleanRemote(
+	ctx context.Context,
+	retention time.Duration,
+	wg *sync.WaitGroup,
+	remoteRemoveRetryDelay time.Duration,
+) {
 	toDelete := lc.registry.evictRemote(retention)
-	wg.Add(len(toDelete))
 	for _, remote := range toDelete {
-		go func() {
-			defer wg.Done()
-			info := remote.Info()
-			lc.infoCache.Remove(info.Name())
-			remote.Destroy()
-			logger.Info("remove remote fraction",
-				zap.String("name", info.Name()),
-				zap.Time("created", time.UnixMilli(int64(info.CreationTime))))
-		}()
+		lc.removeRemoteAsync(ctx, remote, wg, remoteRemoveRetryDelay)
+	}
+}
+
+// removeRemoteZombies deletes remote fractions pending removal: evicted
+// ones, and zombies discovered at startup (interrupted offloading).
+// On failure a fraction stays in the remotesRemoving queue and the
+// deletion is retried on the next tick.
+func (lc *lifecycleManager) removeRemoteAsync(
+	ctx context.Context,
+	ref *refCountedRemote,
+	wg *sync.WaitGroup,
+	retryDelay time.Duration,
+) {
+	wg.Add(1)
+	_, err := lc.tasks.Run(ref.BaseFileName, ctx, func(ctx context.Context) {
+		defer wg.Done()
+
+		for i := 0; ; i++ {
+			e := ref.Destroy()
+			if e == nil {
+				lc.infoCache.Remove(ref.Info().Name())
+				logger.Info("removed remote fraction",
+					zap.String("name", ref.BaseFileName),
+					zap.Time("created", time.UnixMilli(int64(ref.Info().CreationTime))),
+				)
+
+				return
+			}
+
+			logger.Warn(
+				"failed to remove remote fraction",
+				zap.String("name", ref.BaseFileName),
+				zap.Int("attempts", i),
+				zap.Error(e),
+			)
+
+			select {
+			case <-ctx.Done():
+				logger.Info(
+					"fraction offloading was stopped",
+					zap.String("name", ref.BaseFileName),
+					zap.Int("attempts", i),
+					zap.Error(ctx.Err()),
+				)
+				return
+			case <-time.After(retryDelay):
+				// Wait before next retry attempt
+			}
+		}
+	})
+	if err != nil {
+		panic(err) // expect no error here
 	}
 }
 

@@ -31,10 +31,11 @@ type Config struct {
 	Fraction          frac.Config
 	MinSealFracSize   uint64
 
-	OffloadingEnabled    bool
-	OffloadingQueueSize  uint64
-	OffloadingRetention  time.Duration
-	OffloadingRetryDelay time.Duration
+	OffloadingEnabled      bool
+	OffloadingQueueSize    uint64
+	OffloadingRetention    time.Duration
+	OffloadingRetryDelay   time.Duration
+	RemoteRemoveRetryDelay time.Duration
 
 	CompactionEnabled bool
 }

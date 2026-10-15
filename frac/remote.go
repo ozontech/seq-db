@@ -116,6 +116,23 @@ func NewRemote(
 	return f
 }
 
+// NewRemoteZombie creates a stub for a fraction pending remote deletion
+// (offloading interrupted before commit, or deletion interrupted mid-way).
+// It skips info loading entirely: deletion only needs the base name and
+// the S3 client, and loading info would require reaching S3, which must
+// not prevent the store from starting up.
+func NewRemoteZombie(ctx context.Context, baseFile string, s3cli *s3.Client) *Remote {
+	return &Remote{
+		ctx:          ctx,
+		initMu:       &sync.RWMutex{},
+		docsCache:    cache.NewConcurrentCache[[]byte](nil, nil),
+		indexCache:   NewIndexCache(),
+		info:         &common.Info{Path: baseFile},
+		BaseFileName: baseFile,
+		s3cli:        s3cli,
+	}
+}
+
 func (f *Remote) Contains(mid seq.MID) bool {
 	return f.info.IsIntersecting(mid, mid)
 }
@@ -235,14 +252,15 @@ func (f *Remote) IsIntersecting(from, to seq.MID) bool {
 	return f.info.IsIntersecting(from, to)
 }
 
-func (f *Remote) Suicide() {
-	// FIXME(dkharms): We need to rename `.remote` file to `._remote` to commit deletion intent.
-	// Now, we might have fraction leaks in S3 storage since [Suicide] is not atomic.
-
-	util.MustRemoveFileByPath(f.BaseFileName + consts.RemoteFractionSuffix)
-
-	f.docsCache.Release()
-	f.indexCache.Release()
+func (f *Remote) Suicide() error {
+	// Rename the marker to ._remote-del first: it commits the deletion
+	// intent, so a crash at any point after it leaves a recoverable state -
+	// the loader recognizes the fraction as pending remote deletion.
+	deletingMarker := f.BaseFileName + consts.RemoteFractionDeletingSuffix
+	remoteMarker := f.BaseFileName + consts.RemoteFractionSuffix
+	if err := os.Rename(remoteMarker, deletingMarker); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("can't rename remote marker to deleting marker: %w", err)
+	}
 
 	files := []string{
 		filepath.Base(f.BaseFileName) + consts.DocsFileSuffix,
@@ -259,14 +277,17 @@ func (f *Remote) Suicide() {
 
 	err := f.s3cli.Remove(f.ctx, files...)
 	if err != nil {
-		logger.Info(
-			"failed to delete files during suicide",
-			zap.Any("files", files),
-			zap.Error(err),
-		)
+		return fmt.Errorf("failed to delete files from s3 during suicide: %w", err)
 	}
 
+	util.MustRemoveFileByPath(deletingMarker)
+
+	f.docsCache.Release()
+	f.indexCache.Release()
+
 	f.skipMaskProvider.RemoveFrac(f.info.Name())
+
+	return nil
 }
 
 func (f *Remote) String() string {
