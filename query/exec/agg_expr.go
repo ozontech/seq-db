@@ -20,51 +20,71 @@ type AggAcc interface {
 	Merge(r *query.Record)
 	Value() float64
 	Quantiles() []float64
-}
-
-type NotExists interface {
 	NotExists() uint64
 }
 
-// notExistsAcc wraps an accumulator with the bucket-level not_exists count.
-type notExistsAcc struct {
-	AggAcc
-	col *query.Column[uint64]
-	v   uint64
+type notExistsState struct {
+	col       query.Column[uint64]
+	notExists uint64
 }
 
-func (a *notExistsAcc) Merge(r *query.Record) {
-	a.AggAcc.Merge(r)
-	a.v += a.col.Val(r)
+func (s *notExistsState) mergeNotExists(r *query.Record) {
+	s.notExists += s.col.Val(r)
 }
 
-func (a *notExistsAcc) NotExists() uint64 { return a.v }
+func (s *notExistsState) NotExists() uint64 {
+	return s.notExists
+}
 
 // totalExpr backs count and unique.
 type totalExpr struct {
 	total query.Column[uint64]
 }
 
-func (e totalExpr) NewAcc() AggAcc { return &totalAcc{col: e.total} }
-func (e totalExpr) SortAsc() bool  { return false }
+func (e totalExpr) NewAcc() AggAcc {
+	return &totalAcc{col: e.total}
+}
+
+func (e totalExpr) SortAsc() bool {
+	return false
+}
 
 type totalAcc struct {
 	col   query.Column[uint64]
 	total uint64
 }
 
-func (a *totalAcc) Merge(r *query.Record) { a.total += a.col.Val(r) }
-func (a *totalAcc) Value() float64        { return float64(a.total) }
-func (a *totalAcc) Quantiles() []float64  { return nil }
+func (a *totalAcc) Merge(r *query.Record) {
+	a.total += a.col.Val(r)
+}
+
+func (a *totalAcc) Value() float64 {
+	return float64(a.total)
+}
+
+func (a *totalAcc) Quantiles() []float64 {
+	return nil
+}
+
+func (a *totalAcc) NotExists() uint64 {
+	return 0
+}
 
 type minExpr struct {
 	min query.Column[float64]
+	ne  query.Column[uint64]
 }
 
-func (e minExpr) NewAcc() AggAcc { return &minAcc{col: e.min} }
-func (e minExpr) SortAsc() bool  { return true }
+func (e minExpr) NewAcc() AggAcc {
+	return &minAcc{notExistsState: notExistsState{col: e.ne}, col: e.min}
+}
+
+func (e minExpr) SortAsc() bool {
+	return true
+}
 
 type minAcc struct {
+	notExistsState
 	col query.Column[float64]
 	v   float64
 	has bool
@@ -75,18 +95,32 @@ func (a *minAcc) Merge(r *query.Record) {
 	if !a.has || v < a.v {
 		a.v, a.has = v, true
 	}
+	a.mergeNotExists(r)
 }
-func (a *minAcc) Value() float64       { return a.v }
-func (a *minAcc) Quantiles() []float64 { return nil }
+
+func (a *minAcc) Value() float64 {
+	return a.v
+}
+
+func (a *minAcc) Quantiles() []float64 {
+	return nil
+}
 
 type maxExpr struct {
 	max query.Column[float64]
+	ne  query.Column[uint64]
 }
 
-func (e maxExpr) NewAcc() AggAcc { return &maxAcc{col: e.max} }
-func (e maxExpr) SortAsc() bool  { return false }
+func (e maxExpr) NewAcc() AggAcc {
+	return &maxAcc{notExistsState: notExistsState{col: e.ne}, col: e.max}
+}
+
+func (e maxExpr) SortAsc() bool {
+	return false
+}
 
 type maxAcc struct {
+	notExistsState
 	col query.Column[float64]
 	v   float64
 	has bool
@@ -97,37 +131,65 @@ func (a *maxAcc) Merge(r *query.Record) {
 	if !a.has || v > a.v {
 		a.v, a.has = v, true
 	}
+	a.mergeNotExists(r)
 }
-func (a *maxAcc) Value() float64       { return a.v }
-func (a *maxAcc) Quantiles() []float64 { return nil }
+
+func (a *maxAcc) Value() float64 {
+	return a.v
+}
+
+func (a *maxAcc) Quantiles() []float64 {
+	return nil
+}
 
 type sumExpr struct {
 	sum query.Column[float64]
+	ne  query.Column[uint64]
 }
 
-func (e sumExpr) NewAcc() AggAcc { return &sumAcc{col: e.sum} }
-func (e sumExpr) SortAsc() bool  { return false }
+func (e sumExpr) NewAcc() AggAcc {
+	return &sumAcc{notExistsState: notExistsState{col: e.ne}, col: e.sum}
+}
+
+func (e sumExpr) SortAsc() bool {
+	return false
+}
 
 type sumAcc struct {
+	notExistsState
 	col query.Column[float64]
 	sum float64
 }
 
-func (a *sumAcc) Merge(r *query.Record) { a.sum += a.col.Val(r) }
-func (a *sumAcc) Value() float64        { return a.sum }
-func (a *sumAcc) Quantiles() []float64  { return nil }
+func (a *sumAcc) Merge(r *query.Record) {
+	a.sum += a.col.Val(r)
+	a.mergeNotExists(r)
+}
+
+func (a *sumAcc) Value() float64 {
+	return a.sum
+}
+
+func (a *sumAcc) Quantiles() []float64 {
+	return nil
+}
 
 type avgExpr struct {
 	sum   query.Column[float64]
 	total query.Column[uint64]
+	ne    query.Column[uint64]
 }
 
 func (e avgExpr) NewAcc() AggAcc {
-	return &avgAcc{colSum: e.sum, colTotal: e.total}
+	return &avgAcc{notExistsState: notExistsState{col: e.ne}, colSum: e.sum, colTotal: e.total}
 }
-func (e avgExpr) SortAsc() bool { return false }
+
+func (e avgExpr) SortAsc() bool {
+	return false
+}
 
 type avgAcc struct {
+	notExistsState
 	colSum   query.Column[float64]
 	colTotal query.Column[uint64]
 	sum      float64
@@ -137,28 +199,42 @@ type avgAcc struct {
 func (a *avgAcc) Merge(r *query.Record) {
 	a.sum += a.colSum.Val(r)
 	a.total += a.colTotal.Val(r)
+	a.mergeNotExists(r)
 }
+
 func (a *avgAcc) Value() float64 {
 	if a.total != 0 {
 		return a.sum / float64(a.total)
 	}
 	return 0
 }
-func (a *avgAcc) Quantiles() []float64 { return nil }
+
+func (a *avgAcc) Quantiles() []float64 {
+	return nil
+}
 
 type quantileExpr struct {
 	colMin     query.Column[float64]
 	colMax     query.Column[float64]
 	colSamples query.Column[[]float64]
+	ne         query.Column[uint64]
 	quantiles  []float64
 }
 
 func (e quantileExpr) NewAcc() AggAcc {
-	return &quantileAcc{expr: e, cont: seq.NewSamplesContainers()}
+	return &quantileAcc{
+		notExistsState: notExistsState{col: e.ne},
+		expr:           e,
+		cont:           seq.NewSamplesContainers(),
+	}
 }
-func (e quantileExpr) SortAsc() bool { return false }
+
+func (e quantileExpr) SortAsc() bool {
+	return false
+}
 
 type quantileAcc struct {
+	notExistsState
 	expr quantileExpr
 	cont *seq.SamplesContainer
 	has  bool
@@ -176,8 +252,13 @@ func (a *quantileAcc) Merge(r *query.Record) {
 	for _, v := range a.expr.colSamples.Val(r) {
 		a.cont.InsertSample(v)
 	}
+	a.mergeNotExists(r)
 }
-func (a *quantileAcc) Value() float64 { return a.Quantiles()[0] }
+
+func (a *quantileAcc) Value() float64 {
+	return a.Quantiles()[0]
+}
+
 func (a *quantileAcc) Quantiles() []float64 {
 	qs := make([]float64, 0, len(a.expr.quantiles))
 	for _, q := range a.expr.quantiles {
@@ -188,12 +269,19 @@ func (a *quantileAcc) Quantiles() []float64 {
 
 type uniqueCountExpr struct {
 	values query.Column[[]string]
+	ne     query.Column[uint64]
 }
 
-func (e uniqueCountExpr) NewAcc() AggAcc { return &uniqueCountAcc{col: e.values} }
-func (e uniqueCountExpr) SortAsc() bool  { return false }
+func (e uniqueCountExpr) NewAcc() AggAcc {
+	return &uniqueCountAcc{notExistsState: notExistsState{col: e.ne}, col: e.values}
+}
+
+func (e uniqueCountExpr) SortAsc() bool {
+	return false
+}
 
 type uniqueCountAcc struct {
+	notExistsState
 	col    query.Column[[]string]
 	values map[string]struct{}
 }
@@ -205,9 +293,16 @@ func (a *uniqueCountAcc) Merge(r *query.Record) {
 	for _, v := range a.col.Val(r) {
 		a.values[v] = struct{}{}
 	}
+	a.mergeNotExists(r)
 }
-func (a *uniqueCountAcc) Value() float64       { return float64(len(a.values)) }
-func (a *uniqueCountAcc) Quantiles() []float64 { return nil }
+
+func (a *uniqueCountAcc) Value() float64 {
+	return float64(len(a.values))
+}
+
+func (a *uniqueCountAcc) Quantiles() []float64 {
+	return nil
+}
 
 // newAggExpr builds the expression for fn, resolving input columns from the schema.
 func newAggExpr(fn seq.AggFunc, in *query.Schema, quantiles []float64) (AggExpr, error) {
@@ -223,19 +318,31 @@ func newAggExpr(fn seq.AggFunc, in *query.Schema, quantiles []float64) (AggExpr,
 		if err != nil {
 			return nil, err
 		}
-		return minExpr{col}, nil
+		ne, err := in.Column[uint64]("not_exists")
+		if err != nil {
+			return nil, err
+		}
+		return minExpr{col, ne}, nil
 	case seq.AggFuncMax:
 		col, err := in.Column[float64]("max")
 		if err != nil {
 			return nil, err
 		}
-		return maxExpr{col}, nil
+		ne, err := in.Column[uint64]("not_exists")
+		if err != nil {
+			return nil, err
+		}
+		return maxExpr{col, ne}, nil
 	case seq.AggFuncSum:
 		col, err := in.Column[float64]("sum")
 		if err != nil {
 			return nil, err
 		}
-		return sumExpr{col}, nil
+		ne, err := in.Column[uint64]("not_exists")
+		if err != nil {
+			return nil, err
+		}
+		return sumExpr{col, ne}, nil
 	case seq.AggFuncAvg:
 		sum, err := in.Column[float64]("sum")
 		if err != nil {
@@ -245,7 +352,11 @@ func newAggExpr(fn seq.AggFunc, in *query.Schema, quantiles []float64) (AggExpr,
 		if err != nil {
 			return nil, err
 		}
-		return avgExpr{sum, total}, nil
+		ne, err := in.Column[uint64]("not_exists")
+		if err != nil {
+			return nil, err
+		}
+		return avgExpr{sum, total, ne}, nil
 	case seq.AggFuncQuantile:
 		if len(quantiles) == 0 {
 			return nil, fmt.Errorf("BUG: empty quantiles")
@@ -262,13 +373,21 @@ func newAggExpr(fn seq.AggFunc, in *query.Schema, quantiles []float64) (AggExpr,
 		if err != nil {
 			return nil, err
 		}
-		return quantileExpr{cmin, cmax, csamples, quantiles}, nil
+		ne, err := in.Column[uint64]("not_exists")
+		if err != nil {
+			return nil, err
+		}
+		return quantileExpr{cmin, cmax, csamples, ne, quantiles}, nil
 	case seq.AggFuncUniqueCount:
 		values, err := in.Column[[]string]("values")
 		if err != nil {
 			return nil, err
 		}
-		return uniqueCountExpr{values}, nil
+		ne, err := in.Column[uint64]("not_exists")
+		if err != nil {
+			return nil, err
+		}
+		return uniqueCountExpr{values, ne}, nil
 	default:
 		return nil, fmt.Errorf("unimplemented aggregation func")
 	}

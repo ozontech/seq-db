@@ -37,9 +37,8 @@ type DistributedAggregator struct {
 	// same buckets will enable multi-agg later.
 	expr AggExpr
 
-	colGroupKey  query.Column[string]
-	colNotExists *query.Column[uint64]
-	colTs        *query.Column[uint64] // nil for non-timeseries aggregations
+	colGroupKey query.Column[string]
+	colTs       *query.Column[uint64] // nil for non-timeseries aggregations
 
 	outSchema *query.Schema
 
@@ -62,14 +61,13 @@ func NewDistributedAggregator(
 
 	colTs := query.OptionalColumn[uint64](in, "ts")
 	return &DistributedAggregator{
-		inputs:       inputs,
-		expr:         expr,
-		colGroupKey:  in.MustColumn[string]("token"),
-		colTs:        colTs,
-		colNotExists: query.OptionalColumn[uint64](in, "not_exists"),
-		outSchema:    query.AggResultSchemaFor(aggFunc, colTs != nil),
-		buckets:      make(map[aggKey]AggAcc),
-		sortingBuf:   make([]*query.Record, 0),
+		inputs:      inputs,
+		expr:        expr,
+		colGroupKey: in.MustColumn[string]("token"),
+		colTs:       colTs,
+		outSchema:   query.AggResultSchemaFor(aggFunc, colTs != nil),
+		buckets:     make(map[aggKey]AggAcc),
+		sortingBuf:  make([]*query.Record, 0),
 	}
 }
 
@@ -88,11 +86,7 @@ func (a *DistributedAggregator) Next() *query.Record {
 
 	if a.state == ExecutorStateProcessingData {
 		for key, acc := range a.buckets {
-			var notExists uint64
-			if ne, ok := acc.(NotExists); ok {
-				notExists = ne.NotExists()
-			}
-			a.sortingBuf = append(a.sortingBuf, a.makeRecord(key, acc, notExists))
+			a.sortingBuf = append(a.sortingBuf, a.makeRecord(key, acc))
 		}
 
 		a.sortBuckets()
@@ -110,10 +104,10 @@ func (a *DistributedAggregator) Next() *query.Record {
 	return r
 }
 
-func (a *DistributedAggregator) makeRecord(key aggKey, acc AggAcc, notExists uint64) *query.Record {
+func (a *DistributedAggregator) makeRecord(key aggKey, acc AggAcc) *query.Record {
 	vals := make([]*query.RecordVals, 0, a.outSchema.Len())
 	for _, col := range a.outSchema.Cols() {
-		vals = append(vals, a.resultVals(col.Name, key, acc, notExists))
+		vals = append(vals, a.resultVals(col.Name, key, acc, acc.NotExists()))
 	}
 	return query.NewRecord(vals)
 }
@@ -154,9 +148,6 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 		acc, exists := a.buckets[key]
 		if !exists {
 			acc = a.expr.NewAcc()
-			if a.colNotExists != nil {
-				acc = &notExistsAcc{AggAcc: acc, col: a.colNotExists}
-			}
 			a.buckets[key] = acc
 		}
 		acc.Merge(r)
