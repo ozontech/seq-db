@@ -43,8 +43,9 @@ type DistributedAggregator struct {
 	// same buckets will enable multi-agg later.
 	expr AggExpr
 
-	colGroupKey query.Column[string]
-	colTs       *query.Column[uint64] // nil for non-timeseries aggregations
+	colGroupKey  query.Column[string]
+	colNotExists *query.Column[uint64]
+	colTs        *query.Column[uint64] // nil for non-timeseries aggregations
 
 	buckets    map[aggKey]AggAcc
 	sortingBuf []*query.Record
@@ -64,12 +65,13 @@ func NewDistributedAggregator(
 	}
 
 	return &DistributedAggregator{
-		inputs:      inputs,
-		expr:        expr,
-		colGroupKey: in.MustColumn[string]("token"),
-		colTs:       optionalColumn[uint64](in, "ts"),
-		buckets:     make(map[aggKey]AggAcc),
-		sortingBuf:  make([]*query.Record, 0),
+		inputs:       inputs,
+		expr:         expr,
+		colGroupKey:  in.MustColumn[string]("token"),
+		colTs:        optionalColumn[uint64](in, "ts"),
+		colNotExists: optionalColumn[uint64](in, "not_exists"),
+		buckets:      make(map[aggKey]AggAcc),
+		sortingBuf:   make([]*query.Record, 0),
 	}
 }
 
@@ -88,12 +90,17 @@ func (a *DistributedAggregator) Next() *query.Record {
 
 	if a.state == ExecutorStateProcessingData {
 		for key, acc := range a.buckets {
+			var notExists uint64
+			if ne, ok := acc.(NotExists); ok {
+				notExists = ne.NotExists()
+			}
 			// val order must match query.AggResultSchema
 			a.sortingBuf = append(a.sortingBuf, query.NewRecord([]*query.RecordVals{
 				query.NewStringVals(key.token),
 				query.NewFloat64Vals(acc.Value()),
 				query.NewUint64Vals(key.ts),
 				query.NewFloat64ArrayVals(acc.Quantiles()),
+				query.NewUint64Vals(notExists),
 			}))
 		}
 
@@ -131,6 +138,9 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 		acc, exists := a.buckets[key]
 		if !exists {
 			acc = a.expr.NewAcc()
+			if a.colNotExists != nil {
+				acc = &notExistsAcc{AggAcc: acc, col: a.colNotExists}
+			}
 			a.buckets[key] = acc
 		}
 		acc.Merge(r)
@@ -140,7 +150,7 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 }
 
 func (a *DistributedAggregator) Finalize() *query.Summary {
-	var total uint64
+	var total, notExists uint64
 	var firstErr error
 	for _, i := range a.inputs {
 		s := i.Finalize()
@@ -148,11 +158,12 @@ func (a *DistributedAggregator) Finalize() *query.Summary {
 			continue
 		}
 		total += s.Total
+		notExists += s.NotExists
 		if firstErr == nil && s.Err != nil {
 			firstErr = s.Err
 		}
 	}
-	return &query.Summary{Total: total, Err: firstErr}
+	return &query.Summary{Total: total, NotExists: notExists, Err: firstErr}
 }
 
 func optionalColumn[T any](s *query.Schema, name string) *query.Column[T] {

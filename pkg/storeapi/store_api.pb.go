@@ -2470,10 +2470,13 @@ func (x *Record) GetRawData() [][]byte {
 }
 
 type ResponseSummary struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Total         uint64                 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
-	Error         *Error                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
-	Explain       *ExplainEntry          `protobuf:"bytes,3,opt,name=explain,proto3,oneof" json:"explain,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Total   uint64                 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
+	Error   *Error                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	Explain *ExplainEntry          `protobuf:"bytes,3,opt,name=explain,proto3,oneof" json:"explain,omitempty"`
+	// Aggregation-level not_exists: documents where the aggregated field
+	// exists but the group-by token does not. Zero for document streams.
+	NotExists     int64 `protobuf:"varint,4,opt,name=not_exists,json=notExists,proto3" json:"not_exists,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2527,6 +2530,13 @@ func (x *ResponseSummary) GetExplain() *ExplainEntry {
 		return x.Explain
 	}
 	return nil
+}
+
+func (x *ResponseSummary) GetNotExists() int64 {
+	if x != nil {
+		return x.NotExists
+	}
+	return 0
 }
 
 type Error struct {
@@ -3204,12 +3214,14 @@ const file_storeapi_store_api_proto_rawDesc = "" +
 	"\fRecordsBatch\x12%\n" +
 	"\arecords\x18\x01 \x03(\v2\v.api.RecordR\arecords\"#\n" +
 	"\x06Record\x12\x19\n" +
-	"\braw_data\x18\x01 \x03(\fR\arawData\"\x87\x01\n" +
+	"\braw_data\x18\x01 \x03(\fR\arawData\"\xa6\x01\n" +
 	"\x0fResponseSummary\x12\x14\n" +
 	"\x05total\x18\x01 \x01(\x04R\x05total\x12 \n" +
 	"\x05error\x18\x02 \x01(\v2\n" +
 	".api.ErrorR\x05error\x120\n" +
-	"\aexplain\x18\x03 \x01(\v2\x11.api.ExplainEntryH\x00R\aexplain\x88\x01\x01B\n" +
+	"\aexplain\x18\x03 \x01(\v2\x11.api.ExplainEntryH\x00R\aexplain\x88\x01\x01\x12\x1d\n" +
+	"\n" +
+	"not_exists\x18\x04 \x01(\x03R\tnotExistsB\n" +
 	"\n" +
 	"\b_explain\"K\n" +
 	"\x05Error\x12(\n" +

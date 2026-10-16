@@ -132,6 +132,9 @@ func (g *grpcV1) useStreamSearch(
 	if summary == nil {
 		summary = &query.Summary{}
 	}
+	if len(aggs) == 1 {
+		aggs[0].NotExists = int64(summary.NotExists)
+	}
 	if partialErr != nil && summary.Err == nil {
 		summary.Err = partialErr
 	}
@@ -178,8 +181,9 @@ func readAggregations(storesStream query.RecordProducer) []*seqproxyapi.Aggregat
 	buckets := make([]*seqproxyapi.Aggregation_Bucket, 0)
 	for r := storesStream.Next(); r != nil; r = storesStream.Next() {
 		bucket := &seqproxyapi.Aggregation_Bucket{
-			Key:   aggKeyCol.Val(r),
-			Value: aggValueCol.Val(r),
+			Key:       aggKeyCol.Val(r),
+			Value:     aggValueCol.Val(r),
+			NotExists: int64(aggNotExistsCol.Val(r)),
 		}
 		if ts := aggTsCol.Val(r); ts != consts.DummyMID {
 			bucket.Ts = timestamppb.New(seq.MID(ts).Time())

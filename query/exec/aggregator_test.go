@@ -143,6 +143,48 @@ func TestDistributedAggregatorSumTimeseries(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+func TestDistributedAggregatorNotExists(t *testing.T) {
+	makeRec := func(token string, sum float64, notExists uint64) *query.Record {
+		return query.NewRecord([]*query.RecordVals{
+			query.NewStringVals(token),
+			query.NewFloat64Vals(sum),
+			query.NewUint64Vals(notExists),
+		})
+	}
+
+	in1 := &testProducer{data: []*query.Record{
+		makeRec("a", 10, 1),
+		makeRec("b", 1, 2),
+	}}
+	in2 := &testProducer{data: []*query.Record{
+		makeRec("a", 20, 3),
+		makeRec("c", 9, 4),
+	}}
+
+	a := newTestAgg(seq.AggFuncSum, false, nil, in1, in2)
+	// nolint:unused // fields are checked but not directly
+	type out struct {
+		key       string
+		value     float64
+		notExists uint64
+	}
+	got := make([]out, 0)
+	for r := a.Next(); r != nil; r = a.Next() {
+		got = append(got, out{
+			key:       r.Vals[0].AsString(),
+			value:     r.Vals[1].AsFloat64(),
+			notExists: r.Vals[4].AsUint64(),
+		})
+	}
+
+	want := []out{
+		{"a", 30, 4},
+		{"c", 9, 4},
+		{"b", 1, 2},
+	}
+	assert.Equal(t, want, got)
+}
+
 // TestDistributedAggregatorMinMergeAcrossShards checks that min/max are reduced
 // across shards sharing a bin and that Min sorts ascending by value.
 func TestDistributedAggregatorMinMergeAcrossShards(t *testing.T) {
@@ -231,8 +273,8 @@ func TestDistributedAggregator_UniqueCount(t *testing.T) {
 }
 
 func TestDistributedAggregatorFinalize(t *testing.T) {
-	in1 := &testProducer{data: nil, total: 40}
-	in2 := &testProducer{data: nil, total: 60}
+	in1 := &testProducer{data: nil, total: 40, notExists: 2}
+	in2 := &testProducer{data: nil, total: 60, notExists: 3}
 	agg := newTestAgg(seq.AggFuncCount, false, nil, in1, in2)
 	for r := agg.Next(); r != nil; r = agg.Next() {
 		t.Fatalf("unexpected record: %v", r)
@@ -240,6 +282,7 @@ func TestDistributedAggregatorFinalize(t *testing.T) {
 	summary := agg.Finalize()
 	assert.NotNil(t, summary)
 	assert.Equal(t, uint64(100), summary.Total)
+	assert.Equal(t, uint64(5), summary.NotExists)
 	assert.Nil(t, summary.Err)
 }
 

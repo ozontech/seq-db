@@ -348,6 +348,9 @@ message ResponseSummary {
   uint64 total = 1;
   Error error = 2;
   optional ExplainEntry explain = 3;
+  // Aggregation-level not_exists: documents where the aggregated field
+  // exists but the group-by token does not. Zero for document streams.
+  int64 not_exists = 4;
 }
 
 message Error {
