@@ -65,10 +65,11 @@ func TestLimiterNoLimit(t *testing.T) {
 }
 
 type testProducer struct {
-	data  []*query.Record
-	cur   int
-	total uint64
-	err   error
+	data      []*query.Record
+	cur       int
+	total     uint64
+	notExists uint64
+	err       error
 }
 
 func (p *testProducer) Next() *query.Record {
@@ -83,10 +84,10 @@ func (p *testProducer) Next() *query.Record {
 }
 
 func (p *testProducer) Finalize() *query.Summary {
-	if p.total == 0 && p.err == nil {
+	if p.total == 0 && p.notExists == 0 && p.err == nil {
 		return nil
 	}
-	return &query.Summary{Total: p.total, Err: p.err}
+	return &query.Summary{Total: p.total, NotExists: p.notExists, Err: p.err}
 }
 
 func makeTestInputRecords(count int) []*query.Record {
