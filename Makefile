@@ -108,7 +108,7 @@ ci-tests-race: test-deps
 # run diff lint like in pipeline
 .lint:
 	$(info Running lint...)
-	GOBIN=$(LOCAL_BIN) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.1 run \
+	GOBIN=$(LOCAL_BIN) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run \
 		--config=.golangci.yaml ./...
 
 .PHONY: lint
