@@ -618,7 +618,6 @@ type SourcedNodeIterator struct {
 	sourcesBuf []int
 }
 
-// SourcedIterator is implemented by source iterators, with or without token value caching.
 type SourcedIterator interface {
 	ConsumeTokenSource(lids []node.LID) ([]int, error)
 	ValueBySource(source uint32) string
@@ -690,6 +689,7 @@ func (s *SourcedNodeIterator) Dispose() {
 }
 
 // TokenCachingSourcedNodeIterator caches token values for aggregators that resolve them repeatedly.
+// It can also prefetch all values of touched sources/TIDS into a tokensCache to minimize random IO.
 type TokenCachingSourcedNodeIterator struct {
 	*SourcedNodeIterator
 
