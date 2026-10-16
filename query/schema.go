@@ -148,6 +148,7 @@ var (
 		ColumnDesc{Name: "value", Type: DataTypeFloat64},
 		ColumnDesc{Name: "ts", Type: DataTypeUint64},
 		ColumnDesc{Name: "quantiles", Type: DataTypeFloat64Array},
+		ColumnDesc{Name: "not_exists", Type: DataTypeUint64},
 	)
 )
 
@@ -167,15 +168,25 @@ func aggInputColsFor(fn seq.AggFunc) []ColumnDesc {
 	case seq.AggFuncCount, seq.AggFuncUnique:
 		return []ColumnDesc{{Name: "total", Type: DataTypeUint64}}
 	case seq.AggFuncMin:
-		return []ColumnDesc{{Name: "min", Type: DataTypeFloat64}}
+		return []ColumnDesc{
+			{Name: "min", Type: DataTypeFloat64},
+			{Name: "not_exists", Type: DataTypeUint64},
+		}
 	case seq.AggFuncMax:
-		return []ColumnDesc{{Name: "max", Type: DataTypeFloat64}}
+		return []ColumnDesc{
+			{Name: "max", Type: DataTypeFloat64},
+			{Name: "not_exists", Type: DataTypeUint64},
+		}
 	case seq.AggFuncSum:
-		return []ColumnDesc{{Name: "sum", Type: DataTypeFloat64}}
+		return []ColumnDesc{
+			{Name: "sum", Type: DataTypeFloat64},
+			{Name: "not_exists", Type: DataTypeUint64},
+		}
 	case seq.AggFuncAvg:
 		return []ColumnDesc{
 			{Name: "sum", Type: DataTypeFloat64},
 			{Name: "total", Type: DataTypeUint64},
+			{Name: "not_exists", Type: DataTypeUint64},
 		}
 	case seq.AggFuncQuantile:
 		// min and max are used for q=0/q=1.
@@ -183,9 +194,13 @@ func aggInputColsFor(fn seq.AggFunc) []ColumnDesc {
 			{Name: "min", Type: DataTypeFloat64},
 			{Name: "max", Type: DataTypeFloat64},
 			{Name: "samples", Type: DataTypeFloat64Array},
+			{Name: "not_exists", Type: DataTypeUint64},
 		}
 	case seq.AggFuncUniqueCount:
-		return []ColumnDesc{{Name: "values", Type: DataTypeStringArray}}
+		return []ColumnDesc{
+			{Name: "values", Type: DataTypeStringArray},
+			{Name: "not_exists", Type: DataTypeUint64},
+		}
 	}
 	return nil
 }
