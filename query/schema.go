@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+
+	"github.com/ozontech/seq-db/seq"
 )
 
 type ColumnDesc struct {
@@ -141,17 +143,6 @@ var (
 		ColumnDesc{Name: DocsIDCol, Type: DataTypeSeqID},
 		ColumnDesc{Name: DocsDataCol, Type: DataTypeDocument},
 	)
-	AggsSchema = MustNewSchema(
-		ColumnDesc{Name: "token", Type: DataTypeString},
-		ColumnDesc{Name: "min", Type: DataTypeFloat64},
-		ColumnDesc{Name: "max", Type: DataTypeFloat64},
-		ColumnDesc{Name: "sum", Type: DataTypeFloat64},
-		ColumnDesc{Name: "total", Type: DataTypeUint64},
-		ColumnDesc{Name: "not_exists", Type: DataTypeUint64},
-		ColumnDesc{Name: "ts", Type: DataTypeUint64},
-		ColumnDesc{Name: "samples", Type: DataTypeFloat64Array},
-		ColumnDesc{Name: "values", Type: DataTypeStringArray},
-	)
 	AggResultSchema = MustNewSchema(
 		ColumnDesc{Name: "token", Type: DataTypeString},
 		ColumnDesc{Name: "value", Type: DataTypeFloat64},
@@ -159,3 +150,42 @@ var (
 		ColumnDesc{Name: "quantiles", Type: DataTypeFloat64Array},
 	)
 )
+
+func AggsSchemaFor(fn seq.AggFunc, timeseries bool) *Schema {
+	inputCols := aggInputColsFor(fn)
+	cols := make([]ColumnDesc, 0, 2+len(inputCols))
+	cols = append(cols, ColumnDesc{Name: "token", Type: DataTypeString})
+	if timeseries {
+		cols = append(cols, ColumnDesc{Name: "ts", Type: DataTypeUint64})
+	}
+	cols = append(cols, inputCols...)
+	return MustNewSchema(cols...)
+}
+
+func aggInputColsFor(fn seq.AggFunc) []ColumnDesc {
+	switch fn {
+	case seq.AggFuncCount, seq.AggFuncUnique:
+		return []ColumnDesc{{Name: "total", Type: DataTypeUint64}}
+	case seq.AggFuncMin:
+		return []ColumnDesc{{Name: "min", Type: DataTypeFloat64}}
+	case seq.AggFuncMax:
+		return []ColumnDesc{{Name: "max", Type: DataTypeFloat64}}
+	case seq.AggFuncSum:
+		return []ColumnDesc{{Name: "sum", Type: DataTypeFloat64}}
+	case seq.AggFuncAvg:
+		return []ColumnDesc{
+			{Name: "sum", Type: DataTypeFloat64},
+			{Name: "total", Type: DataTypeUint64},
+		}
+	case seq.AggFuncQuantile:
+		// min and max are used for q=0/q=1.
+		return []ColumnDesc{
+			{Name: "min", Type: DataTypeFloat64},
+			{Name: "max", Type: DataTypeFloat64},
+			{Name: "samples", Type: DataTypeFloat64Array},
+		}
+	case seq.AggFuncUniqueCount:
+		return []ColumnDesc{{Name: "values", Type: DataTypeStringArray}}
+	}
+	return nil
+}

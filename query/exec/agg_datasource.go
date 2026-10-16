@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -28,6 +29,8 @@ type AggDataSource struct {
 	fracManager *fracmanager.FracManager
 	searcher    *fracmanager.Searcher
 
+	schema *query.Schema
+
 	agg         *storeapi.SearchResponse_Agg
 	aggsScanned bool
 
@@ -50,6 +53,7 @@ func NewAggDataSource(
 	searchParams processor.SearchParams,
 	fracManager *fracmanager.FracManager,
 	searcher *fracmanager.Searcher,
+	schema *query.Schema,
 ) *AggDataSource {
 	if ctx == nil {
 		ctx = context.Background()
@@ -61,6 +65,7 @@ func NewAggDataSource(
 		searchParams: searchParams,
 		fracManager:  fracManager,
 		searcher:     searcher,
+		schema:       schema,
 	}
 }
 
@@ -77,7 +82,7 @@ func (a *AggDataSource) Next() *query.Record {
 		return nil
 	}
 
-	record := makeAggRecord(a.agg.Timeseries[a.curIdx], a.agg.ValuesPool)
+	record := a.makeRecord(a.agg.Timeseries[a.curIdx], a.agg.ValuesPool)
 
 	a.curIdx++
 
@@ -121,12 +126,11 @@ func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
 
 	for bin, hist := range from {
 		pbhist := &storeapi.SearchResponse_Histogram{
-			Min:       hist.Min,
-			Max:       hist.Max,
-			Sum:       hist.Sum,
-			Total:     hist.Total,
-			Samples:   hist.Samples,
-			NotExists: hist.NotExists,
+			Min:     hist.Min,
+			Max:     hist.Max,
+			Sum:     hist.Sum,
+			Total:   hist.Total,
+			Samples: hist.Samples,
 		}
 
 		if len(hist.Values) > 0 {
@@ -154,27 +158,43 @@ func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
 	return agg
 }
 
-func makeAggRecord(bin *storeapi.SearchResponse_Bin, valuesPool []string) *query.Record {
-	// For unique_count, the store holds unique field values as indices into the per-agg ValuesPool.
-	// Resolve them to strings here so each record is self-contained, no shared pool.
-	var values []string
-	if len(bin.Hist.Values) > 0 && len(valuesPool) > 0 {
-		values = make([]string, 0, len(bin.Hist.Values))
-		for _, idx := range bin.Hist.Values {
-			values = append(values, valuesPool[idx])
-		}
+func (a *AggDataSource) makeRecord(bin *storeapi.SearchResponse_Bin, valuesPool []string) *query.Record {
+	vals := make([]*query.RecordVals, 0, a.schema.Len())
+	for _, col := range a.schema.Cols() {
+		vals = append(vals, aggColumnVals(col.Name, bin, valuesPool))
 	}
-	return &query.Record{
-		Vals: []*query.RecordVals{
-			query.NewStringVals(bin.Label),
-			query.NewFloat64Vals(bin.Hist.Min),
-			query.NewFloat64Vals(bin.Hist.Max),
-			query.NewFloat64Vals(bin.Hist.Sum),
-			query.NewUint64Vals(uint64(bin.Hist.Total)),
-			query.NewUint64Vals(uint64(bin.Hist.NotExists)),
-			query.NewUint64Vals(uint64(bin.Ts.AsTime().UnixNano())),
-			query.NewFloat64ArrayVals(bin.Hist.Samples),
-			query.NewStringArrayVals(values),
-		},
+	return &query.Record{Vals: vals}
+}
+
+func aggColumnVals(name string, bin *storeapi.SearchResponse_Bin, valuesPool []string) *query.RecordVals {
+	switch name {
+	case "token":
+		return query.NewStringVals(bin.Label)
+	case "ts":
+		return query.NewUint64Vals(uint64(bin.Ts.AsTime().UnixNano()))
+	case "min":
+		return query.NewFloat64Vals(bin.Hist.Min)
+	case "max":
+		return query.NewFloat64Vals(bin.Hist.Max)
+	case "sum":
+		return query.NewFloat64Vals(bin.Hist.Sum)
+	case "total":
+		return query.NewUint64Vals(uint64(bin.Hist.Total))
+	case "samples":
+		return query.NewFloat64ArrayVals(bin.Hist.Samples)
+	case "values":
+		// For unique_count, the store holds unique field values as indices into
+		// the per-agg ValuesPool. Resolve them to strings here so each record is
+		// self-contained, no shared pool.
+		var values []string
+		if len(bin.Hist.Values) > 0 && len(valuesPool) > 0 {
+			values = make([]string, 0, len(bin.Hist.Values))
+			for _, idx := range bin.Hist.Values {
+				values = append(values, valuesPool[idx])
+			}
+		}
+		return query.NewStringArrayVals(values)
+	default:
+		panic(fmt.Errorf("BUG: unknown aggregation column %q", name))
 	}
 }

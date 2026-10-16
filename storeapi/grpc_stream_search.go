@@ -351,6 +351,7 @@ func (g *GrpcV1) buildProducer(
 			searchParams,
 			g.fracManager,
 			g.searchData.searcher,
+			p.Schema,
 		)
 		// don't allow aggs post processing yet
 		return producer, p.Schema, nil

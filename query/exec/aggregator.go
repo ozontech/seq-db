@@ -19,18 +19,6 @@ const (
 	ExecutorStateDone
 )
 
-// Input and output columns are resolved from existing hardcoded schemas.
-var (
-	aggColTokenIn   = query.AggsSchema.MustColumn[string]("token")
-	aggColMinIn     = query.AggsSchema.MustColumn[float64]("min")
-	aggColMaxIn     = query.AggsSchema.MustColumn[float64]("max")
-	aggColSumIn     = query.AggsSchema.MustColumn[float64]("sum")
-	aggColTotalIn   = query.AggsSchema.MustColumn[uint64]("total")
-	aggColTsIn      = query.AggsSchema.MustColumn[uint64]("ts")
-	aggColSamplesIn = query.AggsSchema.MustColumn[[]float64]("samples")
-	aggColValuesIn  = query.AggsSchema.MustColumn[[]string]("values")
-)
-
 var (
 	aggColTokenOut = query.AggResultSchema.MustColumn[string]("token")
 	aggColValueOut = query.AggResultSchema.MustColumn[float64]("value")
@@ -51,29 +39,37 @@ type DistributedAggregator struct {
 
 	mu sync.Mutex
 
-	aggFunc   seq.AggFunc
-	quantiles []float64
+	// expr holds the per-func specifics. a list of expressions over the
+	// same buckets will enable multi-agg later.
+	expr AggExpr
 
-	buckets    map[aggKey]*seq.SamplesContainer
+	colGroupKey query.Column[string]
+	colTs       *query.Column[uint64] // nil for non-timeseries aggregations
+
+	buckets    map[aggKey]AggAcc
 	sortingBuf []*query.Record
-
-	// values holds the unique field-value sets per bucket for unique count.
-	values map[aggKey]map[string]struct{}
 
 	curIdx int
 }
 
 func NewDistributedAggregator(
 	inputs []query.RecordProducer,
+	in *query.Schema,
 	aggFunc seq.AggFunc,
 	quantiles []float64,
 ) *DistributedAggregator {
+	expr, err := newAggExpr(aggFunc, in, quantiles)
+	if err != nil {
+		panic(fmt.Errorf("BUG: can't execute newAggExpr: %v", err))
+	}
+
 	return &DistributedAggregator{
-		inputs:     inputs,
-		aggFunc:    aggFunc,
-		quantiles:  quantiles,
-		buckets:    make(map[aggKey]*seq.SamplesContainer),
-		sortingBuf: make([]*query.Record, 0),
+		inputs:      inputs,
+		expr:        expr,
+		colGroupKey: in.MustColumn[string]("token"),
+		colTs:       optionalColumn[uint64](in, "ts"),
+		buckets:     make(map[aggKey]AggAcc),
+		sortingBuf:  make([]*query.Record, 0),
 	}
 }
 
@@ -91,48 +87,17 @@ func (a *DistributedAggregator) Next() *query.Record {
 	}
 
 	if a.state == ExecutorStateProcessingData {
-		for key, bucket := range a.buckets {
-			var value float64
-			var quantiles []float64
-
-			switch a.aggFunc {
-			case seq.AggFuncCount, seq.AggFuncUnique:
-				value = float64(bucket.Total)
-			case seq.AggFuncUniqueCount:
-				value = float64(len(a.values[key]))
-			case seq.AggFuncSum:
-				value = bucket.Sum
-			case seq.AggFuncMin:
-				value = bucket.Min
-			case seq.AggFuncMax:
-				value = bucket.Max
-			case seq.AggFuncAvg:
-				if bucket.Total != 0 {
-					value = bucket.Sum / float64(bucket.Total)
-				}
-			case seq.AggFuncQuantile:
-				if len(a.quantiles) == 0 {
-					panic(fmt.Errorf("BUG: empty quantiles"))
-				}
-				quantiles = make([]float64, 0, len(a.quantiles))
-				for _, q := range a.quantiles {
-					quantiles = append(quantiles, bucket.Quantile(q))
-				}
-				value = quantiles[0]
-			default:
-				panic(fmt.Errorf("unimplemented aggregation func"))
-			}
-
+		for key, acc := range a.buckets {
 			// val order must match query.AggResultSchema
 			a.sortingBuf = append(a.sortingBuf, query.NewRecord([]*query.RecordVals{
 				query.NewStringVals(key.token),
-				query.NewFloat64Vals(value),
+				query.NewFloat64Vals(acc.Value()),
 				query.NewUint64Vals(key.ts),
-				query.NewFloat64ArrayVals(quantiles),
+				query.NewFloat64ArrayVals(acc.Quantiles()),
 			}))
 		}
 
-		sortBuckets(a.aggFunc, a.sortingBuf)
+		sortBuckets(a.expr.SortAsc(), a.sortingBuf)
 		a.state = ExecutorStateProducingOutput
 	}
 
@@ -155,46 +120,20 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 		}
 
 		key := aggKey{
-			token: aggColTokenIn.Val(r),
-			ts:    aggColTsIn.Val(r),
+			token: a.colGroupKey.Val(r),
+		}
+		if a.colTs != nil {
+			key.ts = a.colTs.Val(r)
 		}
 
 		a.mu.Lock()
 
-		s, exists := a.buckets[key]
+		acc, exists := a.buckets[key]
 		if !exists {
-			s = seq.NewSamplesContainers()
-			s.Min = aggColMinIn.Val(r)
-			s.Max = aggColMaxIn.Val(r)
-		} else {
-			s.Min = min(s.Min, aggColMinIn.Val(r))
-			s.Max = max(s.Max, aggColMaxIn.Val(r))
+			acc = a.expr.NewAcc()
+			a.buckets[key] = acc
 		}
-
-		s.Sum += aggColSumIn.Val(r)
-		s.Total += int64(aggColTotalIn.Val(r))
-
-		if a.aggFunc == seq.AggFuncQuantile {
-			for _, v := range aggColSamplesIn.Val(r) {
-				s.InsertSample(v)
-			}
-		}
-
-		if a.aggFunc == seq.AggFuncUniqueCount {
-			if a.values == nil {
-				a.values = make(map[aggKey]map[string]struct{})
-			}
-			m, ok := a.values[key]
-			if !ok {
-				m = make(map[string]struct{})
-				a.values[key] = m
-			}
-			for _, v := range aggColValuesIn.Val(r) {
-				m[v] = struct{}{}
-			}
-		}
-
-		a.buckets[key] = s
+		acc.Merge(r)
 
 		a.mu.Unlock()
 	}
@@ -216,31 +155,31 @@ func (a *DistributedAggregator) Finalize() *query.Summary {
 	return &query.Summary{Total: total, Err: firstErr}
 }
 
-func sortBuckets(aggFunc seq.AggFunc, buckets []*query.Record) {
+func optionalColumn[T any](s *query.Schema, name string) *query.Column[T] {
+	c, err := s.Column[T](name)
+	if err != nil {
+		return nil
+	}
+	return &c
+}
+
+func sortBuckets(sortAsc bool, buckets []*query.Record) {
 	// ts is the primary key (ASC), matching seq/qpr.go sortBuckets
 	// where MID comes first. Within the same ts buckets are ordered by value.
-	sortByTsValueDescNameAsc := func(left, right *query.Record) int {
+	valueCmp := func(left, right *query.Record) int {
+		return cmp.Compare(aggColValueOut.Val(right), aggColValueOut.Val(left))
+	}
+	if sortAsc {
+		valueCmp = func(left, right *query.Record) int {
+			return cmp.Compare(aggColValueOut.Val(left), aggColValueOut.Val(right))
+		}
+	}
+
+	slices.SortFunc(buckets, func(left, right *query.Record) int {
 		return cmp.Or(
 			cmp.Compare(aggColTsOut.Val(left), aggColTsOut.Val(right)),
-			cmp.Compare(aggColValueOut.Val(right), aggColValueOut.Val(left)),
+			valueCmp(left, right),
 			cmp.Compare(aggColTokenOut.Val(left), aggColTokenOut.Val(right)),
 		)
-	}
-
-	sortByTsValueNameAsc := func(left, right *query.Record) int {
-		return cmp.Or(
-			cmp.Compare(aggColTsOut.Val(left), aggColTsOut.Val(right)),
-			cmp.Compare(aggColValueOut.Val(left), aggColValueOut.Val(right)),
-			cmp.Compare(aggColTokenOut.Val(left), aggColTokenOut.Val(right)),
-		)
-	}
-
-	sortFunc := sortByTsValueDescNameAsc
-
-	if aggFunc == seq.AggFuncMin {
-		// Sort the MIN aggregation result in ascending order.
-		sortFunc = sortByTsValueNameAsc
-	}
-
-	slices.SortFunc(buckets, sortFunc)
+	})
 }
