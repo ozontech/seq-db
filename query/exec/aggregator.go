@@ -54,15 +54,10 @@ func NewDistributedAggregator(
 	aggFunc seq.AggFunc,
 	quantiles []float64,
 ) *DistributedAggregator {
-	expr, err := newAggExpr(aggFunc, in, quantiles)
-	if err != nil {
-		panic(fmt.Errorf("BUG: can't execute newAggExpr: %v", err))
-	}
-
 	colTs := query.OptionalColumn[uint64](in, "ts")
 	return &DistributedAggregator{
 		inputs:      inputs,
-		expr:        expr,
+		expr:        newAggExpr(aggFunc, in, quantiles),
 		colGroupKey: in.MustColumn[string]("token"),
 		colTs:       colTs,
 		outSchema:   query.AggResultSchemaFor(aggFunc, colTs != nil),

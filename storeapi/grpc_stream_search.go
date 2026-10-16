@@ -29,6 +29,7 @@ import (
 
 // streamSearchBatchSize limits the number of records sent in a single
 // StreamSearchResponse data message.
+// TODO: set this value from config file
 const streamSearchBatchSize = 100
 
 type controlOutcome int

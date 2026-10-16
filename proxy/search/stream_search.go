@@ -431,9 +431,7 @@ func (it *StreamSearchIterator) push(msg *storeapi.StreamSearchResponse) error {
 		it.curBatch = v.Data.GetBatch().GetRecords()
 	case *storeapi.StreamSearchResponse_Summary:
 		it.total = v.Summary.Total
-		if v.Summary.NotExists > 0 {
-			it.aggNotExists = uint64(v.Summary.NotExists)
-		}
+		it.aggNotExists = uint64(v.Summary.NotExists)
 		if v.Summary.Explain != nil {
 			it.tr.AddChildWithSpan(explainEntryToTracerSpan(v.Summary.Explain))
 		}

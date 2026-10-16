@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,12 +32,12 @@ func TestDistributedAggregator_Count(t *testing.T) {
 
 func TestDistributedAggregator_Sum(t *testing.T) {
 	input1 := &testProducer{data: []*query.Record{
-		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key1", 0, 0, 10, 0, 0, nil, nil),
-		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key2", 0, 0, 30, 0, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key1", 0, 0, 10, 1, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key2", 0, 0, 30, 1, 0, nil, nil),
 	}}
 	input2 := &testProducer{data: []*query.Record{
-		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key1", 0, 0, 20, 0, 0, nil, nil),
-		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key2", 0, 0, 40, 0, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key1", 0, 0, 20, 1, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key2", 0, 0, 40, 1, 0, nil, nil),
 	}}
 	agg := newTestAgg(seq.AggFuncSum, false, nil, input1, input2)
 
@@ -121,13 +122,13 @@ func TestDistributedAggregator_EmptyInput(t *testing.T) {
 func TestDistributedAggregatorSumTimeseries(t *testing.T) {
 	const ts1, ts2 uint64 = 1_000_000_000, 2_000_000_000
 	in1 := &testProducer{data: []*query.Record{
-		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "foo", 0, 0, 2, 0, ts1, nil, nil),
-		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "foo", 0, 0, 3, 0, ts2, nil, nil),
-		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "bar", 0, 0, 5, 0, ts1, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "foo", 0, 0, 2, 1, ts1, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "foo", 0, 0, 3, 1, ts2, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "bar", 0, 0, 5, 1, ts1, nil, nil),
 	}}
 	in2 := &testProducer{data: []*query.Record{
-		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "foo", 0, 0, 4, 0, ts1, nil, nil), // same bin as in1[0] -> merged sum 6
-		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "baz", 0, 0, 7, 0, ts2, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "foo", 0, 0, 4, 1, ts1, nil, nil), // same bin as in1[0] -> merged sum 6
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "baz", 0, 0, 7, 1, ts2, nil, nil),
 	}}
 
 	a := newTestAgg(seq.AggFuncSum, true, nil, in1, in2)
@@ -145,9 +146,11 @@ func TestDistributedAggregatorSumTimeseries(t *testing.T) {
 
 func TestDistributedAggregatorNotExists(t *testing.T) {
 	makeRec := func(token string, sum float64, notExists uint64) *query.Record {
+		// sum input schema: [token, sum, total, not_exists]
 		return query.NewRecord([]*query.RecordVals{
 			query.NewStringVals(token),
 			query.NewFloat64Vals(sum),
+			query.NewUint64Vals(1),
 			query.NewUint64Vals(notExists),
 		})
 	}
@@ -261,6 +264,108 @@ func TestDistributedAggregator_UniqueCount(t *testing.T) {
 	assert.Len(t, results, 1)
 	assert.Equal(t, "key", results[0].Vals[0].AsString())
 	assert.Equal(t, float64(4), results[0].Vals[1].AsFloat64())
+}
+
+func TestDistributedAggregatorEmptyShard(t *testing.T) {
+	const ts uint64 = 0
+
+	empty := func(fn seq.AggFunc) *query.Record {
+		return makeAggInputRecord(query.AggsSchemaFor(fn, false), "k", math.NaN(), math.NaN(), 0, 0, ts, nil, nil)
+	}
+
+	tests := []struct {
+		name     string
+		fn       seq.AggFunc
+		quantile []float64
+		real     *query.Record
+		want     float64
+	}{
+		{
+			name: "min ignores empty shard",
+			fn:   seq.AggFuncMin,
+			real: makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMin, false), "k", 7, 0, 0, 0, ts, nil, nil),
+			want: 7,
+		},
+		{
+			name: "max ignores empty shard",
+			fn:   seq.AggFuncMax,
+			real: makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMax, false), "k", 0, 7, 0, 0, ts, nil, nil),
+			want: 7,
+		},
+		{
+			name: "sum ignores empty shard",
+			fn:   seq.AggFuncSum,
+			real: makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "k", 0, 0, 7, 2, ts, nil, nil),
+			want: 7,
+		},
+		{
+			name: "avg ignores empty shard",
+			fn:   seq.AggFuncAvg,
+			real: makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncAvg, false), "k", 0, 0, 7, 2, ts, nil, nil),
+			want: 3.5,
+		},
+		{
+			name:     "quantile ignores empty shard",
+			fn:       seq.AggFuncQuantile,
+			quantile: []float64{0, 1},
+			real:     makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncQuantile, false), "k", 3, 9, 0, 0, ts, []float64{3, 5, 9}, nil),
+			want:     3, // q=0 -> min
+		},
+		{
+			name: "unique_count ignores empty shard",
+			fn:   seq.AggFuncUniqueCount,
+			real: makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncUniqueCount, false), "k", 0, 0, 0, 0, ts, nil, []string{"a", "b"}),
+			want: 2,
+		},
+		{
+			name: "count counts empty shard as zero",
+			fn:   seq.AggFuncCount,
+			real: makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncCount, false), "k", 0, 0, 0, 2, ts, nil, nil),
+			want: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agg := newTestAgg(tt.fn, false, tt.quantile,
+				&testProducer{data: []*query.Record{empty(tt.fn)}},
+				&testProducer{data: []*query.Record{tt.real}})
+
+			got := decodeAggOutputs(t, tt.fn, false, agg)
+			assert.Len(t, got, 1)
+			assert.Equal(t, tt.want, got[0].value)
+		})
+	}
+}
+
+func TestDistributedAggregatorEmptyBucketNaN(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		fn       seq.AggFunc
+		quantile []float64
+		empty    bool
+	}{
+		{name: "min", fn: seq.AggFuncMin, empty: true},
+		{name: "max", fn: seq.AggFuncMax, empty: true},
+		{name: "sum", fn: seq.AggFuncSum, empty: true},
+		{name: "avg", fn: seq.AggFuncAvg, empty: true},
+		{name: "quantile", fn: seq.AggFuncQuantile, quantile: []float64{0.5}, empty: true},
+		{name: "unique_count", fn: seq.AggFuncUniqueCount, empty: true},
+		{name: "count stays zero", fn: seq.AggFuncCount},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := makeAggInputRecord(query.AggsSchemaFor(tt.fn, false), "k", math.NaN(), math.NaN(), 0, 0, 0, nil, nil)
+			agg := newTestAgg(tt.fn, false, tt.quantile, &testProducer{data: []*query.Record{rec}})
+
+			got := decodeAggOutputs(t, tt.fn, false, agg)
+			assert.Len(t, got, 1)
+			if tt.empty {
+				assert.True(t, math.IsNaN(got[0].value), "want NaN, got %v", got[0].value)
+			} else {
+				assert.Equal(t, float64(0), got[0].value)
+			}
+		})
+	}
 }
 
 func TestDistributedAggregatorFinalize(t *testing.T) {
