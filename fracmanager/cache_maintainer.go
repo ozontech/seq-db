@@ -23,6 +23,7 @@ const (
 	indexName      = "index"
 	tokensName     = "tokens"
 	tokenTableName = "token_table"
+	exprTIDsName   = "expr_tids"
 	docsName       = "docblock"
 	sortName       = "sorting" // Used when sealing for sorting documents.
 )
@@ -46,6 +47,10 @@ func cleanerConfig(sortCacheSize uint64) []cleanerConf {
 		{
 			layers: []string{tokenTableName},
 			weight: 8,
+		},
+		{
+			layers: []string{exprTIDsName},
+			weight: 3,
 		},
 		{
 			layers: []string{tokensName},
@@ -159,6 +164,8 @@ func (cm *CacheMaintainer) CreateIndexCache() *frac.IndexCache {
 		TokenTable: newCache[token.Table](cm, tokenTableName),
 
 		LIDs: newCache[*lids.Block](cm, lidsName),
+
+		ExprTIDs: newCache[frac.ExprTIDs](cm, exprTIDsName),
 	}
 }
 
