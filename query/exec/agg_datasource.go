@@ -1,0 +1,180 @@
+package exec
+
+import (
+	"context"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/pkg/storeapi"
+	"github.com/ozontech/seq-db/query"
+	"github.com/ozontech/seq-db/querytracer"
+	"github.com/ozontech/seq-db/seq"
+)
+
+// AggDataSource is a scan-all data source: a single SearchDocs request (no
+// cursor, no limit) — aggregations require a full scan and the proxy-side
+// DistributedAggregator merges complete results.
+//
+// searchParams.AggQ must be set: it drives both the aggregation computation
+// itself and IsScanAllRequest(), which makes the searcher scan all fractions.
+type AggDataSource struct {
+	ctx context.Context
+	tr  *querytracer.Tracer
+
+	searchParams processor.SearchParams
+
+	fracManager *fracmanager.FracManager
+	searcher    *fracmanager.Searcher
+
+	agg         *storeapi.SearchResponse_Agg
+	aggsScanned bool
+
+	curIdx int
+
+	// total accumulates the final total.
+	total uint64
+
+	// fracs are acquired once and held for the producer's lifetime.
+	fracs   fracmanager.List
+	release func()
+
+	// err holds the first error encountered during scanning. Reported via Finalize.
+	err error
+}
+
+func NewAggDataSource(
+	ctx context.Context,
+	tr *querytracer.Tracer,
+	searchParams processor.SearchParams,
+	fracManager *fracmanager.FracManager,
+	searcher *fracmanager.Searcher,
+) *AggDataSource {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	return &AggDataSource{
+		ctx:          ctx,
+		tr:           tr,
+		searchParams: searchParams,
+		fracManager:  fracManager,
+		searcher:     searcher,
+	}
+}
+
+func (a *AggDataSource) Next() *query.Record {
+	if !a.aggsScanned {
+		if err := a.scanAgg(); err != nil {
+			a.err = err
+			return nil
+		}
+		a.aggsScanned = true
+	}
+
+	if a.agg == nil || a.curIdx >= len(a.agg.Timeseries) {
+		return nil
+	}
+
+	record := makeAggRecord(a.agg.Timeseries[a.curIdx], a.agg.ValuesPool)
+
+	a.curIdx++
+
+	return record
+}
+
+func (a *AggDataSource) Finalize() *query.Summary {
+	if a.release != nil {
+		a.release()
+	}
+	return &query.Summary{Total: a.total, Err: a.err}
+}
+
+// scanAgg runs the single scan-all SearchDocs request.
+func (a *AggDataSource) scanAgg() error {
+	a.fracs, a.release = a.fracManager.AcquireFractionsInRange(a.searchParams.From, a.searchParams.To)
+
+	qpr, err := a.searcher.SearchDocs(a.ctx, a.fracs, a.searchParams, a.tr)
+	if err != nil {
+		return err
+	}
+	if err := qprErrors(qpr); err != nil {
+		return err
+	}
+
+	a.total = qpr.Total
+	a.agg = buildAgg(qpr)
+	return nil
+}
+
+func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
+	if len(qpr.Aggs) == 0 {
+		return nil
+	}
+	// we expect only one agg
+	fromAgg := qpr.Aggs[0]
+
+	agg := &storeapi.SearchResponse_Agg{}
+	from := fromAgg.SamplesByBin
+	to := make(map[string]*storeapi.SearchResponse_Histogram, len(from))
+
+	for bin, hist := range from {
+		pbhist := &storeapi.SearchResponse_Histogram{
+			Min:       hist.Min,
+			Max:       hist.Max,
+			Sum:       hist.Sum,
+			Total:     hist.Total,
+			Samples:   hist.Samples,
+			NotExists: hist.NotExists,
+		}
+
+		if len(hist.Values) > 0 {
+			pbhist.Values = make([]uint32, 0, len(hist.Values))
+			for idx := range hist.Values {
+				pbhist.Values = append(pbhist.Values, idx)
+			}
+		}
+
+		agg.Timeseries = append(agg.Timeseries,
+			&storeapi.SearchResponse_Bin{
+				Label: bin.Token,
+				Ts:    timestamppb.New(bin.MID.Time()),
+				Hist:  pbhist,
+			},
+		)
+
+		to[bin.Token] = pbhist
+	}
+
+	agg.NotExists = fromAgg.NotExists
+	agg.AggHistogram = to
+	agg.ValuesPool = fromAgg.ValuesPool
+
+	return agg
+}
+
+func makeAggRecord(bin *storeapi.SearchResponse_Bin, valuesPool []string) *query.Record {
+	// For unique_count, the store holds unique field values as indices into the per-agg ValuesPool.
+	// Resolve them to strings here so each record is self-contained, no shared pool.
+	var values []string
+	if len(bin.Hist.Values) > 0 && len(valuesPool) > 0 {
+		values = make([]string, 0, len(bin.Hist.Values))
+		for _, idx := range bin.Hist.Values {
+			values = append(values, valuesPool[idx])
+		}
+	}
+	return &query.Record{
+		Vals: []*query.RecordVals{
+			query.NewStringVals(bin.Label),
+			query.NewFloat64Vals(bin.Hist.Min),
+			query.NewFloat64Vals(bin.Hist.Max),
+			query.NewFloat64Vals(bin.Hist.Sum),
+			query.NewUint64Vals(uint64(bin.Hist.Total)),
+			query.NewUint64Vals(uint64(bin.Hist.NotExists)),
+			query.NewUint64Vals(uint64(bin.Ts.AsTime().UnixNano())),
+			query.NewFloat64ArrayVals(bin.Hist.Samples),
+			query.NewStringArrayVals(values),
+		},
+	}
+}
