@@ -373,9 +373,10 @@ type StreamSearchIterator struct {
 
 	curBatch []*storeapi.Record
 
-	total uint64
-	err   error
-	done  bool
+	total        uint64
+	aggNotExists uint64
+	err          error
+	done         bool
 
 	cancel context.CancelFunc
 }
@@ -430,6 +431,9 @@ func (it *StreamSearchIterator) push(msg *storeapi.StreamSearchResponse) error {
 		it.curBatch = v.Data.GetBatch().GetRecords()
 	case *storeapi.StreamSearchResponse_Summary:
 		it.total = v.Summary.Total
+		if v.Summary.NotExists > 0 {
+			it.aggNotExists = uint64(v.Summary.NotExists)
+		}
 		if v.Summary.Explain != nil {
 			it.tr.AddChildWithSpan(explainEntryToTracerSpan(v.Summary.Explain))
 		}
@@ -464,7 +468,7 @@ func (it *StreamSearchIterator) Finalize() *query.Summary {
 	// Drain the remaining messages so the store-reported summary is not lost.
 	it.drain()
 	it.tr.Done()
-	return &query.Summary{Total: it.total, Err: it.err}
+	return &query.Summary{Total: it.total, NotExists: it.aggNotExists, Err: it.err}
 }
 
 // drain reads the store stream until the EOF is received, capturing the store-reported total and error.

@@ -283,8 +283,9 @@ func sendSummary(
 	explain bool,
 ) error {
 	respSummary := &storeapi.ResponseSummary{
-		Total: summary.Total,
-		Error: &storeapi.Error{Code: storeapi.SearchErrorCode_NO_ERROR},
+		Total:     summary.Total,
+		NotExists: int64(summary.NotExists),
+		Error:     &storeapi.Error{Code: storeapi.SearchErrorCode_NO_ERROR},
 	}
 
 	if summary.Err != nil {

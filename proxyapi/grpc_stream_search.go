@@ -278,6 +278,7 @@ func aggsTyping() []*seqproxyapi.Typing {
 		{Title: "value", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64},
 		{Title: "ts", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
 		{Title: "quantiles", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64_ARRAY},
+		{Title: "not_exists", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
 	}
 }
 
@@ -289,6 +290,7 @@ var (
 	aggValueCol     = query.AggResultSchema.MustColumn[float64]("value")
 	aggTsCol        = query.AggResultSchema.MustColumn[uint64]("ts")
 	aggQuantilesCol = query.AggResultSchema.MustColumn[[]float64]("quantiles")
+	aggNotExistsCol = query.AggResultSchema.MustColumn[uint64]("not_exists")
 )
 
 // converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
@@ -312,6 +314,7 @@ func aggToRecord(r *query.Record) *seqproxyapi.Record {
 			aggValueCol.RawData(r),     // value
 			aggTsCol.RawData(r),        // ts
 			aggQuantilesCol.RawData(r), // quantiles
+			aggNotExistsCol.RawData(r), // not_exists
 		},
 	}
 }

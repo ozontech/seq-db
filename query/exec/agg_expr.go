@@ -22,6 +22,24 @@ type AggAcc interface {
 	Quantiles() []float64
 }
 
+type NotExists interface {
+	NotExists() uint64
+}
+
+// notExistsAcc wraps an accumulator with the bucket-level not_exists count.
+type notExistsAcc struct {
+	AggAcc
+	col *query.Column[uint64]
+	v   uint64
+}
+
+func (a *notExistsAcc) Merge(r *query.Record) {
+	a.AggAcc.Merge(r)
+	a.v += a.col.Val(r)
+}
+
+func (a *notExistsAcc) NotExists() uint64 { return a.v }
+
 // totalExpr backs count and unique.
 type totalExpr struct {
 	total query.Column[uint64]

@@ -2211,8 +2211,8 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 			case *seqproxyapi.StreamSearchResponse_Data:
 				for _, rec := range v.Data.GetBatch().GetRecords() {
 					raw := rec.GetRawData()
-					// [key:STRING, value:FLOAT64, ts:UINT64, quantiles:FLOAT64_ARRAY] — proxy agg schema.
-					r.Len(raw, 4)
+					// [key:STRING, value:FLOAT64, ts:UINT64, quantiles:FLOAT64_ARRAY, not_exists:FLOAT64] — proxy agg schema.
+					r.Len(raw, 5)
 					value := math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
 					ts := binary.LittleEndian.Uint64(raw[2])
 					got[ts] += value
@@ -2263,7 +2263,7 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 				for _, rec := range v.Data.GetBatch().GetRecords() {
 					raw := rec.GetRawData()
 					// [key:STRING, value:FLOAT64, ts:UINT64, quantiles:FLOAT64_ARRAY].
-					r.Len(raw, 4)
+					r.Len(raw, 5)
 					gotRecords++
 					value = math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
 					quantiles = encoding.Float64ArrayFromBytes(raw[3])
@@ -2310,7 +2310,7 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 			case *seqproxyapi.StreamSearchResponse_Data:
 				for _, rec := range v.Data.GetBatch().GetRecords() {
 					raw := rec.GetRawData()
-					r.Len(raw, 4)
+					r.Len(raw, 5)
 					gotRecords++
 					value = math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
 				}

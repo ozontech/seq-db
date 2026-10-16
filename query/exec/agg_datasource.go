@@ -37,7 +37,8 @@ type AggDataSource struct {
 	curIdx int
 
 	// total accumulates the final total.
-	total uint64
+	total        uint64
+	aggNotExists uint64
 
 	// fracs are acquired once and held for the producer's lifetime.
 	fracs   fracmanager.List
@@ -93,7 +94,7 @@ func (a *AggDataSource) Finalize() *query.Summary {
 	if a.release != nil {
 		a.release()
 	}
-	return &query.Summary{Total: a.total, Err: a.err}
+	return &query.Summary{Total: a.total, NotExists: a.aggNotExists, Err: a.err}
 }
 
 // scanAgg runs the single scan-all SearchDocs request.
@@ -109,6 +110,9 @@ func (a *AggDataSource) scanAgg() error {
 	}
 
 	a.total = qpr.Total
+	if len(qpr.Aggs) > 0 {
+		a.aggNotExists = uint64(qpr.Aggs[0].NotExists)
+	}
 	a.agg = buildAgg(qpr)
 	return nil
 }
@@ -126,11 +130,12 @@ func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
 
 	for bin, hist := range from {
 		pbhist := &storeapi.SearchResponse_Histogram{
-			Min:     hist.Min,
-			Max:     hist.Max,
-			Sum:     hist.Sum,
-			Total:   hist.Total,
-			Samples: hist.Samples,
+			Min:       hist.Min,
+			Max:       hist.Max,
+			Sum:       hist.Sum,
+			Total:     hist.Total,
+			Samples:   hist.Samples,
+			NotExists: hist.NotExists,
 		}
 
 		if len(hist.Values) > 0 {
@@ -180,6 +185,8 @@ func aggColumnVals(name string, bin *storeapi.SearchResponse_Bin, valuesPool []s
 		return query.NewFloat64Vals(bin.Hist.Sum)
 	case "total":
 		return query.NewUint64Vals(uint64(bin.Hist.Total))
+	case "not_exists":
+		return query.NewUint64Vals(uint64(bin.Hist.NotExists))
 	case "samples":
 		return query.NewFloat64ArrayVals(bin.Hist.Samples)
 	case "values":
