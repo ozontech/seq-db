@@ -3,9 +3,11 @@ package exec
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/pkg/storeapi"
@@ -113,11 +115,11 @@ func (a *AggDataSource) scanAgg() error {
 	if len(qpr.Aggs) > 0 {
 		a.aggNotExists = uint64(qpr.Aggs[0].NotExists)
 	}
-	a.agg = buildAgg(qpr)
+	a.agg = buildAgg(qpr, a.searchParams.AggQ[0].Interval > 0)
 	return nil
 }
 
-func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
+func buildAgg(qpr *seq.QPR, timeseries bool) *storeapi.SearchResponse_Agg {
 	if len(qpr.Aggs) == 0 {
 		return nil
 	}
@@ -126,9 +128,12 @@ func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
 
 	agg := &storeapi.SearchResponse_Agg{}
 	from := fromAgg.SamplesByBin
-	to := make(map[string]*storeapi.SearchResponse_Histogram, len(from))
 
 	for bin, hist := range from {
+		if timeseries && bin.MID == consts.DummyMID {
+			continue
+		}
+
 		pbhist := &storeapi.SearchResponse_Histogram{
 			Min:       hist.Min,
 			Max:       hist.Max,
@@ -152,12 +157,8 @@ func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
 				Hist:  pbhist,
 			},
 		)
-
-		to[bin.Token] = pbhist
 	}
 
-	agg.NotExists = fromAgg.NotExists
-	agg.AggHistogram = to
 	agg.ValuesPool = fromAgg.ValuesPool
 
 	return agg
@@ -178,8 +179,14 @@ func aggColumnVals(name string, bin *storeapi.SearchResponse_Bin, valuesPool []s
 	case "ts":
 		return query.NewUint64Vals(uint64(bin.Ts.AsTime().UnixNano()))
 	case "min":
+		if bin.Hist.Total == 0 {
+			return query.NewFloat64Vals(math.NaN())
+		}
 		return query.NewFloat64Vals(bin.Hist.Min)
 	case "max":
+		if bin.Hist.Total == 0 {
+			return query.NewFloat64Vals(math.NaN())
+		}
 		return query.NewFloat64Vals(bin.Hist.Max)
 	case "sum":
 		return query.NewFloat64Vals(bin.Hist.Sum)
