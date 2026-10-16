@@ -10,19 +10,15 @@ import (
 )
 
 func TestDistributedAggregator_Count(t *testing.T) {
-	records1 := []*query.Record{
-		makeAggInputRecord("key1", 10.0, 10.0, 10.0, 1, 0, []float64{}, []string{}),
-		makeAggInputRecord("key2", 20.0, 20.0, 20.0, 1, 0, []float64{}, []string{}),
-	}
-
-	records2 := []*query.Record{
-		makeAggInputRecord("key1", 30.0, 30.0, 30.0, 1, 0, []float64{}, []string{}),
-		makeAggInputRecord("key2", 40.0, 40.0, 40.0, 1, 0, []float64{}, []string{}),
-	}
-
-	input1 := testProducer{data: records1}
-	input2 := testProducer{data: records2}
-	agg := NewDistributedAggregator([]query.RecordProducer{&input1, &input2}, seq.AggFuncCount, nil)
+	input1 := &testProducer{data: []*query.Record{
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncCount, false), "key1", 0, 0, 0, 1, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncCount, false), "key2", 0, 0, 0, 1, 0, nil, nil),
+	}}
+	input2 := &testProducer{data: []*query.Record{
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncCount, false), "key1", 0, 0, 0, 1, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncCount, false), "key2", 0, 0, 0, 1, 0, nil, nil),
+	}}
+	agg := newTestAgg(seq.AggFuncCount, false, nil, input1, input2)
 
 	results := collectRecords(agg)
 
@@ -34,19 +30,15 @@ func TestDistributedAggregator_Count(t *testing.T) {
 }
 
 func TestDistributedAggregator_Sum(t *testing.T) {
-	records1 := []*query.Record{
-		makeAggInputRecord("key1", 10.0, 10.0, 10.0, 1, 0, []float64{}, []string{}),
-		makeAggInputRecord("key2", 30.0, 30.0, 30.0, 1, 0, []float64{}, []string{}),
-	}
-
-	records2 := []*query.Record{
-		makeAggInputRecord("key1", 20.0, 20.0, 20.0, 1, 0, []float64{}, []string{}),
-		makeAggInputRecord("key2", 40.0, 40.0, 40.0, 1, 0, []float64{}, []string{}),
-	}
-
-	input1 := testProducer{data: records1}
-	input2 := testProducer{data: records2}
-	agg := NewDistributedAggregator([]query.RecordProducer{&input1, &input2}, seq.AggFuncSum, nil)
+	input1 := &testProducer{data: []*query.Record{
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key1", 0, 0, 10, 0, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key2", 0, 0, 30, 0, 0, nil, nil),
+	}}
+	input2 := &testProducer{data: []*query.Record{
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key1", 0, 0, 20, 0, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, false), "key2", 0, 0, 40, 0, 0, nil, nil),
+	}}
+	agg := newTestAgg(seq.AggFuncSum, false, nil, input1, input2)
 
 	results := collectRecords(agg)
 
@@ -58,19 +50,15 @@ func TestDistributedAggregator_Sum(t *testing.T) {
 }
 
 func TestDistributedAggregator_Min(t *testing.T) {
-	records1 := []*query.Record{
-		makeAggInputRecord("key1", 30.0, 30.0, 30.0, 1, 0, []float64{}, []string{}),
-		makeAggInputRecord("key2", 20.0, 20.0, 20.0, 1, 0, []float64{}, []string{}),
-	}
-
-	records2 := []*query.Record{
-		makeAggInputRecord("key1", 10.0, 10.0, 10.0, 1, 0, []float64{}, []string{}),
-		makeAggInputRecord("key2", 40.0, 40.0, 40.0, 1, 0, []float64{}, []string{}),
-	}
-
-	input1 := testProducer{data: records1}
-	input2 := testProducer{data: records2}
-	agg := NewDistributedAggregator([]query.RecordProducer{&input1, &input2}, seq.AggFuncMin, nil)
+	input1 := &testProducer{data: []*query.Record{
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMin, false), "key1", 30, 0, 0, 0, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMin, false), "key2", 20, 0, 0, 0, 0, nil, nil),
+	}}
+	input2 := &testProducer{data: []*query.Record{
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMin, false), "key1", 10, 0, 0, 0, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMin, false), "key2", 40, 0, 0, 0, 0, nil, nil),
+	}}
+	agg := newTestAgg(seq.AggFuncMin, false, nil, input1, input2)
 
 	results := collectRecords(agg)
 
@@ -82,19 +70,15 @@ func TestDistributedAggregator_Min(t *testing.T) {
 }
 
 func TestDistributedAggregator_Max(t *testing.T) {
-	records1 := []*query.Record{
-		makeAggInputRecord("key1", 10.0, 10.0, 10.0, 1, 0, []float64{}, []string{}),
-		makeAggInputRecord("key2", 30.0, 30.0, 30.0, 1, 0, []float64{}, []string{}),
-	}
-
-	records2 := []*query.Record{
-		makeAggInputRecord("key1", 50.0, 50.0, 50.0, 1, 0, []float64{}, []string{}),
-		makeAggInputRecord("key2", 20.0, 20.0, 20.0, 1, 0, []float64{}, []string{}),
-	}
-
-	input1 := testProducer{data: records1}
-	input2 := testProducer{data: records2}
-	agg := NewDistributedAggregator([]query.RecordProducer{&input1, &input2}, seq.AggFuncMax, nil)
+	input1 := &testProducer{data: []*query.Record{
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMax, false), "key1", 0, 10, 0, 0, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMax, false), "key2", 0, 30, 0, 0, 0, nil, nil),
+	}}
+	input2 := &testProducer{data: []*query.Record{
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMax, false), "key1", 0, 50, 0, 0, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMax, false), "key2", 0, 20, 0, 0, 0, nil, nil),
+	}}
+	agg := newTestAgg(seq.AggFuncMax, false, nil, input1, input2)
 
 	results := collectRecords(agg)
 
@@ -106,19 +90,15 @@ func TestDistributedAggregator_Max(t *testing.T) {
 }
 
 func TestDistributedAggregator_Avg(t *testing.T) {
-	records1 := []*query.Record{
-		makeAggInputRecord("key1", 10.0, 10.0, 10.0, 1, 0, []float64{}, []string{}),
-		makeAggInputRecord("key2", 20.0, 20.0, 20.0, 1, 0, []float64{}, []string{}),
-	}
-
-	records2 := []*query.Record{
-		makeAggInputRecord("key1", 30.0, 30.0, 30.0, 1, 0, []float64{}, []string{}),
-		makeAggInputRecord("key2", 40.0, 40.0, 40.0, 1, 0, []float64{}, []string{}),
-	}
-
-	input1 := testProducer{data: records1}
-	input2 := testProducer{data: records2}
-	agg := NewDistributedAggregator([]query.RecordProducer{&input1, &input2}, seq.AggFuncAvg, nil)
+	input1 := &testProducer{data: []*query.Record{
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncAvg, false), "key1", 0, 0, 10, 1, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncAvg, false), "key2", 0, 0, 20, 1, 0, nil, nil),
+	}}
+	input2 := &testProducer{data: []*query.Record{
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncAvg, false), "key1", 0, 0, 30, 1, 0, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncAvg, false), "key2", 0, 0, 40, 1, 0, nil, nil),
+	}}
+	agg := newTestAgg(seq.AggFuncAvg, false, nil, input1, input2)
 
 	results := collectRecords(agg)
 
@@ -130,10 +110,8 @@ func TestDistributedAggregator_Avg(t *testing.T) {
 }
 
 func TestDistributedAggregator_EmptyInput(t *testing.T) {
-	var records []*query.Record
-
-	input := testProducer{data: records}
-	agg := NewDistributedAggregator([]query.RecordProducer{&input}, seq.AggFuncCount, nil)
+	input := &testProducer{data: nil}
+	agg := newTestAgg(seq.AggFuncCount, false, nil, input)
 
 	results := collectRecords(agg)
 
@@ -143,16 +121,16 @@ func TestDistributedAggregator_EmptyInput(t *testing.T) {
 func TestDistributedAggregatorSumTimeseries(t *testing.T) {
 	const ts1, ts2 uint64 = 1_000_000_000, 2_000_000_000
 	in1 := &testProducer{data: []*query.Record{
-		makeAggInputRecord("foo", 2, 2, 2, 1, ts1, []float64{}, []string{}),
-		makeAggInputRecord("foo", 3, 3, 3, 1, ts2, []float64{}, []string{}),
-		makeAggInputRecord("bar", 5, 5, 5, 1, ts1, []float64{}, []string{}),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "foo", 0, 0, 2, 0, ts1, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "foo", 0, 0, 3, 0, ts2, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "bar", 0, 0, 5, 0, ts1, nil, nil),
 	}}
 	in2 := &testProducer{data: []*query.Record{
-		makeAggInputRecord("foo", 4, 4, 4, 1, ts1, []float64{}, []string{}), // same bin as in1[0] -> merged sum 6
-		makeAggInputRecord("baz", 7, 7, 7, 1, ts2, []float64{}, []string{}),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "foo", 0, 0, 4, 0, ts1, nil, nil), // same bin as in1[0] -> merged sum 6
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncSum, true), "baz", 0, 0, 7, 0, ts2, nil, nil),
 	}}
 
-	a := NewDistributedAggregator([]query.RecordProducer{in1, in2}, seq.AggFuncSum, nil)
+	a := newTestAgg(seq.AggFuncSum, true, nil, in1, in2)
 	got := decodeAggOutputs(t, a)
 
 	// Sorted by ts ASC, then value DESC, then name ASC.
@@ -170,15 +148,15 @@ func TestDistributedAggregatorSumTimeseries(t *testing.T) {
 func TestDistributedAggregatorMinMergeAcrossShards(t *testing.T) {
 	const ts uint64 = 0 // no interval: all samples collapse into ts=0
 	in1 := &testProducer{data: []*query.Record{
-		makeAggInputRecord("a", 5, 50, 0, 1, ts, []float64{}, []string{}),
-		makeAggInputRecord("b", 1, 10, 0, 1, ts, []float64{}, []string{}),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMin, false), "a", 5, 50, 0, 0, ts, nil, nil),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMin, false), "b", 1, 10, 0, 0, ts, nil, nil),
 	}}
 	in2 := &testProducer{data: []*query.Record{
-		makeAggInputRecord("a", 2, 60, 0, 1, ts, []float64{}, []string{}), // min(5,2)=2, max(50,60)=60
-		makeAggInputRecord("c", 9, 9, 0, 1, ts, []float64{}, []string{}),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMin, false), "a", 2, 60, 0, 0, ts, nil, nil), // min(5,2)=2, max(50,60)=60
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncMin, false), "c", 9, 9, 0, 0, ts, nil, nil),
 	}}
 
-	a := NewDistributedAggregator([]query.RecordProducer{in1, in2}, seq.AggFuncMin, nil)
+	a := newTestAgg(seq.AggFuncMin, false, nil, in1, in2)
 	got := decodeAggOutputs(t, a)
 
 	// Same ts (0); Min sorts by value ASC, then name ASC.
@@ -194,13 +172,13 @@ func TestDistributedAggregatorMinMergeAcrossShards(t *testing.T) {
 // interval (ts=0 for every input) aggregation merges solely by token.
 func TestDistributedAggregatorNoIntervalCollapsesByToken(t *testing.T) {
 	in1 := &testProducer{data: []*query.Record{
-		makeAggInputRecord("foo", 0, 0, 10, 2, 0, []float64{}, []string{}),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncCount, false), "foo", 0, 0, 10, 2, 0, nil, nil),
 	}}
 	in2 := &testProducer{data: []*query.Record{
-		makeAggInputRecord("foo", 0, 0, 5, 3, 0, []float64{}, []string{}),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncCount, false), "foo", 0, 0, 5, 3, 0, nil, nil),
 	}}
 
-	a := NewDistributedAggregator([]query.RecordProducer{in1, in2}, seq.AggFuncCount, nil)
+	a := newTestAgg(seq.AggFuncCount, false, nil, in1, in2)
 	got := decodeAggOutputs(t, a)
 
 	// count = total = 2 + 3 = 5.
@@ -213,14 +191,14 @@ func TestDistributedAggregatorNoIntervalCollapsesByToken(t *testing.T) {
 func TestDistributedAggregator_Quantile(t *testing.T) {
 	const ts uint64 = 0
 	in1 := &testProducer{data: []*query.Record{
-		makeAggInputRecord("key", 1, 5, 0, 0, ts, []float64{1, 2, 3, 4, 5}, []string{}),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncQuantile, false), "key", 1, 5, 0, 0, ts, []float64{1, 2, 3, 4, 5}, nil),
 	}}
 	in2 := &testProducer{data: []*query.Record{
-		makeAggInputRecord("key", 6, 10, 0, 0, ts, []float64{6, 7, 8, 9, 10}, []string{}),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncQuantile, false), "key", 6, 10, 0, 0, ts, []float64{6, 7, 8, 9, 10}, nil),
 	}}
 
 	quantiles := []float64{0, 0.5, 0.9, 1}
-	agg := NewDistributedAggregator([]query.RecordProducer{in1, in2}, seq.AggFuncQuantile, quantiles)
+	agg := newTestAgg(seq.AggFuncQuantile, false, quantiles, in1, in2)
 
 	results := collectRecords(agg)
 	assert.Len(t, results, 1)
@@ -238,14 +216,13 @@ func TestDistributedAggregator_Quantile(t *testing.T) {
 }
 
 func TestDistributedAggregator_UniqueCount(t *testing.T) {
-	const ts uint64 = 0
 	in1 := &testProducer{data: []*query.Record{
-		makeAggInputRecord("key", 0, 0, 0, 0, ts, []float64{}, []string{"a", "b", "c"}),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncUniqueCount, false), "key", 0, 0, 0, 0, 0, nil, []string{"a", "b", "c"}),
 	}}
 	in2 := &testProducer{data: []*query.Record{
-		makeAggInputRecord("key", 0, 0, 0, 0, ts, []float64{}, []string{"b", "c", "d"}),
+		makeAggInputRecord(query.AggsSchemaFor(seq.AggFuncUniqueCount, false), "key", 0, 0, 0, 0, 0, nil, []string{"b", "c", "d"}),
 	}}
-	agg := NewDistributedAggregator([]query.RecordProducer{in1, in2}, seq.AggFuncUniqueCount, nil)
+	agg := newTestAgg(seq.AggFuncUniqueCount, false, nil, in1, in2)
 
 	results := collectRecords(agg)
 	assert.Len(t, results, 1)
@@ -256,28 +233,56 @@ func TestDistributedAggregator_UniqueCount(t *testing.T) {
 func TestDistributedAggregatorFinalize(t *testing.T) {
 	in1 := &testProducer{data: nil, total: 40}
 	in2 := &testProducer{data: nil, total: 60}
-	a := NewDistributedAggregator([]query.RecordProducer{in1, in2}, seq.AggFuncCount, nil)
-	for r := a.Next(); r != nil; r = a.Next() {
+	agg := newTestAgg(seq.AggFuncCount, false, nil, in1, in2)
+	for r := agg.Next(); r != nil; r = agg.Next() {
 		t.Fatalf("unexpected record: %v", r)
 	}
-	summary := a.Finalize()
+	summary := agg.Finalize()
 	assert.NotNil(t, summary)
 	assert.Equal(t, uint64(100), summary.Total)
 	assert.Nil(t, summary.Err)
 }
 
-func makeAggInputRecord(token string, mn, mx, sum float64, total, ts uint64, samples []float64, values []string) *query.Record {
-	return query.NewRecord([]*query.RecordVals{
-		query.NewStringVals(token),
-		query.NewFloat64Vals(mn),
-		query.NewFloat64Vals(mx),
-		query.NewFloat64Vals(sum),
-		query.NewUint64Vals(total),
-		query.NewUint64Vals(0), // not_exists, unused by aggregator
-		query.NewUint64Vals(ts),
-		query.NewFloat64ArrayVals(samples),
-		query.NewStringArrayVals(values),
-	})
+func newTestAgg(fn seq.AggFunc, timeseries bool, quantiles []float64, inputs ...query.RecordProducer) *DistributedAggregator {
+	return NewDistributedAggregator(inputs, query.AggsSchemaFor(fn, timeseries), fn, quantiles)
+}
+
+func makeAggInputRecord(
+	schema *query.Schema,
+	token string,
+	mn, mx, sum float64,
+	total, ts uint64,
+	samples []float64,
+	values []string,
+) *query.Record {
+	vals := make([]*query.RecordVals, 0, schema.Len())
+	for _, col := range schema.Cols() {
+		var v *query.RecordVals
+		switch col.Name {
+		case "token":
+			v = query.NewStringVals(token)
+		case "ts":
+			v = query.NewUint64Vals(ts)
+		case "min":
+			v = query.NewFloat64Vals(mn)
+		case "max":
+			v = query.NewFloat64Vals(mx)
+		case "sum":
+			v = query.NewFloat64Vals(sum)
+		case "total":
+			v = query.NewUint64Vals(total)
+		case "not_exists":
+			v = query.NewUint64Vals(0) // unused by the aggregator
+		case "samples":
+			v = query.NewFloat64ArrayVals(samples)
+		case "values":
+			v = query.NewStringArrayVals(values)
+		default:
+			panic("unknown aggregation column " + col.Name)
+		}
+		vals = append(vals, v)
+	}
+	return query.NewRecord(vals)
 }
 
 // nolint:unused // fields are checked but not directly
