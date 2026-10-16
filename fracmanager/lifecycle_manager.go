@@ -187,10 +187,6 @@ func (lc *lifecycleManager) tryOffload(ctx context.Context, sealed *frac.Sealed)
 	return remote, nil
 }
 
-// cleanRemote deletes outdated remote fractions based on retention policy.
-// Selected fractions are moved to the remotesRemoving queue; their deletion
-// from remote storage is performed by removeRemoteZombies and retried every
-// tick until it succeeds.
 func (lc *lifecycleManager) cleanRemote(
 	ctx context.Context,
 	retention time.Duration,
@@ -203,10 +199,6 @@ func (lc *lifecycleManager) cleanRemote(
 	}
 }
 
-// removeRemoteZombies deletes remote fractions pending removal: evicted
-// ones, and zombies discovered at startup (interrupted offloading).
-// On failure a fraction stays in the remotesRemoving queue and the
-// deletion is retried on the next tick.
 func (lc *lifecycleManager) removeRemoteAsync(
 	ctx context.Context,
 	ref *refCountedRemote,
