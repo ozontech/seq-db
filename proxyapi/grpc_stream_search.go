@@ -108,7 +108,8 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	var toRecord func(*query.Record) *seqproxyapi.Record
 	if searchReq.Agg != nil {
 		typing = aggsTyping()
-		toRecord = aggToRecord
+		mapper := newAggRecordMapper(aggOutSchema(searchReq.Agg))
+		toRecord = mapper.toRecord
 	} else {
 		typing = docsTyping()
 		toRecord = docToRecord
@@ -285,12 +286,6 @@ func aggsTyping() []*seqproxyapi.Typing {
 var (
 	docIDCol   = query.DocsSchema.MustColumn[seq.ID](query.DocsIDCol)
 	docDataCol = query.DocsSchema.MustColumn[*insaneJSON.Root](query.DocsDataCol)
-
-	aggKeyCol       = query.AggResultSchema.MustColumn[string]("token")
-	aggValueCol     = query.AggResultSchema.MustColumn[float64]("value")
-	aggTsCol        = query.AggResultSchema.MustColumn[uint64]("ts")
-	aggQuantilesCol = query.AggResultSchema.MustColumn[[]float64]("quantiles")
-	aggNotExistsCol = query.AggResultSchema.MustColumn[uint64]("not_exists")
 )
 
 // converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
@@ -306,15 +301,48 @@ func docToRecord(r *query.Record) *seqproxyapi.Record {
 	}
 }
 
-// converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
-func aggToRecord(r *query.Record) *seqproxyapi.Record {
+type aggRecordMapper struct {
+	key       query.Column[string]
+	value     query.Column[float64]
+	ts        *query.Column[uint64]
+	quantiles *query.Column[[]float64]
+	notExists *query.Column[uint64]
+}
+
+func aggOutSchema(agg *search.AggQuery) *query.Schema {
+	return query.AggResultSchemaFor(agg.Func, agg.Interval > 0)
+}
+
+func newAggRecordMapper(out *query.Schema) aggRecordMapper {
+	return aggRecordMapper{
+		key:       out.MustColumn[string]("token"),
+		value:     out.MustColumn[float64]("value"),
+		ts:        query.OptionalColumn[uint64](out, "ts"),
+		quantiles: query.OptionalColumn[[]float64](out, "quantiles"),
+		notExists: query.OptionalColumn[uint64](out, "not_exists"),
+	}
+}
+
+func (m aggRecordMapper) toRecord(r *query.Record) *seqproxyapi.Record {
+	var ts uint64
+	if m.ts != nil {
+		ts = m.ts.Val(r)
+	}
+	var quantiles []float64
+	if m.quantiles != nil {
+		quantiles = m.quantiles.Val(r)
+	}
+	var notExists uint64
+	if m.notExists != nil {
+		notExists = m.notExists.Val(r)
+	}
 	return &seqproxyapi.Record{
 		RawData: [][]byte{
-			aggKeyCol.RawData(r),       // key
-			aggValueCol.RawData(r),     // value
-			aggTsCol.RawData(r),        // ts
-			aggQuantilesCol.RawData(r), // quantiles
-			aggNotExistsCol.RawData(r), // not_exists
+			m.key.RawData(r),                        // key
+			m.value.RawData(r),                      // value
+			encoding.Uint64ToBytes(ts),              // ts
+			encoding.Float64ArrayToBytes(quantiles), // quantiles
+			encoding.Uint64ToBytes(notExists),       // not_exists
 		},
 	}
 }

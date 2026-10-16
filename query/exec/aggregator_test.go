@@ -131,14 +131,14 @@ func TestDistributedAggregatorSumTimeseries(t *testing.T) {
 	}}
 
 	a := newTestAgg(seq.AggFuncSum, true, nil, in1, in2)
-	got := decodeAggOutputs(t, a)
+	got := decodeAggOutputs(t, seq.AggFuncSum, true, a)
 
 	// Sorted by ts ASC, then value DESC, then name ASC.
 	want := []aggOutput{
-		{"foo", 6, ts1}, // 2 + 4
-		{"bar", 5, ts1},
-		{"baz", 7, ts2},
-		{"foo", 3, ts2},
+		{"foo", 6, ts1, 0}, // 2 + 4
+		{"bar", 5, ts1, 0},
+		{"baz", 7, ts2, 0},
+		{"foo", 3, ts2, 0},
 	}
 	assert.Equal(t, want, got)
 }
@@ -162,25 +162,14 @@ func TestDistributedAggregatorNotExists(t *testing.T) {
 	}}
 
 	a := newTestAgg(seq.AggFuncSum, false, nil, in1, in2)
-	// nolint:unused // fields are checked but not directly
-	type out struct {
-		key       string
-		value     float64
-		notExists uint64
-	}
-	got := make([]out, 0)
-	for r := a.Next(); r != nil; r = a.Next() {
-		got = append(got, out{
-			key:       r.Vals[0].AsString(),
-			value:     r.Vals[1].AsFloat64(),
-			notExists: r.Vals[4].AsUint64(),
-		})
-	}
+	got := decodeAggOutputs(t, seq.AggFuncSum, false, a)
 
-	want := []out{
-		{"a", 30, 4},
-		{"c", 9, 4},
-		{"b", 1, 2},
+	// "a": sum 10+20, not_exists 1+3=4; "b": 1/2; "c": 9/4.
+	// Sorted by value DESC: a, c, b.
+	want := []aggOutput{
+		{"a", 30, 0, 4},
+		{"c", 9, 0, 4},
+		{"b", 1, 0, 2},
 	}
 	assert.Equal(t, want, got)
 }
@@ -199,13 +188,13 @@ func TestDistributedAggregatorMinMergeAcrossShards(t *testing.T) {
 	}}
 
 	a := newTestAgg(seq.AggFuncMin, false, nil, in1, in2)
-	got := decodeAggOutputs(t, a)
+	got := decodeAggOutputs(t, seq.AggFuncMin, false, a)
 
 	// Same ts (0); Min sorts by value ASC, then name ASC.
 	want := []aggOutput{
-		{"b", 1, ts},
-		{"a", 2, ts},
-		{"c", 9, ts},
+		{"b", 1, ts, 0},
+		{"a", 2, ts, 0},
+		{"c", 9, ts, 0},
 	}
 	assert.Equal(t, want, got)
 }
@@ -221,11 +210,11 @@ func TestDistributedAggregatorNoIntervalCollapsesByToken(t *testing.T) {
 	}}
 
 	a := newTestAgg(seq.AggFuncCount, false, nil, in1, in2)
-	got := decodeAggOutputs(t, a)
+	got := decodeAggOutputs(t, seq.AggFuncCount, false, a)
 
-	// count = total = 2 + 3 = 5.
+	// count = total = 2 + 3 = 5. Output schema is [token, value] only.
 	want := []aggOutput{
-		{"foo", 5, 0},
+		{"foo", 5, 0, 0},
 	}
 	assert.Equal(t, want, got)
 }
@@ -244,10 +233,12 @@ func TestDistributedAggregator_Quantile(t *testing.T) {
 
 	results := collectRecords(agg)
 	assert.Len(t, results, 1)
-	assert.Equal(t, "key", results[0].Vals[0].AsString())
+	// quantile without interval: output schema is [token, value, quantiles, not_exists]
+	out := query.AggResultSchemaFor(seq.AggFuncQuantile, false)
+	assert.Equal(t, "key", out.MustColumn[string]("token").Val(results[0]))
 
-	gotValue := results[0].Vals[1].AsFloat64()
-	gotQuantiles := results[0].Vals[3].AsFloat64Array()
+	gotValue := out.MustColumn[float64]("value").Val(results[0])
+	gotQuantiles := out.MustColumn[[]float64]("quantiles").Val(results[0])
 	assert.Len(t, gotQuantiles, len(quantiles))
 	assert.Equal(t, gotQuantiles[0], gotValue)
 
@@ -330,20 +321,35 @@ func makeAggInputRecord(
 
 // nolint:unused // fields are checked but not directly
 type aggOutput struct {
-	key   string
-	value float64
-	ts    uint64
+	key       string
+	value     float64
+	ts        uint64
+	notExists uint64
 }
 
-func decodeAggOutputs(t *testing.T, a *DistributedAggregator) []aggOutput {
+func decodeAggOutputs(t *testing.T, fn seq.AggFunc, timeseries bool, a *DistributedAggregator) []aggOutput {
 	t.Helper()
-	out := make([]aggOutput, 0)
+	out := query.AggResultSchemaFor(fn, timeseries)
+	token := out.MustColumn[string]("token")
+	value := out.MustColumn[float64]("value")
+	tsCol := query.OptionalColumn[uint64](out, "ts")
+	neCol := query.OptionalColumn[uint64](out, "not_exists")
+
+	decoded := make([]aggOutput, 0)
 	for r := a.Next(); r != nil; r = a.Next() {
-		out = append(out, aggOutput{
-			key:   r.Vals[0].AsString(),
-			value: r.Vals[1].AsFloat64(),
-			ts:    r.Vals[2].AsUint64(),
+		var ts, notExists uint64
+		if tsCol != nil {
+			ts = tsCol.Val(r)
+		}
+		if neCol != nil {
+			notExists = neCol.Val(r)
+		}
+		decoded = append(decoded, aggOutput{
+			key:       token.Val(r),
+			value:     value.Val(r),
+			ts:        ts,
+			notExists: notExists,
 		})
 	}
-	return out
+	return decoded
 }
