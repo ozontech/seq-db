@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"cmp"
 	"fmt"
 	"iter"
 	"math"
@@ -324,6 +325,11 @@ type tsBinCount struct {
 	count uint32
 }
 
+type tsSourceBinCount struct {
+	source uint32
+	bin    tsBinCount
+}
+
 const (
 	// tsBinsArrayLimit max number of timestamp bins per source to keep in an array
 	tsBinsArrayLimit = 8
@@ -400,21 +406,49 @@ func (c *tsSourceCountMap) moveToMp(source uint32, bins []tsBinCount) {
 
 func (c *tsSourceCountMap) all() iter.Seq2[uint32, tsBinCount] {
 	return func(yield func(source uint32, bin tsBinCount) bool) {
+		var mpBins []tsSourceBinCount
+		if len(c.mp) > 0 {
+			mpBins = make([]tsSourceBinCount, 0, len(c.mp))
+			for bin, count := range c.mp {
+				mpBins = append(mpBins, tsSourceBinCount{
+					source: bin.Source,
+					bin:    tsBinCount{MID: bin.MID, count: count},
+				})
+			}
+			slices.SortFunc(mpBins, func(a, b tsSourceBinCount) int {
+				if a.source != b.source {
+					if a.source < b.source {
+						return -1
+					}
+					return 1
+				}
+				return cmp.Compare(a.bin.MID, b.bin.MID)
+			})
+		}
+
+		mpIdx := 0
 		for chunkIdx, chunk := range c.chunks {
 			if chunk == nil {
 				continue
 			}
 			base := uint32(chunkIdx * sourceChunkSize)
 			for offset, bins := range chunk {
+				source := base + uint32(offset)
+				for mpIdx < len(mpBins) && mpBins[mpIdx].source < source {
+					if !yield(mpBins[mpIdx].source, mpBins[mpIdx].bin) {
+						return
+					}
+					mpIdx++
+				}
 				for _, bin := range bins {
-					if !yield(base+uint32(offset), bin) {
+					if !yield(source, bin) {
 						return
 					}
 				}
 			}
 		}
-		for bin, count := range c.mp {
-			if !yield(bin.Source, tsBinCount{MID: bin.MID, count: count}) {
+		for ; mpIdx < len(mpBins); mpIdx++ {
+			if !yield(mpBins[mpIdx].source, mpBins[mpIdx].bin) {
 				return
 			}
 		}

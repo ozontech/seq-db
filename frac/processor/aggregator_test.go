@@ -480,6 +480,31 @@ func TestTsSourceCountMap_MigrateToMap(t *testing.T) {
 	}
 }
 
+func TestTsSourceCountMapAllOrderedWithMigratedBins(t *testing.T) {
+	counts := newTsSourceCountMap(4096)
+
+	for i := range 9 {
+		counts.add(100, seq.MID(i))
+	}
+	counts.add(1100, 100)
+	counts.add(2100, 200)
+	for i := range 9 {
+		counts.add(3100, seq.MID(i))
+	}
+
+	var gotSources []uint32
+	for source := range counts.all() {
+		gotSources = append(gotSources, source)
+	}
+
+	expectedSources := make([]uint32, 0, 20)
+	expectedSources = append(expectedSources, slices.Repeat([]uint32{100}, 9)...)
+	expectedSources = append(expectedSources, 1100, 2100)
+	expectedSources = append(expectedSources, slices.Repeat([]uint32{3100}, 9)...)
+
+	assert.Equal(t, expectedSources, gotSources)
+}
+
 // TestTsSourceCountMapAgainstBuiltinMap validates result of using tsSourceCountMap against a builtin map
 func TestTsSourceCountMapAgainstBuiltinMap(t *testing.T) {
 	const (
