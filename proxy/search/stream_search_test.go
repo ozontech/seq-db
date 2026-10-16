@@ -364,7 +364,10 @@ func TestValidateShardSchemas(t *testing.T) {
 
 	t.Run("expected schema mismatch", func(t *testing.T) {
 		streams := []*StreamSearchIterator{newIterator(docsTyping), newIterator(docsTyping)}
-		err := validateShardSchemas(streams, query.AggsSchema)
+		err := validateShardSchemas(streams, query.MustNewSchema(
+			query.ColumnDesc{Name: "token", Type: query.DataTypeString},
+			query.ColumnDesc{Name: "val", Type: query.DataTypeFloat64},
+		))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "shard schema mismatch")
 	})
