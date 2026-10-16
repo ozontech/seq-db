@@ -108,6 +108,15 @@ func (s *Schema) Cols() []ColumnDesc {
 	return s.cols
 }
 
+// OptionalColumn resolves the column by name; nil when the column is absent.
+func OptionalColumn[T any](s *Schema, name string) *Column[T] {
+	c, err := s.Column[T](name)
+	if err != nil {
+		return nil
+	}
+	return &c
+}
+
 var (
 	columnGetters = map[DataType]any{
 		DataTypeSeqID:        (*RecordVals).AsSeqID,
@@ -143,14 +152,28 @@ var (
 		ColumnDesc{Name: DocsIDCol, Type: DataTypeSeqID},
 		ColumnDesc{Name: DocsDataCol, Type: DataTypeDocument},
 	)
-	AggResultSchema = MustNewSchema(
+)
+
+func AggResultSchemaFor(fn seq.AggFunc, timeseries bool) *Schema {
+	cols := make([]ColumnDesc, 0, 5)
+	cols = append(cols,
 		ColumnDesc{Name: "token", Type: DataTypeString},
 		ColumnDesc{Name: "value", Type: DataTypeFloat64},
-		ColumnDesc{Name: "ts", Type: DataTypeUint64},
-		ColumnDesc{Name: "quantiles", Type: DataTypeFloat64Array},
-		ColumnDesc{Name: "not_exists", Type: DataTypeUint64},
 	)
-)
+	if timeseries {
+		cols = append(cols, ColumnDesc{Name: "ts", Type: DataTypeUint64})
+	}
+	if fn == seq.AggFuncQuantile {
+		cols = append(cols, ColumnDesc{Name: "quantiles", Type: DataTypeFloat64Array})
+	}
+	for _, col := range aggInputColsFor(fn) {
+		if col.Name == "not_exists" {
+			cols = append(cols, ColumnDesc{Name: "not_exists", Type: DataTypeUint64})
+			break
+		}
+	}
+	return MustNewSchema(cols...)
+}
 
 func AggsSchemaFor(fn seq.AggFunc, timeseries bool) *Schema {
 	inputCols := aggInputColsFor(fn)
