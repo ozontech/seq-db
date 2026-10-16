@@ -2,6 +2,7 @@ package exec
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
@@ -86,20 +87,23 @@ func (e minExpr) SortAsc() bool {
 type minAcc struct {
 	notExistsState
 	col query.Column[float64]
-	v   float64
+	val float64
 	has bool
 }
 
 func (a *minAcc) Merge(r *query.Record) {
 	v := a.col.Val(r)
-	if !a.has || v < a.v {
-		a.v, a.has = v, true
+	if !math.IsNaN(v) && (!a.has || v < a.val) {
+		a.val, a.has = v, true
 	}
 	a.mergeNotExists(r)
 }
 
 func (a *minAcc) Value() float64 {
-	return a.v
+	if !a.has {
+		return math.NaN()
+	}
+	return a.val
 }
 
 func (a *minAcc) Quantiles() []float64 {
@@ -122,20 +126,23 @@ func (e maxExpr) SortAsc() bool {
 type maxAcc struct {
 	notExistsState
 	col query.Column[float64]
-	v   float64
+	val float64
 	has bool
 }
 
 func (a *maxAcc) Merge(r *query.Record) {
 	v := a.col.Val(r)
-	if !a.has || v > a.v {
-		a.v, a.has = v, true
+	if !math.IsNaN(v) && (!a.has || v > a.val) {
+		a.val, a.has = v, true
 	}
 	a.mergeNotExists(r)
 }
 
 func (a *maxAcc) Value() float64 {
-	return a.v
+	if !a.has {
+		return math.NaN()
+	}
+	return a.val
 }
 
 func (a *maxAcc) Quantiles() []float64 {
@@ -143,12 +150,13 @@ func (a *maxAcc) Quantiles() []float64 {
 }
 
 type sumExpr struct {
-	sum query.Column[float64]
-	ne  query.Column[uint64]
+	sum   query.Column[float64]
+	total query.Column[uint64]
+	ne    query.Column[uint64]
 }
 
 func (e sumExpr) NewAcc() AggAcc {
-	return &sumAcc{notExistsState: notExistsState{col: e.ne}, col: e.sum}
+	return &sumAcc{notExistsState: notExistsState{col: e.ne}, colSum: e.sum, colTotal: e.total}
 }
 
 func (e sumExpr) SortAsc() bool {
@@ -157,17 +165,23 @@ func (e sumExpr) SortAsc() bool {
 
 type sumAcc struct {
 	notExistsState
-	col query.Column[float64]
-	sum float64
+	colSum   query.Column[float64]
+	colTotal query.Column[uint64]
+	sum      float64
+	total    uint64
 }
 
 func (a *sumAcc) Merge(r *query.Record) {
-	a.sum += a.col.Val(r)
+	a.sum += a.colSum.Val(r)
+	a.total += a.colTotal.Val(r)
 	a.mergeNotExists(r)
 }
 
 func (a *sumAcc) Value() float64 {
-	return a.sum
+	if a.total != 0 {
+		return a.sum
+	}
+	return math.NaN()
 }
 
 func (a *sumAcc) Quantiles() []float64 {
@@ -206,7 +220,7 @@ func (a *avgAcc) Value() float64 {
 	if a.total != 0 {
 		return a.sum / float64(a.total)
 	}
-	return 0
+	return math.NaN()
 }
 
 func (a *avgAcc) Quantiles() []float64 {
@@ -235,17 +249,15 @@ func (e quantileExpr) SortAsc() bool {
 
 type quantileAcc struct {
 	notExistsState
-	expr quantileExpr
-	cont *seq.SamplesContainer
-	has  bool
+	expr      quantileExpr
+	cont      *seq.SamplesContainer
+	quantiles []float64
 }
 
 func (a *quantileAcc) Merge(r *query.Record) {
-	mn, mx := a.expr.colMin.Val(r), a.expr.colMax.Val(r)
-	if !a.has {
-		a.cont.Min, a.cont.Max = mn, mx
-		a.has = true
-	} else {
+	mn := a.expr.colMin.Val(r)
+	mx := a.expr.colMax.Val(r)
+	if !math.IsNaN(mn) {
 		a.cont.Min = min(a.cont.Min, mn)
 		a.cont.Max = max(a.cont.Max, mx)
 	}
@@ -260,11 +272,14 @@ func (a *quantileAcc) Value() float64 {
 }
 
 func (a *quantileAcc) Quantiles() []float64 {
-	qs := make([]float64, 0, len(a.expr.quantiles))
-	for _, q := range a.expr.quantiles {
-		qs = append(qs, a.cont.Quantile(q))
+	if a.quantiles == nil {
+		quantiles := make([]float64, 0, len(a.expr.quantiles))
+		for _, q := range a.expr.quantiles {
+			quantiles = append(quantiles, a.cont.Quantile(q))
+		}
+		a.quantiles = quantiles
 	}
-	return qs
+	return a.quantiles
 }
 
 type uniqueCountExpr struct {
@@ -297,6 +312,9 @@ func (a *uniqueCountAcc) Merge(r *query.Record) {
 }
 
 func (a *uniqueCountAcc) Value() float64 {
+	if len(a.values) == 0 {
+		return math.NaN()
+	}
 	return float64(len(a.values))
 }
 
@@ -338,11 +356,15 @@ func newAggExpr(fn seq.AggFunc, in *query.Schema, quantiles []float64) (AggExpr,
 		if err != nil {
 			return nil, err
 		}
+		total, err := in.Column[uint64]("total")
+		if err != nil {
+			return nil, err
+		}
 		ne, err := in.Column[uint64]("not_exists")
 		if err != nil {
 			return nil, err
 		}
-		return sumExpr{col, ne}, nil
+		return sumExpr{col, total, ne}, nil
 	case seq.AggFuncAvg:
 		sum, err := in.Column[float64]("sum")
 		if err != nil {

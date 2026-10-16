@@ -14,7 +14,6 @@ type RecordProducer interface {
 type Summary struct {
 	Err   error
 	Total uint64
-	// NotExists is the aggregation-level count of documents that have the
-	// aggregated field but no group-by token; zero for document streams.
+	// Aggregation-level not_exists
 	NotExists uint64
 }

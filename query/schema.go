@@ -166,11 +166,8 @@ func AggResultSchemaFor(fn seq.AggFunc, timeseries bool) *Schema {
 	if fn == seq.AggFuncQuantile {
 		cols = append(cols, ColumnDesc{Name: "quantiles", Type: DataTypeFloat64Array})
 	}
-	for _, col := range aggInputColsFor(fn) {
-		if col.Name == "not_exists" {
-			cols = append(cols, ColumnDesc{Name: "not_exists", Type: DataTypeUint64})
-			break
-		}
+	if aggHasNotExists(fn) {
+		cols = append(cols, ColumnDesc{Name: "not_exists", Type: DataTypeUint64})
 	}
 	return MustNewSchema(cols...)
 }
@@ -187,43 +184,44 @@ func AggsSchemaFor(fn seq.AggFunc, timeseries bool) *Schema {
 }
 
 func aggInputColsFor(fn seq.AggFunc) []ColumnDesc {
+	var cols []ColumnDesc
 	switch fn {
 	case seq.AggFuncCount, seq.AggFuncUnique:
-		return []ColumnDesc{{Name: "total", Type: DataTypeUint64}}
+		cols = []ColumnDesc{{Name: "total", Type: DataTypeUint64}}
 	case seq.AggFuncMin:
-		return []ColumnDesc{
-			{Name: "min", Type: DataTypeFloat64},
-			{Name: "not_exists", Type: DataTypeUint64},
-		}
+		cols = []ColumnDesc{{Name: "min", Type: DataTypeFloat64}}
 	case seq.AggFuncMax:
-		return []ColumnDesc{
-			{Name: "max", Type: DataTypeFloat64},
-			{Name: "not_exists", Type: DataTypeUint64},
-		}
+		cols = []ColumnDesc{{Name: "max", Type: DataTypeFloat64}}
 	case seq.AggFuncSum:
-		return []ColumnDesc{
-			{Name: "sum", Type: DataTypeFloat64},
-			{Name: "not_exists", Type: DataTypeUint64},
-		}
-	case seq.AggFuncAvg:
-		return []ColumnDesc{
+		cols = []ColumnDesc{
 			{Name: "sum", Type: DataTypeFloat64},
 			{Name: "total", Type: DataTypeUint64},
-			{Name: "not_exists", Type: DataTypeUint64},
+		}
+	case seq.AggFuncAvg:
+		cols = []ColumnDesc{
+			{Name: "sum", Type: DataTypeFloat64},
+			{Name: "total", Type: DataTypeUint64},
 		}
 	case seq.AggFuncQuantile:
 		// min and max are used for q=0/q=1.
-		return []ColumnDesc{
+		cols = []ColumnDesc{
 			{Name: "min", Type: DataTypeFloat64},
 			{Name: "max", Type: DataTypeFloat64},
 			{Name: "samples", Type: DataTypeFloat64Array},
-			{Name: "not_exists", Type: DataTypeUint64},
 		}
 	case seq.AggFuncUniqueCount:
-		return []ColumnDesc{
-			{Name: "values", Type: DataTypeStringArray},
-			{Name: "not_exists", Type: DataTypeUint64},
-		}
+		cols = []ColumnDesc{{Name: "values", Type: DataTypeStringArray}}
 	}
-	return nil
+	if aggHasNotExists(fn) {
+		cols = append(cols, ColumnDesc{Name: "not_exists", Type: DataTypeUint64})
+	}
+	return cols
+}
+
+func aggHasNotExists(fn seq.AggFunc) bool {
+	switch fn {
+	case seq.AggFuncCount, seq.AggFuncUnique:
+		return false
+	}
+	return true
 }

@@ -2474,8 +2474,7 @@ type ResponseSummary struct {
 	Total   uint64                 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
 	Error   *Error                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
 	Explain *ExplainEntry          `protobuf:"bytes,3,opt,name=explain,proto3,oneof" json:"explain,omitempty"`
-	// Aggregation-level not_exists: documents where the aggregated field
-	// exists but the group-by token does not. Zero for document streams.
+	// Aggregation-level not_exists
 	NotExists     int64 `protobuf:"varint,4,opt,name=not_exists,json=notExists,proto3" json:"not_exists,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
