@@ -87,6 +87,30 @@ limits:
 			expectErr: false,
 		},
 		{
+			name: "Valid offloading.remote_total_size",
+			cfg: createCfgFile(t, base+`
+offloading:
+  enabled: true
+  bucket: bbb
+  access_key: bbb
+  secret_key: bbb
+  remote_total_size: 1GiB
+`),
+			expectErr: false,
+		},
+		{
+			name: "Invalid offloading.remote_total_size",
+			cfg: createCfgFile(t, base+`
+offloading:
+  enabled: true
+  bucket: bbb
+  access_key: bbb
+  secret_key: bbb
+  remote_total_size: -1B
+`),
+			expectErr: true,
+		},
+		{
 			name:      "Invalid sealing.lids.block_size",
 			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_SEALING_LIDS_BLOCK_SIZE": "-1"},

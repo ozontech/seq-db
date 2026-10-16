@@ -1,6 +1,8 @@
 package fracmanager
 
 import (
+	"context"
+	"fmt"
 	"math"
 	"math/rand"
 	"path/filepath"
@@ -12,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
@@ -234,4 +238,239 @@ func TestPendingDestroy(t *testing.T) {
 		}, "searching by destroyed faction is expected to trigger a panic")
 	}
 	release2()
+}
+
+type remoteSpec struct {
+	minutesAgo int // creation time and last-doc time, minutes back from now
+	size       uint64
+}
+
+// addRemotes creates remote fraction fixtures in the registry. Eviction
+// uses Info only (creation time, last-doc time, FullSize), the fractions
+// themselves are never searched or loaded. size is the resulting
+// FullSize; a zero size gives a 1-byte fraction (the minimal nonzero
+// IndexOnDisk skips S3 info loading in NewRemote).
+func addRemotes(lc *lifecycleManager, specs ...remoteSpec) {
+	lc.registry.mu.Lock()
+	defer lc.registry.mu.Unlock()
+
+	now := time.Now()
+	for i, s := range specs {
+		name := fmt.Sprintf("frac_remote_%d_%d", now.UnixNano(), i)
+		info := common.NewInfo(name, max(s.size, 1)-1, 0)
+		info.IndexOnDisk = 1
+
+		ts := now.Add(-time.Duration(s.minutesAgo) * time.Minute)
+		info.CreationTime = uint64(ts.UnixMilli())
+		// remotes are partitioned by last-doc time (aligned up to a
+		// minute) - the eviction order comes from it
+		info.To = seq.MillisToMID(uint64(ts.UnixMilli()))
+
+		remote := frac.NewRemote(
+			context.Background(),
+			name,
+			nil,
+			frac.NewIndexCache(),
+			nil,
+			info,
+			&frac.Config{},
+			nil,
+			testSkipMaskProvider{},
+		)
+		lc.registry.remotes.Add(name, &refCountedRemote{Remote: remote})
+		lc.registry.stats.remotes.Add(info)
+	}
+	lc.registry.rebuildSnapshot()
+}
+
+// remoteTotal is the size the evictRemote size accounting operates on.
+func remoteTotal(stats *registryStats) uint64 {
+	return stats.TotalSizeOnDiskRemote() + stats.TotalSizeOnDiskOffloading()
+}
+
+func TestEvictRemote(t *testing.T) {
+	const fracSize = 100
+
+	tests := []struct {
+		name string
+
+		// fixtures: age (minutes back from now) and FullSize of each remote fraction;
+		// zero size gives a 1-byte fraction
+		specs []remoteSpec
+
+		retention time.Duration
+		sizeLimit uint64
+
+		// extra offloading-queue size not backed by any remote fraction;
+		// it counts toward the limit but can't be released
+		offloadingSize uint64
+
+		wantEvicted int // evicted fraction count
+		wantRemotes int // remaining remote fraction count
+		// the size accounting the eviction operates on, after the eviction
+		checkTotal func(t *testing.T, lc *lifecycleManager)
+		// set when an eviction happened: oldestTotal must shift to a younger fraction
+		wantOldestShift bool
+	}{
+		{
+			name: "only the fraction older than retention is evicted",
+			specs: []remoteSpec{
+				{minutesAgo: 60},
+				{minutesAgo: 10},
+				{minutesAgo: 5},
+			},
+			retention:       30 * time.Minute,
+			wantEvicted:     1,
+			wantRemotes:     2,
+			wantOldestShift: true,
+		},
+		{
+			name: "the oldest fraction is evicted to fit the size limit",
+			specs: []remoteSpec{
+				{minutesAgo: 30, size: fracSize},
+				{minutesAgo: 20, size: fracSize},
+				{minutesAgo: 10, size: fracSize},
+			},
+			sizeLimit:   fracSize * 2,
+			wantEvicted: 1,
+			wantRemotes: 2,
+			checkTotal: func(t *testing.T, lc *lifecycleManager) {
+				assert.Equal(t, uint64(fracSize*2), remoteTotal(&lc.registry.stats))
+			},
+			wantOldestShift: true,
+		},
+		{
+			name: "the whole oldest partition goes even if the limit fits less",
+			specs: []remoteSpec{
+				{minutesAgo: 30, size: 1000},
+				{minutesAgo: 10, size: 100},
+			},
+			sizeLimit:   500,
+			wantEvicted: 1,
+			wantRemotes: 1,
+			checkTotal: func(t *testing.T, lc *lifecycleManager) {
+				assert.LessOrEqual(t, remoteTotal(&lc.registry.stats), uint64(500))
+			},
+		},
+		{
+			name: "no limits configured, nothing is ever evicted",
+			specs: []remoteSpec{
+				{minutesAgo: 600, size: fracSize},
+				{minutesAgo: 5, size: fracSize},
+			},
+			wantRemotes: 2,
+		},
+		{
+			name: "no size limit configured, only retention",
+			specs: []remoteSpec{
+				{minutesAgo: 600, size: fracSize},
+				{minutesAgo: 5, size: fracSize},
+			},
+			retention:       30 * time.Minute,
+			wantEvicted:     1,
+			wantRemotes:     1,
+			wantOldestShift: true,
+		},
+		{
+			name: "retention set, all fractions fresh, nothing is evicted",
+			specs: []remoteSpec{
+				{minutesAgo: 5, size: fracSize},
+				{minutesAgo: 3, size: fracSize},
+			},
+			retention:   time.Hour,
+			wantRemotes: 2,
+		},
+		{
+			name: "limit below any achievable total, everything is evicted",
+			specs: []remoteSpec{
+				{minutesAgo: 30, size: fracSize},
+				{minutesAgo: 20, size: fracSize * 2},
+			},
+			sizeLimit:   1,
+			wantEvicted: 2,
+			wantRemotes: 0,
+		},
+		{
+			name: "offloading queue size pushes the total over the limit",
+			specs: []remoteSpec{
+				{minutesAgo: 30, size: fracSize},
+				{minutesAgo: 20, size: fracSize},
+			},
+			offloadingSize: fracSize,
+			sizeLimit:      fracSize * 2,
+			wantEvicted:    1,
+			wantRemotes:    1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lc, tearDown := setupLifecycle(t, nil)
+			defer tearDown()
+
+			addRemotes(lc, tt.specs...)
+
+			if tt.offloadingSize > 0 {
+				offloading := common.NewInfo("frac_offloading", tt.offloadingSize-1, 0)
+				offloading.IndexOnDisk = 1 // FullSize == offloadingSize
+
+				lc.registry.mu.Lock()
+				lc.registry.stats.offloading.Add(offloading)
+				lc.registry.mu.Unlock()
+			}
+
+			evicted := lc.registry.evictRemote(tt.retention, tt.sizeLimit)
+
+			require.Len(t, evicted, tt.wantEvicted)
+			assert.Equal(t, tt.wantRemotes, lc.registry.statistics().remotes.count)
+
+			if tt.checkTotal != nil {
+				tt.checkTotal(t, lc)
+			}
+
+			if tt.wantOldestShift {
+				require.NotEmpty(t, evicted)
+				assert.Greater(t, lc.registry.oldestTotal(), evicted[0].Info().CreationTime,
+					"oldestTotal shifted to a younger fraction")
+			}
+		})
+	}
+}
+
+func TestCleanRemoteBySizeIntegration(t *testing.T) {
+	lc, tearDown := setupLifecycle(t, nil)
+	defer tearDown()
+
+	const fracsCount = 6
+
+	fillAndRotate := func() {
+		appender := lc.registry.appender()
+		appendDocsToActive(t, appender.Active, 10)
+		wg := sync.WaitGroup{}
+		lc.rotate(0, &wg)
+		wg.Wait()
+	}
+
+	for range fracsCount {
+		fillAndRotate()
+	}
+
+	// offload half of the local fractions to S3
+	localTotal := lc.registry.statistics().TotalSizeOnDiskLocal()
+	wg := sync.WaitGroup{}
+	lc.offloadLocal(t.Context(), localTotal/2, 0, &wg)
+	wg.Wait()
+
+	require.Equal(t, fracsCount/2, lc.registry.statistics().remotes.count,
+		"half of the fractions is offloaded")
+
+	// the limit is one byte below the current remote size: the oldest
+	// partition must be deleted and the capacity flag set
+	wg = sync.WaitGroup{}
+	lc.cleanRemote(0, lc.registry.statistics().TotalSizeOnDiskRemote()-1, &wg)
+	wg.Wait()
+
+	stats := lc.registry.statistics()
+	assert.Less(t, stats.remotes.count, fracsCount/2, "at least one remote fraction is evicted")
+	assert.True(t, lc.flags.IsCapacityExceeded(), "capacity exceeded flag is set after remote deletion")
 }
