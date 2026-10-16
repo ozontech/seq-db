@@ -207,8 +207,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8m
 github.com/oklog/ulid/v2 v2.1.1 h1:suPZ4ARWLOJLegGFiZZ1dFAkqzhMjL3J1TzI+5wHz8s=
 github.com/oklog/ulid/v2 v2.1.1/go.mod h1:rcEKHmBBKfef9DhnvX7y1HZBYxjXb0cP5ExxNsTT1QQ=
 github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde/go.mod h1:nZgzbfBr3hhjoZnS66nKrHmduYNpc34ny7RK4z5/HM0=
-github.com/ozontech/insane-json v0.1.9 h1:JG5cEsmuSDwmU7KTJTHfTJ40XMgvtPdsUQbXdbPv+bY=
-github.com/ozontech/insane-json v0.1.9/go.mod h1:xZLf3tVLOqaT13rn1sv4fYaZfupAXNL9naLz4QRoMfY=
+github.com/ozontech/insane-json v0.1.10 h1:H5CflLmvK0x7ZuE8Y1FTO197fCf6hr6ZrYehVuJ5DgM=
+github.com/ozontech/insane-json v0.1.10/go.mod h1:xZLf3tVLOqaT13rn1sv4fYaZfupAXNL9naLz4QRoMfY=
 github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 h1:onHthvaw9LFnH4t2DcNVpwGmV9E1BkGknEliJkfwQj0=
 github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58/go.mod h1:DXv8WO4yhMYhSNPKjeNKa5WY9YCIEBRbNzFFPJbWO6Y=
 github.com/pborman/getopt v0.0.0-20170112200414-7148bc3a4c30/go.mod h1:85jBQOZwpVEaDAr341tbn15RS4fCAsIst0qp7i8ex1o=
