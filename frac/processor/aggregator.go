@@ -331,6 +331,8 @@ type tsSourceBinCount struct {
 }
 
 const (
+	sourceChunkSize = 1024
+	sourceChunkMask = sourceChunkSize - 1
 	// tsBinsArrayLimit max number of timestamp bins per source to keep in an array
 	tsBinsArrayLimit = 8
 )
@@ -637,10 +639,12 @@ func (n *SingleSourceHistogramAggregator) Dispose() {
 	n.field.Dispose()
 }
 
-const (
-	sourceChunkSize = 1024
-	sourceChunkMask = sourceChunkSize - 1
-)
+type SourcedIterator interface {
+	ConsumeTokenSource(lids []node.LID) ([]int, error)
+	ValueBySource(source uint32) string
+	UniqueSources() int
+	Dispose()
+}
 
 // SourcedNodeIterator can iterate the sourced node that returns source, which means index in a tids slice.
 type SourcedNodeIterator struct {
@@ -656,13 +660,6 @@ type SourcedNodeIterator struct {
 	lastSource uint32
 
 	sourcesBuf []int
-}
-
-type SourcedIterator interface {
-	ConsumeTokenSource(lids []node.LID) ([]int, error)
-	ValueBySource(source uint32) string
-	UniqueSources() int
-	Dispose()
 }
 
 func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, field string, limit iteratorLimit) *SourcedNodeIterator {
