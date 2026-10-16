@@ -36,10 +36,10 @@ type twoSources struct {
 // TwoSourceAggregator implements Aggregator interface
 // and can iterate over groupBy and field node.Sourced to collect a histogram.
 type TwoSourceAggregator struct {
-	field *SourcedNodeIterator
+	field *TokenCachingSourcedNodeIterator
 	// groupNotExists is the counter for non-existent groups.
 	groupNotExists int64
-	groupBy        *SourcedNodeIterator
+	groupBy        *TokenCachingSourcedNodeIterator
 	// groupByNotExists is the map to count non-existent groups by source.
 	// Source (key in the map) actually is an index in groupByTIDs.
 	groupByNotExists map[uint32]int64
@@ -65,9 +65,9 @@ func NewGroupAndFieldAggregator(
 		collectSamples:   collectSamples,
 		collectValues:    collectValues,
 		countBySource:    make(map[AggBin[twoSources]]int64),
-		field:            fieldIterator,
+		field:            NewTokenCachingSourcedNodeIterator(fieldIterator),
 		groupNotExists:   0,
-		groupBy:          groupByIterator,
+		groupBy:          NewTokenCachingSourcedNodeIterator(groupByIterator),
 		groupByNotExists: make(map[uint32]int64),
 		extractMID:       fn,
 		limits:           limits,
@@ -211,7 +211,7 @@ func parseNum(str string) (float64, error) {
 // sourceCounter stores per-source totals for a single count aggregation.
 type sourceCounter interface {
 	update(sources []int, mids []seq.MID)
-	get(group *SourcedNodeIterator) map[seq.AggBin]*seq.SamplesContainer
+	get(group SourcedIterator) map[seq.AggBin]*seq.SamplesContainer
 	notExists() int64
 }
 
@@ -233,9 +233,9 @@ func (c *plainSourceCounter) update(sources []int, _ []seq.MID) {
 	}
 }
 
-func (c *plainSourceCounter) get(group *SourcedNodeIterator) map[seq.AggBin]*seq.SamplesContainer {
+func (c *plainSourceCounter) get(group SourcedIterator) map[seq.AggBin]*seq.SamplesContainer {
 	dst := make(map[seq.AggBin]*seq.SamplesContainer, group.UniqueSources())
-	for source, cnt := range group.countBySource.all() {
+	for source, cnt := range group.SourceCounts() {
 		aggBin := seq.AggBin{
 			Token: group.ValueBySource(source),
 			MID:   consts.DummyMID,
@@ -282,7 +282,7 @@ func (c *tsSourceCounter) update(sources []int, mids []seq.MID) {
 	}
 }
 
-func (c *tsSourceCounter) get(group *SourcedNodeIterator) map[seq.AggBin]*seq.SamplesContainer {
+func (c *tsSourceCounter) get(group SourcedIterator) map[seq.AggBin]*seq.SamplesContainer {
 	dst := make(map[seq.AggBin]*seq.SamplesContainer, group.UniqueSources())
 	for source, bin := range c.counts.all() {
 		aggBin := seq.AggBin{
@@ -418,7 +418,7 @@ func (c *tsSourceCountMap) all() iter.Seq2[uint32, tsBinCount] {
 // SingleSourceCountAggregator aggregates counts for a single source.
 type SingleSourceCountAggregator struct {
 	counter    sourceCounter
-	group      *SourcedNodeIterator
+	group      SourcedIterator
 	extractMID ExtractMIDFunc
 	midsBuf    []seq.MID
 }
@@ -454,8 +454,6 @@ func (n *SingleSourceCountAggregator) Next(lids []node.LID) error {
 }
 
 func (n *SingleSourceCountAggregator) Aggregate() (seq.AggregatableSamples, error) {
-	n.group.prefetchTokenValues()
-
 	return seq.AggregatableSamples{
 		NotExists:    n.counter.notExists(),
 		SamplesByBin: n.counter.get(n.group),
@@ -468,14 +466,14 @@ func (n *SingleSourceCountAggregator) Dispose() {
 
 // SingleSourceUniqueAggregator aggregates unique values for a single source.
 type SingleSourceUniqueAggregator struct {
-	group     *SourcedNodeIterator
+	group     *TokenCachingSourcedNodeIterator
 	notExists int64
 }
 
 func NewSingleSourceUniqueAggregator(iterator *SourcedNodeIterator) *SingleSourceUniqueAggregator {
 	return &SingleSourceUniqueAggregator{
 		notExists: 0,
-		group:     iterator,
+		group:     NewTokenCachingSourcedNodeIterator(iterator),
 	}
 }
 
@@ -522,7 +520,7 @@ func (n *SingleSourceUniqueAggregator) Dispose() {
 }
 
 type SingleSourceHistogramAggregator struct {
-	field          *SourcedNodeIterator
+	field          *TokenCachingSourcedNodeIterator
 	histogram      map[seq.MID]*seq.SamplesContainer
 	collectSamples bool
 	extractMID     ExtractMIDFunc
@@ -533,7 +531,7 @@ func NewSingleSourceHistogramAggregator(
 	field *SourcedNodeIterator, collectSamples bool, fn ExtractMIDFunc,
 ) *SingleSourceHistogramAggregator {
 	return &SingleSourceHistogramAggregator{
-		field:          field,
+		field:          NewTokenCachingSourcedNodeIterator(field),
 		histogram:      make(map[seq.MID]*seq.SamplesContainer),
 		collectSamples: collectSamples,
 		extractMID:     fn,
@@ -611,8 +609,6 @@ type SourcedNodeIterator struct {
 	tids        []uint32
 	field       string
 
-	tokensCache map[uint32]string
-
 	uniqSourcesLimit iteratorLimit
 	countBySource    sourceCountMap
 
@@ -622,6 +618,15 @@ type SourcedNodeIterator struct {
 	sourcesBuf []int
 }
 
+// SourcedIterator is implemented by source iterators, with or without token value caching.
+type SourcedIterator interface {
+	ConsumeTokenSource(lids []node.LID) ([]int, error)
+	ValueBySource(source uint32) string
+	UniqueSources() int
+	SourceCounts() iter.Seq2[uint32, uint64]
+	Dispose()
+}
+
 func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, field string, limit iteratorLimit) *SourcedNodeIterator {
 	lastID, lastSource := sourced.NextSourced()
 	return &SourcedNodeIterator{
@@ -629,7 +634,6 @@ func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, 
 		ti:               ti,
 		tids:             tids,
 		field:            field,
-		tokensCache:      make(map[uint32]string),
 		uniqSourcesLimit: limit,
 		countBySource:    newSourceCountMap(len(tids)),
 		lastID:           lastID,
@@ -666,7 +670,41 @@ func (s *SourcedNodeIterator) ConsumeTokenSource(lids []node.LID) ([]int, error)
 	return s.sourcesBuf, nil
 }
 
-func (s *SourcedNodeIterator) prefetchTokenValues() {
+func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
+	return string(s.ti.GetValByTID(s.tids[source], s.field))
+}
+
+func (s *SourcedNodeIterator) SourceCounts() iter.Seq2[uint32, uint64] {
+	return s.countBySource.all()
+}
+
+func (s *SourcedNodeIterator) UniqueSources() int {
+	return s.countBySource.size
+}
+
+func (s *SourcedNodeIterator) Dispose() {
+	if s.sourcedNode != nil {
+		s.sourcedNode.Release()
+		s.sourcedNode = nil
+	}
+}
+
+// TokenCachingSourcedNodeIterator caches token values for aggregators that resolve them repeatedly.
+type TokenCachingSourcedNodeIterator struct {
+	*SourcedNodeIterator
+
+	tokensCache map[uint32]string
+}
+
+// NewTokenCachingSourcedNodeIterator wraps iterator with token value caching.
+func NewTokenCachingSourcedNodeIterator(iterator *SourcedNodeIterator) *TokenCachingSourcedNodeIterator {
+	return &TokenCachingSourcedNodeIterator{
+		SourcedNodeIterator: iterator,
+		tokensCache:         make(map[uint32]string),
+	}
+}
+
+func (s *TokenCachingSourcedNodeIterator) prefetchTokenValues() {
 	if s.ti == nil || s.countBySource.size == 0 {
 		return
 	}
@@ -675,7 +713,7 @@ func (s *SourcedNodeIterator) prefetchTokenValues() {
 	}
 }
 
-func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
+func (s *TokenCachingSourcedNodeIterator) ValueBySource(source uint32) string {
 	if val, ok := s.tokensCache[source]; ok {
 		return val
 	}
@@ -689,17 +727,6 @@ func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
 	s.tokensCache[source] = val
 
 	return val
-}
-
-func (s *SourcedNodeIterator) UniqueSources() int {
-	return s.countBySource.size
-}
-
-func (s *SourcedNodeIterator) Dispose() {
-	if s.sourcedNode != nil {
-		s.sourcedNode.Release()
-		s.sourcedNode = nil
-	}
 }
 
 // sourceCountMap keeps a number of occurrences for each source. It uses a chunked array
