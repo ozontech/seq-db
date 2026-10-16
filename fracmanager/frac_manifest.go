@@ -32,6 +32,9 @@ type fracManifest struct {
 	// Presence of ._remote (case when offloading was interrupted)
 	hasRemoteTmp bool
 
+	// Presence of ._remote-del (case when remote deletion was interrupted)
+	hasRemoteDeleting bool
+
 	// Split index file flags
 	hasInfo    bool
 	hasToken   bool
@@ -99,6 +102,9 @@ func (m *fracManifest) AddExtension(ext string) error {
 	case consts.RemoteFractionTmpSuffix:
 		m.hasRemoteTmp = true
 
+	case consts.RemoteFractionDeletingSuffix:
+		m.hasRemoteDeleting = true
+
 	case consts.IndexTmpFileSuffix, consts.InfoTmpFileSuffix,
 		consts.TokenTmpFileSuffix, consts.OffsetsTmpFileSuffix,
 		consts.IDTmpFileSuffix, consts.LIDTmpFileSuffix,
@@ -123,11 +129,19 @@ const (
 	fracStageSealed                   // sealed fraction - read-only
 	fracStageRemote                   // remote fraction - data stored in external storage
 	fracStageZombie                   // partially deleted fraction - requires cleanup
+	// fracStageZombieRemote is a fraction whose offloading to remote storage
+	// started (._remote intent marker) but never committed (.remote missing),
+	// and local files are gone - so its partial files in remote storage
+	// can never be overwritten and must be cleaned up there.
+	fracStageZombieRemote
 )
 
 // Stage determines the current stage of the fraction based on file presence
 // Key method for making fraction management decisions
 func (m *fracManifest) Stage() fracStage {
+	if m.hasRemoteDeleting {
+		return fracStageZombieRemote
+	}
 	if m.hasRemoteFile() {
 		return fracStageRemote
 	}
@@ -136,6 +150,15 @@ func (m *fracManifest) Stage() fracStage {
 	}
 	if m.hasWal && m.hasDocs {
 		return fracStageActive
+	}
+	if m.hasRemoteTmp {
+		// Offloading intent marker without commit: if local data files are
+		// gone too, the fraction is a remote zombie - its partial files in
+		// remote storage can never be overwritten and must be cleaned there.
+		// Otherwise local files are intact and offloading will be retried.
+		if !m.hasDocsFile() && !m.hasAllIndexFiles() {
+			return fracStageZombieRemote
+		}
 	}
 	if m.hasDocsDel || m.hasSdocsDel || m.hasIndexDel {
 		return fracStageZombie
@@ -215,14 +238,6 @@ func removeIndexTmp(m *fracManifest) {
 	}
 }
 
-func removeRemoteTmp(m *fracManifest) {
-	if m.hasRemoteTmp {
-		// TODO: Clean S3 zombies before
-		util.RemoveFile(m.basePath + consts.RemoteFractionTmpSuffix)
-		m.hasRemoteTmp = false
-	}
-}
-
 func removeSdocsTmp(m *fracManifest) {
 	util.RemoveFile(m.basePath + consts.SdocsTmpFileSuffix)
 }
@@ -232,7 +247,7 @@ func removeDocsTmp(m *fracManifest) {
 }
 
 // analyzeFiles analyzes fraction files and groups them by fraction ID
-// Creates manifests that represent the complete state of each fraction
+// Creates manifests that represent the complete state of each fraction.
 func analyzeFiles(files []string) ([]*fracManifest, error) {
 	ids := make([]string, 0, len(files))
 	manifests := make(map[string]*fracManifest)
@@ -260,8 +275,13 @@ func analyzeFiles(files []string) ([]*fracManifest, error) {
 }
 
 // filterValid filters valid fractions and handles invalid ones
-// Removes partially deleted and unknown fractions
-func filterValid(ids []string, manifests map[string]*fracManifest) ([]*fracManifest, error) {
+// Removes partially deleted and unknown fractions.
+// Remote zombies (interrupted offloading, no local files) are passed
+// through: the loader registers them for remote deletion.
+func filterValid(
+	ids []string,
+	manifests map[string]*fracManifest,
+) ([]*fracManifest, error) {
 	// We need to drop stale (compacted) fractions first.
 	ids, err := dropCompacted(ids, manifests)
 	if err != nil {
@@ -297,6 +317,13 @@ func filterValid(ids []string, manifests map[string]*fracManifest) ([]*fracManif
 			logger.Warn("cleaning up partially deleted fraction files", zap.String("base_path", manifest.basePath))
 			removeAllFiles(manifest.basePath)
 			continue
+
+		case fracStageZombieRemote:
+			// Offloading was interrupted and local files are gone.
+			// Local leftovers are removed, the partial remote files are
+			// deleted later by maintenance ticks (the fraction is passed
+			// through to the loader, keeping its ._remote marker).
+			removeAllExceptRemoteTmp(manifest.basePath)
 		}
 
 		cleanupFrac(manifest)
@@ -413,7 +440,6 @@ func cleanupTemporary(m *fracManifest) {
 	removeSdocsDel(m)
 	removeDocsDel(m)
 	removeIndexTmp(m)
-	removeRemoteTmp(m)
 	removeDocsTmp(m)
 	removeSdocsTmp(m)
 }
@@ -427,6 +453,31 @@ func removeAllFiles(basePath string) {
 		consts.IndexFileSuffix, consts.IndexDelFileSuffix, consts.IndexTmpFileSuffix,
 
 		consts.RemoteFractionTmpSuffix, consts.RemoteFractionSuffix,
+		consts.RemoteFractionDeletingSuffix,
+
+		consts.InfoFileSuffix, consts.InfoTmpFileSuffix,
+		consts.TokenFileSuffix, consts.TokenTmpFileSuffix,
+		consts.OffsetsFileSuffix, consts.OffsetsTmpFileSuffix,
+		consts.IDFileSuffix, consts.IDTmpFileSuffix,
+		consts.LIDFileSuffix, consts.LIDTmpFileSuffix,
+
+		consts.WalFileSuffix,
+		consts.CompactionPlan,
+	} {
+		util.RemoveFile(basePath + suffix)
+	}
+}
+
+// removeAllExceptRemoteTmp removes all fraction files except the remote
+// intent markers (._remote, ._remote-deleting), which must survive until
+// the remote deletion succeeds.
+func removeAllExceptRemoteTmp(basePath string) {
+	for _, suffix := range []string{
+		consts.DocsFileSuffix, consts.DocsDelFileSuffix, consts.DocsTmpFileSuffix,
+		consts.SdocsFileSuffix, consts.SdocsDelFileSuffix, consts.SdocsTmpFileSuffix,
+		consts.IndexFileSuffix, consts.IndexDelFileSuffix, consts.IndexTmpFileSuffix,
+
+		consts.RemoteFractionSuffix,
 
 		consts.InfoFileSuffix, consts.InfoTmpFileSuffix,
 		consts.TokenFileSuffix, consts.TokenTmpFileSuffix,
@@ -477,6 +528,7 @@ func (f *fracManifest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddBool("hasSdocs", f.hasSdocs)
 	enc.AddBool("hasRemote", f.hasRemote)
 	enc.AddBool("hasRemoteTmp", f.hasRemoteTmp)
+	enc.AddBool("hasRemoteDeleting", f.hasRemoteDeleting)
 
 	enc.AddBool("hasInfo", f.hasInfo)
 	enc.AddBool("hasToken", f.hasToken)

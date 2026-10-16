@@ -153,7 +153,7 @@ type refCountedRemote struct {
 }
 
 // Destroy waits for all references to be released and then destroys the Remote.
-func (p *refCountedRemote) Destroy() {
+func (p *refCountedRemote) Destroy() error {
 	p.wg.Wait()
-	p.Suicide()
+	return p.Suicide()
 }
