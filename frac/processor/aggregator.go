@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/bits-and-blooms/bitset"
+
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
@@ -215,27 +217,31 @@ type sourceCounter interface {
 	notExists() int64
 }
 
-// plainSourceCounter is a counter used in ordinary aggregations. It currently relies on SourcedNodeIterator's
-// countBySource internal per-source counter.
+// plainSourceCounter is a counter used in ordinary aggregations.
 type plainSourceCounter struct {
-	notExistsCnt int64
+	countBySource sourceCountMap
+	notExistsCnt  int64
 }
 
-func newPlainSourceCounter() *plainSourceCounter {
-	return &plainSourceCounter{}
+func newPlainSourceCounter(sources int) *plainSourceCounter {
+	return &plainSourceCounter{
+		countBySource: newSourceCountMap(sources),
+	}
 }
 
 func (c *plainSourceCounter) update(sources []int, _ []seq.MID) {
-	for i := range sources {
-		if sources[i] < 0 {
+	for _, source := range sources {
+		if source < 0 {
 			c.notExistsCnt++
+			continue
 		}
+		c.countBySource.add(uint32(source))
 	}
 }
 
 func (c *plainSourceCounter) get(group SourcedIterator) map[seq.AggBin]*seq.SamplesContainer {
 	dst := make(map[seq.AggBin]*seq.SamplesContainer, group.UniqueSources())
-	for source, cnt := range group.SourceCounts() {
+	for source, cnt := range c.countBySource.all() {
 		aggBin := seq.AggBin{
 			Token: group.ValueBySource(source),
 			MID:   consts.DummyMID,
@@ -430,7 +436,7 @@ func NewSingleSourceCountAggregator(
 	if timeseries {
 		counts = newTsSourceCounter(len(iterator.tids))
 	} else {
-		counts = newPlainSourceCounter()
+		counts = newPlainSourceCounter(len(iterator.tids))
 	}
 	return &SingleSourceCountAggregator{
 		counter:    counts,
@@ -610,7 +616,7 @@ type SourcedNodeIterator struct {
 	field       string
 
 	uniqSourcesLimit iteratorLimit
-	countBySource    sourceCountMap
+	uniqueSources    *bitset.BitSet
 
 	lastID     node.LID
 	lastSource uint32
@@ -622,7 +628,6 @@ type SourcedIterator interface {
 	ConsumeTokenSource(lids []node.LID) ([]int, error)
 	ValueBySource(source uint32) string
 	UniqueSources() int
-	SourceCounts() iter.Seq2[uint32, uint64]
 	Dispose()
 }
 
@@ -634,7 +639,7 @@ func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, 
 		tids:             tids,
 		field:            field,
 		uniqSourcesLimit: limit,
-		countBySource:    newSourceCountMap(len(tids)),
+		uniqueSources:    bitset.New(uint(len(tids))),
 		lastID:           lastID,
 		lastSource:       lastSource,
 	}
@@ -657,8 +662,11 @@ func (s *SourcedNodeIterator) ConsumeTokenSource(lids []node.LID) ([]int, error)
 			continue
 		}
 
-		isNewSource := s.countBySource.add(s.lastSource)
-		if isNewSource && s.uniqSourcesLimit.limit > 0 && s.countBySource.size > s.uniqSourcesLimit.limit {
+		isNewSource := !s.uniqueSources.Test(uint(s.lastSource))
+		if isNewSource {
+			s.uniqueSources.Set(uint(s.lastSource))
+		}
+		if isNewSource && s.uniqSourcesLimit.limit > 0 && s.UniqueSources() > s.uniqSourcesLimit.limit {
 			s.sourcesBuf[i] = -1
 			return nil, fmt.Errorf("%w: iterator limit is exceeded", s.uniqSourcesLimit.err)
 		}
@@ -673,12 +681,8 @@ func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
 	return string(s.ti.GetValByTID(s.tids[source], s.field))
 }
 
-func (s *SourcedNodeIterator) SourceCounts() iter.Seq2[uint32, uint64] {
-	return s.countBySource.all()
-}
-
 func (s *SourcedNodeIterator) UniqueSources() int {
-	return s.countBySource.size
+	return int(s.uniqueSources.Count())
 }
 
 func (s *SourcedNodeIterator) Dispose() {
@@ -693,7 +697,8 @@ func (s *SourcedNodeIterator) Dispose() {
 type TokenCachingSourcedNodeIterator struct {
 	*SourcedNodeIterator
 
-	tokensCache map[uint32]string
+	tokensCache   map[uint32]string
+	countBySource sourceCountMap
 }
 
 // NewTokenCachingSourcedNodeIterator wraps iterator with token value caching.
@@ -701,11 +706,27 @@ func NewTokenCachingSourcedNodeIterator(iterator *SourcedNodeIterator) *TokenCac
 	return &TokenCachingSourcedNodeIterator{
 		SourcedNodeIterator: iterator,
 		tokensCache:         make(map[uint32]string),
+		countBySource:       newSourceCountMap(len(iterator.tids)),
 	}
 }
 
+func (s *TokenCachingSourcedNodeIterator) ConsumeTokenSource(lids []node.LID) ([]int, error) {
+	sources, err := s.SourcedNodeIterator.ConsumeTokenSource(lids)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, source := range sources {
+		if source >= 0 {
+			s.countBySource.add(uint32(source))
+		}
+	}
+
+	return sources, nil
+}
+
 func (s *TokenCachingSourcedNodeIterator) prefetchTokenValues() {
-	if s.ti == nil || s.countBySource.size == 0 {
+	if s.ti == nil || s.UniqueSources() == 0 {
 		return
 	}
 	for source := range s.countBySource.all() {
@@ -733,7 +754,6 @@ func (s *TokenCachingSourcedNodeIterator) ValueBySource(source uint32) string {
 // for better performance.
 type sourceCountMap struct {
 	chunks []*[sourceChunkSize]uint64
-	size   int
 }
 
 func newSourceCountMap(size int) sourceCountMap {
@@ -742,8 +762,8 @@ func newSourceCountMap(size int) sourceCountMap {
 	}
 }
 
-// add increments a counter by source and returns if it was previously zero
-func (c *sourceCountMap) add(source uint32) bool {
+// add increments a counter by source.
+func (c *sourceCountMap) add(source uint32) {
 	chunkIdx := int(source / sourceChunkSize)
 	chunk := c.chunks[chunkIdx]
 	if chunk == nil {
@@ -752,13 +772,7 @@ func (c *sourceCountMap) add(source uint32) bool {
 	}
 
 	offset := source & sourceChunkMask
-	isNew := chunk[offset] == 0
 	chunk[offset]++
-	if isNew {
-		c.size++
-	}
-
-	return isNew
 }
 
 func (c *sourceCountMap) count(source uint32) uint64 {
