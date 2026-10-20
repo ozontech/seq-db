@@ -115,6 +115,7 @@ func NewIngestor(config IngestorConfig, store *storeapiclient.Store) (*Ingestor,
 
 	grpcGateway := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &humanReadableMarshaler{}),
+		runtime.WithForwardResponseRewriter(seqproxyapi.NewStreamSearchRewriter()),
 	)
 	err := seqproxyapi.RegisterSeqProxyApiHandlerFromEndpoint(ctx, grpcGateway, config.API.GatewayAddr,
 		[]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())})
