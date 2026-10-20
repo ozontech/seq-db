@@ -1422,7 +1422,8 @@ func (s *IntegrationTestSuite) TestDocuments() {
 
 		actualDocs := []string{}
 		actualIDs := []seq.ID{}
-		for doc := range search.DocsIteratorSeq(docsStream) {
+		for doc, e := range search.DocsIteratorSeq(docsStream) {
+			_ = e
 			actualIDs = append(actualIDs, doc.ID)
 			actualDocs = append(actualDocs, string(doc.Data))
 		}
