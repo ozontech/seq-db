@@ -2,13 +2,16 @@ package frac_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/ozontech/seq-db/cache"
@@ -112,4 +115,55 @@ func BenchmarkIndexer(b *testing.B) {
 		}
 		wg.Wait()
 	}
+}
+
+func TestIndexerDuplicateIDWithinBulk(t *testing.T) {
+	idx, stop := frac.NewActiveIndexer(1, 1)
+	defer stop()
+
+	active := frac.NewActive(
+		filepath.Join(t.TempDir(), "test"),
+		idx,
+		storage.NewReadLimiter(1, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		&frac.Config{},
+		testSkipMaskProvider{},
+	)
+	defer active.Release()
+
+	processor := getTestProcessor()
+	docs := [][]byte{
+		[]byte(`{"status":"200","request":"first"}`),
+		[]byte(`{"status":"500","request":"second with the same id"}`),
+		[]byte(`{"status":"404","request":"third"}`),
+	}
+
+	var metas []indexer.MetaData
+	for _, doc := range docs {
+		_, docMetas, err := processor.ProcessDoc(doc, time.Now())
+		require.NoError(t, err)
+		for _, m := range docMetas {
+			m.Tokens = slices.Clone(m.Tokens)
+			metas = append(metas, m)
+		}
+	}
+	metas[1].ID = metas[0].ID
+
+	var raw []byte
+	for _, m := range metas {
+		lenPos := len(raw)
+		raw = append(raw, 0, 0, 0, 0)
+		raw = m.MarshalBinaryTo(raw)
+		binary.LittleEndian.PutUint32(raw[lenPos:], uint32(len(raw)-lenPos-4))
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	idx.Index(active, storage.CompressWalBlock(raw, nil, 3), &wg, stopwatch.New())
+	wg.Wait()
+
+	assert.Equal(t, uint32(2), active.Info().DocsTotal)
+	assert.Equal(t, active.Info().DocsTotal, active.MIDs.Len()-1)
+	assert.Len(t, active.GetAllDocuments(), int(active.Info().DocsTotal))
 }
