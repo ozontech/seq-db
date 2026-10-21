@@ -72,7 +72,7 @@ func getTestProcessor() *indexer.Processor {
 		seq.TokenizerTypeExists:  tokenizer.NewExistsTokenizer(),
 	}
 
-	return indexer.NewProcessor(mapping, tokenizers, 0, 0, 0)
+	return indexer.NewProcessor(mapping, tokenizers, 0, 0)
 }
 
 func BenchmarkIndexer(b *testing.B) {
