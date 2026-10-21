@@ -33,6 +33,7 @@ type Processor struct {
 
 	indexer *indexer
 	decoder *insaneJSON.Root
+	bulkIDs map[seq.ID]struct{}
 }
 
 func init() {
@@ -72,6 +73,14 @@ func (p *Processor) ProcessDoc(doc []byte, requestTime time.Time) ([]byte, []Met
 	}
 
 	id := seq.NewID(docTime, rand.Uint64())
+	for {
+		if _, ok := p.bulkIDs[id]; !ok {
+			break
+		}
+		ridCollisions.Inc()
+		id.RID = seq.RID(rand.Uint64())
+	}
+	p.bulkIDs[id] = struct{}{}
 
 	p.indexer.Index(p.decoder.Node, id, uint32(len(doc)))
 
@@ -181,6 +190,12 @@ func (p *Processor) ProcessBulk(
 	readNext func() ([]byte, error),
 ) (int, []byte, []byte, error) {
 	parseDuration := time.Duration(0)
+
+	if p.bulkIDs == nil {
+		p.bulkIDs = make(map[seq.ID]struct{})
+	} else {
+		clear(p.bulkIDs)
+	}
 
 	total := 0
 	for {
