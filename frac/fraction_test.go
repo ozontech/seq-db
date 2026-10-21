@@ -2881,13 +2881,11 @@ func rewriteMetas(t *testing.T, src []byte, filter func(*indexer.MetaData) bool)
 		var meta indexer.MetaData
 		require.NoError(t, meta.UnmarshalBinary(raw))
 
-		var kept []tokenizer.MetaToken
 		for _, tok := range meta.Tokens {
-			meta.Tokens = append(kept, tok)
+			meta.Tokens = append(meta.Tokens, tok)
 			if !filter(&meta) {
 				continue
 			}
-			kept = append(kept, tok)
 		}
 
 		dst = binary.LittleEndian.AppendUint32(dst, 0)
