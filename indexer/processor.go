@@ -51,6 +51,7 @@ func NewProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenize
 			metas:      []MetaData{},
 		},
 		decoder: insaneJSON.Spawn(),
+		bulkIDs: make(map[seq.ID]struct{}),
 	}
 }
 
@@ -191,11 +192,7 @@ func (p *Processor) ProcessBulk(
 ) (int, []byte, []byte, error) {
 	parseDuration := time.Duration(0)
 
-	if p.bulkIDs == nil {
-		p.bulkIDs = make(map[seq.ID]struct{})
-	} else {
-		clear(p.bulkIDs)
-	}
+	clear(p.bulkIDs)
 
 	total := 0
 	for {
