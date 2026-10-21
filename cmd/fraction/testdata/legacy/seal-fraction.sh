@@ -134,9 +134,15 @@ else
 
 	wt="${TMPDIR:-/tmp}/fraction-seal-$VERSION"
 
+	# A run interrupted between the checkout and the .git write leaves a
+	# partial worktree (dirs but no .git) or a stale registration; either
+	# makes `git worktree add` fail with "already exists". Existing
+	# on-disk worktrees are never pruned, so this is safe to run always.
+	git -C "$REPO" worktree prune
 	if [[ -d "$wt/.git" || -f "$wt/.git" ]]; then
 		git -C "$wt" checkout -q --detach "$(git -C "$REPO" rev-parse "$commit")"
 	else
+		rm -rf "$wt"
 		git -C "$REPO" worktree add --detach "$wt" "$commit" >/dev/null
 	fi
 

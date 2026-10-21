@@ -1,6 +1,7 @@
 services:
   minio:
     image: alpine/minio:latest-release
+    user: "0:0"
     ports:
       - 9000:9000  # API
       - 9001:9001  # WebUI

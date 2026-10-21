@@ -84,30 +84,20 @@ func (c *metaDataCollector) AppendMeta(m indexer.MetaData) {
 	c.extractTokens(m.Tokens)
 }
 
-func getIndexesOfIntercept(a, b []seq.ID) []int {
-	bMap := make(map[seq.ID]struct{}, len(b))
-	for _, id := range b {
-		bMap[id] = struct{}{}
-	}
-
-	res := make([]int, 0, len(a)-len(b))
-	for i, id := range a {
-		if _, ok := bMap[id]; ok {
-			res = append(res, i)
-		}
-	}
-	return res
-}
-
-// Filter cleans up metaDataCollector from ids that do not intercept with 'appended'.
+// Filter cleans up metaDataCollector from ids that do not intercept with
+// 'appended' and drops duplicated documents.
 func (c *metaDataCollector) Filter(appended []seq.ID) {
 	// prepare stats
 	c.MaxMID = 0
 	c.MinMID = math.MaxUint64
-	c.DocsCounter = uint32(len(appended))
+
+	unique := make(map[seq.ID]struct{}, len(appended))
+	for _, id := range appended {
+		unique[id] = struct{}{}
+	}
 
 	// prepare new slices
-	ids := make([]seq.ID, 0, cap(c.IDs))
+	ids := make([]seq.ID, 0, len(unique))
 	positions := make([]seq.DocPos, 0, cap(c.Positions))
 	tokensIndex := make([]int, 0, cap(c.tokensIndex))
 	tokensInDocs := make([]uint32, 0, cap(c.tokensInDocs))
@@ -120,8 +110,18 @@ func (c *metaDataCollector) Filter(appended []seq.ID) {
 		tokensOffset += v
 	}
 
-	for _, i := range getIndexesOfIntercept(c.IDs, appended) {
-		id := c.IDs[i]
+	keptPos := make(map[seq.ID]seq.DocPos, len(unique))
+	for i, id := range c.IDs {
+		if _, ok := unique[id]; !ok {
+			continue // the ID was not appended to DocsPositions
+		}
+		if first, ok := keptPos[id]; ok {
+			if first != c.Positions[i] {
+				continue // duplicate document, not nested index
+			}
+		} else {
+			keptPos[id] = c.Positions[i]
+		}
 		if id.MID < c.MinMID {
 			c.MinMID = id.MID
 		}
@@ -139,6 +139,7 @@ func (c *metaDataCollector) Filter(appended []seq.ID) {
 	c.Positions = positions
 	c.tokensInDocs = tokensInDocs
 	c.tokensIndex = tokensIndex
+	c.DocsCounter = uint32(len(ids))
 }
 
 func (c *metaDataCollector) extractTokens(tokens []tokenizer.MetaToken) {
