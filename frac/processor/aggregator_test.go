@@ -402,6 +402,9 @@ func TestSourceCountMapAgainstBuiltinMap(t *testing.T) {
 
 	require.Len(t, gotPairs, counts.size)
 	assert.Equal(t, wantPairs, gotPairs)
+	for _, pair := range gotPairs {
+		assert.Greater(t, pair.count, uint64(0))
+	}
 }
 
 // TestSourceCountMapAllOrderedBySource tests that iteration is asc ordered by source.
