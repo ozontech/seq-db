@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/consts"
+	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/tokenizer"
 )
 
 func TestExtractDocTime(t *testing.T) {
@@ -200,4 +202,39 @@ func TestFutureTimestamp(t *testing.T) {
 	r.True(documentDelayed(now.Sub(docTime), 0, time.Hour*23))
 
 	r.False(documentDelayed(0, 0, 0))
+}
+
+func TestProcessBulkBulkIDsReset(t *testing.T) {
+	mapping := seq.Mapping{
+		"message": seq.NewSingleType(seq.TokenizerTypeText, "message", 1024),
+	}
+	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
+		seq.TokenizerTypeText: tokenizer.NewTextTokenizer(1024, false, true, 8192),
+	}
+
+	proc := NewProcessor(mapping, tokenizers, 0, 0)
+
+	readNext := func(docs ...string) func() ([]byte, error) {
+		i := 0
+		return func() ([]byte, error) {
+			if i >= len(docs) {
+				return nil, nil
+			}
+			d := []byte(docs[i])
+			i++
+			return d, nil
+		}
+	}
+
+	_, _, _, err := proc.ProcessBulk(time.Now(), nil, nil, readNext(
+		`{"message": "a"}`, `{"message": "b"}`, `{"message": "c"}`,
+	))
+	require.NoError(t, err)
+	require.Len(t, proc.bulkIDs, 3)
+
+	_, _, _, err = proc.ProcessBulk(time.Now(), nil, nil, readNext(
+		`{"message": "a"}`, `{"message": "b"}`,
+	))
+	require.NoError(t, err)
+	require.Len(t, proc.bulkIDs, 2)
 }
