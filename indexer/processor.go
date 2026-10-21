@@ -9,6 +9,7 @@ import (
 	"math/rand/v2"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	insaneJSON "github.com/ozontech/insane-json"
 	"go.uber.org/zap"
 
@@ -25,9 +26,21 @@ var (
 	futureDelays = bulkTimeErrors.WithLabelValues("future_delay")
 )
 
+func ParseRidMode(s string) (bool, error) {
+	switch s {
+	case "rand":
+		return false, nil
+	case "hash":
+		return true, nil
+	default:
+		return false, fmt.Errorf("unknown rid mode: %q (must be \"rand\" or \"hash\")", s)
+	}
+}
+
 // Processor accumulates meta and docs from a single bulk
 // returns bulk request ready to be sent to store
 type Processor struct {
+	ridByHash   bool
 	drift       time.Duration
 	futureDrift time.Duration
 
@@ -41,8 +54,9 @@ func init() {
 	insaneJSON.MapUseThreshold = math.MaxInt32
 }
 
-func NewProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, drift, futureDrift time.Duration) *Processor {
+func NewProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, drift, futureDrift time.Duration, ridByHash bool) *Processor {
 	return &Processor{
+		ridByHash:   ridByHash,
 		drift:       drift,
 		futureDrift: futureDrift,
 		indexer: &indexer{
@@ -73,19 +87,31 @@ func (p *Processor) ProcessDoc(doc []byte, requestTime time.Time) ([]byte, []Met
 		docTime = requestTime
 	}
 
-	id := seq.NewID(docTime, rand.Uint64())
-	for {
-		if _, ok := p.bulkIDs[id]; !ok {
-			break
-		}
+	id := seq.NewID(docTime, p.rid(doc))
+	if _, ok := p.bulkIDs[id]; ok {
 		ridCollisions.Inc()
-		id.RID = seq.RID(rand.Uint64())
+		if p.ridByHash {
+			return nil, nil, nil
+		}
+		for {
+			id.RID = seq.RID(rand.Uint64())
+			if _, ok := p.bulkIDs[id]; !ok {
+				break
+			}
+		}
 	}
 	p.bulkIDs[id] = struct{}{}
 
 	p.indexer.Index(p.decoder.Node, id, uint32(len(doc)))
 
 	return doc, p.indexer.Metas(), nil
+}
+
+func (p *Processor) rid(doc []byte) uint64 {
+	if p.ridByHash {
+		return xxhash.Sum64(doc)
+	}
+	return rand.Uint64()
 }
 
 func documentDelayed(docDelay, drift, futureDrift time.Duration) bool {
@@ -214,6 +240,10 @@ func (p *Processor) ProcessBulk(
 			return 0, nil, nil, fmt.Errorf("processing doc: %s", err)
 		}
 		parseDuration += time.Since(parseStart)
+
+		if doc == nil { // duplicate skipped in hash mode
+			continue
+		}
 
 		total++
 		dstDocs = binary.LittleEndian.AppendUint32(dstDocs, uint32(len(doc)))

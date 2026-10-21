@@ -25,6 +25,7 @@ import (
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
+	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/mappingprovider"
 	"github.com/ozontech/seq-db/network/circuitbreaker"
@@ -222,6 +223,12 @@ func startProxy(
 			MaxDocumentSize:        int(cfg.Limits.DocSize),
 		},
 	}
+
+	ridByHash, err := indexer.ParseRidMode(cfg.Indexing.RidMode)
+	if err != nil {
+		logger.Panic("failed to parse rid mode", zap.Error(err))
+	}
+	pconfig.Bulk.RidByHash = ridByHash
 
 	ingestor, err := proxyapi.NewIngestor(pconfig, inMemory)
 	if err != nil {

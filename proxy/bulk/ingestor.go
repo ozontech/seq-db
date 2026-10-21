@@ -36,6 +36,7 @@ type IngestorConfig struct {
 	MaxInflightBulks       int
 	AllowedTimeDrift       time.Duration
 	FutureAllowedTimeDrift time.Duration
+	RidByHash              bool
 
 	MappingProvider MappingProvider
 
@@ -213,7 +214,7 @@ func (i *Ingestor) getProcessor() *indexer.Processor {
 		// The proc already initialized with current ingestor config, so we don't need to reinit it.
 		return procEface.(*indexer.Processor)
 	}
-	return indexer.NewProcessor(i.config.MappingProvider.GetMapping(), i.tokenizers, i.config.AllowedTimeDrift, i.config.FutureAllowedTimeDrift)
+	return indexer.NewProcessor(i.config.MappingProvider.GetMapping(), i.tokenizers, i.config.AllowedTimeDrift, i.config.FutureAllowedTimeDrift, i.config.RidByHash)
 }
 
 func (i *Ingestor) putProcessor(proc *indexer.Processor) {

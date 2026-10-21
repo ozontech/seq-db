@@ -55,6 +55,7 @@ type TestingEnvConfig struct {
 
 	Mapping        seq.Mapping
 	IndexAllFields bool
+	RidByHash      bool
 
 	S3Cli *seqs3.Client
 }
@@ -361,6 +362,7 @@ func MakeIngestors(cfg *TestingEnvConfig, hot, cold [][]string) []*Ingestor {
 					MaxInflightBulks:       0,
 					AllowedTimeDrift:       24 * time.Hour,
 					FutureAllowedTimeDrift: 24 * time.Hour,
+					RidByHash:              cfg.RidByHash,
 					MappingProvider:        mappingProvider,
 					MaxTokenSize:           consts.DefaultMaxTokenSize,
 					CaseSensitive:          false,
