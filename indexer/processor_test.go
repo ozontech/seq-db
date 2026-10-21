@@ -5,6 +5,7 @@ import (
 	"time"
 
 	insaneJSON "github.com/ozontech/insane-json"
+	"github.com/cespare/xxhash/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -212,7 +213,7 @@ func TestProcessBulkBulkIDsReset(t *testing.T) {
 		seq.TokenizerTypeText: tokenizer.NewTextTokenizer(1024, false, true, 8192),
 	}
 
-	proc := NewProcessor(mapping, tokenizers, 0, 0)
+	proc := NewProcessor(mapping, tokenizers, 0, 0, false)
 
 	readNext := func(docs ...string) func() ([]byte, error) {
 		i := 0
@@ -237,4 +238,114 @@ func TestProcessBulkBulkIDsReset(t *testing.T) {
 	))
 	require.NoError(t, err)
 	require.Len(t, proc.bulkIDs, 2)
+}
+
+func TestProcessorRidHash(t *testing.T) {
+	mapping := seq.Mapping{
+		"message": seq.NewSingleType(seq.TokenizerTypeText, "message", 1024),
+	}
+	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
+		seq.TokenizerTypeText: tokenizer.NewTextTokenizer(1024, false, true, 8192),
+	}
+
+	proc := NewProcessor(mapping, tokenizers, 0, 0, true)
+
+	doc := []byte(`{"message": "a", "ts": "2024-04-19 18:04:25.999"}`)
+
+	_, metas, err := proc.ProcessDoc(doc, time.Now())
+	require.NoError(t, err)
+	require.NotEmpty(t, metas)
+
+	id := metas[0].ID
+	require.Equal(t, seq.RID(xxhash.Sum64(doc)), id.RID)
+
+	doc2, metas2, err := proc.ProcessDoc(doc, time.Now())
+	require.NoError(t, err)
+	require.Nil(t, doc2)
+	require.Nil(t, metas2)
+}
+
+func TestProcessBulkSkipsDuplicates(t *testing.T) {
+	mapping := seq.Mapping{
+		"message": seq.NewSingleType(seq.TokenizerTypeText, "message", 1024),
+	}
+	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
+		seq.TokenizerTypeText: tokenizer.NewTextTokenizer(1024, false, true, 8192),
+	}
+
+	proc := NewProcessor(mapping, tokenizers, 0, 0, true)
+
+	readNext := func(docs ...string) func() ([]byte, error) {
+		i := 0
+		return func() ([]byte, error) {
+			if i >= len(docs) {
+				return nil, nil
+			}
+			d := []byte(docs[i])
+			i++
+			return d, nil
+		}
+	}
+
+	total, _, _, err := proc.ProcessBulk(time.Now(), nil, nil, readNext(
+		`{"message": "a"}`, `{"message": "a"}`, `{"message": "b"}`,
+	))
+	require.NoError(t, err)
+	require.Equal(t, 2, total)
+	require.Len(t, proc.bulkIDs, 2)
+}
+
+func TestParseRidMode(t *testing.T) {
+	byHash, err := ParseRidMode("rand")
+	require.NoError(t, err)
+	require.False(t, byHash)
+
+	byHash, err = ParseRidMode("hash")
+	require.NoError(t, err)
+	require.True(t, byHash)
+
+	_, err = ParseRidMode("unknown")
+	require.Error(t, err)
+}
+
+func TestRIDFromDocContent(t *testing.T) {
+	r := require.New(t)
+
+	mapping, err := seq.ReadMapping([]byte(`mapping-list:
+  - type: keyword
+    name: service
+  - type: keyword
+    name: kafka_request_correlation_id
+`))
+	r.NoError(err)
+
+	newProc := func() *Processor {
+		return NewProcessor(mapping, map[seq.TokenizerType]tokenizer.Tokenizer{
+			seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(20, false, true),
+		}, 0, 0, true)
+	}
+
+	now := time.Now()
+	doc := []byte(`{"ts": "2024-04-19 18:04:25.999", "service": "test", "kafka_request_correlation_id": "123"}`)
+
+	// same content, same millisecond -> same ID (idempotent retries)
+	_, metas1, err := newProc().ProcessDoc(doc, now)
+	r.NoError(err)
+	_, metas2, err := newProc().ProcessDoc(doc, now)
+	r.NoError(err)
+	r.Equal(metas1[0].ID, metas2[0].ID)
+	r.Equal(seq.RID(xxhash.Sum64(doc)), metas1[0].ID.RID)
+
+	// different content -> different RID (overwhelmingly likely)
+	other := []byte(`{"ts": "2024-04-19 18:04:25.999", "service": "test", "kafka_request_correlation_id": "124"}`)
+	_, metas3, err := newProc().ProcessDoc(other, now)
+	r.NoError(err)
+	r.NotEqual(metas1[0].ID.RID, metas3[0].ID.RID)
+
+	// same content, different millisecond -> different MID
+	otherTime := []byte(`{"ts": "2024-04-19 18:04:26.999", "service": "test", "kafka_request_correlation_id": "123"}`)
+	_, metas4, err := newProc().ProcessDoc(otherTime, now)
+	r.NoError(err)
+	r.NotEqual(metas1[0].ID.MID, metas4[0].ID.MID)
+	r.NotEqual(metas1[0].ID.RID, metas4[0].ID.RID) // timestamp is part of the content
 }
