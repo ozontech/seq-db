@@ -3,6 +3,7 @@ package frac_test
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/ozontech/seq-db/cache"
@@ -102,6 +104,10 @@ type FractionTestSuite struct {
 	fraction frac.Fraction
 
 	insertDocuments func(docs ...[]string)
+	// insertWithoutAllToken makes the next insertDocuments call drop the
+	// _all_ token from metas, simulating a proxy of the version that
+	// stopped sending it.
+	insertWithoutAllToken bool
 }
 
 func (s *FractionTestSuite) SetupSuiteCommon() {
@@ -191,6 +197,89 @@ func (s *FractionTestSuite) TestSearchKeyword() {
 
 	s.AssertSearch("_exists_:message", docs, []int{4, 3, 2, 1, 0})
 	s.AssertSearch("_exists_:level", docs, []int{3, 2, 1, 0})
+}
+
+func (s *FractionTestSuite) TestSearchMatchAll() {
+	docs := []string{
+		/*0*/ `{"timestamp":"2000-01-01T13:00:25Z","message":"first","level":"1"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:32Z","message":"second"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:43Z","message":"third","level":"2"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	// Every spelling of "all documents" must return the whole fraction
+	// without consulting the _all_ postings (which are no longer written).
+	s.AssertSearch("*", docs, []int{2, 1, 0})
+	s.AssertSearch("_all_:*", docs, []int{2, 1, 0})
+	s.AssertSearch(`_all_:""`, docs, []int{2, 1, 0})
+
+	// Aggregation over _all_ must yield a single "" bucket holding
+	// every document of the query window.
+	searchParams := s.query("*", withAggQuery(processor.AggQuery{
+		GroupBy: aggField(seq.TokenAll),
+		Func:    seq.AggFuncCount,
+	}))
+	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncCount}, []seq.AggregationBucket{
+		{Name: "", Value: float64(len(docs))},
+	})
+}
+
+// TestSearchWithoutAllTokenInMetas inserts documents whose metas carry no
+// _all_ token, as produced by a proxy of the version that stopped sending it.
+func (s *FractionTestSuite) TestSearchWithoutAllTokenInMetas() {
+	docs := []string{
+		/*0*/ `{"timestamp":"2000-01-01T13:00:25Z","message":"first","level":"1"}`,
+		/*1*/ `{"timestamp":"2000-01-01T13:00:32Z","message":"second"}`,
+		/*2*/ `{"timestamp":"2000-01-01T13:00:43Z","message":"third","level":"2"}`,
+		// No field of this document is in the mapping, so its meta has
+		// no tokens at all now that _all_ is not added unconditionally.
+		/*3*/ `{"timestamp":"2000-01-01T13:00:55Z","not_in_mapping":"value"}`,
+	}
+
+	s.insertWithoutAllToken = true
+	s.insertDocuments(docs)
+
+	s.AssertSearch("*", docs, []int{3, 2, 1, 0})
+	s.AssertSearch("level:1", docs, []int{0})
+	s.AssertSearch("message:second", docs, []int{1})
+	s.AssertSearch("NOT message:second", docs, []int{3, 2, 0})
+
+	searchParams := s.query("*", withAggQuery(processor.AggQuery{
+		GroupBy: aggField("level"),
+		Func:    seq.AggFuncCount,
+	}))
+	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncCount}, []seq.AggregationBucket{
+		{Name: "1", Value: 1},
+		{Name: "2", Value: 1},
+		// Documents 2 and 3 have no level token in their metas at all.
+		{Name: "_not_exists", Value: 2},
+	})
+}
+
+func (s *FractionTestSuite) TestSearchMatchAllDegenerateWindows() {
+	docs := []string{
+		/*0*/ `{"timestamp":"2000-01-01T13:00:25Z","message":"only one"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	// The window [minLID, maxLID] must never leak LID 0 (seq.SystemID):
+	// getLIDsBorders returns (0, 0) for ranges that miss the fraction.
+	s.AssertSearch("*", docs, []int{0})
+
+	s.AssertSearch("*",
+		docs,
+		[]int{0},
+	)
+	s.AssertSearchWithSearchParams(
+		s.query("*", withFrom("2000-01-01T12:00:00Z"), withTo("2000-01-01T12:30:00Z")),
+		docs, []int{}, nil,
+	)
+	s.AssertSearchWithSearchParams(
+		s.query("*", withFrom("2000-01-01T14:00:00Z"), withTo("2000-01-01T14:30:00Z")),
+		docs, []int{}, nil,
+	)
 }
 
 func (s *FractionTestSuite) TestSearchNot() {
@@ -2711,6 +2800,20 @@ func (s *FractionTestSuite) AssertHist(
 }
 
 func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
+	var metaFilter func(*indexer.MetaData) bool
+	if s.insertWithoutAllToken {
+		s.insertWithoutAllToken = false
+		metaFilter = func(meta *indexer.MetaData) bool {
+			return len(meta.Tokens) == 0 || string(meta.Tokens[0].Key) != seq.TokenAll
+		}
+	}
+	return s.newActiveWithMetas(bulks, metaFilter)
+}
+
+// newActiveWithMetas appends documents processed like a proxy does, passing
+// each meta through the given filter that reports which tokens to keep.
+// A nil filter keeps all tokens.
+func (s *FractionTestSuite) newActiveWithMetas(bulks [][]string, metaFilter func(*indexer.MetaData) bool) *frac.Active {
 	baseName := filepath.Join(s.tmpDir, randomHex(12))
 
 	active := frac.NewActive(
@@ -2746,6 +2849,12 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
 		_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
 		s.Require().NoError(err, "processing bulk failed")
 
+		if metaFilter != nil {
+			// Rewrite the metas blob dropping tokens rejected by the filter:
+			// [u32 len][meta][u32 len][meta]...
+			binaryMeta = rewriteMetas(s.T(), binaryMeta, metaFilter)
+		}
+
 		compressor.CompressDocsAndMetas(binaryDocs, binaryMeta)
 		docsBlock, metasBlock := compressor.DocsMetas()
 
@@ -2755,6 +2864,38 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
 	}
 	wg.Wait()
 	return active
+}
+
+// rewriteMetas re-encodes the metas blob keeping only the tokens the
+// filter approves for each meta.
+func rewriteMetas(t *testing.T, src []byte, filter func(*indexer.MetaData) bool) []byte {
+	t.Helper()
+
+	var dst []byte
+	for len(src) > 0 {
+		n := binary.LittleEndian.Uint32(src)
+		src = src[4:]
+		raw := src[:n]
+		src = src[n:]
+
+		var meta indexer.MetaData
+		require.NoError(t, meta.UnmarshalBinary(raw))
+
+		var kept []tokenizer.MetaToken
+		for _, tok := range meta.Tokens {
+			meta.Tokens = append(kept, tok)
+			if !filter(&meta) {
+				continue
+			}
+			kept = append(kept, tok)
+		}
+
+		dst = binary.LittleEndian.AppendUint32(dst, 0)
+		pos := len(dst) - 4
+		dst = meta.MarshalBinaryTo(dst)
+		binary.LittleEndian.PutUint32(dst[pos:], uint32(len(dst)-pos-4))
+	}
+	return dst
 }
 
 func (s *FractionTestSuite) newSealed(bulks ...[]string) *frac.Sealed {
