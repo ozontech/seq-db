@@ -75,13 +75,11 @@ func (c *metaDataCollector) AppendMeta(m indexer.MetaData) {
 	}
 
 	c.IDs = append(c.IDs, m.ID)
-	c.tokensInDocs = append(c.tokensInDocs, uint32(len(m.Tokens)))
+	c.tokensInDocs = append(c.tokensInDocs, uint32(c.extractTokens(m.Tokens)))
 	c.Positions = append(c.Positions, pos)
 
 	c.DocsCounter++
 	c.SizeCounter += uint64(m.Size)
-
-	c.extractTokens(m.Tokens)
 }
 
 func getIndexesOfIntercept(a, b []seq.ID) []int {
@@ -141,9 +139,21 @@ func (c *metaDataCollector) Filter(appended []seq.ID) {
 	c.tokensIndex = tokensIndex
 }
 
-func (c *metaDataCollector) extractTokens(tokens []tokenizer.MetaToken) {
+// extractTokens appends the given tokens to the collector and returns the
+// number of tokens actually recorded. Callers must use this count for
+// per-document token accounting: tokensInDocs and tokensIndex are flat
+// arrays that must stay in sync.
+//
+// The _all_ token is skipped: the store assigns every LID itself, so the
+// _all_ posting list is fed directly (see appendWorker) and must not
+// depend on the proxy putting this token into every meta.
+func (c *metaDataCollector) extractTokens(tokens []tokenizer.MetaToken) int {
+	count := 0
 	for _, token := range tokens {
 		key, value := token.Key, token.Value
+		if string(key) == seq.TokenAll {
+			continue
+		}
 		pos := len(c.tokensBuf)
 		c.tokensBuf = append(c.tokensBuf, key...)
 		c.tokensBuf = append(c.tokensBuf, ':')
@@ -160,7 +170,9 @@ func (c *metaDataCollector) extractTokens(tokens []tokenizer.MetaToken) {
 			c.FieldsLengths = append(c.FieldsLengths, len(key))
 		}
 		c.tokensIndex = append(c.tokensIndex, index)
+		count++
 	}
+	return count
 }
 
 func (c *metaDataCollector) Init(blockIndex uint32) {

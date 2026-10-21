@@ -34,6 +34,10 @@ type mergeTask struct {
 	tokenLIDs *TokenLIDs
 }
 
+// minMergeQueue is the queue length above which a token is sent to
+// background merge workers; below it the merge happens lazily on read.
+const minMergeQueue = 10000
+
 func NewActiveIndexer(workerCount, chLen int) (*ActiveIndexer, func()) {
 	idx := ActiveIndexer{
 		ch:          make(chan *indexTask, chLen),
@@ -176,6 +180,11 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 
 		m = sw.Start("put_lids_queue")
 		tokensToMerge := addLIDsToTokens(tokenLIDsPlaces, groups)
+		// The _all_ posting list is every LID of the fraction, which we have
+		// just assigned ourselves
+		if allLIDs := active.TokenList.GetAllTokenLIDs(); allLIDs.PutLIDsInQueue(lids) > minMergeQueue {
+			tokensToMerge = append(tokensToMerge, allLIDs)
+		}
 		ai.sendTokensToMergeWorkers(active, tokensToMerge)
 		m.Stop()
 
@@ -202,8 +211,6 @@ func (ai *ActiveIndexer) sendTokensToMergeWorkers(frac *Active, tokens []*TokenL
 }
 
 func addLIDsToTokens(tlids []*TokenLIDs, lids [][]uint32) []*TokenLIDs {
-	const minMergeQueue = 10000
-
 	needMerge := make([]*TokenLIDs, 0, len(tlids))
 	for i, tl := range tlids {
 		if l := tl.PutLIDsInQueue(lids[i]); l > minMergeQueue {

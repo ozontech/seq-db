@@ -101,7 +101,6 @@ func TestProcessDocuments(t *testing.T) {
 	}
 
 	var (
-		all       = newToken(seq.TokenAll, "")
 		existsMsg = newToken(seq.TokenExists, "message")
 	)
 
@@ -115,7 +114,7 @@ func TestProcessDocuments(t *testing.T) {
 					ExpMeta: []indexer.MetaData{{
 						ID:     id,
 						Size:   2,
-						Tokens: []tokenizer.MetaToken{newToken(seq.TokenAll, "")},
+						Tokens: nil,
 					}},
 				}
 			},
@@ -141,14 +140,14 @@ func TestProcessDocuments(t *testing.T) {
 					},
 					ExpDocs: nil,
 					ExpMeta: []indexer.MetaData{
-						{ID: id, Size: 30, Tokens: []tokenizer.MetaToken{all, tk("*prefix_asterisk"), existsMsg}},
-						{ID: id, Size: 31, Tokens: []tokenizer.MetaToken{all, tk("*"), tk("prefix_asterisk"), existsMsg}},
-						{ID: id, Size: 28, Tokens: []tokenizer.MetaToken{all, tk("infix*asterisk"), existsMsg}},
-						{ID: id, Size: 30, Tokens: []tokenizer.MetaToken{all, tk("infix"), tk("*"), tk("asterisk"), existsMsg}},
-						{ID: id, Size: 29, Tokens: []tokenizer.MetaToken{all, tk("infix"), tk("*asterisk"), existsMsg}},
-						{ID: id, Size: 29, Tokens: []tokenizer.MetaToken{all, tk("infix*"), tk("asterisk"), existsMsg}},
-						{ID: id, Size: 31, Tokens: []tokenizer.MetaToken{all, tk("postfix"), tk("asterisk*"), existsMsg}},
-						{ID: id, Size: 32, Tokens: []tokenizer.MetaToken{all, tk("postfix"), tk("asterisk"), tk("*"), existsMsg}},
+						{ID: id, Size: 30, Tokens: []tokenizer.MetaToken{tk("*prefix_asterisk"), existsMsg}},
+						{ID: id, Size: 31, Tokens: []tokenizer.MetaToken{tk("*"), tk("prefix_asterisk"), existsMsg}},
+						{ID: id, Size: 28, Tokens: []tokenizer.MetaToken{tk("infix*asterisk"), existsMsg}},
+						{ID: id, Size: 30, Tokens: []tokenizer.MetaToken{tk("infix"), tk("*"), tk("asterisk"), existsMsg}},
+						{ID: id, Size: 29, Tokens: []tokenizer.MetaToken{tk("infix"), tk("*asterisk"), existsMsg}},
+						{ID: id, Size: 29, Tokens: []tokenizer.MetaToken{tk("infix*"), tk("asterisk"), existsMsg}},
+						{ID: id, Size: 31, Tokens: []tokenizer.MetaToken{tk("postfix"), tk("asterisk*"), existsMsg}},
+						{ID: id, Size: 32, Tokens: []tokenizer.MetaToken{tk("postfix"), tk("asterisk"), tk("*"), existsMsg}},
 					},
 				}
 			},
@@ -164,7 +163,6 @@ func TestProcessDocuments(t *testing.T) {
 						ID:   id,
 						Size: 22,
 						Tokens: []tokenizer.MetaToken{
-							newToken(seq.TokenAll, ""),
 							newToken(seq.TokenExists, "exists_only"),
 						},
 					}},
@@ -180,7 +178,6 @@ func TestProcessDocuments(t *testing.T) {
 					ExpDocs: []string{doc},
 					ExpMeta: []indexer.MetaData{
 						{ID: id, Size: uint32(len(doc)), Tokens: []tokenizer.MetaToken{
-							newToken(seq.TokenAll, ""),
 							newToken("_exists_", "tags.level"),
 							newToken("_exists_", "tags.message"),
 							newToken("_exists_", "tags.path"),
@@ -199,9 +196,9 @@ func TestProcessDocuments(t *testing.T) {
 					InDocs:  []string{doc1, doc2, doc3},
 					ExpDocs: nil,
 					ExpMeta: []indexer.MetaData{
-						{ID: id, Size: uint32(len(doc1)), Tokens: []tokenizer.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "level")}},
-						{ID: id, Size: uint32(len(doc2)), Tokens: []tokenizer.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "message")}},
-						{ID: id, Size: uint32(len(doc3)), Tokens: []tokenizer.MetaToken{newToken(seq.TokenAll, ""), newToken(seq.TokenExists, "path")}},
+						{ID: id, Size: uint32(len(doc1)), Tokens: []tokenizer.MetaToken{newToken(seq.TokenExists, "level")}},
+						{ID: id, Size: uint32(len(doc2)), Tokens: []tokenizer.MetaToken{newToken(seq.TokenExists, "message")}},
+						{ID: id, Size: uint32(len(doc3)), Tokens: []tokenizer.MetaToken{newToken(seq.TokenExists, "path")}},
 					},
 				}
 			},
@@ -211,7 +208,6 @@ func TestProcessDocuments(t *testing.T) {
 			Payload: func() TestPayload {
 				const doc = `{"level":"error", "message":" request 🫦 failed! ", "error": "context cancelled", "shard": "1", "path":"http://localhost:8080/example"}`
 				meta := indexer.MetaData{ID: id, Size: uint32(len(doc)), Tokens: []tokenizer.MetaToken{
-					newToken(seq.TokenAll, ""),
 					newToken("level", "error"),
 					newToken(seq.TokenExists, "level"),
 					newToken("message", "request"),
@@ -537,8 +533,6 @@ func newToken(k, v string) tokenizer.MetaToken {
 
 func buildKeywordTokens(kvs ...string) []tokenizer.MetaToken {
 	var tokens []tokenizer.MetaToken
-
-	tokens = append(tokens, newToken("_all_", ""))
 
 	for i := 0; i < len(kvs); i += 2 {
 		k := kvs[i]
