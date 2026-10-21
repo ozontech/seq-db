@@ -343,11 +343,13 @@ func BenchmarkMergeSource(b *testing.B) {
 		ms := NewMergeSource("bench", sources)
 
 		ms.BlockOffsets()
-		for range ms.IDs() {
+		for _, e := range ms.IDs() {
+			_ = e
 		}
 
 		for _, tokIt := range ms.TokenTriplets() {
-			for range tokIt {
+			for _, e := range tokIt {
+				_ = e
 			}
 		}
 	}
