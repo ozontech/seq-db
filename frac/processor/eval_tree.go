@@ -64,19 +64,18 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 func evalLeaf(
 	ti tokenIndex,
 	token parser.Token,
+	cache tidsCache,
 	sw *stopwatch.Stopwatch,
 	stats *searchStats,
 	minLID, maxLID uint32,
 	order seq.DocsOrder,
 ) (node.Node, error) {
-	m := sw.Start("get_tids_by_token_expr")
-	tids, err := ti.GetTIDsByTokenExpr(token)
-	m.Stop()
+	tids, err := cache.get(ti, token)
 	if err != nil {
 		return nil, err
 	}
 
-	m = sw.Start("get_lids_from_tids")
+	m := sw.Start("get_lids_from_tids")
 	lidsTids := ti.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 	m.Stop()
 
