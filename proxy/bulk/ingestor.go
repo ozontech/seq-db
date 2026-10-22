@@ -3,7 +3,6 @@ package bulk
 import (
 	"context"
 	"errors"
-	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -214,8 +213,7 @@ func (i *Ingestor) getProcessor() *indexer.Processor {
 		// The proc already initialized with current ingestor config, so we don't need to reinit it.
 		return procEface.(*indexer.Processor)
 	}
-	index := rand.Uint64() % consts.IngestorMaxInstances
-	return indexer.NewProcessor(i.config.MappingProvider.GetMapping(), i.tokenizers, i.config.AllowedTimeDrift, i.config.FutureAllowedTimeDrift, index)
+	return indexer.NewProcessor(i.config.MappingProvider.GetMapping(), i.tokenizers, i.config.AllowedTimeDrift, i.config.FutureAllowedTimeDrift)
 }
 
 func (i *Ingestor) putProcessor(proc *indexer.Processor) {
