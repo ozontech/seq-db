@@ -60,6 +60,25 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 	return nil, fmt.Errorf("unknown token type")
 }
 
+// matchAllNode yields every LID in [minLID, maxLID] without touching the index.
+// A sealed fraction's _all_ postings are exactly 1..DocsTotal, because sealing
+// derives the new LID numbering from the _all_ list itself; an active fraction's
+// are 1..N in the inverser-mapped space for the same reason. Either way the
+// window computed by getLIDsBorders is already the answer.
+//
+// The asc flag follows the node package convention: it means "LID numbers
+// ascend", which is desc document order, since LID 1 is the newest document.
+func matchAllNode(minLID, maxLID uint32, asc bool) node.Node {
+	// LID 0 is reserved for seq.SystemID; getLIDsBorders returns (0, 0) for an empty index.
+	if minLID == 0 || minLID > maxLID {
+		return node.NewStatic(nil, asc)
+	}
+	if asc {
+		return node.NewRange(node.NewAscLID(minLID), node.NewAscLID(maxLID))
+	}
+	return node.NewRange(node.NewDescLID(maxLID), node.NewDescLID(minLID))
+}
+
 // evalLeaf finds suitable matching fraction tokens and returns Node that generate corresponding tokens LIDs
 func evalLeaf(
 	ti tokenIndex,
@@ -69,6 +88,12 @@ func evalLeaf(
 	minLID, maxLID uint32,
 	order seq.DocsOrder,
 ) (node.Node, error) {
+	if parser.IsMatchAll(token) {
+		stats.LeavesTotal++
+		stats.NodesTotal++
+		return matchAllNode(minLID, maxLID, order.IsDesc()), nil
+	}
+
 	m := sw.Start("get_tids_by_token_expr")
 	tids, err := ti.GetTIDsByTokenExpr(token)
 	m.Stop()
@@ -226,6 +251,15 @@ func iteratorFromLiteral(
 	queryStats QueryStats,
 	queryOpt QueryOptimizationConfig,
 ) (*SourcedNodeIterator, error) {
+	if parser.IsMatchAll(literal) {
+		// The _all_ posting list matches every LID in the window, so no index
+		// lookup is needed. Source 0 with tids = []uint32{0} makes GetValByTID
+		// return "" (the value of the _all_ token) on both active and sealed
+		// fractions; any other TID would panic on fractions lacking the field.
+		sourcedNode := node.NewSourcedNodeWrapper(matchAllNode(minLID, maxLID, order.IsDesc()), 0)
+		return NewSourcedNodeIterator(sourcedNode, ti, []uint32{0}, literal.Field, iteratorLimit), nil
+	}
+
 	m := sw.Start("get_tids_by_field")
 	// For aggregations we can receive the first and the last TID for field,
 	// because we build tree over *all* token values.
