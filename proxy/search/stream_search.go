@@ -292,12 +292,8 @@ func NewStreamSearchIterator(
 	it := &StreamSearchIterator{tr: tr, typing: header.Typing, stream: stream, cancel: cancel}
 
 	msg, err := stream.Recv()
-	if errors.Is(err, io.EOF) {
-		// No data and no summary: an empty result, not an error.
-		return it, nil
-	}
 	if err != nil {
-		return nil, err
+		return nil, it.mapRecvErr(err)
 	}
 	if err := it.push(msg); err != nil {
 		return nil, err
@@ -313,9 +309,10 @@ type StreamSearchIterator struct {
 
 	curBatch []*storeapi.Record
 
-	total uint64
-	err   error
-	done  bool
+	total       uint64
+	err         error
+	done        bool
+	summarySeen bool
 
 	cancel context.CancelFunc
 }
@@ -329,10 +326,7 @@ func (it *StreamSearchIterator) Next() *query.Record {
 		data, err := it.stream.Recv()
 		if err != nil {
 			it.done = true
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			it.err = err
+			it.err = it.mapRecvErr(err)
 			return nil
 		}
 		if err := it.push(data); err != nil {
@@ -365,6 +359,7 @@ func (it *StreamSearchIterator) push(msg *storeapi.StreamSearchResponse) error {
 	case *storeapi.StreamSearchResponse_Data:
 		it.curBatch = v.Data.GetBatch().GetRecords()
 	case *storeapi.StreamSearchResponse_Summary:
+		it.summarySeen = true
 		it.total = v.Summary.Total
 		if v.Summary.Explain != nil {
 			it.tr.AddChildWithSpan(explainEntryToTracerSpan(v.Summary.Explain))
@@ -409,16 +404,25 @@ func (it *StreamSearchIterator) drain() {
 	for {
 		msg, err := it.stream.Recv()
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return
+			if e := it.mapRecvErr(err); e != nil && it.err == nil {
+				it.err = e
 			}
-			it.err = err
 			return
 		}
 		if err := it.push(msg); err != nil {
 			it.err = err
 		}
 	}
+}
+
+func (it *StreamSearchIterator) mapRecvErr(err error) error {
+	if errors.Is(err, io.EOF) {
+		if it.summarySeen {
+			return nil
+		}
+		return fmt.Errorf("store stream closed without summary: %w", io.ErrUnexpectedEOF)
+	}
+	return err
 }
 
 func storeCodeToError(code storeapi.SearchErrorCode) error {

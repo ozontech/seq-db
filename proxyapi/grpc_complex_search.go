@@ -132,9 +132,7 @@ func (g *grpcV1) useStreamSearch(
 	if summary == nil {
 		summary = &query.Summary{}
 	}
-	if partialErr != nil && summary.Err == nil {
-		summary.Err = partialErr
-	}
+	summary.Err = wrapPartialResponse(summary.Err, partialErr)
 
 	tr.Done()
 

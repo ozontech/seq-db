@@ -130,9 +130,7 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	if summary == nil {
 		summary = &query.Summary{}
 	}
-	if partialErr != nil && summary.Err == nil {
-		summary.Err = partialErr
-	}
+	summary.Err = wrapPartialResponse(summary.Err, partialErr)
 	return g.sendSummary(stream, summary, tr, q.Explain)
 }
 
@@ -178,6 +176,17 @@ func mapProxyErrorCode(err error) seqproxyapi.ErrorCode {
 	default:
 		return seqproxyapi.ErrorCode_ERROR_CODE_UNSPECIFIED
 	}
+}
+
+func wrapPartialResponse(errs ...error) error {
+	err := util.DeduplicateErrors(errs)
+	if err == nil ||
+		errors.Is(err, consts.ErrPartialResponse) ||
+		errors.Is(err, consts.ErrIngestorQueryWantsOldData) ||
+		errors.Is(err, consts.ErrTooManyFractionsHit) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", consts.ErrPartialResponse, err)
 }
 
 // checkControl peeks at the control/recv channels without blocking. It returns
