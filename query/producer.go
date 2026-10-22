@@ -14,4 +14,6 @@ type RecordProducer interface {
 type Summary struct {
 	Err   error
 	Total uint64
+	// Aggregation-level not_exists
+	NotExists uint64
 }

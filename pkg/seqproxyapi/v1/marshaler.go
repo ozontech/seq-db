@@ -272,24 +272,16 @@ func (i *AsyncSearchesListItem) MarshalJSON() ([]byte, error) {
 const streamSearchDocColumns = 3
 
 // streamSearchAggColumns is the number of columns carried by an aggregation
-// record: [key, value, ts, quantiles]. quantiles holds the computed quantile
-// values (a little-endian float64 array); it is empty for non-quantile
-// aggregations. The record kind is told from the column count, so documents
-// (3 cells) and aggregations (4 cells) never collide.
-const streamSearchAggColumns = 4
+// record: [key, value, ts, quantiles, not_exists].
+const streamSearchAggColumns = 5
 
 // MarshalJSON formats a StreamSearch record into a human-readable JSON array.
 // The record kind is distinguished by the column count:
 //
 //   - documents (3 cells): [id, time(nanoseconds, little-endian uint64), data]
-//     where data is inlined as a json.RawMessage and time is rendered as an
-//     RFC3339Nano string;
-//   - aggregation buckets (4 cells): [key, value(little-endian float64),
+//   - aggregation buckets (5 cells): [key, value(little-endian float64),
 //     ts(nanoseconds, little-endian uint64), quantiles(little-endian float64
-//     array)] where value is rendered as a number (NaN/Inf become quoted
-//     strings), ts is rendered as an RFC3339Nano string (empty when the bucket
-//     has no timestamp) and quantiles is rendered as an array of numbers
-//     (empty when no quantiles were requested).
+//     array), not_exists(little-endian uint64)]
 //
 // For any other layout the raw cells are emitted as-is (base64 for bytes).
 func (r *Record) MarshalJSON() ([]byte, error) {
@@ -313,7 +305,7 @@ func (r *Record) MarshalJSON() ([]byte, error) {
 	}
 }
 
-// marshalAggRecord renders an aggregation record: [key, value, ts, quantiles].
+// marshalAggRecord renders an aggregation record: [key, value, ts, quantiles, not_exists].
 func marshalAggRecord(cells [][]byte) ([]byte, error) {
 	// cells[1] is a little-endian float64 storing the aggregation value.
 	var value float64
@@ -332,10 +324,16 @@ func marshalAggRecord(cells [][]byte) ([]byte, error) {
 			formattedTime = time.Unix(0, int64(ns)).UTC().Format(time.RFC3339Nano)
 		}
 	}
+	// cells[4] is a little-endian uint64 storing the not_exists count.
+	var notExists uint64
+	if len(cells[4]) == 8 {
+		notExists = encoding.Uint64FromBytes(cells[4])
+	}
 	return json.Marshal([]any{
 		string(cells[0]),                         // key
 		val,                                      // value
 		formattedTime,                            // ts
 		encoding.Float64ArrayFromBytes(cells[3]), // quantiles
+		notExists,                                // not_exists
 	})
 }

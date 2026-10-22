@@ -29,6 +29,7 @@ import (
 
 // streamSearchBatchSize limits the number of records sent in a single
 // StreamSearchResponse data message.
+// TODO: set this value from config file
 const streamSearchBatchSize = 100
 
 type controlOutcome int
@@ -283,8 +284,9 @@ func sendSummary(
 	explain bool,
 ) error {
 	respSummary := &storeapi.ResponseSummary{
-		Total: summary.Total,
-		Error: &storeapi.Error{Code: storeapi.SearchErrorCode_NO_ERROR},
+		Total:     summary.Total,
+		NotExists: int64(summary.NotExists),
+		Error:     &storeapi.Error{Code: storeapi.SearchErrorCode_NO_ERROR},
 	}
 
 	if summary.Err != nil {
@@ -329,9 +331,6 @@ func (g *GrpcV1) buildProducer(
 		return nil, nil, err
 	}
 
-	// The data source is limitless and walks the matched set via cursor pagination;
-	// the real request limit is applied by a Limiter executor. The limit op
-	// also caps the per-batch scan size.
 	searchParams := processor.SearchParams{
 		AST:       p.Scan.AST,
 		From:      p.Scan.From,
@@ -347,7 +346,23 @@ func (g *GrpcV1) buildProducer(
 		}
 	}
 
-	var producer query.RecordProducer = exec.NewSearcherDataSource(
+	if p.IsAgg() {
+		var producer query.RecordProducer = exec.NewAggDataSource(
+			ctx,
+			tr,
+			searchParams,
+			g.fracManager,
+			g.searchData.searcher,
+			p.Schema,
+		)
+		// don't allow aggs post processing yet
+		return producer, p.Schema, nil
+	}
+
+	// The documents data source is limitless and walks the matched set via
+	// cursor pagination; the real request limit is applied by a Limiter
+	// executor. The limit op also caps the per-batch scan size.
+	var producer query.RecordProducer = exec.NewDocsDataSource(
 		ctx,
 		tr,
 		searchParams,
@@ -355,10 +370,6 @@ func (g *GrpcV1) buildProducer(
 		g.searchData.searcher,
 		g.fetchData.docFetcher,
 	)
-
-	if p.IsAgg() {
-		return producer, p.Schema, nil
-	}
 
 	// ops wrap the source, the schema flows through them so an op that changes the record
 	// shape extends it here and downstream ops resolve their columns from the extension
