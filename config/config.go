@@ -278,6 +278,7 @@ type Config struct {
 		// FutureAllowedTimeDrift specifies the maximum allowable offset for a message’s timestamp into the future.
 		// If a message’s timestamp is further in the future than FutureAllowedTimeDrift, it is overwritten.
 		FutureAllowedTimeDrift time.Duration `config:"future_allowed_time_drift" default:"5m"`
+		RidMode string `config:"rid_mode" default:"rand"`
 	} `config:"indexing"`
 
 	Mapping struct {

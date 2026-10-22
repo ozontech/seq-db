@@ -106,7 +106,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 
 		writersGroup.Go(func() error {
 			wg := sync.WaitGroup{}
-			proc := indexer.NewProcessor(mapping, tokenizers, 0, 0)
+			proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, false)
 			for _, bulk := range writerBulks {
 				select {
 				case <-writeCtx.Done():
@@ -613,7 +613,7 @@ func fillActiveFraction(t *testing.T, active *frac.Active, bulks [][]string, map
 
 		writersGroup.Go(func() error {
 			wg := sync.WaitGroup{}
-			proc := indexer.NewProcessor(mapping, tokenizers, 0, 0)
+			proc := indexer.NewProcessor(mapping, tokenizers, 0, 0, false)
 			for _, bulk := range writerBulks {
 				select {
 				case <-writeCtx.Done():
