@@ -103,10 +103,7 @@ type FractionTestSuite struct {
 
 	fraction frac.Fraction
 
-	insertDocuments func(docs ...[]string)
-	// insertWithoutAllToken makes the next insertDocuments call drop the
-	// _all_ token from metas, simulating a proxy of the version that
-	// stopped sending it.
+	insertDocuments       func(docs ...[]string)
 	insertWithoutAllToken bool
 }
 
@@ -201,21 +198,17 @@ func (s *FractionTestSuite) TestSearchKeyword() {
 
 func (s *FractionTestSuite) TestSearchMatchAll() {
 	docs := []string{
-		/*0*/ `{"timestamp":"2000-01-01T13:00:25Z","message":"first","level":"1"}`,
-		/*1*/ `{"timestamp":"2000-01-01T13:00:32Z","message":"second"}`,
-		/*2*/ `{"timestamp":"2000-01-01T13:00:43Z","message":"third","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:25Z","message":"first","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:32Z","message":"second"}`,
+		`{"timestamp":"2000-01-01T13:00:43Z","message":"third","level":"2"}`,
 	}
 
 	s.insertDocuments(docs)
 
-	// Every spelling of "all documents" must return the whole fraction
-	// without consulting the _all_ postings (which are no longer written).
 	s.AssertSearch("*", docs, []int{2, 1, 0})
 	s.AssertSearch("_all_:*", docs, []int{2, 1, 0})
 	s.AssertSearch(`_all_:""`, docs, []int{2, 1, 0})
 
-	// Aggregation over _all_ must yield a single "" bucket holding
-	// every document of the query window.
 	searchParams := s.query("*", withAggQuery(processor.AggQuery{
 		GroupBy: aggField(seq.TokenAll),
 		Func:    seq.AggFuncCount,
@@ -225,16 +218,13 @@ func (s *FractionTestSuite) TestSearchMatchAll() {
 	})
 }
 
-// TestSearchWithoutAllTokenInMetas inserts documents whose metas carry no
-// _all_ token, as produced by a proxy of the version that stopped sending it.
 func (s *FractionTestSuite) TestSearchWithoutAllTokenInMetas() {
 	docs := []string{
-		/*0*/ `{"timestamp":"2000-01-01T13:00:25Z","message":"first","level":"1"}`,
-		/*1*/ `{"timestamp":"2000-01-01T13:00:32Z","message":"second"}`,
-		/*2*/ `{"timestamp":"2000-01-01T13:00:43Z","message":"third","level":"2"}`,
-		// No field of this document is in the mapping, so its meta has
-		// no tokens at all now that _all_ is not added unconditionally.
-		/*3*/ `{"timestamp":"2000-01-01T13:00:55Z","not_in_mapping":"value"}`,
+		`{"timestamp":"2000-01-01T13:00:25Z","message":"first","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:32Z","message":"second"}`,
+		`{"timestamp":"2000-01-01T13:00:43Z","message":"third","level":"2"}`,
+		// No field of this document is in the mapping
+		`{"timestamp":"2000-01-01T13:00:55Z","not_in_mapping":"value"}`,
 	}
 
 	s.insertWithoutAllToken = true
@@ -259,13 +249,11 @@ func (s *FractionTestSuite) TestSearchWithoutAllTokenInMetas() {
 
 func (s *FractionTestSuite) TestSearchMatchAllDegenerateWindows() {
 	docs := []string{
-		/*0*/ `{"timestamp":"2000-01-01T13:00:25Z","message":"only one"}`,
+		`{"timestamp":"2000-01-01T13:00:25Z","message":"only one"}`,
 	}
 
 	s.insertDocuments(docs)
 
-	// The window [minLID, maxLID] must never leak LID 0 (seq.SystemID):
-	// getLIDsBorders returns (0, 0) for ranges that miss the fraction.
 	s.AssertSearch("*", docs, []int{0})
 
 	s.AssertSearch("*",
@@ -2850,8 +2838,6 @@ func (s *FractionTestSuite) newActiveWithMetas(bulks [][]string, metaFilter func
 		s.Require().NoError(err, "processing bulk failed")
 
 		if metaFilter != nil {
-			// Rewrite the metas blob dropping tokens rejected by the filter:
-			// [u32 len][meta][u32 len][meta]...
 			binaryMeta = rewriteMetas(s.T(), binaryMeta, metaFilter)
 		}
 
