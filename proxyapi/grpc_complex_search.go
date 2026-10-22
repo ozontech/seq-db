@@ -135,9 +135,7 @@ func (g *grpcV1) useStreamSearch(
 	if len(aggs) == 1 {
 		aggs[0].NotExists = int64(summary.NotExists)
 	}
-	if partialErr != nil && summary.Err == nil {
-		summary.Err = partialErr
-	}
+	summary.Err = wrapPartialResponse(summary.Err, partialErr)
 
 	tr.Done()
 

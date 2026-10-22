@@ -5,6 +5,7 @@ import (
 
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
 )
 
 type Merger[T any] struct {
@@ -132,22 +133,26 @@ func (m *Merger[T]) Finalize() *query.Summary {
 }
 
 // combineSummaries merges the final summaries of two merged branches. The
-// totals are summed; an error from either side (if any) takes precedence.
+// totals are summed; errors from both sides are collected and deduplicated.
 func combineSummaries(left, right *query.Summary) *query.Summary {
 	var total uint64
+	errs := make([]error, 0, 2)
 	if left != nil {
 		total += left.Total
+		if left.Err != nil {
+			errs = append(errs, left.Err)
+		}
 	}
 	if right != nil {
 		total += right.Total
+		if right.Err != nil {
+			errs = append(errs, right.Err)
+		}
 	}
-	summary := &query.Summary{Total: total}
-	if left != nil && left.Err != nil {
-		summary.Err = left.Err
-	} else if right != nil && right.Err != nil {
-		summary.Err = right.Err
+	return &query.Summary{
+		Total: total,
+		Err:   util.DeduplicateErrors(errs),
 	}
-	return summary
 }
 
 func NewNMergedProducers[T any](
