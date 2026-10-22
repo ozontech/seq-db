@@ -256,10 +256,6 @@ func (s *FractionTestSuite) TestSearchMatchAllDegenerateWindows() {
 
 	s.AssertSearch("*", docs, []int{0})
 
-	s.AssertSearch("*",
-		docs,
-		[]int{0},
-	)
 	s.AssertSearchWithSearchParams(
 		s.query("*", withFrom("2000-01-01T12:00:00Z"), withTo("2000-01-01T12:30:00Z")),
 		docs, []int{}, nil,
