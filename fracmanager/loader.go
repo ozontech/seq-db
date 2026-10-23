@@ -40,7 +40,7 @@ func NewLoader(config *Config, provider *fractionProvider, infoCache *fracInfoCa
 // Coordinates the entire process: discovery, validation, recovery, and ordering
 func (l *Loader) Load(ctx context.Context) (*fractionRegistry, error) {
 	// Stage 1: Discover all fractions in filesystem
-	actives, locals, remotes, err := l.discover(ctx)
+	actives, locals, remotes, remotesRemoving, err := l.discover(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,12 @@ func (l *Loader) Load(ctx context.Context) (*fractionRegistry, error) {
 
 	// Stage 4: Combine all local fractions
 	locals = append(locals, sealed...)
-	return NewFractionRegistry(active, locals, remotes)
+
+	registry, err := NewFractionRegistry(active, locals, remotes, remotesRemoving)
+	if err != nil {
+		return nil, err
+	}
+	return registry, nil
 }
 
 // replayAndSeal replays active fractions and seals old ones
@@ -115,20 +120,29 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 }
 
 // discover discovers all fractions in filesystem
-// Returns fractions separated by type: active, local, remote
-func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, []*frac.Remote, error) {
-	// Scan and analyze fraction files. Filter valid fractions
+// Returns fractions separated by type: active, local, remote.
+// Fractions whose offloading was interrupted and local files are gone
+// (remote zombies) are returned in remotesRemoving: they are not
+// searchable, their partial remote files are deleted by maintenance ticks.
+func (l *Loader) discover(ctx context.Context) (
+	actives []*frac.Active,
+	locals []*frac.Sealed,
+	remotes []*frac.Remote,
+	remotesRemoving []*frac.Remote,
+	err error,
+) {
 	manifests, err := analyzeFiles(l.scanFiles())
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	total := len(manifests)
 	logProgress := progressLogger(time.Millisecond * 500)
 
-	actives := make([]*frac.Active, 0)
-	locals := make([]*frac.Sealed, 0, total)
-	remotes := make([]*frac.Remote, 0, total)
+	actives = make([]*frac.Active, 0)
+	locals = make([]*frac.Sealed, 0, total)
+	remotes = make([]*frac.Remote, 0, total)
+	remotesRemoving = make([]*frac.Remote, 0)
 
 	loadedInfoCache := NewFracInfoCacheFromDisk(l.infoCache.fullPath)
 
@@ -140,6 +154,13 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 			locals = append(locals, l.loadSealed(manifest.basePath, loadedInfoCache))
 		case fracStageRemote:
 			remotes = append(remotes, l.loadRemote(ctx, manifest.basePath, loadedInfoCache))
+		case fracStageZombieRemote:
+			// Offloading was interrupted and local files are gone:
+			// partial files in remote storage will never be overwritten.
+			// Register for deletion by maintenance ticks. Info is not
+			// loaded: deletion needs only the base name and S3 client.
+			logger.Warn("remote zombie detected", zap.String("base_path", manifest.basePath))
+			remotesRemoving = append(remotesRemoving, l.provider.NewRemoteZombie(manifest.basePath))
 		default:
 			logger.Error("unexpected fraction stage", zap.Any("manifest", manifest))
 		}
@@ -150,7 +171,7 @@ func (l *Loader) discover(ctx context.Context) ([]*frac.Active, []*frac.Sealed, 
 		zap.Int("cached", l.cacheStat.hits),
 		zap.Int("uncached", l.cacheStat.misses))
 
-	return actives, locals, remotes, nil
+	return actives, locals, remotes, remotesRemoving, nil
 }
 
 // loadSealed loads a sealed fraction using cache

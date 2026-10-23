@@ -27,6 +27,7 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/compaction"
 	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -3027,7 +3028,7 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 
 func (s *RemoteFractionTestSuite) TearDownTest() {
 	if remote, ok := s.fraction.(*frac.Remote); ok {
-		remote.Suicide()
+		s.Require().NoError(remote.Suicide())
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Remote type")
 	}
@@ -3261,4 +3262,67 @@ func TestLegacySealedFractionTestSuite(t *testing.T) {
 			suite.Run(t, &LegacySealedLoadedFractionTestSuite{Version: config.BinaryDataVersion(ver)})
 		})
 	}
+}
+
+// This test verifies the [frac.Remote.Suicide] deletion order: remote files
+// are deleted first, then the local .remote marker. If remote deletion fails,
+// the marker must stay on disk so the fraction remains known to the registry
+// and the deletion is retried by the next cleanup cycle.
+func (s *RemoteFractionTestSuite) TestSuicideDeletionOrder() {
+	s.insertDocuments([]string{`{"timestamp":"2000-01-01T13:00:00Z","service":"service_a","message":"m","level":"1"}`})
+	remote := s.fraction.(*frac.Remote)
+	s.fraction = nil // prevent TearDownTest from calling Suicide again
+
+	// Unsuccessful suicide: remote storage is unreachable, so the marker
+	// must be renamed to .remote.del (deletion intent) and stay on
+	// disk; the fraction is no longer searchable but recoverable.
+	failingS3 := s.newBrokenS3Client()
+	brokenRemote := frac.NewRemote(
+		context.Background(),
+		remote.BaseFileName,
+		storage.NewReadLimiter(1, nil),
+		frac.NewIndexCache(),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		remote.Info(),
+		s.config,
+		failingS3,
+		testSkipMaskProvider{},
+	)
+
+	s.Require().Error(brokenRemote.Suicide(), "suicide must fail when remote storage is unreachable")
+
+	_, err := os.Stat(remote.BaseFileName + consts.RemoteFractionSuffix)
+	s.Require().True(os.IsNotExist(err), ".remote must be renamed after failed suicide")
+	_, err = os.Stat(remote.BaseFileName + consts.RemoteFractionDeletingSuffix)
+	s.Require().NoError(err, ".remote.del marker must stay after failed suicide")
+
+	// Successful suicide: remote files are deleted first, then the marker.
+	// The .remote marker was already renamed, recreate it to emulate
+	// the deletion being retried by a maintenance tick on a fresh instance.
+	err = os.Rename(
+		remote.BaseFileName+consts.RemoteFractionDeletingSuffix,
+		remote.BaseFileName+consts.RemoteFractionSuffix,
+	)
+	s.Require().NoError(err)
+
+	s.Require().NoError(remote.Suicide(), "retry of suicide must succeed")
+
+	_, err = os.Stat(remote.BaseFileName + consts.RemoteFractionSuffix)
+	s.Require().True(os.IsNotExist(err), ".remote must be removed after successful suicide")
+	_, err = os.Stat(remote.BaseFileName + consts.RemoteFractionDeletingSuffix)
+	s.Require().True(os.IsNotExist(err), ".remote.del must be removed after successful suicide")
+}
+
+// newBrokenS3Client returns an S3 client pointing to a closed address:
+// every request fails, simulating remote storage unavailability.
+func (s *RemoteFractionTestSuite) newBrokenS3Client() *s3.Client {
+	s3cli, err := s3.NewClient(
+		"http://127.0.0.1:1", // nothing listens here
+		"ACCESS_KEY",
+		"SECRET_KEY",
+		"eu-west-3",
+		"bucket",
+	)
+	s.Require().NoError(err, "broken s3 client setup failed")
+	return s3cli
 }

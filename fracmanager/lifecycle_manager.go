@@ -51,8 +51,10 @@ func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.
 			lc.removeOverflowed(cfg.OffloadingQueueSize, wg)
 		}
 		lc.cleanRemote(
+			ctx,
 			cfg.OffloadingRetention,
 			cfg.OffloadingRemoteTotalSize,
+			cfg.RemoteRemoveRetryDelay,
 			wg,
 		)
 	} else {
@@ -193,8 +195,10 @@ func (lc *lifecycleManager) tryOffload(ctx context.Context, sealed *frac.Sealed)
 
 // cleanRemote deletes outdated remote fractions based on retention policy.
 func (lc *lifecycleManager) cleanRemote(
+	ctx context.Context,
 	retention time.Duration,
 	sizeLimitS3 uint64,
+	remoteRemoveRetryDelay time.Duration,
 	wg *sync.WaitGroup,
 ) {
 	toDelete := lc.registry.evictRemote(retention, sizeLimitS3)
@@ -205,17 +209,56 @@ func (lc *lifecycleManager) cleanRemote(
 		}
 	}
 
-	wg.Add(len(toDelete))
 	for _, remote := range toDelete {
-		go func() {
-			defer wg.Done()
-			info := remote.Info()
-			lc.infoCache.Remove(info.Name())
-			remote.Destroy()
-			logger.Info("remove remote fraction",
-				zap.String("name", info.Name()),
-				zap.Time("created", time.UnixMilli(int64(info.CreationTime))))
-		}()
+		lc.removeRemoteAsync(ctx, remote, wg, remoteRemoveRetryDelay)
+	}
+}
+
+func (lc *lifecycleManager) removeRemoteAsync(
+	ctx context.Context,
+	ref *refCountedRemote,
+	wg *sync.WaitGroup,
+	retryDelay time.Duration,
+) {
+	wg.Add(1)
+	_, err := lc.tasks.Run(ref.BaseFileName, ctx, func(ctx context.Context) {
+		defer wg.Done()
+
+		for i := 0; ; i++ {
+			destroyErr := ref.Destroy()
+			if destroyErr == nil {
+				lc.infoCache.Remove(ref.Info().Name())
+				logger.Info("removed remote fraction",
+					zap.String("name", ref.BaseFileName),
+					zap.Time("created", time.UnixMilli(int64(ref.Info().CreationTime))),
+				)
+
+				return
+			}
+
+			logger.Warn(
+				"failed to remove remote fraction",
+				zap.String("name", ref.BaseFileName),
+				zap.Int("attempts", i),
+				zap.Error(destroyErr),
+			)
+
+			select {
+			case <-ctx.Done():
+				logger.Info(
+					"fraction offloading was stopped",
+					zap.String("name", ref.BaseFileName),
+					zap.Int("attempts", i),
+					zap.Error(ctx.Err()),
+				)
+				return
+			case <-time.After(retryDelay):
+				// Wait before next retry attempt
+			}
+		}
+	})
+	if err != nil {
+		panic(err) // expect no error here
 	}
 }
 
