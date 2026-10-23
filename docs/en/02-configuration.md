@@ -66,6 +66,7 @@ Rate limiting and resource constraints.
 | `limits.fraction_hits` | int | `6000` | Maximum amount of fractions that can be processed within single search request |
 | `limits.search_docs` | int | `100000` | Maximum amount of documents that can be returned within single search request |
 | `limits.doc_size` | Bytes | `128KiB` | Maximum possible size for single document. Document larger than this threshold will be skipped |
+| `limits.grpc_message_size` | Bytes | `256MiB` | Maximum size of a single unary gRPC message (request or response) accepted by and sent from store and proxy servers |
 
 ### Aggregation Limits
 

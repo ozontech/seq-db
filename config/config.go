@@ -153,6 +153,9 @@ type Config struct {
 		// DocSize specifies maximum possible size for single document.
 		// Document larger than this threshold will be skipped.
 		DocSize Bytes `config:"doc_size" default:"128KiB"`
+		// GrpcMessageSize specifies maximum size of a single unary gRPC message
+		// (request or response) accepted by and sent from store and proxy servers.
+		GrpcMessageSize Bytes `config:"grpc_message_size" default:"256MiB"`
 		// QprMemoryUsage specifies maximum heap memory which a single QPR (query partial result)
 		// can use in either store or proxy.
 		QprMemoryUsage Bytes `config:"qpr_memory_usage" default:"0B"`
