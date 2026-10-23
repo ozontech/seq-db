@@ -121,15 +121,21 @@ func NewRemote(
 // It skips info loading entirely: deletion only needs the base name and
 // the S3 client, and loading info would require reaching S3, which must
 // not prevent the store from starting up.
-func NewRemoteZombie(ctx context.Context, baseFile string, s3cli *s3.Client) *Remote {
+func NewRemoteZombie(
+	ctx context.Context,
+	baseFile string,
+	s3cli *s3.Client,
+	skipMaskProvider skipMaskProvider,
+) *Remote {
 	return &Remote{
-		ctx:          ctx,
-		initMu:       &sync.RWMutex{},
-		docsCache:    cache.NewConcurrentCache[[]byte](nil, nil),
-		indexCache:   NewIndexCache(),
-		info:         &common.Info{Path: baseFile},
-		BaseFileName: baseFile,
-		s3cli:        s3cli,
+		ctx:              ctx,
+		initMu:           &sync.RWMutex{},
+		docsCache:        cache.NewConcurrentCache[[]byte](nil, nil),
+		indexCache:       NewIndexCache(),
+		info:             &common.Info{Path: baseFile},
+		BaseFileName:     baseFile,
+		s3cli:            s3cli,
+		skipMaskProvider: skipMaskProvider,
 	}
 }
 
@@ -253,12 +259,13 @@ func (f *Remote) IsIntersecting(from, to seq.MID) bool {
 }
 
 func (f *Remote) Suicide() error {
-	// Rename the marker to ._remote-del first: it commits the deletion
+	// Rename the marker to .remote.del first: it commits the deletion
 	// intent, so a crash at any point after it leaves a recoverable state -
 	// the loader recognizes the fraction as pending remote deletion.
 	deletingMarker := f.BaseFileName + consts.RemoteFractionDeletingSuffix
 	remoteMarker := f.BaseFileName + consts.RemoteFractionSuffix
-	if err := os.Rename(remoteMarker, deletingMarker); err != nil && !errors.Is(err, os.ErrNotExist) {
+
+	if err := util.DurableRenameFile(remoteMarker, deletingMarker); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("can't rename remote marker to deleting marker: %w", err)
 	}
 
@@ -273,6 +280,7 @@ func (f *Remote) Suicide() error {
 		filepath.Base(f.BaseFileName) + consts.OffsetsFileSuffix,
 		filepath.Base(f.BaseFileName) + consts.IDFileSuffix,
 		filepath.Base(f.BaseFileName) + consts.LIDFileSuffix,
+		deletingMarker,
 	}
 
 	err := f.s3cli.Remove(f.ctx, files...)

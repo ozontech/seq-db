@@ -87,7 +87,7 @@ const (
 
 	RemoteFractionSuffix         = ".remote"
 	RemoteFractionTmpSuffix      = "._remote"
-	RemoteFractionDeletingSuffix = "._remote-del"
+	RemoteFractionDeletingSuffix = ".remote.del"
 
 	FracCacheFileSuffix = ".frac-cache"
 	CompactionPlan      = ".compaction-plan"

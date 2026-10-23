@@ -577,9 +577,9 @@ func TestRemoveRemoteAsyncCanceled(t *testing.T) {
 
 	// The failed attempt committed the deletion intent (marker rename),
 	// remote files must survive for the next retry: after restart the
-	// fraction is discovered via the ._remote-del marker.
+	// fraction is discovered via the .remote.del marker.
 	_, err := os.Stat(ref.BaseFileName + consts.RemoteFractionDeletingSuffix)
-	assert.NoError(t, err, "._remote-del marker must survive canceled deletion")
+	assert.NoError(t, err, ".remote.del marker must survive canceled deletion")
 
 	exists, err := lc.provider.s3cli.Exists(t.Context(), filepath.Base(ref.BaseFileName)+consts.DocsFileSuffix)
 	require.NoError(t, err)

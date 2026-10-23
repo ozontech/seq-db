@@ -564,7 +564,7 @@ func TestDiscover_InterruptedOffloadingWithLocalFiles(t *testing.T) {
 }
 
 // TestDiscover_InterruptedDeletion verifies that a fraction with a
-// ._remote-del marker (remote deletion was interrupted after the
+// .remote.del marker (remote deletion was interrupted after the
 // marker rename) is scheduled for remote deletion: it is not searchable
 // and must not be loaded as remote.
 func TestDiscover_InterruptedDeletion(t *testing.T) {
@@ -582,7 +582,7 @@ func TestDiscover_InterruptedDeletion(t *testing.T) {
 	require.NotNil(t, r)
 
 	// Simulate an interrupted deletion: the marker was renamed to
-	// ._remote-del, but remote files were not deleted yet.
+	// .remote.del, but remote files were not deleted yet.
 	basePath := r.BaseFileName
 	err = os.Rename(
 		basePath+consts.RemoteFractionSuffix,
@@ -602,7 +602,7 @@ func TestDiscover_InterruptedDeletion(t *testing.T) {
 
 	// The deleting marker must survive discovery until the deletion succeeds.
 	_, statErr := os.Stat(basePath + consts.RemoteFractionDeletingSuffix)
-	assert.NoError(t, statErr, "._remote-deleting marker must survive discovery")
+	assert.NoError(t, statErr, ".remote.del marker must survive discovery")
 }
 
 // TestDiscover_ZombieRemote_S3Unavailable verifies that a zombie fraction is

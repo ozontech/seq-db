@@ -262,10 +262,12 @@ func startMaintWorker(ctx context.Context, cfg *Config, fm *FracManager, wg *syn
 
 		logger.Info("maintenance loop is started")
 
-		// Removing remote fractions from S3 may be interrupted; continue after store reload
-		for _, r := range fm.lc.registry.popRemotesRemoving() {
-			ref := &refCountedRemote{Remote: r}
-			fm.lc.removeRemoteAsync(ctx, ref, wg, cfg.RemoteRemoveRetryDelay)
+		if cfg.OffloadingEnabled {
+			// Removing remote fractions from S3 may be interrupted; continue after store reload
+			for _, r := range fm.lc.registry.popRemotesRemoving() {
+				ref := &refCountedRemote{Remote: r}
+				fm.lc.removeRemoteAsync(ctx, ref, wg, cfg.RemoteRemoveRetryDelay)
+			}
 		}
 
 		// Run maintenance at configured interval

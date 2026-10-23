@@ -113,7 +113,12 @@ func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedIn
 }
 
 func (fp *fractionProvider) NewRemoteZombie(name string) *frac.Remote {
-	return frac.NewRemoteZombie(context.Background(), name, fp.s3cli)
+	return frac.NewRemoteZombie(
+		context.Background(),
+		name,
+		fp.s3cli,
+		fp.skipMaskProvider,
+	)
 }
 
 // nextFractionID generates a unique identifier for a new fraction

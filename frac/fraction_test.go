@@ -3274,7 +3274,7 @@ func (s *RemoteFractionTestSuite) TestSuicideDeletionOrder() {
 	s.fraction = nil // prevent TearDownTest from calling Suicide again
 
 	// Unsuccessful suicide: remote storage is unreachable, so the marker
-	// must be renamed to ._remote-deleting (deletion intent) and stay on
+	// must be renamed to .remote.del (deletion intent) and stay on
 	// disk; the fraction is no longer searchable but recoverable.
 	failingS3 := s.newBrokenS3Client()
 	brokenRemote := frac.NewRemote(
@@ -3294,7 +3294,7 @@ func (s *RemoteFractionTestSuite) TestSuicideDeletionOrder() {
 	_, err := os.Stat(remote.BaseFileName + consts.RemoteFractionSuffix)
 	s.Require().True(os.IsNotExist(err), ".remote must be renamed after failed suicide")
 	_, err = os.Stat(remote.BaseFileName + consts.RemoteFractionDeletingSuffix)
-	s.Require().NoError(err, "._remote-deleting marker must stay after failed suicide")
+	s.Require().NoError(err, ".remote.del marker must stay after failed suicide")
 
 	// Successful suicide: remote files are deleted first, then the marker.
 	// The .remote marker was already renamed, recreate it to emulate
@@ -3310,7 +3310,7 @@ func (s *RemoteFractionTestSuite) TestSuicideDeletionOrder() {
 	_, err = os.Stat(remote.BaseFileName + consts.RemoteFractionSuffix)
 	s.Require().True(os.IsNotExist(err), ".remote must be removed after successful suicide")
 	_, err = os.Stat(remote.BaseFileName + consts.RemoteFractionDeletingSuffix)
-	s.Require().True(os.IsNotExist(err), "._remote-deleting must be removed after successful suicide")
+	s.Require().True(os.IsNotExist(err), ".remote.del must be removed after successful suicide")
 }
 
 // newBrokenS3Client returns an S3 client pointing to a closed address:

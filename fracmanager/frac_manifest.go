@@ -32,7 +32,7 @@ type fracManifest struct {
 	// Presence of ._remote (case when offloading was interrupted)
 	hasRemoteTmp bool
 
-	// Presence of ._remote-del (case when remote deletion was interrupted)
+	// Presence of .remote.del (case when remote deletion was interrupted)
 	hasRemoteDeleting bool
 
 	// Split index file flags
@@ -447,32 +447,15 @@ func cleanupTemporary(m *fracManifest) {
 // removeAllFiles completely removes all fraction files
 // Used for cleaning up partially deleted or corrupted fractions
 func removeAllFiles(basePath string) {
-	for _, suffix := range []string{
-		consts.DocsFileSuffix, consts.DocsDelFileSuffix, consts.DocsTmpFileSuffix,
-		consts.SdocsFileSuffix, consts.SdocsDelFileSuffix, consts.SdocsTmpFileSuffix,
-		consts.IndexFileSuffix, consts.IndexDelFileSuffix, consts.IndexTmpFileSuffix,
-
-		consts.RemoteFractionTmpSuffix, consts.RemoteFractionSuffix,
-		consts.RemoteFractionDeletingSuffix,
-
-		consts.InfoFileSuffix, consts.InfoTmpFileSuffix,
-		consts.TokenFileSuffix, consts.TokenTmpFileSuffix,
-		consts.OffsetsFileSuffix, consts.OffsetsTmpFileSuffix,
-		consts.IDFileSuffix, consts.IDTmpFileSuffix,
-		consts.LIDFileSuffix, consts.LIDTmpFileSuffix,
-
-		consts.WalFileSuffix,
-		consts.CompactionPlan,
-	} {
-		util.RemoveFile(basePath + suffix)
-	}
+	removeFiles(basePath, true)
 }
 
-// removeAllExceptRemoteTmp removes all fraction files except the remote
-// intent markers (._remote, ._remote-deleting), which must survive until
-// the remote deletion succeeds.
 func removeAllExceptRemoteTmp(basePath string) {
-	for _, suffix := range []string{
+	removeFiles(basePath, false)
+}
+
+func removeFiles(basePath string, removeRemoteTmp bool) {
+	files := []string{
 		consts.DocsFileSuffix, consts.DocsDelFileSuffix, consts.DocsTmpFileSuffix,
 		consts.SdocsFileSuffix, consts.SdocsDelFileSuffix, consts.SdocsTmpFileSuffix,
 		consts.IndexFileSuffix, consts.IndexDelFileSuffix, consts.IndexTmpFileSuffix,
@@ -487,7 +470,13 @@ func removeAllExceptRemoteTmp(basePath string) {
 
 		consts.WalFileSuffix,
 		consts.CompactionPlan,
-	} {
+	}
+
+	if removeRemoteTmp {
+		files = append(files, consts.RemoteFractionTmpSuffix, consts.RemoteFractionDeletingSuffix)
+	}
+
+	for _, suffix := range files {
 		util.RemoveFile(basePath + suffix)
 	}
 }

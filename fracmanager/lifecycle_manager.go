@@ -55,7 +55,8 @@ func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.
 			cfg.OffloadingRetention,
 			cfg.OffloadingRemoteTotalSize,
 			cfg.RemoteRemoveRetryDelay,
-			wg)
+			wg,
+		)
 	} else {
 		lc.cleanLocal(cfg.TotalSize, wg)
 	}
@@ -224,8 +225,8 @@ func (lc *lifecycleManager) removeRemoteAsync(
 		defer wg.Done()
 
 		for i := 0; ; i++ {
-			e := ref.Destroy()
-			if e == nil {
+			destroyErr := ref.Destroy()
+			if destroyErr == nil {
 				lc.infoCache.Remove(ref.Info().Name())
 				logger.Info("removed remote fraction",
 					zap.String("name", ref.BaseFileName),
@@ -239,7 +240,7 @@ func (lc *lifecycleManager) removeRemoteAsync(
 				"failed to remove remote fraction",
 				zap.String("name", ref.BaseFileName),
 				zap.Int("attempts", i),
-				zap.Error(e),
+				zap.Error(destroyErr),
 			)
 
 			select {
