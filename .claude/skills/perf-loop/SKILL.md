@@ -26,8 +26,8 @@ that reference; there is no wrapper script for it.
   unverified edits.
 - **Keep a run log** (`.perf-loop/log.md`) of every iteration: hypothesis, change,
   measured delta, kept/reverted. This log is the real deliverable.
-- **Compare apples to apples.** Pin scenario params and `--bootstrap.cpu`/
-  `--bootstrap.memory` for the whole session. Changing the workload invalidates
+- **Compare apples to apples.** Pin scenario params and `--seqdb.cpu-limit`/
+  `--seqdb.memory-limit` for the whole session. Changing the workload invalidates
   the baseline.
 
 ## Prerequisites (check once, up front)
@@ -59,7 +59,7 @@ SHA, image tag). The previous run's dir is the **baseline** for the next.
    local edits measurable: `VERSION=perf-local make build-image` produces
    `ghcr.io/ozontech/seq-db:perf-local`. Verify `docker image inspect` finds it
    (else testcontainers tries to pull it and fails with `manifest unknown`).
-3. Run seqbazooka with `--bootstrap.image=ghcr.io/ozontech/seq-db:perf-local`
+3. Run seqbazooka with `--seqdb.image=ghcr.io/ozontech/seq-db:perf-local`
    (§ run mechanics below).
 4. This first run is `000-baseline`. No analysis-driven change yet.
 
@@ -70,7 +70,7 @@ For each iteration:
    baseline/previous run's artifacts, plus the scenario. It returns a ranked
    list of optimization opportunities.
 2. **Apply the top viable one** yourself — edit the seq-db source. Respect
-   `CLAUDE.md`/`CONTRIBUTING.md` (style, "why" comments, reuse over allocation).
+   `CLAUDE.md`/`CONTRIBUTING.md` (style, no comments, reuse over allocation).
    Keep the change focused; if the analyzer's top idea is risky or speculative,
    pick the next one it rates high-confidence.
 3. **Rebuild** the image, **re-run** the identical scenario into a new run dir.
@@ -88,8 +88,8 @@ The observability stack collects metrics/profiles continuously, so you do not
 scrape anything mid-run — you just bracket the run with timestamps and pull the
 window afterwards.
 1. Record `FROM=$(date +%s)`.
-2. Run `seqbazooka <cmd> … --bootstrap.image=ghcr.io/ozontech/seq-db:perf-local
-   --bootstrap.network=host --bootstrap.cpu=<C> --bootstrap.memory=<M>
+2. Run `seqbazooka <cmd> … --seqdb.image=ghcr.io/ozontech/seq-db:perf-local
+   --seqdb.network=host --seqdb.cpu-limit=<C> --seqdb.memory-limit=<M>
    --duration=<D> --report.path=<dir>/report.json` (compose flags from the
    reference). Run it in the background and wait for it to finish.
 3. Record `TO=$(date +%s)` and write `<dir>/window.env` (`FROM`/`TO`/`SERVICE=seq-db`).

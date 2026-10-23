@@ -32,12 +32,12 @@ func (dp *DocsPositions) GetSync(id seq.ID) seq.DocPos {
 	return dp.Get(id)
 }
 
-// SetMultiple returns a slice of added ids
-func (dp *DocsPositions) SetMultiple(ids []seq.ID, pos []seq.DocPos) []seq.ID {
+// SetMultiple returns indexes of added ids.
+func (dp *DocsPositions) SetMultiple(ids []seq.ID, pos []seq.DocPos) []int {
 	dp.mu.Lock()
 	defer dp.mu.Unlock()
 
-	appended := make([]seq.ID, 0, len(ids))
+	appended := make([]int, 0, len(ids))
 	for i, id := range ids {
 		p, ok := dp.idToPos[id]
 
@@ -51,7 +51,7 @@ func (dp *DocsPositions) SetMultiple(ids []seq.ID, pos []seq.DocPos) []seq.ID {
 			dp.idToPos[id] = pos[i]
 		}
 
-		appended = append(appended, id)
+		appended = append(appended, i)
 	}
 	return appended
 }

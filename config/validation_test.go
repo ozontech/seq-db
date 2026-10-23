@@ -99,6 +99,20 @@ offloading:
 			expectErr: false,
 		},
 		{
+			name: "Valid offloading.remote_total_size=0",
+			cfg: createCfgFile(t, base+`
+offloading:
+  enabled: true
+  bucket: bbb
+  access_key: bbb
+  secret_key: bbb
+  remote_total_size: 0
+`),
+
+			expectErr: false,
+		},
+
+		{
 			name: "Invalid offloading.remote_total_size",
 			cfg: createCfgFile(t, base+`
 offloading:
