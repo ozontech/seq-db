@@ -90,6 +90,7 @@ func main() {
 	config.MaxRequestedDocuments = cfg.Limits.SearchDocs
 	config.MaxRegexTokensCheck = cfg.Experimental.MaxRegexTokensCheck
 	config.FailPartialResponse = cfg.Cluster.FailPartialResponse
+	config.MaxGrpcMessageSizeBytes = int(cfg.Limits.GrpcMessageSize)
 
 	backoff.DefaultConfig.MaxDelay = 10 * time.Second
 

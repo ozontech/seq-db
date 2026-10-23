@@ -11,6 +11,7 @@ func (c *Config) Validate(mode string) error {
 	validations := []validateFn{
 		notEmpty("mapping.path", c.Mapping.Path),
 		inRange("tracing.sampling_rate", 0, 1, c.Tracing.SamplingRate),
+		greaterThan("limits.grpc_message_size", 0, c.Limits.GrpcMessageSize),
 	}
 
 	switch mode {
