@@ -28,14 +28,13 @@ func NewStreamSearchRewriter() func(ctx context.Context, resp proto.Message) (an
 		case res.GetHeader() != nil:
 			mu.Lock()
 			schemas[ctx] = newRowSchema(res.GetHeader().GetTyping())
+			for c := range schemas {
+				// clean up streams aborted mid way
+				if c.Err() != nil {
+					delete(schemas, c)
+				}
+			}
 			mu.Unlock()
-			go func() {
-				// clean up stream aborted mid way
-				<-ctx.Done()
-				mu.Lock()
-				delete(schemas, ctx)
-				mu.Unlock()
-			}()
 		case res.GetData() != nil:
 			mu.RLock()
 			schema := schemas[ctx]
