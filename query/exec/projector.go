@@ -17,6 +17,10 @@ type DocProjector struct {
 	input  query.RecordProducer
 	col    query.Column[*insaneJSON.Root]
 	filter *FieldsFilter
+
+	// roots holds every record whose doc val has been decoded (spawned an insaneJSON root).
+	// They are released back to the library pool in Finalize.
+	roots []*query.Record
 }
 
 func NewDocProjector(
@@ -63,13 +67,16 @@ func (p *DocProjector) Next() *query.Record {
 		newRecord = p.makeRecordWithNewVals(r, decoder.Encode(nil))
 	}
 
-	// The original root won't be seen downstream, release it immediately.
-	r.Release()
+	p.roots = append(p.roots, r)
 
 	return newRecord
 }
 
 func (p *DocProjector) Finalize() *query.Summary {
+	for _, r := range p.roots {
+		r.Release()
+	}
+	p.roots = nil
 	return p.input.Finalize()
 }
 
