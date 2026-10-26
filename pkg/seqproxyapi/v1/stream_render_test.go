@@ -207,26 +207,31 @@ func TestStreamSearchRewriter(t *testing.T) {
 func TestStreamSearchRewriterSchemaCleanup(t *testing.T) {
 	r := require.New(t)
 
+	newHeader := func(_ context.Context) *StreamSearchResponse {
+		return &StreamSearchResponse{ResponseType: &StreamSearchResponse_Header{
+			Header: &ResponseHeader{Typing: []*Typing{
+				{Title: "value", Type: DataType_DATA_TYPE_FLOAT64},
+			}},
+		}}
+	}
+
 	rewrite := NewStreamSearchRewriter()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	_, err := rewrite(ctx, &StreamSearchResponse{ResponseType: &StreamSearchResponse_Header{
-		Header: &ResponseHeader{Typing: []*Typing{
-			{Title: "value", Type: DataType_DATA_TYPE_FLOAT64},
-		}},
-	}})
+	_, err := rewrite(ctx, newHeader(ctx))
 	r.NoError(err)
 
-	// Aborting the stream (context cancellation) drops the captured schema,
-	// so a late data message is no longer rewritten.
+	// Aborting the stream (context cancellation) drops the captured schema on
+	// the next stream's header, so a late data message is no longer rewritten.
 	cancel()
+	_, err = rewrite(context.Background(), newHeader(context.Background()))
+	r.NoError(err)
 
-	r.Eventually(func() bool {
-		out, err := rewrite(ctx, &StreamSearchResponse{ResponseType: &StreamSearchResponse_Data{
-			Data: &ResponseData{Batch: &RecordsBatch{Records: []*Record{}}}},
-		})
-		return err == nil && !isRenderedData(out)
-	}, time.Second, 10*time.Millisecond)
+	out, err := rewrite(ctx, &StreamSearchResponse{ResponseType: &StreamSearchResponse_Data{
+		Data: &ResponseData{Batch: &RecordsBatch{Records: []*Record{}}}},
+	})
+	r.NoError(err)
+	r.False(isRenderedData(out))
 }
 
 func isRenderedData(v any) bool {
