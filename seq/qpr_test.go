@@ -2,6 +2,7 @@ package seq
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -500,17 +501,34 @@ func TestRemoveRepetitionsAdvancedCombined(t *testing.T) {
 }
 
 func aggSamplesFromMap(other map[string]uint64) AggregatableSamples {
-	histByToken := make(map[AggBin]*SamplesContainer, len(other))
-
+	bins := make([]AggBinSamples, 0, len(other))
 	for k, cnt := range other {
 		hist := NewSamplesContainers()
 		hist.Total = int64(cnt)
-		histByToken[AggBin{Token: k}] = hist
+		bins = append(bins, AggBinSamples{
+			Bin:     AggBin{Token: k},
+			Samples: *hist,
+		})
 	}
+	SortAggBinSamples(bins)
 
 	return AggregatableSamples{
-		SamplesByBin: histByToken,
+		SamplesByBin: bins,
 		NotExists:    int64(other["_not_exists"]),
+	}
+}
+
+func aggBin(token string, total int64, values ...uint32) AggBinSamples {
+	var set map[uint32]struct{}
+	if len(values) > 0 {
+		set = make(map[uint32]struct{}, len(values))
+		for _, v := range values {
+			set[v] = struct{}{}
+		}
+	}
+	return AggBinSamples{
+		Bin:     AggBin{Token: token},
+		Samples: SamplesContainer{Total: total, Values: set},
 	}
 }
 
@@ -531,21 +549,9 @@ func TestMergeQPRsWithValuesPool(t *testing.T) {
 					Aggs: []AggregatableSamples{
 						{
 							ValuesPool: []string{"error", "info", "warn"},
-							SamplesByBin: map[AggBin]*SamplesContainer{
-								{Token: "pod1"}: {
-									Total: 2,
-									Values: map[uint32]struct{}{
-										0: {},
-										1: {},
-									},
-								},
-								{Token: "pod2"}: {
-									Total: 2,
-									Values: map[uint32]struct{}{
-										1: {},
-										2: {},
-									},
-								},
+							SamplesByBin: []AggBinSamples{
+								aggBin("pod1", 2, 0, 1),
+								aggBin("pod2", 2, 1, 2),
 							},
 							NotExists: 0,
 						},
@@ -560,20 +566,9 @@ func TestMergeQPRsWithValuesPool(t *testing.T) {
 					Aggs: []AggregatableSamples{
 						{
 							ValuesPool: []string{"info", "warn", "debug"},
-							SamplesByBin: map[AggBin]*SamplesContainer{
-								{Token: "pod1"}: {
-									Total: 2,
-									Values: map[uint32]struct{}{
-										0: {},
-										2: {},
-									},
-								},
-								{Token: "pod3"}: {
-									Total: 1,
-									Values: map[uint32]struct{}{
-										1: {},
-									},
-								},
+							SamplesByBin: []AggBinSamples{
+								aggBin("pod1", 2, 0, 2),
+								aggBin("pod3", 1, 1),
 							},
 							NotExists: 0,
 						},
@@ -592,28 +587,10 @@ func TestMergeQPRsWithValuesPool(t *testing.T) {
 					{
 						// we append values from "right" values pool to "left" values pool, thus order is defined and can be tested
 						ValuesPool: []string{"error", "info", "warn", "debug"},
-						SamplesByBin: map[AggBin]*SamplesContainer{
-							{Token: "pod1"}: {
-								Total: 4,
-								Values: map[uint32]struct{}{
-									0: {},
-									1: {},
-									3: {},
-								},
-							},
-							{Token: "pod2"}: {
-								Total: 2,
-								Values: map[uint32]struct{}{
-									1: {},
-									2: {},
-								},
-							},
-							{Token: "pod3"}: {
-								Total: 1,
-								Values: map[uint32]struct{}{
-									2: {},
-								},
-							},
+						SamplesByBin: []AggBinSamples{
+							aggBin("pod1", 4, 0, 1, 3),
+							aggBin("pod2", 2, 1, 2),
+							aggBin("pod3", 1, 2),
 						},
 						NotExists: 0,
 					},
@@ -631,14 +608,8 @@ func TestMergeQPRsWithValuesPool(t *testing.T) {
 					Aggs: []AggregatableSamples{
 						{
 							ValuesPool: []string{"error", "fatal"},
-							SamplesByBin: map[AggBin]*SamplesContainer{
-								{Token: "pod1"}: {
-									Total: 2,
-									Values: map[uint32]struct{}{
-										0: {},
-										1: {},
-									},
-								},
+							SamplesByBin: []AggBinSamples{
+								aggBin("pod1", 2, 0, 1),
 							},
 							NotExists: 0,
 						},
@@ -652,14 +623,8 @@ func TestMergeQPRsWithValuesPool(t *testing.T) {
 					Aggs: []AggregatableSamples{
 						{
 							ValuesPool: []string{"info", "debug"},
-							SamplesByBin: map[AggBin]*SamplesContainer{
-								{Token: "pod2"}: {
-									Total: 2,
-									Values: map[uint32]struct{}{
-										0: {},
-										1: {},
-									},
-								},
+							SamplesByBin: []AggBinSamples{
+								aggBin("pod2", 2, 0, 1),
 							},
 							NotExists: 0,
 						},
@@ -675,21 +640,9 @@ func TestMergeQPRsWithValuesPool(t *testing.T) {
 				Aggs: []AggregatableSamples{
 					{
 						ValuesPool: []string{"error", "fatal", "info", "debug"},
-						SamplesByBin: map[AggBin]*SamplesContainer{
-							{Token: "pod1"}: {
-								Total: 2,
-								Values: map[uint32]struct{}{
-									0: {},
-									1: {},
-								},
-							},
-							{Token: "pod2"}: {
-								Total: 2,
-								Values: map[uint32]struct{}{
-									2: {},
-									3: {},
-								},
-							},
+						SamplesByBin: []AggBinSamples{
+							aggBin("pod1", 2, 0, 1),
+							aggBin("pod2", 2, 2, 3),
 						},
 						NotExists: 0,
 					},
@@ -720,14 +673,16 @@ func TestMergeQPRsWithValuesPool(t *testing.T) {
 				a.Equal(expAgg.ValuesPool, actualAgg.ValuesPool, "value pools do not match")
 				a.Equal(expAgg.NotExists, actualAgg.NotExists, "NotExists do not match")
 				a.Equal(len(expAgg.SamplesByBin), len(actualAgg.SamplesByBin), "bins count does not match")
+				a.True(slices.IsSortedFunc(actualAgg.SamplesByBin, func(left, right AggBinSamples) int {
+					return CompareAggBin(left.Bin, right.Bin)
+				}), "bins are not sorted by (token, descending MID)")
 
-				for bin, expectedHist := range expAgg.SamplesByBin {
-					resultHist, exists := actualAgg.SamplesByBin[bin]
-					a.True(exists, "actual bin does not exist")
-					a.NotNil(resultHist, "actual bin is nil")
-					a.Equal(expectedHist.Total, resultHist.Total, "total does not match for bin")
-					a.Equal(len(expectedHist.Values), len(resultHist.Values), "values do not match")
-					for idx := range expectedHist.Values {
+				for _, expected := range expAgg.SamplesByBin {
+					resultHist := actualAgg.FindBin(expected.Bin)
+					a.NotNil(resultHist, "actual bin does not exist")
+					a.Equal(expected.Samples.Total, resultHist.Total, "total does not match for bin")
+					a.Equal(len(expected.Samples.Values), len(resultHist.Values), "values do not match")
+					for idx := range expected.Samples.Values {
 						_, valueExists := resultHist.Values[idx]
 						a.True(valueExists, "value does not exist")
 					}
@@ -737,15 +692,186 @@ func TestMergeQPRsWithValuesPool(t *testing.T) {
 	}
 }
 
+func TestMergeAggregatableSamplesOrder(t *testing.T) {
+	left := AggregatableSamples{
+		SamplesByBin: []AggBinSamples{
+			{Bin: AggBin{Token: "a", MID: 2}, Samples: SamplesContainer{Total: 1, Sum: 1, Min: 1, Max: 1}},
+			{Bin: AggBin{Token: "b", MID: 2}, Samples: SamplesContainer{Total: 1, Sum: 4, Min: 4, Max: 4}},
+		},
+		NotExists: 1,
+	}
+	right := AggregatableSamples{
+		SamplesByBin: []AggBinSamples{
+			{Bin: AggBin{Token: "a", MID: 1}, Samples: SamplesContainer{Total: 1, Sum: 2, Min: 2, Max: 2, Samples: []float64{2}}},
+			{Bin: AggBin{Token: "b", MID: 2}, Samples: SamplesContainer{Total: 2, Sum: 6, Min: 3, Max: 3}},
+		},
+		NotExists: 4,
+	}
+
+	left.Merge([]AggregatableSamples{right})
+
+	assert.Equal(t, int64(5), left.NotExists)
+	assert.Equal(t, []AggBin{
+		{Token: "a", MID: 2},
+		{Token: "a", MID: 1},
+		{Token: "b", MID: 2},
+	}, []AggBin{left.SamplesByBin[0].Bin, left.SamplesByBin[1].Bin, left.SamplesByBin[2].Bin})
+
+	a2 := left.FindBin(AggBin{Token: "a", MID: 2})
+	assert.Equal(t, int64(1), a2.Total)
+	assert.Equal(t, float64(1), a2.Sum)
+
+	a1 := left.FindBin(AggBin{Token: "a", MID: 1})
+	assert.Equal(t, int64(1), a1.Total)
+	assert.Equal(t, float64(2), a1.Sum)
+	a1.Samples[0] = 9
+	assert.Equal(t, []float64{9}, right.SamplesByBin[0].Samples.Samples)
+
+	b := left.FindBin(AggBin{Token: "b", MID: 2})
+	assert.Equal(t, int64(3), b.Total)
+	assert.Equal(t, float64(10), b.Sum)
+	assert.Equal(t, float64(3), b.Min)
+	assert.Equal(t, float64(4), b.Max)
+
+}
+
+func TestMergeQPRsKWay(t *testing.T) {
+	dst := &QPR{
+		Aggs: []AggregatableSamples{{
+			ValuesPool: []string{"error"},
+			SamplesByBin: []AggBinSamples{
+				{Bin: AggBin{Token: "a", MID: 2}, Samples: SamplesContainer{Total: 1, Sum: 1, Min: 1, Max: 1}},
+				{Bin: AggBin{Token: "c", MID: 2}, Samples: SamplesContainer{Total: 1, Sum: 4, Min: 4, Max: 4}},
+			},
+			NotExists: 1,
+		}},
+	}
+	qprs := []*QPR{
+		{Aggs: []AggregatableSamples{{
+			ValuesPool: []string{"info"},
+			SamplesByBin: []AggBinSamples{
+				aggBin("b", 1, 0),
+			},
+			NotExists: 2,
+		}}},
+		{Aggs: []AggregatableSamples{{
+			ValuesPool: []string{"error", "debug"},
+			SamplesByBin: []AggBinSamples{
+				aggBin("b", 1, 1),
+				{Bin: AggBin{Token: "c", MID: 2}, Samples: SamplesContainer{Total: 2, Sum: 3, Min: 1, Max: 2}},
+			},
+			NotExists: 4,
+		}}},
+		{Aggs: []AggregatableSamples{{
+			ValuesPool: []string{"error"},
+			SamplesByBin: []AggBinSamples{
+				{
+					Bin: AggBin{Token: "a"},
+					Samples: SamplesContainer{
+						Total:   1,
+						Sum:     2,
+						Min:     2,
+						Max:     2,
+						Values:  map[uint32]struct{}{0: {}},
+						Samples: []float64{2},
+					},
+				},
+			},
+		}}},
+	}
+	srcSamples := qprs[2].Aggs[0].SamplesByBin[0].Samples.Samples
+
+	MergeQPRs(dst, qprs, 10, 0, DocsOrderDesc)
+
+	agg := dst.Aggs[0]
+	assert.Equal(t, []string{"error", "info", "debug"}, agg.ValuesPool)
+	assert.Equal(t, int64(7), agg.NotExists)
+	assert.Equal(t, []AggBin{
+		{Token: "a", MID: 2},
+		{Token: "a"},
+		{Token: "b"},
+		{Token: "c", MID: 2},
+	}, []AggBin{
+		agg.SamplesByBin[0].Bin,
+		agg.SamplesByBin[1].Bin,
+		agg.SamplesByBin[2].Bin,
+		agg.SamplesByBin[3].Bin,
+	})
+
+	a := agg.FindBin(AggBin{Token: "a"})
+	assert.Equal(t, int64(1), a.Total)
+	assert.Equal(t, map[uint32]struct{}{0: {}}, a.Values)
+	assert.Equal(t, float64(2), a.Sum)
+	a.Samples[0] = 9
+	assert.Equal(t, []float64{9}, srcSamples)
+
+	a2 := agg.FindBin(AggBin{Token: "a", MID: 2})
+	assert.Equal(t, int64(1), a2.Total)
+	assert.Equal(t, float64(1), a2.Sum)
+
+	b := agg.FindBin(AggBin{Token: "b"})
+	assert.Equal(t, int64(2), b.Total)
+	assert.Equal(t, map[uint32]struct{}{1: {}, 2: {}}, b.Values)
+
+	c := agg.FindBin(AggBin{Token: "c", MID: 2})
+	assert.Equal(t, int64(3), c.Total)
+	assert.Equal(t, float64(7), c.Sum)
+	assert.Equal(t, float64(1), c.Min)
+	assert.Equal(t, float64(4), c.Max)
+}
+
+func TestKWayMergeBinsCapacity(t *testing.T) {
+	bins := []AggBinSamples{
+		{Bin: AggBin{Token: "a"}, Samples: SamplesContainer{Total: 1}},
+		{Bin: AggBin{Token: "b"}, Samples: SamplesContainer{Total: 2}},
+		{Bin: AggBin{Token: "c"}, Samples: SamplesContainer{Total: 3}},
+	}
+	cursors := make([]mergeCursor, 4)
+	for i := range cursors {
+		cursors[i].bins = bins
+	}
+
+	merged := kWayMergeBins(cursors)
+
+	assert.Len(t, merged, len(bins))
+	assert.Equal(t, len(bins), cap(merged))
+}
+
+func TestTwoWayMergeBinsCapacity(t *testing.T) {
+	bins := []AggBinSamples{
+		{Bin: AggBin{Token: "a"}, Samples: SamplesContainer{Total: 1}},
+		{Bin: AggBin{Token: "b"}, Samples: SamplesContainer{Total: 2}},
+		{Bin: AggBin{Token: "c"}, Samples: SamplesContainer{Total: 3}},
+	}
+
+	merged := twoWayMergeBins(mergeCursor{bins: bins}, mergeCursor{bins: bins})
+
+	assert.Len(t, merged, len(bins))
+	assert.Equal(t, len(bins), cap(merged))
+}
+
+func TestTwoWayMergeBinsRemapsValues(t *testing.T) {
+	left := mergeCursor{bins: []AggBinSamples{{
+		Bin:     AggBin{Token: "a"},
+		Samples: SamplesContainer{Total: 1, Values: map[uint32]struct{}{0: {}}},
+	}}}
+	right := mergeCursor{
+		bins: []AggBinSamples{{
+			Bin:     AggBin{Token: "a"},
+			Samples: SamplesContainer{Total: 1, Values: map[uint32]struct{}{1: {}}},
+		}},
+		remap: []uint32{0, 1},
+	}
+
+	merged := twoWayMergeBins(left, right)
+
+	assert.Len(t, merged, 1)
+	assert.Equal(t, map[uint32]struct{}{0: {}, 1: {}}, merged[0].Samples.Values)
+}
+
 func BenchmarkMergeQPRs_ReusingQPR(b *testing.B) {
 	totalQPRs := uint64(100)
 	qprSize := uint64(100)
-
-	qprs := make([]*QPR, totalQPRs)
-	for i := range totalQPRs {
-		qpr := getRandomQPR(qprSize)
-		qprs[i] = &qpr
-	}
 
 	aggQpr := QPR{
 		Histogram: make(map[MID]uint64),
@@ -753,6 +879,14 @@ func BenchmarkMergeQPRs_ReusingQPR(b *testing.B) {
 	}
 
 	for b.Loop() {
+		b.StopTimer()
+		qprs := make([]*QPR, totalQPRs)
+		for i := range totalQPRs {
+			qpr := getRandomQPR(qprSize)
+			qprs[i] = &qpr
+		}
+		b.StartTimer()
+
 		MergeQPRs(&aggQpr, qprs, 1000, 5, DocsOrderDesc)
 
 		aggQpr.IDs = aggQpr.IDs[:0]
@@ -762,7 +896,7 @@ func BenchmarkMergeQPRs_ReusingQPR(b *testing.B) {
 		clear(aggQpr.Histogram)
 
 		for i := range aggQpr.Aggs {
-			clear(aggQpr.Aggs[i].SamplesByBin)
+			aggQpr.Aggs[i].SamplesByBin = nil
 			aggQpr.Aggs[i].NotExists = 0
 		}
 		aggQpr.Aggs = aggQpr.Aggs[:0]

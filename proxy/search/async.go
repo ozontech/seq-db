@@ -206,6 +206,9 @@ func (si *Ingestor) FetchAsyncSearchResult(
 						response.Histogram = newHist
 					}
 				}
+				if protocolVersion < config.StoreProtocolVersion3 && storeResp != nil && storeResp.Response != nil {
+					sortAggBins(storeResp.Response)
+				}
 
 				respChan <- shardResponse{
 					replica: replica,

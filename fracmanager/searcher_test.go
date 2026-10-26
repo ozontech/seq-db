@@ -254,17 +254,13 @@ func TestSearcher_MergeHistograms(t *testing.T) {
 func TestSearcher_MergeAggregations(t *testing.T) {
 	searcher := NewSearcher(4, SearcherCfg{})
 
-	frac1 := newFakeFrac(0, 50, newFakeQPRWithAgg(
-		map[seq.AggBin]*seq.SamplesContainer{
-			{Token: "gateway"}: {Min: 1, Max: 30, Sum: 70, Total: 5},
-			{Token: "proxy"}:   {Min: 5, Max: 5, Sum: 5, Total: 1},
-		},
-	))
-	frac2 := newFakeFrac(0, 50, newFakeQPRWithAgg(
-		map[seq.AggBin]*seq.SamplesContainer{
-			{Token: "gateway"}: {Min: 2, Max: 35, Sum: 37, Total: 2},
-		},
-	))
+	frac1 := newFakeFrac(0, 50, newFakeQPRWithAgg([]seq.AggBinSamples{
+		{Bin: seq.AggBin{Token: "gateway"}, Samples: seq.SamplesContainer{Min: 1, Max: 30, Sum: 70, Total: 5}},
+		{Bin: seq.AggBin{Token: "proxy"}, Samples: seq.SamplesContainer{Min: 5, Max: 5, Sum: 5, Total: 1}},
+	}))
+	frac2 := newFakeFrac(0, 50, newFakeQPRWithAgg([]seq.AggBinSamples{
+		{Bin: seq.AggBin{Token: "gateway"}, Samples: seq.SamplesContainer{Min: 2, Max: 35, Sum: 37, Total: 2}},
+	}))
 
 	params := processor.SearchParams{
 		From:  0,
@@ -281,13 +277,13 @@ func TestSearcher_MergeAggregations(t *testing.T) {
 	assert.Len(t, qpr.Aggs, 1)
 	assert.Len(t, qpr.Aggs[0].SamplesByBin, 2)
 
-	gatewaySamples := qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "gateway"}]
+	gatewaySamples := qpr.Aggs[0].FindBin(seq.AggBin{Token: "gateway"})
 	assert.Equal(t, int64(7), gatewaySamples.Total)
 	assert.Equal(t, float64(1), gatewaySamples.Min)
 	assert.Equal(t, float64(35), gatewaySamples.Max)
 	assert.Equal(t, float64(107), gatewaySamples.Sum)
 
-	proxySamples := qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "proxy"}]
+	proxySamples := qpr.Aggs[0].FindBin(seq.AggBin{Token: "proxy"})
 	assert.Equal(t, int64(1), proxySamples.Total)
 	assert.Equal(t, float64(5), proxySamples.Min)
 	assert.Equal(t, float64(5), proxySamples.Max)
@@ -355,7 +351,8 @@ func newFakeQPRWithHist(ids []int, histogram map[seq.MID]uint64) *seq.QPR {
 	}
 }
 
-func newFakeQPRWithAgg(aggData map[seq.AggBin]*seq.SamplesContainer) *seq.QPR {
+func newFakeQPRWithAgg(aggData []seq.AggBinSamples) *seq.QPR {
+	seq.SortAggBinSamples(aggData)
 	agg := seq.AggregatableSamples{
 		SamplesByBin: aggData,
 		NotExists:    0,

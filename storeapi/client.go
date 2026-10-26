@@ -67,7 +67,7 @@ func setProtocolVersionHeader(opts ...grpc.CallOption) {
 			if *headerOpt.HeaderAddr == nil {
 				*headerOpt.HeaderAddr = make(metadata.MD)
 			}
-			(*headerOpt.HeaderAddr)[consts.StoreProtocolVersionHeader] = []string{config.StoreProtocolVersion2.String()}
+			(*headerOpt.HeaderAddr)[consts.StoreProtocolVersionHeader] = []string{config.StoreProtocolVersion3.String()}
 		}
 	}
 }
@@ -103,7 +103,7 @@ func newStoreAPIFetchClient(b []*storeapi.BinaryData) *storeAPIFetchClient {
 
 func (x *storeAPIFetchClient) Header() (metadata.MD, error) {
 	md := make(metadata.MD)
-	md[consts.StoreProtocolVersionHeader] = []string{config.StoreProtocolVersion2.String()}
+	md[consts.StoreProtocolVersionHeader] = []string{config.StoreProtocolVersion3.String()}
 	return md, nil
 }
 
@@ -206,7 +206,7 @@ type storeAPIStreamSearchClient struct {
 
 func (c *storeAPIStreamSearchClient) Header() (metadata.MD, error) {
 	md := make(metadata.MD)
-	md[consts.StoreProtocolVersionHeader] = []string{config.StoreProtocolVersion2.String()}
+	md[consts.StoreProtocolVersionHeader] = []string{config.StoreProtocolVersion3.String()}
 	return md, nil
 }
 

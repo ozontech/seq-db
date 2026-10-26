@@ -3,6 +3,7 @@ package asyncsearcher
 import (
 	"math"
 	"math/rand/v2"
+	"slices"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ func TestQPRMarshalUnmarshal(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 0, len(tail))
 		require.EqualExportedValues(t, qpr, out)
+		require.Equal(t, qprBinVersion3, qprBinVersion(rawQPR[0]))
 	}
 
 	test(seq.QPR{Histogram: map[seq.MID]uint64{}})
@@ -42,33 +44,40 @@ func TestQPRMarshalUnmarshal(t *testing.T) {
 		Histogram: map[seq.MID]uint64{},
 		Aggs: []seq.AggregatableSamples{
 			{
-				SamplesByBin: map[seq.AggBin]*seq.SamplesContainer{
-					{Token: "_not_exists"}: {
-						Total: 1,
+				SamplesByBin: []seq.AggBinSamples{
+					{Bin: seq.AggBin{Token: "_not_exists"}, Samples: seq.SamplesContainer{Total: 1}},
+					{
+						Bin: seq.AggBin{Token: "seq-db proxy"},
+						Samples: seq.SamplesContainer{
+							Min:       0,
+							Max:       100,
+							Sum:       100,
+							Total:     1,
+							NotExists: 0,
+							Samples:   []float64{100},
+						},
 					},
-					{Token: "seq-db proxy"}: {
-						Min:       0,
-						Max:       100,
-						Sum:       100,
-						Total:     1,
-						NotExists: 0,
-						Samples:   []float64{100},
+					{
+						Bin: seq.AggBin{Token: "seq-db store", MID: seq.MID(2)},
+						Samples: seq.SamplesContainer{
+							Min:       3,
+							Max:       5,
+							Sum:       794,
+							Total:     1,
+							NotExists: 7,
+							Samples:   []float64{324},
+						},
 					},
-					{Token: "seq-db store", MID: seq.MID(1)}: {
-						Min:       3,
-						Max:       5,
-						Sum:       794,
-						Total:     1,
-						NotExists: 7,
-						Samples:   []float64{324},
-					},
-					{Token: "seq-db store", MID: seq.MID(2)}: {
-						Min:       2,
-						Max:       6,
-						Sum:       544,
-						Total:     2,
-						NotExists: 3,
-						Samples:   []float64{324},
+					{
+						Bin: seq.AggBin{Token: "seq-db store", MID: seq.MID(1)},
+						Samples: seq.SamplesContainer{
+							Min:       2,
+							Max:       6,
+							Sum:       544,
+							Total:     2,
+							NotExists: 3,
+							Samples:   []float64{324},
+						},
 					},
 				},
 				NotExists: 5412,
@@ -107,25 +116,29 @@ func TestQPRVersion1Compatibility(t *testing.T) {
 		},
 		Aggs: []seq.AggregatableSamples{
 			{
-				SamplesByBin: map[seq.AggBin]*seq.SamplesContainer{
-					{Token: "_not_exists"}: {
-						Total: 1,
+				SamplesByBin: []seq.AggBinSamples{
+					{Bin: seq.AggBin{Token: "_not_exists"}, Samples: seq.SamplesContainer{Total: 1}},
+					{
+						Bin: seq.AggBin{Token: "seq-db store", MID: seq.MID(1761812502456)},
+						Samples: seq.SamplesContainer{
+							Min:       2,
+							Max:       6,
+							Sum:       544,
+							Total:     2,
+							NotExists: 3,
+							Samples:   []float64{324},
+						},
 					},
-					{Token: "seq-db store", MID: seq.MID(1761812502953)}: {
-						Min:       3,
-						Max:       5,
-						Sum:       794,
-						Total:     1,
-						NotExists: 7,
-						Samples:   []float64{324},
-					},
-					{Token: "seq-db store", MID: seq.MID(1761812502456)}: {
-						Min:       2,
-						Max:       6,
-						Sum:       544,
-						Total:     2,
-						NotExists: 3,
-						Samples:   []float64{324},
+					{
+						Bin: seq.AggBin{Token: "seq-db store", MID: seq.MID(1761812502953)},
+						Samples: seq.SamplesContainer{
+							Min:       3,
+							Max:       5,
+							Sum:       794,
+							Total:     1,
+							NotExists: 7,
+							Samples:   []float64{324},
+						},
 					},
 				},
 				NotExists: 5412,
@@ -152,11 +165,53 @@ func TestQPRVersion1Compatibility(t *testing.T) {
 	require.Len(t, agg.SamplesByBin, 3, "should have 3 samples in bin")
 
 	notExistsBin := seq.AggBin{Token: "_not_exists"}
-	require.Equal(t, int64(1), agg.SamplesByBin[notExistsBin].Total, "bucket doesn't match")
+	require.Equal(t, int64(1), agg.FindBin(notExistsBin).Total, "bucket doesn't match")
 	bin1 := seq.AggBin{Token: "seq-db store", MID: seq.MID(1761812502953000000)}
-	require.Equal(t, int64(1), agg.SamplesByBin[bin1].Total, "bucket doesn't match")
+	require.Equal(t, int64(1), agg.FindBin(bin1).Total, "bucket doesn't match")
 	bin2 := seq.AggBin{Token: "seq-db store", MID: seq.MID(1761812502456000000)}
-	require.Equal(t, int64(2), agg.SamplesByBin[bin2].Total, "bucket doesn't match")
+	require.Equal(t, int64(2), agg.FindBin(bin2).Total, "bucket doesn't match")
+}
+
+func TestQPRVersion2SortsAggBins(t *testing.T) {
+	sortedQPR := seq.QPR{
+		Histogram: map[seq.MID]uint64{},
+		Aggs: []seq.AggregatableSamples{{
+			SamplesByBin: []seq.AggBinSamples{
+				{Bin: seq.AggBin{Token: "a", MID: 3}},
+				{Bin: seq.AggBin{Token: "a", MID: 1}},
+				{Bin: seq.AggBin{Token: "b", MID: 2}},
+			},
+		}},
+	}
+
+	rawQPR := marshalQPR(&sortedQPR, nil)
+	var version3 seq.QPR
+	tail, err := unmarshalQPR(&version3, rawQPR, math.MaxInt)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(tail))
+	require.Equal(t, sortedQPR.Aggs[0].SamplesByBin, version3.Aggs[0].SamplesByBin)
+
+	unsortedQPR := seq.QPR{
+		Histogram: map[seq.MID]uint64{},
+		Aggs: []seq.AggregatableSamples{{
+			SamplesByBin: []seq.AggBinSamples{
+				{Bin: seq.AggBin{Token: "b", MID: 2}},
+				{Bin: seq.AggBin{Token: "a", MID: 3}},
+				{Bin: seq.AggBin{Token: "a", MID: 1}},
+			},
+		}},
+	}
+	rawQPR = slices.Clone(marshalQPR(&unsortedQPR, nil))
+	rawQPR[0] = uint8(qprBinVersion2)
+
+	var version2 seq.QPR
+	tail, err = unmarshalQPR(&version2, rawQPR, math.MaxInt)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(tail))
+	require.Equal(t, sortedQPR.Aggs[0].SamplesByBin, version2.Aggs[0].SamplesByBin)
+	require.True(t, slices.IsSortedFunc(version2.Aggs[0].SamplesByBin, func(a, b seq.AggBinSamples) int {
+		return seq.CompareAggBin(a.Bin, b.Bin)
+	}))
 }
 
 func getRandomQPR(size int) seq.QPR {
@@ -201,12 +256,16 @@ func getRandomQPR(size int) seq.QPR {
 }
 
 func aggSamplesFromMap(other map[string]uint64) seq.AggregatableSamples {
-	samplesByBin := make(map[seq.AggBin]*seq.SamplesContainer, len(other))
+	samplesByBin := make([]seq.AggBinSamples, 0, len(other))
 	for k, cnt := range other {
 		hist := seq.NewSamplesContainers()
 		hist.Total = int64(cnt)
-		samplesByBin[seq.AggBin{Token: k}] = hist
+		samplesByBin = append(samplesByBin, seq.AggBinSamples{
+			Bin:     seq.AggBin{Token: k},
+			Samples: *hist,
+		})
 	}
+	seq.SortAggBinSamples(samplesByBin)
 	return seq.AggregatableSamples{
 		SamplesByBin: samplesByBin,
 		NotExists:    int64(other["_not_exists"]),

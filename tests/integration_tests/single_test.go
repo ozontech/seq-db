@@ -128,8 +128,8 @@ func (s *SingleTestSuite) TestSearchAgg() {
 		r.NoError(err)
 		r.Equal(len(expected), len(qpr.Aggs))
 		for i := range expected {
-			for bin, hist := range qpr.Aggs[i].SamplesByBin {
-				r.Equalf(int64(expected[i][bin.Token]), hist.Total, "failed for token %s", bin)
+			for _, pair := range qpr.Aggs[i].SamplesByBin {
+				r.Equalf(int64(expected[i][pair.Bin.Token]), pair.Samples.Total, "failed for token %s", pair.Bin)
 			}
 		}
 	}

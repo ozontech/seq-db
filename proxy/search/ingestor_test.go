@@ -4,13 +4,18 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search/mock"
 	"github.com/ozontech/seq-db/proxy/stores"
@@ -51,6 +56,52 @@ func TestAggHour(t *testing.T) {
 	times, docs, _ := searchIngestor.aggregate(nil, nil, seq.TimeToMID(now.Add(time.Hour)), seq.DurationToMID(time.Hour), ids)
 	assert.Equal(t, 2, len(docs), "wrong bucket count")
 	assert.Equal(t, 2, len(times), "wrong bucket count")
+}
+
+func TestSearchHostAggBinsProtocol(t *testing.T) {
+	tests := []struct {
+		version  config.StoreProtocolVersion
+		expected []string
+	}{
+		{version: config.StoreProtocolVersion2, expected: []string{"a2", "a1", "b3"}},
+		{version: config.StoreProtocolVersion3, expected: []string{"b3", "a2", "a1"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.version.String(), func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			bins := []*storeapi.SearchResponse_Bin{
+				{Label: "b", Ts: timestamppb.New(time.Unix(3, 0))},
+				{Label: "a", Ts: timestamppb.New(time.Unix(2, 0))},
+				{Label: "a", Ts: timestamppb.New(time.Unix(1, 0))},
+			}
+			client := mock.NewMockStoreApiClient(ctrl)
+			client.EXPECT().
+				Search(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, _ *storeapi.SearchRequest, opts ...grpc.CallOption) (*storeapi.SearchResponse, error) {
+					for _, opt := range opts {
+						if header, ok := opt.(grpc.HeaderCallOption); ok && header.HeaderAddr != nil {
+							*header.HeaderAddr = metadata.Pairs(consts.StoreProtocolVersionHeader, tt.version.String())
+						}
+					}
+					return &storeapi.SearchResponse{
+						Aggs: []*storeapi.SearchResponse_Agg{{Timeseries: bins}},
+					}, nil
+				})
+
+			ingestor := NewIngestor(Config{}, map[string]storeapi.StoreApiClient{"store": client})
+			resp, _, err := ingestor.searchHost(context.Background(), &storeapi.SearchRequest{}, "store")
+			assert.NoError(t, err)
+
+			labels := make([]string, 0, len(resp.Aggs[0].Timeseries))
+			for _, bin := range resp.Aggs[0].Timeseries {
+				labels = append(labels, bin.Label+strconv.FormatInt(bin.Ts.Seconds, 10))
+			}
+			assert.Equal(t, tt.expected, labels)
+		})
+	}
 }
 
 func TestStatus(t *testing.T) {

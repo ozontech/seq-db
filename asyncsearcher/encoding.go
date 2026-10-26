@@ -19,15 +19,17 @@ type qprBinVersion uint8
 const (
 	qprBinVersion1 qprBinVersion = iota + 1 // MIDs stored in milliseconds
 	qprBinVersion2                          // MIDs stored in nanoseconds
+	qprBinVersion3
 )
 
 var availableVersions = map[qprBinVersion]struct{}{
 	qprBinVersion1: {},
 	qprBinVersion2: {},
+	qprBinVersion3: {},
 }
 
 func marshalQPR(q *seq.QPR, dst []byte) []byte {
-	dst = append(dst, uint8(qprBinVersion2))
+	dst = append(dst, uint8(qprBinVersion3))
 
 	blocksLenPos := len(dst)
 	dst = append(dst, make([]byte, 8)...)
@@ -412,13 +414,14 @@ func unmarshalAggs(dst []seq.AggregatableSamples, src []byte, version qprBinVers
 func marshalAggregatableSamples(s seq.AggregatableSamples, dst []byte) []byte {
 	dst = be.AppendUint64(dst, uint64(len(s.SamplesByBin)))
 	prevMID := seq.MID(0)
-	for sample, hist := range s.SamplesByBin {
+	for i := range s.SamplesByBin {
+		sample := s.SamplesByBin[i].Bin
 		delta := int64(sample.MID) - int64(prevMID)
 		prevMID = sample.MID
 		dst = binary.AppendVarint(dst, delta)
 		dst = binary.AppendUvarint(dst, uint64(len(sample.Token)))
-		dst = append(dst, []byte(sample.Token)...)
-		dst = marshalSamplesContainer(hist, dst)
+		dst = append(dst, sample.Token...)
+		dst = marshalSamplesContainer(&s.SamplesByBin[i].Samples, dst)
 	}
 	dst = be.AppendUint64(dst, uint64(s.NotExists))
 	return dst
@@ -431,8 +434,9 @@ func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte, versio
 
 	aggs := be.Uint64(src)
 	src = src[8:]
-	q.SamplesByBin = make(map[seq.AggBin]*seq.SamplesContainer, aggs)
-	samples := make([]seq.SamplesContainer, aggs)
+	if aggs > 0 {
+		q.SamplesByBin = make([]seq.AggBinSamples, aggs)
+	}
 	prev := int64(0)
 	for i := 0; i < int(aggs); i++ {
 		delta, n := binary.Varint(src)
@@ -452,8 +456,7 @@ func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte, versio
 		token := string(src[:v])
 		src = src[v:]
 
-		sample := &samples[i]
-		tail, err := unmarshalSamplesContainer(sample, src)
+		tail, err := unmarshalSamplesContainer(&q.SamplesByBin[i].Samples, src)
 		if err != nil {
 			return nil, err
 		}
@@ -466,11 +469,13 @@ func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte, versio
 			midValue = seq.MID(mid)
 		}
 
-		ab := seq.AggBin{
+		q.SamplesByBin[i].Bin = seq.AggBin{
 			MID:   midValue,
 			Token: token,
 		}
-		q.SamplesByBin[ab] = sample
+	}
+	if version < qprBinVersion3 {
+		seq.SortAggBinSamples(q.SamplesByBin)
 	}
 
 	q.NotExists = int64(be.Uint64(src))

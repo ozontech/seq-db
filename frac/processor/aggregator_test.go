@@ -95,6 +95,53 @@ func TestSingleSourceCountAggregatorWithInterval(t *testing.T) {
 	assert.Equal(t, int64(1), agg.counter.notExists())
 }
 
+type testGroupIterator struct {
+	values map[uint32]string
+}
+
+func (g *testGroupIterator) ConsumeTokenSource([]node.LID) ([]int, error) {
+	return nil, nil
+}
+
+func (g *testGroupIterator) Release() {}
+
+func (g *testGroupIterator) UniqueSources() int {
+	return len(g.values)
+}
+
+func (g *testGroupIterator) ValueBySource(source uint32) string {
+	return g.values[source]
+}
+
+func TestTsSourceCounterGet(t *testing.T) {
+	counter := newTsSourceCounter(3)
+	counter.counts.add(2, 3)
+	counter.counts.add(0, 1)
+	counter.counts.add(2, 2)
+	counter.notExistsCnt = 4
+
+	got := counter.get(&testGroupIterator{values: map[uint32]string{
+		0: "b",
+		1: "a",
+		2: "a",
+	}})
+	seq.SortAggBinSamples(got)
+
+	require.Len(t, got, 4)
+	assert.Equal(t, []seq.AggBin{
+		{Token: "_not_exists", MID: consts.DummyMID},
+		{Token: "a", MID: 3},
+		{Token: "a", MID: 2},
+		{Token: "b", MID: 1},
+	}, []seq.AggBin{got[0].Bin, got[1].Bin, got[2].Bin, got[3].Bin})
+	assert.Equal(t, []int64{4, 1, 1, 1}, []int64{
+		got[0].Samples.Total,
+		got[1].Samples.Total,
+		got[2].Samples.Total,
+		got[3].Samples.Total,
+	})
+}
+
 const benchRandSeed int64 = 1
 
 func Generate(r *rand.Rand, n int) ([]uint32, uint32) {
@@ -300,15 +347,17 @@ func TestSingleTreeCountAggregator(t *testing.T) {
 	}
 
 	expectedResult := seq.AggregatableSamples{
-		SamplesByBin: map[seq.AggBin]*seq.SamplesContainer{
+		SamplesByBin: []seq.AggBinSamples{
 			// "0" because DataProvider converts TID source (tid index) to string
-			{Token: "0"}: {Total: 1},
+			{Bin: seq.AggBin{Token: "0"}, Samples: seq.SamplesContainer{Total: 1}},
 		},
 	}
 
 	r.Equal(len(expectedResult.SamplesByBin), len(result.SamplesByBin))
-	for token, hist := range expectedResult.SamplesByBin {
-		r.Equal(hist.Total, result.SamplesByBin[token].Total)
+	for _, exp := range expectedResult.SamplesByBin {
+		got := result.FindBin(exp.Bin)
+		r.NotNil(got)
+		r.Equal(exp.Samples.Total, got.Total)
 	}
 }
 
