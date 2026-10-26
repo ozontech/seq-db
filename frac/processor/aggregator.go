@@ -487,7 +487,7 @@ func (n *SingleSourceUniqueAggregator) Next(lids []node.LID) error {
 	}
 
 	for i := range lids {
-		if sources[i] == 0 {
+		if sources[i] < 0 {
 			n.notExists++
 		}
 	}
