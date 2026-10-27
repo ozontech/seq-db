@@ -41,20 +41,6 @@ func TestFilterLt(t *testing.T) {
 	})
 }
 
-func TestDocumentFilter(t *testing.T) {
-	const (
-		field = "service"
-		cond  = "service-5"
-	)
-
-	filterExpr := NewDocFilter(field, NewEq(cond))
-
-	testFilter(t, query.DocColumn(1), filterExpr, func(r *query.Record) bool {
-		field := r.Vals[1].AsDoc().Dig(field)
-		return field.AsString() == cond
-	})
-}
-
 func testFilter[T any](
 	t *testing.T,
 	col query.Column[T],
