@@ -39,6 +39,10 @@ func newStoreSender(address string, mapping seq.Mapping) (*storeSender, error) {
 		return nil, fmt.Errorf("cannot create grpc client: %w", err)
 	}
 
+	return newStoreSenderWithClient(storeapi.NewStoreApiClient(conn), mapping), nil
+}
+
+func newStoreSenderWithClient(client storeapi.StoreApiClient, mapping seq.Mapping) *storeSender {
 	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(consts.DefaultMaxTokenSize, false, true, consts.MaxTextFieldValueLength),
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(consts.DefaultMaxTokenSize, false, true),
@@ -47,10 +51,10 @@ func newStoreSender(address string, mapping seq.Mapping) (*storeSender, error) {
 	}
 
 	return &storeSender{
-		client: storeapi.NewStoreApiClient(conn),
+		client: client,
 		proc:   indexer.NewProcessor(mapping, tokenizers, 0, 0, 0),
 		comp:   indexer.GetDocsMetasCompressor(1, 1),
-	}, nil
+	}
 }
 
 func (s *storeSender) Send(ctx context.Context, docsList [][]byte) error {
