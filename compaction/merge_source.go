@@ -2,6 +2,7 @@ package compaction
 
 import (
 	"bytes"
+	"io"
 	"iter"
 	"slices"
 	"sync"
@@ -9,14 +10,11 @@ import (
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/indexwriter"
 	"github.com/ozontech/seq-db/seq"
-	"github.com/ozontech/seq-db/util"
 )
-
-type DocBlockLocation = util.Pair[[]byte, uint64]
 
 type Source interface {
 	indexwriter.Source
-	DocBlocks() iter.Seq2[DocBlockLocation, error]
+	DocsReader() (io.ReadCloser, error)
 }
 
 type MergeSource struct {

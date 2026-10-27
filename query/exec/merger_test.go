@@ -1,170 +1,13 @@
 package exec
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
-	insaneJSON "github.com/ozontech/insane-json"
-
 	"github.com/ozontech/seq-db/query"
-	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/ozontech/seq-db/seq"
 )
-
-func TestMergerAsc(t *testing.T) {
-	const field = "service"
-
-	leftInput := makeMergerTestRecords([]string{
-		"service-01",
-		"service-03",
-		"service-05",
-	})
-	rightInput := makeMergerTestRecords([]string{
-		"service-02",
-		"service-04",
-		"service-06",
-	})
-
-	merger := NewMerger(
-		&testProducer{data: leftInput},
-		&testProducer{data: rightInput},
-		1,
-		field,
-		query.DataTypeDocument,
-		seq.DocsOrderAsc,
-	)
-
-	outputData := collectRecords(merger)
-	assert.Equal(t, []string{
-		"service-01", "service-02", "service-03",
-		"service-04", "service-05", "service-06",
-	}, extractFieldValues(outputData, field))
-}
-
-func TestMergerDesc(t *testing.T) {
-	const field = "service"
-
-	leftInput := makeMergerTestRecords([]string{
-		"service-06",
-		"service-04",
-		"service-02",
-	})
-	rightInput := makeMergerTestRecords([]string{
-		"service-05",
-		"service-03",
-		"service-01",
-	})
-
-	merger := NewMerger(
-		&testProducer{data: leftInput},
-		&testProducer{data: rightInput},
-		1,
-		field,
-		query.DataTypeDocument,
-		seq.DocsOrderDesc,
-	)
-
-	outputData := collectRecords(merger)
-	assert.Equal(t, []string{
-		"service-06", "service-05", "service-04",
-		"service-03", "service-02", "service-01",
-	}, extractFieldValues(outputData, field))
-}
-
-func TestMergerLeftEmpty(t *testing.T) {
-	const field = "service"
-
-	leftInput := makeMergerTestRecords([]string{})
-	rightInput := makeMergerTestRecords([]string{
-		"service-01",
-		"service-02",
-	})
-
-	merger := NewMerger(
-		&testProducer{data: leftInput},
-		&testProducer{data: rightInput},
-		1,
-		field,
-		query.DataTypeDocument,
-		seq.DocsOrderAsc,
-	)
-
-	outputData := collectRecords(merger)
-	assert.Equal(t, []string{"service-01", "service-02"}, extractFieldValues(outputData, field))
-}
-
-func TestMergerRightEmpty(t *testing.T) {
-	const field = "service"
-
-	leftInput := makeMergerTestRecords([]string{
-		"service-01",
-		"service-02",
-	})
-	rightInput := makeMergerTestRecords([]string{})
-
-	merger := NewMerger(
-		&testProducer{data: leftInput},
-		&testProducer{data: rightInput},
-		1,
-		field,
-		query.DataTypeDocument,
-		seq.DocsOrderAsc,
-	)
-
-	outputData := collectRecords(merger)
-	assert.Equal(t, []string{"service-01", "service-02"}, extractFieldValues(outputData, field))
-}
-
-func TestMergerBothEmpty(t *testing.T) {
-	const field = "service"
-
-	leftInput := makeMergerTestRecords([]string{})
-	rightInput := makeMergerTestRecords([]string{})
-
-	merger := NewMerger(
-		&testProducer{data: leftInput},
-		&testProducer{data: rightInput},
-		1,
-		field,
-		query.DataTypeDocument,
-		seq.DocsOrderAsc,
-	)
-
-	outputData := collectRecords(merger)
-	assert.Empty(t, outputData)
-}
-
-func TestMergerDuplicates(t *testing.T) {
-	const field = "service"
-
-	leftInput := makeMergerTestRecords([]string{
-		"service-01",
-		"service-01",
-		"service-03",
-	})
-	rightInput := makeMergerTestRecords([]string{
-		"service-01",
-		"service-02",
-		"service-03",
-	})
-
-	merger := NewMerger(
-		&testProducer{data: leftInput},
-		&testProducer{data: rightInput},
-		1,
-		field,
-		query.DataTypeDocument,
-		seq.DocsOrderAsc,
-	)
-
-	outputData := collectRecords(merger)
-	assert.Equal(t, []string{
-		"service-01", "service-01", "service-01",
-		"service-02", "service-03", "service-03",
-	}, extractFieldValues(outputData, field))
-}
 
 func TestMergerUint32(t *testing.T) {
 	leftInput := makeMergerUint32Records([]uint32{1, 3, 5})
@@ -173,9 +16,7 @@ func TestMergerUint32(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput},
 		&testProducer{data: rightInput},
-		0,
-		"",
-		query.DataTypeUint32,
+		query.Uint32Column(0),
 		seq.DocsOrderAsc,
 	)
 
@@ -190,9 +31,7 @@ func TestMergerUint64(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput},
 		&testProducer{data: rightInput},
-		0,
-		"",
-		query.DataTypeUint64,
+		query.Uint64Column(0),
 		seq.DocsOrderAsc,
 	)
 
@@ -207,9 +46,7 @@ func TestMergerInt32(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput},
 		&testProducer{data: rightInput},
-		0,
-		"",
-		query.DataTypeInt32,
+		query.Int32Column(0),
 		seq.DocsOrderAsc,
 	)
 
@@ -224,9 +61,7 @@ func TestMergerInt64(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput},
 		&testProducer{data: rightInput},
-		0,
-		"",
-		query.DataTypeInt64,
+		query.Int64Column(0),
 		seq.DocsOrderDesc,
 	)
 
@@ -241,9 +76,7 @@ func TestMergerFloat64(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput},
 		&testProducer{data: rightInput},
-		0,
-		"",
-		query.DataTypeFloat64,
+		query.Float64Column(0),
 		seq.DocsOrderAsc,
 	)
 
@@ -258,14 +91,27 @@ func TestMergerString(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput},
 		&testProducer{data: rightInput},
-		0,
-		"",
-		query.DataTypeString,
+		query.StringColumn(0),
 		seq.DocsOrderAsc,
 	)
 
 	outputData := collectRecords(merger)
 	assert.Equal(t, []string{"apple", "apricot", "banana", "cherry", "date", "elder"}, extractStringValues(outputData))
+}
+
+func TestMergerStringDuplicates(t *testing.T) {
+	leftInput := makeMergerStringRecords([]string{"apple", "apple", "cherry"})
+	rightInput := makeMergerStringRecords([]string{"apple", "banana", "elder"})
+
+	merger := NewMerger(
+		&testProducer{data: leftInput},
+		&testProducer{data: rightInput},
+		query.StringColumn(0),
+		seq.DocsOrderAsc,
+	)
+
+	outputData := collectRecords(merger)
+	assert.Equal(t, []string{"apple", "apple", "apple", "banana", "cherry", "elder"}, extractStringValues(outputData))
 }
 
 func TestMergerSeqIDAsc(t *testing.T) {
@@ -283,9 +129,7 @@ func TestMergerSeqIDAsc(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput},
 		&testProducer{data: rightInput},
-		0,
-		"",
-		query.DataTypeSeqID,
+		query.SeqIDColumn(0),
 		seq.DocsOrderAsc,
 	)
 
@@ -311,9 +155,7 @@ func TestMergerSeqIDDesc(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput},
 		&testProducer{data: rightInput},
-		0,
-		"",
-		query.DataTypeSeqID,
+		query.SeqIDColumn(0),
 		seq.DocsOrderDesc,
 	)
 
@@ -337,9 +179,7 @@ func TestMergerSeqIDSameMIDDifferentRID(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput},
 		&testProducer{data: rightInput},
-		0,
-		"",
-		query.DataTypeSeqID,
+		query.SeqIDColumn(0),
 		seq.DocsOrderAsc,
 	)
 
@@ -360,9 +200,7 @@ func TestMergerSeqIDLeftEmpty(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput},
 		&testProducer{data: rightInput},
-		0,
-		"",
-		query.DataTypeSeqID,
+		query.SeqIDColumn(0),
 		seq.DocsOrderAsc,
 	)
 
@@ -370,6 +208,41 @@ func TestMergerSeqIDLeftEmpty(t *testing.T) {
 	assert.Equal(t, []seq.ID{
 		{MID: 100, RID: 1}, {MID: 200, RID: 2},
 	}, extractSeqIDValues(outputData))
+}
+
+func TestMergerSeqIDRightEmpty(t *testing.T) {
+	leftInput := makeMergerSeqIDRecords([]seq.ID{
+		{MID: 100, RID: 1},
+		{MID: 200, RID: 2},
+	})
+	rightInput := makeMergerSeqIDRecords([]seq.ID{})
+
+	merger := NewMerger(
+		&testProducer{data: leftInput},
+		&testProducer{data: rightInput},
+		query.SeqIDColumn(0),
+		seq.DocsOrderAsc,
+	)
+
+	outputData := collectRecords(merger)
+	assert.Equal(t, []seq.ID{
+		{MID: 100, RID: 1}, {MID: 200, RID: 2},
+	}, extractSeqIDValues(outputData))
+}
+
+func TestMergerSeqIDBothEmpty(t *testing.T) {
+	leftInput := makeMergerSeqIDRecords([]seq.ID{})
+	rightInput := makeMergerSeqIDRecords([]seq.ID{})
+
+	merger := NewMerger(
+		&testProducer{data: leftInput},
+		&testProducer{data: rightInput},
+		query.SeqIDColumn(0),
+		seq.DocsOrderAsc,
+	)
+
+	outputData := collectRecords(merger)
+	assert.Empty(t, outputData)
 }
 
 func TestMergerSeqIDDuplicates(t *testing.T) {
@@ -387,9 +260,7 @@ func TestMergerSeqIDDuplicates(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput, total: uint64(len(leftInput))},
 		&testProducer{data: rightInput, total: uint64(len(rightInput))},
-		0,
-		"",
-		query.DataTypeSeqID,
+		query.SeqIDColumn(0),
 		seq.DocsOrderAsc,
 	)
 
@@ -414,9 +285,7 @@ func TestMergerSeqIDDuplicatesDesc(t *testing.T) {
 	merger := NewMerger(
 		&testProducer{data: leftInput, total: uint64(len(leftInput))},
 		&testProducer{data: rightInput, total: uint64(len(rightInput))},
-		0,
-		"",
-		query.DataTypeSeqID,
+		query.SeqIDColumn(0),
 		seq.DocsOrderDesc,
 	)
 
@@ -429,29 +298,13 @@ func TestMergerSeqIDDuplicatesDesc(t *testing.T) {
 	assert.Equal(t, uint64(3), summary.Total)
 }
 
-func makeMergerTestRecords(values []string) []*query.Record {
-	out := make([]*query.Record, 0, len(values))
-
-	for _, v := range values {
-		doc := fmt.Sprintf(`{"service":%q,"level":3}`, v)
-		out = append(out, &query.Record{
-			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeUint32, encoding.Uint32ToBytes(1)),
-				query.NewRecordVals(query.DataTypeDocument, []byte(doc)),
-			},
-		})
-	}
-
-	return out
-}
-
 func makeMergerUint32Records(values []uint32) []*query.Record {
 	out := make([]*query.Record, 0, len(values))
 
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeUint32, encoding.Uint32ToBytes(v)),
+				query.NewUint32Vals(v),
 			},
 		})
 	}
@@ -465,7 +318,7 @@ func makeMergerUint64Records(values []uint64) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(v)),
+				query.NewUint64Vals(v),
 			},
 		})
 	}
@@ -479,7 +332,7 @@ func makeMergerInt32Records(values []int32) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeInt32, encoding.Int32ToBytes(v)),
+				query.NewInt32Vals(v),
 			},
 		})
 	}
@@ -493,7 +346,7 @@ func makeMergerInt64Records(values []int64) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeInt64, encoding.Int64ToBytes(v)),
+				query.NewInt64Vals(v),
 			},
 		})
 	}
@@ -507,7 +360,7 @@ func makeMergerFloat64Records(values []float64) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(v)),
+				query.NewFloat64Vals(v),
 			},
 		})
 	}
@@ -521,7 +374,7 @@ func makeMergerStringRecords(values []string) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeString, []byte(v)),
+				query.NewStringVals(v),
 			},
 		})
 	}
@@ -534,7 +387,7 @@ func makeMergerSeqIDRecords(values []seq.ID) []*query.Record {
 	for _, v := range values {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeSeqID, encoding.SeqIDToBytes(v)),
+				query.NewSeqIDVals(v),
 			},
 		})
 	}
@@ -545,7 +398,7 @@ func makeMergerSeqIDRecords(values []seq.ID) []*query.Record {
 func extractUint32Values(records []*query.Record) []uint32 {
 	out := make([]uint32, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(uint32))
+		out = append(out, r.Vals[0].AsUint32())
 	}
 	return out
 }
@@ -553,7 +406,7 @@ func extractUint32Values(records []*query.Record) []uint32 {
 func extractUint64Values(records []*query.Record) []uint64 {
 	out := make([]uint64, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(uint64))
+		out = append(out, r.Vals[0].AsUint64())
 	}
 	return out
 }
@@ -561,7 +414,7 @@ func extractUint64Values(records []*query.Record) []uint64 {
 func extractInt32Values(records []*query.Record) []int32 {
 	out := make([]int32, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(int32))
+		out = append(out, r.Vals[0].AsInt32())
 	}
 	return out
 }
@@ -569,7 +422,7 @@ func extractInt32Values(records []*query.Record) []int32 {
 func extractInt64Values(records []*query.Record) []int64 {
 	out := make([]int64, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(int64))
+		out = append(out, r.Vals[0].AsInt64())
 	}
 	return out
 }
@@ -577,7 +430,7 @@ func extractInt64Values(records []*query.Record) []int64 {
 func extractFloat64Values(records []*query.Record) []float64 {
 	out := make([]float64, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(float64))
+		out = append(out, r.Vals[0].AsFloat64())
 	}
 	return out
 }
@@ -585,7 +438,7 @@ func extractFloat64Values(records []*query.Record) []float64 {
 func extractStringValues(records []*query.Record) []string {
 	out := make([]string, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(string))
+		out = append(out, r.Vals[0].AsString())
 	}
 	return out
 }
@@ -593,90 +446,74 @@ func extractStringValues(records []*query.Record) []string {
 func extractSeqIDValues(records []*query.Record) []seq.ID {
 	out := make([]seq.ID, 0, len(records))
 	for _, r := range records {
-		out = append(out, r.Vals[0].Decoded().(seq.ID))
+		out = append(out, r.Vals[0].AsSeqID())
 	}
 	return out
 }
 
 func TestNewNMergedProducersEmpty(t *testing.T) {
-	const field = "service"
-
 	producers := []query.RecordProducer{}
 
-	merger := NewNMergedProducers(producers, 1, field, query.DataTypeDocument, seq.DocsOrderAsc)
+	merger := NewNMergedProducers(producers, query.SeqIDColumn(0), seq.DocsOrderAsc)
 	outputData := collectRecords(merger)
 	assert.Empty(t, outputData)
 }
 
 func TestNewNMergedProducersSingle(t *testing.T) {
-	const field = "service"
-
-	input := makeMergerTestRecords([]string{
-		"service-01",
-		"service-02",
+	input := makeMergerSeqIDRecords([]seq.ID{
+		{MID: 200, RID: 2},
+		{MID: 100, RID: 1},
 	})
 
 	producers := []query.RecordProducer{
 		&testProducer{data: input},
 	}
 
-	merger := NewNMergedProducers(producers, 1, field, query.DataTypeDocument, seq.DocsOrderAsc)
+	merger := NewNMergedProducers(producers, query.SeqIDColumn(0), seq.DocsOrderAsc)
 	outputData := collectRecords(merger)
-	assert.Equal(t, []string{"service-01", "service-02"}, extractFieldValues(outputData, field))
+	assert.Equal(t, []seq.ID{{MID: 200, RID: 2}, {MID: 100, RID: 1}}, extractSeqIDValues(outputData))
 }
 
 func TestNewNMergedProducersThree(t *testing.T) {
-	const field = "service"
-
-	producer1 := makeMergerTestRecords([]string{"service-01", "service-04"})
-	producer2 := makeMergerTestRecords([]string{"service-02", "service-05"})
-	producer3 := makeMergerTestRecords([]string{"service-03", "service-06"})
+	producer1 := makeMergerSeqIDRecords([]seq.ID{{MID: 100, RID: 1}, {MID: 400, RID: 4}})
+	producer2 := makeMergerSeqIDRecords([]seq.ID{{MID: 200, RID: 2}, {MID: 500, RID: 5}})
+	producer3 := makeMergerSeqIDRecords([]seq.ID{{MID: 300, RID: 3}, {MID: 600, RID: 6}})
 	producers := []query.RecordProducer{
 		&testProducer{data: producer1},
 		&testProducer{data: producer2},
 		&testProducer{data: producer3},
 	}
 
-	merger := NewNMergedProducers(producers, 1, field, query.DataTypeDocument, seq.DocsOrderAsc)
+	merger := NewNMergedProducers(producers, query.SeqIDColumn(0), seq.DocsOrderAsc)
 	outputData := collectRecords(merger)
-	assert.Equal(t, []string{
-		"service-01", "service-02", "service-03",
-		"service-04", "service-05", "service-06",
-	}, extractFieldValues(outputData, field))
+	assert.Equal(t, []seq.ID{
+		{MID: 100, RID: 1}, {MID: 200, RID: 2},
+		{MID: 300, RID: 3}, {MID: 400, RID: 4},
+		{MID: 500, RID: 5}, {MID: 600, RID: 6},
+	}, extractSeqIDValues(outputData))
 }
 
 func TestNewNMergedProducersWithEmpty(t *testing.T) {
-	const field = "service"
-
-	producer1 := makeMergerTestRecords([]string{"service-03", "service-01"})
-	producer2 := makeMergerTestRecords([]string{})
-	producer3 := makeMergerTestRecords([]string{"service-02"})
+	producer1 := makeMergerSeqIDRecords([]seq.ID{{MID: 300, RID: 3}, {MID: 100, RID: 1}})
+	producer2 := makeMergerSeqIDRecords([]seq.ID{})
+	producer3 := makeMergerSeqIDRecords([]seq.ID{{MID: 200, RID: 2}})
 	producers := []query.RecordProducer{
 		&testProducer{data: producer1},
 		&testProducer{data: producer2},
 		&testProducer{data: producer3},
 	}
 
-	merger := NewNMergedProducers(producers, 1, field, query.DataTypeDocument, seq.DocsOrderDesc)
+	merger := NewNMergedProducers(producers, query.SeqIDColumn(0), seq.DocsOrderDesc)
 	outputData := collectRecords(merger)
-	assert.Equal(t, []string{
-		"service-03", "service-02", "service-01",
-	}, extractFieldValues(outputData, field))
+	assert.Equal(t, []seq.ID{
+		{MID: 300, RID: 3}, {MID: 200, RID: 2}, {MID: 100, RID: 1},
+	}, extractSeqIDValues(outputData))
 }
 
 func collectRecords(p query.RecordProducer) []*query.Record {
 	out := make([]*query.Record, 0)
 	for r := p.Next(); r != nil; r = p.Next() {
 		out = append(out, r)
-	}
-	return out
-}
-
-func extractFieldValues(records []*query.Record, field string) []string {
-	out := make([]string, 0, len(records))
-	for _, r := range records {
-		val := r.Vals[1].Decoded().(*insaneJSON.Root).Dig(field).AsString()
-		out = append(out, val)
 	}
 	return out
 }

@@ -15,18 +15,22 @@ type FieldsFilter struct {
 
 type DocProjector struct {
 	input  query.RecordProducer
-	colIdx int
+	col    query.Column[*insaneJSON.Root]
 	filter *FieldsFilter
+
+	// roots holds every record whose doc val has been decoded (spawned an insaneJSON root).
+	// They are released back to the library pool in Finalize.
+	roots []*query.Record
 }
 
 func NewDocProjector(
 	input query.RecordProducer,
-	colIdx int,
+	col query.Column[*insaneJSON.Root],
 	filter *FieldsFilter,
 ) *DocProjector {
 	return &DocProjector{
 		input:  input,
-		colIdx: colIdx,
+		col:    col,
 		filter: filter,
 	}
 }
@@ -37,7 +41,7 @@ func (p *DocProjector) Next() *query.Record {
 		return nil
 	}
 
-	decoder := r.Vals[p.colIdx].Decoded().(*insaneJSON.Root)
+	decoder := p.col.Val(r)
 
 	var newRecord *query.Record
 	if !p.filter.AllowList {
@@ -63,13 +67,16 @@ func (p *DocProjector) Next() *query.Record {
 		newRecord = p.makeRecordWithNewVals(r, decoder.Encode(nil))
 	}
 
-	// The original root won't be seen downstream, release it immediately.
-	r.Release()
+	p.roots = append(p.roots, r)
 
 	return newRecord
 }
 
 func (p *DocProjector) Finalize() *query.Summary {
+	for _, r := range p.roots {
+		r.Release()
+	}
+	p.roots = nil
 	return p.input.Finalize()
 }
 
@@ -77,7 +84,7 @@ func (p *DocProjector) makeRecordWithNewVals(old *query.Record, newRawData []byt
 	newRecordVals := make([]*query.RecordVals, len(old.Vals))
 	for i := range len(old.Vals) {
 		rawData := old.Vals[i].RawData()
-		if i == p.colIdx {
+		if i == p.col.Idx() {
 			rawData = newRawData
 		}
 		newRecordVals[i] = query.NewRecordVals(old.Vals[i].Type, rawData)

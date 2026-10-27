@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/ozontech/seq-db/query"
-	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -18,6 +17,24 @@ const (
 	ExecutorStateProcessingData
 	ExecutorStateProducingOutput
 	ExecutorStateDone
+)
+
+// Input and output columns are resolved from existing hardcoded schemas.
+var (
+	aggColTokenIn   = query.AggsSchema.MustColumn[string]("token")
+	aggColMinIn     = query.AggsSchema.MustColumn[float64]("min")
+	aggColMaxIn     = query.AggsSchema.MustColumn[float64]("max")
+	aggColSumIn     = query.AggsSchema.MustColumn[float64]("sum")
+	aggColTotalIn   = query.AggsSchema.MustColumn[uint64]("total")
+	aggColTsIn      = query.AggsSchema.MustColumn[uint64]("ts")
+	aggColSamplesIn = query.AggsSchema.MustColumn[[]float64]("samples")
+	aggColValuesIn  = query.AggsSchema.MustColumn[[]string]("values")
+)
+
+var (
+	aggColTokenOut = query.AggResultSchema.MustColumn[string]("token")
+	aggColValueOut = query.AggResultSchema.MustColumn[float64]("value")
+	aggColTsOut    = query.AggResultSchema.MustColumn[uint64]("ts")
 )
 
 // aggKey identifies a single timeseries bin: the grouping token plus the
@@ -106,11 +123,12 @@ func (a *DistributedAggregator) Next() *query.Record {
 				panic(fmt.Errorf("unimplemented aggregation func"))
 			}
 
+			// val order must match query.AggResultSchema
 			a.sortingBuf = append(a.sortingBuf, query.NewRecord([]*query.RecordVals{
-				query.NewRecordVals(query.DataTypeString, []byte(key.token)),
-				query.NewRecordVals(query.DataTypeFloat64, encoding.Float64ToBytes(value)),
-				query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(key.ts)),
-				query.NewRecordVals(query.DataTypeFloat64Array, encoding.Float64ArrayToBytes(quantiles)),
+				query.NewStringVals(key.token),
+				query.NewFloat64Vals(value),
+				query.NewUint64Vals(key.ts),
+				query.NewFloat64ArrayVals(quantiles),
 			}))
 		}
 
@@ -137,8 +155,8 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 		}
 
 		key := aggKey{
-			token: r.Vals[0].Decoded().(string),
-			ts:    r.Vals[6].Decoded().(uint64),
+			token: aggColTokenIn.Val(r),
+			ts:    aggColTsIn.Val(r),
 		}
 
 		a.mu.Lock()
@@ -146,18 +164,18 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 		s, exists := a.buckets[key]
 		if !exists {
 			s = seq.NewSamplesContainers()
-			s.Min = r.Vals[1].Decoded().(float64)
-			s.Max = r.Vals[2].Decoded().(float64)
+			s.Min = aggColMinIn.Val(r)
+			s.Max = aggColMaxIn.Val(r)
 		} else {
-			s.Min = min(s.Min, r.Vals[1].Decoded().(float64))
-			s.Max = max(s.Max, r.Vals[2].Decoded().(float64))
+			s.Min = min(s.Min, aggColMinIn.Val(r))
+			s.Max = max(s.Max, aggColMaxIn.Val(r))
 		}
 
-		s.Sum += r.Vals[3].Decoded().(float64)
-		s.Total += int64(r.Vals[4].Decoded().(uint64))
+		s.Sum += aggColSumIn.Val(r)
+		s.Total += int64(aggColTotalIn.Val(r))
 
 		if a.aggFunc == seq.AggFuncQuantile {
-			for _, v := range r.Vals[7].Decoded().([]float64) {
+			for _, v := range aggColSamplesIn.Val(r) {
 				s.InsertSample(v)
 			}
 		}
@@ -171,7 +189,7 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 				m = make(map[string]struct{})
 				a.values[key] = m
 			}
-			for _, v := range r.Vals[8].Decoded().([]string) {
+			for _, v := range aggColValuesIn.Val(r) {
 				m[v] = struct{}{}
 			}
 		}
@@ -199,21 +217,21 @@ func (a *DistributedAggregator) Finalize() *query.Summary {
 }
 
 func sortBuckets(aggFunc seq.AggFunc, buckets []*query.Record) {
-	// ts (Vals[2]) is the primary key (ASC), matching seq/qpr.go sortBuckets
+	// ts is the primary key (ASC), matching seq/qpr.go sortBuckets
 	// where MID comes first. Within the same ts buckets are ordered by value.
 	sortByTsValueDescNameAsc := func(left, right *query.Record) int {
 		return cmp.Or(
-			cmp.Compare(left.Vals[2].Decoded().(uint64), right.Vals[2].Decoded().(uint64)),
-			cmp.Compare(right.Vals[1].Decoded().(float64), left.Vals[1].Decoded().(float64)),
-			cmp.Compare(left.Vals[0].Decoded().(string), right.Vals[0].Decoded().(string)),
+			cmp.Compare(aggColTsOut.Val(left), aggColTsOut.Val(right)),
+			cmp.Compare(aggColValueOut.Val(right), aggColValueOut.Val(left)),
+			cmp.Compare(aggColTokenOut.Val(left), aggColTokenOut.Val(right)),
 		)
 	}
 
 	sortByTsValueNameAsc := func(left, right *query.Record) int {
 		return cmp.Or(
-			cmp.Compare(left.Vals[2].Decoded().(uint64), right.Vals[2].Decoded().(uint64)),
-			cmp.Compare(left.Vals[1].Decoded().(float64), right.Vals[1].Decoded().(float64)),
-			cmp.Compare(left.Vals[0].Decoded().(string), right.Vals[0].Decoded().(string)),
+			cmp.Compare(aggColTsOut.Val(left), aggColTsOut.Val(right)),
+			cmp.Compare(aggColValueOut.Val(left), aggColValueOut.Val(right)),
+			cmp.Compare(aggColTokenOut.Val(left), aggColTokenOut.Val(right)),
 		)
 	}
 

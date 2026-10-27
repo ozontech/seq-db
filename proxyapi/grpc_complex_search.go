@@ -164,11 +164,11 @@ func (g *grpcV1) useStreamSearch(
 func readDocuments(storesStream query.RecordProducer) []*seqproxyapi.Document {
 	var docs []*seqproxyapi.Document
 	for r := storesStream.Next(); r != nil; r = storesStream.Next() {
-		id := r.Vals[0].Decoded().(seq.ID)
+		id := docIDCol.Val(r)
 		docs = append(docs, &seqproxyapi.Document{
 			Id:   id.String(),
 			Time: timestamppb.New(id.MID.Time()),
-			Data: r.Vals[1].RawData(),
+			Data: docDataCol.RawData(r),
 		})
 	}
 	return docs
@@ -178,13 +178,13 @@ func readAggregations(storesStream query.RecordProducer) []*seqproxyapi.Aggregat
 	buckets := make([]*seqproxyapi.Aggregation_Bucket, 0)
 	for r := storesStream.Next(); r != nil; r = storesStream.Next() {
 		bucket := &seqproxyapi.Aggregation_Bucket{
-			Key:   r.Vals[0].Decoded().(string),
-			Value: r.Vals[1].Decoded().(float64),
+			Key:   aggKeyCol.Val(r),
+			Value: aggValueCol.Val(r),
 		}
-		if ts := r.Vals[2].Decoded().(uint64); ts != consts.DummyMID {
+		if ts := aggTsCol.Val(r); ts != consts.DummyMID {
 			bucket.Ts = timestamppb.New(seq.MID(ts).Time())
 		}
-		if quantiles := r.Vals[3].Decoded().([]float64); len(quantiles) > 0 {
+		if quantiles := aggQuantilesCol.Val(r); len(quantiles) > 0 {
 			bucket.Quantiles = quantiles
 		}
 		buckets = append(buckets, bucket)

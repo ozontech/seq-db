@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/query"
-	"github.com/ozontech/seq-db/query/encoding"
 )
 
 func TestLimiterLessThanInputLen(t *testing.T) {
@@ -97,8 +96,8 @@ func makeTestInputRecords(count int) []*query.Record {
 		doc := fmt.Sprintf(`{"service":"service-%d","level":3,"k8s_pod":"pod-%d"}`, i, i)
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
-				query.NewRecordVals(query.DataTypeUint32, encoding.Uint32ToBytes(uint32(i))),
-				query.NewRecordVals(query.DataTypeDocument, []byte(doc)),
+				query.NewUint32Vals(uint32(i)),
+				query.NewDocVals([]byte(doc)),
 			},
 		})
 	}

@@ -96,6 +96,7 @@ func (c *Config) storeValidations() []validateFn {
 			notEmpty("offloading.bucket", c.Offloading.Bucket),
 			notEmpty("offloading.access_key", c.Offloading.AccessKey),
 			notEmpty("offloading.secret_key", c.Offloading.SecretKey),
+			greaterOrEqThan("offloading.remote_total_size", 0, c.Offloading.RemoteTotalSize),
 		)
 	}
 

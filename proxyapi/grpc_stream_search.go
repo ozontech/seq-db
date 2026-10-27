@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	insaneJSON "github.com/ozontech/insane-json"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -280,15 +281,25 @@ func aggsTyping() []*seqproxyapi.Typing {
 	}
 }
 
+var (
+	docIDCol   = query.DocsSchema.MustColumn[seq.ID](query.DocsIDCol)
+	docDataCol = query.DocsSchema.MustColumn[*insaneJSON.Root](query.DocsDataCol)
+
+	aggKeyCol       = query.AggResultSchema.MustColumn[string]("token")
+	aggValueCol     = query.AggResultSchema.MustColumn[float64]("value")
+	aggTsCol        = query.AggResultSchema.MustColumn[uint64]("ts")
+	aggQuantilesCol = query.AggResultSchema.MustColumn[[]float64]("quantiles")
+)
+
 // converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
 func docToRecord(r *query.Record) *seqproxyapi.Record {
-	id := r.Vals[0].Decoded().(seq.ID)
+	id := docIDCol.Val(r)
 
 	return &seqproxyapi.Record{
 		RawData: [][]byte{
 			[]byte(id.String()),                    // id
 			encoding.Uint64ToBytes(uint64(id.MID)), // time
-			r.Vals[1].RawData(),                    // data
+			docDataCol.RawData(r),                  // data
 		},
 	}
 }
@@ -297,10 +308,10 @@ func docToRecord(r *query.Record) *seqproxyapi.Record {
 func aggToRecord(r *query.Record) *seqproxyapi.Record {
 	return &seqproxyapi.Record{
 		RawData: [][]byte{
-			r.Vals[0].RawData(), // key
-			r.Vals[1].RawData(), // value
-			r.Vals[2].RawData(), // ts
-			r.Vals[3].RawData(), // quantiles
+			aggKeyCol.RawData(r),       // key
+			aggValueCol.RawData(r),     // value
+			aggTsCol.RawData(r),        // ts
+			aggQuantilesCol.RawData(r), // quantiles
 		},
 	}
 }
