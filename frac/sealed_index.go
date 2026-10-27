@@ -3,11 +3,13 @@ package frac
 import (
 	"context"
 	"fmt"
+	"hash/maphash"
 	"math"
 
 	"github.com/RoaringBitmap/roaring/v2"
 	"go.uber.org/zap"
 
+	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
@@ -33,6 +35,8 @@ type sealedDataProvider struct {
 	ctx    context.Context
 	info   *common.Info
 	config *Config
+
+	exprTIDsCache cache.Cache[ExprTIDs]
 
 	idsTable    *seqids.Table
 	idsProvider *seqids.Provider
@@ -72,6 +76,7 @@ func (dp *sealedDataProvider) getFetchIndex() *sealedFetchIndex {
 func (dp *sealedDataProvider) getTokenIndex() *sealedTokenIndex {
 	return &sealedTokenIndex{
 		ctx:              dp.ctx,
+		exprTIDsCache:    dp.exprTIDsCache,
 		lidsLoader:       dp.lidsLoader,
 		lidsTable:        dp.lidsTable,
 		tokenTableLoader: dp.tokenTableLoader,
@@ -226,6 +231,7 @@ func (ii *sealedIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 
 type sealedTokenIndex struct {
 	ctx              context.Context
+	exprTIDsCache    cache.Cache[ExprTIDs]
 	lidsTable        *lids.Table
 	lidsLoader       *lids.Loader
 	tokenTableLoader *token.TableLoader
@@ -261,6 +267,41 @@ func (ti *sealedTokenIndex) GetTIDsByField(field string) ([]uint32, error) {
 }
 
 func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error) {
+	if pattern.IsExactLiteral(t) {
+		return ti.lookupTIDs(t)
+	}
+	key := parser.TokenKey(t)
+	res, err := ti.exprTIDsCache.Get(tokenKeyHash(key), tokenTIDsLoader{ti: ti, t: t, key: key})
+	if err != nil {
+		return nil, err
+	}
+	if res.Key != key { // uint32 hash collision
+		return ti.lookupTIDs(t)
+	}
+	return res.TIDs, nil
+}
+
+type tokenTIDsLoader struct {
+	ti  *sealedTokenIndex
+	t   parser.Token
+	key string
+}
+
+func (l tokenTIDsLoader) Load(uint32) (ExprTIDs, int, error) {
+	tids, err := l.ti.lookupTIDs(l.t)
+	if err != nil {
+		return ExprTIDs{}, 0, err
+	}
+	return ExprTIDs{Key: l.key, TIDs: tids}, len(l.key) + len(tids)*4, nil
+}
+
+var tokenKeyHashSeed = maphash.MakeSeed()
+
+func tokenKeyHash(key string) uint32 {
+	return uint32(maphash.String(tokenKeyHashSeed, key))
+}
+
+func (ti *sealedTokenIndex) lookupTIDs(t parser.Token) ([]uint32, error) {
 	field := parser.GetField(t)
 	searchStr := parser.GetHint(t)
 
