@@ -362,7 +362,7 @@ func (c *tsSourceCountMap) add(source uint32, mid seq.MID) {
 
 	// a bin not found in chunked array
 	if len(bins) == 0 {
-		if c.mpUsed != nil && c.mpUsed[source] {
+		if c.mpUsed != nil && source < uint32(len(c.mpUsed)) && c.mpUsed[source] {
 			c.mp[AggBin[uint32]{Source: source, MID: mid}]++
 			return
 		}
