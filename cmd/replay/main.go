@@ -63,6 +63,8 @@ func (c *cmdReplay) run(ctx context.Context) error {
 	}
 	defer docs.Close()
 
+	logger.Info("started replaying docs")
+
 	for {
 		doc, err := docs.next()
 		if err != nil {
@@ -79,7 +81,7 @@ func (c *cmdReplay) run(ctx context.Context) error {
 		return err
 	}
 
-	logger.Info("finished replaying docs", zap.Int("docs_count", batcher.sent))
+	logger.Info("finished replaying docs", zap.Int("total", batcher.sent))
 	return nil
 }
 
@@ -158,6 +160,8 @@ func (b *batcher) flush(ctx context.Context) error {
 	b.sent += len(b.batch)
 	b.batch = b.batch[:0]
 
+	logger.Info("sent batch", zap.Int("total", b.sent))
+
 	return nil
 }
 
@@ -234,7 +238,7 @@ func (r *docsReader) next() ([]byte, error) {
 }
 
 func backoffDelay(attempt int) time.Duration {
-	return time.Duration(attempt) * 100 * time.Millisecond
+	return time.Duration(attempt) * time.Second
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
