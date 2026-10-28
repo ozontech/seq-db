@@ -99,15 +99,11 @@ func TestDocsReaderStopOnError(t *testing.T) {
 	require.NoError(t, err)
 	defer docs.Close()
 
-	// The first document is returned fine, the error only surfaces on the
-	// following call — the iterator has no callback to interrupt.
 	doc, err := docs.next()
 	require.NoError(t, err)
 	require.Equal(t, "a", string(doc))
 }
 
-// packDocBlock compresses length-prefixed documents into a single doc block
-// in the same format the store writes to .docs files.
 func packDocBlock(t *testing.T, docs ...string) []byte {
 	t.Helper()
 
@@ -119,7 +115,6 @@ func packDocBlock(t *testing.T, docs ...string) []byte {
 	return packRawDocBlock(t, raw)
 }
 
-// packRawDocBlock wraps an already length-prefixed payload into a doc block.
 func packRawDocBlock(t *testing.T, raw []byte) []byte {
 	t.Helper()
 
@@ -172,12 +167,10 @@ func TestProxySender(t *testing.T) {
 			wantCalls: int64(maxBulkTries),
 		},
 		{
-			name:     "context canceled between retries",
-			status:   status429Always,
-			canceled: true,
-			wantErr:  []string{"context canceled"},
-			// The canceled context fails the first request before it
-			// reaches the server.
+			name:      "context canceled between retries",
+			status:    status429Always,
+			canceled:  true,
+			wantErr:   []string{"context canceled"},
 			wantCalls: 0,
 		},
 	}

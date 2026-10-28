@@ -19,8 +19,6 @@ import (
 	"github.com/ozontech/seq-db/tokenizer"
 )
 
-// storeSender builds metas locally (the store does not tokenize documents)
-// and sends binary bulks over gRPC.
 type storeSender struct {
 	client storeapi.StoreApiClient
 	proc   *indexer.Processor
@@ -63,7 +61,12 @@ func (s *storeSender) Send(ctx context.Context, docsList [][]byte) error {
 	s.docsBuf = s.docsBuf[:0]
 	s.metasBuf = s.metasBuf[:0]
 
-	total, docsBuf, metasBuf, err := s.proc.ProcessBulk(requestTime, s.docsBuf, s.metasBuf, listReader(docsList))
+	total, docsBuf, metasBuf, err := s.proc.ProcessBulk(
+		requestTime,
+		s.docsBuf,
+		s.metasBuf,
+		listReader(docsList),
+	)
 	if err != nil {
 		return fmt.Errorf("cannot process documents: %w", err)
 	}
@@ -104,7 +107,6 @@ func (s *storeSender) Send(ctx context.Context, docsList [][]byte) error {
 
 func (s *storeSender) close() {}
 
-// listReader returns a reader function over a slice of documents.
 func listReader(docs [][]byte) func() ([]byte, error) {
 	i := 0
 	return func() ([]byte, error) {

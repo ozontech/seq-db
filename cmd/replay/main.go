@@ -26,7 +26,6 @@ const (
 
 const maxBulkTries = 10
 
-// bulkSender sends one batch of documents to a proxy or a store.
 type bulkSender interface {
 	Send(ctx context.Context, docs [][]byte) error
 }
@@ -222,11 +221,10 @@ func (r *docsReader) next() ([]byte, error) {
 
 		block, n, err := r.reader.ReadDocBlockPayload(r.offset)
 		if errors.Is(err, io.EOF) {
-			// A truncated block also reports io.EOF, distinguish it from the
-			// honest end of the file by the offset.
 			if r.offset == r.size {
 				return nil, nil
 			}
+
 			return nil, fmt.Errorf("truncated doc block header at offset %d", r.offset)
 		}
 		if err != nil {
