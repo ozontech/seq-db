@@ -180,8 +180,9 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 
 		m = sw.Start("put_lids_queue")
 		tokensToMerge := addLIDsToTokens(tokenLIDsPlaces, groups)
-		// The _all_ posting list is every LID of the fraction, which we have
-		// just assigned ourselves
+		// _all_ no longer comes in document metas, so it has no group in the
+		// collector; instead its posting list is fed directly with the LIDs
+		// just assigned to this batch, since it matches every document.
 		if allLIDs := active.TokenList.GetAllTokenLIDs(); allLIDs.PutLIDsInQueue(lids) > minMergeQueue {
 			tokensToMerge = append(tokensToMerge, allLIDs)
 		}

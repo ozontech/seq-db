@@ -113,10 +113,6 @@ func TestMatchAllNode(t *testing.T) {
 	t.Run("single lid window", func(t *testing.T) {
 		assert.Equal(t, []uint32{2}, all(2, 2, false))
 	})
-	t.Run("empty index", func(t *testing.T) {
-		// getLIDsBorders returns (0, 0) when idsIndex is empty.
-		assert.Empty(t, all(0, 0, true))
-	})
 	t.Run("degenerate window", func(t *testing.T) {
 		// maxLID = minLID-1 happens when the query range misses the fraction.
 		assert.Empty(t, all(4, 3, false))

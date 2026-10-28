@@ -69,13 +69,10 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 // The asc flag follows the node package convention: it means "LID numbers
 // ascend", which is desc document order, since LID 1 is the newest document.
 func matchAllNode(minLID, maxLID uint32, asc bool) node.Node {
-	// LID 0 is reserved for seq.SystemID; getLIDsBorders returns (0, 0) for an empty index.
-	if minLID == 0 || minLID > maxLID {
-		return node.NewStatic(nil, asc)
-	}
 	if asc {
 		return node.NewRange(node.NewAscLID(minLID), node.NewAscLID(maxLID))
 	}
+
 	return node.NewRange(node.NewDescLID(maxLID), node.NewDescLID(minLID))
 }
 
