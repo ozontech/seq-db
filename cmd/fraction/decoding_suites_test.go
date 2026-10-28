@@ -28,8 +28,7 @@ type FractionDecoderTestSuite struct {
 
 	fracName    string
 	expectedVer config.BinaryDataVersion
-	// sealedWithAllToken is true for fractions sealed by pre-_all_-removal
-	// code (every legacy version): their token table starts with _all_.
+	// sealedWithAllToken is true for fractions sealed before token _all_ removal
 	sealedWithAllToken bool
 }
 
