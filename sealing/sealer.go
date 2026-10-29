@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
@@ -20,6 +21,7 @@ type Source = indexwriter.Source
 // and returns PreloadedData for fast initialization of the sealed fraction.
 func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
 	info := src.Info()
+	info.BinaryDataVer = config.CurrentFracVersion
 	info.ConstRegularBlockSize = params.TokenBlockSize
 	if info.ConstRegularBlockSize == 0 {
 		info.ConstRegularBlockSize = consts.RegularBlockSize

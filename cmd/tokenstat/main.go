@@ -43,6 +43,10 @@ func main() {
 	repackTop := repack.Flag("top", "number of fields to show").Default("30").Int()
 	repackTypedZstd := repack.Flag("typed-zstd", "compress typed blocks with zstd on top of bitpack").Default("true").Bool()
 
+	merge := app.Command("merge", "merge sealed fractions into one with the current format")
+	mergeOut := merge.Arg("out", "base file name of the merged fraction").Required().String()
+	mergeFracs := merge.Arg("frac", "base file names of fractions to merge").Required().Strings()
+
 	var err error
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case classify.FullCommand():
@@ -59,6 +63,8 @@ func main() {
 		}, os.Stdout)
 	case slowlog.FullCommand():
 		err = runSlowLog(*slowlogPath, *slowlogField, *slowlogFrac, os.Stdout)
+	case merge.FullCommand():
+		err = runMerge(*mergeOut, *mergeFracs, os.Stdout)
 	case repack.FullCommand():
 		err = runRepack(*repackFrac, repackParams{
 			level:       *repackLevel,

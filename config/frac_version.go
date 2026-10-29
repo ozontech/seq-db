@@ -32,6 +32,8 @@ const (
 	// - isContinued is not used, no legacy TID adjusting.
 	// - Roaring bitmaps for sufficiently large LID lists, hybrid LIDs block format
 	BinaryDataV6
+
+	BinaryDataV7
 )
 
-const CurrentFracVersion = BinaryDataV6
+const CurrentFracVersion = BinaryDataV7

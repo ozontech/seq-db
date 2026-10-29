@@ -215,6 +215,7 @@ func (b TableBlock) packedSize() int {
 			size += len(entry.MaxVal)
 			// Letters
 			size += sizeOfUint32
+			size += 1 + 16
 		}
 	}
 	return size
@@ -242,6 +243,11 @@ func (b TableBlock) Pack(buf []byte) []byte {
 			buf = append(buf, entry.MaxVal...)
 			// Letters
 			buf = binary.LittleEndian.AppendUint32(buf, uint32(entry.Letters))
+			buf = append(buf, byte(entry.Kind))
+			if entry.Kind == KindInt64 {
+				buf = binary.LittleEndian.AppendUint64(buf, uint64(entry.MinInt))
+				buf = binary.LittleEndian.AppendUint64(buf, uint64(entry.MaxInt))
+			}
 		}
 	}
 	return buf
@@ -275,6 +281,13 @@ func (b *TableBlock) Unpack(data []byte, fracVer config.BinaryDataVersion) {
 				e.Letters = util.LettersBitset(unpacker.GetUint32())
 			} else {
 				e.Letters = util.NewLettersBitsetNil()
+			}
+			if fracVer >= config.BinaryDataV7 {
+				e.Kind = Kind(unpacker.GetByte())
+				if e.Kind == KindInt64 {
+					e.MinInt = int64(unpacker.GetUint64())
+					e.MaxInt = int64(unpacker.GetUint64())
+				}
 			}
 			ft.Entries[i] = e
 		}

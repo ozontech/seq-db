@@ -1,7 +1,6 @@
 package frac
 
 import (
-	"bytes"
 	"encoding/binary"
 	"io"
 	"iter"
@@ -17,6 +16,7 @@ import (
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/indexwriter"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
@@ -115,9 +115,7 @@ func sortFields(tl *TokenList) ([]string, [][]uint32) {
 		// with concurrent readers (user search queries).
 		cp := slices.Clone(tl.FieldTIDs[field])
 
-		slices.SortFunc(cp, func(i, j uint32) int {
-			return bytes.Compare(tl.tidToVal[i], tl.tidToVal[j])
-		})
+		token.SortTIDs(cp, func(tid uint32) []byte { return tl.tidToVal[tid] })
 
 		fieldTIDs[i] = cp
 	}
@@ -203,7 +201,7 @@ func (src *ActiveSealingSource) postingsForField(field string, idx int) iter.Seq
 	var lidsbuf []uint32
 	return func(yield func(indexwriter.TokenLIDs, error) bool) {
 		for _, tid := range src.fieldTIDs[idx] {
-			token := src.tokens[tid]
+			tok := src.tokens[tid]
 
 			lids := src.lids[tid].SortedLIDsUnsafe()
 			lidsbuf = slices.Grow(lidsbuf[:0], len(lids))
@@ -212,7 +210,7 @@ func (src *ActiveSealingSource) postingsForField(field string, idx int) iter.Seq
 				lidsbuf = append(lidsbuf, src.oldToNewLIDs[lid])
 			}
 
-			tpost := indexwriter.TokenLIDs{First: token, Second: lidsbuf}
+			tpost := indexwriter.TokenLIDs{First: tok, Second: lidsbuf}
 			if !yield(tpost, nil) {
 				return
 			}

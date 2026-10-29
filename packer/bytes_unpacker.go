@@ -39,3 +39,15 @@ func (u *BytesUnpacker) GetBinary() []byte {
 	u.buf = u.buf[l:]
 	return val
 }
+
+func (u *BytesUnpacker) GetUint64() uint64 {
+	val := binary.LittleEndian.Uint64(u.buf)
+	u.buf = u.buf[8:]
+	return val
+}
+
+func (u *BytesUnpacker) GetByte() byte {
+	val := u.buf[0]
+	u.buf = u.buf[1:]
+	return val
+}

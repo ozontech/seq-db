@@ -128,3 +128,71 @@ func (tp *Provider) findInBlocks(
 	}
 	return tids, nil
 }
+
+func (tp *Provider) FindIntRange(from, to int64) []uint32 {
+	first, last, ok := tp.intTIDRange(from, to)
+	if !ok {
+		return nil
+	}
+
+	tids := make([]uint32, 0, last-first+1)
+	for tid := first; tid <= last; tid++ {
+		tids = append(tids, tid)
+	}
+	return tids
+}
+
+func (tp *Provider) FindIntToken(ranges []pattern.IntRange, minLen int, searcher pattern.Searcher) ([]uint32, error) {
+	var tids []uint32
+	for _, r := range ranges {
+		first, last, ok := tp.intTIDRange(r.From, r.To)
+		if !ok {
+			continue
+		}
+
+		found, err := tp.findInBlocks(
+			first,
+			last,
+			func(e *TableEntry) bool {
+				return e.maxIntLen() >= minLen && searcher.CheckEntry(e.Letters)
+			},
+			func(b *Block, firstIndex, lastIndex int) ([]int, error) {
+				return b.find(firstIndex, lastIndex, searcher)
+			})
+		if err != nil {
+			return nil, err
+		}
+		tids = append(tids, found...)
+	}
+	return tids, nil
+}
+
+func (tp *Provider) intTIDRange(from, to int64) (uint32, uint32, bool) {
+	if from > to {
+		return 0, 0, false
+	}
+
+	i := sort.Search(len(tp.entries), func(i int) bool { return tp.entries[i].MaxInt >= from })
+	j := sort.Search(len(tp.entries), func(j int) bool { return tp.entries[j].MinInt > to }) - 1
+	if i == len(tp.entries) || j < i {
+		return 0, 0, false
+	}
+
+	first := tp.entryLowerBound(tp.entries[i], from)
+	last := tp.entryLowerBound(tp.entries[j], to+1) - 1
+	if to == math.MaxInt64 {
+		last = tp.entries[j].GetLastTID()
+	}
+
+	if first > last {
+		return 0, 0, false
+	}
+	return first, last, true
+}
+
+func (tp *Provider) entryLowerBound(e *TableEntry, v int64) uint32 {
+	block := tp.findBlock(e.BlockIndex)
+	ints := block.Ints[e.StartIndex : e.StartIndex+e.ValCount]
+	idx := sort.Search(len(ints), func(k int) bool { return ints[k] >= v })
+	return e.StartTID + uint32(idx)
+}

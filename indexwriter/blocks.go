@@ -1,6 +1,7 @@
 package indexwriter
 
 import (
+	"fmt"
 	"iter"
 	"math"
 	"unsafe"
@@ -57,7 +58,7 @@ func tokenBlock(
 			blockIdx  uint32
 			blockSize int
 		)
-		block.payload.FracVer = config.BinaryDataV6
+		block.payload.FracVer = config.CurrentFracVersion
 
 		var (
 			currentTID         uint32
@@ -92,6 +93,7 @@ func tokenBlock(
 			block.payload.Offsets = block.payload.Offsets[:0]
 			block.payload.FreqIndexes = block.payload.FreqIndexes[:0]
 			block.payload.Freqs = block.payload.Freqs[:0]
+			block.payload.Ints = block.payload.Ints[:0]
 			block.ext.minTID = currentTID + 1
 
 			blockIdx++
@@ -109,6 +111,7 @@ func tokenBlock(
 
 			fieldName = field
 			fieldEntryStartTID = currentTID + 1
+			prevKind := token.KindString
 
 			for pair, err := range tokIt {
 				if err != nil {
@@ -118,11 +121,24 @@ func tokenBlock(
 
 				tok, tlids := pair.First, pair.Second
 				tokenSize := int(unsafe.Sizeof(uint32(0))) + len(tok)
+				kind, intVal := token.Classify(tok)
+				if kind < prevKind {
+					yield(tokenFieldBlock{}, fmt.Errorf("field %q: string token %q after int64 tokens", field, tok))
+					return
+				}
+				prevKind = kind
 
-				if blockSize > 0 && blockSize+tokenSize > blockCapacity {
+				if blockSize > 0 && blockFull(&block.payload, kind, blockSize+tokenSize, blockCapacity) {
 					if !flushBlock() {
 						return
 					}
+				}
+
+				if blockSize == 0 {
+					block.payload.Kind = kind
+				}
+				if kind == token.KindInt64 {
+					block.payload.Ints = append(block.payload.Ints, intVal)
 				}
 
 				offsets := block.payload.Offsets
@@ -170,7 +186,7 @@ func newTokenTableEntry(
 	minVal := string(block.payload.GetToken(int(firstIndex)))
 	maxVal := string(block.payload.GetToken(int(lastIndex)))
 
-	return &token.TableEntry{
+	entry := &token.TableEntry{
 		StartIndex: firstIndex,                 // Starting index within the block
 		StartTID:   entryStartTID,              // Starting token ID (global)
 		BlockIndex: blockIndex,                 // Reference to containing block
@@ -178,7 +194,15 @@ func newTokenTableEntry(
 		MinVal:     minVal,                     // Smallest token value in range
 		MaxVal:     maxVal,                     // Largest token value in range
 		Letters:    block.payload.LettersBitset(),
+		Kind:       block.payload.Kind,
 	}
+
+	if entry.Kind == token.KindInt64 {
+		entry.MinInt = block.payload.Ints[firstIndex]
+		entry.MaxInt = block.payload.Ints[lastIndex]
+	}
+
+	return entry
 }
 
 // idBlock accumulates scalar (ID, position) pairs into sealed ID blocks.
@@ -235,4 +259,16 @@ func collapseOrderedFieldsTables(src []token.FieldTable) []token.FieldTable {
 	}
 
 	return append(dst, current)
+}
+
+const intTokenBlockCapacity = 2048
+
+func blockFull(block *token.Block, kind token.Kind, size, capacity int) bool {
+	if block.Kind != kind {
+		return true
+	}
+	if kind == token.KindInt64 {
+		return len(block.Ints) >= intTokenBlockCapacity
+	}
+	return size > capacity
 }

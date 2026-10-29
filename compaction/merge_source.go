@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/ozontech/seq-db/frac/common"
+	sealedtoken "github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/indexwriter"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -368,7 +369,7 @@ func (s *MergeSource) postingsForField(
 				continue
 			}
 
-			if bytes.Compare(c.posting.First, token) < 0 {
+			if sealedtoken.Compare(c.posting.First, token) < 0 {
 				token = c.posting.First
 			}
 		}

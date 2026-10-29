@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
+	"strconv"
 	"unsafe"
 
 	"go.uber.org/zap"
@@ -25,9 +27,22 @@ type Block struct {
 	FreqIndexes []uint16 // indexes of tokens which have doc freqs (frequencies)
 	Freqs       []uint32 // frequencies of certain tokens (how many docs have this token included at least once)
 
+	Kind Kind
+	Ints []int64
+
 	// TODO(cheb0) delete this field and convert V0..V5 to a new in-memory format when data all clusters have V6 fractions
 	FracVer config.BinaryDataVersion
 }
+
+const (
+	blockFlagFreqs = 1 << iota
+	blockFlagInt64
+)
+
+const (
+	signBit     = uint64(1) << 63
+	maxInt64Len = 20
+)
 
 func (b *Block) Size() int {
 	const selfSize = int(unsafe.Sizeof(Block{}))
@@ -35,21 +50,33 @@ func (b *Block) Size() int {
 		cap(b.Payload) +
 		cap(b.Offsets)*util.SizeOfUint32 +
 		cap(b.FreqIndexes)*util.SizeOfUint16 +
-		cap(b.Freqs)*util.SizeOfUint32
+		cap(b.Freqs)*util.SizeOfUint32 +
+		cap(b.Ints)*util.SizeOfUint64
 }
 
 func (b Block) Pack(dst []byte, buf []uint32) []byte {
 	// 1st bit is used to identify if at least one token has frequency
 	var flags byte
 	if len(b.FreqIndexes) > 0 {
-		flags |= 1
+		flags |= blockFlagFreqs
+	}
+	if b.Kind == KindInt64 {
+		flags |= blockFlagInt64
 	}
 	dst = append(dst, flags)
 
-	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(b.Payload)))
-	dst = append(dst, b.Payload...)
+	if b.Kind == KindInt64 {
+		buf64 := make([]uint64, 0, len(b.Ints))
+		for _, v := range b.Ints {
+			buf64 = append(buf64, uint64(v)^signBit)
+		}
+		dst = packer.CompressDeltaBitpackUint64(dst, buf64, nil)
+	} else {
+		dst = binary.LittleEndian.AppendUint32(dst, uint32(len(b.Payload)))
+		dst = append(dst, b.Payload...)
 
-	dst = packer.CompressDeltaBitpackUint32(dst, b.Offsets, buf)
+		dst = packer.CompressDeltaBitpackUint32(dst, b.Offsets, buf)
+	}
 
 	if len(b.FreqIndexes) > 0 {
 		dst = packer.CompressDeltaBitpackUint16(dst, b.FreqIndexes, buf)
@@ -81,6 +108,10 @@ func (b *Block) unpackV6(data []byte, buf *UnpackBuffer) error {
 	flags := data[0]
 	data = data[1:]
 
+	if flags&blockFlagInt64 != 0 {
+		return b.unpackInt64(data, buf, flags)
+	}
+
 	// token payload
 	payloadLen := binary.LittleEndian.Uint32(data[:util.SizeOfUint32])
 	data = data[util.SizeOfUint32:]
@@ -107,6 +138,33 @@ func (b *Block) unpackV6(data []byte, buf *UnpackBuffer) error {
 	}
 
 	return nil
+}
+
+func (b *Block) unpackInt64(data []byte, buf *UnpackBuffer, flags byte) error {
+	var err error
+	data, buf.decompressedUint64, err = packer.DecompressDeltaBitpackUint64(data, buf.decompressedUint64, buf.compressedUint64)
+	if err != nil {
+		return err
+	}
+
+	b.Kind = KindInt64
+	b.Ints = slices.Grow(b.Ints[:0], len(buf.decompressedUint64))
+	b.Offsets = slices.Grow(b.Offsets[:0], len(buf.decompressedUint64)+1)
+	b.Payload = slices.Grow(b.Payload[:0], len(buf.decompressedUint64)*maxInt64Len/2)
+
+	b.Offsets = append(b.Offsets, 0)
+	for _, u := range buf.decompressedUint64 {
+		v := int64(u ^ signBit)
+		b.Ints = append(b.Ints, v)
+		b.Payload = strconv.AppendInt(b.Payload, v, 10)
+		b.Offsets = append(b.Offsets, uint32(len(b.Payload)))
+	}
+
+	return b.unpackFreqs(data, buf, flags)
+}
+
+func (b *Block) GetInt(index int) int64 {
+	return b.Ints[index]
 }
 
 func (b *Block) unpackV5(data []byte, buf *UnpackBuffer) error {
@@ -381,6 +439,8 @@ func (l *BlockLoader) read(index uint32) (*Block, error) {
 type UnpackBuffer struct {
 	decompressedUint32 []uint32 // temporary buffer for bitpack
 	decompressedUint16 []uint16 // temporary buffer for bitpack
+	decompressedUint64 []uint64
+	compressedUint64   []uint64
 	compressed         []uint32 // temporary buffer for bitpack
 }
 

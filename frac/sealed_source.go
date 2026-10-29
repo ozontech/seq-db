@@ -1,12 +1,15 @@
 package frac
 
 import (
+	"cmp"
 	"io"
 	"iter"
 	"os"
 	"slices"
+	"strconv"
 
 	"github.com/ozontech/seq-db/cache"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
@@ -129,8 +132,17 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 	lidsTable := s.f.blocksData.LIDsTable
 	tokenTable := s.tokenTableLoader.Load()
 
+	type intPosting struct {
+		v    int64
+		lids []uint32
+	}
+
+	reorder := s.f.Info().BinaryDataVer < config.BinaryDataV7
+
 	var lidsBuf []uint32
 	return func(yield func(indexwriter.TokenLIDs, error) bool) {
+		var ints []intPosting
+
 		for _, entry := range tokenTable[field].Entries {
 			block := s.tokenBlockLoader.GetTokenBlock(entry.BlockIndex)
 
@@ -152,9 +164,24 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 				}
 
 				tokenVal := block.GetToken(entry.GetIndexInTokensBlock(tid))
+				if reorder {
+					if kind, v := token.Classify(tokenVal); kind == token.KindInt64 {
+						ints = append(ints, intPosting{v: v, lids: slices.Clone(lidsBuf)})
+						continue
+					}
+				}
+
 				if !yield(indexwriter.TokenLIDs{First: tokenVal, Second: lidsBuf}, nil) {
 					return
 				}
+			}
+		}
+
+		slices.SortFunc(ints, func(a, b intPosting) int { return cmp.Compare(a.v, b.v) })
+
+		for _, p := range ints {
+			if !yield(indexwriter.TokenLIDs{First: strconv.AppendInt(nil, p.v, 10), Second: p.lids}, nil) {
+				return
 			}
 		}
 	}

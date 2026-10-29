@@ -54,21 +54,43 @@ func (t Table) SelectEntries(field, hint string) []*TableEntry {
 		return data.Entries
 	}
 
+	return selectByHint(data.MinVal, data.Entries, hint)
+}
+
+func (t Table) SelectTypedEntries(field, hint string) (strs, ints []*TableEntry) {
+	data, ok := t[field]
+	if !ok {
+		return nil, nil
+	}
+
+	split := sort.Search(len(data.Entries), func(i int) bool {
+		return data.Entries[i].Kind == KindInt64
+	})
+	strs, ints = data.Entries[:split], data.Entries[split:]
+
+	if hint != "" && len(strs) > 0 {
+		strs = selectByHint(data.MinVal, strs, hint)
+	}
+
+	return strs, ints
+}
+
+func selectByHint(minVal string, entries []*TableEntry, hint string) []*TableEntry {
 	hintLen := len(hint)
-	if hint < cut(data.MinVal, hintLen) { // we don't have a match
-		return data.Entries[:0]
+	if hint < cut(minVal, hintLen) { // we don't have a match
+		return entries[:0]
 	}
 
 	// we need to include next block after the last matching
-	r := 1 + sort.Search(len(data.Entries)-1, func(i int) bool {
-		return hint < cut(data.Entries[i].MaxVal, hintLen)
+	r := 1 + sort.Search(len(entries)-1, func(i int) bool {
+		return hint < cut(entries[i].MaxVal, hintLen)
 	})
 
 	l := sort.Search(r, func(i int) bool {
-		return hint <= cut(data.Entries[i].MaxVal, hintLen)
+		return hint <= cut(entries[i].MaxVal, hintLen)
 	})
 
-	return data.Entries[l:r]
+	return entries[l:r]
 }
 
 func (t Table) GetEntryByTID(tid uint32, field string) *TableEntry {

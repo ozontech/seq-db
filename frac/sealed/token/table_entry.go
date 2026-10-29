@@ -13,6 +13,10 @@ type TableEntry struct {
 	MaxVal string
 
 	Letters util.LettersBitset // case-insensitive English letters present in entry tokens
+
+	Kind   Kind
+	MinInt int64
+	MaxInt int64
 }
 
 func (t *TableEntry) GetIndexInTokensBlock(tid uint32) int {
@@ -60,4 +64,22 @@ func (t *TableEntry) checkTIDInBlock(tid uint32) bool {
 	}
 
 	return true
+}
+
+func (t *TableEntry) maxIntLen() int {
+	return max(int64Len(t.MinInt), int64Len(t.MaxInt))
+}
+
+func int64Len(v int64) int {
+	n := 1
+	u := uint64(v)
+	if v < 0 {
+		n++
+		u = ^u + 1
+	}
+	for u >= 10 {
+		u /= 10
+		n++
+	}
+	return n
 }

@@ -265,17 +265,29 @@ func (ti *sealedTokenIndex) GetTIDsByTokenExpr(t parser.Token) ([]uint32, error)
 	searchStr := parser.GetHint(t)
 
 	tokenTable := ti.tokenTableLoader.Load()
-	entries := tokenTable.SelectEntries(field, searchStr)
-	if len(entries) == 0 {
-		return nil, nil
+	strs, ints := tokenTable.SelectTypedEntries(field, searchStr)
+
+	var tids []uint32
+	if len(strs) > 0 && (len(ints) == 0 || pattern.MatchesStrings(t)) {
+		tp := token.NewProvider(ti.tokenBlockLoader, strs)
+
+		var err error
+		tids, err = pattern.Search(ti.ctx, t, tp)
+		if err != nil {
+			return nil, fmt.Errorf("search error: %s field: %s, query: %s", err, field, searchStr)
+		}
 	}
 
-	tp := token.NewProvider(ti.tokenBlockLoader, entries)
+	if len(ints) > 0 {
+		tp := token.NewProvider(ti.tokenBlockLoader, ints)
 
-	tids, err := pattern.Search(ti.ctx, t, tp)
-	if err != nil {
-		return nil, fmt.Errorf("search error: %s field: %s, query: %s", err, field, searchStr)
+		intTIDs, err := pattern.SearchInt(ti.ctx, t, tp)
+		if err != nil {
+			return nil, fmt.Errorf("search error: %s field: %s, query: %s", err, field, searchStr)
+		}
+		tids = append(tids, intTIDs...)
 	}
+
 	return tids, nil
 }
 
