@@ -34,7 +34,7 @@ func newDocReader(
 
 	return &docReader{
 		scanner:         scanner,
-		proc:            indexer.NewProcessor(mapping, tokenizers, 0, 0),
+		proc:            indexer.NewProcessor(mapping, tokenizers, 0, 0, false),
 		docsPerDocBlock: docsPerDockBlock,
 	}, nil
 }
