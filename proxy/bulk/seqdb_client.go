@@ -22,6 +22,11 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
+const (
+	MaxCallRecvMsgSize = 256 * int(units.MiB)
+	MaxCallSendMsgSize = 256 * int(units.MiB)
+)
+
 type SeqDBClient struct {
 	hotStores   bulkStores
 	writeStores bulkStores
@@ -195,8 +200,8 @@ func (s *shard) Bulk(ctx context.Context, req *storeapi.BulkRequest, writtenRepl
 func sendBulkToHost(ctx context.Context, replica replica, req *storeapi.BulkRequest) error {
 	_, err := replica.client.Bulk(
 		ctx, req,
-		grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
-		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
+		grpc.MaxCallRecvMsgSize(MaxCallRecvMsgSize),
+		grpc.MaxCallSendMsgSize(MaxCallSendMsgSize),
 	)
 	if err != nil {
 		return fmt.Errorf("can't receive bulk acceptance: host=%s, err=%w", replica.host, err)
