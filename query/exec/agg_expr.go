@@ -228,11 +228,11 @@ func (a *avgAcc) Quantiles() []float64 {
 }
 
 type quantileExpr struct {
-	colMin     query.Column[float64]
-	colMax     query.Column[float64]
-	colSamples query.Column[[]float64]
-	ne         query.Column[uint64]
-	quantiles  []float64
+	min       query.Column[float64]
+	max       query.Column[float64]
+	samples   query.Column[[]float64]
+	ne        query.Column[uint64]
+	quantiles []float64
 }
 
 func (e quantileExpr) NewAcc() AggAcc {
@@ -255,13 +255,13 @@ type quantileAcc struct {
 }
 
 func (a *quantileAcc) Merge(r *query.Record) {
-	mn := a.expr.colMin.Val(r)
-	mx := a.expr.colMax.Val(r)
+	mn := a.expr.min.Val(r)
+	mx := a.expr.max.Val(r)
 	if !math.IsNaN(mn) {
 		a.cont.Min = min(a.cont.Min, mn)
 		a.cont.Max = max(a.cont.Max, mx)
 	}
-	for _, v := range a.expr.colSamples.Val(r) {
+	for _, v := range a.expr.samples.Val(r) {
 		a.cont.InsertSample(v)
 	}
 	a.mergeNotExists(r)
@@ -326,45 +326,45 @@ func newAggExpr(fn seq.AggFunc, in *query.Schema, quantiles []float64) AggExpr {
 	switch fn {
 	case seq.AggFuncCount, seq.AggFuncUnique:
 		return totalExpr{
-			in.MustColumn[uint64]("total"),
+			total: in.MustColumn[uint64]("total"),
 		}
 	case seq.AggFuncMin:
 		return minExpr{
-			in.MustColumn[float64]("min"),
-			in.MustColumn[uint64]("not_exists"),
+			min: in.MustColumn[float64]("min"),
+			ne:  in.MustColumn[uint64]("not_exists"),
 		}
 	case seq.AggFuncMax:
 		return maxExpr{
-			in.MustColumn[float64]("max"),
-			in.MustColumn[uint64]("not_exists"),
+			max: in.MustColumn[float64]("max"),
+			ne:  in.MustColumn[uint64]("not_exists"),
 		}
 	case seq.AggFuncSum:
 		return sumExpr{
-			in.MustColumn[float64]("sum"),
-			in.MustColumn[uint64]("total"),
-			in.MustColumn[uint64]("not_exists"),
+			sum:   in.MustColumn[float64]("sum"),
+			total: in.MustColumn[uint64]("total"),
+			ne:    in.MustColumn[uint64]("not_exists"),
 		}
 	case seq.AggFuncAvg:
 		return avgExpr{
-			in.MustColumn[float64]("sum"),
-			in.MustColumn[uint64]("total"),
-			in.MustColumn[uint64]("not_exists"),
+			sum:   in.MustColumn[float64]("sum"),
+			total: in.MustColumn[uint64]("total"),
+			ne:    in.MustColumn[uint64]("not_exists"),
 		}
 	case seq.AggFuncQuantile:
 		if len(quantiles) == 0 {
 			panic("BUG: empty quantiles")
 		}
 		return quantileExpr{
-			in.MustColumn[float64]("min"),
-			in.MustColumn[float64]("max"),
-			in.MustColumn[[]float64]("samples"),
-			in.MustColumn[uint64]("not_exists"),
-			quantiles,
+			min:       in.MustColumn[float64]("min"),
+			max:       in.MustColumn[float64]("max"),
+			samples:   in.MustColumn[[]float64]("samples"),
+			ne:        in.MustColumn[uint64]("not_exists"),
+			quantiles: quantiles,
 		}
 	case seq.AggFuncUniqueCount:
 		return uniqueCountExpr{
-			in.MustColumn[[]string]("values"),
-			in.MustColumn[uint64]("not_exists"),
+			values: in.MustColumn[[]string]("values"),
+			ne:     in.MustColumn[uint64]("not_exists"),
 		}
 	default:
 		panic(fmt.Errorf("unimplemented aggregation func %s", fn))

@@ -72,17 +72,6 @@ func NewDocsDataSource(
 }
 
 func (s *DocsDataSource) Next() *query.Record {
-	return s.nextDoc()
-}
-
-func (s *DocsDataSource) Finalize() *query.Summary {
-	if s.release != nil {
-		s.release()
-	}
-	return &query.Summary{Total: s.total, Err: s.err}
-}
-
-func (s *DocsDataSource) nextDoc() *query.Record {
 	if s.done {
 		return nil
 	}
@@ -107,6 +96,13 @@ func (s *DocsDataSource) nextDoc() *query.Record {
 	}
 
 	return makeDocumentRecord(idSrc.ID, docs[0])
+}
+
+func (s *DocsDataSource) Finalize() *query.Summary {
+	if s.release != nil {
+		s.release()
+	}
+	return &query.Summary{Total: s.total, Err: s.err}
 }
 
 // scanBatch runs one SearchDocs iteration of the documents path with cursor
