@@ -58,6 +58,10 @@ type FieldLIDs interface {
 	NextBatch(lids, offsets []uint32) (outLids, outOffsets []uint32, isFirstLID bool)
 }
 
+type countable interface {
+	Count() (uint64, bool)
+}
+
 type searchIndex interface {
 	tokenIndex
 	idsIndex
@@ -247,6 +251,14 @@ func iterateEvalTree(
 	hasHist := params.HasHist()
 	needScanAllRange := params.IsScanAllRequest()
 
+	matchAllTotal, isMatchAll := uint64(0), false
+	if needScanAllRange && !hasHist && !params.HasAgg() && params.Downsample <= 1 {
+		if cnt, ok := evalTree.(countable); ok {
+			matchAllTotal, isMatchAll = cnt.Count()
+		}
+	}
+	scanAll := needScanAllRange && !isMatchAll
+
 	var (
 		total  int
 		hist   HistMap
@@ -275,7 +287,7 @@ func iterateEvalTree(
 	sample := sampler(params.Downsample)
 
 	var aggs []Aggregator
-	for (params.Limit-len(ids)) > 0 || needScanAllRange {
+	for (params.Limit-len(ids)) > 0 || scanAll {
 		if util.IsCancelled(ctx) {
 			return total, ids, hist, aggs, ctx.Err()
 		}
@@ -291,7 +303,7 @@ func iterateEvalTree(
 		iter := batch.ManyIter(params.Order.IsDesc())
 
 		// Process batch part by part (batches can be quite large currently)
-		for (params.Limit-len(ids)) > 0 || needScanAllRange {
+		for (params.Limit-len(ids)) > 0 || scanAll {
 			if util.IsCancelled(ctx) {
 				return total, ids, hist, aggs, ctx.Err()
 			}
@@ -304,7 +316,7 @@ func iterateEvalTree(
 				// We have IDs to fill for search - iterate batch by supposedly smaller parts with length equal to count of IDs needed
 				// This allows fetching MIDs for the entire batch part to serve for IDs creation and hist
 				toProcessLIDs = min(needIDs, cap(lidsBuf))
-			} else if needScanAllRange || params.Downsample > 1 {
+			} else if scanAll || params.Downsample > 1 {
 				// We don't have IDs to fill for search. We now operate on larger parts (size is capped by tmp buff).
 				// If it's a hist request, then we fetch MIDs for entire part which means no unneeded work is done.
 				toProcessLIDs = cap(lidsBuf)
@@ -366,6 +378,10 @@ func iterateEvalTree(
 				}
 			}
 		}
+	}
+
+	if isMatchAll {
+		total = int(matchAllTotal)
 	}
 
 	return total, ids, hist, aggs, nil

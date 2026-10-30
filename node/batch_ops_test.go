@@ -401,3 +401,83 @@ func assertSameSet(t *testing.T, want, got []uint32) {
 	slices.Sort(got)
 	assert.Equal(t, want, got)
 }
+
+func TestLIDBatch_RangeOperand(t *testing.T) {
+	tests := []struct {
+		name              string
+		op                func(LIDBatch, LIDBatch, bool) (LIDBatch, LIDBatch, LIDBatch)
+		left, right       LIDBatch
+		asc               bool
+		want              []uint32
+		wantLeftResidual  []uint32
+		wantRightResidual []uint32
+	}{
+		{
+			name:              "and asc range vs sparse right",
+			op:                And,
+			left:              NewRangeBatched(3, 10, true).NextBatch(),
+			right:             NewSliceBatch([]uint32{1, 5, 8, 10, 12}),
+			asc:               true,
+			want:              []uint32{5, 8, 10},
+			wantLeftResidual:  nil,
+			wantRightResidual: []uint32{1, 5, 8, 10, 12},
+		},
+		{
+			name:              "and desc range vs sparse right",
+			op:                And,
+			left:              NewRangeBatched(3, 10, false).NextBatch(),
+			right:             NewSliceBatch([]uint32{1, 5, 8, 10, 12}),
+			want:              []uint32{5, 8, 10},
+			wantLeftResidual:  nil,
+			wantRightResidual: []uint32{1, 5, 8, 10, 12},
+		},
+		{
+			name:              "and sparse right inside range",
+			op:                And,
+			left:              NewRangeBatched(3, 10, true).NextBatch(),
+			right:             NewSliceBatch([]uint32{5, 8}),
+			asc:               true,
+			want:              []uint32{5, 8},
+			wantLeftResidual:  []uint32{3, 4, 5, 6, 7, 8, 9, 10},
+			wantRightResidual: nil,
+		},
+		{
+			name:              "and range vs range",
+			op:                And,
+			left:              NewRangeBatched(3, 10, true).NextBatch(),
+			right:             NewRangeBatched(5, 12, true).NextBatch(),
+			asc:               true,
+			want:              []uint32{5, 6, 7, 8, 9, 10},
+			wantLeftResidual:  nil,
+			wantRightResidual: []uint32{5, 6, 7, 8, 9, 10, 11, 12},
+		},
+		{
+			name:              "or asc range vs sparse right",
+			op:                Or,
+			left:              NewRangeBatched(3, 10, true).NextBatch(),
+			right:             NewSliceBatch([]uint32{1, 8, 12}),
+			asc:               true,
+			want:              []uint32{1, 3, 4, 5, 6, 7, 8, 9, 10},
+			wantLeftResidual:  nil,
+			wantRightResidual: []uint32{12},
+		},
+		{
+			name:              "or desc range vs sparse right",
+			op:                Or,
+			left:              NewRangeBatched(3, 10, false).NextBatch(),
+			right:             NewSliceBatch([]uint32{1, 8, 12}),
+			want:              []uint32{3, 4, 5, 6, 7, 8, 9, 10, 12},
+			wantLeftResidual:  nil,
+			wantRightResidual: []uint32{1},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, leftResidual, rightResidual := tt.op(tt.left, tt.right, tt.asc)
+			assertSameSet(t, tt.want, toSlice(result))
+			assertSameSet(t, tt.wantLeftResidual, toSlice(leftResidual))
+			assertSameSet(t, tt.wantRightResidual, toSlice(rightResidual))
+		})
+	}
+}
