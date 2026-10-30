@@ -231,7 +231,9 @@ func buildAgg(qpr *seq.QPR) *storeapi.SearchResponse_Agg {
 	from := fromAgg.SamplesByBin
 	to := make(map[string]*storeapi.SearchResponse_Histogram, len(from))
 
-	for bin, hist := range from {
+	for i := range from {
+		bin := from[i].Bin
+		hist := &from[i].Samples
 		pbhist := &storeapi.SearchResponse_Histogram{
 			Min:       hist.Min,
 			Max:       hist.Max,

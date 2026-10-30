@@ -2,6 +2,7 @@ package seq
 
 import (
 	"cmp"
+	"container/heap"
 	"fmt"
 	"maps"
 	"math"
@@ -35,6 +36,7 @@ const (
 	SizeOfIDSource            = int(unsafe.Sizeof(IDSource{}))
 	SizeOfErrorSource         = int(unsafe.Sizeof(ErrorSource{}))
 	SizeOfAggBin              = int(unsafe.Sizeof(AggBin{}))
+	SizeOfAggBinSamples       = int(unsafe.Sizeof(AggBinSamples{}))
 	SizeOfSamplesContainer    = int(unsafe.Sizeof(SamplesContainer{}))
 	SizeOfAggregatableSamples = int(unsafe.Sizeof(AggregatableSamples{}))
 	SizeOfQPR                 = int(unsafe.Sizeof(QPR{}))
@@ -205,8 +207,28 @@ func (b *AggBin) MemUsage() int {
 	return SizeOfAggBin + len(b.Token)
 }
 
+type AggBinSamples struct {
+	Bin     AggBin
+	Samples SamplesContainer
+}
+
+func CompareAggBin(a, b AggBin) int {
+	return cmp.Or(
+		cmp.Compare(a.Token, b.Token),
+		cmp.Compare(b.MID, a.MID),
+	)
+}
+
+func SortAggBinSamples(bins []AggBinSamples) {
+	slices.SortFunc(bins, func(a, b AggBinSamples) int {
+		return CompareAggBin(a.Bin, b.Bin)
+	})
+}
+
+// AggregatableSamples bins with samples for a particular aggregation request. SamplesByBin must be sorted by
+// a bin comparator.
 type AggregatableSamples struct {
-	SamplesByBin map[AggBin]*SamplesContainer
+	SamplesByBin []AggBinSamples // sorted
 	NotExists    int64
 	ValuesPool   []string
 }
@@ -233,11 +255,12 @@ type AggregateArgs struct {
 func (q *AggregatableSamples) Aggregate(args AggregateArgs) AggregationResult {
 	buckets := make([]AggregationBucket, 0, len(q.SamplesByBin))
 
-	for bin, hist := range q.SamplesByBin {
+	for i := range q.SamplesByBin {
+		bin := q.SamplesByBin[i].Bin
 		if args.SkipWithoutTimestamp && bin.MID == consts.DummyMID {
 			continue
 		}
-		buckets = append(buckets, q.getAggBucket(bin, hist, args))
+		buckets = append(buckets, q.getAggBucket(bin, &q.SamplesByBin[i].Samples, args))
 	}
 
 	sortBuckets(args.Func, buckets)
@@ -334,54 +357,199 @@ func (q *AggregatableSamples) getAggBucket(bin AggBin, hist *SamplesContainer, a
 	}
 }
 
-func (q *AggregatableSamples) Merge(agg AggregatableSamples) {
-	if q.SamplesByBin == nil {
-		q.SamplesByBin = make(map[AggBin]*SamplesContainer, len(agg.SamplesByBin))
+// FindBin returns the samples stored for bin, or nil if not found.
+// Used only in tests.
+func (q *AggregatableSamples) FindBin(bin AggBin) *SamplesContainer {
+	i, ok := slices.BinarySearchFunc(q.SamplesByBin, bin, func(entry AggBinSamples, target AggBin) int {
+		return CompareAggBin(entry.Bin, target)
+	})
+	if !ok {
+		return nil
+	}
+	return &q.SamplesByBin[i].Samples
+}
+
+// Merge merges another AggregatableSamples into this object.  Please note, for performance reasons
+// a provided object may be mutated and left in an unpredictable state.
+func (q *AggregatableSamples) Merge(aggs []AggregatableSamples) {
+	if len(aggs) == 0 {
+		return
 	}
 
-	oldToNewIndex := make([]uint32, len(agg.ValuesPool))
-	valuesPoolMap := make(map[string]uint32, len(q.ValuesPool))
-
+	poolIndex := make(map[string]uint32, len(q.ValuesPool))
 	for i, v := range q.ValuesPool {
-		valuesPoolMap[v] = uint32(i)
+		poolIndex[v] = uint32(i)
 	}
 
-	for oldIdx, v := range agg.ValuesPool {
-		newIdx, exists := valuesPoolMap[v]
-		if !exists {
-			newIdx = uint32(len(q.ValuesPool))
-			q.ValuesPool = append(q.ValuesPool, v)
-			valuesPoolMap[v] = newIdx
-		}
-		oldToNewIndex[oldIdx] = newIdx
+	cursors := make([]mergeCursor, 0, len(aggs)+1)
+	if len(q.SamplesByBin) > 0 {
+		cursors = append(cursors, mergeCursor{bins: q.SamplesByBin})
 	}
+	for i := range aggs {
+		q.NotExists += aggs[i].NotExists
 
-	for bin, hist := range agg.SamplesByBin {
-		if q.SamplesByBin[bin] == nil {
-			q.SamplesByBin[bin] = NewSamplesContainers()
+		remap := appendValuesPool(&q.ValuesPool, poolIndex, aggs[i].ValuesPool)
+		if len(aggs[i].SamplesByBin) == 0 {
+			continue
+		}
+		cursors = append(cursors, mergeCursor{
+			bins:  aggs[i].SamplesByBin,
+			remap: remap,
+		})
+	}
+	if len(cursors) == 0 || (len(cursors) == 1 && len(q.SamplesByBin) > 0) {
+		return
+	}
+	if len(cursors) == 2 {
+		q.SamplesByBin = twoWayMergeBins(cursors[0], cursors[1])
+		return
+	}
+	q.SamplesByBin = kWayMergeBins(cursors)
+}
+
+func appendValuesPool(pool *[]string, index map[string]uint32, src []string) []uint32 {
+	if len(src) == 0 {
+		return nil
+	}
+	oldToNew := make([]uint32, len(src))
+	for oldIdx, v := range src {
+		newIdx, ok := index[v]
+		if !ok {
+			newIdx = uint32(len(*pool))
+			*pool = append(*pool, v)
+			index[v] = newIdx
+		}
+		oldToNew[oldIdx] = newIdx
+	}
+	return oldToNew
+}
+
+type mergeCursor struct {
+	bins  []AggBinSamples
+	idx   int
+	remap []uint32
+}
+
+func kWayMergeBins(cursors []mergeCursor) []AggBinSamples {
+	h := make(binMergeHeap, 0, len(cursors))
+	for i := range cursors {
+		h = append(h, &cursors[i])
+	}
+	heap.Init(&h)
+
+	// allocate a slice with size capacity of the largest QPR
+	n := 0
+	for i := range cursors {
+		n = max(n, len(cursors[i].bins))
+	}
+	out := make([]AggBinSamples, 0, n)
+
+	currBin, currSamples := h.next()
+
+	for h.Len() > 0 {
+		bin, samples := h.next()
+
+		if CompareAggBin(bin, currBin) == 0 {
+			currSamples.Merge(&samples)
+			continue
 		}
 
-		if len(hist.Values) > 0 {
-			remappedHist := &SamplesContainer{
-				Min:       hist.Min,
-				Max:       hist.Max,
-				Sum:       hist.Sum,
-				Total:     hist.Total,
-				NotExists: hist.NotExists,
-				Samples:   hist.Samples,
-				Values:    make(map[uint32]struct{}, len(hist.Values)),
-			}
-			for oldIdx := range hist.Values {
-				newIdx := oldToNewIndex[oldIdx]
-				remappedHist.Values[newIdx] = struct{}{}
-			}
-			q.SamplesByBin[bin].Merge(remappedHist)
-		} else {
-			q.SamplesByBin[bin].Merge(hist)
+		out = append(out, AggBinSamples{Bin: currBin, Samples: currSamples})
+		currBin = bin
+		currSamples = samples
+	}
+	out = append(out, AggBinSamples{Bin: currBin, Samples: currSamples})
+	return out
+}
+
+// twoWayMergeBins merges two QPRs via two pointers. The primary user is async searcher, since ordinary
+// searches rely on merging several QPRs at a time.
+func twoWayMergeBins(left, right mergeCursor) []AggBinSamples {
+	n := max(len(left.bins), len(right.bins))
+	out := make([]AggBinSamples, 0, n)
+
+	for left.idx < len(left.bins) && right.idx < len(right.bins) {
+		c := CompareAggBin(left.bins[left.idx].Bin, right.bins[right.idx].Bin)
+		switch c {
+		case 0:
+			samples := left.bins[left.idx].Samples
+			rightSamples := right.bins[right.idx].Samples
+			rightSamples.Values = remapValues(rightSamples.Values, right.remap)
+			samples.Merge(&rightSamples)
+			out = append(out, AggBinSamples{Bin: left.bins[left.idx].Bin, Samples: samples})
+			left.idx++
+			right.idx++
+		case -1:
+			out = append(out, left.bins[left.idx])
+			left.idx++
+		default:
+			samples := right.bins[right.idx].Samples
+			samples.Values = remapValues(samples.Values, right.remap)
+			out = append(out, AggBinSamples{Bin: right.bins[right.idx].Bin, Samples: samples})
+			right.idx++
 		}
 	}
+	for left.idx < len(left.bins) {
+		out = append(out, left.bins[left.idx])
+		left.idx++
+	}
+	for right.idx < len(right.bins) {
+		samples := right.bins[right.idx].Samples
+		samples.Values = remapValues(samples.Values, right.remap)
+		out = append(out, AggBinSamples{Bin: right.bins[right.idx].Bin, Samples: samples})
+		right.idx++
+	}
+	return out
+}
 
-	q.NotExists += agg.NotExists
+type binMergeHeap []*mergeCursor
+
+func (h binMergeHeap) Len() int {
+	return len(h)
+}
+
+func (h binMergeHeap) Less(i, j int) bool {
+	return CompareAggBin(h[i].bins[h[i].idx].Bin, h[j].bins[h[j].idx].Bin) < 0
+}
+
+func (h binMergeHeap) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+}
+
+func (h *binMergeHeap) Push(cursor any) {
+	*h = append(*h, cursor.(*mergeCursor))
+}
+
+func (h *binMergeHeap) Pop() any {
+	old := *h
+	last := len(old) - 1
+	cursor := old[last]
+	*h = old[:last]
+	return cursor
+}
+
+func (h *binMergeHeap) next() (AggBin, SamplesContainer) {
+	cursor := heap.Pop(h).(*mergeCursor)
+	idx := cursor.idx
+	bin := cursor.bins[idx].Bin
+	samples := cursor.bins[idx].Samples
+	samples.Values = remapValues(samples.Values, cursor.remap)
+	cursor.idx++
+	if cursor.idx < len(cursor.bins) {
+		heap.Push(h, cursor)
+	}
+	return bin, samples
+}
+
+func remapValues(values map[uint32]struct{}, oldToNew []uint32) map[uint32]struct{} {
+	if len(values) == 0 || oldToNew == nil {
+		return values
+	}
+	remapped := make(map[uint32]struct{}, len(values))
+	for oldIdx := range values {
+		remapped[oldToNew[oldIdx]] = struct{}{}
+	}
+	return remapped
 }
 
 func (q *AggregatableSamples) MemUsage() int {
@@ -396,8 +564,20 @@ func (q *AggregatableSamples) MemUsage() int {
 		total += len(s)
 	}
 
-	for bin, samples := range q.SamplesByBin {
-		total += bin.MemUsage() + util.SizeOfPointer + samples.MemUsage()
+	total += cap(q.SamplesByBin) * SizeOfAggBinSamples
+	for i := range q.SamplesByBin {
+		total += len(q.SamplesByBin[i].Bin.Token)
+		total += samplesMemUsage(&q.SamplesByBin[i].Samples)
+	}
+	return total
+}
+
+func samplesMemUsage(h *SamplesContainer) int {
+	total := cap(h.Samples) * util.SizeOfFloat64
+	if h.Values != nil {
+		for range h.Values {
+			total += util.SizeOfUint32
+		}
 	}
 	return total
 }
@@ -433,14 +613,7 @@ func (h *SamplesContainer) MemUsage() int {
 	if h == nil {
 		return 0
 	}
-	total := SizeOfSamplesContainer
-	total += cap(h.Samples) * util.SizeOfFloat64
-	if h.Values != nil {
-		for range h.Values {
-			total += util.SizeOfUint32
-		}
-	}
-	return total
+	return SizeOfSamplesContainer + samplesMemUsage(h)
 }
 
 // Quantile calculates the quantile value of the histogram.
@@ -533,7 +706,13 @@ func (h *SamplesContainer) InsertValueIndex(poolIdx uint32, cnt int64) {
 	h.Total += cnt
 }
 
+// MergeQPRs merges several qprs into dst. Please note, for performance reasons
+// provided qprs may be mutated and left in an unpredictable state.
 func MergeQPRs(dst *QPR, qprs []*QPR, limit int, histInterval MID, order DocsOrder) {
+	if len(qprs) == 0 {
+		return
+	}
+
 	idsCount := 0
 	for _, qpr := range qprs {
 		idsCount += len(qpr.IDs)
@@ -550,15 +729,28 @@ func MergeQPRs(dst *QPR, qprs []*QPR, limit int, histInterval MID, order DocsOrd
 			dst.Histogram[time] += count
 		}
 
-		if len(qpr.Aggs) != 0 && len(dst.Aggs) == 0 {
-			dst.Aggs = make([]AggregatableSamples, len(qpr.Aggs))
-		}
-		for i := range qpr.Aggs {
-			dst.Aggs[i].Merge(qpr.Aggs[i])
-		}
-
 		dst.IDs = append(dst.IDs, qpr.IDs...)
 		dst.Errors = append(dst.Errors, qpr.Errors...)
+	}
+
+	if len(dst.Aggs) == 0 {
+		for _, qpr := range qprs {
+			if len(qpr.Aggs) != 0 {
+				dst.Aggs = make([]AggregatableSamples, len(qpr.Aggs))
+				break
+			}
+		}
+	}
+	for i := range dst.Aggs {
+		inputs := make([]AggregatableSamples, 0, len(qprs))
+		for _, qpr := range qprs {
+			if i >= len(qpr.Aggs) {
+				continue
+			}
+			inputs = append(inputs, qpr.Aggs[i])
+		}
+
+		dst.Aggs[i].Merge(inputs)
 	}
 
 	if order.IsReverse() {

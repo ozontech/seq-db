@@ -15,6 +15,7 @@ const (
 	StoreProtocolVersion1 StoreProtocolVersion = 1
 	// StoreProtocolVersion2 MID is in nanoseconds
 	StoreProtocolVersion2 StoreProtocolVersion = 2
+	StoreProtocolVersion3 StoreProtocolVersion = 3
 )
 
 func (p StoreProtocolVersion) String() string {

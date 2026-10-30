@@ -790,8 +790,8 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 
 		s.Require().Equal(len(expected), len(qpr.Aggs))
 		for i := range expected {
-			for bin, hist := range qpr.Aggs[i].SamplesByBin {
-				s.Require().Equalf(int64(expected[i][bin.Token]), hist.Total, "failed for token %s", bin)
+			for _, pair := range qpr.Aggs[i].SamplesByBin {
+				s.Require().Equalf(int64(expected[i][pair.Bin.Token]), pair.Samples.Total, "failed for token %s", pair.Bin)
 			}
 		}
 	}
@@ -2490,10 +2490,10 @@ func assertTotalScaled(s *FractionTestSuite, expTotal, actTotal uint64, ds uint3
 		label, expScaled, ds, actTotal)
 }
 
-func samplesToMap(samplesByBin map[seq.AggBin]*seq.SamplesContainer) map[string]uint64 {
+func samplesToMap(samplesByBin []seq.AggBinSamples) map[string]uint64 {
 	res := make(map[string]uint64, len(samplesByBin))
-	for bin, sample := range samplesByBin {
-		res[bin.Token] = uint64(sample.Total)
+	for i := range samplesByBin {
+		res[samplesByBin[i].Bin.Token] = uint64(samplesByBin[i].Samples.Total)
 	}
 	return res
 }

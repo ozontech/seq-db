@@ -259,22 +259,25 @@ func makeGetHistRespData(interval string, totalSize, fromTs, toTs int64) (*testG
 }
 
 type testGetAggResp struct {
-	qprAgg map[seq.AggBin]*seq.SamplesContainer
+	qprAgg []seq.AggBinSamples
 	apiAgg *seqproxyapi.Aggregation
 }
 
 func makeGetAggRespData(totalSize int64, bucketsCnt int) *testGetAggResp {
 	buckets := make([]*seqproxyapi.Aggregation_Bucket, 0)
-	qprAgg := make(map[seq.AggBin]*seq.SamplesContainer)
+	qprAgg := make([]seq.AggBinSamples, 0, bucketsCnt)
 
 	docCnt := totalSize / int64(bucketsCnt)
 	remainCnt := totalSize - docCnt*(int64(bucketsCnt)-1)
 
 	bucketKey := "bucket0"
 
-	bin := seq.AggBin{Token: bucketKey}
-	qprAgg[bin] = seq.NewSamplesContainers()
-	qprAgg[bin].Total = remainCnt
+	samples := seq.NewSamplesContainers()
+	samples.Total = remainCnt
+	qprAgg = append(qprAgg, seq.AggBinSamples{
+		Bin:     seq.AggBin{Token: bucketKey},
+		Samples: *samples,
+	})
 
 	bucket := &seqproxyapi.Aggregation_Bucket{
 		Value: float64(remainCnt), Key: bucketKey,
@@ -283,9 +286,11 @@ func makeGetAggRespData(totalSize int64, bucketsCnt int) *testGetAggResp {
 	buckets = append(buckets, bucket)
 	for i := 1; i < bucketsCnt; i++ {
 		bucketKey = "bucket" + strconv.Itoa(i)
-		bin := seq.AggBin{Token: bucketKey}
 
-		qprAgg[bin] = &seq.SamplesContainer{Total: docCnt}
+		qprAgg = append(qprAgg, seq.AggBinSamples{
+			Bin:     seq.AggBin{Token: bucketKey},
+			Samples: seq.SamplesContainer{Total: docCnt},
+		})
 
 		bucket = &seqproxyapi.Aggregation_Bucket{
 			Value: float64(docCnt), Key: bucketKey,
@@ -293,6 +298,7 @@ func makeGetAggRespData(totalSize int64, bucketsCnt int) *testGetAggResp {
 
 		buckets = append(buckets, bucket)
 	}
+	seq.SortAggBinSamples(qprAgg)
 
 	return &testGetAggResp{
 		qprAgg: qprAgg,

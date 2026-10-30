@@ -103,7 +103,7 @@ func prepareComplexSearchTestData(t *testing.T, cData cSearchTestCaseData) cSear
 			resp.Aggs = make([]*seqproxyapi.Aggregation, len(cData.aggQ))
 			for i, query := range cData.aggQ {
 				aRespData := makeGetAggRespData(cData.totalSize, query.bucketsCnt)
-				qpr.Aggs[i].Merge(seq.AggregatableSamples{SamplesByBin: aRespData.qprAgg})
+				qpr.Aggs[i].Merge([]seq.AggregatableSamples{{SamplesByBin: aRespData.qprAgg}})
 				resp.Aggs[i] = aRespData.apiAgg
 			}
 		}

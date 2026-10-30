@@ -1,9 +1,11 @@
 package search
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -568,15 +570,10 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 	aggs := make([]seq.AggregatableSamples, len(resp.Aggs))
 	for i, agg := range resp.Aggs {
 		from := agg.Timeseries
-		to := make(map[seq.AggBin]*seq.SamplesContainer)
+		to := make([]seq.AggBinSamples, 0, len(from))
 
 		for _, bin := range from {
 			pbhist := bin.Hist
-
-			tbin := seq.AggBin{
-				MID:   seq.MID(bin.Ts.AsTime().UnixNano()),
-				Token: bin.Label,
-			}
 
 			var values map[uint32]struct{}
 			if len(pbhist.Values) > 0 {
@@ -586,17 +583,22 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 				}
 			}
 
-			to[tbin] = &seq.SamplesContainer{
-				Min:       pbhist.Min,
-				Max:       pbhist.Max,
-				Sum:       pbhist.Sum,
-				Total:     pbhist.Total,
-				Samples:   pbhist.Samples,
-				NotExists: pbhist.NotExists,
-				Values:    values,
-			}
+			to = append(to, seq.AggBinSamples{
+				Bin: seq.AggBin{
+					MID:   seq.MID(bin.Ts.AsTime().UnixNano()),
+					Token: bin.Label,
+				},
+				Samples: seq.SamplesContainer{
+					Min:       pbhist.Min,
+					Max:       pbhist.Max,
+					Sum:       pbhist.Sum,
+					Total:     pbhist.Total,
+					Samples:   pbhist.Samples,
+					NotExists: pbhist.NotExists,
+					Values:    values,
+				},
+			})
 		}
-
 		aggs[i] = seq.AggregatableSamples{
 			SamplesByBin: to,
 			NotExists:    agg.NotExists,
@@ -618,6 +620,17 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 		Aggs:      aggs,
 		Total:     resp.Total,
 		Errors:    errSources,
+	}
+}
+
+func sortAggBins(resp *storeapi.SearchResponse) {
+	for _, agg := range resp.Aggs {
+		slices.SortFunc(agg.Timeseries, func(a, b *storeapi.SearchResponse_Bin) int {
+			return cmp.Or(
+				cmp.Compare(a.Label, b.Label),
+				cmp.Compare(b.Ts.AsTime().UnixNano(), a.Ts.AsTime().UnixNano()),
+			)
+		})
 	}
 }
 
@@ -735,6 +748,9 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 			}
 			data.Histogram = newHist
 		}
+	}
+	if protocolVersion < config.StoreProtocolVersion3 {
+		sortAggBins(data)
 	}
 
 	return data, si.sourceByClient[host], nil

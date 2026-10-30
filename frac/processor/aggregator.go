@@ -191,7 +191,7 @@ func (n *TwoSourceAggregator) Aggregate() (seq.AggregatableSamples, error) {
 
 	return seq.AggregatableSamples{
 		NotExists:    n.groupNotExists,
-		SamplesByBin: aggMap,
+		SamplesByBin: sortedAggSamples(aggMap),
 		ValuesPool:   sourceValuePool,
 	}, nil
 }
@@ -213,11 +213,11 @@ func parseNum(str string) (float64, error) {
 // sourceCounter stores per-source totals for a single count aggregation.
 type sourceCounter interface {
 	update(sources []int, mids []seq.MID)
-	get(group SourcedIterator) map[seq.AggBin]*seq.SamplesContainer
+	get(group SourcedIterator) []seq.AggBinSamples
 	notExists() int64
 }
 
-// plainSourceCounter is a counter used in ordinary aggregations.
+// plainSourceCounter is a counter used in ordinary count aggregations.
 type plainSourceCounter struct {
 	countBySource sourceCountMap
 	notExistsCnt  int64
@@ -239,25 +239,30 @@ func (c *plainSourceCounter) update(sources []int, _ []seq.MID) {
 	}
 }
 
-func (c *plainSourceCounter) get(group SourcedIterator) map[seq.AggBin]*seq.SamplesContainer {
-	dst := make(map[seq.AggBin]*seq.SamplesContainer, group.UniqueSources())
-	for source, cnt := range c.countBySource.all() {
-		aggBin := seq.AggBin{
-			Token: group.ValueBySource(source),
-			MID:   consts.DummyMID,
-		}
-		if dst[aggBin] == nil {
-			dst[aggBin] = seq.NewSamplesContainers()
-		}
-		dst[aggBin].Total = int64(cnt)
+func (c *plainSourceCounter) get(group SourcedIterator) []seq.AggBinSamples {
+	n := group.UniqueSources()
+	if c.notExistsCnt > 0 {
+		n++
+	}
+	if n == 0 {
+		return nil
 	}
 
+	dst := make([]seq.AggBinSamples, 0, n)
+	for source, cnt := range c.countBySource.all() {
+		token := group.ValueBySource(source)
+		samples := seq.NewSamplesContainers()
+		samples.Total = int64(cnt)
+		dst = append(dst, seq.AggBinSamples{
+			Bin:     seq.AggBin{Token: token, MID: consts.DummyMID},
+			Samples: *samples,
+		})
+	}
 	if c.notExistsCnt > 0 {
-		// Handle non-existent sources in legacy format.
-		dst[seq.AggBin{
-			Token: "_not_exists",
-			MID:   consts.DummyMID,
-		}] = &seq.SamplesContainer{Total: c.notExistsCnt}
+		dst = append(dst, seq.AggBinSamples{
+			Bin:     seq.AggBin{Token: "_not_exists", MID: consts.DummyMID},
+			Samples: seq.SamplesContainer{Total: c.notExistsCnt},
+		})
 	}
 	return dst
 }
@@ -288,30 +293,32 @@ func (c *tsSourceCounter) update(sources []int, mids []seq.MID) {
 	}
 }
 
-func (c *tsSourceCounter) get(group SourcedIterator) map[seq.AggBin]*seq.SamplesContainer {
-	dst := make(map[seq.AggBin]*seq.SamplesContainer, group.UniqueSources())
+func (c *tsSourceCounter) get(group SourcedIterator) []seq.AggBinSamples {
+	dst := make([]seq.AggBinSamples, 0, group.UniqueSources())
+
 	for source, bin := range c.counts.all() {
-		aggBin := seq.AggBin{
-			Token: group.ValueBySource(source),
-			MID:   bin.MID,
-		}
-		samples := dst[aggBin]
-		if samples == nil {
-			samples = seq.NewSamplesContainers()
-			dst[aggBin] = samples
-		}
-		samples.Total = int64(bin.count)
+		dst = append(dst, seq.AggBinSamples{
+			Bin: seq.AggBin{
+				Token: group.ValueBySource(source),
+				MID:   bin.MID,
+			},
+			Samples: seq.SamplesContainer{Total: int64(bin.count)},
+		})
 	}
 
 	// FIXME(dkharms): It will not work correctly with time series, since
 	// we also have to spread [notExists] across different time bins.
 	if c.notExistsCnt > 0 {
 		// Handle non-existent sources in legacy format.
-		dst[seq.AggBin{
-			Token: "_not_exists",
-			MID:   consts.DummyMID,
-		}] = &seq.SamplesContainer{Total: c.notExistsCnt}
+		dst = append(dst, seq.AggBinSamples{
+			Bin: seq.AggBin{
+				Token: "_not_exists",
+				MID:   consts.DummyMID,
+			},
+			Samples: seq.SamplesContainer{Total: c.notExistsCnt},
+		})
 	}
+
 	return dst
 }
 
@@ -498,9 +505,15 @@ func (n *SingleSourceCountAggregator) Next(lids []node.LID) error {
 }
 
 func (n *SingleSourceCountAggregator) Aggregate() (seq.AggregatableSamples, error) {
+	bins := n.counter.get(n.group)
+
+	// We still need to sort bins for two reasons: active fraction tokens are not sorted lexicographically,
+	// and _not_exists bin must be in the right place while merging.
+	seq.SortAggBinSamples(bins)
+
 	return seq.AggregatableSamples{
 		NotExists:    n.counter.notExists(),
-		SamplesByBin: n.counter.get(n.group),
+		SamplesByBin: bins,
 	}, nil
 }
 
@@ -529,7 +542,7 @@ func (n *SingleSourceUniqueAggregator) Next(lids []node.LID) error {
 	}
 
 	for i := range lids {
-		if sources[i] == 0 {
+		if sources[i] < 0 {
 			n.notExists++
 		}
 	}
@@ -539,21 +552,18 @@ func (n *SingleSourceUniqueAggregator) Next(lids []node.LID) error {
 func (n *SingleSourceUniqueAggregator) Aggregate() (seq.AggregatableSamples, error) {
 	n.group.prefetchTokenValues()
 
-	aggMap := make(map[seq.AggBin]*seq.SamplesContainer, n.group.UniqueSources())
-
+	bins := make([]seq.AggBinSamples, 0, n.group.UniqueSources())
 	for source := range n.group.countBySource.all() {
-		aggBin := seq.AggBin{
-			Token: n.group.ValueBySource(source),
-		}
-
-		if aggMap[aggBin] == nil {
-			aggMap[aggBin] = seq.NewSamplesContainers()
-		}
+		bins = append(bins, seq.AggBinSamples{
+			Bin:     seq.AggBin{Token: n.group.ValueBySource(source)},
+			Samples: seq.SamplesContainer{},
+		})
 	}
+	seq.SortAggBinSamples(bins)
 
 	return seq.AggregatableSamples{
 		NotExists:    n.notExists,
-		SamplesByBin: aggMap,
+		SamplesByBin: bins,
 	}, nil
 }
 
@@ -622,17 +632,32 @@ func (n *SingleSourceHistogramAggregator) Next(lids []node.LID) error {
 }
 
 func (n *SingleSourceHistogramAggregator) Aggregate() (seq.AggregatableSamples, error) {
-	qprHist := seq.AggregatableSamples{
-		SamplesByBin: make(map[seq.AggBin]*seq.SamplesContainer, len(n.histogram)),
-	}
-
+	bins := make([]seq.AggBinSamples, 0, len(n.histogram))
 	for mid, histogram := range n.histogram {
-		qprHist.SamplesByBin[seq.AggBin{
-			MID: mid,
-		}] = histogram
+		bins = append(bins, seq.AggBinSamples{
+			Bin:     seq.AggBin{MID: mid},
+			Samples: *histogram,
+		})
 	}
+	seq.SortAggBinSamples(bins)
 
-	return qprHist, nil
+	return seq.AggregatableSamples{SamplesByBin: bins}, nil
+}
+
+func sortedAggSamples(m map[seq.AggBin]*seq.SamplesContainer) []seq.AggBinSamples {
+	if len(m) == 0 {
+		return nil
+	}
+	bins := make([]seq.AggBinSamples, 0, len(m))
+	for bin, samples := range m {
+		entry := seq.AggBinSamples{Bin: bin}
+		if samples != nil {
+			entry.Samples = *samples
+		}
+		bins = append(bins, entry)
+	}
+	seq.SortAggBinSamples(bins)
+	return bins
 }
 
 func (n *SingleSourceHistogramAggregator) Release() {
