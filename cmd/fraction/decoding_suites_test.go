@@ -57,8 +57,6 @@ func (s *FractionDecoderTestSuite) sealDocsVersion(v config.BinaryDataVersion) {
 	s.sealedWithAllToken = true
 }
 
-// expectedTokens returns the token records of testDocs, with the leading
-// _all_ token and the TID shift it implies for older sealers.
 func expectedTokens(withAllToken bool) []tokenRecord {
 	if !withAllToken {
 		return testTokens

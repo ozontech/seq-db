@@ -144,7 +144,6 @@ func (p *recordingProvider) GetLIDsFromTIDs(tids []uint32, stats lids.Counter, m
 func TestMatchAllDoesNotTouchIndex(t *testing.T) {
 	p := &recordingProvider{}
 
-	// The leaf for `_all_:*` must be synthesized from the window only.
 	token := &parser.Literal{
 		Field: seq.TokenAll,
 		Terms: []parser.Term{{Kind: parser.TermSymbol, Data: "*"}},
@@ -153,7 +152,6 @@ func TestMatchAllDoesNotTouchIndex(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []uint32{2, 3, 4, 5, 6, 7}, readAll(leaf))
 
-	// The aggregation iterator must use the synthetic source as well.
 	it, err := iteratorFromLiteral(
 		p, token, stopwatch.New(), &searchStats{}, 2, 7,
 		0, iteratorLimit{}, seq.DocsOrderDesc, QueryStats{}, QueryOptimizationConfig{},
@@ -165,8 +163,6 @@ func TestMatchAllDoesNotTouchIndex(t *testing.T) {
 }
 
 func TestIteratorFromLiteralMatchAllAggregation(t *testing.T) {
-	// group_by=_all_ via storeapi produces exactly this literal; counting
-	// over it must yield a single "" bucket holding every LID of the window.
 	token := &parser.Literal{
 		Field: seq.TokenAll,
 		Terms: []parser.Term{{Kind: parser.TermSymbol, Data: "*"}},
@@ -179,22 +175,18 @@ func TestIteratorFromLiteralMatchAllAggregation(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		agg := NewSingleSourceCountAggregator(it, provideExtractTimeFunc(nil, nil, 0))
-		// Feed LIDs in the order and encoding the eval tree yields them:
-		// desc document order means LID numbers ascend and vice versa.
+		agg := NewSingleSourceCountAggregator(it, provideExtractTimeFunc(nil, nil, 0), false)
 		for lid := uint32(1); lid <= 4; lid++ {
 			docLID := lid
 			if order.IsReverse() {
 				docLID = 5 - lid
 			}
-			require.NoError(t, agg.Next(node.NewLID(docLID, order.IsDesc())))
+			require.NoError(t, agg.Next([]node.LID{node.NewLID(docLID, order.IsDesc())}))
 		}
 
 		result, err := agg.Aggregate()
 		require.NoError(t, err)
 
-		// MockTokenIndex names buckets by TID ("0"); a real index returns
-		// nil from GetValByTID(0), which is the empty value of _all_.
 		assert.Len(t, result.SamplesByBin, 1)
 		for bin, samples := range result.SamplesByBin {
 			assert.Equal(t, "0", bin.Token)
