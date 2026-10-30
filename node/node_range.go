@@ -1,5 +1,7 @@
 package node
 
+import "github.com/RoaringBitmap/roaring/v2"
+
 type nodeRange struct {
 	maxID LID
 	curID LID
@@ -44,13 +46,6 @@ func (n *nodeRangeBatched) String() string {
 	return "(RANGE_BATCHED)"
 }
 
-func (n *nodeRangeBatched) Count() (uint64, bool) {
-	if n.min > n.max {
-		return 0, true
-	}
-	return uint64(n.max) - uint64(n.min) + 1, true
-}
-
 func (n *nodeRangeBatched) NextBatch() LIDBatch {
 	if n.asc {
 		return n.NextBatchGeq(NewAscZeroLID())
@@ -66,7 +61,14 @@ func (n *nodeRangeBatched) NextBatchGeq(nextID LID) LIDBatch {
 	raw := nextID.Unpack()
 	n.done = true
 	if n.asc {
-		return newRangeBatch(max(n.min, raw), n.max)
+		return newBitmapBatchFromRange(max(n.min, raw), n.max)
 	}
-	return newRangeBatch(n.min, min(n.max, raw))
+	return newBitmapBatchFromRange(n.min, min(n.max, raw))
+}
+
+func newBitmapBatchFromRange(minLID, maxLID uint32) LIDBatch {
+	bm := roaring.NewBitmap()
+	bm.AddRange(uint64(minLID), uint64(maxLID)+1)
+
+	return NewBitmapBatch(bm)
 }

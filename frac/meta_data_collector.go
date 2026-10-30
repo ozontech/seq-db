@@ -124,14 +124,6 @@ func (c *metaDataCollector) Filter(appended []int) {
 	c.tokensIndex = tokensIndex
 }
 
-// extractTokens appends the given tokens to the collector and returns the
-// number of tokens actually recorded. Callers must use this count for
-// per-document token accounting: tokensInDocs and tokensIndex are flat
-// arrays that must stay in sync.
-//
-// The _all_ token is skipped: the store assigns every LID itself, so the
-// _all_ posting list is fed directly (see appendWorker) and must not
-// depend on the proxy putting this token into every meta.
 func (c *metaDataCollector) extractTokens(tokens []tokenizer.MetaToken) int {
 	count := 0
 	for _, token := range tokens {

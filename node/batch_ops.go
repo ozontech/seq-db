@@ -191,14 +191,6 @@ func toBitmapBatch(b LIDBatch) *bitmapBatch {
 			min: batchTyped.Min(),
 			max: batchTyped.Max(),
 		}
-	case *rangeBatch:
-		bm := roaring.NewBitmap()
-		bm.AddRange(uint64(batchTyped.min), uint64(batchTyped.max)+1)
-		return &bitmapBatch{
-			bm:  bm,
-			min: batchTyped.min,
-			max: batchTyped.max,
-		}
 	default:
 		panic("unsupported batch type")
 	}

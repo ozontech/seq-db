@@ -249,10 +249,6 @@ func iteratorFromLiteral(
 	queryOpt QueryOptimizationConfig,
 ) (*SourcedNodeIterator, error) {
 	if parser.IsMatchAll(literal) {
-		// The _all_ posting list matches every LID in the window, so no index
-		// lookup is needed. Source 0 with tids = []uint32{0} makes GetValByTID
-		// return "" (the value of the _all_ token) on both active and sealed
-		// fractions; any other TID would panic on fractions lacking the field.
 		sourcedNode := node.NewSourcedNodeWrapper(matchAllNode(minLID, maxLID, order.IsDesc()), 0)
 		return NewSourcedNodeIterator(sourcedNode, ti, []uint32{0}, literal.Field, iteratorLimit), nil
 	}

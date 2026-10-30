@@ -124,26 +124,6 @@ func TestRangeBatchedNextGeq(t *testing.T) {
 	}
 }
 
-func TestRangeBatchedCount(t *testing.T) {
-	tests := []struct {
-		name     string
-		min, max uint32
-		want     uint64
-	}{
-		{name: "range", min: 3, max: 10, want: 8},
-		{name: "empty", min: 10, max: 3},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			n := NewRangeBatched(tt.min, tt.max, true).(*nodeRangeBatched)
-			count, ok := n.Count()
-			require.True(t, ok)
-			require.Equal(t, tt.want, count)
-		})
-	}
-}
-
 func TestRangeBatchedWholeWindowInOneBatch(t *testing.T) {
 	n := NewRangeBatched(1, uint32(consts.DefaultLIDBlockCap)+10, true)
 	b := n.NextBatch()
@@ -166,37 +146,23 @@ func TestRangeBatchedUint32Bounds(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			n := NewRangeBatched(tt.value, tt.value, tt.asc)
 			b := n.NextBatch()
-			var it Iter
-			if tt.asc {
-				it = b.Iter()
-			} else {
-				it = b.ReverseIter()
-			}
-			v, ok := it.Next()
-			require.True(t, ok)
-			require.Equal(t, tt.value, v)
-			_, ok = it.Next()
-			require.False(t, ok)
+			it := b.ManyIter(tt.asc)
+			buf := make([]uint32, 1)
+			require.Equal(t, 1, it.CopyRawLIDs(buf))
+			require.Equal(t, tt.value, buf[0])
+			require.Zero(t, it.CopyRawLIDs(buf))
 			require.True(t, n.NextBatch().IsEmpty())
 		})
 	}
 }
 
 func TestRangeBatchFullUint32Range(t *testing.T) {
-	b := newRangeBatch(0, math.MaxUint32)
+	b := newBitmapBatchFromRange(0, math.MaxUint32)
 	require.Equal(t, uint64(math.MaxUint32)+1, uint64(b.Len()))
 
-	asc := b.Iter()
-	v, ok := asc.NextGeq(math.MaxUint32)
-	require.True(t, ok)
-	require.Equal(t, uint32(math.MaxUint32), v)
-	_, ok = asc.Next()
-	require.False(t, ok)
-
-	desc := b.ReverseIter()
-	v, ok = desc.NextGeq(0)
-	require.True(t, ok)
-	require.Equal(t, uint32(0), v)
-	_, ok = desc.Next()
-	require.False(t, ok)
+	buf := make([]uint32, 1)
+	require.Equal(t, 1, b.ManyIter(true).CopyRawLIDs(buf))
+	require.Equal(t, uint32(0), buf[0])
+	require.Equal(t, 1, b.ManyIter(false).CopyRawLIDs(buf))
+	require.Equal(t, uint32(math.MaxUint32), buf[0])
 }
