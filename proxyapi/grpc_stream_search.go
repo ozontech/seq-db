@@ -61,20 +61,9 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 
 	tr := querytracer.New(q.Explain, "proxy/StreamSearch")
 
-	var partialErr error
-	storesStream, cancelStreams, err := g.searchIngestor.StreamSearch(ctx, searchReq, tr)
+	storesStream, err := g.openStoreStreams(ctx, searchReq, tr)
 	if err != nil {
-		if errors.Is(err, consts.ErrPartialResponse) {
-			if shouldFailPartialResponse(ctx) {
-				cancelStreams()
-				return status.Error(codes.Internal, "partial response: not all shards returned results")
-			}
-			partialErr = err
-			metric.SearchPartial.Inc()
-		} else {
-			cancelStreams()
-			return status.Error(codes.Internal, err.Error())
-		}
+		return err
 	}
 
 	// Read control messages from the client concurrently with sending data.
@@ -114,29 +103,76 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 		typing = docsTyping()
 		toRecord = docToRecord
 	}
-	outcome, err := g.streamSearchRecords(stream, storesStream, typing, toRecord, controlCh, recvErrCh, ctx)
+	outcome, err := g.streamSearchRecords(stream, storesStream.Records, typing, toRecord, controlCh, recvErrCh, ctx)
 	if err != nil {
 		// Streaming failed: cancel the stores so they stop producing.
-		cancelStreams()
+		storesStream.Cancel()
 		return err
 	}
 
 	// CANCEL: terminate immediately, no summary.
 	if outcome == outcomeCancel {
-		cancelStreams()
+		storesStream.Cancel()
 		return nil
 	}
 
 	// FINALIZE or data exhausted without an explicit control action: send the summary gathered from the store stream.
-	summary := storesStream.Finalize()
+	summary, err := g.finalizeStoreStreams(ctx, storesStream)
+	if err != nil {
+		return err
+	}
+	return g.sendSummary(stream, summary, tr, q.Explain)
+}
+
+func (g *grpcV1) openStoreStreams(
+	ctx context.Context,
+	req *search.StreamSearchRequest,
+	tr *querytracer.Tracer,
+) (*search.StreamResult, error) {
+	storesStream, err := g.searchIngestor.StreamSearch(ctx, req, tr)
+	if err != nil {
+		if errors.Is(err, consts.ErrIngestorQueryWantsOldData) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if storesStream.PartialErr != nil {
+		if shouldFailPartialResponse(ctx) {
+			storesStream.Cancel()
+			return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
+		}
+		metric.SearchPartial.Inc()
+	}
+	return storesStream, nil
+}
+
+func (g *grpcV1) finalizeStoreStreams(ctx context.Context, storesStream *search.StreamResult) (*query.Summary, error) {
+	summary := storesStream.Records.Finalize()
 	if summary == nil {
 		summary = &query.Summary{}
 	}
-	summary.Err = wrapPartialResponse(summary.Err, partialErr)
-	if errors.Is(summary.Err, consts.ErrPartialResponse) && shouldFailPartialResponse(ctx) {
-		return status.Error(codes.Internal, "partial response: not all shards returned results")
+
+	err := util.DeduplicateErrors([]error{storesStream.PartialErr, summary.Err})
+	if err == nil {
+		return summary, nil
 	}
-	return g.sendSummary(stream, summary, tr, q.Explain)
+
+	switch {
+	case errors.Is(err, consts.ErrTooManyFractionsHit):
+		summary.Err = err
+	case errors.Is(err, consts.ErrIngestorQueryWantsOldData):
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	case !storesStream.HasSuccessfulStream():
+		return nil, status.Error(codes.Internal, err.Error())
+	case shouldFailPartialResponse(ctx):
+		return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
+	case errors.Is(err, consts.ErrPartialResponse):
+		summary.Err = err
+	default:
+		summary.Err = fmt.Errorf("%w: %w", consts.ErrPartialResponse, err)
+	}
+
+	return summary, nil
 }
 
 func (g *grpcV1) sendSummary(
@@ -174,24 +210,13 @@ func (g *grpcV1) sendSummary(
 
 func mapProxyErrorCode(err error) seqproxyapi.ErrorCode {
 	switch {
-	case errors.Is(err, consts.ErrPartialResponse):
-		return seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE
 	case errors.Is(err, consts.ErrTooManyFractionsHit):
 		return seqproxyapi.ErrorCode_ERROR_CODE_TOO_MANY_FRACTIONS_HIT
+	case errors.Is(err, consts.ErrPartialResponse):
+		return seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE
 	default:
 		return seqproxyapi.ErrorCode_ERROR_CODE_UNSPECIFIED
 	}
-}
-
-func wrapPartialResponse(errs ...error) error {
-	err := util.DeduplicateErrors(errs)
-	if err == nil ||
-		errors.Is(err, consts.ErrPartialResponse) ||
-		errors.Is(err, consts.ErrIngestorQueryWantsOldData) ||
-		errors.Is(err, consts.ErrTooManyFractionsHit) {
-		return err
-	}
-	return fmt.Errorf("%w: %w", consts.ErrPartialResponse, err)
 }
 
 // checkControl peeks at the control/recv channels without blocking. It returns
