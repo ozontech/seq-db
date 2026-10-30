@@ -136,6 +136,9 @@ func (g *grpcV1) useStreamSearch(
 		aggs[0].NotExists = int64(summary.NotExists)
 	}
 	summary.Err = wrapPartialResponse(summary.Err, partialErr)
+	if errors.Is(summary.Err, consts.ErrPartialResponse) && shouldFailPartialResponse(ctx) {
+		return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
+	}
 
 	tr.Done()
 

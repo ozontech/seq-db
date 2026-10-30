@@ -133,6 +133,9 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 		summary = &query.Summary{}
 	}
 	summary.Err = wrapPartialResponse(summary.Err, partialErr)
+	if errors.Is(summary.Err, consts.ErrPartialResponse) && shouldFailPartialResponse(ctx) {
+		return status.Error(codes.Internal, "partial response: not all shards returned results")
+	}
 	return g.sendSummary(stream, summary, tr, q.Explain)
 }
 
