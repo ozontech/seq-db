@@ -260,15 +260,15 @@ func (c *plainSourceCounter) notExists() int64 {
 	return c.notExistsCnt
 }
 
-// tsSourceCounter is a counter used in time series count aggregations.
+// tsSourceCounter is a per-source counter used in time series count aggregations.
 type tsSourceCounter struct {
-	counts       map[AggBin[int]]int64
+	counts       tsSourceCountMap
 	notExistsCnt int64
 }
 
-func newTsSourceCounter() *tsSourceCounter {
+func newTsSourceCounter(sources int) *tsSourceCounter {
 	return &tsSourceCounter{
-		counts: make(map[AggBin[int]]int64),
+		counts: newTsSourceCountMap(sources),
 	}
 }
 
@@ -278,27 +278,23 @@ func (c *tsSourceCounter) update(sources []int, mids []seq.MID) {
 			c.notExistsCnt++
 			continue
 		}
-		c.counts[AggBin[int]{
-			MID:    mid,
-			Source: sources[i],
-		}]++
+		c.counts.add(uint32(sources[i]), mid)
 	}
 }
 
 func (c *tsSourceCounter) get(group *SourcedNodeIterator) map[seq.AggBin]*seq.SamplesContainer {
 	dst := make(map[seq.AggBin]*seq.SamplesContainer, group.UniqueSources())
-	for bin, cnt := range c.counts {
+	for source, bin := range c.counts.all() {
 		aggBin := seq.AggBin{
-			Token: group.ValueBySource(uint32(bin.Source)),
+			Token: group.ValueBySource(source),
 			MID:   bin.MID,
 		}
-
 		samples := dst[aggBin]
 		if samples == nil {
 			samples = seq.NewSamplesContainers()
 			dst[aggBin] = samples
 		}
-		samples.Total = cnt
+		samples.Total = int64(bin.count)
 	}
 
 	// FIXME(dkharms): It will not work correctly with time series, since
@@ -317,6 +313,108 @@ func (c *tsSourceCounter) notExists() int64 {
 	return c.notExistsCnt
 }
 
+type tsBinCount struct {
+	MID   seq.MID
+	count uint32
+}
+
+const (
+	// tsBinsArrayLimit max number of timestamp bins per source to keep in an array
+	tsBinsArrayLimit = 8
+)
+
+type tsSourceChunk [sourceChunkSize][]tsBinCount
+
+// tsSourceCountMap keeps timestamp-bin counts for each source. It's a hybrid data structure which combines arrays
+// and a hashmap. An array is used for a particular source if the number of MID bins doesn't exceed tsBinsArrayLimit.
+// When the number of MID bins exceeds this number, MID bins are migrated to the hashmap.
+type tsSourceCountMap struct {
+	chunks  []*tsSourceChunk
+	mp      map[AggBin[uint32]]uint32
+	mpUsed  []bool // indicates if source's MID bins were migrated to mp. Allocated lazily
+	sources int
+}
+
+func newTsSourceCountMap(sources int) tsSourceCountMap {
+	return tsSourceCountMap{
+		sources: sources,
+		chunks:  make([]*tsSourceChunk, (sources+sourceChunkSize-1)/sourceChunkSize),
+		mp:      make(map[AggBin[uint32]]uint32),
+	}
+}
+
+func (c *tsSourceCountMap) add(source uint32, mid seq.MID) {
+	chunkIdx := source / sourceChunkSize
+	chunk := c.chunks[chunkIdx]
+	if chunk == nil {
+		chunk = new(tsSourceChunk)
+		c.chunks[chunkIdx] = chunk
+	}
+
+	bins := chunk[source%sourceChunkSize]
+
+	for i := range bins {
+		if bins[i].MID == mid {
+			bins[i].count++
+			return
+		}
+	}
+
+	// a bin not found in chunked array
+	if len(bins) == 0 {
+		if c.mpUsed != nil && source < uint32(len(c.mpUsed)) && c.mpUsed[source] {
+			c.mp[AggBin[uint32]{Source: source, MID: mid}]++
+			return
+		}
+
+		// initial capacity is 2 for bins - a wild guess
+		bins = make([]tsBinCount, 0, 2)
+		chunk[source%sourceChunkSize] = append(bins, tsBinCount{MID: mid, count: 1})
+	} else if len(bins) >= tsBinsArrayLimit {
+		c.moveToMp(source, bins)
+		c.mp[AggBin[uint32]{Source: source, MID: mid}] = 1
+		return
+	}
+
+	chunk[source%sourceChunkSize] = append(bins, tsBinCount{MID: mid, count: 1})
+}
+
+// moveToMp moves MID bins to mp hashmap for a specified source
+func (c *tsSourceCountMap) moveToMp(source uint32, bins []tsBinCount) {
+	if c.mpUsed == nil {
+		c.mpUsed = make([]bool, c.sources)
+	}
+
+	for _, bin := range bins {
+		c.mp[AggBin[uint32]{Source: source, MID: bin.MID}] = bin.count
+	}
+	c.chunks[source/sourceChunkSize][source%sourceChunkSize] = nil
+	c.mpUsed[source] = true
+}
+
+func (c *tsSourceCountMap) all() iter.Seq2[uint32, tsBinCount] {
+	return func(yield func(source uint32, bin tsBinCount) bool) {
+		for chunkIdx, chunk := range c.chunks {
+			if chunk == nil {
+				continue
+			}
+			base := uint32(chunkIdx * sourceChunkSize)
+			for offset, bins := range chunk {
+				for _, bin := range bins {
+					if !yield(base+uint32(offset), bin) {
+						return
+					}
+				}
+			}
+		}
+		for bin, count := range c.mp {
+			if !yield(bin.Source, tsBinCount{MID: bin.MID, count: count}) {
+				return
+			}
+		}
+	}
+}
+
 // SingleSourceCountAggregator aggregates counts for a single source.
 type SingleSourceCountAggregator struct {
 	counter    sourceCounter
@@ -330,7 +428,7 @@ func NewSingleSourceCountAggregator(
 ) *SingleSourceCountAggregator {
 	var counts sourceCounter
 	if timeseries {
-		counts = newTsSourceCounter()
+		counts = newTsSourceCounter(len(iterator.tids))
 	} else {
 		counts = newPlainSourceCounter()
 	}
