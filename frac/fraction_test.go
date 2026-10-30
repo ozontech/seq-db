@@ -2766,7 +2766,6 @@ func (s *FractionTestSuite) AssertHist(
 	}
 }
 
-// newActive appends documents processed like a proxy does.
 func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
 	baseName := filepath.Join(s.tmpDir, randomHex(12))
 

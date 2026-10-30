@@ -119,8 +119,6 @@ func TestMatchAllNode(t *testing.T) {
 	})
 }
 
-// recordingProvider counts calls of every tokenIndex method to make sure
-// match-all filters never reach the underlying index.
 type recordingProvider struct {
 	tokenIndex
 	calls []string

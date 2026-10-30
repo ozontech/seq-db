@@ -1,6 +1,6 @@
 services:
   minio:
-    image: alpine/minio:latest-release
+    image: docker.io/pgsty/silo:latest
     ports:
       - 9000:9000 # API
       - 9001:9001 # WebUI

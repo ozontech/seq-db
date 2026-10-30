@@ -34,8 +34,6 @@ type mergeTask struct {
 	tokenLIDs *TokenLIDs
 }
 
-// minMergeQueue is the queue length above which a token is sent to
-// background merge workers; below it the merge happens lazily on read.
 const minMergeQueue = 10000
 
 func NewActiveIndexer(workerCount, chLen int) (*ActiveIndexer, func()) {
