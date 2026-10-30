@@ -30,6 +30,13 @@ var (
 		Help:      "Number of errors for time rules violation in events",
 	}, []string{"cause"})
 
+	ridCollisions = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "seq_db_ingestor",
+		Subsystem: "bulk",
+		Name:      "rid_collisions_total",
+		Help:      "Number of seq.ID collisions within a single bulk, resolved by re-rolling the RID",
+	})
+
 	bulkSizeAfterCompression = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "seq_db_ingestor",
 		Subsystem: "bulk",
