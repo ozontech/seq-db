@@ -96,7 +96,7 @@ func (si *Ingestor) StreamSearch(
 	// TODO: store can change docs' schema in case of filter pipe, need to handle it on proxy.
 	var expectedSchema *query.Schema
 	if sr.Agg != nil {
-		expectedSchema = query.AggsSchema
+		expectedSchema = query.AggsSchemaFor(sr.Agg.Func, sr.Agg.Interval > 0)
 	}
 	// Shard schemas come off the wire, so validate them before any consumer reads records.
 	if err := validateShardSchemas(streams, expectedSchema); err != nil {
@@ -106,7 +106,7 @@ func (si *Ingestor) StreamSearch(
 
 	var mergedStream query.RecordProducer
 	if sr.Agg != nil {
-		mergedStream = exec.NewDistributedAggregator(producers, sr.Agg.Func, sr.Agg.Quantiles)
+		mergedStream = exec.NewDistributedAggregator(producers, expectedSchema, sr.Agg.Func, sr.Agg.Quantiles)
 	} else {
 		// streams[0] is safe - streams len is already checked
 		idCol, err := streams[0].OutSchema().Column[seq.ID](query.DocsIDCol)
@@ -373,9 +373,10 @@ type StreamSearchIterator struct {
 
 	curBatch []*storeapi.Record
 
-	total uint64
-	err   error
-	done  bool
+	total        uint64
+	aggNotExists uint64
+	err          error
+	done         bool
 
 	cancel context.CancelFunc
 }
@@ -430,6 +431,7 @@ func (it *StreamSearchIterator) push(msg *storeapi.StreamSearchResponse) error {
 		it.curBatch = v.Data.GetBatch().GetRecords()
 	case *storeapi.StreamSearchResponse_Summary:
 		it.total = v.Summary.Total
+		it.aggNotExists = uint64(v.Summary.NotExists)
 		if v.Summary.Explain != nil {
 			it.tr.AddChildWithSpan(explainEntryToTracerSpan(v.Summary.Explain))
 		}
@@ -464,7 +466,7 @@ func (it *StreamSearchIterator) Finalize() *query.Summary {
 	// Drain the remaining messages so the store-reported summary is not lost.
 	it.drain()
 	it.tr.Done()
-	return &query.Summary{Total: it.total, Err: it.err}
+	return &query.Summary{Total: it.total, NotExists: it.aggNotExists, Err: it.err}
 }
 
 // drain reads the store stream until the EOF is received, capturing the store-reported total and error.
