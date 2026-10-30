@@ -28,6 +28,8 @@ type FractionDecoderTestSuite struct {
 
 	fracName    string
 	expectedVer config.BinaryDataVersion
+	// sealedWithAllToken is true for fractions sealed before token _all_ removal
+	sealedWithAllToken bool
 }
 
 func (s *FractionDecoderTestSuite) sealDocs(docsPerDocBlock int) {
@@ -40,6 +42,7 @@ func (s *FractionDecoderTestSuite) sealDocs(docsPerDocBlock int) {
 	)
 	s.Require().NoError(err)
 	s.expectedVer = config.CurrentFracVersion
+	s.sealedWithAllToken = false
 }
 
 func (s *FractionDecoderTestSuite) sealDocsVersion(v config.BinaryDataVersion) {
@@ -51,6 +54,14 @@ func (s *FractionDecoderTestSuite) sealDocsVersion(v config.BinaryDataVersion) {
 	s.Require().NoError(err, "seal-fraction.sh failed:\n%s", out)
 
 	s.expectedVer = v
+	s.sealedWithAllToken = true
+}
+
+func expectedTokens(withAllToken bool) []tokenRecord {
+	if !withAllToken {
+		return testTokens
+	}
+	return append([]tokenRecord{{Field: "_all_", Token: "", Freq: 3}}, testTokens...)
 }
 
 func (s *FractionDecoderTestSuite) decodeAll() *collectedContent {
@@ -101,14 +112,15 @@ func (s *FractionDecoderTestSuite) checkIDs() {
 
 func (s *FractionDecoderTestSuite) checkTokens() {
 	content := s.decodeAll()
+	expected := expectedTokens(s.sealedWithAllToken)
 
-	s.Require().Len(content.Tokens, len(testTokens))
+	s.Require().Len(content.Tokens, len(expected))
 	for i, tok := range content.Tokens {
-		expected := testTokens[i]
-		expected.TID = uint32(i + 1)
-		expected.Kind = kindToken
-		expected.LIDs = tok.LIDs
-		s.Equal(expected, tok)
+		want := expected[i]
+		want.TID = uint32(i + 1)
+		want.Kind = kindToken
+		want.LIDs = tok.LIDs
+		s.Equal(want, tok)
 
 		s.Len(tok.LIDs, int(tok.Freq))
 		for _, lid := range tok.LIDs {
@@ -123,10 +135,11 @@ func (s *FractionDecoderTestSuite) checkTokensWithoutPostings() {
 	err := decodeFraction(s.fracName, kindToken, content)
 	s.Require().NoError(err)
 
-	s.Require().Len(content.Tokens, len(testTokens))
+	expected := expectedTokens(s.sealedWithAllToken)
+	s.Require().Len(content.Tokens, len(expected))
 	for i, tok := range content.Tokens {
-		s.Equal(testTokens[i].Token, tok.Token)
-		s.Equal(testTokens[i].Freq, tok.Freq)
+		s.Equal(expected[i].Token, tok.Token)
+		s.Equal(expected[i].Freq, tok.Freq)
 		s.Empty(tok.LIDs)
 	}
 }

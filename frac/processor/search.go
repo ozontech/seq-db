@@ -99,6 +99,13 @@ func IndexSearch(
 	minLID, maxLID := getLIDsBorders(params, index)
 	m.Stop()
 
+	if minLID > maxLID || minLID == 0 {
+		return &seq.QPR{
+			Histogram: make(map[seq.MID]uint64),
+			Aggs:      make([]seq.AggregatableSamples, len(params.AggQ)),
+		}, nil
+	}
+
 	m = sw.Start("get_skip_lids")
 	skipLIDs, hasSkipLIDs, release, err := index.GetSkipLIDs(minLID, maxLID, params.Order.IsReverse())
 	defer func() {

@@ -193,6 +193,62 @@ func (s *FractionTestSuite) TestSearchKeyword() {
 	s.AssertSearch("_exists_:level", docs, []int{3, 2, 1, 0})
 }
 
+func (s *FractionTestSuite) TestSearchMatchAll() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:25Z","message":"first","level":"1"}`,
+		`{"timestamp":"2000-01-01T13:00:32Z","message":"second"}`,
+		`{"timestamp":"2000-01-01T13:00:43Z","message":"third","level":"2"}`,
+		`{"timestamp":"2000-01-01T13:00:55Z","not_in_mapping":"value"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	s.AssertSearch("", docs, []int{3, 2, 1, 0})
+	s.AssertSearch("*", docs, []int{3, 2, 1, 0})
+	s.AssertSearch("_all_:*", docs, []int{3, 2, 1, 0})
+	s.AssertSearch(`_all_:""`, docs, []int{3, 2, 1, 0})
+	s.AssertSearch("level:1", docs, []int{0})
+	s.AssertSearch("NOT message:second", docs, []int{3, 2, 0})
+
+	searchParams := s.query("*", withAggQuery(processor.AggQuery{
+		GroupBy: aggField(seq.TokenAll),
+		Func:    seq.AggFuncCount,
+	}))
+	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncCount}, []seq.AggregationBucket{
+		{Name: "", Value: float64(len(docs))},
+	})
+
+	searchParams = s.query("*", withAggQuery(processor.AggQuery{
+		GroupBy: aggField("level"),
+		Func:    seq.AggFuncCount,
+	}))
+	s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncCount}, []seq.AggregationBucket{
+		{Name: "1", Value: 1},
+		{Name: "2", Value: 1},
+		// Documents 2 and 3 have no level token in their metas at all.
+		{Name: "_not_exists", Value: 2},
+	})
+}
+
+func (s *FractionTestSuite) TestSearchMatchAllDegenerateWindows() {
+	docs := []string{
+		`{"timestamp":"2000-01-01T13:00:25Z","message":"only one"}`,
+	}
+
+	s.insertDocuments(docs)
+
+	s.AssertSearch("*", docs, []int{0})
+
+	s.AssertSearchWithSearchParams(
+		s.query("*", withFrom("2000-01-01T12:00:00Z"), withTo("2000-01-01T12:30:00Z")),
+		docs, []int{}, nil,
+	)
+	s.AssertSearchWithSearchParams(
+		s.query("*", withFrom("2000-01-01T14:00:00Z"), withTo("2000-01-01T14:30:00Z")),
+		docs, []int{}, nil,
+	)
+}
+
 func (s *FractionTestSuite) TestSearchNot() {
 	docs := []string{
 		/*0*/ `{"timestamp":"2000-01-01T13:00:25Z","message":"bad","level":"1","service":"srv_1","status":"ok"}`,

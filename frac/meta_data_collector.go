@@ -75,13 +75,11 @@ func (c *metaDataCollector) AppendMeta(m indexer.MetaData) {
 	}
 
 	c.IDs = append(c.IDs, m.ID)
-	c.tokensInDocs = append(c.tokensInDocs, uint32(len(m.Tokens)))
+	c.tokensInDocs = append(c.tokensInDocs, uint32(c.extractTokens(m.Tokens)))
 	c.Positions = append(c.Positions, pos)
 
 	c.DocsCounter++
 	c.SizeCounter += uint64(m.Size)
-
-	c.extractTokens(m.Tokens)
 }
 
 // Filter keeps only documents at the given ascending indexes.
@@ -126,9 +124,13 @@ func (c *metaDataCollector) Filter(appended []int) {
 	c.tokensIndex = tokensIndex
 }
 
-func (c *metaDataCollector) extractTokens(tokens []tokenizer.MetaToken) {
+func (c *metaDataCollector) extractTokens(tokens []tokenizer.MetaToken) int {
+	count := 0
 	for _, token := range tokens {
 		key, value := token.Key, token.Value
+		if string(key) == seq.TokenAll {
+			continue
+		}
 		pos := len(c.tokensBuf)
 		c.tokensBuf = append(c.tokensBuf, key...)
 		c.tokensBuf = append(c.tokensBuf, ':')
@@ -145,7 +147,9 @@ func (c *metaDataCollector) extractTokens(tokens []tokenizer.MetaToken) {
 			c.FieldsLengths = append(c.FieldsLengths, len(key))
 		}
 		c.tokensIndex = append(c.tokensIndex, index)
+		count++
 	}
+	return count
 }
 
 func (c *metaDataCollector) Init(blockIndex uint32) {

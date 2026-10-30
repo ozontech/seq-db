@@ -180,18 +180,18 @@ func toBitmapBatch(b LIDBatch) *bitmapBatch {
 	if b.IsEmpty() {
 		panic("empty batch is not allowed to be cast to bitmap batch")
 	}
-	if bb, ok := b.(*bitmapBatch); ok {
-		return bb
-	}
-	slice, ok := b.(*sliceBatch)
-	if !ok {
+	switch batchTyped := b.(type) {
+	case *bitmapBatch:
+		return batchTyped
+	case *sliceBatch:
+		bm := roaring.NewBitmap()
+		bm.AddMany(batchTyped.lids)
+		return &bitmapBatch{
+			bm:  bm,
+			min: batchTyped.Min(),
+			max: batchTyped.Max(),
+		}
+	default:
 		panic("unsupported batch type")
-	}
-	bm := roaring.NewBitmap()
-	bm.AddMany(slice.lids)
-	return &bitmapBatch{
-		bm:  bm,
-		min: slice.Min(),
-		max: slice.Max(),
 	}
 }
