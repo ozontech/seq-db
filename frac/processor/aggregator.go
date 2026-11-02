@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"cmp"
 	"fmt"
 	"iter"
 	"math"
@@ -418,14 +419,10 @@ func (c *tsSourceCountMap) all() iter.Seq2[uint32, tsBinCount] {
 				})
 			}
 			slices.SortFunc(mpBins, func(a, b tsSourceBinCount) int {
-				if a.source != b.source {
-					if a.source < b.source {
-						return -1
-					}
-					return 1
-				}
-				// do not care for now, only source order is important
-				return -1
+				return cmp.Or(
+					cmp.Compare(a.source, b.source),
+					cmp.Compare(a.bin.MID, b.bin.MID),
+				)
 			})
 		}
 
@@ -655,6 +652,7 @@ type SourcedNodeIterator struct {
 
 	uniqSourcesLimit iteratorLimit
 	uniqueSources    *bitset.BitSet
+	uniqueSourcesCnt int
 
 	lastID     node.LID
 	lastSource uint32
@@ -696,7 +694,8 @@ func (s *SourcedNodeIterator) ConsumeTokenSource(lids []node.LID) ([]int, error)
 		isNewSource := !s.uniqueSources.Test(uint(s.lastSource))
 		if isNewSource {
 			s.uniqueSources.Set(uint(s.lastSource))
-			if s.uniqSourcesLimit.limit > 0 && s.UniqueSources() > s.uniqSourcesLimit.limit {
+			s.uniqueSourcesCnt++
+			if s.uniqSourcesLimit.limit > 0 && s.uniqueSourcesCnt > s.uniqSourcesLimit.limit {
 				s.sourcesBuf[i] = -1
 				return nil, fmt.Errorf("%w: iterator limit is exceeded", s.uniqSourcesLimit.err)
 			}
@@ -713,7 +712,7 @@ func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
 }
 
 func (s *SourcedNodeIterator) UniqueSources() int {
-	return int(s.uniqueSources.Count())
+	return s.uniqueSourcesCnt
 }
 
 func (s *SourcedNodeIterator) Release() {

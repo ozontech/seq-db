@@ -495,17 +495,22 @@ func TestTsSourceCountMapAllOrderedWithMigratedBins(t *testing.T) {
 		counts.add(3100, seq.MID(i))
 	}
 
-	var gotSources []uint32
-	for source := range counts.all() {
-		gotSources = append(gotSources, source)
+	var gotBins []AggBin[int]
+	for source, bin := range counts.all() {
+		gotBins = append(gotBins, AggBin[int]{Source: int(source), MID: bin.MID})
 	}
 
-	expectedSources := make([]uint32, 0, 20)
-	expectedSources = append(expectedSources, slices.Repeat([]uint32{100}, 9)...)
-	expectedSources = append(expectedSources, 1100, 2100)
-	expectedSources = append(expectedSources, slices.Repeat([]uint32{3100}, 9)...)
+	expectedBins := make([]AggBin[int], 0, 20)
+	for i := range 9 {
+		expectedBins = append(expectedBins, AggBin[int]{Source: 100, MID: seq.MID(i)})
+	}
+	expectedBins = append(expectedBins, AggBin[int]{Source: 1100, MID: 100})
+	expectedBins = append(expectedBins, AggBin[int]{Source: 2100, MID: 200})
+	for i := range 9 {
+		expectedBins = append(expectedBins, AggBin[int]{Source: 3100, MID: seq.MID(i)})
+	}
 
-	assert.Equal(t, expectedSources, gotSources)
+	assert.Equal(t, expectedBins, gotBins)
 }
 
 // TestTsSourceCountMapAgainstBuiltinMap validates result of using tsSourceCountMap against a builtin map
