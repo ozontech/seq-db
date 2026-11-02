@@ -184,7 +184,7 @@ func IndexSearch(
 	if len(aggs) > 0 {
 		defer func() {
 			for _, agg := range aggs {
-				agg.Dispose()
+				agg.Release()
 			}
 		}()
 	}
