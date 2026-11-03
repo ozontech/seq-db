@@ -144,7 +144,7 @@ func TestRowSchemaRenderMismatch(t *testing.T) {
 	})
 	r.NoError(err)
 	r.Equal(
-		`{"data":{"batch":{"records":[["c2VydmljZS1h"]]}}}`,
+		`{"ResponseType":{"Data":{"batch":{"records":[["c2VydmljZS1h"]]}}}}`,
 		string(raw),
 	)
 }
@@ -186,7 +186,7 @@ func TestStreamSearchRewriter(t *testing.T) {
 	raw, err := json.Marshal(map[string]any{"result": out})
 	r.NoError(err)
 	r.Equal(
-		`{"result":{"data":{"batch":{"records":[["service-a",3],["service-b",4.5]]}}}}`,
+		`{"result":{"ResponseType":{"Data":{"batch":{"records":[["service-a",3],["service-b",4.5]]}}}}}`,
 		string(raw),
 	)
 
