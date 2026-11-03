@@ -70,15 +70,21 @@ func (d *renderedData) MarshalJSON() ([]byte, error) {
 		}
 		records[i] = raw
 	}
-	return json.Marshal(renderedDataJSON{
-		Data: renderedDataBodyJSON{
-			Batch: renderedBatchJSON{Records: records},
+	return json.Marshal(renderedResponseTypeJSON{
+		ResponseType: renderedDataJSON{
+			Data: renderedDataBodyJSON{
+				Batch: renderedBatchJSON{Records: records},
+			},
 		},
 	})
 }
 
+type renderedResponseTypeJSON struct {
+	ResponseType renderedDataJSON `json:"ResponseType,omitempty"`
+}
+
 type renderedDataJSON struct {
-	Data renderedDataBodyJSON `json:"data,omitempty"`
+	Data renderedDataBodyJSON `json:"Data,omitempty"`
 }
 
 type renderedDataBodyJSON struct {
