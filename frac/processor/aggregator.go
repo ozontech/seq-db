@@ -1,8 +1,8 @@
 package processor
 
 import (
-	"cmp"
 	"fmt"
+	"iter"
 	"math"
 	"slices"
 	"strconv"
@@ -11,6 +11,7 @@ import (
 	"github.com/ozontech/seq-db/metric/stopwatch"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
 )
 
 // AggBin is a container for documents which were written in the same time interval.
@@ -21,8 +22,9 @@ type AggBin[T comparable] struct {
 }
 
 // ExtractMIDFunc is necessary since in aggregators we do not have [idsIndex] interface,
-// we need a way to extract timestamp of document to build time series.
-type ExtractMIDFunc func(seq.LID) seq.MID
+// we need a way to extract timestamps of documents to build time series.
+// Must return nil slice for ordinary aggs.
+type ExtractMIDFunc func(lids []node.LID, dst []seq.MID) []seq.MID
 
 // twoSources contains sources for groupBy and field
 // Source actually means id in the TIDs slice.
@@ -49,6 +51,7 @@ type TwoSourceAggregator struct {
 	countBySource map[AggBin[twoSources]]int64
 	// extractMID will be used for building time series.
 	extractMID ExtractMIDFunc
+	midsBuf    []seq.MID
 	// limits enforces upper bound constraints on how many unique values we parse and hold in memory
 	limits AggLimits
 }
@@ -72,44 +75,58 @@ func NewGroupAndFieldAggregator(
 }
 
 // Next iterates over groupBy and field iterators (actually trees) to count occurrence.
-func (n *TwoSourceAggregator) Next(lid node.LID) error {
-	groupBySource, hasGroupBy, err := n.groupBy.ConsumeTokenSource(lid)
+func (n *TwoSourceAggregator) Next(lids []node.LID) error {
+	groupSources, err := n.groupBy.ConsumeTokenSource(lids)
 	if err != nil {
 		return err
 	}
 
-	fieldSource, hasField, err := n.field.ConsumeTokenSource(lid)
+	fieldSources, err := n.field.ConsumeTokenSource(lids)
 	if err != nil {
 		return err
 	}
 
-	if !hasField && !hasGroupBy {
-		// Both group and field do not exist.
-		return nil
-	}
+	mids := n.extractMID(lids, n.midsBuf)
+	tsAgg := mids != nil
+	n.midsBuf = mids[:0]
 
-	if !hasField {
-		// Field does not exist, but group exists.
-		n.groupByNotExists[groupBySource]++
-		return nil
-	}
+	for i := range lids {
+		fieldSource := fieldSources[i]
+		groupSource := groupSources[i]
 
-	if !hasGroupBy {
-		// Group does not exist, but field exists.
-		n.groupNotExists++
-		return nil
-	}
+		if fieldSource < 0 && groupSource < 0 {
+			// Both group and field do not exist.
+			continue
+		}
 
-	// Both group and field exist, increment the count for the combined sources.
-	source := AggBin[twoSources]{
-		MID: n.extractMID(seq.LID(lid.Unpack())),
-		Source: twoSources{
-			GroupBySource: groupBySource,
-			FieldSource:   fieldSource,
-		},
-	}
+		if fieldSource < 0 {
+			// Field does not exist, but group exists.
+			n.groupByNotExists[uint32(groupSource)]++
+			continue
+		}
 
-	n.countBySource[source]++
+		if groupSource < 0 {
+			// Group does not exist, but field exists.
+			n.groupNotExists++
+			continue
+		}
+
+		mid := seq.MID(consts.DummyMID)
+		if tsAgg {
+			mid = mids[i]
+		}
+
+		// Both group and field exist, increment the count for the combined sources.
+		source := AggBin[twoSources]{
+			MID: mid,
+			Source: twoSources{
+				GroupBySource: uint32(groupSource),
+				FieldSource:   uint32(fieldSource),
+			},
+		}
+
+		n.countBySource[source]++
+	}
 	return nil
 }
 
@@ -177,6 +194,11 @@ func (n *TwoSourceAggregator) Aggregate() (seq.AggregatableSamples, error) {
 	}, nil
 }
 
+func (n *TwoSourceAggregator) Dispose() {
+	n.field.Dispose()
+	n.groupBy.Dispose()
+}
+
 func parseNum(str string) (float64, error) {
 	// TODO: allow time.Duration and data units (kb, mb, gb, etc) parsing.
 	num, err := strconv.ParseFloat(str, 64)
@@ -186,112 +208,196 @@ func parseNum(str string) (float64, error) {
 	return num, nil
 }
 
+// sourceCounter stores per-source totals for a single count aggregation.
+type sourceCounter interface {
+	update(sources []int, mids []seq.MID)
+	get(group *SourcedNodeIterator) map[seq.AggBin]*seq.SamplesContainer
+	notExists() int64
+}
+
+// plainSourceCounter is a counter used in ordinary aggregations. It currently relies on SourcedNodeIterator's
+// countBySource internal per-source counter.
+type plainSourceCounter struct {
+	notExistsCnt int64
+}
+
+func newPlainSourceCounter() *plainSourceCounter {
+	return &plainSourceCounter{}
+}
+
+func (c *plainSourceCounter) update(sources []int, _ []seq.MID) {
+	for i := range sources {
+		if sources[i] < 0 {
+			c.notExistsCnt++
+		}
+	}
+}
+
+func (c *plainSourceCounter) get(group *SourcedNodeIterator) map[seq.AggBin]*seq.SamplesContainer {
+	dst := make(map[seq.AggBin]*seq.SamplesContainer, group.UniqueSources())
+	for source, cnt := range group.countBySource.all() {
+		aggBin := seq.AggBin{
+			Token: group.ValueBySource(source),
+			MID:   consts.DummyMID,
+		}
+		if dst[aggBin] == nil {
+			dst[aggBin] = seq.NewSamplesContainers()
+		}
+		dst[aggBin].Total = int64(cnt)
+	}
+
+	if c.notExistsCnt > 0 {
+		// Handle non-existent sources in legacy format.
+		dst[seq.AggBin{
+			Token: "_not_exists",
+			MID:   consts.DummyMID,
+		}] = &seq.SamplesContainer{Total: c.notExistsCnt}
+	}
+	return dst
+}
+
+func (c *plainSourceCounter) notExists() int64 {
+	return c.notExistsCnt
+}
+
+// tsSourceCounter is a counter used in time series count aggregations.
+type tsSourceCounter struct {
+	counts       map[AggBin[int]]int64
+	notExistsCnt int64
+}
+
+func newTsSourceCounter() *tsSourceCounter {
+	return &tsSourceCounter{
+		counts: make(map[AggBin[int]]int64),
+	}
+}
+
+func (c *tsSourceCounter) update(sources []int, mids []seq.MID) {
+	for i, mid := range mids {
+		if sources[i] < 0 {
+			c.notExistsCnt++
+			continue
+		}
+		c.counts[AggBin[int]{
+			MID:    mid,
+			Source: sources[i],
+		}]++
+	}
+}
+
+func (c *tsSourceCounter) get(group *SourcedNodeIterator) map[seq.AggBin]*seq.SamplesContainer {
+	dst := make(map[seq.AggBin]*seq.SamplesContainer, group.UniqueSources())
+	for bin, cnt := range c.counts {
+		aggBin := seq.AggBin{
+			Token: group.ValueBySource(uint32(bin.Source)),
+			MID:   bin.MID,
+		}
+
+		samples := dst[aggBin]
+		if samples == nil {
+			samples = seq.NewSamplesContainers()
+			dst[aggBin] = samples
+		}
+		samples.Total = cnt
+	}
+
+	// FIXME(dkharms): It will not work correctly with time series, since
+	// we also have to spread [notExists] across different time bins.
+	if c.notExistsCnt > 0 {
+		// Handle non-existent sources in legacy format.
+		dst[seq.AggBin{
+			Token: "_not_exists",
+			MID:   consts.DummyMID,
+		}] = &seq.SamplesContainer{Total: c.notExistsCnt}
+	}
+	return dst
+}
+
+func (c *tsSourceCounter) notExists() int64 {
+	return c.notExistsCnt
+}
+
 // SingleSourceCountAggregator aggregates counts for a single source.
 type SingleSourceCountAggregator struct {
-	// countBySource needs to count occurrences by source.
-	countBySource map[AggBin[uint32]]int64
-	// notExists is the counter for non-existent sources.
-	notExists int64
-	group     *SourcedNodeIterator
-	// extractMID will be used for building time series.
+	counter    sourceCounter
+	group      *SourcedNodeIterator
 	extractMID ExtractMIDFunc
+	midsBuf    []seq.MID
 }
 
 func NewSingleSourceCountAggregator(
-	iterator *SourcedNodeIterator, fn ExtractMIDFunc,
+	iterator *SourcedNodeIterator, fn ExtractMIDFunc, timeseries bool,
 ) *SingleSourceCountAggregator {
+	var counts sourceCounter
+	if timeseries {
+		counts = newTsSourceCounter()
+	} else {
+		counts = newPlainSourceCounter()
+	}
 	return &SingleSourceCountAggregator{
-		countBySource: make(map[AggBin[uint32]]int64),
-		notExists:     0,
-		group:         iterator,
-		extractMID:    fn,
+		counter:    counts,
+		extractMID: fn,
+		group:      iterator,
 	}
 }
 
 // Next iterates over groupBy tree to count occurrence.
-func (n *SingleSourceCountAggregator) Next(lid node.LID) error {
-	source, has, err := n.group.ConsumeTokenSource(lid)
+func (n *SingleSourceCountAggregator) Next(lids []node.LID) error {
+	sources, err := n.group.ConsumeTokenSource(lids)
 	if err != nil {
 		return err
 	}
 
-	if has {
-		mid := n.extractMID(seq.LID(lid.Unpack()))
+	mids := n.extractMID(lids, n.midsBuf)
+	n.midsBuf = mids[:0]
 
-		n.countBySource[AggBin[uint32]{
-			MID:    mid,
-			Source: source,
-		}]++
-
-		return nil
-	}
-
-	n.notExists++
+	n.counter.update(sources, mids)
 	return nil
 }
 
 func (n *SingleSourceCountAggregator) Aggregate() (seq.AggregatableSamples, error) {
 	n.group.prefetchTokenValues()
 
-	aggMap := make(map[seq.AggBin]*seq.SamplesContainer, n.group.UniqueSources())
-
-	for bin, cnt := range n.countBySource {
-		aggBin := seq.AggBin{
-			Token: n.group.ValueBySource(bin.Source),
-			MID:   bin.MID,
-		}
-
-		if aggMap[aggBin] == nil {
-			aggMap[aggBin] = seq.NewSamplesContainers()
-		}
-
-		aggMap[aggBin].Total = cnt
-	}
-
-	// FIXME(dkharms): It will not work correctly with time series, since
-	// we also have to spread [notExists] across different time bins.
-	if n.notExists > 0 {
-		// Handle non-existent sources in legacy format.
-		aggMap[seq.AggBin{
-			Token: "_not_exists",
-			MID:   consts.DummyMID,
-		}] = &seq.SamplesContainer{Total: n.notExists}
-	}
-
 	return seq.AggregatableSamples{
-		NotExists:    n.notExists,
-		SamplesByBin: aggMap,
+		NotExists:    n.counter.notExists(),
+		SamplesByBin: n.counter.get(n.group),
 	}, nil
+}
+
+func (n *SingleSourceCountAggregator) Dispose() {
+	n.group.Dispose()
 }
 
 // SingleSourceUniqueAggregator aggregates unique values for a single source.
 type SingleSourceUniqueAggregator struct {
-	values    map[uint32]struct{}
+	values    map[int]struct{}
 	group     *SourcedNodeIterator
 	notExists int64
 }
 
 func NewSingleSourceUniqueAggregator(iterator *SourcedNodeIterator) *SingleSourceUniqueAggregator {
 	return &SingleSourceUniqueAggregator{
-		values:    make(map[uint32]struct{}),
+		values:    make(map[int]struct{}),
 		notExists: 0,
 		group:     iterator,
 	}
 }
 
 // Next iterates over groupBy tree to count occurrence.
-func (n *SingleSourceUniqueAggregator) Next(lid node.LID) error {
-	source, has, err := n.group.ConsumeTokenSource(lid)
+func (n *SingleSourceUniqueAggregator) Next(lids []node.LID) error {
+	sources, err := n.group.ConsumeTokenSource(lids)
 	if err != nil {
 		return err
 	}
 
-	if has {
-		n.values[source] = struct{}{}
-		return nil
-	}
+	for i := range lids {
+		if sources[i] >= 0 {
+			n.values[sources[i]] = struct{}{}
+			continue
+		}
 
-	n.notExists++
+		n.notExists++
+	}
 	return nil
 }
 
@@ -302,7 +408,7 @@ func (n *SingleSourceUniqueAggregator) Aggregate() (seq.AggregatableSamples, err
 
 	for val := range n.values {
 		aggBin := seq.AggBin{
-			Token: n.group.ValueBySource(val),
+			Token: n.group.ValueBySource(uint32(val)),
 		}
 
 		if aggMap[aggBin] == nil {
@@ -316,11 +422,16 @@ func (n *SingleSourceUniqueAggregator) Aggregate() (seq.AggregatableSamples, err
 	}, nil
 }
 
+func (n *SingleSourceUniqueAggregator) Dispose() {
+	n.group.Dispose()
+}
+
 type SingleSourceHistogramAggregator struct {
 	field          *SourcedNodeIterator
 	histogram      map[seq.MID]*seq.SamplesContainer
 	collectSamples bool
 	extractMID     ExtractMIDFunc
+	midsBuf        []seq.MID
 }
 
 func NewSingleSourceHistogramAggregator(
@@ -334,37 +445,44 @@ func NewSingleSourceHistogramAggregator(
 	}
 }
 
-func (n *SingleSourceHistogramAggregator) Next(lid node.LID) error {
-	source, has, err := n.field.ConsumeTokenSource(lid)
+func (n *SingleSourceHistogramAggregator) Next(lids []node.LID) error {
+	sources, err := n.field.ConsumeTokenSource(lids)
 	if err != nil {
 		return err
 	}
 
-	mid := n.extractMID(seq.LID(lid.Unpack()))
-	if _, ok := n.histogram[mid]; !ok {
-		n.histogram[mid] = seq.NewSamplesContainers()
-	}
-	histogram := n.histogram[mid]
+	mids := n.extractMID(lids, n.midsBuf)
+	n.midsBuf = mids[:0]
 
-	if !has {
-		histogram.NotExists++
-		return nil
-	}
+	for i := range lids {
+		mid := seq.MID(consts.DummyMID)
+		if mids != nil {
+			mid = mids[i]
+		}
+		if _, ok := n.histogram[mid]; !ok {
+			n.histogram[mid] = seq.NewSamplesContainers()
+		}
+		histogram := n.histogram[mid]
 
-	// TODO(dkharms): Sequence of `source` values
-	// is in a random order so we again lose benefits of kernel read-ahead.
-	// Maybe it's worth it to do something like [prefetchTokenValues].
-	value := n.field.ValueBySource(source)
-	num, err := parseNum(value)
-	if err != nil {
-		return err
-	}
+		if sources[i] < 0 {
+			histogram.NotExists++
+			continue
+		}
 
-	histogram.InsertNTimes(num, 1)
-	if n.collectSamples {
-		histogram.InsertSample(num)
-	}
+		// TODO(dkharms): Sequence of `source` values
+		// is in a random order so we again lose benefits of kernel read-ahead.
+		// Maybe it's worth it to do something like [prefetchTokenValues].
+		value := n.field.ValueBySource(uint32(sources[i]))
+		num, err := parseNum(value)
+		if err != nil {
+			return err
+		}
 
+		histogram.InsertNTimes(num, 1)
+		if n.collectSamples {
+			histogram.InsertSample(num)
+		}
+	}
 	return nil
 }
 
@@ -382,6 +500,15 @@ func (n *SingleSourceHistogramAggregator) Aggregate() (seq.AggregatableSamples, 
 	return qprHist, nil
 }
 
+func (n *SingleSourceHistogramAggregator) Dispose() {
+	n.field.Dispose()
+}
+
+const (
+	sourceChunkSize = 1024
+	sourceChunkMask = sourceChunkSize - 1
+)
+
 // SourcedNodeIterator can iterate the sourced node that returns source, which means index in a tids slice.
 type SourcedNodeIterator struct {
 	sourcedNode node.Sourced
@@ -392,10 +519,12 @@ type SourcedNodeIterator struct {
 	tokensCache map[uint32]string
 
 	uniqSourcesLimit iteratorLimit
-	countBySource    map[uint32]int
+	countBySource    sourceCountMap
 
 	lastID     node.LID
 	lastSource uint32
+
+	sourcesBuf []int
 }
 
 func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, field string, limit iteratorLimit) *SourcedNodeIterator {
@@ -407,52 +536,46 @@ func NewSourcedNodeIterator(sourced node.Sourced, ti tokenIndex, tids []uint32, 
 		field:            field,
 		tokensCache:      make(map[uint32]string),
 		uniqSourcesLimit: limit,
-		countBySource:    make(map[uint32]int),
+		countBySource:    newSourceCountMap(len(tids)),
 		lastID:           lastID,
 		lastSource:       lastSource,
 	}
 }
 
-func (s *SourcedNodeIterator) ConsumeTokenSource(lid node.LID) (uint32, bool, error) {
-	for s.lastID.Less(lid) {
-		s.lastID, s.lastSource = s.sourcedNode.NextSourcedGeq(lid)
+// ConsumeTokenSource resolves token sources for a batch of lids.
+// The returned slice is owned by the iterator and reused on the next call.
+func (s *SourcedNodeIterator) ConsumeTokenSource(lids []node.LID) ([]int, error) {
+	s.sourcesBuf = slices.Grow(s.sourcesBuf[:0], len(lids))[:len(lids)]
+
+	for i, lid := range lids {
+		for s.lastID.Less(lid) {
+			lastID, lastSource := s.sourcedNode.NextSourcedGeq(lid)
+			s.lastID = lastID
+			s.lastSource = lastSource
+		}
+
+		if s.lastID.IsNull() || s.lastID != lid {
+			s.sourcesBuf[i] = -1
+			continue
+		}
+
+		isNewSource := s.countBySource.add(s.lastSource)
+		if isNewSource && s.uniqSourcesLimit.limit > 0 && s.countBySource.size > s.uniqSourcesLimit.limit {
+			s.sourcesBuf[i] = -1
+			return nil, fmt.Errorf("%w: iterator limit is exceeded", s.uniqSourcesLimit.err)
+		}
+
+		s.sourcesBuf[i] = int(s.lastSource)
 	}
 
-	exists := !s.lastID.IsNull() && s.lastID == lid
-	if !exists {
-		return 0, false, nil
-	}
-
-	s.countBySource[s.lastSource]++
-	if s.uniqSourcesLimit.limit > 0 && len(s.countBySource) > s.uniqSourcesLimit.limit {
-		return lid.Unpack(), true, fmt.Errorf("%w: iterator limit is exceeded", s.uniqSourcesLimit.err)
-	}
-
-	return s.lastSource, true, nil
+	return s.sourcesBuf, nil
 }
 
 func (s *SourcedNodeIterator) prefetchTokenValues() {
-	if s.ti == nil || len(s.countBySource) == 0 {
+	if s.ti == nil || s.countBySource.size == 0 {
 		return
 	}
-
-	// NOTE(dkharms): Since `countBySource` is a hashmap and
-	// its iteration order is not determined, we lose benefits
-	// of kernel read-ahead.
-	//
-	// In this method we establish the order again.
-	sources := make([]uint32, 0, len(s.countBySource))
-	for source := range s.countBySource {
-		if _, ok := s.tokensCache[source]; !ok {
-			sources = append(sources, source)
-		}
-	}
-
-	slices.SortFunc(sources, func(a, b uint32) int {
-		return cmp.Compare(s.tids[a], s.tids[b])
-	})
-
-	for _, source := range sources {
+	for source := range s.countBySource.all() {
 		s.tokensCache[source] = string(s.ti.GetValByTID(s.tids[source], s.field))
 	}
 }
@@ -463,7 +586,7 @@ func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
 	}
 
 	const useCacheThreshold = 2
-	if s.countBySource[source] < useCacheThreshold {
+	if s.countBySource.count(source) < useCacheThreshold {
 		return string(s.ti.GetValByTID(s.tids[source], s.field))
 	}
 
@@ -474,22 +597,157 @@ func (s *SourcedNodeIterator) ValueBySource(source uint32) string {
 }
 
 func (s *SourcedNodeIterator) UniqueSources() int {
-	return len(s.countBySource)
+	return s.countBySource.size
+}
+
+func (s *SourcedNodeIterator) Dispose() {
+	if s.sourcedNode != nil {
+		s.sourcedNode.Release()
+		s.sourcedNode = nil
+	}
+}
+
+// sourceCountMap keeps a number of occurrences for each source. It uses a chunked array
+// for better performance.
+type sourceCountMap struct {
+	chunks []*[sourceChunkSize]uint64
+	size   int
+}
+
+func newSourceCountMap(size int) sourceCountMap {
+	return sourceCountMap{
+		chunks: make([]*[sourceChunkSize]uint64, (size+sourceChunkSize-1)/sourceChunkSize),
+	}
+}
+
+// add increments a counter by source and returns if it was previously zero
+func (c *sourceCountMap) add(source uint32) bool {
+	chunkIdx := int(source / sourceChunkSize)
+	chunk := c.chunks[chunkIdx]
+	if chunk == nil {
+		chunk = &[sourceChunkSize]uint64{}
+		c.chunks[chunkIdx] = chunk
+	}
+
+	offset := source & sourceChunkMask
+	isNew := chunk[offset] == 0
+	chunk[offset]++
+	if isNew {
+		c.size++
+	}
+
+	return isNew
+}
+
+func (c *sourceCountMap) count(source uint32) uint64 {
+	chunk := c.chunks[source/sourceChunkSize]
+	if chunk == nil {
+		return 0
+	}
+	return chunk[source&sourceChunkMask]
+}
+
+func (c *sourceCountMap) all() iter.Seq2[uint32, uint64] {
+	return func(yield func(source uint32, count uint64) bool) {
+		for chunkID, chunk := range c.chunks {
+			if chunk == nil {
+				continue
+			}
+			for offset, count := range chunk {
+				if count == 0 {
+					continue
+				}
+				if !yield(uint32(chunkID*sourceChunkSize+offset), count) {
+					return
+				}
+			}
+		}
+	}
 }
 
 func provideExtractTimeFunc(sw *stopwatch.Stopwatch, idx idsIndex, interval int64) ExtractMIDFunc {
 	if interval <= 0 {
 		// Dummy implementation for aggregation without time series.
-		return ExtractMIDFunc(func(seq.LID) seq.MID {
-			return seq.MID(consts.DummyMID)
+		return ExtractMIDFunc(func([]node.LID, []seq.MID) []seq.MID {
+			return nil
 		})
 	}
 
+	bin := seq.MillisToMID(uint64(interval))
 	timer := sw.Timer("agg_get_mid")
-	return ExtractMIDFunc(func(lid seq.LID) seq.MID {
+	return ExtractMIDFunc(func(lids []node.LID, dst []seq.MID) []seq.MID {
 		timer.Start()
-		mid := idx.GetMID(seq.LID(lid))
+		mids := idx.GetMIDs(lids, dst)
 		timer.Stop()
-		return mid - (mid % seq.MillisToMID(uint64(interval)))
+		for i, mid := range mids {
+			mids[i] = mid - mid%bin
+		}
+		return mids
 	})
+}
+
+// QueryStats carries search-side statistics used to choose an aggregation plan.
+type QueryStats struct {
+	EstimatedSearchLIDs int
+	LIDRange            int
+}
+
+func NewQueryStats(sample []node.LID, minLID, maxLID uint32) QueryStats {
+	return QueryStats{
+		EstimatedSearchLIDs: estimateSearchLIDs(sample, minLID, maxLID),
+		LIDRange:            int(maxLID - minLID + 1),
+	}
+}
+
+// estimateSearchLIDs extrapolates total matching LIDs from the first search batch density.
+func estimateSearchLIDs(batch []node.LID, minLID, maxLID uint32) int {
+	// TODO check reverse order
+	if len(batch) == 0 {
+		return 0
+	}
+
+	searchRange := int(maxLID - minLID + 1)
+	if searchRange == 0 {
+		return 0
+	}
+
+	firstLID := int(batch[0].Unpack())
+	lastLID := int(batch[len(batch)-1].Unpack())
+	batchRange := util.Abs(lastLID - firstLID)
+
+	if batchRange == 0 {
+		batchRange = 1
+	}
+
+	n := len(batch) * searchRange / batchRange
+	if n < len(batch) {
+		n = len(batch)
+	}
+	if n > searchRange {
+		n = searchRange
+	}
+	return n
+}
+
+// treeAggOps roughly estimates CPU operations (complexity) for OR tree aggregation
+func treeAggOps(searchLids, aggTids int) int {
+	// We overestimate number of CPU operations to be aggTids for each lid pass to an agg tree
+	// instead of log2(aggTids), even though agg tree is a binary tree.
+	// When skipping happens in agg tree we 'NextGeq' each tree node, while log2(tids) complexity is acheived only
+	// when we do not skip lids at all. If no skipping happens, then column plan is way more effective anyway.
+	// Therefore, tids is more realstic estimation than just log2(tids).
+	return searchLids * aggTids
+}
+
+// columnAggOps roughly estimates CPU operations (complexity) for materialized column aggregation
+func columnAggOps(searchLids, aggLids int) int {
+	return searchLids + aggLids
+}
+
+func useColumnAggPlan(stats QueryStats, aggTidsCount int) bool {
+	if aggTidsCount == 0 {
+		return false
+	}
+
+	return columnAggOps(stats.EstimatedSearchLIDs, stats.LIDRange) < treeAggOps(stats.EstimatedSearchLIDs, aggTidsCount)
 }

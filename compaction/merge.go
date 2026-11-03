@@ -3,6 +3,7 @@ package compaction
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 
 	"github.com/ozontech/seq-db/consts"
@@ -124,25 +125,25 @@ func mergeDocs(filename string, srcs ...Source) error {
 		filename+consts.DocsTmpFileSuffix,
 		filename+consts.DocsFileSuffix,
 		func(f *os.File) error {
-			var docsSize uint64
 			for _, src := range srcs {
-				for loc, err := range src.DocBlocks() {
-					if err != nil {
-						return err
-					}
-
-					payload, offset := loc.First, loc.Second
-					if _, err := f.WriteAt(payload, int64(offset+docsSize)); err != nil {
-						return err
-					}
+				if err := copyDocs(f, src); err != nil {
+					return err
 				}
-
-				docsSize += src.Info().DocsOnDisk
 			}
-
 			return nil
 		},
 	)
+}
+
+func copyDocs(dst *os.File, src Source) error {
+	r, err := src.DocsReader()
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	_, err = io.CopyN(dst, r, int64(src.Info().DocsOnDisk))
+	return err
 }
 
 func syncAndClose(f *os.File) error {

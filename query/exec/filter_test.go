@@ -4,7 +4,6 @@ import (
 	"errors"
 	"testing"
 
-	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/query"
@@ -17,8 +16,8 @@ func TestFilterEq(t *testing.T) {
 
 	filterExpr := NewEq[uint32](cond)
 
-	testFilter(t, 0, filterExpr, func(r *query.Record) bool {
-		return r.Vals[0].Decoded().(uint32) == uint32(cond)
+	testFilter(t, query.Uint32Column(0), filterExpr, func(r *query.Record) bool {
+		return r.Vals[0].AsUint32() == uint32(cond)
 	})
 }
 
@@ -27,8 +26,8 @@ func TestFilterGt(t *testing.T) {
 
 	filterExpr := NewGt[uint32](cond)
 
-	testFilter(t, 0, filterExpr, func(r *query.Record) bool {
-		return r.Vals[0].Decoded().(uint32) > uint32(cond)
+	testFilter(t, query.Uint32Column(0), filterExpr, func(r *query.Record) bool {
+		return r.Vals[0].AsUint32() > uint32(cond)
 	})
 }
 
@@ -37,28 +36,14 @@ func TestFilterLt(t *testing.T) {
 
 	filterExpr := NewLt[uint32](cond)
 
-	testFilter(t, 0, filterExpr, func(r *query.Record) bool {
-		return r.Vals[0].Decoded().(uint32) < uint32(cond)
-	})
-}
-
-func TestDocumentFilter(t *testing.T) {
-	const (
-		field = "service"
-		cond  = "service-5"
-	)
-
-	filterExpr := NewDocFilter(field, NewEq(cond))
-
-	testFilter(t, 1, filterExpr, func(r *query.Record) bool {
-		field := r.Vals[1].Decoded().(*insaneJSON.Root).Dig(field)
-		return field.AsString() == cond
+	testFilter(t, query.Uint32Column(0), filterExpr, func(r *query.Record) bool {
+		return r.Vals[0].AsUint32() < uint32(cond)
 	})
 }
 
 func testFilter[T any](
 	t *testing.T,
-	colIdx int,
+	col query.Column[T],
 	filterExpr FilterExpr[T],
 	wantFilterFunc func(*query.Record) bool,
 ) {
@@ -74,7 +59,7 @@ func testFilter[T any](
 		}
 	}
 
-	filter := NewFilter(&input, colIdx, filterExpr, false)
+	filter := NewFilter(&input, col, filterExpr, false)
 
 	outputData := make([]*query.Record, 0)
 	for r := filter.Next(); r != nil; r = filter.Next() {
@@ -95,13 +80,13 @@ func TestFilterTotalDrainsInput(t *testing.T) {
 	wantCount := 0
 	wantData := make([]*query.Record, 0)
 	for _, r := range inputData {
-		if r.Vals[0].Decoded().(uint32) == uint32(cond) {
+		if r.Vals[0].AsUint32() == uint32(cond) {
 			wantCount++
 			wantData = append(wantData, r)
 		}
 	}
 
-	filter := NewFilter(&input, 0, filterExpr, true)
+	filter := NewFilter(&input, query.Uint32Column(0), filterExpr, true)
 	outputData := make([]*query.Record, 0)
 	for i := 0; i < len(wantData); i++ {
 		r := filter.Next()
@@ -126,7 +111,7 @@ func TestFilterTotalErrorPropagated(t *testing.T) {
 		err:   assertErr,
 	}
 
-	filter := NewFilter(&input, 0, filterExpr, true)
+	filter := NewFilter(&input, query.Uint32Column(0), filterExpr, true)
 	for r := filter.Next(); r != nil; r = filter.Next() {
 	}
 

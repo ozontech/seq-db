@@ -46,14 +46,14 @@ func TestIterateEvalTreeDuplicateIDsAtBatchBoundary(t *testing.T) {
 	}}
 
 	// Single batch with 6 LIDs, longer than the limit.
-	evalTree := node.NewStaticBatched([]uint32{1, 2, 3, 4, 5, 6}, seq.DocsOrderDesc.IsReverse())
+	evalTree := node.NewStaticBatched([]uint32{1, 2, 3, 4, 5, 6}, seq.DocsOrderDesc.IsDesc())
 
 	params := SearchParams{
 		Limit: 3,
 		Order: seq.DocsOrderDesc,
 	}
 
-	total, ids, _, _, err := iterateEvalTree(context.Background(), params, idx, evalTree, nil, stopwatch.New())
+	total, ids, _, _, err := iterateEvalTree(context.Background(), params, idx, evalTree, nil, 1, 6, stopwatch.New())
 	require.NoError(t, err)
 
 	// 6 LIDs exist and the limit is not yet satisfied after the duplicate,

@@ -1,7 +1,9 @@
 package frac
 
 import (
+	"io"
 	"iter"
+	"os"
 	"slices"
 
 	"github.com/ozontech/seq-db/cache"
@@ -146,7 +148,7 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 					}
 
 					chunkIdx := lidsTable.GetChunkIndex(bi, tid)
-					lidsBuf = lidBlock.AppendLIDsTo(chunkIdx, lidsBuf)
+					lidsBuf, _ = lidBlock.AppendLIDsTo(chunkIdx, lidsBuf)
 				}
 
 				tokenVal := block.GetToken(entry.GetIndexInTokensBlock(tid))
@@ -156,6 +158,10 @@ func (s *SealedSource) postingsForField(field string) iter.Seq2[indexwriter.Toke
 			}
 		}
 	}
+}
+
+func (s *SealedSource) DocsReader() (io.ReadCloser, error) {
+	return os.Open(s.f.docsFile.Name())
 }
 
 func (s *SealedSource) DocBlocks() iter.Seq2[DocBlockLocation, error] {

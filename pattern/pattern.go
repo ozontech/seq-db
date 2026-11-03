@@ -541,6 +541,12 @@ func isSimpleWildcardSuffix(token parser.Token) (suffix []byte, ok bool) {
 	return []byte(lit.Terms[1].Data), true
 }
 
+// IsExactLiteral reports whether t is a plain `field:value` literal
+func IsExactLiteral(token parser.Token) bool {
+	lit, ok := token.(*parser.Literal)
+	return ok && len(lit.Terms) == 1 && lit.Terms[0].Kind == parser.TermText
+}
+
 func Search(ctx context.Context, t parser.Token, tp tokenProvider) ([]uint32, error) {
 	if util.IsCancelled(ctx) {
 		return nil, ctx.Err()

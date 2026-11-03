@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,7 +20,7 @@ func TestDocProjectorFields(t *testing.T) {
 	)
 }
 
-func TestProjectorFieldsExcepr(t *testing.T) {
+func TestProjectorFieldsExcept(t *testing.T) {
 	testDocProjector(
 		t,
 		&FieldsFilter{Fields: []string{"level"}, AllowList: false},
@@ -36,7 +37,7 @@ func testDocProjector(t *testing.T, fieldsFilter *FieldsFilter, wantDocs []strin
 	inputData := makeTestInputRecords(2)
 	input := testProducer{data: inputData}
 
-	projector := NewDocProjector(&input, 1, fieldsFilter)
+	projector := NewDocProjector(&input, query.DocColumn(1), fieldsFilter)
 
 	outputData := make([]*query.Record, 0)
 	for r := projector.Next(); r != nil; r = projector.Next() {
@@ -49,4 +50,28 @@ func testDocProjector(t *testing.T, fieldsFilter *FieldsFilter, wantDocs []strin
 	}
 
 	assert.Equal(t, wantDocs, outputDocs)
+}
+
+func TestDocProjectorKeepsUpstreamValsAlive(t *testing.T) {
+	const field = "k8s_pod"
+	input := &testProducer{data: makeTestInputRecords(10)}
+
+	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), field)
+	projector := NewDocProjector(extractor, query.DocColumn(1), &FieldsFilter{
+		Fields:    []string{"service", "level"},
+		AllowList: false,
+	})
+	podCol := query.StringColumn(2)
+
+	records := make([]*query.Record, 0, 10)
+	for r := projector.Next(); r != nil; r = projector.Next() {
+		records = append(records, r)
+	}
+
+	for _, r := range records {
+		want := fmt.Sprintf("pod-%d", r.Vals[0].AsUint32())
+		assert.Equal(t, want, podCol.Val(r))
+	}
+
+	projector.Finalize()
 }

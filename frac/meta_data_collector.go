@@ -84,23 +84,8 @@ func (c *metaDataCollector) AppendMeta(m indexer.MetaData) {
 	c.extractTokens(m.Tokens)
 }
 
-func getIndexesOfIntercept(a, b []seq.ID) []int {
-	bMap := make(map[seq.ID]struct{}, len(b))
-	for _, id := range b {
-		bMap[id] = struct{}{}
-	}
-
-	res := make([]int, 0, len(a)-len(b))
-	for i, id := range a {
-		if _, ok := bMap[id]; ok {
-			res = append(res, i)
-		}
-	}
-	return res
-}
-
-// Filter cleans up metaDataCollector from ids that do not intercept with 'appended'.
-func (c *metaDataCollector) Filter(appended []seq.ID) {
+// Filter keeps only documents at the given ascending indexes.
+func (c *metaDataCollector) Filter(appended []int) {
 	// prepare stats
 	c.MaxMID = 0
 	c.MinMID = math.MaxUint64
@@ -120,7 +105,7 @@ func (c *metaDataCollector) Filter(appended []seq.ID) {
 		tokensOffset += v
 	}
 
-	for _, i := range getIndexesOfIntercept(c.IDs, appended) {
+	for _, i := range appended {
 		id := c.IDs[i]
 		if id.MID < c.MinMID {
 			c.MinMID = id.MID

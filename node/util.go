@@ -12,14 +12,14 @@ const maxBatchDrain = 4 * 1024
 // the underlying slice is reused.
 type batcherNode struct {
 	source Node
-	desc   bool
+	asc    bool
 	batch  []uint32
 }
 
-func NewBatcherNode(source Node, desc bool) BatchedNode {
+func NewBatcherNode(source Node, asc bool) BatchedNode {
 	return &batcherNode{
 		source: source,
-		desc:   desc,
+		asc:    asc,
 		batch:  make([]uint32, 0, maxBatchDrain),
 	}
 }
@@ -33,7 +33,7 @@ func (b *batcherNode) NextBatch() LIDBatch {
 		}
 		b.batch = append(b.batch, lid.Unpack())
 	}
-	if !b.desc {
+	if !b.asc {
 		slices.Reverse(b.batch)
 	}
 	return NewSliceBatch(b.batch)
@@ -48,7 +48,7 @@ func (b *batcherNode) NextBatchGeq(nextID LID) LIDBatch {
 		}
 		b.batch = append(b.batch, lid.Unpack())
 	}
-	if !b.desc {
+	if !b.asc {
 		slices.Reverse(b.batch)
 	}
 	return NewSliceBatch(b.batch)

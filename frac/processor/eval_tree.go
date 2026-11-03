@@ -48,11 +48,11 @@ func buildEvalTree(root *parser.ASTNode, minVal, maxVal uint32, stats *searchSta
 			var minLID node.LID
 			var maxLID node.LID
 			if reverse {
-				minLID = node.NewAscLID(maxVal)
-				maxLID = node.NewAscLID(minVal)
+				minLID = node.NewDescLID(maxVal)
+				maxLID = node.NewDescLID(minVal)
 			} else {
-				minLID = node.NewDescLID(minVal)
-				maxLID = node.NewDescLID(maxVal)
+				minLID = node.NewAscLID(minVal)
+				maxLID = node.NewAscLID(maxVal)
 			}
 			return node.NewNot(children[0], minLID, maxLID), nil
 		}
@@ -94,10 +94,12 @@ func evalSkipLIDs(root, skipLIDsIterator node.Node, stats *searchStats) node.Nod
 }
 
 type Aggregator interface {
-	// Next iterates to count the next lid.
-	Next(lid node.LID) error
+	// Next processes a batch of lids and updates aggregation state.
+	Next(lids []node.LID) error
 	// Aggregate processes and returns the final aggregation result.
 	Aggregate() (seq.AggregatableSamples, error)
+	// Dispose releases resources held by the aggregator.
+	Dispose()
 }
 
 type AggLimits struct {
@@ -113,7 +115,8 @@ type AggLimits struct {
 
 // QueryOptimizationConfig controls search-time query optimization decisions.
 type QueryOptimizationConfig struct {
-	BatchExecution BatchExecutionConfig
+	BatchExecution        BatchExecutionConfig
+	MaterializedColumnAgg MaterializedColumnAggConfig
 }
 
 // BatchExecutionConfig controls batch-at-a-time query evaluation.
@@ -123,6 +126,10 @@ type BatchExecutionConfig struct {
 	// CostThreshold is the minimum estimated non-batched iteration
 	// cost required to enable batch-at-a-time query evaluation.
 	CostThreshold int
+}
+
+type MaterializedColumnAggConfig struct {
+	Enabled bool
 }
 
 type iteratorLimit struct {
@@ -136,20 +143,21 @@ type iteratorLimit struct {
 func evalAgg(
 	ti tokenIndex, query AggQuery, sw *stopwatch.Stopwatch,
 	stats *searchStats, minLID, maxLID uint32, limits AggLimits,
-	extractMID ExtractMIDFunc, order seq.DocsOrder,
+	extractMID ExtractMIDFunc, order seq.DocsOrder, queryStats QueryStats, queryOpt QueryOptimizationConfig,
 ) (Aggregator, error) {
 	switch query.Func {
 	case seq.AggFuncCount, seq.AggFuncUnique:
 		groupIterator, err := iteratorFromLiteral(
 			ti, query.GroupBy, sw, stats, minLID, maxLID,
 			limits.MaxTIDsPerFraction, iteratorLimit{limit: limits.MaxGroupTokens, err: consts.ErrTooManyGroupTokens}, order,
+			queryStats, queryOpt,
 		)
 		if err != nil {
 			return nil, err
 		}
 
 		if query.Func == seq.AggFuncCount {
-			return NewSingleSourceCountAggregator(groupIterator, extractMID), nil
+			return NewSingleSourceCountAggregator(groupIterator, extractMID, query.Interval > 0), nil
 		}
 
 		return NewSingleSourceUniqueAggregator(groupIterator), nil
@@ -158,6 +166,7 @@ func evalAgg(
 		fieldIterator, err := iteratorFromLiteral(
 			ti, query.Field, sw, stats, minLID, maxLID,
 			limits.MaxTIDsPerFraction, iteratorLimit{limit: limits.MaxFieldTokens, err: consts.ErrTooManyFieldTokens}, order,
+			queryStats, queryOpt,
 		)
 		if err != nil {
 			return nil, err
@@ -176,6 +185,7 @@ func evalAgg(
 		groupIterator, err := iteratorFromLiteral(
 			ti, query.GroupBy, sw, stats, minLID, maxLID,
 			limits.MaxTIDsPerFraction, iteratorLimit{limit: limits.MaxGroupTokens, err: consts.ErrTooManyGroupTokens}, order,
+			queryStats, queryOpt,
 		)
 		if err != nil {
 			return nil, err
@@ -213,6 +223,8 @@ func iteratorFromLiteral(
 	maxTIDs int,
 	iteratorLimit iteratorLimit,
 	order seq.DocsOrder,
+	queryStats QueryStats,
+	queryOpt QueryOptimizationConfig,
 ) (*SourcedNodeIterator, error) {
 	m := sw.Start("get_tids_by_field")
 	// For aggregations we can receive the first and the last TID for field,
@@ -230,6 +242,20 @@ func iteratorFromLiteral(
 		)
 	}
 
+	sealedIndex, isSealed := ti.(sealedTokenIndex)
+	useColumnAgg := queryOpt.MaterializedColumnAgg.Enabled && isSealed && useColumnAggPlan(queryStats, len(tids))
+
+	var sourcedNode node.Sourced
+	if useColumnAgg {
+		m = sw.Start("get_field_postings")
+		postings := sealedIndex.FieldIterator(tids, stats)
+		m.Stop()
+
+		sourcedNode = node.NewColumnAgg(postings, minLID, maxLID, order.IsDesc())
+		aggColumnFracsTotal.Inc()
+		return NewSourcedNodeIterator(sourcedNode, ti, tids, literal.Field, iteratorLimit), nil
+	}
+
 	m = sw.Start("get_lids_from_tids")
 	lidsTids := ti.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 	m.Stop()
@@ -238,6 +264,7 @@ func iteratorFromLiteral(
 		stats.AggNodesTotal += len(lidsTids)*2 - 1
 	}
 
-	sourcedNode := node.BuildORTreeAgg(lidsTids)
+	sourcedNode = node.BuildORTreeAgg(lidsTids)
+	aggOrTreeFracsTotal.Inc()
 	return NewSourcedNodeIterator(sourcedNode, ti, tids, literal.Field, iteratorLimit), nil
 }

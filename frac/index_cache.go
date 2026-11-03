@@ -7,6 +7,11 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/token"
 )
 
+type ExprTIDs struct {
+	Key  string
+	TIDs []uint32
+}
+
 func NewIndexCache() *IndexCache {
 	return &IndexCache{
 		LegacyRegistry: cache.NewConcurrentCache[[]byte](nil, nil),
@@ -23,6 +28,8 @@ func NewIndexCache() *IndexCache {
 		Tokens:     cache.NewConcurrentCache[*token.Block](nil, nil),
 		TokenTable: cache.NewConcurrentCache[token.Table](nil, nil),
 		LIDs:       cache.NewConcurrentCache[*lids.Block](nil, nil),
+
+		ExprTIDs: cache.NewConcurrentCache[ExprTIDs](nil, nil),
 	}
 }
 
@@ -45,6 +52,8 @@ type IndexCache struct {
 	TokenTable *cache.ConcurrentCache[token.Table]
 
 	LIDs *cache.ConcurrentCache[*lids.Block]
+
+	ExprTIDs *cache.ConcurrentCache[ExprTIDs]
 }
 
 func (s *IndexCache) Release() {
@@ -63,4 +72,6 @@ func (s *IndexCache) Release() {
 	s.TokenTable.Release()
 
 	s.LIDs.Release()
+
+	s.ExprTIDs.Release()
 }

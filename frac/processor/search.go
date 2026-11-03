@@ -41,6 +41,23 @@ type tokenIndex interface {
 	GetBatchedLIDsFromTIDs(tids []uint32, stats lids.Counter, minLID, maxLID uint32, order seq.DocsOrder) []node.BatchedNode
 }
 
+type sealedTokenIndex interface {
+	tokenIndex
+	FieldIterator(tids []uint32, stats lids.Counter) FieldLIDs
+}
+
+// FieldLIDs iterates LID lists of one field in TID (source) order.
+// NextBatch returns:
+//   - lids: concatenated LID values
+//   - offsets: list boundaries in lids (same layout as lids.Block)
+//   - isFirstLID: true when the first list in the batch begins in this block
+//     (false when it continues a list split across the previous block)
+//
+// Exhausted when len(lids) == 0.
+type FieldLIDs interface {
+	NextBatch(lids, offsets []uint32) (outLids, outOffsets []uint32, isFirstLID bool)
+}
+
 type searchIndex interface {
 	tokenIndex
 	idsIndex
@@ -137,10 +154,10 @@ func IndexSearch(
 		return nil, ctx.Err()
 	}
 
-	var aggSupplier func() ([]Aggregator, error)
+	var aggSupplier func(QueryStats) ([]Aggregator, error)
 
 	if params.HasAgg() {
-		aggSupplier = func() ([]Aggregator, error) {
+		aggSupplier = func(queryStats QueryStats) ([]Aggregator, error) {
 			mAgg := sw.Start("eval_agg")
 			defer mAgg.Stop()
 
@@ -149,6 +166,7 @@ func IndexSearch(
 				aggs[i], err = evalAgg(
 					index, query, sw, stats, minLID, maxLID, aggLimits,
 					provideExtractTimeFunc(sw, index, query.Interval), params.Order,
+					queryStats, queryOpt,
 				)
 				if err != nil {
 					return nil, err
@@ -160,8 +178,16 @@ func IndexSearch(
 	}
 
 	m = sw.Start("iterate_eval_tree")
-	total, ids, histMap, aggs, err := iterateEvalTree(ctx, params, index, evalTree, aggSupplier, sw)
+	total, ids, histMap, aggs, err := iterateEvalTree(ctx, params, index, evalTree, aggSupplier, minLID, maxLID, sw)
 	m.Stop()
+
+	if len(aggs) > 0 {
+		defer func() {
+			for _, agg := range aggs {
+				agg.Dispose()
+			}
+		}()
+	}
 
 	if err != nil {
 		return nil, err
@@ -207,7 +233,8 @@ func iterateEvalTree(
 	params SearchParams,
 	idsIndex idsIndex,
 	evalTree node.BatchedNode,
-	aggSupplier func() ([]Aggregator, error),
+	aggSupplier func(QueryStats) ([]Aggregator, error),
+	minLID, maxLID uint32,
 	sw *stopwatch.Stopwatch,
 ) (int, seq.IDSources, HistMap, []Aggregator, error) {
 	hasHist := params.HasHist()
@@ -327,7 +354,7 @@ func iterateEvalTree(
 			// Update aggregators
 			if params.HasAgg() {
 				var err error
-				if aggs, err = updateAggs(aggs, lidsBatch, aggSupplier, timerAgg); err != nil {
+				if aggs, err = updateAggs(aggs, lidsBatch, aggSupplier, minLID, maxLID, timerAgg); err != nil {
 					return total, ids, hist, aggs, err
 				}
 			}
@@ -337,10 +364,17 @@ func iterateEvalTree(
 	return total, ids, hist, aggs, nil
 }
 
-func updateAggs(aggs []Aggregator, lidsSlice []node.LID, aggSupplier func() ([]Aggregator, error), timer *stopwatch.Timer) ([]Aggregator, error) {
+func updateAggs(
+	aggs []Aggregator,
+	lidsSlice []node.LID,
+	aggSupplier func(QueryStats) ([]Aggregator, error),
+	minLID, maxLID uint32,
+	timer *stopwatch.Timer,
+) ([]Aggregator, error) {
 	if aggs == nil {
 		var err error
-		if aggs, err = aggSupplier(); err != nil { // sw timer is activated inside aggSupplier
+		queryStats := NewQueryStats(lidsSlice, minLID, maxLID)
+		if aggs, err = aggSupplier(queryStats); err != nil { // sw timer is activated inside aggSupplier
 			return nil, err
 		}
 	}
@@ -349,10 +383,8 @@ func updateAggs(aggs []Aggregator, lidsSlice []node.LID, aggSupplier func() ([]A
 	defer timer.Stop()
 
 	for i := range aggs {
-		for _, lid := range lidsSlice {
-			if err := aggs[i].Next(lid); err != nil {
-				return aggs, err
-			}
+		if err := aggs[i].Next(lidsSlice); err != nil {
+			return aggs, err
 		}
 	}
 	return aggs, nil

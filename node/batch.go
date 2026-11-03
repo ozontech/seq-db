@@ -16,7 +16,7 @@ type LIDBatch interface {
 	Min() uint32
 	// Max returns max (last) value. Panics if batch is empty.
 	Max() uint32
-	ManyIter(desc bool) ManyIter
+	ManyIter(asc bool) ManyIter
 	// Iter iterates lids in ascending way.
 	Iter() Iter
 	// ReverseIter iterates lids in descending way.
@@ -27,6 +27,8 @@ type LIDBatch interface {
 
 type ManyIter interface {
 	CopyLIDs(dst []LID, tmp []uint32) int
+	// CopyRawLIDs copies raw lids (exactly as they stored)
+	CopyRawLIDs(dst []uint32) int
 }
 
 type Iter interface {
@@ -115,9 +117,9 @@ func (b *sliceBatch) ReverseIter() Iter {
 	return &sliceReverseIter{lids: b.lids, idx: len(b.lids) - 1}
 }
 
-func (b *sliceBatch) ManyIter(desc bool) ManyIter {
-	it := &sliceManyIter{lids: b.lids, desc: desc}
-	if !desc {
+func (b *sliceBatch) ManyIter(asc bool) ManyIter {
+	it := &sliceManyIter{lids: b.lids, asc: asc}
+	if !asc {
 		it.pos = len(b.lids) - 1
 	}
 	return it
@@ -126,17 +128,17 @@ func (b *sliceBatch) ManyIter(desc bool) ManyIter {
 type sliceManyIter struct {
 	lids []uint32
 	pos  int
-	desc bool
+	asc  bool
 }
 
 func (it *sliceManyIter) CopyLIDs(dst []LID, tmp []uint32) int {
 	if len(dst) == 0 || len(tmp) == 0 {
 		return 0
 	}
-	if it.desc {
+	if it.asc {
 		n := min(len(dst), len(tmp), len(it.lids)-it.pos)
 		for i := 0; i < n; i++ {
-			dst[i] = NewDescLID(it.lids[it.pos+i])
+			dst[i] = NewAscLID(it.lids[it.pos+i])
 		}
 		it.pos += n
 		return n
@@ -146,7 +148,28 @@ func (it *sliceManyIter) CopyLIDs(dst []LID, tmp []uint32) int {
 	}
 	n := min(len(dst), len(tmp), it.pos+1)
 	for i := 0; i < n; i++ {
-		dst[i] = NewAscLID(it.lids[it.pos-i])
+		dst[i] = NewDescLID(it.lids[it.pos-i])
+	}
+	it.pos -= n
+	return n
+}
+
+func (it *sliceManyIter) CopyRawLIDs(dst []uint32) int {
+	if len(dst) == 0 {
+		return 0
+	}
+	if it.asc {
+		n := min(len(dst), len(it.lids)-it.pos)
+		copy(dst, it.lids[it.pos:it.pos+n])
+		it.pos += n
+		return n
+	}
+	if it.pos < 0 {
+		return 0
+	}
+	n := min(len(dst), it.pos+1)
+	for i := 0; i < n; i++ {
+		dst[i] = it.lids[it.pos-i]
 	}
 	it.pos -= n
 	return n
@@ -173,8 +196,7 @@ func (it *sliceIter) NextGeq(geq uint32) (uint32, bool) {
 		return 0, false
 	}
 	rest := it.lids[it.idx:]
-	off := sort.Search(len(rest), func(i int) bool { return rest[i] >= geq })
-	it.idx += off
+	it.idx += searchGeqGallopAsc(rest, geq)
 	return it.Next()
 }
 
@@ -197,7 +219,7 @@ func (it *sliceReverseIter) NextGeq(leq uint32) (uint32, bool) {
 		return 0, false
 	}
 	right := it.idx + 1
-	idx := sort.Search(right, func(i int) bool { return it.lids[i] > leq }) - 1
+	idx := searchGtGallopDesc(it.lids[:right], leq) - 1
 	if idx < 0 {
 		it.idx = -1
 		return 0, false
@@ -255,8 +277,8 @@ func (b *bitmapBatch) ReverseIter() Iter {
 	return newBitmapReverseIter(b.bm)
 }
 
-func (b *bitmapBatch) ManyIter(desc bool) ManyIter {
-	if desc {
+func (b *bitmapBatch) ManyIter(asc bool) ManyIter {
+	if asc {
 		return &bitmapManyIterAsc{it: b.bm.ManyIterator()}
 	}
 	return &bitmapManyIterDesc{it: b.bm.ReverseIterator()}
@@ -272,9 +294,16 @@ func (it *bitmapManyIterAsc) CopyLIDs(dst []LID, tmp []uint32) int {
 	}
 	n := it.it.NextMany(tmp[:min(len(dst), len(tmp))])
 	for i := 0; i < n; i++ {
-		dst[i] = NewDescLID(tmp[i])
+		dst[i] = NewAscLID(tmp[i])
 	}
 	return n
+}
+
+func (it *bitmapManyIterAsc) CopyRawLIDs(dst []uint32) int {
+	if len(dst) == 0 {
+		return 0
+	}
+	return it.it.NextMany(dst)
 }
 
 type bitmapManyIterDesc struct {
@@ -288,7 +317,19 @@ func (it *bitmapManyIterDesc) CopyLIDs(dst []LID, tmp []uint32) int {
 	n := 0
 	limit := min(len(dst), len(tmp))
 	for n < limit && it.it.HasNext() {
-		dst[n] = NewAscLID(it.it.Next())
+		dst[n] = NewDescLID(it.it.Next())
+		n++
+	}
+	return n
+}
+
+func (it *bitmapManyIterDesc) CopyRawLIDs(dst []uint32) int {
+	if len(dst) == 0 {
+		return 0
+	}
+	n := 0
+	for n < len(dst) && it.it.HasNext() {
+		dst[n] = it.it.Next()
 		n++
 	}
 	return n
@@ -323,6 +364,10 @@ type emptyManyIter struct{}
 var emptyManyIterInstance = emptyManyIter{}
 
 func (emptyManyIter) CopyLIDs([]LID, []uint32) int { return 0 }
+
+func (emptyManyIter) CopyRawLIDs(dst []uint32) int {
+	return 0
+}
 
 type emptyIter struct{}
 

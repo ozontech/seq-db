@@ -73,6 +73,10 @@ func (b *Block) GetCount() int {
 	return n
 }
 
+func (b *Block) IsDeltaEncoded() bool {
+	return len(b.bitmapIndexes) == 0
+}
+
 func (b *Block) GetLIDs(i int) node.LIDBatch {
 	slot, isBitmap := b.getListSlot(i)
 	if isBitmap {
@@ -81,12 +85,15 @@ func (b *Block) GetLIDs(i int) node.LIDBatch {
 	return node.NewSliceBatch(b.lids[b.offsets[slot]:b.offsets[slot+1]])
 }
 
-func (b *Block) AppendLIDsTo(idx int, dst []uint32) []uint32 {
+func (b *Block) AppendLIDsTo(idx int, dst []uint32) ([]uint32, int) {
 	slot, isBitmap := b.getListSlot(idx)
 	if isBitmap {
 		return b.copyLIDsFromBitmap(slot, dst)
 	}
-	return append(dst, b.lids[b.offsets[slot]:b.offsets[slot+1]]...)
+	start := b.offsets[slot]
+	end := b.offsets[slot+1]
+	n := int(end - start)
+	return append(dst, b.lids[start:end]...), n
 }
 
 // getListSlot returns either a slot into bitmaps if the corresponding list is a bitmap. Otherwise, returns
@@ -105,7 +112,7 @@ func (b *Block) getListSlot(i int) (slot int, isBitmap bool) {
 	return i - slot, false
 }
 
-func (b *Block) copyLIDsFromBitmap(slot int, buf []uint32) []uint32 {
+func (b *Block) copyLIDsFromBitmap(slot int, buf []uint32) ([]uint32, int) {
 	bitmap := b.bitmaps[slot]
 	n := int(bitmap.GetCardinality())
 	oldLen := len(buf)
@@ -113,7 +120,7 @@ func (b *Block) copyLIDsFromBitmap(slot int, buf []uint32) []uint32 {
 	buf = slices.Grow(buf, n)[:oldLen+n]
 	dest := buf[oldLen:]
 	bitmap.ToExistingArray(&dest)
-	return buf
+	return buf, n
 }
 
 func (b *Block) GetSizeBytes() int {

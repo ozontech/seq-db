@@ -19,11 +19,9 @@ as a cluster of proxy + store nodes.
 
 ## Comments
 
-Comment only when the code cannot speak for itself. A comment explains **why**,
-not **what** — the non-obvious reason, the invariant being upheld, the subtle
-edge case, or the trap a future reader would otherwise fall into. Do not
-paraphrase the code on the line below it. Exported identifiers still get doc
-comments per Go convention.
+Do not write comments. This includes doc comments on exported identifiers.
+Leave existing comments as they are unless the code they describe changes. If
+something needs explaining, say it in chat or in the commit message instead.
 
 ## Commands
 

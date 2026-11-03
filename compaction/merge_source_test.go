@@ -1,8 +1,10 @@
 package compaction
 
 import (
+	"bytes"
 	"cmp"
 	"fmt"
+	"io"
 	"iter"
 	"math/rand"
 	"slices"
@@ -99,12 +101,8 @@ func (m *mockSealingSource) postingsForField(field string) iter.Seq2[indexwriter
 	}
 }
 
-func (m *mockSealingSource) DocBlocks() iter.Seq2[DocBlockLocation, error] {
-	return func(yield func(DocBlockLocation, error) bool) {
-		if !yield(DocBlockLocation{}, nil) {
-			return
-		}
-	}
+func (m *mockSealingSource) DocsReader() (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(make([]byte, m.docsOnDisk))), nil
 }
 
 func (m *mockSealingSource) LastError() error {
@@ -345,11 +343,13 @@ func BenchmarkMergeSource(b *testing.B) {
 		ms := NewMergeSource("bench", sources)
 
 		ms.BlockOffsets()
-		for range ms.IDs() {
+		for _, e := range ms.IDs() {
+			_ = e
 		}
 
 		for _, tokIt := range ms.TokenTriplets() {
-			for range tokIt {
+			for _, e := range tokIt {
+				_ = e
 			}
 		}
 	}

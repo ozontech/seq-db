@@ -5,10 +5,12 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"math"
 	"math/rand/v2"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/compaction"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
@@ -40,18 +43,57 @@ import (
 type testSkipMaskProvider struct{}
 
 func (testSkipMaskProvider) GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {
-	return node.NewStatic([]uint32{}, false), false, func() error { return nil }, nil
+	return node.NewStatic([]uint32{}, true), false, func() error { return nil }, nil
 }
 func (testSkipMaskProvider) GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error) {
 	return nil, nil
 }
 func (testSkipMaskProvider) RemoveFrac(_ string) {}
 
+var testMappingYAML = []byte(`mapping-list:
+  - type: keyword
+    name: client_ip
+  - type: keyword
+    name: id
+  - type: keyword
+    name: k8s_container
+  - type: keyword
+    name: k8s_namespace
+  - type: keyword
+    name: k8s_pod
+  - type: keyword
+    name: level
+  - type: text
+    name: message
+  - type: keyword
+    name: pod
+  - type: keyword
+    name: request_took
+  - type: path
+    name: request_uri
+  - type: keyword
+    name: service
+  - type: keyword
+    name: source
+  - type: nested
+    name: spans
+    mapping-list:
+      - type: keyword
+        name: span_id
+  - type: keyword
+    name: status
+  - type: keyword
+    name: trace_id
+  - type: keyword
+    name: v
+`)
+
 type FractionTestSuite struct {
 	suite.Suite
 	tmpDir        string
 	config        *frac.Config
 	mapping       seq.Mapping
+	mappingYAML   []byte
 	tokenizers    map[seq.TokenizerType]tokenizer.Tokenizer
 	activeIndexer *frac.ActiveIndexer
 	stopIndexer   func()
@@ -77,30 +119,21 @@ func (s *FractionTestSuite) SetupTestCommon() {
 			Enabled:       true,
 			CostThreshold: 1000,
 		},
+		MaterializedColumnAgg: frac.MaterializedColumnAggConfig{
+			Enabled: true,
+		},
 	}
 	s.tokenizers = map[seq.TokenizerType]tokenizer.Tokenizer{
 		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(20, false, true),
 		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(20, false, true, 100),
 		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(512, false, true),
 	}
-	s.mapping = seq.Mapping{
-		"id":            seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_pod":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_namespace": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"k8s_container": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"message":       seq.NewSingleType(seq.TokenizerTypeText, "", 0),
-		"level":         seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"client_ip":     seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"service":       seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"pod":           seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"status":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"source":        seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"trace_id":      seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"request_uri":   seq.NewSingleType(seq.TokenizerTypePath, "", 0),
-		"spans":         seq.NewSingleType(seq.TokenizerTypeNested, "", 0),
-		"spans.span_id": seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-		"v":             seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0),
-	}
+	s.mappingYAML = testMappingYAML
+
+	var err error
+	s.mapping, err = seq.ReadMapping(s.mappingYAML)
+	s.Require().NoError(err)
+
 	s.sealParams = common.SealParams{
 		IDsZstdLevel:           1,
 		LIDsZstdLevel:          1,
@@ -114,7 +147,6 @@ func (s *FractionTestSuite) SetupTestCommon() {
 		LIDsBitmapThreshold:    25,
 	}
 
-	var err error
 	s.tmpDir, err = os.MkdirTemp(os.TempDir(), "fraction_test_*")
 	s.Require().NoError(err)
 }
@@ -1874,6 +1906,52 @@ func (s *FractionTestSuite) runLargeFracTestCases(nestedIndexes bool) {
 		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
 	})
 
+	s.Run("(service:kafka OR service:gateway) | group by pod avg(request_took)", func() {
+		// TODO(cheb0) aggregation returns fuzzy results with nested indexes enabled
+		if nestedIndexes {
+			return
+		}
+
+		requestTimesByPod := make(map[string][]int)
+		totalCountByPod := make(map[string]int)
+		for _, doc := range testDocs {
+			if doc.service != "kafka" && doc.service != "gateway" {
+				continue
+			}
+			totalCountByPod[doc.pod]++
+			if doc.requestTook == 0 {
+				continue
+			}
+
+			requestTimesByPod[doc.pod] = append(requestTimesByPod[doc.pod], doc.requestTook)
+		}
+
+		var expectedBuckets []seq.AggregationBucket
+		for pod, requestTimes := range requestTimesByPod {
+			sum := 0
+			for _, r := range requestTimes {
+				sum += r
+			}
+			avg := float64(sum) / float64(len(requestTimes))
+			expectedBuckets = append(expectedBuckets, seq.AggregationBucket{
+				Name:      pod,
+				Value:     avg,
+				NotExists: int64(totalCountByPod[pod] - len(requestTimes)),
+			})
+		}
+
+		searchParams := s.query(
+			"service:kafka OR service:gateway",
+			withTo(toTime.Format(time.RFC3339Nano)),
+			withAggQuery(processor.AggQuery{
+				Field:   aggField("request_took"),
+				GroupBy: aggField("pod"),
+				Func:    seq.AggFuncAvg,
+			}))
+
+		s.AssertAggregation(searchParams, seq.AggregateArgs{Func: seq.AggFuncAvg}, expectedBuckets)
+	})
+
 	s.Run("service:database AND level:3 | hist 1s", func() {
 		// TODO(cheb0) histogram returns fuzzy results with nested indexes enabled
 		if nestedIndexes {
@@ -2663,7 +2741,7 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
 			return d, nil
 		}
 
-		proc := indexer.NewProcessor(s.mapping, s.tokenizers, 0, 0, 0)
+		proc := indexer.NewProcessor(s.mapping, s.tokenizers, 0, 0)
 		compressor := indexer.GetDocsMetasCompressor(3, 3)
 		_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
 		s.Require().NoError(err, "processing bulk failed")
@@ -3069,6 +3147,90 @@ func (s *CompactedFractionTestSuite) TestFractionInfo() {
 	s.Require().True(info.IndexOnDisk > 0, "index on disk should be non-zero")
 }
 
+/*
+LegacySealedLoadedFractionTestSuite run tests for legacy sealed fraction
+*/
+type LegacySealedLoadedFractionTestSuite struct {
+	FractionTestSuite
+
+	Version config.BinaryDataVersion
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) SetupSuite() {
+	s.SetupSuiteCommon()
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) SetupTest() {
+	s.SetupTestCommon()
+
+	s.insertDocuments = func(bulks ...[]string) {
+		if s.fraction != nil {
+			s.Require().Fail("can insert docs only once")
+		}
+		s.fraction = s.newLegacySealedLoaded(bulks...)
+	}
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) TearDownTest() {
+	if sealed, ok := s.fraction.(*frac.Sealed); ok {
+		sealed.Release()
+	} else {
+		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
+	}
+
+	s.TearDownTestCommon()
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) TearDownSuite() {
+	s.TearDownSuiteCommon()
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) sealDocs(bulks ...[]string) string {
+	fracName := filepath.Join(s.T().TempDir(), fmt.Sprintf("frac_v%d", s.Version))
+
+	mappingPath := filepath.Join(s.T().TempDir(), "mapping.yaml")
+	err := os.WriteFile(mappingPath, s.mappingYAML, 0o600)
+	s.Require().NoError(err)
+
+	cmd := exec.Command(
+		"bash",
+		"../cmd/fraction/testdata/legacy/seal-fraction.sh",
+		"--mapping="+mappingPath,
+		fmt.Sprintf("v%d", s.Version),
+		fracName,
+	)
+	cmd.Stdin = readerFromBulks(bulks...)
+	out, err := cmd.CombinedOutput()
+	s.Require().NoError(err, "seal-fraction.sh failed:\n%s", out)
+
+	return fracName
+}
+
+func (s *LegacySealedLoadedFractionTestSuite) newLegacySealedLoaded(bulks ...[]string) *frac.Sealed {
+	filename := s.sealDocs(bulks...)
+
+	sealed := frac.NewSealed(
+		filename,
+		storage.NewReadLimiter(1, nil),
+		frac.NewIndexCache(),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		nil,
+		s.config,
+		testSkipMaskProvider{},
+	)
+
+	s.fraction = sealed
+	return sealed
+}
+
+func readerFromBulks(bulks ...[]string) io.Reader {
+	var readers []io.Reader
+	for _, batch := range bulks {
+		readers = append(readers, strings.NewReader(strings.Join(batch, "\n")+"\n"))
+	}
+	return io.MultiReader(readers...)
+}
+
 func TestActiveFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(ActiveFractionTestSuite))
 }
@@ -3091,4 +3253,12 @@ func TestRemoteFractionTestSuite(t *testing.T) {
 
 func TestCompactedFractionTestSuite(t *testing.T) {
 	suite.Run(t, new(CompactedFractionTestSuite))
+}
+
+func TestLegacySealedFractionTestSuite(t *testing.T) {
+	for ver := config.BinaryDataV2; ver < config.CurrentFracVersion; ver++ {
+		t.Run(fmt.Sprintf("v%d", ver), func(t *testing.T) {
+			suite.Run(t, &LegacySealedLoadedFractionTestSuite{Version: config.BinaryDataVersion(ver)})
+		})
+	}
 }

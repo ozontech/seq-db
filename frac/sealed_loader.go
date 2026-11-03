@@ -241,14 +241,7 @@ func (l *Loader) loadIDsTable(r storage.IndexReader, info *common.Info) seqids.T
 		IDsTotal:        info.DocsTotal + 1, // Increment by one for [seq.SystemID]
 	}
 
-	blocksCount, err := r.BlocksCount()
-	if err != nil {
-		logger.Fatal(
-			"cannot get block count",
-			zap.Error(err),
-		)
-	}
-
+	blocksCount := r.BlocksCount()
 	for blockIdx := 0; blockIdx < blocksCount; blockIdx += 3 {
 		header, err := r.GetBlockHeader(uint32(blockIdx))
 		if err != nil {
@@ -281,14 +274,7 @@ func (l *Loader) loadLIDsTable(r storage.IndexReader, fracVer config.BinaryDataV
 		isContinued []bool
 	)
 
-	blocksCount, err := r.BlocksCount()
-	if err != nil {
-		logger.Fatal(
-			"cannot get block count",
-			zap.Error(err),
-		)
-	}
-
+	blocksCount := r.BlocksCount()
 	for blockIdx := 0; blockIdx < blocksCount; blockIdx++ {
 		header, err := r.GetBlockHeader(uint32(blockIdx))
 		if err != nil {

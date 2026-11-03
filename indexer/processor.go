@@ -28,12 +28,12 @@ var (
 // Processor accumulates meta and docs from a single bulk
 // returns bulk request ready to be sent to store
 type Processor struct {
-	proxyIndex  uint64
 	drift       time.Duration
 	futureDrift time.Duration
 
 	indexer *indexer
 	decoder *insaneJSON.Root
+	bulkIDs map[seq.ID]struct{}
 }
 
 func init() {
@@ -41,9 +41,8 @@ func init() {
 	insaneJSON.MapUseThreshold = math.MaxInt32
 }
 
-func NewProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, drift, futureDrift time.Duration, index uint64) *Processor {
+func NewProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, drift, futureDrift time.Duration) *Processor {
 	return &Processor{
-		proxyIndex:  index,
 		drift:       drift,
 		futureDrift: futureDrift,
 		indexer: &indexer{
@@ -52,6 +51,7 @@ func NewProcessor(mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenize
 			metas:      []MetaData{},
 		},
 		decoder: insaneJSON.Spawn(),
+		bulkIDs: make(map[seq.ID]struct{}),
 	}
 }
 
@@ -73,7 +73,15 @@ func (p *Processor) ProcessDoc(doc []byte, requestTime time.Time) ([]byte, []Met
 		docTime = requestTime
 	}
 
-	id := seq.NewID(docTime, (rand.Uint64()<<16)+p.proxyIndex)
+	id := seq.NewID(docTime, rand.Uint64())
+	for {
+		if _, ok := p.bulkIDs[id]; !ok {
+			break
+		}
+		ridCollisions.Inc()
+		id.RID = seq.RID(rand.Uint64())
+	}
+	p.bulkIDs[id] = struct{}{}
 
 	p.indexer.Index(p.decoder.Node, id, uint32(len(doc)))
 
@@ -183,6 +191,8 @@ func (p *Processor) ProcessBulk(
 	readNext func() ([]byte, error),
 ) (int, []byte, []byte, error) {
 	parseDuration := time.Duration(0)
+
+	clear(p.bulkIDs)
 
 	total := 0
 	for {

@@ -31,6 +31,8 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install Go
         uses: actions/setup-go@v6
@@ -93,7 +95,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.15.0
           only-new-issues: false
           args: --timeout 5m
           # Package/build cache already provided above.

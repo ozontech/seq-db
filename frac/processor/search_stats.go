@@ -55,6 +55,18 @@ var (
 		Name:      "batch_execution_fracs_total",
 		Help:      "Number of fractions queried with batch execution",
 	})
+	aggOrTreeFracsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Name:      "agg_or_tree_fracs_total",
+		Help:      "Number of aggregation fields served via OR tree",
+	})
+	aggColumnFracsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: metricsNamespace,
+		Subsystem: metricsSubsystem,
+		Name:      "agg_column_fracs_total",
+		Help:      "Number of aggregation fields served via query-time materialized column",
+	})
 )
 
 type searchStats struct {

@@ -224,9 +224,9 @@ func (smm *SkipMaskManager) GetIDsIteratorByFrac(
 		loader := newLoader(f, smm.headersCache)
 		releaseFuncs[i] = loader.release
 		if reverse {
-			iterators = append(iterators, (*IteratorAsc)(NewIterator(loader, minLID, maxLID)))
-		} else {
 			iterators = append(iterators, (*IteratorDesc)(NewIterator(loader, minLID, maxLID)))
+		} else {
+			iterators = append(iterators, (*IteratorAsc)(NewIterator(loader, minLID, maxLID)))
 		}
 	}
 

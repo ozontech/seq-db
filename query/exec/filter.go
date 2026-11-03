@@ -3,8 +3,6 @@ package exec
 import (
 	"cmp"
 
-	insaneJSON "github.com/ozontech/insane-json"
-
 	"github.com/ozontech/seq-db/query"
 )
 
@@ -14,9 +12,8 @@ type FilterExpr[T any] interface {
 
 type Filter[T any] struct {
 	input query.RecordProducer
-
-	colIdx int
-	expr   FilterExpr[T]
+	col   query.Column[T]
+	expr  FilterExpr[T]
 
 	// withTotal requests the accurate total of records that pass the filter.
 	// When true, Finalize drains the (possibly partially consumed) input to the
@@ -26,23 +23,17 @@ type Filter[T any] struct {
 	// passed counts records emitted via Next; Finalize keeps counting while
 	// draining the remaining input.
 	passed uint64
-
-	// roots holds every record whose colIdx val has been decoded (and thus
-	// Spawn'd an insaneJSON root). They are released back to the library pool in
-	// Finalize. Record.Release is idempotent, so records that were forwarded
-	// downstream (and released there too) are safe to release here as well.
-	roots []*query.Record
 }
 
 func NewFilter[T any](
 	input query.RecordProducer,
-	colIdx int,
+	col query.Column[T],
 	expr FilterExpr[T],
 	withTotal bool,
 ) *Filter[T] {
 	return &Filter[T]{
 		input:     input,
-		colIdx:    colIdx,
+		col:       col,
 		expr:      expr,
 		withTotal: withTotal,
 	}
@@ -55,9 +46,7 @@ func (f *Filter[T]) Next() *query.Record {
 			return nil
 		}
 
-		passes := f.expr.Eval(r.Vals[f.colIdx].Decoded().(T))
-		// The decoded root is now cached; keep a reference so Finalize can release it.
-		f.roots = append(f.roots, r)
+		passes := f.expr.Eval(f.col.Val(r))
 		if passes {
 			f.passed++
 			return r
@@ -68,25 +57,17 @@ func (f *Filter[T]) Next() *query.Record {
 func (f *Filter[T]) Finalize() *query.Summary {
 	upstream := f.input.Finalize()
 	if !f.withTotal {
-		f.releaseRoots()
 		return upstream
 	}
 
 	for f.Next() != nil {
 	}
-	f.releaseRoots()
 
 	summary := &query.Summary{Total: f.passed}
 	if upstream != nil {
 		summary.Err = upstream.Err
 	}
 	return summary
-}
-
-func (f *Filter[T]) releaseRoots() {
-	for _, r := range f.roots {
-		r.Release()
-	}
 }
 
 type Eq[T comparable] struct {
@@ -135,24 +116,4 @@ func NewLt[T cmp.Ordered](
 
 func (e *Lt[T]) Eval(other T) bool {
 	return other < e.pred
-}
-
-type DocFilter struct {
-	field  string
-	filter FilterExpr[string]
-}
-
-func NewDocFilter(
-	field string,
-	filter FilterExpr[string],
-) *DocFilter {
-	return &DocFilter{
-		field:  field,
-		filter: filter,
-	}
-}
-
-func (e *DocFilter) Eval(root *insaneJSON.Root) bool {
-	field := root.Dig(e.field)
-	return e.filter.Eval(field.AsString())
 }

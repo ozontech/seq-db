@@ -6,9 +6,9 @@ import (
 	"github.com/RoaringBitmap/roaring/v2"
 )
 
-// And intersects two batches in the given document order and returns result and unprocessed parts (either left or right
+// And intersects two batches in the given LID order and returns result and unprocessed parts (either left or right
 // will be empty). For AND operation left and right residuals are equal to provided left or right batch, it's safe.
-func And(left, right LIDBatch, desc bool) (result, leftResidual, rightResidual LIDBatch) {
+func And(left, right LIDBatch, asc bool) (result, leftResidual, rightResidual LIDBatch) {
 	empty := EmptyBatch()
 	if left.IsEmpty() || right.IsEmpty() {
 		return empty, empty, empty
@@ -23,7 +23,7 @@ func And(left, right LIDBatch, desc bool) (result, leftResidual, rightResidual L
 
 	// If left or right are slice batches, we must return leftBm and rightBm (bitmap copies), since
 	// left or right might be intersected with another batch again soon.
-	if desc {
+	if asc {
 		if leftBm.max > rightBm.max {
 			return result, leftBm, empty
 		}
@@ -43,7 +43,7 @@ func And(left, right LIDBatch, desc bool) (result, leftResidual, rightResidual L
 }
 
 // AndNot finds "AND NOT" result for two batches and returns result and unprocessed parts.
-func AndNot(reg, neg LIDBatch, desc bool) (result, regResidual, negResidual LIDBatch) {
+func AndNot(reg, neg LIDBatch, asc bool) (result, regResidual, negResidual LIDBatch) {
 	empty := EmptyBatch()
 	if reg.IsEmpty() {
 		return empty, empty, neg
@@ -58,12 +58,12 @@ func AndNot(reg, neg LIDBatch, desc bool) (result, regResidual, negResidual LIDB
 	resultBm := regBm.bm.Clone()
 	resultBm.AndNot(negBm.bm)
 
-	return truncateBatches(resultBm, regBm, negBm, desc)
+	return truncateBatches(resultBm, regBm, negBm, asc)
 }
 
-// Or unions two batches in the given document order and returns result and unprocessed parts (either left or right
+// Or unions two batches in the given LID order and returns result and unprocessed parts (either left or right
 // will be empty).
-func Or(left, right LIDBatch, desc bool) (result, leftResidual, rightResidual LIDBatch) {
+func Or(left, right LIDBatch, asc bool) (result, leftResidual, rightResidual LIDBatch) {
 	empty := EmptyBatch()
 	if left.IsEmpty() {
 		return right, empty, empty
@@ -78,12 +78,12 @@ func Or(left, right LIDBatch, desc bool) (result, leftResidual, rightResidual LI
 	resultBm := leftBm.bm.Clone()
 	resultBm.Or(rightBm.bm)
 
-	return truncateBatches(resultBm, leftBm, rightBm, desc)
+	return truncateBatches(resultBm, leftBm, rightBm, asc)
 }
 
-// OrMulti unions multiple batches in the given document order and returns
+// OrMulti unions multiple batches in the given LID order and returns
 // result and unprocessed parts for each input batch.
-func OrMulti(batches []LIDBatch, desc bool) (result LIDBatch, residuals []LIDBatch) {
+func OrMulti(batches []LIDBatch, asc bool) (result LIDBatch, residuals []LIDBatch) {
 	residuals = make([]LIDBatch, len(batches))
 	bmBatches := make([]*bitmapBatch, len(batches))
 	nonEmptyBmBatches := make([]*bitmapBatch, 0, len(batches))
@@ -111,7 +111,7 @@ func OrMulti(batches []LIDBatch, desc bool) (result LIDBatch, residuals []LIDBat
 
 	resultBm := roaring.FastOr(bitmaps...)
 
-	if desc {
+	if asc {
 		minMax := nonEmptyBmBatches[0].max
 		for i := 1; i < len(nonEmptyBmBatches); i++ {
 			if nonEmptyBmBatches[i].max < minMax {
@@ -148,8 +148,8 @@ func OrMulti(batches []LIDBatch, desc bool) (result LIDBatch, residuals []LIDBat
 	return NewBitmapBatch(resultBm), residuals
 }
 
-func truncateBatches(result *roaring.Bitmap, left, right *bitmapBatch, desc bool) (LIDBatch, LIDBatch, LIDBatch) {
-	if desc {
+func truncateBatches(result *roaring.Bitmap, left, right *bitmapBatch, asc bool) (LIDBatch, LIDBatch, LIDBatch) {
+	if asc {
 		if left.max > right.max {
 			leftRes := left.Narrow(right.max+1, math.MaxUint32)
 			result.RemoveRange(uint64(right.max)+1, math.MaxUint64)

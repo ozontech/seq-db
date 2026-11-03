@@ -145,15 +145,15 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 		parsingMetric.Stop()
 
 		m := sw.Start("doc_params_set")
-		appendedIDs := active.DocsPositions.SetMultiple(collector.IDs, collector.Positions)
-		if len(appendedIDs) != len(collector.IDs) {
+		appended := active.DocsPositions.SetMultiple(collector.IDs, collector.Positions)
+		if len(appended) != len(collector.IDs) {
 			// There are duplicates in the active fraction.
 			// It is possible in case we retry same bulk requests.
 			// So we need to remove duplicates from collector.
-			doublesCnt := len(collector.IDs) - len(appendedIDs)
+			doublesCnt := len(collector.IDs) - len(appended)
 			metric.BulkDuplicateDocsTotal.Observe(float64(doublesCnt))
 			logger.Warn("found duplicates", zap.Int("batch", doublesCnt), zap.Int("worker", index))
-			collector.Filter(appendedIDs)
+			collector.Filter(appended)
 		}
 		m.Stop()
 

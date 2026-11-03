@@ -313,21 +313,45 @@ func (r *fractionRegistry) evictLocal(sizeLimit uint64) ([]*refCountedSealed, er
 	return evicted, nil
 }
 
-// evictRemote removes oldest remote fractions based on retention policy.
-// Fractions older than retention period are permanently deleted.
+// evictRemote removes oldest remote fractions based on
+// retention policy and total size limit.
+// Fractions older than retention period or that
+// exceed the limit are permanently deleted.
 // Returns removed fractions or empty slice if nothing to remove.
-func (r *fractionRegistry) evictRemote(retention time.Duration) []*refCountedRemote {
-	if retention == 0 {
+func (r *fractionRegistry) evictRemote(
+	retention time.Duration,
+	sizeLimit uint64,
+) []*refCountedRemote {
+	if retention == 0 && sizeLimit == 0 {
 		return nil
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	var releasingSize uint64
+	totalUsedSize := r.stats.TotalSizeOnDiskRemote() + r.stats.TotalSizeOnDiskOffloading()
+
 	evicted := []*refCountedRemote{}
-	for r.remotes.Len() > 0 && time.Since(time.UnixMilli(int64(r.remotes.MinPartition()))) > retention {
+	for {
+		if r.remotes.Len() == 0 {
+			break
+		}
+
+		retentionOk := (retention == 0) ||
+			(time.Since(time.UnixMilli(int64(r.remotes.MinPartition()))) <= retention)
+
+		sizeLimitOk := (sizeLimit == 0) ||
+			(totalUsedSize-releasingSize <= sizeLimit)
+
+		if retentionOk && sizeLimitOk {
+			break
+		}
+
 		for _, remote := range r.remotes.GetByPartition(r.remotes.MinPartition()) {
 			info := remote.Info()
+			releasingSize += info.FullSize()
+
 			r.stats.remotes.Sub(info)
 			evicted = append(evicted, remote)
 			r.remotes.Del(info.Name())
@@ -335,6 +359,19 @@ func (r *fractionRegistry) evictRemote(retention time.Duration) []*refCountedRem
 	}
 
 	r.rebuildSnapshot()
+
+	// check if enough space will be freed
+	if totalUsedSize-releasingSize > sizeLimit {
+		logger.Error(
+			fmt.Sprintf(
+				"insufficient size on s3: need to free %d more bytes (total: %d, releasing: %d, limit: %d)",
+				totalUsedSize-releasingSize-sizeLimit,
+				totalUsedSize,
+				releasingSize,
+				sizeLimit,
+			),
+		)
+	}
 
 	return evicted
 }
