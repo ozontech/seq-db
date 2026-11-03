@@ -122,7 +122,7 @@ func (g *grpcV1) useStreamSearch(
 	var docs []*seqproxyapi.Document
 	var aggs []*seqproxyapi.Aggregation
 	if streamSearchReq.Agg != nil {
-		aggs = readAggregations(storesStream)
+		aggs = readAggregations(storesStream, aggOutSchema(streamSearchReq.Agg))
 	} else {
 		docs = readDocuments(storesStream)
 	}
@@ -131,6 +131,9 @@ func (g *grpcV1) useStreamSearch(
 	summary := storesStream.Finalize()
 	if summary == nil {
 		summary = &query.Summary{}
+	}
+	if len(aggs) == 1 {
+		aggs[0].NotExists = int64(summary.NotExists)
 	}
 	if partialErr != nil && summary.Err == nil {
 		summary.Err = partialErr
@@ -164,28 +167,41 @@ func (g *grpcV1) useStreamSearch(
 func readDocuments(storesStream query.RecordProducer) []*seqproxyapi.Document {
 	var docs []*seqproxyapi.Document
 	for r := storesStream.Next(); r != nil; r = storesStream.Next() {
-		id := r.Vals[0].AsSeqID()
+		id := docIDCol.Val(r)
 		docs = append(docs, &seqproxyapi.Document{
 			Id:   id.String(),
 			Time: timestamppb.New(id.MID.Time()),
-			Data: r.Vals[1].RawData(),
+			Data: docDataCol.RawData(r),
 		})
 	}
 	return docs
 }
 
-func readAggregations(storesStream query.RecordProducer) []*seqproxyapi.Aggregation {
+func readAggregations(storesStream query.RecordProducer, out *query.Schema) []*seqproxyapi.Aggregation {
+	keyCol := out.MustColumn[string]("token")
+	valueCol := out.MustColumn[float64]("value")
+	tsCol := query.OptionalColumn[uint64](out, "ts")
+	quantilesCol := query.OptionalColumn[[]float64](out, "quantiles")
+	notExistsCol := query.OptionalColumn[uint64](out, "not_exists")
+
 	buckets := make([]*seqproxyapi.Aggregation_Bucket, 0)
 	for r := storesStream.Next(); r != nil; r = storesStream.Next() {
 		bucket := &seqproxyapi.Aggregation_Bucket{
-			Key:   r.Vals[0].AsString(),
-			Value: r.Vals[1].AsFloat64(),
+			Key:   keyCol.Val(r),
+			Value: valueCol.Val(r),
 		}
-		if ts := r.Vals[2].AsUint64(); ts != consts.DummyMID {
-			bucket.Ts = timestamppb.New(seq.MID(ts).Time())
+		if tsCol != nil {
+			if ts := tsCol.Val(r); ts != consts.DummyMID {
+				bucket.Ts = timestamppb.New(seq.MID(ts).Time())
+			}
 		}
-		if quantiles := r.Vals[3].AsFloat64Array(); len(quantiles) > 0 {
-			bucket.Quantiles = quantiles
+		if quantilesCol != nil {
+			if quantiles := quantilesCol.Val(r); len(quantiles) > 0 {
+				bucket.Quantiles = quantiles
+			}
+		}
+		if notExistsCol != nil {
+			bucket.NotExists = int64(notExistsCol.Val(r))
 		}
 		buckets = append(buckets, bucket)
 	}

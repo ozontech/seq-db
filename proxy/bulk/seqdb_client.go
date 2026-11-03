@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alecthomas/units"
 	"github.com/cep21/circuit/v3"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
+	seqdbconfig "github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -195,8 +195,8 @@ func (s *shard) Bulk(ctx context.Context, req *storeapi.BulkRequest, writtenRepl
 func sendBulkToHost(ctx context.Context, replica replica, req *storeapi.BulkRequest) error {
 	_, err := replica.client.Bulk(
 		ctx, req,
-		grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
-		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
+		grpc.MaxCallRecvMsgSize(seqdbconfig.MaxGrpcMessageSizeBytes),
+		grpc.MaxCallSendMsgSize(seqdbconfig.MaxGrpcMessageSizeBytes),
 	)
 	if err != nil {
 		return fmt.Errorf("can't receive bulk acceptance: host=%s, err=%w", replica.host, err)

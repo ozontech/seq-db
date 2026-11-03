@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/ozontech/seq-db/query/encoding"
 )
 
 func TestAggregationBucketMarshalJSON(t *testing.T) {
@@ -174,11 +175,12 @@ func TestRecordMarshalJSON(t *testing.T) {
 			encoding.Float64ToBytes(42.5),
 			encoding.Uint64ToBytes(uint64(tsNs)),
 			encoding.Float64ArrayToBytes(nil), // no quantiles
+			encoding.Uint64ToBytes(7),
 		}}
 
 		raw, err := json.Marshal(rec)
 		r.NoError(err)
-		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z",[]]`, string(raw))
+		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z",[],7]`, string(raw))
 	})
 
 	t.Run("aggregation bucket with quantiles", func(t *testing.T) {
@@ -188,11 +190,12 @@ func TestRecordMarshalJSON(t *testing.T) {
 			encoding.Float64ToBytes(42.5),
 			encoding.Uint64ToBytes(uint64(tsNs)),
 			encoding.Float64ArrayToBytes([]float64{5.5, 9.1}),
+			encoding.Uint64ToBytes(0),
 		}}
 
 		raw, err := json.Marshal(rec)
 		r.NoError(err)
-		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z",[5.5,9.1]]`, string(raw))
+		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z",[5.5,9.1],0]`, string(raw))
 	})
 
 	t.Run("aggregation bucket with NaN", func(t *testing.T) {
@@ -201,15 +204,17 @@ func TestRecordMarshalJSON(t *testing.T) {
 			encoding.Float64ToBytes(math.NaN()),
 			make([]byte, 8),
 			encoding.Float64ArrayToBytes(nil),
+			make([]byte, 8),
 		}}
 
 		raw, err := json.Marshal(rec)
 		r.NoError(err)
-		r.Equal(`["service-a","NaN","",[]]`, string(raw))
+		r.Equal(`["service-a","NaN","",[],0]`, string(raw))
 	})
 
 	t.Run("unknown layout falls back to raw bytes", func(t *testing.T) {
-		rec := &Record{RawData: [][]byte{[]byte("only"), []byte("two"), []byte("three"), []byte("four"), []byte("five")}}
+		// 4 cells used to be the aggregation layout; now it is an unknown one.
+		rec := &Record{RawData: [][]byte{[]byte("only"), []byte("two"), []byte("three"), []byte("four")}}
 		raw, err := json.Marshal(rec)
 		r.NoError(err)
 		// encoding/json marshals [][]byte as an array of base64 strings.

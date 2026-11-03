@@ -163,6 +163,7 @@ func (f *Remote) createDataProvider(ctx context.Context) (*sealedDataProvider, e
 	ir := f.indexReaders()
 	return &sealedDataProvider{
 		ctx:               ctx,
+		exprTIDsCache:     cache.NewSession(f.indexCache.ExprTIDs),
 		fractionTypeLabel: "remote",
 
 		info:       f.info,
