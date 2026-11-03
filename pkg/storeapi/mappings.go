@@ -147,7 +147,7 @@ func MustProtoAsyncSearchStatus(s asyncsearcher.AsyncSearchStatus) AsyncSearchSt
 var typeMappings = []DataType{
 	query.DataTypeBytes:        DataType_DATA_TYPE_BYTES,
 	query.DataTypeSeqID:        DataType_DATA_TYPE_SEQ_ID,
-	query.DataTypeDocument:     DataType_DATA_TYPE_RAW_DOCUMENT,
+	query.DataTypeJSON:         DataType_DATA_TYPE_JSON,
 	query.DataTypeString:       DataType_DATA_TYPE_STRING,
 	query.DataTypeUint32:       DataType_DATA_TYPE_UINT32,
 	query.DataTypeUint64:       DataType_DATA_TYPE_UINT64,

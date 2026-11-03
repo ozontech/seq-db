@@ -10,15 +10,15 @@ import (
 	"github.com/ozontech/seq-db/query/encoding"
 )
 
-func TestDocFieldsExtractorExtractsScalars(t *testing.T) {
+func TestJSONFieldsExtractorExtractsScalars(t *testing.T) {
 	input := &testProducer{data: makeExtractorInputRecords([]string{
 		`{"service":"svc-1","level":3,"active":true,"absent":null}`,
 		`{"service":"svc-2","level":7,"active":false}`,
 	})}
 
-	extractor := NewDocFieldsExtractor(
+	extractor := NewJSONFieldsExtractor(
 		input,
-		query.DocColumn(1),
+		query.JSONColumn(1),
 		"service", "level", "active", "absent",
 	)
 
@@ -42,12 +42,12 @@ func TestDocFieldsExtractorExtractsScalars(t *testing.T) {
 	assert.Nil(t, extractor.Next())
 }
 
-func TestDocFieldsExtractorMissingFieldYieldsEmpty(t *testing.T) {
+func TestJSONFieldsExtractorMissingFieldYieldsEmpty(t *testing.T) {
 	input := &testProducer{data: makeExtractorInputRecords([]string{
 		`{"service":"svc-1"}`,
 	})}
 
-	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), "nope")
+	extractor := NewJSONFieldsExtractor(input, query.JSONColumn(1), "nope")
 
 	r := extractor.Next()
 	assert.NotNil(t, r)
@@ -55,26 +55,51 @@ func TestDocFieldsExtractorMissingFieldYieldsEmpty(t *testing.T) {
 	assert.Equal(t, "", r.Vals[2].AsString())
 }
 
-func TestDocFieldsExtractorObjectAndArrayFields(t *testing.T) {
-	// This case documents the scalar-only contract: object and array fields yield an
-	// empty string, not their JSON representation.
+func TestJSONFieldsExtractorObjectAndArrayFields(t *testing.T) {
 	input := &testProducer{data: makeExtractorInputRecords([]string{
-		`{"service":"svc-1","obj":{"a":1},"arr":[1,2]}`,
+		`{"service":"svc-1","obj":{"a":1,"b":"x"},"arr":[1,2]}`,
 	})}
 
-	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), "obj", "arr")
+	extractor := NewJSONFieldsExtractor(input, query.JSONColumn(1), "obj", "arr")
 
 	r := extractor.Next()
 	assert.NotNil(t, r)
-	assert.Equal(t, "", r.Vals[2].AsString())
-	assert.Equal(t, "", r.Vals[3].AsString())
+	assert.JSONEq(t, `{"a":1,"b":"x"}`, r.Vals[2].AsString())
+	assert.JSONEq(t, `[1,2]`, r.Vals[3].AsString())
 }
 
-func TestDocFieldsExtractorNoFields(t *testing.T) {
+func TestJSONFieldsExtractorEscapedStrings(t *testing.T) {
+	input := &testProducer{data: makeExtractorInputRecords([]string{
+		`{"msg":"line1\nline2","quote":"say \"hi\""}`,
+	})}
+
+	extractor := NewJSONFieldsExtractor(input, query.JSONColumn(1), "msg", "quote")
+
+	r := extractor.Next()
+	assert.NotNil(t, r)
+	assert.Equal(t, "line1\nline2", r.Vals[2].AsString())
+	assert.Equal(t, `say "hi"`, r.Vals[3].AsString())
+}
+
+func TestJSONFieldsExtractorKeysWithSpecialChars(t *testing.T) {
+	input := &testProducer{data: makeExtractorInputRecords([]string{
+		`{"http.method":"GET","{a}":1,"a b":" "}`,
+	})}
+
+	extractor := NewJSONFieldsExtractor(input, query.JSONColumn(1), "http.method", "{a}", "a b")
+
+	r := extractor.Next()
+	assert.NotNil(t, r)
+	assert.Equal(t, "GET", r.Vals[2].AsString())
+	assert.Equal(t, "1", r.Vals[3].AsString())
+	assert.Equal(t, " ", r.Vals[4].AsString())
+}
+
+func TestJSONFieldsExtractorNoFields(t *testing.T) {
 	docs := []string{`{"service":"svc-1"}`, `{"service":"svc-2"}`}
 	input := &testProducer{data: makeExtractorInputRecords(docs)}
 
-	extractor := NewDocFieldsExtractor(input, query.DocColumn(1))
+	extractor := NewJSONFieldsExtractor(input, query.JSONColumn(1))
 
 	count := 0
 	for r := extractor.Next(); r != nil; r = extractor.Next() {
@@ -85,29 +110,28 @@ func TestDocFieldsExtractorNoFields(t *testing.T) {
 	assert.Equal(t, 2, count)
 }
 
-func TestDocFieldsExtractorFinalize(t *testing.T) {
+func TestJSONFieldsExtractorFinalize(t *testing.T) {
 	input := &testProducer{data: makeExtractorInputRecords([]string{
 		`{"service":"svc-1"}`,
 		`{"service":"svc-2"}`,
 	}), total: 2}
 
-	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), "service")
+	extractor := NewJSONFieldsExtractor(input, query.JSONColumn(1), "service")
 	for r := extractor.Next(); r != nil; r = extractor.Next() {
 	}
 
 	summary := extractor.Finalize()
 	assert.Equal(t, uint64(2), summary.Total)
-	assert.Nil(t, extractor.roots)
 }
 
-func TestDocFieldsExtractorPipeline(t *testing.T) {
+func TestJSONFieldsExtractorPipeline(t *testing.T) {
 	// E2E check: a downstream reader uses the extractor's field
 	// values via a string column appended right after the original vals.
 	const field = "k8s_pod"
 	inputData := makeTestInputRecords(10)
 	input := &testProducer{data: inputData}
 
-	extractor := NewDocFieldsExtractor(input, query.DocColumn(1), field)
+	extractor := NewJSONFieldsExtractor(input, query.JSONColumn(1), field)
 	podCol := query.StringColumn(2)
 
 	for r := extractor.Next(); r != nil; r = extractor.Next() {
@@ -122,7 +146,7 @@ func makeExtractorInputRecords(docs []string) []*query.Record {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
 				query.NewRecordVals(query.DataTypeUint64, encoding.Uint64ToBytes(0)),
-				query.NewRecordVals(query.DataTypeDocument, []byte(doc)),
+				query.NewRecordVals(query.DataTypeJSON, []byte(doc)),
 			},
 		})
 	}

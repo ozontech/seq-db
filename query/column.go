@@ -3,8 +3,6 @@ package query
 import (
 	"cmp"
 
-	insaneJSON "github.com/ozontech/insane-json"
-
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -74,11 +72,11 @@ func StringColumn(idx int) Column[string] {
 	}
 }
 
-func DocColumn(idx int) Column[*insaneJSON.Root] {
-	return Column[*insaneJSON.Root]{
+func JSONColumn(idx int) Column[[]byte] {
+	return Column[[]byte]{
 		idx:      idx,
-		dataType: DataTypeDocument,
-		get:      (*RecordVals).AsDoc,
+		dataType: DataTypeJSON,
+		get:      (*RecordVals).AsJSON,
 	}
 }
 
