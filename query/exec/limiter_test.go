@@ -98,7 +98,7 @@ func makeTestInputRecords(count int) []*query.Record {
 		out = append(out, &query.Record{
 			Vals: []*query.RecordVals{
 				query.NewUint32Vals(uint32(i)),
-				query.NewDocVals([]byte(doc)),
+				query.NewJSONVals([]byte(doc)),
 			},
 		})
 	}
