@@ -280,7 +280,6 @@ func (f *Remote) Suicide() error {
 		filepath.Base(f.BaseFileName) + consts.OffsetsFileSuffix,
 		filepath.Base(f.BaseFileName) + consts.IDFileSuffix,
 		filepath.Base(f.BaseFileName) + consts.LIDFileSuffix,
-		deletingMarker,
 	}
 
 	err := f.s3cli.Remove(f.ctx, files...)
@@ -288,6 +287,7 @@ func (f *Remote) Suicide() error {
 		return fmt.Errorf("failed to delete files from s3 during suicide: %w", err)
 	}
 
+	util.MustRemoveFileByPath(f.BaseFileName + consts.RemoteFractionTmpSuffix)
 	util.MustRemoveFileByPath(deletingMarker)
 
 	f.docsCache.Release()

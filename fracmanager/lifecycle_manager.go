@@ -19,7 +19,8 @@ type lifecycleManager struct {
 	provider  *fractionProvider // provider for fraction operations
 	flags     *StateManager     // storage state flags
 	registry  *fractionRegistry // fraction state registry
-	tasks     *TaskManager      // Background offloading tasks
+	cleaner   *remoteCleaner
+	tasks     *TaskManager // Background offloading tasks
 
 	sealingWg sync.WaitGroup // todo: get rid after removing SealAll in tests
 }
@@ -29,12 +30,14 @@ func newLifecycleManager(
 	provider *fractionProvider,
 	flags *StateManager,
 	registry *fractionRegistry,
+	cleaner *remoteCleaner,
 ) *lifecycleManager {
 	return &lifecycleManager{
 		infoCache: infoCache,
 		provider:  provider,
 		flags:     flags,
 		registry:  registry,
+		cleaner:   cleaner,
 		tasks:     NewTaskManager(),
 	}
 }
@@ -50,13 +53,7 @@ func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.
 		if cfg.OffloadingQueueSize > 0 {
 			lc.removeOverflowed(cfg.OffloadingQueueSize, wg)
 		}
-		lc.cleanRemote(
-			ctx,
-			cfg.OffloadingRetention,
-			cfg.OffloadingRemoteTotalSize,
-			cfg.RemoteRemoveRetryDelay,
-			wg,
-		)
+		lc.cleanRemote(cfg.OffloadingRetention, cfg.OffloadingRemoteTotalSize)
 	} else {
 		lc.cleanLocal(cfg.TotalSize, wg)
 	}
@@ -194,13 +191,7 @@ func (lc *lifecycleManager) tryOffload(ctx context.Context, sealed *frac.Sealed)
 }
 
 // cleanRemote deletes outdated remote fractions based on retention policy.
-func (lc *lifecycleManager) cleanRemote(
-	ctx context.Context,
-	retention time.Duration,
-	sizeLimitS3 uint64,
-	remoteRemoveRetryDelay time.Duration,
-	wg *sync.WaitGroup,
-) {
+func (lc *lifecycleManager) cleanRemote(retention time.Duration, sizeLimitS3 uint64) {
 	toDelete := lc.registry.evictRemote(retention, sizeLimitS3)
 
 	if len(toDelete) > 0 && !lc.flags.IsCapacityExceeded() {
@@ -210,55 +201,7 @@ func (lc *lifecycleManager) cleanRemote(
 	}
 
 	for _, remote := range toDelete {
-		lc.removeRemoteAsync(ctx, remote, wg, remoteRemoveRetryDelay)
-	}
-}
-
-func (lc *lifecycleManager) removeRemoteAsync(
-	ctx context.Context,
-	ref *refCountedRemote,
-	wg *sync.WaitGroup,
-	retryDelay time.Duration,
-) {
-	wg.Add(1)
-	_, err := lc.tasks.Run(ref.BaseFileName, ctx, func(ctx context.Context) {
-		defer wg.Done()
-
-		for i := 0; ; i++ {
-			destroyErr := ref.Destroy()
-			if destroyErr == nil {
-				lc.infoCache.Remove(ref.Info().Name())
-				logger.Info("removed remote fraction",
-					zap.String("name", ref.BaseFileName),
-					zap.Time("created", time.UnixMilli(int64(ref.Info().CreationTime))),
-				)
-
-				return
-			}
-
-			logger.Warn(
-				"failed to remove remote fraction",
-				zap.String("name", ref.BaseFileName),
-				zap.Int("attempts", i),
-				zap.Error(destroyErr),
-			)
-
-			select {
-			case <-ctx.Done():
-				logger.Info(
-					"fraction offloading was stopped",
-					zap.String("name", ref.BaseFileName),
-					zap.Int("attempts", i),
-					zap.Error(ctx.Err()),
-				)
-				return
-			case <-time.After(retryDelay):
-				// Wait before next retry attempt
-			}
-		}
-	})
-	if err != nil {
-		panic(err) // expect no error here
+		lc.cleaner.Add(remote)
 	}
 }
 

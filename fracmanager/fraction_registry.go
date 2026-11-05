@@ -26,8 +26,6 @@ type fractionRegistry struct {
 	offloading PartitionedCollection[*refCountedSealed] // fractions being offloaded (0-5 typical)
 	remotes    PartitionedCollection[*refCountedRemote] // offloaded fractions (can be thousands)
 
-	remotesRemoving []*frac.Remote
-
 	stats registryStats // size statistics for monitoring
 
 	muAppender sync.RWMutex
@@ -43,7 +41,6 @@ func NewFractionRegistry(
 	active *frac.Active,
 	sealed []*frac.Sealed,
 	remotes []*frac.Remote,
-	remotesRemoving []*frac.Remote,
 ) (*fractionRegistry, error) {
 	if active == nil {
 		return nil, errors.New("active fraction must be specified")
@@ -62,12 +59,11 @@ func NewFractionRegistry(
 	reg := fractionRegistry{
 		sappender: &syncAppender{refCountedActive: refCountedActive{Active: active}},
 
-		sealing:         map[string]*syncAppender{},
-		sealed:          NewPartitionedCollection(func(rcs *refCountedSealed) uint64 { return creationTime(rcs) }),
-		compacting:      map[string]*refCountedSealed{},
-		offloading:      NewPartitionedCollection(func(rcs *refCountedSealed) uint64 { return lastDocTime(rcs) }),
-		remotes:         NewPartitionedCollection(func(rcr *refCountedRemote) uint64 { return lastDocTime(rcr) }),
-		remotesRemoving: remotesRemoving,
+		sealing:    map[string]*syncAppender{},
+		sealed:     NewPartitionedCollection(func(rcs *refCountedSealed) uint64 { return creationTime(rcs) }),
+		compacting: map[string]*refCountedSealed{},
+		offloading: NewPartitionedCollection(func(rcs *refCountedSealed) uint64 { return lastDocTime(rcs) }),
+		remotes:    NewPartitionedCollection(func(rcr *refCountedRemote) uint64 { return lastDocTime(rcr) }),
 	}
 
 	// initialize local sealed fractions
@@ -575,12 +571,4 @@ func (r *fractionRegistry) rebuildSnapshot() {
 	defer r.muSnapshot.Unlock()
 
 	r.snapshot = all
-}
-
-func (r *fractionRegistry) popRemotesRemoving() []*frac.Remote {
-	rr := r.remotesRemoving
-
-	r.remotesRemoving = nil
-
-	return rr
 }

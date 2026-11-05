@@ -38,17 +38,17 @@ func NewLoader(config *Config, provider *fractionProvider, infoCache *fracInfoCa
 
 // Load is the main method for loading all fractions
 // Coordinates the entire process: discovery, validation, recovery, and ordering
-func (l *Loader) Load(ctx context.Context) (*fractionRegistry, error) {
+func (l *Loader) Load(ctx context.Context) (*fractionRegistry, []*frac.Remote, error) {
 	// Stage 1: Discover all fractions in filesystem
 	actives, locals, remotes, remotesRemoving, err := l.discover(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Stage 2: Replay active fractions and seal them
 	active, sealed, err := l.replayAndSeal(ctx, actives)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Stage 3: Create new active fraction if no existing ones
@@ -59,11 +59,11 @@ func (l *Loader) Load(ctx context.Context) (*fractionRegistry, error) {
 	// Stage 4: Combine all local fractions
 	locals = append(locals, sealed...)
 
-	registry, err := NewFractionRegistry(active, locals, remotes, remotesRemoving)
+	registry, err := NewFractionRegistry(active, locals, remotes)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return registry, nil
+	return registry, remotesRemoving, nil
 }
 
 // replayAndSeal replays active fractions and seals old ones
@@ -123,7 +123,7 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 // Returns fractions separated by type: active, local, remote.
 // Fractions whose offloading was interrupted and local files are gone
 // (remote zombies) are returned in remotesRemoving: they are not
-// searchable, their partial remote files are deleted by maintenance ticks.
+// searchable, their partial remote files are deleted by the remote cleaner.
 func (l *Loader) discover(ctx context.Context) (
 	actives []*frac.Active,
 	locals []*frac.Sealed,
@@ -157,10 +157,10 @@ func (l *Loader) discover(ctx context.Context) (
 		case fracStageZombieRemote:
 			// Offloading was interrupted and local files are gone:
 			// partial files in remote storage will never be overwritten.
-			// Register for deletion by maintenance ticks. Info is not
+			// Register for deletion by the remote cleaner. Info is not
 			// loaded: deletion needs only the base name and S3 client.
 			logger.Warn("remote zombie detected", zap.String("base_path", manifest.basePath))
-			remotesRemoving = append(remotesRemoving, l.provider.NewRemoteZombie(manifest.basePath))
+			remotesRemoving = append(remotesRemoving, l.provider.NewRemoteZombie(ctx, manifest.basePath))
 		default:
 			logger.Error("unexpected fraction stage", zap.Any("manifest", manifest))
 		}

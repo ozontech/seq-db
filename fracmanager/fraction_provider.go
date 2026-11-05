@@ -112,9 +112,9 @@ func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedIn
 	)
 }
 
-func (fp *fractionProvider) NewRemoteZombie(name string) *frac.Remote {
+func (fp *fractionProvider) NewRemoteZombie(ctx context.Context, name string) *frac.Remote {
 	return frac.NewRemoteZombie(
-		context.Background(),
+		ctx,
 		name,
 		fp.s3cli,
 		fp.skipMaskProvider,

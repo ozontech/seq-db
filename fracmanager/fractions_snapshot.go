@@ -3,6 +3,7 @@ package fracmanager
 import (
 	"math"
 	"sync"
+	"sync/atomic"
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
@@ -148,12 +149,18 @@ func (p *refCountedSealed) Destroy() {
 
 // refCountedRemote wraps frac.Remote with reference counting.
 type refCountedRemote struct {
-	refCounterWg
+	readers atomic.Int64
 	*frac.Remote
 }
 
-// Destroy waits for all references to be released and then destroys the Remote.
-func (p *refCountedRemote) Destroy() error {
-	p.wg.Wait()
-	return p.Suicide()
+func (p *refCountedRemote) Inc() { p.readers.Add(1) }
+
+func (p *refCountedRemote) Dec() { p.readers.Add(-1) }
+
+func (p *refCountedRemote) TryDestroy() (bool, error) {
+	if p.readers.Load() != 0 {
+		return false, nil
+	}
+	err := p.Suicide()
+	return err == nil, err
 }
