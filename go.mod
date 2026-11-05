@@ -22,7 +22,7 @@ require (
 	github.com/kkyr/fig v0.5.0
 	github.com/klauspost/compress v1.18.2
 	github.com/oklog/ulid/v2 v2.1.1
-	github.com/ozontech/insane-json v0.1.9
+	github.com/ozontech/insane-json v0.1.10
 	github.com/pierrec/lz4/v4 v4.1.22
 	github.com/pkg/profile v1.7.0
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10
