@@ -135,7 +135,7 @@ func (t *Typing) renderCell(cell []byte) any {
 		return string(cell)
 	case DataType_DATA_TYPE_BYTES:
 		return cell
-	case DataType_DATA_TYPE_RAW_DOCUMENT:
+	case DataType_DATA_TYPE_JSON:
 		return json.RawMessage(cell)
 	case DataType_DATA_TYPE_UINT32:
 		return encoding.Uint32FromBytes(cell)

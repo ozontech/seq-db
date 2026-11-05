@@ -31,7 +31,7 @@ func TestRowSchemaRender(t *testing.T) {
 			[]*Typing{
 				{Title: "id", Type: DataType_DATA_TYPE_SEQ_ID},
 				{Title: "time", Type: DataType_DATA_TYPE_UINT64},
-				{Title: "data", Type: DataType_DATA_TYPE_RAW_DOCUMENT},
+				{Title: "data", Type: DataType_DATA_TYPE_JSON},
 			},
 			[][]byte{
 				[]byte("46e48be997010000-e70163d0fa7582e4"),

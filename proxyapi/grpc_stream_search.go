@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	insaneJSON "github.com/ozontech/insane-json"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -304,7 +303,7 @@ func docsTyping() []*seqproxyapi.Typing {
 	return []*seqproxyapi.Typing{
 		{Title: "id", Type: seqproxyapi.DataType_DATA_TYPE_SEQ_ID},
 		{Title: "time", Type: seqproxyapi.DataType_DATA_TYPE_UINT64}, // extract time from id
-		{Title: "data", Type: seqproxyapi.DataType_DATA_TYPE_RAW_DOCUMENT},
+		{Title: "data", Type: seqproxyapi.DataType_DATA_TYPE_JSON},
 	}
 }
 
@@ -321,7 +320,7 @@ func schemaToTyping(out *query.Schema) []*seqproxyapi.Typing {
 
 var (
 	docIDCol   = query.DocsSchema.MustColumn[seq.ID](query.DocsIDCol)
-	docDataCol = query.DocsSchema.MustColumn[*insaneJSON.Root](query.DocsDataCol)
+	docDataCol = query.DocsSchema.MustColumn[[]byte](query.DocsDataCol)
 )
 
 // converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
