@@ -188,20 +188,5 @@ func DecompressDeltaBitpackUint64(data []byte, buf, compressed []uint64) ([]byte
 	return data, buf, nil
 }
 
-func copyAsUints32(src []byte, dst []uint32) []uint32 {
-	dst = dst[:0]
-	for len(src) != 0 {
-		dst = append(dst, binary.LittleEndian.Uint32(src))
-		src = src[sizeOfUint32:]
-	}
-	return dst
-}
-
-func copyAsUints64(src []byte, dst []uint64) []uint64 {
-	dst = dst[:0]
-	for len(src) != 0 {
-		dst = append(dst, binary.LittleEndian.Uint64(src))
-		src = src[8:]
-	}
-	return dst
-}
+// copyAsUints32 and copyAsUints64 convert the little-endian byte stream into
+// words; see copy_uints.go (little-endian targets only, bulk copy).
