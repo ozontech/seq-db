@@ -36,26 +36,50 @@ type StreamSearchRequest struct {
 	Offset    int
 }
 
+type StreamResult struct {
+	Records    query.RecordProducer
+	Cancel     func()
+	PartialErr error
+
+	hasSuccessfulStream func() bool
+}
+
+func NewStreamResult(
+	records query.RecordProducer,
+	cancel func(),
+	partialErr error,
+	hasSuccessfulStream func() bool,
+) *StreamResult {
+	return &StreamResult{
+		Records:             records,
+		Cancel:              cancel,
+		PartialErr:          partialErr,
+		hasSuccessfulStream: hasSuccessfulStream,
+	}
+}
+
+func (sr *StreamResult) Finalize() (*query.Summary, bool) {
+	return sr.Records.Finalize(), sr.hasSuccessfulStream()
+}
+
 func (si *Ingestor) StreamSearch(
 	ctx context.Context,
 	sr *StreamSearchRequest,
 	tr *querytracer.Tracer,
-) (query.RecordProducer, func(), error) {
+) (*StreamResult, error) {
 	searchStores := si.config.HotStores
 	if si.config.HotReadStores != nil && len(si.config.HotReadStores.Shards) > 0 {
 		searchStores = si.config.HotReadStores
 	}
 
 	var partialRespErr error
-	cancelStreams := func() {}
-
 	streams, err := si.streamSearchStores(ctx, sr, searchStores, tr)
 	if err != nil {
 		switch {
 		case errors.Is(err, consts.ErrIngestorQueryWantsOldData):
 			if len(si.config.ReadStores.Shards) == 0 {
 				logger.Error("no cold stores, but hot mode is enabled, bad configuration of stores!")
-				return nil, cancelStreams, err
+				return nil, err
 			}
 			metric.SearchColdTotal.Inc()
 			streams, err = si.streamSearchStores(ctx, sr, si.config.ReadStores, tr)
@@ -65,20 +89,25 @@ func (si *Ingestor) StreamSearch(
 					partialRespErr = err // consider partial response from cold stores as a result
 				} else {
 					// errors from both hot and cold stores, return error
-					return nil, cancelStreams, err
+					return nil, err
 				}
 			}
 		case errors.Is(err, consts.ErrPartialResponse):
 			partialRespErr = err // consider partial response from hot stores as a result
 		default:
 			// unexpected error on all hot replica sets (usually bad query)
-			return nil, cancelStreams, err
+			return nil, err
 		}
 	}
 
 	if len(streams) == 0 {
 		// nothing to read from, return an empty stream
-		return exec.NewNMergedProducers(nil, query.SeqIDColumn(0), sr.Order), cancelStreams, partialRespErr
+		return NewStreamResult(
+			exec.NewNMergedProducers(nil, query.SeqIDColumn(0), sr.Order),
+			func() {},
+			partialRespErr,
+			func() bool { return false },
+		), partialRespErr
 	}
 
 	producers := make([]query.RecordProducer, 0, len(streams))
@@ -101,7 +130,7 @@ func (si *Ingestor) StreamSearch(
 	// Shard schemas come off the wire, so validate them before any consumer reads records.
 	if err := validateShardSchemas(streams, expectedSchema); err != nil {
 		closeStreams(streams)
-		return nil, nil, err
+		return nil, err
 	}
 
 	var mergedStream query.RecordProducer
@@ -112,19 +141,27 @@ func (si *Ingestor) StreamSearch(
 		idCol, err := streams[0].OutSchema().Column[seq.ID](query.DocsIDCol)
 		if err != nil {
 			closeStreams(streams)
-			return nil, nil, err
+			return nil, err
 		}
 		mergedDocsStream := exec.NewNMergedProducers(producers, idCol, sr.Order)
 		mergedStream = exec.NewLimiter(mergedDocsStream, uint32(sr.Size), uint32(offset))
 	}
 
-	cancelStreams = func() {
+	cancelStreams := func() {
 		for _, s := range streams {
 			s.Close()
 		}
 	}
+	hasSuccessfulStream := func() bool {
+		for _, s := range streams {
+			if s.err == nil {
+				return true
+			}
+		}
+		return false
+	}
 
-	return mergedStream, cancelStreams, partialRespErr
+	return NewStreamResult(mergedStream, cancelStreams, partialRespErr, hasSuccessfulStream), nil
 }
 
 func (si *Ingestor) streamSearchStores(
@@ -351,12 +388,8 @@ func NewStreamSearchIterator(
 	it := &StreamSearchIterator{tr: tr, schema: schema, types: types, stream: stream, cancel: cancel}
 
 	msg, err := stream.Recv()
-	if errors.Is(err, io.EOF) {
-		// No data and no summary: an empty result, not an error.
-		return it, nil
-	}
 	if err != nil {
-		return nil, err
+		return nil, it.mapRecvErr(err)
 	}
 	if err := it.push(msg); err != nil {
 		return nil, err
@@ -377,6 +410,7 @@ type StreamSearchIterator struct {
 	aggNotExists uint64
 	err          error
 	done         bool
+	summarySeen  bool
 
 	cancel context.CancelFunc
 }
@@ -390,10 +424,7 @@ func (it *StreamSearchIterator) Next() *query.Record {
 		data, err := it.stream.Recv()
 		if err != nil {
 			it.done = true
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			it.err = err
+			it.err = it.mapRecvErr(err)
 			return nil
 		}
 		if err := it.push(data); err != nil {
@@ -430,6 +461,7 @@ func (it *StreamSearchIterator) push(msg *storeapi.StreamSearchResponse) error {
 	case *storeapi.StreamSearchResponse_Data:
 		it.curBatch = v.Data.GetBatch().GetRecords()
 	case *storeapi.StreamSearchResponse_Summary:
+		it.summarySeen = true
 		it.total = v.Summary.Total
 		it.aggNotExists = uint64(v.Summary.NotExists)
 		if v.Summary.Explain != nil {
@@ -475,16 +507,25 @@ func (it *StreamSearchIterator) drain() {
 	for {
 		msg, err := it.stream.Recv()
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return
+			if e := it.mapRecvErr(err); e != nil && it.err == nil {
+				it.err = e
 			}
-			it.err = err
 			return
 		}
 		if err := it.push(msg); err != nil {
 			it.err = err
 		}
 	}
+}
+
+func (it *StreamSearchIterator) mapRecvErr(err error) error {
+	if errors.Is(err, io.EOF) {
+		if it.summarySeen {
+			return nil
+		}
+		return fmt.Errorf("store stream closed without summary: %w", io.ErrUnexpectedEOF)
+	}
+	return err
 }
 
 func storeCodeToError(code storeapi.SearchErrorCode) error {
