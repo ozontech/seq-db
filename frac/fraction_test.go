@@ -3028,7 +3028,7 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 
 func (s *RemoteFractionTestSuite) TearDownTest() {
 	if remote, ok := s.fraction.(*frac.Remote); ok {
-		s.Require().NoError(remote.Suicide())
+		s.Require().NoError(remote.Suicide(s.T().Context()))
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Remote type")
 	}
@@ -3289,7 +3289,7 @@ func (s *RemoteFractionTestSuite) TestSuicideDeletionOrder() {
 		testSkipMaskProvider{},
 	)
 
-	s.Require().Error(brokenRemote.Suicide(), "suicide must fail when remote storage is unreachable")
+	s.Require().Error(brokenRemote.Suicide(s.T().Context()), "suicide must fail when remote storage is unreachable")
 
 	_, err := os.Stat(remote.BaseFileName + consts.RemoteFractionSuffix)
 	s.Require().True(os.IsNotExist(err), ".remote must be renamed after failed suicide")
@@ -3305,7 +3305,7 @@ func (s *RemoteFractionTestSuite) TestSuicideDeletionOrder() {
 	)
 	s.Require().NoError(err)
 
-	s.Require().NoError(remote.Suicide(), "retry of suicide must succeed")
+	s.Require().NoError(remote.Suicide(s.T().Context()), "retry of suicide must succeed")
 
 	_, err = os.Stat(remote.BaseFileName + consts.RemoteFractionSuffix)
 	s.Require().True(os.IsNotExist(err), ".remote must be removed after successful suicide")

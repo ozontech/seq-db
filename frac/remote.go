@@ -259,7 +259,7 @@ func (f *Remote) IsIntersecting(from, to seq.MID) bool {
 	return f.info.IsIntersecting(from, to)
 }
 
-func (f *Remote) Suicide() error {
+func (f *Remote) Suicide(ctx context.Context) error {
 	// Rename the marker to .remote.del first: it commits the deletion
 	// intent, so a crash at any point after it leaves a recoverable state -
 	// the loader recognizes the fraction as pending remote deletion.
@@ -283,7 +283,7 @@ func (f *Remote) Suicide() error {
 		filepath.Base(f.BaseFileName) + consts.LIDFileSuffix,
 	}
 
-	err := f.s3cli.Remove(f.ctx, files...)
+	err := f.s3cli.Remove(ctx, files...)
 	if err != nil {
 		return fmt.Errorf("failed to delete files from s3 during suicide: %w", err)
 	}

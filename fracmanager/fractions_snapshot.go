@@ -1,6 +1,7 @@
 package fracmanager
 
 import (
+	"context"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -157,10 +158,10 @@ func (p *refCountedRemote) Inc() { p.readers.Add(1) }
 
 func (p *refCountedRemote) Dec() { p.readers.Add(-1) }
 
-func (p *refCountedRemote) TryDestroy() (bool, error) {
+func (p *refCountedRemote) TryDestroy(ctx context.Context) (bool, error) {
 	if p.readers.Load() != 0 {
 		return false, nil
 	}
-	err := p.Suicide()
+	err := p.Suicide(ctx)
 	return err == nil, err
 }

@@ -3,6 +3,7 @@ package fracmanager
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -10,13 +11,18 @@ import (
 	"github.com/ozontech/seq-db/logger"
 )
 
-const defaultRetryDelay = 2 * time.Second
+const (
+	defaultRetryDelay    = 2 * time.Second
+	remoteRemovalTimeout = 5 * time.Second
+	maxPendingRemotes    = 50
+)
 
 type remoteCleaner struct {
-	ctx        context.Context
-	infoCache  *fracInfoCache
-	retryDelay time.Duration
-	pending    sync.Map
+	ctx          context.Context
+	infoCache    *fracInfoCache
+	retryDelay   time.Duration
+	pending      sync.Map
+	pendingCount atomic.Int64
 }
 
 func newRemoteCleaner(infoCache *fracInfoCache, retryDelay time.Duration) *remoteCleaner {
@@ -38,7 +44,12 @@ func (c *remoteCleaner) Add(remote *refCountedRemote) {
 	if c.ctx.Err() != nil {
 		return
 	}
-	c.pending.LoadOrStore(remote.BaseFileName, remote)
+	if _, loaded := c.pending.LoadOrStore(remote.BaseFileName, remote); loaded {
+		return
+	}
+	if c.pendingCount.Add(1) > maxPendingRemotes {
+		panic("too many remote fractions pending deletion")
+	}
 }
 
 func (c *remoteCleaner) run() {
@@ -60,7 +71,9 @@ func (c *remoteCleaner) clean() {
 			return false
 		}
 		remote := value.(*refCountedRemote)
-		removed, err := remote.TryDestroy()
+		ctx, cancel := context.WithTimeout(c.ctx, remoteRemovalTimeout)
+		removed, err := remote.TryDestroy(ctx)
+		cancel()
 		if err != nil {
 			logger.Warn("failed to remove remote fraction",
 				zap.String("name", remote.BaseFileName),
@@ -72,6 +85,7 @@ func (c *remoteCleaner) clean() {
 			return true
 		}
 		c.infoCache.Remove(remote.Info().Name())
+		c.pendingCount.Add(-1)
 		c.pending.Delete(name)
 		logger.Info("removed remote fraction", zap.String("name", remote.BaseFileName))
 		return true

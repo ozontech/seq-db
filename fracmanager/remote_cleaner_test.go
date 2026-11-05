@@ -2,6 +2,8 @@ package fracmanager
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/storage/s3"
 )
 
 func setupRemoteCleaner(t testing.TB, infoCache *fracInfoCache) (*remoteCleaner, func()) {
@@ -56,6 +59,7 @@ func TestRemoteCleaner(t *testing.T) {
 	assert.False(t, pending)
 	_, cached := cleaner.infoCache.Get(remote.Info().Name())
 	assert.False(t, cached)
+	assert.Zero(t, cleaner.pendingCount.Load())
 }
 
 func TestRemoteCleanerWithReaders(t *testing.T) {
@@ -76,6 +80,7 @@ func TestRemoteCleanerWithReaders(t *testing.T) {
 	assert.True(t, cached)
 	_, pending = cleaner.pending.Load(other.BaseFileName)
 	assert.False(t, pending)
+	assert.Equal(t, int64(1), cleaner.pendingCount.Load())
 
 	busy.Dec()
 	cleaner.clean()
@@ -84,6 +89,7 @@ func TestRemoteCleanerWithReaders(t *testing.T) {
 	assert.False(t, pending)
 	_, cached = cleaner.infoCache.Get(busy.Info().Name())
 	assert.False(t, cached)
+	assert.Zero(t, cleaner.pendingCount.Load())
 }
 
 func TestRemoteCleanerRetry(t *testing.T) {
@@ -91,12 +97,10 @@ func TestRemoteCleanerRetry(t *testing.T) {
 	remote := makeOffloadedFraction(t, provider)
 	cleaner.infoCache.Add(remote.Info())
 
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
 	broken := &refCountedRemote{Remote: frac.NewRemoteZombie(
-		ctx,
+		t.Context(),
 		remote.BaseFileName,
-		provider.s3cli,
+		newBrokenS3Client(t),
 		testSkipMaskProvider{},
 	)}
 
@@ -112,6 +116,7 @@ func TestRemoteCleanerRetry(t *testing.T) {
 	assert.True(t, cached)
 	_, pending = cleaner.pending.Load(other.BaseFileName)
 	assert.False(t, pending)
+	assert.Equal(t, int64(1), cleaner.pendingCount.Load())
 
 	broken.Remote = remote.Remote
 	cleaner.clean()
@@ -120,6 +125,47 @@ func TestRemoteCleanerRetry(t *testing.T) {
 	assert.False(t, pending)
 	_, cached = cleaner.infoCache.Get(remote.Info().Name())
 	assert.False(t, cached)
+	assert.Zero(t, cleaner.pendingCount.Load())
+}
+
+func TestRemoteCleanerQueueLimit(t *testing.T) {
+	cleaner := newRemoteCleaner(nil, time.Millisecond)
+	cleaner.ctx = t.Context()
+	for i := range 50 {
+		remote := &frac.Remote{BaseFileName: fmt.Sprint(i)}
+		require.NotPanics(t, func() {
+			cleaner.Add(&refCountedRemote{Remote: remote})
+			cleaner.Add(&refCountedRemote{Remote: remote})
+		})
+	}
+	assert.Equal(t, int64(50), cleaner.pendingCount.Load())
+	require.Panics(t, func() {
+		cleaner.Add(&refCountedRemote{Remote: &frac.Remote{BaseFileName: "overflow"}})
+	})
+}
+
+func TestRemoteCleanerTimeout(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, listener.Close()) })
+	client, err := s3.NewClient("http://"+listener.Addr().String(), "ACCESS_KEY", "SECRET_KEY", "eu-west-3", "bucket")
+	require.NoError(t, err)
+	remote := &refCountedRemote{Remote: frac.NewRemoteZombie(
+		t.Context(), filepath.Join(t.TempDir(), "blocked"), client, testSkipMaskProvider{},
+	)}
+	cleaner := newRemoteCleaner(nil, time.Millisecond)
+	cleaner.ctx = t.Context()
+	cleaner.Add(remote)
+
+	started := time.Now()
+	cleaner.clean()
+	elapsed := time.Since(started)
+
+	assert.GreaterOrEqual(t, elapsed, 5*time.Second)
+	assert.Less(t, elapsed, 10*time.Second)
+	_, pending := cleaner.pending.Load(remote.BaseFileName)
+	assert.True(t, pending)
+	assert.Equal(t, int64(1), cleaner.pendingCount.Load())
 }
 
 func TestRemoteCleanerStopsWithReaders(t *testing.T) {
