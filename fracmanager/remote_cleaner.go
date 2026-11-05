@@ -47,6 +47,7 @@ func (c *remoteCleaner) Add(remote *refCountedRemote) {
 	if _, loaded := c.pending.LoadOrStore(remote.BaseFileName, remote); loaded {
 		return
 	}
+	remoteCleanerPendingFractions.Inc()
 	if c.pendingCount.Add(1) > maxPendingRemotes {
 		panic("too many remote fractions pending deletion")
 	}
@@ -87,6 +88,7 @@ func (c *remoteCleaner) clean() {
 		c.infoCache.Remove(remote.Info().Name())
 		c.pendingCount.Add(-1)
 		c.pending.Delete(name)
+		remoteCleanerPendingFractions.Dec()
 		logger.Info("removed remote fraction", zap.String("name", remote.BaseFileName))
 		return true
 	})
