@@ -186,6 +186,12 @@ var (
 		Help:      "How many seconds it took to offload fraction to remote storage",
 		Buckets:   metric.SecondsBuckets,
 	})
+	remoteCleanerPendingFractions = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "remote_cleaner",
+		Name:      "pending_fractions",
+		Help:      "Number of remote fractions pending deletion",
+	})
 	dataSizeTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "common",

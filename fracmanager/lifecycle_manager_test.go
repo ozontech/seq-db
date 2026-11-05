@@ -19,6 +19,7 @@ import (
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage/s3"
 )
 
 func setupLifecycle(t testing.TB, cfg *Config) (*lifecycleManager, func()) {
@@ -26,15 +27,19 @@ func setupLifecycle(t testing.TB, cfg *Config) (*lifecycleManager, func()) {
 	dataDir := provider.config.DataDir
 	infoCache := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 
+	cleaner, stopCleaner := setupRemoteCleaner(t, infoCache)
 	registry, err := NewFractionRegistry(provider.CreateActive(), nil, nil)
 	assert.NoError(t, err)
 
 	storageState, err := NewStateManager(dataDir, defaultStorageState)
 	assert.NoError(t, err)
 
-	lifecycle := newLifecycleManager(infoCache, provider, storageState, registry)
+	lifecycle := newLifecycleManager(infoCache, provider, storageState, registry, cleaner)
 
-	return lifecycle, tearDown
+	return lifecycle, func() {
+		stopCleaner()
+		tearDown()
+	}
 }
 
 func TestFracInfoCache(t *testing.T) {
@@ -466,11 +471,26 @@ func TestCleanRemoteBySizeIntegration(t *testing.T) {
 
 	// the limit is one byte below the current remote size: the oldest
 	// partition must be deleted and the capacity flag set
-	wg = sync.WaitGroup{}
-	lc.cleanRemote(0, lc.registry.statistics().TotalSizeOnDiskRemote()-1, &wg)
-	wg.Wait()
+	lc.cleanRemote(
+		0,
+		lc.registry.statistics().TotalSizeOnDiskRemote()-1,
+	)
 
 	stats := lc.registry.statistics()
 	assert.Less(t, stats.remotes.count, fracsCount/2, "at least one remote fraction is evicted")
 	assert.True(t, lc.flags.IsCapacityExceeded(), "capacity exceeded flag is set after remote deletion")
+}
+
+// newBrokenS3Client returns an S3 client pointing to a closed address:
+// every request fails, simulating remote storage unavailability.
+func newBrokenS3Client(t testing.TB) *s3.Client {
+	s3cli, err := s3.NewClient(
+		"http://127.0.0.1:1", // nothing listens here
+		"ACCESS_KEY",
+		"SECRET_KEY",
+		"eu-west-3",
+		"bucket",
+	)
+	require.NoError(t, err, "broken s3 client setup failed")
+	return s3cli
 }

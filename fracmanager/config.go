@@ -35,6 +35,7 @@ type Config struct {
 	OffloadingQueueSize       uint64
 	OffloadingRetention       time.Duration
 	OffloadingRetryDelay      time.Duration
+	RemoteRemoveRetryDelay    time.Duration
 	OffloadingRemoteTotalSize uint64
 
 	CompactionEnabled bool

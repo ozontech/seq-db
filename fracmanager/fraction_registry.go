@@ -37,7 +37,11 @@ type fractionRegistry struct {
 
 // NewFractionRegistry creates and initializes a new fraction registry instance.
 // Populates the registry with existing active, sealed and remote fractions.
-func NewFractionRegistry(active *frac.Active, sealed []*frac.Sealed, remotes []*frac.Remote) (*fractionRegistry, error) {
+func NewFractionRegistry(
+	active *frac.Active,
+	sealed []*frac.Sealed,
+	remotes []*frac.Remote,
+) (*fractionRegistry, error) {
 	if active == nil {
 		return nil, errors.New("active fraction must be specified")
 	}

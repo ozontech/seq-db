@@ -112,6 +112,15 @@ func (fp *fractionProvider) NewRemote(ctx context.Context, name string, cachedIn
 	)
 }
 
+func (fp *fractionProvider) NewRemoteZombie(ctx context.Context, name string) *frac.Remote {
+	return frac.NewRemoteZombie(
+		ctx,
+		name,
+		fp.s3cli,
+		fp.skipMaskProvider,
+	)
+}
+
 // nextFractionID generates a unique identifier for a new fraction
 func (fp *fractionProvider) nextFractionID() string {
 	fp.mu.Lock()
