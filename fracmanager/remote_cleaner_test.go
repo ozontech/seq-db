@@ -17,8 +17,8 @@ import (
 func setupRemoteCleaner(t testing.TB, infoCache *fracInfoCache) (*remoteCleaner, func()) {
 	ctx, cancel := context.WithCancel(t.Context())
 	wg := &sync.WaitGroup{}
-	cleaner := newRemoteCleaner(infoCache)
-	cleaner.Start(ctx, time.Millisecond, wg)
+	cleaner := newRemoteCleaner(infoCache, time.Millisecond)
+	cleaner.Start(ctx, wg)
 	return cleaner, func() {
 		cancel()
 		wg.Wait()
@@ -29,7 +29,7 @@ func setupRemoteCleanerTest(t testing.TB) (*remoteCleaner, *fractionProvider) {
 	provider, tearDown := setupFractionProvider(t, nil)
 	t.Cleanup(tearDown)
 	infoCache := NewFracInfoCache(filepath.Join(provider.config.DataDir, consts.FracCacheFileSuffix))
-	cleaner := newRemoteCleaner(infoCache)
+	cleaner := newRemoteCleaner(infoCache, time.Millisecond)
 	cleaner.ctx = t.Context()
 	return cleaner, provider
 }
@@ -129,7 +129,7 @@ func TestRemoteCleanerStopsWithReaders(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	wg := &sync.WaitGroup{}
-	cleaner.Start(ctx, time.Millisecond, wg)
+	cleaner.Start(ctx, wg)
 	t.Cleanup(func() {
 		cancel()
 		wg.Wait()

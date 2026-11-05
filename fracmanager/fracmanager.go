@@ -63,7 +63,7 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 	}
 
 	fm := FracManager{
-		cleaner: newRemoteCleaner(infoCache),
+		cleaner: newRemoteCleaner(infoCache, cfg.RemoteRemoveRetryDelay),
 	}
 
 	// Create lc manager to handle fraction maintenance
@@ -74,7 +74,7 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 	ctx, cancel := context.WithCancel(ctx)
 	wg := sync.WaitGroup{}
 
-	fm.cleaner.Start(ctx, cfg.RemoteRemoveRetryDelay, &wg)
+	fm.cleaner.Start(ctx, &wg)
 	if cfg.OffloadingEnabled {
 		for _, remote := range remotesRemoving {
 			fm.cleaner.Add(&refCountedRemote{Remote: remote})

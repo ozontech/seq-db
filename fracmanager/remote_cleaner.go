@@ -13,23 +13,25 @@ import (
 const defaultRetryDelay = 2 * time.Second
 
 type remoteCleaner struct {
-	ctx       context.Context
-	infoCache *fracInfoCache
-	pending   sync.Map
+	ctx        context.Context
+	infoCache  *fracInfoCache
+	retryDelay time.Duration
+	pending    sync.Map
 }
 
-func newRemoteCleaner(infoCache *fracInfoCache) *remoteCleaner {
-	return &remoteCleaner{
-		infoCache: infoCache,
-	}
-}
-
-func (c *remoteCleaner) Start(ctx context.Context, retryDelay time.Duration, wg *sync.WaitGroup) {
-	c.ctx = ctx
+func newRemoteCleaner(infoCache *fracInfoCache, retryDelay time.Duration) *remoteCleaner {
 	if retryDelay <= 0 {
 		retryDelay = defaultRetryDelay
 	}
-	wg.Go(func() { c.run(retryDelay) })
+	return &remoteCleaner{
+		infoCache:  infoCache,
+		retryDelay: retryDelay,
+	}
+}
+
+func (c *remoteCleaner) Start(ctx context.Context, wg *sync.WaitGroup) {
+	c.ctx = ctx
+	wg.Go(c.run)
 }
 
 func (c *remoteCleaner) Add(remote *refCountedRemote) {
@@ -39,8 +41,8 @@ func (c *remoteCleaner) Add(remote *refCountedRemote) {
 	c.pending.LoadOrStore(remote.BaseFileName, remote)
 }
 
-func (c *remoteCleaner) run(retryDelay time.Duration) {
-	ticker := time.NewTicker(retryDelay)
+func (c *remoteCleaner) run() {
+	ticker := time.NewTicker(c.retryDelay)
 	defer ticker.Stop()
 	for {
 		select {

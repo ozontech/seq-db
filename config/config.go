@@ -326,7 +326,7 @@ type Config struct {
 		// Delay duration between consecutive offloading retries
 		RetryDelay time.Duration `config:"retry_delay" default:"2s"`
 		// Delay duration between consecutive removing from S3 retries
-		RemoteRemoveRetryDelay time.Duration `config:"remote_remove_retry_delay" default:"2s"`
+		RemoteRemoveRetryDelay time.Duration `config:"remote_remove_retry_delay" default:"10s"`
 	} `config:"offloading"`
 
 	AsyncSearch struct {
