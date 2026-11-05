@@ -27,8 +27,6 @@ const (
 
 	BulkMaxTries = 3
 
-	IngestorMaxInstances = 1024 // should be power of two
-
 	ESTimeFormat = "2006-01-02 15:04:05.999"
 
 	BulkTimeout          = 30 * time.Second

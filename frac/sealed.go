@@ -503,6 +503,7 @@ func (f *Sealed) createDataProvider(ctx context.Context) *sealedDataProvider {
 	ir := f.indexReaders()
 	return &sealedDataProvider{
 		ctx:               ctx,
+		exprTIDsCache:     cache.NewSession(f.indexCache.ExprTIDs),
 		fractionTypeLabel: "sealed",
 
 		info:       f.info,

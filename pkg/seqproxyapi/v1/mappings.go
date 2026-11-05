@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ozontech/seq-db/asyncsearcher"
+	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -127,4 +128,56 @@ func AsyncSearchStatusFromString(s string) (AsyncSearchStatus, error) {
 	}
 
 	return 0, fmt.Errorf("unknown status")
+}
+
+var typeMappings = []DataType{
+	query.DataTypeBytes:        DataType_DATA_TYPE_BYTES,
+	query.DataTypeSeqID:        DataType_DATA_TYPE_SEQ_ID,
+	query.DataTypeDocument:     DataType_DATA_TYPE_RAW_DOCUMENT,
+	query.DataTypeString:       DataType_DATA_TYPE_STRING,
+	query.DataTypeUint32:       DataType_DATA_TYPE_UINT32,
+	query.DataTypeUint64:       DataType_DATA_TYPE_UINT64,
+	query.DataTypeInt32:        DataType_DATA_TYPE_INT32,
+	query.DataTypeInt64:        DataType_DATA_TYPE_INT64,
+	query.DataTypeFloat64:      DataType_DATA_TYPE_FLOAT64,
+	query.DataTypeFloat64Array: DataType_DATA_TYPE_FLOAT64_ARRAY,
+	query.DataTypeStringArray:  DataType_DATA_TYPE_STRING_ARRAY,
+}
+
+var typeMappingsPb = func() []query.DataType {
+	mappings := make([]query.DataType, len(typeMappings))
+	for from, to := range typeMappings {
+		mappings[to] = query.DataType(from)
+	}
+	return mappings
+}()
+
+func (t DataType) ToQueryDataType() (query.DataType, error) {
+	if int(t) >= len(typeMappingsPb) || t < 0 {
+		return 0, fmt.Errorf("unknown data type: %d", t)
+	}
+	return typeMappingsPb[t], nil
+}
+
+func (t DataType) MustQueryDataType() query.DataType {
+	v, err := t.ToQueryDataType()
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
+func ToProtoDataType(t query.DataType) (DataType, error) {
+	if int(t) >= len(typeMappings) {
+		return 0, fmt.Errorf("unknown data type: %d", t)
+	}
+	return typeMappings[t], nil
+}
+
+func MustProtoDataType(t query.DataType) DataType {
+	v, err := ToProtoDataType(t)
+	if err != nil {
+		panic(err)
+	}
+	return v
 }
