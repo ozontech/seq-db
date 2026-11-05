@@ -7,6 +7,7 @@ require (
 	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/RoaringBitmap/roaring/v2 v2.18.2
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
+	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/aws/aws-sdk-go-v2 v1.47.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.4
@@ -65,7 +66,6 @@ require (
 	github.com/aws/smithy-go v1.28.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.24.2 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/google/pprof v0.0.0-20250422154841-e1f9c1950416 // indirect

@@ -344,3 +344,49 @@ func TestSingleSuite(t *testing.T) {
 		})
 	}
 }
+
+// HashRidTestSuite runs with indexing.rid_mode=hash on the ingestor, so
+// documents with identical content and timestamp share one seq.ID.
+type HashRidTestSuite struct {
+	suites.Single
+}
+
+func TestHashRidSuite(t *testing.T) {
+	cfg := &setup.TestingEnvConfig{
+		Name:          "HashRid",
+		IngestorCount: 1,
+		HotShards:     1,
+		HotFactor:     1,
+		RidByHash:     true,
+	}
+	t.Parallel()
+	suite.Run(t, &HashRidTestSuite{Single: *suites.NewSingle(cfg)})
+}
+
+// TestNestedSealLIDsInvariant ingests documents with nested fields, including
+// exact duplicates of a nested document in the same bulk and in a later bulk
+// (both share one ID), then checks across active, sealed and restarted
+// fraction states that:
+//   - search by a nested token returns exactly the parent documents,
+//   - every sealed fraction keeps the on-disk invariant
+//     physical ids in .ids == info.DocsTotal + 1.
+func (s *HashRidTestSuite) TestNestedSealLIDsInvariant() {
+	baseTS := time.Now()
+	doc1 := fmt.Sprintf(`{"timestamp":%q,"service":"gw","spans":[{"span_id":"s1"},{"span_id":"s3"}]}`,
+		baseTS.Format(time.RFC3339Nano))
+	doc2 := fmt.Sprintf(`{"timestamp":%q,"service":"gw","spans":[{"span_id":"s2"}]}`,
+		baseTS.Add(time.Millisecond).Format(time.RFC3339Nano))
+
+	// doc1 again in the same bulk: same content, same millisecond, same ID
+	s.Bulk([]string{doc1, doc2, doc1})
+	// doc1 in a later bulk: cross-bulk duplicate, must become an orphan, not a new doc
+	s.Bulk([]string{doc1})
+
+	// the duplicate must not double the documents
+	s.RunFracEnvs(suites.AllFracEnvs, true, func() {
+		s.AssertSearch(`spans.span_id:s1`, []string{doc1}, []int{0})
+		s.AssertSearch(`spans.span_id:s3`, []string{doc1}, []int{0})
+		s.AssertSearch(`spans.span_id:s2`, []string{doc2}, []int{0})
+		s.AssertSearch(`service:gw`, []string{doc1, doc2}, []int{1, 0})
+	})
+}
