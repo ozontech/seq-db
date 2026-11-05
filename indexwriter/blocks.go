@@ -9,6 +9,7 @@ import (
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
+	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
 )
 
@@ -105,6 +106,10 @@ func tokenBlock(
 
 		block.ext.minTID = 1
 		for field, tokIt := range it {
+			if field == seq.TokenAll {
+				continue
+			}
+
 			emitFieldEntry()
 
 			fieldName = field

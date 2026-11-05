@@ -12,8 +12,17 @@ type Literal struct {
 	Terms []Term
 }
 
+func IsMatchAll(t Token) bool {
+	l, ok := t.(*Literal)
+	if !ok || l.Field != seq.TokenAll || len(l.Terms) != 1 {
+		return false
+	}
+	term := l.Terms[0]
+	return term.IsWildcard() || (term.Kind == TermText && term.Data == "")
+}
+
 func (n *Literal) DumpSeqQL(o *strings.Builder) {
-	if n.Field == seq.TokenAll && len(n.Terms) == 1 && n.Terms[0].IsWildcard() {
+	if IsMatchAll(n) {
 		o.WriteString("*")
 		return
 	}
