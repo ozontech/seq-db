@@ -96,12 +96,7 @@ func BenchmarkOr(b *testing.B) {
 	}
 }
 
-// BenchmarkAnd traverses AND of two static asc leaves (the production zigzag
-// in node_and.go) over LID sets of different density. density=random keeps the
-// two independent random lists; otherwise the right list is every k-th value
-// of the left one, so intersections are guaranteed and the zigzag skip is ~k
-// elements: dense = lockstep, sparse = rare long skips. A fresh node is built
-// per iteration since iterators are single-pass.
+// BenchmarkAnd traverses AND of two static asc leaves over LID sets of different density
 func BenchmarkAnd(b *testing.B) {
 	sizes := []int{1000, 10_000, 1_000_000}
 	densities := []struct {
@@ -142,7 +137,6 @@ func BenchmarkAnd(b *testing.B) {
 					res = readAllInto(n, res[:0])
 				}
 				assert.Equal(b, len(want), len(res))
-				benchSink = res[len(res)/2]
 				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*len(want)), "ns/match")
 			})
 		}
@@ -273,5 +267,3 @@ func BenchmarkComplex(b *testing.B) {
 		})
 	}
 }
-
-var benchSink uint32
