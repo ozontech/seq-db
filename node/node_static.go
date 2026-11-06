@@ -2,7 +2,6 @@ package node
 
 import (
 	"math"
-	"sort"
 )
 
 type staticCursor struct {
@@ -54,7 +53,7 @@ func (n *staticAsc) NextGeq(nextID LID) LID {
 	}
 
 	from := n.ptr
-	idx := sort.Search(len(n.data)-from, func(i int) bool { return n.data[from+i] >= nextID.Unpack() })
+	idx := searchGeqGallopAsc(n.data[from:], nextID.Unpack())
 	if idx >= len(n.data)-from {
 		return NullLID()
 	}
@@ -79,7 +78,7 @@ func (n *staticDesc) NextGeq(nextID LID) LID {
 	if n.ptr < 0 {
 		return NullLID()
 	}
-	idx := sort.Search(n.ptr+1, func(i int) bool { return n.data[i] > nextID.Unpack() }) - 1
+	idx := searchGtGallopDesc(n.data[:n.ptr+1], nextID.Unpack()) - 1
 	if idx < 0 {
 		return NullLID()
 	}
