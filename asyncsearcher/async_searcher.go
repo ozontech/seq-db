@@ -800,13 +800,13 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 	histInterval := seq.MillisToMID(info.Request.Params.HistInterval)
 	if info.merged.Load() {
 		p := path.Join(as.config.DataDir, r.ID+asyncSearchExtMergedQPR)
-		qpr, _ = as.loadSearchResult([]string{p}, r.Limit, r.Order, histInterval)
+		qpr, _ = as.loadSearchResult([]string{p}, r.Limit, r.Order, histInterval, aggFuncs(info.Request.Params.AggQ))
 	} else {
 		p, err := as.findQPRs(r.ID)
 		if err != nil {
 			logger.Fatal("can't load async search result", zap.String("id", r.ID), zap.Error(err))
 		}
-		qpr, _ = as.loadSearchResult(p, r.Limit, r.Order, histInterval)
+		qpr, _ = as.loadSearchResult(p, r.Limit, r.Order, histInterval, aggFuncs(info.Request.Params.AggQ))
 	}
 
 	intervalsDone, intervalsInQueue := getProgress(info)
@@ -839,7 +839,9 @@ func (as *AsyncSearcher) FetchSearchResult(r FetchSearchResultRequest) (FetchSea
 	}, true
 }
 
-func (as *AsyncSearcher) loadSearchResult(qprsPaths []string, limit int, order seq.DocsOrder, histInterval seq.MID) (seq.QPR, int) {
+func (as *AsyncSearcher) loadSearchResult(
+	qprsPaths []string, limit int, order seq.DocsOrder, histInterval seq.MID, aggFuncs []seq.AggFunc,
+) (seq.QPR, int) {
 	qpr := seq.QPR{}
 	size := 0
 	for _, qprPath := range qprsPaths {
@@ -860,7 +862,7 @@ func (as *AsyncSearcher) loadSearchResult(qprsPaths []string, limit int, order s
 		}
 
 		var tmp seq.QPR
-		tail, err := unmarshalQPR(&tmp, qprRaw, limit)
+		tail, err := unmarshalQPR(&tmp, qprRaw, limit, aggFuncs...)
 		if err != nil {
 			logger.Fatal("can't unmarshal async search result", zap.String("path", qprPath), zap.Error(err))
 		}
@@ -870,6 +872,14 @@ func (as *AsyncSearcher) loadSearchResult(qprsPaths []string, limit int, order s
 		seq.MergeQPRs(&qpr, []*seq.QPR{&tmp}, limit, histInterval, order)
 	}
 	return qpr, size
+}
+
+func aggFuncs(queries []processor.AggQuery) []seq.AggFunc {
+	result := make([]seq.AggFunc, len(queries))
+	for i := range queries {
+		result[i] = queries[i].Func
+	}
+	return result
 }
 
 var timeNow = time.Now
@@ -934,7 +944,9 @@ func (as *AsyncSearcher) mergeQPRs(job mergeJob) {
 		qprPath := path.Join(as.config.DataDir, qprFilename)
 		qprs = append(qprs, qprPath)
 	}
-	qpr, sizeBefore := as.loadSearchResult(qprs, params.Limit, params.Order, seq.MillisToMID(params.HistInterval))
+	qpr, sizeBefore := as.loadSearchResult(
+		qprs, params.Limit, params.Order, seq.MillisToMID(params.HistInterval), aggFuncs(params.AggQ),
+	)
 
 	var sizeAfter int
 	storeMQPR := func(compressed []byte) error {
