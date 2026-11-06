@@ -9,8 +9,11 @@ import (
 
 	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/ozontech/seq-db/asyncsearcher"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/indexer"
@@ -49,6 +52,196 @@ func TestDuplicates(t *testing.T) {
 	assert.Equal(t, cnt, len(data.IdSources), "we expect no doubles")
 }
 
+func TestProxyProtocolFromContext(t *testing.T) {
+	tests := []struct {
+		name   string
+		ctx    context.Context
+		expect config.ProxyProtocolVersion
+	}{
+		{name: "no metadata", ctx: context.Background(), expect: config.ProxyProtocolVersion1},
+		{
+			name:   "no protocol header",
+			ctx:    metadata.NewIncomingContext(context.Background(), metadata.MD{}),
+			expect: config.ProxyProtocolVersion1,
+		},
+		{
+			name:   "protocol v1",
+			ctx:    metadata.NewIncomingContext(context.Background(), metadata.Pairs(consts.ProxyProtocolVersionHeader, "1")),
+			expect: config.ProxyProtocolVersion1,
+		},
+		{
+			name:   "protocol v2",
+			ctx:    metadata.NewIncomingContext(context.Background(), metadata.Pairs(consts.ProxyProtocolVersionHeader, "2")),
+			expect: config.ProxyProtocolVersion2,
+		},
+		{
+			name:   "future protocol",
+			ctx:    metadata.NewIncomingContext(context.Background(), metadata.Pairs(consts.ProxyProtocolVersionHeader, "3")),
+			expect: config.ProxyProtocolVersion2,
+		},
+		{
+			name:   "unknown protocol",
+			ctx:    metadata.NewIncomingContext(context.Background(), metadata.Pairs(consts.ProxyProtocolVersionHeader, "unknown")),
+			expect: config.ProxyProtocolVersion2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expect, proxyProtocolFromContext(tt.ctx))
+		})
+	}
+}
+
+func TestBuildSearchResponseColumns(t *testing.T) {
+	agg := seq.NewAggregatableSamples(seq.AggFuncSum, 1, 2)
+	agg.Tokens[0].AppendString("a")
+	agg.Values.Totals.Append(2)
+	agg.Values.NotExists.Append(7)
+	agg.Values.Sums.Append(4)
+	agg.Values.Mins.Append(0)
+	agg.Values.Maxs.Append(0)
+	agg.Tokens[0].AppendString("b")
+	agg.Values.Totals.Append(1)
+	agg.Values.NotExists.Append(8)
+	agg.Values.Sums.Append(1)
+	agg.Values.Mins.Append(0)
+	agg.Values.Maxs.Append(0)
+
+	t.Run("proxy protocol v2 compressed columns", func(t *testing.T) {
+		resp := buildSearchResponseVersion(&seq.QPR{Aggs: []seq.AggregatableSamples{*agg}}, config.CurrentProxyProtocolVersion)
+		values := resp.Aggs[0].GetValues()
+		assert.NotNil(t, values)
+
+		tokenColumn, err := seq.UnmarshalStringColumn(values.Tokens[0])
+		assert.NoError(t, err)
+		requireRowsEqual(t, tokenColumn, "a", "b")
+		assert.Empty(t, values.Mids)
+		totals, err := seq.UnmarshalInt64Column(values.Totals)
+		assert.NoError(t, err)
+		var got []int64
+		it := totals.NewIter()
+		for it.Next() {
+			got = append(got, it.Value())
+		}
+		assert.Equal(t, []int64{2, 1}, got)
+		notExists, err := seq.UnmarshalInt64Column(values.NotExists)
+		assert.NoError(t, err)
+		got = nil
+		it = notExists.NewIter()
+		for it.Next() {
+			got = append(got, it.Value())
+		}
+		assert.Equal(t, []int64{7, 8}, got)
+		sums, err := seq.UnmarshalFloat64Column(values.Sums)
+		assert.NoError(t, err)
+		floatIt := sums.NewIter()
+		gotFloat := make([]float64, 0)
+		for floatIt.Next() {
+			gotFloat = append(gotFloat, floatIt.Value())
+		}
+		assert.Equal(t, []float64{4, 1}, gotFloat)
+	})
+
+	t.Run("proxy protocol v2 compressed mids", func(t *testing.T) {
+		timeSeries := seq.NewAggregatableSamples(seq.AggFuncSum, 1, 3)
+		timeSeries.MIDs = seq.NewInt64Column(3)
+		appendSumRow := func(token string, mid int64, total int64, sum float64) {
+			timeSeries.Tokens[0].AppendString(token)
+			timeSeries.MIDs.Append(mid)
+			timeSeries.Values.Totals.Append(total)
+			timeSeries.Values.NotExists.Append(0)
+			timeSeries.Values.Sums.Append(sum)
+			timeSeries.Values.Mins.Append(0)
+			timeSeries.Values.Maxs.Append(0)
+		}
+		appendSumRow("a", 2, 2, 4)
+		appendSumRow("b", 2, 1, 1)
+		appendSumRow("a", 1, 3, 6)
+
+		resp := buildSearchResponseVersion(&seq.QPR{Aggs: []seq.AggregatableSamples{*timeSeries}}, config.CurrentProxyProtocolVersion)
+		values := resp.Aggs[0].GetValues()
+		mids, err := seq.UnmarshalInt64Column(values.Mids)
+		assert.NoError(t, err)
+
+		var got []int64
+		it := mids.NewIter()
+		for it.Next() {
+			got = append(got, it.Value())
+		}
+		assert.Equal(t, []int64{2, 2, 1}, got)
+	})
+
+	t.Run("legacy zero-row aggregation", func(t *testing.T) {
+		qpr := &seq.QPR{
+			Aggs: make([]seq.AggregatableSamples, 1),
+		}
+
+		resp := buildSearchResponseVersion(qpr, config.ProxyProtocolVersion1)
+
+		require.Len(t, resp.Aggs, 1)
+		require.Empty(t, resp.Aggs[0].Timeseries)
+		require.Empty(t, resp.Aggs[0].Agg)
+		require.Empty(t, resp.Aggs[0].AggHistogram)
+	})
+}
+
+func TestAggValuesToProtoRequiredColumns(t *testing.T) {
+	tests := []struct {
+		fn        seq.AggFunc
+		totals    bool
+		notExists bool
+		sums      bool
+		mins      bool
+		maxs      bool
+		quantiles bool
+		uniqueIDs bool
+	}{
+		{fn: seq.AggFuncCount, totals: true},
+		{fn: seq.AggFuncSum, totals: true, notExists: true, sums: true},
+		{fn: seq.AggFuncMin, totals: true, notExists: true, mins: true},
+		{fn: seq.AggFuncMax, totals: true, notExists: true, maxs: true},
+		{fn: seq.AggFuncAvg, totals: true, notExists: true, sums: true},
+		{fn: seq.AggFuncQuantile, totals: true, notExists: true, mins: true, maxs: true, quantiles: true},
+		{fn: seq.AggFuncUnique},
+		{fn: seq.AggFuncUniqueCount, totals: true, notExists: true, uniqueIDs: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.fn.String(), func(t *testing.T) {
+			agg := seq.NewAggregatableSamples(tt.fn, 1, 1)
+			agg.AppendSamples([]string{"a"}, consts.DummyMID, seq.SamplesContainer{
+				Total:     1,
+				NotExists: 2,
+				Sum:       3,
+				Min:       4,
+				Max:       5,
+				Samples:   []float64{6},
+				Values:    map[uint32]struct{}{7: {}},
+			})
+
+			encoded := aggValuesToProto(agg)
+			assert.Equal(t, tt.totals, len(encoded.Totals) > 0)
+			assert.Equal(t, tt.notExists, len(encoded.NotExists) > 0)
+			assert.Equal(t, tt.sums, len(encoded.Sums) > 0)
+			assert.Equal(t, tt.mins, len(encoded.Mins) > 0)
+			assert.Equal(t, tt.maxs, len(encoded.Maxs) > 0)
+			assert.Equal(t, tt.quantiles, len(encoded.Quantiles) > 0)
+			assert.Equal(t, tt.uniqueIDs, len(encoded.UniqueIds) > 0)
+		})
+	}
+}
+
+func requireRowsEqual(t *testing.T, col seq.StringColumn, want ...string) {
+	t.Helper()
+	var got []string
+	it := col.NewIter()
+	for it.Next() {
+		got = append(got, string(it.Row()))
+	}
+	assert.Equal(t, want, got)
+}
+
 func makeBulkRequest(cnt int) *storeapi.BulkRequest {
 	metaRoot := insaneJSON.Spawn()
 	defer insaneJSON.Release(metaRoot)
@@ -80,7 +273,7 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 	}, nil, skipMaskManager)
 	assert.NoError(t, err)
 
-	config := APIConfig{
+	apiConfig := APIConfig{
 		StoreMode: "",
 		Bulk: BulkConfig{
 			RequestsLimit: consts.DefaultBulkRequestsLimit,
@@ -98,7 +291,7 @@ func getTestGrpc(t *testing.T) (*GrpcV1, func(), func()) {
 		},
 	}
 
-	g := NewGrpcV1(config, fm, mappingProvider)
+	g := NewGrpcV1(apiConfig, fm, mappingProvider)
 
 	release := func() {
 		stop()

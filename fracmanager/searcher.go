@@ -55,6 +55,9 @@ func (s *Searcher) SearchDocs(ctx context.Context, fracs []frac.Fraction, params
 		Histogram: make(map[seq.MID]uint64),
 		Aggs:      make([]seq.AggregatableSamples, len(params.AggQ)),
 	}
+	for i, query := range params.AggQ {
+		total.Aggs[i] = *seq.NewAggregatableSamples(query.Func, 1, 0)
+	}
 
 	fracsChunkSize := s.cfg.FractionsPerIteration
 	if fracsChunkSize == 0 {

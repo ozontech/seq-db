@@ -157,6 +157,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 
 	storesCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	storesCtx = metadata.AppendToOutgoingContext(storesCtx, consts.ProxyProtocolVersionHeader, config.CurrentProxyProtocolVersion.String())
 
 	type shardResponse struct {
 		replica string
@@ -226,7 +227,7 @@ func (si *Ingestor) FetchAsyncSearchResult(
 	intervalsInQueue := 0
 	histInterval := seq.MID(0)
 	pr := FetchAsyncSearchResultResponse{}
-	mergeStoreResp := func(sr *storeapi.FetchAsyncSearchResultResponse, replica string) {
+	mergeStoreResp := func(sr *storeapi.FetchAsyncSearchResultResponse, replica string) error {
 		pr.DiskUsage += sr.DiskUsage
 		intervalsInQueue += int(sr.IntervalsInQueue)
 		intervalsDone += int(sr.IntervalsDone)
@@ -260,10 +261,17 @@ func (si *Ingestor) FetchAsyncSearchResult(
 			pr.DoneAt = t
 		}
 
-		qpr := responseToQPR(sr.Response, si.sourceByClient[replica], false)
+		aggFuncs := make([]seq.AggFunc, len(sr.Aggs))
+		for i, agg := range sr.Aggs {
+			aggFuncs[i] = agg.Func.MustAggFunc()
+		}
+		qpr, err := responseToQPR(aggFuncs, sr.Response, si.sourceByClient[replica], false)
+		if err != nil {
+			return fmt.Errorf("decode response from source %d: %w", si.sourceByClient[replica], err)
+		}
 		seq.MergeQPRs(&pr.QPR, []*seq.QPR{qpr}, r.Size+r.Offset, histInterval, r.Order)
+		return nil
 	}
-
 	var aggQueries []seq.AggregateArgs
 	var searchReq *AsyncRequest
 	var successfulResponses int
@@ -277,7 +285,9 @@ func (si *Ingestor) FetchAsyncSearchResult(
 
 		successfulResponses++
 		storeResp := resp.data
-		mergeStoreResp(storeResp, resp.replica)
+		if err := mergeStoreResp(storeResp, resp.replica); err != nil {
+			return FetchAsyncSearchResultResponse{}, nil, status.Error(codes.Internal, err.Error())
+		}
 
 		if len(aggQueries) == 0 {
 			for _, agg := range storeResp.Aggs {
