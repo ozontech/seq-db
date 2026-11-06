@@ -263,6 +263,15 @@ type testGetAggResp struct {
 	apiAgg *seqproxyapi.Aggregation
 }
 
+func aggSamplesFromMap(m map[seq.AggBin]*seq.SamplesContainer) seq.AggregatableSamples {
+	bins := make([]seq.AggBinSamples, 0, len(m))
+	for bin, samples := range m {
+		bins = append(bins, seq.AggBinSamples{Bin: bin, Samples: *samples})
+	}
+	seq.SortAggBinSamples(bins)
+	return seq.AggregatableSamplesFromBins(bins)
+}
+
 func makeGetAggRespData(totalSize int64, bucketsCnt int) *testGetAggResp {
 	buckets := make([]*seqproxyapi.Aggregation_Bucket, 0)
 	qprAgg := make(map[seq.AggBin]*seq.SamplesContainer)

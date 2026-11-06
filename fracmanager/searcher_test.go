@@ -279,15 +279,15 @@ func TestSearcher_MergeAggregations(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, qpr.Aggs, 1)
-	assert.Len(t, qpr.Aggs[0].SamplesByBin, 2)
+	assert.Equal(t, 2, qpr.Aggs[0].RowsCount())
 
-	gatewaySamples := qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "gateway"}]
+	gatewaySamples := qpr.Aggs[0].FindBin(seq.AggBin{Token: "gateway"})
 	assert.Equal(t, int64(7), gatewaySamples.Total)
 	assert.Equal(t, float64(1), gatewaySamples.Min)
 	assert.Equal(t, float64(35), gatewaySamples.Max)
 	assert.Equal(t, float64(107), gatewaySamples.Sum)
 
-	proxySamples := qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "proxy"}]
+	proxySamples := qpr.Aggs[0].FindBin(seq.AggBin{Token: "proxy"})
 	assert.Equal(t, int64(1), proxySamples.Total)
 	assert.Equal(t, float64(5), proxySamples.Min)
 	assert.Equal(t, float64(5), proxySamples.Max)
@@ -356,13 +356,20 @@ func newFakeQPRWithHist(ids []int, histogram map[seq.MID]uint64) *seq.QPR {
 }
 
 func newFakeQPRWithAgg(aggData map[seq.AggBin]*seq.SamplesContainer) *seq.QPR {
-	agg := seq.AggregatableSamples{
-		SamplesByBin: aggData,
-		NotExists:    0,
+	bins := make([]seq.AggBinSamples, 0, len(aggData))
+	for bin, samples := range aggData {
+		bins = append(bins, seq.AggBinSamples{Bin: bin, Samples: *samples})
 	}
+	seq.SortAggBinSamples(bins)
+
+	agg := seq.NewAggregatableSamplesForFunc(seq.AggFuncSum, 1, len(bins))
+	for i := range bins {
+		agg.AppendRow([]string{bins[i].Bin.Token}, bins[i].Bin.MID, bins[i].Samples)
+	}
+	agg.SortRows()
 
 	return &seq.QPR{
-		Aggs: []seq.AggregatableSamples{agg},
+		Aggs: []seq.AggregatableSamples{*agg},
 	}
 }
 

@@ -127,12 +127,17 @@ func buildAgg(qpr *seq.QPR, timeseries bool) *storeapi.SearchResponse_Agg {
 	fromAgg := qpr.Aggs[0]
 
 	agg := &storeapi.SearchResponse_Agg{}
-	from := fromAgg.SamplesByBin
+	var tokens seq.StringColumnIter
+	if len(fromAgg.Tokens) > 0 {
+		tokens = fromAgg.Tokens[0].NewIter()
+	}
 
-	for bin, hist := range from {
-		if timeseries && bin.MID == consts.DummyMID {
+	for row := 0; tokens.Next(); row++ {
+		mid := fromAgg.RowMID(row)
+		if timeseries && mid == consts.DummyMID {
 			continue
 		}
+		hist := fromAgg.RowSamples(row)
 
 		pbhist := &storeapi.SearchResponse_Histogram{
 			Min:       hist.Min,
@@ -152,8 +157,8 @@ func buildAgg(qpr *seq.QPR, timeseries bool) *storeapi.SearchResponse_Agg {
 
 		agg.Timeseries = append(agg.Timeseries,
 			&storeapi.SearchResponse_Bin{
-				Label: bin.Token,
-				Ts:    timestamppb.New(bin.MID.Time()),
+				Label: string(tokens.Row()),
+				Ts:    timestamppb.New(mid.Time()),
 				Hist:  pbhist,
 			},
 		)

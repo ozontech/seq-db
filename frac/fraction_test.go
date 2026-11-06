@@ -790,8 +790,10 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 
 		s.Require().Equal(len(expected), len(qpr.Aggs))
 		for i := range expected {
-			for bin, hist := range qpr.Aggs[i].SamplesByBin {
-				s.Require().Equalf(int64(expected[i][bin.Token]), hist.Total, "failed for token %s", bin)
+			tokens := qpr.Aggs[i].Tokens[0].NewIter()
+			for row := 0; tokens.Next(); row++ {
+				token := string(tokens.Row())
+				s.Require().Equalf(int64(expected[i][token]), qpr.Aggs[i].RowSamples(row).Total, "failed for token %s", token)
 			}
 		}
 	}
@@ -2417,8 +2419,8 @@ func assertSampledAggs(s *FractionTestSuite, expected, actual []seq.Aggregatable
 
 	for i := range expected {
 		// convert aggregations to token → Total maps
-		expMap := samplesToMap(expected[i].SamplesByBin)
-		actMap := samplesToMap(actual[i].SamplesByBin)
+		expMap := samplesToMap(expected[i])
+		actMap := samplesToMap(actual[i])
 
 		// calculate totals and distributions
 		expTotal := sumMap(expMap)
@@ -2490,10 +2492,11 @@ func assertTotalScaled(s *FractionTestSuite, expTotal, actTotal uint64, ds uint3
 		label, expScaled, ds, actTotal)
 }
 
-func samplesToMap(samplesByBin map[seq.AggBin]*seq.SamplesContainer) map[string]uint64 {
-	res := make(map[string]uint64, len(samplesByBin))
-	for bin, sample := range samplesByBin {
-		res[bin.Token] = uint64(sample.Total)
+func samplesToMap(agg seq.AggregatableSamples) map[string]uint64 {
+	res := make(map[string]uint64, agg.RowsCount())
+	tokens := agg.Tokens[0].NewIter()
+	for row := 0; tokens.Next(); row++ {
+		res[string(tokens.Row())] = uint64(agg.RowSamples(row).Total)
 	}
 	return res
 }

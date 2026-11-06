@@ -571,41 +571,20 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 
 	aggs := make([]seq.AggregatableSamples, len(resp.Aggs))
 	for i, agg := range resp.Aggs {
-		from := agg.Timeseries
-		to := make(map[seq.AggBin]*seq.SamplesContainer)
-
-		for _, bin := range from {
-			pbhist := bin.Hist
-
-			tbin := seq.AggBin{
-				MID:   seq.MID(bin.Ts.AsTime().UnixNano()),
-				Token: bin.Label,
+		if agg.Values != nil {
+			to, err := aggValuesToQPR(agg.Values)
+			if err != nil {
+				logger.Error("can't decode aggregation columns", zap.Error(err))
+				continue
 			}
-
-			var values map[uint32]struct{}
-			if len(pbhist.Values) > 0 {
-				values = make(map[uint32]struct{}, len(pbhist.Values))
-				for _, idx := range pbhist.Values {
-					values[idx] = struct{}{}
-				}
-			}
-
-			to[tbin] = &seq.SamplesContainer{
-				Min:       pbhist.Min,
-				Max:       pbhist.Max,
-				Sum:       pbhist.Sum,
-				Total:     pbhist.Total,
-				Samples:   pbhist.Samples,
-				NotExists: pbhist.NotExists,
-				Values:    values,
-			}
+			aggs[i] = to
+		} else {
+			// This is an old store so we convert legacy bins+histograms to a new QPR format
+			aggs[i] = legacyBinsToQPR(agg.Timeseries)
 		}
 
-		aggs[i] = seq.AggregatableSamples{
-			SamplesByBin: to,
-			NotExists:    agg.NotExists,
-			ValuesPool:   agg.ValuesPool,
-		}
+		aggs[i].NotExists = agg.NotExists
+		aggs[i].ValuesPool = agg.ValuesPool
 	}
 
 	errSources := make([]seq.ErrorSource, 0, len(resp.Errors))
@@ -623,6 +602,138 @@ func responseToQPR(resp *storeapi.SearchResponse, source uint64, explain bool) *
 		Total:     resp.Total,
 		Errors:    errSources,
 	}
+}
+
+func legacyBinsToQPR(from []*storeapi.SearchResponse_Bin) seq.AggregatableSamples {
+	to := seq.NewAggregatableSamplesForFunc(aggFuncFromLegacyResponse(from), 1, len(from))
+	for _, bin := range from {
+		to.AppendRow([]string{bin.Label}, seq.MID(bin.Ts.AsTime().UnixNano()), legacyHistogram(bin.Hist))
+	}
+	to.SortRows()
+	return *to
+}
+
+func legacyHistogram(from *storeapi.SearchResponse_Histogram) seq.SamplesContainer {
+	var values map[uint32]struct{}
+	if len(from.Values) > 0 {
+		values = make(map[uint32]struct{}, len(from.Values))
+		for _, idx := range from.Values {
+			values[idx] = struct{}{}
+		}
+	}
+	return seq.SamplesContainer{
+		Min:       from.Min,
+		Max:       from.Max,
+		Sum:       from.Sum,
+		Total:     from.Total,
+		Samples:   from.Samples,
+		NotExists: from.NotExists,
+		Values:    values,
+	}
+}
+
+// aggValuesToQPR decodes token columns in the columnar encoding.
+func aggValuesToQPR(from *storeapi.SearchResponse_AggValues) (seq.AggregatableSamples, error) {
+	if len(from.Tokens) != 1 {
+		return seq.AggregatableSamples{}, fmt.Errorf("invalid token columns %d; want 1", len(from.Tokens))
+	}
+	tokenColumn, err := seq.UnmarshalStringColumn(from.Tokens[0].Data)
+	if err != nil {
+		return seq.AggregatableSamples{}, err
+	}
+	tokenRows := tokenColumn.Len()
+	agg := seq.NewAggregatableSamplesFromColumns(aggFuncFromProto(from.Func), []seq.StringColumn{tokenColumn})
+	if len(from.Mids) > 0 {
+		mids, err := seq.UnmarshalInt64Column(from.Mids)
+		if err != nil {
+			return seq.AggregatableSamples{}, err
+		}
+		if mids.Len() != tokenRows {
+			return seq.AggregatableSamples{}, fmt.Errorf("invalid mids column length %d; want %d", mids.Len(), tokenRows)
+		}
+		agg.MIDs = mids
+	}
+
+	values := &agg.Values
+	totals, err := seq.UnmarshalInt64Column(from.Totals)
+	if err != nil {
+		return seq.AggregatableSamples{}, err
+	}
+	values.Totals = totals
+	notExists, err := seq.UnmarshalInt64Column(from.NotExists)
+	if err != nil {
+		return seq.AggregatableSamples{}, err
+	}
+	values.NotExists = notExists
+	sums, err := seq.UnmarshalFloat64Column(from.Sums)
+	if err != nil {
+		return seq.AggregatableSamples{}, err
+	}
+	values.Sums = sums
+	mins, err := seq.UnmarshalFloat64Column(from.Mins)
+	if err != nil {
+		return seq.AggregatableSamples{}, err
+	}
+	values.Mins = mins
+	maxs, err := seq.UnmarshalFloat64Column(from.Maxs)
+	if err != nil {
+		return seq.AggregatableSamples{}, err
+	}
+	values.Maxs = maxs
+	quantiles, err := seq.UnmarshalArraysColumn[float64](from.Quantiles)
+	if err != nil {
+		return seq.AggregatableSamples{}, err
+	}
+	values.Quantiles = quantiles
+	uniqueIDs, err := seq.UnmarshalArraysColumn[uint32](from.UniqueIds)
+	if err != nil {
+		return seq.AggregatableSamples{}, err
+	}
+	values.UniqueIDs = uniqueIDs
+	if err := values.Validate(tokenRows); err != nil {
+		return seq.AggregatableSamples{}, err
+	}
+	return *agg, nil
+}
+
+func aggFuncFromProto(fn storeapi.AggFunc) seq.AggFunc {
+	switch fn {
+	case storeapi.AggFunc_AGG_FUNC_SUM:
+		return seq.AggFuncSum
+	case storeapi.AggFunc_AGG_FUNC_MIN:
+		return seq.AggFuncMin
+	case storeapi.AggFunc_AGG_FUNC_MAX:
+		return seq.AggFuncMax
+	case storeapi.AggFunc_AGG_FUNC_AVG:
+		return seq.AggFuncAvg
+	case storeapi.AggFunc_AGG_FUNC_QUANTILE:
+		return seq.AggFuncQuantile
+	case storeapi.AggFunc_AGG_FUNC_UNIQUE:
+		return seq.AggFuncUnique
+	case storeapi.AggFunc_AGG_FUNC_UNIQUE_COUNT:
+		return seq.AggFuncUniqueCount
+	default:
+		return seq.AggFuncCount
+	}
+}
+
+func aggFuncFromLegacyResponse(bins []*storeapi.SearchResponse_Bin) seq.AggFunc {
+	var fn seq.AggFunc = seq.AggFuncCount
+	for _, bin := range bins {
+		hist := bin.GetHist()
+		if hist == nil {
+			continue
+		}
+		switch {
+		case len(hist.Values) > 0:
+			return seq.AggFuncUniqueCount
+		case len(hist.Samples) > 0:
+			return seq.AggFuncQuantile
+		case hist.Sum != 0 || hist.Min != 0 || hist.Max != 0:
+			return seq.AggFuncSum
+		}
+	}
+	return fn
 }
 
 // searchShard searches on all hosts of given shard. Returns err only if all hosts return err.
@@ -700,7 +811,6 @@ func (si *Ingestor) searchShard(
 	return nil, 0, util.DeduplicateErrors(errs)
 }
 
-// searchHost search req on single host.
 func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest, host string) (*storeapi.SearchResponse, uint64, error) {
 	client, has := si.clients[host]
 	if !has {
@@ -709,13 +819,7 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 		)
 	}
 
-	var md metadata.MD
-	data, err := client.Search(ctx, req,
-		grpc.MaxCallRecvMsgSize(config.MaxGrpcMessageSizeBytes),
-		grpc.MaxCallSendMsgSize(config.MaxGrpcMessageSizeBytes),
-		grpc.UseCompressor(gzip.Name),
-		grpc.Header(&md),
-	)
+	data, md, err := si.searchCall(ctx, req, client, config.CurrentProxyProtocolVersion)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -742,6 +846,27 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 	}
 
 	return data, si.sourceByClient[host], nil
+}
+
+func (si *Ingestor) searchCall(
+	ctx context.Context,
+	req *storeapi.SearchRequest,
+	client storeapi.StoreApiClient,
+	proxyProtocol config.ProxyProtocolVersion,
+) (*storeapi.SearchResponse, metadata.MD, error) {
+	ctx = metadata.AppendToOutgoingContext(ctx, consts.ProxyProtocolVersionHeader, proxyProtocol.String())
+
+	var md metadata.MD
+	data, err := client.Search(ctx, req,
+		grpc.MaxCallRecvMsgSize(config.MaxGrpcMessageSizeBytes),
+		grpc.MaxCallSendMsgSize(config.MaxGrpcMessageSizeBytes),
+		grpc.UseCompressor(gzip.Name),
+		grpc.Header(&md),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, md, nil
 }
 
 func explainEntryToTracerSpan(e *storeapi.ExplainEntry) *querytracer.Span {

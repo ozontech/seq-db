@@ -177,7 +177,7 @@ func evalAgg(
 
 		if query.GroupBy == nil {
 			return NewSingleSourceHistogramAggregator(
-				fieldIterator, collectSamples, extractMID,
+				fieldIterator, query.Func, collectSamples, extractMID,
 			), nil
 		}
 
@@ -191,7 +191,7 @@ func evalAgg(
 		}
 
 		return NewGroupAndFieldAggregator(
-			fieldIterator, groupIterator, extractMID, collectSamples, collectValues, limits,
+			fieldIterator, groupIterator, query.Func, extractMID, collectSamples, collectValues, limits,
 		), nil
 
 	default:

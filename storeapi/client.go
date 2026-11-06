@@ -32,8 +32,17 @@ func (i inMemoryAPIClient) Bulk(ctx context.Context, in *storeapi.BulkRequest, o
 }
 
 func (i inMemoryAPIClient) Search(ctx context.Context, in *storeapi.SearchRequest, opts ...grpc.CallOption) (*storeapi.SearchResponse, error) {
+	ctx = withIncomingMetadata(ctx)
 	setProtocolVersionHeader(opts...)
 	return i.store.GrpcV1().Search(ctx, in)
+}
+
+func withIncomingMetadata(ctx context.Context) context.Context {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		return ctx
+	}
+	return metadata.NewIncomingContext(ctx, md)
 }
 
 func (i inMemoryAPIClient) StartAsyncSearch(ctx context.Context, in *storeapi.StartAsyncSearchRequest, opts ...grpc.CallOption) (*storeapi.StartAsyncSearchResponse, error) {

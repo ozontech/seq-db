@@ -219,7 +219,7 @@ func IndexSearch(
 				m.Stop()
 				return nil, err
 			}
-			if len(aggsResult[i].SamplesByBin) > aggLimits.MaxGroupTokens && aggLimits.MaxGroupTokens > 0 {
+			if aggsResult[i].RowsCount() > aggLimits.MaxGroupTokens && aggLimits.MaxGroupTokens > 0 {
 				return nil, consts.ErrTooManyGroupTokens
 			}
 		}

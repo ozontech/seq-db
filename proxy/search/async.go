@@ -263,7 +263,6 @@ func (si *Ingestor) FetchAsyncSearchResult(
 		qpr := responseToQPR(sr.Response, si.sourceByClient[replica], false)
 		seq.MergeQPRs(&pr.QPR, []*seq.QPR{qpr}, r.Size+r.Offset, histInterval, r.Order)
 	}
-
 	var aggQueries []seq.AggregateArgs
 	var searchReq *AsyncRequest
 	var successfulResponses int

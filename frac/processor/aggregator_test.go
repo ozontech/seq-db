@@ -51,6 +51,24 @@ func TestSingleSourceCountAggregator(t *testing.T) {
 	assert.Equal(t, int64(1), agg.counter.notExists())
 }
 
+func TestSortAggBinCounts(t *testing.T) {
+	rows := []aggBinCount{
+		{token: "a", mid: 1},
+		{token: "b", mid: 2},
+		{token: "a", mid: 2},
+		{token: "b", mid: consts.DummyMID},
+	}
+
+	sortAggBinCounts(rows)
+
+	require.Equal(t, []aggBinCount{
+		{token: "a", mid: 2},
+		{token: "b", mid: 2},
+		{token: "a", mid: 1},
+		{token: "b", mid: consts.DummyMID},
+	}, rows)
+}
+
 func TestSingleSourceCountAggregatorWithInterval(t *testing.T) {
 	// For now input for this test is incorrect since we support
 	// aggregations only for `keyword` index type.
@@ -241,7 +259,7 @@ func TestTwoSourceAggregator(t *testing.T) {
 	fieldIterator := NewSourcedNodeIterator(field, dp, fieldTIDs, "field", iteratorLimit{limit: 0, err: consts.ErrTooManyGroupTokens})
 	limits := AggLimits{}
 	aggregator := NewGroupAndFieldAggregator(
-		fieldIterator, groupIterator, provideExtractTimeFunc(nil, nil, 0), true, false, limits,
+		fieldIterator, groupIterator, seq.AggFuncMax, provideExtractTimeFunc(nil, nil, 0), true, false, limits,
 	)
 
 	// Call Next for two data points.
@@ -299,17 +317,8 @@ func TestSingleTreeCountAggregator(t *testing.T) {
 		t.Errorf("Unexpected error: %v", err)
 	}
 
-	expectedResult := seq.AggregatableSamples{
-		SamplesByBin: map[seq.AggBin]*seq.SamplesContainer{
-			// "0" because DataProvider converts TID source (tid index) to string
-			{Token: "0"}: {Total: 1},
-		},
-	}
-
-	r.Equal(len(expectedResult.SamplesByBin), len(result.SamplesByBin))
-	for token, hist := range expectedResult.SamplesByBin {
-		r.Equal(hist.Total, result.SamplesByBin[token].Total)
-	}
+	r.Equal(1, result.RowsCount())
+	r.Equal(int64(1), result.RowSamples(0).Total)
 }
 
 func TestAggregatorLimitExceeded(t *testing.T) {

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"maps"
 	"math"
 	"math/rand"
 	"net/http"
@@ -665,13 +664,12 @@ func (s *IntegrationTestSuite) TestAgg() {
 		qpr, _, err := env.Search(`service:x1`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
-		r.NotNil(qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}], qpr.Aggs[0].SamplesByBin)
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
 
 		qpr, _, err = env.Search(`service:x*`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
 
 		aggQ := setup.WithAggQuery(
 			"service",
@@ -681,15 +679,15 @@ func (s *IntegrationTestSuite) TestAgg() {
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[1].SamplesByBin[seq.AggBin{Token: "y1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[1], "y1"), "wrong doc count")
 
 		qpr, _, err = env.Search(`service:x*`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[1].SamplesByBin[seq.AggBin{Token: "y1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[1], "y1"), "wrong doc count")
 	}
 
 	env.SealAll()
@@ -698,12 +696,12 @@ func (s *IntegrationTestSuite) TestAgg() {
 		qpr, _, err := env.Search(`service:x1`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
 
 		qpr, _, err = env.Search(`service:x*`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
 
 		aggQ := setup.WithAggQuery(
 			"service",
@@ -713,16 +711,35 @@ func (s *IntegrationTestSuite) TestAgg() {
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[1].SamplesByBin[seq.AggBin{Token: "y1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[1], "y1"), "wrong doc count")
 
 		qpr, _, err = env.Search(`service:x*`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[1].SamplesByBin[seq.AggBin{Token: "y1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[1], "y1"), "wrong doc count")
 	}
+}
+
+func aggTotal(agg seq.AggregatableSamples, token string) int64 {
+	return agg.FindBin(seq.AggBin{Token: token}).Total
+}
+
+func sortedTimeBins(agg seq.AggregatableSamples) []seq.AggBinSamples {
+	bins := make([]seq.AggBinSamples, 0, agg.RowsCount())
+	tokens := agg.Tokens[0].NewIter()
+	for row := 0; tokens.Next(); row++ {
+		bins = append(bins, seq.AggBinSamples{
+			Bin:     seq.AggBin{Token: string(tokens.Row()), MID: agg.RowMID(row)},
+			Samples: *agg.RowSamples(row),
+		})
+	}
+	slices.SortFunc(bins, func(a, b seq.AggBinSamples) int {
+		return a.Bin.MID.Time().Compare(b.Bin.MID.Time())
+	})
+	return bins
 }
 
 func (s *IntegrationTestSuite) TestTimeseries() {
@@ -781,12 +798,10 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedTimeBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, int64(nextBin), hist[bins[i]].Total)
+			require.Equal(t, int64(nextBin), bins[i].Samples.Total)
 		}
 	})
 
@@ -801,13 +816,11 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedTimeBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, float64(nextBin*i), hist[bins[i]].Min)
-			require.Equal(t, "nginx-min", bins[i].Token)
+			require.Equal(t, float64(nextBin*i), bins[i].Samples.Min)
+			require.Equal(t, "nginx-min", bins[i].Bin.Token)
 		}
 	})
 
@@ -821,12 +834,10 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedTimeBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, float64(nextBin*(i+1)-1), hist[bins[i]].Max)
+			require.Equal(t, float64(nextBin*(i+1)-1), bins[i].Samples.Max)
 		}
 	})
 
@@ -840,12 +851,10 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedTimeBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, float64(1), hist[bins[i]].Sum/float64(hist[bins[i]].Total))
+			require.Equal(t, float64(1), bins[i].Samples.Sum/float64(bins[i].Samples.Total))
 		}
 	})
 
@@ -859,12 +868,10 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedTimeBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, float64(nextBin), hist[bins[i]].Sum)
+			require.Equal(t, float64(nextBin), bins[i].Samples.Sum)
 		}
 	})
 
@@ -879,12 +886,10 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedTimeBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, float64(nextBin*i+5), hist[bins[i]].Quantile(0.5))
+			require.Equal(t, float64(nextBin*i+5), bins[i].Samples.Quantile(0.5))
 		}
 	})
 
@@ -899,13 +904,11 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedTimeBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, "nginx-unique-count", bins[i].Token)
-			require.Equal(t, int64(nextBin), int64(len(hist[bins[i]].Values)))
+			require.Equal(t, "nginx-unique-count", bins[i].Bin.Token)
+			require.Equal(t, int64(nextBin), int64(len(bins[i].Samples.Values)))
 		}
 
 		require.NotEmpty(t, qpr.Aggs[0].ValuesPool)
@@ -918,14 +921,6 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}
 		require.Empty(t, levelStrings)
 	})
-}
-
-func sortedTimeBins(hist map[seq.AggBin]*seq.SamplesContainer) []seq.AggBin {
-	keys := slices.Collect(maps.Keys(hist))
-	slices.SortFunc(keys, func(a, b seq.AggBin) int {
-		return a.MID.Time().Compare(b.MID.Time())
-	})
-	return keys
 }
 
 func (s *IntegrationTestSuite) TestAggNoTotal() {
@@ -993,7 +988,7 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 		assert.Equal(t, size, len(qpr.IDs), "we must get only size ids")
 		for i := 0; i < parts; i++ {
 			k := "x" + strconv.Itoa(i)
-			assert.Equal(t, int(aggCnt), int(qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: k}].Total), "we expect 1/%d of all documents", parts)
+			assert.Equal(t, int(aggCnt), int(aggTotal(qpr.Aggs[0], k)), "we expect 1/%d of all documents", parts)
 		}
 
 		qpr, _, err = searchNoTotal("service", 0)
@@ -1002,7 +997,7 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 		assert.Equal(t, size, len(qpr.IDs), "we must get only size ids")
 		for i := 0; i < parts; i++ {
 			k := "x" + strconv.Itoa(i)
-			assert.Equal(t, int(aggCnt), int(qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: k}].Total), "we expect 1/%d of all documents", parts)
+			assert.Equal(t, int(aggCnt), int(aggTotal(qpr.Aggs[0], k)), "we expect 1/%d of all documents", parts)
 		}
 
 		// histogram
