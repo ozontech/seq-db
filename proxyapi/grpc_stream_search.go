@@ -42,7 +42,7 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	// The first message must carry the search query.
 	req, err := stream.Recv()
 	if err == io.EOF {
-		return nil
+		return status.Error(codes.InvalidArgument, "no search query provided")
 	}
 	if err != nil {
 		return err
@@ -385,6 +385,13 @@ func (m aggRecordMapper) toRecord(r *query.Record) *seqproxyapi.Record {
 }
 
 func buildSearchReq(q *seqproxyapi.StreamSearchQuery) (*search.StreamSearchRequest, error) {
+	if q.From == nil || q.To == nil {
+		return nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
+	}
+	if q.From.AsTime().After(q.To.AsTime()) {
+		return nil, status.Error(codes.InvalidArgument, `"from" timestamp must not be after "to" timestamp`)
+	}
+
 	seqql, err := parser.ParseSeqQL(q.Query, nil)
 	if err != nil {
 		return nil, err

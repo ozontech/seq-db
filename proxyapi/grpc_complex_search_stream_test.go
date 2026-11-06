@@ -120,6 +120,42 @@ func TestBuildStreamSearchReqFromComplexSearchReq(t *testing.T) {
 			},
 		},
 		{
+			name: "missing_from",
+			req: &seqproxyapi.ComplexSearchRequest{
+				Query: &seqproxyapi.SearchQuery{
+					Query: "message:ok",
+					To:    timestamppb.New(now.Add(time.Hour)),
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing_to",
+			req: &seqproxyapi.ComplexSearchRequest{
+				Query: &seqproxyapi.SearchQuery{
+					Query: "message:ok",
+					From:  timestamppb.New(now),
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:    "nil_query",
+			req:     &seqproxyapi.ComplexSearchRequest{},
+			wantErr: true,
+		},
+		{
+			name: "from_after_to",
+			req: &seqproxyapi.ComplexSearchRequest{
+				Query: &seqproxyapi.SearchQuery{
+					Query: "message:ok",
+					From:  timestamppb.New(now.Add(time.Hour)),
+					To:    timestamppb.New(now),
+				},
+			},
+			wantErr: true,
+		},
+		{
 			name: "invalid_query",
 			req: &seqproxyapi.ComplexSearchRequest{
 				Query: &seqproxyapi.SearchQuery{
