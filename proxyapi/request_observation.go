@@ -44,6 +44,8 @@ func (o *requestObservation) finish(method string, retErr error) {
 	fields := []zap.Field{
 		zap.String("method", method),
 		zap.String("query", o.stats.Query),
+		zap.String("from", o.stats.From.String()),
+		zap.String("to", o.stats.To.String()),
 		zap.Bool("agg", o.stats.HasAgg),
 		zap.Bool("hist", o.stats.HasHist),
 		zap.Int("size", o.stats.Size),
