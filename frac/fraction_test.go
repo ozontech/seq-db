@@ -2741,7 +2741,7 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
 			return d, nil
 		}
 
-		proc := indexer.NewProcessor(s.mapping, s.tokenizers, 0, 0, 0)
+		proc := indexer.NewProcessor(s.mapping, s.tokenizers, 0, 0)
 		compressor := indexer.GetDocsMetasCompressor(3, 3)
 		_, binaryDocs, binaryMeta, err := proc.ProcessBulk(time.Now(), nil, nil, readNext)
 		s.Require().NoError(err, "processing bulk failed")

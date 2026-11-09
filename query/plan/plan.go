@@ -79,7 +79,7 @@ func Build(params BuildParams) (*Plan, error) {
 				return nil, fmt.Errorf("failed to convert stats aggs: %w", err)
 			}
 			p.Scan.AggQ = []processor.AggQuery{aggQ}
-			p.Schema = query.AggsSchema
+			p.Schema = query.AggsSchemaFor(aggQ.Func, aggQ.Interval > 0)
 		case *parser.PipeFilter:
 			// we need to extract the field so filter can compare based on it.
 			if _, err := params.Input.Index(pipe.Condition.Field); err == nil {

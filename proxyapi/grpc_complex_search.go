@@ -3,7 +3,6 @@ package proxyapi
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 
@@ -103,37 +102,26 @@ func (g *grpcV1) useStreamSearch(
 		return nil, status.Error(codes.InvalidArgument, `can't build stream search request`)
 	}
 
-	var partialErr error
-	storesStream, cancelStreams, err := g.searchIngestor.StreamSearch(ctx, streamSearchReq, tr)
+	storesStream, err := g.openStoreStreams(ctx, streamSearchReq, tr)
 	if err != nil {
-		if errors.Is(err, consts.ErrPartialResponse) {
-			if shouldFailPartialResponse(ctx) {
-				cancelStreams()
-				return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
-			}
-			partialErr = err
-			metric.SearchPartial.Inc()
-		} else {
-			cancelStreams()
-			return nil, status.Error(codes.Internal, err.Error())
-		}
+		return nil, err
 	}
 
 	var docs []*seqproxyapi.Document
 	var aggs []*seqproxyapi.Aggregation
 	if streamSearchReq.Agg != nil {
-		aggs = readAggregations(storesStream)
+		aggs = readAggregations(storesStream.Records, aggOutSchema(streamSearchReq.Agg))
 	} else {
-		docs = readDocuments(storesStream)
+		docs = readDocuments(storesStream.Records)
 	}
 
 	// finalize to get summary
-	summary := storesStream.Finalize()
-	if summary == nil {
-		summary = &query.Summary{}
+	summary, err := g.finalizeStoreStreams(ctx, storesStream)
+	if err != nil {
+		return nil, err
 	}
-	if partialErr != nil && summary.Err == nil {
-		summary.Err = partialErr
+	if len(aggs) == 1 {
+		aggs[0].NotExists = int64(summary.NotExists)
 	}
 
 	tr.Done()
@@ -174,18 +162,31 @@ func readDocuments(storesStream query.RecordProducer) []*seqproxyapi.Document {
 	return docs
 }
 
-func readAggregations(storesStream query.RecordProducer) []*seqproxyapi.Aggregation {
+func readAggregations(storesStream query.RecordProducer, out *query.Schema) []*seqproxyapi.Aggregation {
+	keyCol := out.MustColumn[string]("token")
+	valueCol := out.MustColumn[float64]("value")
+	tsCol := query.OptionalColumn[uint64](out, "ts")
+	quantilesCol := query.OptionalColumn[[]float64](out, "quantiles")
+	notExistsCol := query.OptionalColumn[uint64](out, "not_exists")
+
 	buckets := make([]*seqproxyapi.Aggregation_Bucket, 0)
 	for r := storesStream.Next(); r != nil; r = storesStream.Next() {
 		bucket := &seqproxyapi.Aggregation_Bucket{
-			Key:   aggKeyCol.Val(r),
-			Value: aggValueCol.Val(r),
+			Key:   keyCol.Val(r),
+			Value: valueCol.Val(r),
 		}
-		if ts := aggTsCol.Val(r); ts != consts.DummyMID {
-			bucket.Ts = timestamppb.New(seq.MID(ts).Time())
+		if tsCol != nil {
+			if ts := tsCol.Val(r); ts != consts.DummyMID {
+				bucket.Ts = timestamppb.New(seq.MID(ts).Time())
+			}
 		}
-		if quantiles := aggQuantilesCol.Val(r); len(quantiles) > 0 {
-			bucket.Quantiles = quantiles
+		if quantilesCol != nil {
+			if quantiles := quantilesCol.Val(r); len(quantiles) > 0 {
+				bucket.Quantiles = quantiles
+			}
+		}
+		if notExistsCol != nil {
+			bucket.NotExists = int64(notExistsCol.Val(r))
 		}
 		buckets = append(buckets, bucket)
 	}

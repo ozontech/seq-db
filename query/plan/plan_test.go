@@ -112,7 +112,7 @@ func TestBuildAgg(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, p.IsAgg())
-	assert.Equal(t, query.AggsSchema, p.Schema)
+	assert.Equal(t, query.AggsSchemaFor(seq.AggFuncSum, true), p.Schema)
 	assert.Empty(t, p.Ops)
 	require.Len(t, p.Scan.AggQ, 1)
 	assert.EqualValues(t, seq.AggFuncSum, p.Scan.AggQ[0].Func)
