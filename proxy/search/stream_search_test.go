@@ -41,13 +41,23 @@ func TestStreamSearchIteratorReadsAllRecords(t *testing.T) {
 }
 
 func TestStreamSearchIteratorEmptyStream(t *testing.T) {
-	// EOF right after the header: an empty result, not an error.
-	it, stream := newTestIterator(t)
-	stream.setRecvErr(io.EOF)
+	it, stream := newTestIterator(t, summaryMsg(0, storeapi.SearchErrorCode_NO_ERROR))
 
 	assert.Empty(t, collectAll(it))
 	assert.Zero(t, it.Finalize().Total)
 	assert.False(t, stream.isCanceled(), "Finalize must not cancel the stream context")
+}
+
+func TestStreamSearchIteratorEOFWithoutSummary(t *testing.T) {
+	it, stream := newTestIterator(t, dataMsg(testRecord(seq.SimpleID(1), "doc1")))
+	stream.setRecvErr(io.EOF)
+
+	assert.NotNil(t, it.Next())
+	assert.Nil(t, it.Next())
+
+	summary := it.Finalize()
+	require.ErrorIs(t, summary.Err, io.ErrUnexpectedEOF)
+	assert.False(t, stream.isCanceled(), "Finalize must drain, not cancel")
 }
 
 func TestStreamSearchIteratorSummaryAfterExhausted(t *testing.T) {
@@ -128,13 +138,14 @@ func TestStreamSearchIteratorNextAfterRecvError(t *testing.T) {
 }
 
 func TestStreamSearchIteratorUnexpectedHeader(t *testing.T) {
-	it, stream := newTestIterator(t)
+	it, stream := newTestIterator(t, dataMsg(testRecord(seq.SimpleID(1), "doc1")))
 	stream.push(&storeapi.StreamSearchResponse{
 		ResponseType: &storeapi.StreamSearchResponse_Header{
 			Header: &storeapi.ResponseHeader{Typing: testTyping()},
 		},
 	})
 
+	assert.NotNil(t, it.Next())
 	assert.Nil(t, it.Next())
 	summary := it.Finalize()
 	require.Error(t, summary.Err)
@@ -162,7 +173,6 @@ func TestNewStreamSearchIteratorPrefetchedErrorSummary(t *testing.T) {
 }
 
 func TestNewStreamSearchIteratorEOFOnPrefetch(t *testing.T) {
-	// EOF on prefetch: no data and no summary, an empty result.
 	stream := newFakeStream()
 	stream.setRecvErr(io.EOF)
 	it, err := NewStreamSearchIterator(
@@ -171,11 +181,8 @@ func TestNewStreamSearchIteratorEOFOnPrefetch(t *testing.T) {
 		stream,
 		stream.markCanceled,
 	)
-	require.NoError(t, err)
-
-	assert.Nil(t, it.Next())
-	summary := it.Finalize()
-	assert.Nil(t, summary.Err)
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	assert.Nil(t, it)
 	assert.False(t, stream.isCanceled())
 }
 
