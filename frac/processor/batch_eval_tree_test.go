@@ -21,6 +21,14 @@ func TestASTSupportsBatching(t *testing.T) {
 		assert.True(t, astSupportsBatching(q.Root))
 	})
 
+	for _, query := range []string{`*`, `_all_:*`, `_all_:""`} {
+		t.Run("match all "+query, func(t *testing.T) {
+			q, err := parser.ParseSeqQL(query, nil)
+			require.NoError(t, err)
+			assert.True(t, astSupportsBatching(q.Root))
+		})
+	}
+
 	t.Run("and of fields", func(t *testing.T) {
 		q, err := parser.ParseSeqQL(`service:"foo" AND level:"error"`, nil)
 		require.NoError(t, err)
@@ -107,15 +115,23 @@ func TestQueryIterationCost(t *testing.T) {
 	t.Run("leaf", func(t *testing.T) {
 		q, err := parser.ParseSeqQL(`a:1`, nil)
 		require.NoError(t, err)
-		cost, err := calculateQueryIterationCost(q.Root, index, make(leafTIDsCache))
+		cost, err := calculateQueryIterationCost(q.Root, index, make(leafTIDsCache), 1, 1)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(80_000), cost)
+	})
+
+	t.Run("match all", func(t *testing.T) {
+		q, err := parser.ParseSeqQL(`_all_:""`, nil)
+		require.NoError(t, err)
+		cost, err := calculateQueryIterationCost(q.Root, index, make(leafTIDsCache), 1, 3)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(3), cost)
 	})
 
 	t.Run("and", func(t *testing.T) {
 		q, err := parser.ParseSeqQL(`a:1 AND b:2`, nil)
 		require.NoError(t, err)
-		cost, err := calculateQueryIterationCost(q.Root, index, make(leafTIDsCache))
+		cost, err := calculateQueryIterationCost(q.Root, index, make(leafTIDsCache), 1, 2)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(80_000), cost)
 	})
@@ -123,7 +139,7 @@ func TestQueryIterationCost(t *testing.T) {
 	t.Run("or", func(t *testing.T) {
 		q, err := parser.ParseSeqQL(`a:1 OR b:2`, nil)
 		require.NoError(t, err)
-		cost, err := calculateQueryIterationCost(q.Root, index, make(leafTIDsCache))
+		cost, err := calculateQueryIterationCost(q.Root, index, make(leafTIDsCache), 1, 2)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(200_000), cost)
 	})
@@ -131,7 +147,7 @@ func TestQueryIterationCost(t *testing.T) {
 	t.Run("and not", func(t *testing.T) {
 		q, err := parser.ParseSeqQL(`a:1 AND NOT b:2`, nil)
 		require.NoError(t, err)
-		cost, err := calculateQueryIterationCost(q.Root, index, make(leafTIDsCache))
+		cost, err := calculateQueryIterationCost(q.Root, index, make(leafTIDsCache), 1, 2)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(200_000), cost)
 	})
@@ -139,7 +155,7 @@ func TestQueryIterationCost(t *testing.T) {
 	t.Run("nested and-or", func(t *testing.T) {
 		q, err := parser.ParseSeqQL(`a:1 AND (b:2 OR c:3)`, nil)
 		require.NoError(t, err)
-		cost, err := calculateQueryIterationCost(q.Root, index, make(leafTIDsCache))
+		cost, err := calculateQueryIterationCost(q.Root, index, make(leafTIDsCache), 1, 2)
 		require.NoError(t, err)
 		assert.Equal(t, uint64(80_000), cost)
 	})

@@ -120,7 +120,6 @@ const testDocs = `
 `
 
 var testTokens = []tokenRecord{
-	{Field: "_all_", Token: "", Freq: 3},
 	{Field: "_exists_", Token: "level", Freq: 3},
 	{Field: "_exists_", Token: "message", Freq: 3},
 	{Field: "_exists_", Token: "service", Freq: 3},
@@ -218,14 +217,13 @@ func TestSealCustomMapping(t *testing.T) {
 		`{"timestamp":"2024-01-01T10:00:00.000Z","request_uri":"/api/v1/users"}`,
 	)
 
-	require.Len(t, content.Tokens, 5)
-	assert.Equal(t, "_all_", content.Tokens[0].Field)
-	assert.Equal(t, "_exists_", content.Tokens[1].Field)
-	assert.Equal(t, "request_uri", content.Tokens[1].Token)
-	assert.Equal(t, "request_uri", content.Tokens[2].Field)
-	assert.Equal(t, "/api", content.Tokens[2].Token)
-	assert.Equal(t, "/api/v1", content.Tokens[3].Token)
-	assert.Equal(t, "/api/v1/users", content.Tokens[4].Token)
+	require.Len(t, content.Tokens, 4)
+	assert.Equal(t, "_exists_", content.Tokens[0].Field)
+	assert.Equal(t, "request_uri", content.Tokens[0].Token)
+	assert.Equal(t, "request_uri", content.Tokens[1].Field)
+	assert.Equal(t, "/api", content.Tokens[1].Token)
+	assert.Equal(t, "/api/v1", content.Tokens[2].Token)
+	assert.Equal(t, "/api/v1/users", content.Tokens[3].Token)
 }
 
 func TestSealMissingMapping(t *testing.T) {
