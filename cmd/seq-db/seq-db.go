@@ -113,6 +113,7 @@ func main() {
 		cfg.Mapping.Path,
 		mappingprovider.WithUpdatePeriod(cfg.Mapping.UpdatePeriod),
 		mappingprovider.WithIndexAllFields(enableIndexingForAllFields(cfg.Mapping.Path)),
+		mappingprovider.WithSortingKeywordField(cfg.DocsSorting.Field),
 	)
 	if err != nil {
 		logger.Fatal("load mapping error", zap.Error(err))
@@ -297,8 +298,9 @@ func startStore(
 						},
 					},
 				},
-				SkipSortDocs: !cfg.DocsSorting.Enabled,
-				KeepWalFile:  false,
+				SkipSortDocs:  !cfg.DocsSorting.Enabled,
+				SortDocsField: cfg.DocsSorting.Field,
+				KeepWalFile:   false,
 			},
 			OffloadingEnabled:         cfg.Offloading.Enabled,
 			OffloadingRetention:       cfg.Offloading.Retention,

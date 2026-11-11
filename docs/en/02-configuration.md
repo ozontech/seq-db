@@ -174,6 +174,7 @@ Settings for document sorting functionality.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `docs_sorting.enabled` | bool | `false` | Enables/disables documents sorting |
+| `docs_sorting.field` | string | `""` | Keyword field used to group documents before sorting by timestamp. Requires `docs_sorting.enabled`; empty keeps timestamp-only sorting. New fractions use `.stdocs` filetype |
 | `docs_sorting.doc_block_size` | Bytes | - | Sets document block size. Large size consumes more RAM but improves compression ratio |
 
 ## Async Search Configuration

@@ -89,7 +89,13 @@ func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSe
 
 	// Sort documents if not skipped in configuration
 	if !active.Config.SkipSortDocs {
-		if err := src.SortDocs(); err != nil {
+		var err error
+		if active.Config.SortDocsField != "" {
+			err = src.sortDocsByField(active.Config.SortDocsField)
+		} else {
+			err = src.SortDocs()
+		}
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -286,20 +292,25 @@ func (src *ActiveSealingSource) doc(pos seq.DocPos) ([]byte, error) {
 // SortDocs sorts documents and writes them in compressed form to disk.
 // Creates a temporary file that is then renamed to the final one.
 func (src *ActiveSealingSource) SortDocs() error {
+	return src.saveDocs(src.Docs(), consts.SdocsTmpFileSuffix, consts.SdocsFileSuffix)
+}
+
+func (src *ActiveSealingSource) saveDocs(docs iter.Seq2[Document, error], tmpSuffix, suffix string) error {
 	start := time.Now()
 	logger.Info("sorting docs...")
 
 	// Create temporary file for sorted documents
-	sdocsFile, err := os.Create(src.info.Path + consts.SdocsTmpFileSuffix)
+	sdocsFile, err := os.Create(src.info.Path + tmpSuffix)
 	if err != nil {
 		return err
 	}
+	defer sdocsFile.Close()
 
 	bw := bytespool.AcquireWriterSize(sdocsFile, int(units.MiB))
 	defer bytespool.ReleaseWriter(bw)
 
 	// Group documents into blocks
-	blocks := docBlocks(src.Docs(), src.params.DocBlockSize)
+	blocks := docBlocks(docs, src.params.DocBlockSize)
 
 	// Write blocks and get new offsets and positions
 	blocksOffsets, positions, err := src.writeDocs(blocks, bw)
@@ -330,7 +341,7 @@ func (src *ActiveSealingSource) SortDocs() error {
 		return err
 	}
 
-	if err := os.Rename(sdocsFile.Name(), src.info.Path+consts.SdocsFileSuffix); err != nil {
+	if err := os.Rename(sdocsFile.Name(), src.info.Path+suffix); err != nil {
 		return err
 	}
 

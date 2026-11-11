@@ -61,6 +61,10 @@ const (
 	SdocsTmpFileSuffix = "._sdocs"
 	SdocsDelFileSuffix = ".sdocs.del"
 
+	StdocsFileSuffix    = ".stdocs"
+	StdocsTmpFileSuffix = "._stdocs"
+	StdocsDelFileSuffix = ".stdocs.del"
+
 	InfoFileSuffix    = ".info"
 	InfoTmpFileSuffix = "._info"
 

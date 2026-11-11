@@ -8,6 +8,10 @@ import (
 type validateFn func() error
 
 func (c *Config) Validate(mode string) error {
+	if c.DocsSorting.Field != "" && !c.DocsSorting.Enabled {
+		return fmt.Errorf("docs_sorting.field requires docs_sorting.enabled")
+	}
+
 	validations := []validateFn{
 		notEmpty("mapping.path", c.Mapping.Path),
 		inRange("tracing.sampling_rate", 0, 1, c.Tracing.SamplingRate),

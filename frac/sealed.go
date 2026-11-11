@@ -206,26 +206,18 @@ func (f *Sealed) openDocs() {
 		return
 	}
 
-	var err error
-	f.docsFile, err = os.Open(f.BaseFileName + consts.SdocsFileSuffix)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			logger.Fatal(
-				"can't open sdocs file",
-				zap.String("frac", f.BaseFileName),
-				zap.Error(err),
-			)
+	for _, suffix := range []string{consts.StdocsFileSuffix, consts.SdocsFileSuffix, consts.DocsFileSuffix} {
+		file, err := os.Open(f.BaseFileName + suffix)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
 		}
-
-		f.docsFile, err = os.Open(f.BaseFileName + consts.DocsFileSuffix)
 		if err != nil {
-			logger.Fatal(
-				"can't open docs file",
-				zap.String("frac", f.BaseFileName),
-				zap.Error(err),
-			)
+			logger.Fatal("can't open documents file", zap.String("file", f.BaseFileName+suffix), zap.Error(err))
 		}
+		f.docsFile = file
+		return
 	}
+	logger.Fatal("missing documents file", zap.String("frac", f.BaseFileName))
 }
 
 func (f *Sealed) loadInfo() {
@@ -398,31 +390,37 @@ func (f *Sealed) Release() {
 	f.indexCache.Release()
 }
 
+func renameFile(baseFilename, fileSuffix, delSuffix string) {
+	oldPath := baseFilename + fileSuffix
+	newPath := baseFilename + delSuffix
+	if err := os.Rename(oldPath, newPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Error(
+			"can't rename file",
+			zap.String("old", oldPath),
+			zap.String("new", newPath),
+			zap.Error(err),
+		)
+	}
+}
+
+func removeFile(baseFilename, suffix string) {
+	if err := os.Remove(baseFilename + suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Error(
+			"can't remove del file",
+			zap.String("frac", baseFilename),
+			zap.String("file", suffix),
+			zap.Error(err),
+		)
+	}
+
+}
+
 func (f *Sealed) Suicide() {
 	f.Release()
 
-	// Rename docs atomically first — this commits the intent to delete.
-	oldPath := f.BaseFileName + consts.DocsFileSuffix
-	newPath := f.BaseFileName + consts.DocsDelFileSuffix
-	if err := os.Rename(oldPath, newPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		logger.Error(
-			"can't rename docs file",
-			zap.String("old", oldPath),
-			zap.String("new", newPath),
-			zap.Error(err),
-		)
-	}
-
-	oldPath = f.BaseFileName + consts.SdocsFileSuffix
-	newPath = f.BaseFileName + consts.SdocsDelFileSuffix
-	if err := os.Rename(oldPath, newPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		logger.Error(
-			"can't rename sdocs file",
-			zap.String("old", oldPath),
-			zap.String("new", newPath),
-			zap.Error(err),
-		)
-	}
+	renameFile(f.BaseFileName, consts.DocsFileSuffix, consts.DocsDelFileSuffix)
+	renameFile(f.BaseFileName, consts.SdocsFileSuffix, consts.SdocsDelFileSuffix)
+	renameFile(f.BaseFileName, consts.StdocsFileSuffix, consts.StdocsDelFileSuffix)
 
 	if f.PartialSuicideMode == HalfRename {
 		return
@@ -453,13 +451,7 @@ func (f *Sealed) Suicide() {
 		}
 	}
 
-	if err := os.Remove(f.BaseFileName + consts.DocsDelFileSuffix); err != nil && !errors.Is(err, os.ErrNotExist) {
-		logger.Error(
-			"can't remove docs del file",
-			zap.String("frac", f.BaseFileName),
-			zap.Error(err),
-		)
-	}
+	removeFile(f.BaseFileName, consts.DocsDelFileSuffix)
 
 	if f.PartialSuicideMode == HalfRemove {
 		return
@@ -472,6 +464,8 @@ func (f *Sealed) Suicide() {
 			zap.Error(err),
 		)
 	}
+	removeFile(f.BaseFileName, consts.SdocsDelFileSuffix)
+	removeFile(f.BaseFileName, consts.StdocsDelFileSuffix)
 
 	f.skipMaskProvider.RemoveFrac(f.info.Name())
 }

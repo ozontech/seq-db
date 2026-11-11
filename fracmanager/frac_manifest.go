@@ -27,7 +27,8 @@ type fracManifest struct {
 	hasWal    bool   // presence of WAL with meta
 	hasIndex  bool   // presence of index file
 	hasSdocs  bool   // presence of sorted documents
-	hasRemote bool   // presence of remote fraction (legacy)
+	hasStdocs bool
+	hasRemote bool // presence of remote fraction (legacy)
 
 	// Presence of ._remote (case when offloading was interrupted)
 	hasRemoteTmp bool
@@ -40,9 +41,10 @@ type fracManifest struct {
 	hasLID     bool
 
 	// Deletion marker file flags
-	hasDocsDel  bool // documents deletion marker
-	hasSdocsDel bool // sorted documents deletion marker
-	hasIndexDel bool // index deletion marker
+	hasDocsDel   bool // documents deletion marker
+	hasSdocsDel  bool // sorted documents deletion marker
+	hasStdocsDel bool
+	hasIndexDel  bool // index deletion marker
 
 	hasCompactionPlan bool
 }
@@ -53,7 +55,7 @@ func (m *fracManifest) hasAllIndexFiles() bool {
 }
 
 func (m *fracManifest) hasDocsFile() bool {
-	return m.hasSdocs || m.hasDocs
+	return m.hasStdocs || m.hasSdocs || m.hasDocs
 }
 
 func (m *fracManifest) hasRemoteFile() bool {
@@ -70,6 +72,8 @@ func (m *fracManifest) AddExtension(ext string) error {
 		m.hasWal = true
 	case consts.SdocsFileSuffix:
 		m.hasSdocs = true
+	case consts.StdocsFileSuffix:
+		m.hasStdocs = true
 	case consts.IndexFileSuffix:
 		m.hasIndex = true
 	case consts.RemoteFractionSuffix:
@@ -90,6 +94,8 @@ func (m *fracManifest) AddExtension(ext string) error {
 		m.hasDocsDel = true
 	case consts.SdocsDelFileSuffix:
 		m.hasSdocsDel = true
+	case consts.StdocsDelFileSuffix:
+		m.hasStdocsDel = true
 	case consts.IndexDelFileSuffix:
 		m.hasIndexDel = true
 
@@ -102,7 +108,7 @@ func (m *fracManifest) AddExtension(ext string) error {
 	case consts.IndexTmpFileSuffix, consts.InfoTmpFileSuffix,
 		consts.TokenTmpFileSuffix, consts.OffsetsTmpFileSuffix,
 		consts.IDTmpFileSuffix, consts.LIDTmpFileSuffix,
-		consts.DocsTmpFileSuffix, consts.SdocsTmpFileSuffix:
+		consts.DocsTmpFileSuffix, consts.SdocsTmpFileSuffix, consts.StdocsTmpFileSuffix:
 
 		// Just handle temporary files (which were not commited).
 		// We will just drop them in all possible cases.
@@ -137,7 +143,7 @@ func (m *fracManifest) Stage() fracStage {
 	if m.hasWal && m.hasDocs {
 		return fracStageActive
 	}
-	if m.hasDocsDel || m.hasSdocsDel || m.hasIndexDel {
+	if m.hasDocsDel || m.hasSdocsDel || m.hasStdocsDel || m.hasIndexDel {
 		return fracStageZombie
 	}
 	return fracStageUnknown
@@ -154,6 +160,13 @@ func removeSdocs(m *fracManifest) {
 	if m.hasSdocs {
 		util.RemoveFile(m.basePath + consts.SdocsFileSuffix)
 		m.hasSdocs = false
+	}
+}
+
+func removeStdocs(m *fracManifest) {
+	if m.hasStdocs {
+		util.RemoveFile(m.basePath + consts.StdocsFileSuffix)
+		m.hasStdocs = false
 	}
 }
 
@@ -195,6 +208,13 @@ func removeSdocsDel(m *fracManifest) {
 	}
 }
 
+func removeStdocsDel(m *fracManifest) {
+	if m.hasStdocsDel {
+		util.RemoveFile(m.basePath + consts.StdocsDelFileSuffix)
+		m.hasStdocsDel = false
+	}
+}
+
 func removeDocsDel(m *fracManifest) {
 	if m.hasDocsDel {
 		util.RemoveFile(m.basePath + consts.DocsDelFileSuffix)
@@ -225,6 +245,10 @@ func removeRemoteTmp(m *fracManifest) {
 
 func removeSdocsTmp(m *fracManifest) {
 	util.RemoveFile(m.basePath + consts.SdocsTmpFileSuffix)
+}
+
+func removeStdocsTmp(m *fracManifest) {
+	util.RemoveFile(m.basePath + consts.StdocsTmpFileSuffix)
 }
 
 func removeDocsTmp(m *fracManifest) {
@@ -394,6 +418,7 @@ func cleanupRemoteFrac(m *fracManifest) {
 	removeWal(m)
 	removeDocs(m)
 	removeSdocs(m)
+	removeStdocs(m)
 	removeIndexFiles(m)
 }
 
@@ -402,7 +427,7 @@ func cleanupRemoteFrac(m *fracManifest) {
 func cleanupSealedFrac(m *fracManifest) {
 	removeWal(m)
 	removeCompactionPlan(m)
-	if m.hasSdocs {
+	if m.hasSdocs || m.hasStdocs {
 		removeDocs(m) // remove orig docs, but keeping sorted
 	}
 }
@@ -411,11 +436,13 @@ func cleanupSealedFrac(m *fracManifest) {
 // Executed for all fractions regardless of stage
 func cleanupTemporary(m *fracManifest) {
 	removeSdocsDel(m)
+	removeStdocsDel(m)
 	removeDocsDel(m)
 	removeIndexTmp(m)
 	removeRemoteTmp(m)
 	removeDocsTmp(m)
 	removeSdocsTmp(m)
+	removeStdocsTmp(m)
 }
 
 // removeAllFiles completely removes all fraction files
@@ -424,6 +451,7 @@ func removeAllFiles(basePath string) {
 	for _, suffix := range []string{
 		consts.DocsFileSuffix, consts.DocsDelFileSuffix, consts.DocsTmpFileSuffix,
 		consts.SdocsFileSuffix, consts.SdocsDelFileSuffix, consts.SdocsTmpFileSuffix,
+		consts.StdocsFileSuffix, consts.StdocsDelFileSuffix, consts.StdocsTmpFileSuffix,
 		consts.IndexFileSuffix, consts.IndexDelFileSuffix, consts.IndexTmpFileSuffix,
 
 		consts.RemoteFractionTmpSuffix, consts.RemoteFractionSuffix,
@@ -475,6 +503,7 @@ func (f *fracManifest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddBool("hasWal", f.hasWal)
 	enc.AddBool("hasIndex", f.hasIndex)
 	enc.AddBool("hasSdocs", f.hasSdocs)
+	enc.AddBool("hasStdocs", f.hasStdocs)
 	enc.AddBool("hasRemote", f.hasRemote)
 	enc.AddBool("hasRemoteTmp", f.hasRemoteTmp)
 
@@ -486,6 +515,7 @@ func (f *fracManifest) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 
 	enc.AddBool("hasDocsDel", f.hasDocsDel)
 	enc.AddBool("hasSdocsDel", f.hasSdocsDel)
+	enc.AddBool("hasStdocsDel", f.hasStdocsDel)
 	enc.AddBool("hasIndexDel", f.hasIndexDel)
 
 	return nil

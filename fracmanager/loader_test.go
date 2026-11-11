@@ -472,3 +472,104 @@ func TestLoadRemote_Legacy(t *testing.T) {
 	require.NotNil(t, remote)
 	assert.True(t, remote.IsSingleIndex(), "should be legacy")
 }
+
+func sealDocsForLoaderTest(t *testing.T, fp *fractionProvider) *frac.Sealed {
+	t.Helper()
+	active := fp.CreateActive()
+	defer active.Release()
+	appendDocsToActive(t, active, 1)
+	sealed, err := fp.Seal(active)
+	require.NoError(t, err)
+	return sealed
+}
+
+func TestDiscoverStdocsWithSortingDisabled(t *testing.T) {
+	cfg := &Config{Fraction: frac.Config{SortDocsField: "service"}}
+	fp, loader, tearDown := setupLoaderTest(t, cfg)
+	defer tearDown()
+	sealed := sealDocsForLoaderTest(t, fp)
+	name := sealed.BaseFileName
+	sealed.Release()
+
+	leftovers := []string{consts.DocsFileSuffix, consts.StdocsTmpFileSuffix, consts.StdocsDelFileSuffix}
+	for _, suffix := range leftovers {
+		require.NoError(t, os.WriteFile(name+suffix, nil, 0o600))
+	}
+	require.NoError(t, os.WriteFile(name+consts.SdocsFileSuffix, nil, 0o600))
+	cfg.Fraction = frac.Config{SkipSortDocs: true}
+
+	actives, locals, remotes, err := loader.discover(t.Context())
+
+	require.NoError(t, err)
+	require.Empty(t, actives)
+	require.Empty(t, remotes)
+	require.Len(t, locals, 1)
+	defer locals[0].Release()
+	for _, suffix := range leftovers {
+		require.NoFileExists(t, name+suffix)
+	}
+	docs, err := locals[0].Fetch(t.Context(), []seq.ID{seq.SimpleID(1)}, false)
+	require.NoError(t, err)
+	require.Equal(t, [][]byte{[]byte(`{"timestamp": 0, "message": "msg"}`)}, docs,
+		"must read .stdocs even with sorting disabled and empty .sdocs present")
+}
+
+func TestDiscoverStdocsFromRemote(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, &Config{Fraction: frac.Config{SortDocsField: "service"}})
+	defer tearDown()
+	sealed := sealDocsForLoaderTest(t, fp)
+	name := sealed.BaseFileName
+	_, err := fp.Offload(t.Context(), sealed)
+	sealed.Release()
+	require.NoError(t, err)
+
+	actives, locals, remotes, err := loader.discover(t.Context())
+
+	require.NoError(t, err)
+	require.Empty(t, actives)
+	require.Empty(t, locals)
+	require.Len(t, remotes, 1)
+	remote := remotes[0]
+	files, err := filepath.Glob(name + ".*")
+	require.NoError(t, err)
+	require.Equal(t, []string{name + consts.RemoteFractionSuffix}, files)
+	docs, err := remote.Fetch(t.Context(), []seq.ID{seq.SimpleID(1)}, false)
+	require.NoError(t, err)
+	require.Equal(t, [][]byte{[]byte(`{"timestamp": 0, "message": "msg"}`)}, docs,
+		"must read .stdocs from S3 after local files are removed")
+
+	key := filepath.Base(name) + consts.StdocsFileSuffix
+	exists, err := fp.s3cli.Exists(t.Context(), key)
+	require.NoError(t, err)
+	require.True(t, exists)
+	remote.Suicide()
+	exists, err = fp.s3cli.Exists(t.Context(), key)
+	require.NoError(t, err)
+	require.False(t, exists)
+}
+
+func TestDiscoverInterruptedStdocsSorting(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, &Config{Fraction: frac.Config{SkipSortDocs: true, KeepWalFile: true}})
+	defer tearDown()
+	active := fp.CreateActive()
+	appendDocsToActive(t, active, 1)
+	name := active.BaseFileName
+	active.Release()
+
+	require.NoError(t, os.WriteFile(name+consts.StdocsFileSuffix, nil, 0o600))
+	require.NoError(t, os.WriteFile(name+consts.StdocsTmpFileSuffix, nil, 0o600))
+
+	actives, locals, remotes, err := loader.discover(t.Context())
+
+	require.NoError(t, err)
+	require.Empty(t, locals)
+	require.Empty(t, remotes)
+	require.Len(t, actives, 1)
+	defer actives[0].Release()
+	require.NoFileExists(t, name+consts.StdocsTmpFileSuffix)
+	require.NoError(t, actives[0].Replay(t.Context()))
+	docs, err := actives[0].Fetch(t.Context(), []seq.ID{seq.SimpleID(1)}, false)
+	require.NoError(t, err)
+	require.Equal(t, [][]byte{[]byte(`{"timestamp": 0, "message": "msg"}`)}, docs,
+		"must recover active fraction despite unfinished .stdocs files")
+}

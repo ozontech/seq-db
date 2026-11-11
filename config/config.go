@@ -293,6 +293,7 @@ type Config struct {
 	} `config:"mapping"`
 
 	DocsSorting struct {
+		Field string `config:"field"`
 		// Enabled enables/disables documents sorting.
 		Enabled bool `config:"enabled"`
 		// DocBlockSize sets document block size.

@@ -3,8 +3,9 @@ package frac
 type Config struct {
 	Search SearchConfig
 
-	SkipSortDocs bool
-	KeepWalFile  bool
+	SkipSortDocs  bool
+	SortDocsField string
+	KeepWalFile   bool
 }
 
 type SearchConfig struct {
