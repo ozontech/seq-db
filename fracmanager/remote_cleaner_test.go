@@ -59,7 +59,7 @@ func TestRemoteCleaner(t *testing.T) {
 	assert.False(t, pending)
 	_, cached := cleaner.infoCache.Get(remote.Info().Name())
 	assert.False(t, cached)
-	assert.Zero(t, cleaner.pendingCount.Load())
+	assert.Zero(t, cleaner.pendingCount)
 }
 
 func TestRemoteCleanerWithReaders(t *testing.T) {
@@ -80,7 +80,7 @@ func TestRemoteCleanerWithReaders(t *testing.T) {
 	assert.True(t, cached)
 	_, pending = cleaner.pending.Load(other.BaseFileName)
 	assert.False(t, pending)
-	assert.Equal(t, int64(1), cleaner.pendingCount.Load())
+	assert.Equal(t, 1, cleaner.pendingCount)
 
 	busy.Dec()
 	cleaner.clean()
@@ -89,7 +89,7 @@ func TestRemoteCleanerWithReaders(t *testing.T) {
 	assert.False(t, pending)
 	_, cached = cleaner.infoCache.Get(busy.Info().Name())
 	assert.False(t, cached)
-	assert.Zero(t, cleaner.pendingCount.Load())
+	assert.Zero(t, cleaner.pendingCount)
 }
 
 func TestRemoteCleanerRetry(t *testing.T) {
@@ -116,7 +116,7 @@ func TestRemoteCleanerRetry(t *testing.T) {
 	assert.True(t, cached)
 	_, pending = cleaner.pending.Load(other.BaseFileName)
 	assert.False(t, pending)
-	assert.Equal(t, int64(1), cleaner.pendingCount.Load())
+	assert.Equal(t, 1, cleaner.pendingCount)
 
 	broken.Remote = remote.Remote
 	cleaner.clean()
@@ -125,23 +125,41 @@ func TestRemoteCleanerRetry(t *testing.T) {
 	assert.False(t, pending)
 	_, cached = cleaner.infoCache.Get(remote.Info().Name())
 	assert.False(t, cached)
-	assert.Zero(t, cleaner.pendingCount.Load())
+	assert.Zero(t, cleaner.pendingCount)
 }
 
 func TestRemoteCleanerQueueLimit(t *testing.T) {
-	cleaner := newRemoteCleaner(nil, time.Millisecond)
-	cleaner.ctx = t.Context()
-	for i := range 50 {
-		remote := &frac.Remote{BaseFileName: fmt.Sprint(i)}
-		require.NotPanics(t, func() {
-			cleaner.Add(&refCountedRemote{Remote: remote})
-			cleaner.Add(&refCountedRemote{Remote: remote})
-		})
+	cleaner, provider := setupRemoteCleanerTest(t)
+	remotes := make([]*refCountedRemote, 0, maxPendingRemotes+1)
+	for i := range maxPendingRemotes + 1 {
+		remote := &refCountedRemote{Remote: frac.NewRemoteZombie(
+			t.Context(), filepath.Join(provider.config.DataDir, fmt.Sprint(i)), provider.s3cli, testSkipMaskProvider{},
+		)}
+		remote.Inc()
+		remotes = append(remotes, remote)
+		cleaner.Add(remote)
+		cleaner.Add(&refCountedRemote{Remote: remote.Remote})
+		assert.Equal(t, i+1 >= maxPendingRemotes, cleaner.IsOverflowed())
 	}
-	assert.Equal(t, int64(50), cleaner.pendingCount.Load())
-	require.Panics(t, func() {
-		cleaner.Add(&refCountedRemote{Remote: &frac.Remote{BaseFileName: "overflow"}})
-	})
+	require.Equal(t, maxPendingRemotes+1, cleaner.pendingCount)
+
+	for _, tc := range []struct {
+		count      int
+		overflowed bool
+	}{
+		{maxPendingRemotes - 1, true},
+		{maxPendingRemotes/2 + 1, true},
+		{maxPendingRemotes / 2, false},
+		{0, false},
+	} {
+		for _, remote := range remotes[tc.count:] {
+			remote.Dec()
+		}
+		remotes = remotes[:tc.count]
+		cleaner.clean()
+		assert.Equal(t, tc.count, cleaner.pendingCount)
+		assert.Equal(t, tc.overflowed, cleaner.IsOverflowed(), "pending: %d", tc.count)
+	}
 }
 
 func TestRemoteCleanerTimeout(t *testing.T) {
@@ -165,7 +183,7 @@ func TestRemoteCleanerTimeout(t *testing.T) {
 	assert.Less(t, elapsed, 10*time.Second)
 	_, pending := cleaner.pending.Load(remote.BaseFileName)
 	assert.True(t, pending)
-	assert.Equal(t, int64(1), cleaner.pendingCount.Load())
+	assert.Equal(t, 1, cleaner.pendingCount)
 }
 
 func TestRemoteCleanerStopsWithReaders(t *testing.T) {

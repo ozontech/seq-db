@@ -3,7 +3,6 @@ package fracmanager
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -22,7 +21,9 @@ type remoteCleaner struct {
 	infoCache    *fracInfoCache
 	retryDelay   time.Duration
 	pending      sync.Map
-	pendingCount atomic.Int64
+	mu           sync.Mutex
+	pendingCount int
+	overflowed   bool
 }
 
 func newRemoteCleaner(infoCache *fracInfoCache, retryDelay time.Duration) *remoteCleaner {
@@ -44,13 +45,23 @@ func (c *remoteCleaner) Add(remote *refCountedRemote) {
 	if c.ctx.Err() != nil {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if _, loaded := c.pending.LoadOrStore(remote.BaseFileName, remote); loaded {
 		return
 	}
 	remoteCleanerPendingFractions.Inc()
-	if c.pendingCount.Add(1) > maxPendingRemotes {
-		panic("too many remote fractions pending deletion")
+	c.pendingCount++
+	if c.pendingCount >= maxPendingRemotes {
+		c.overflowed = true
 	}
+}
+
+func (c *remoteCleaner) IsOverflowed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.overflowed
 }
 
 func (c *remoteCleaner) run() {
@@ -86,9 +97,14 @@ func (c *remoteCleaner) clean() {
 			return true
 		}
 		c.infoCache.Remove(remote.Info().Name())
-		c.pendingCount.Add(-1)
+		c.mu.Lock()
 		c.pending.Delete(name)
+		c.pendingCount--
+		if c.pendingCount*2 <= maxPendingRemotes {
+			c.overflowed = false
+		}
 		remoteCleanerPendingFractions.Dec()
+		c.mu.Unlock()
 		logger.Info("removed remote fraction", zap.String("name", remote.BaseFileName))
 		return true
 	})

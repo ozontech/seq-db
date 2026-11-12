@@ -127,6 +127,33 @@ func TestCapacityExceeded(t *testing.T) {
 	assert.True(t, lc.flags.IsCapacityExceeded(), "the flag must be true now")
 }
 
+func TestSuspendIfOverCapacity(t *testing.T) {
+	lc, tearDown := setupLifecycle(t, nil)
+	defer tearDown()
+	appendDocsToActive(t, lc.registry.appender().Active, 1)
+	lc.registry.stats.sealing.count = 1
+
+	for _, tc := range []struct {
+		name             string
+		remoteOverflowed bool
+		maxQueue         uint64
+		maxSize          uint64
+		suspended        bool
+	}{
+		{"remote_overflow", true, 0, 0, true},
+		{"sealing_still_overflowed", false, 1, 0, true},
+		{"recovered", false, 0, 0, false},
+		{"remote_and_disk_overflow", true, 0, 1, true},
+		{"disk_still_overflowed", false, 0, 1, true},
+		{"all_recovered", false, 0, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lc.registry.suspendIfOverCapacity(tc.maxQueue, tc.maxSize, tc.remoteOverflowed)
+			assert.Equal(t, tc.suspended, lc.registry.appender().isSuspended())
+		})
+	}
+}
+
 func TestOldestMetrics(t *testing.T) {
 	lc, tearDown := setupLifecycle(t, nil)
 	defer tearDown()

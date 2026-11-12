@@ -45,7 +45,7 @@ func newLifecycleManager(
 // Maintain performs periodic lifecycle management tasks.
 // It coordinates rotation, offloading, cleanup based on configuration.
 func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.WaitGroup) {
-	lc.registry.suspendIfOverCapacity(cfg.SealingQueueLen, cfg.SuspendThreshold())
+	lc.registry.suspendIfOverCapacity(cfg.SealingQueueLen, cfg.SuspendThreshold(), lc.cleaner.IsOverflowed())
 
 	lc.rotate(cfg.FracSize, wg)
 	if cfg.OffloadingEnabled {
