@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 
+	"go.uber.org/zap"
+
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/logger"
-	"go.uber.org/zap"
 )
 
 const maxBulkTries = 10
