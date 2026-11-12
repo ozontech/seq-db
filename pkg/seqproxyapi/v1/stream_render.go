@@ -15,7 +15,7 @@ import (
 func NewStreamSearchRewriter() func(ctx context.Context, resp proto.Message) (any, error) {
 	var (
 		mu      sync.RWMutex
-		schemas = make(map[context.Context]*rowSchema) // key per stream
+		schemas = make(map[context.Context]rowSchema) // key per stream
 	)
 
 	return func(ctx context.Context, resp proto.Message) (any, error) {
@@ -37,9 +37,9 @@ func NewStreamSearchRewriter() func(ctx context.Context, resp proto.Message) (an
 			mu.Unlock()
 		case res.GetData() != nil:
 			mu.RLock()
-			schema := schemas[ctx]
+			schema, ok := schemas[ctx]
 			mu.RUnlock()
-			if schema != nil {
+			if ok {
 				return &renderedData{schema: schema, batch: res.GetData().GetBatch()}, nil
 			}
 		case res.GetSummary() != nil:
@@ -54,7 +54,7 @@ func NewStreamSearchRewriter() func(ctx context.Context, resp proto.Message) (an
 }
 
 type renderedData struct {
-	schema *rowSchema
+	schema rowSchema
 	batch  *RecordsBatch
 }
 
@@ -98,12 +98,11 @@ type renderedBatchJSON struct {
 // rowSchema renders raw data of StreamSearch records as human readable values according to the Typing from header.
 type rowSchema []*Typing
 
-func newRowSchema(typing []*Typing) *rowSchema {
-	s := rowSchema(typing)
-	return &s
+func newRowSchema(typing []*Typing) rowSchema {
+	return rowSchema(typing)
 }
 
-func (s *rowSchema) renderRecord(cells [][]byte) (json.RawMessage, error) {
+func (s rowSchema) renderRecord(cells [][]byte) (json.RawMessage, error) {
 	row, err := s.render(cells)
 	if err != nil {
 		return nil, err
@@ -111,13 +110,13 @@ func (s *rowSchema) renderRecord(cells [][]byte) (json.RawMessage, error) {
 	return json.Marshal(row)
 }
 
-func (s *rowSchema) render(cells [][]byte) ([]any, error) {
-	if len(cells) != len(*s) {
-		return nil, fmt.Errorf("record has %d cells, schema declares %d columns", len(cells), len(*s))
+func (s rowSchema) render(cells [][]byte) ([]any, error) {
+	if len(cells) != len(s) {
+		return nil, fmt.Errorf("record has %d cells, schema declares %d columns", len(cells), len(s))
 	}
 	row := make([]any, len(cells))
 	for i, cell := range cells {
-		row[i] = (*s)[i].renderCell(cell)
+		row[i] = s[i].renderCell(cell)
 	}
 	return row, nil
 }
