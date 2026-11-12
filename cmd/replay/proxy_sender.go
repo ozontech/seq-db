@@ -13,6 +13,19 @@ import (
 	"github.com/ozontech/seq-db/logger"
 )
 
+func backoffDelay(attempt int) time.Duration {
+	return time.Duration(attempt) * time.Second
+}
+
+func sleep(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
 type proxySender struct {
 	url     string
 	client  *http.Client

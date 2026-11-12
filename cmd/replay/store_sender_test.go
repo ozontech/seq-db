@@ -133,7 +133,7 @@ func itoa(i int) string {
 }
 
 func TestNewSenderRequiresMapping(t *testing.T) {
-	_, _, err := newSender(modeStore, "localhost:1", "")
+	_, err := newSender(modeStore, "localhost:1", "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "--mapping")
 }

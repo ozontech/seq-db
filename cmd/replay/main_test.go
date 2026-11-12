@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/binary"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,12 +24,10 @@ func TestReadDocs(t *testing.T) {
 	rawOverflow = append(rawOverflow, []byte("short")...)
 
 	tests := []struct {
-		name      string
-		blocks    [][]byte
-		want      []string
-		wantErr   string
-		stopsOn   string
-		stopError error
+		name    string
+		blocks  [][]byte
+		want    []string
+		wantErr string
 	}{
 		{
 			name:   "ok single block",
@@ -48,10 +48,9 @@ func TestReadDocs(t *testing.T) {
 			want: nil,
 		},
 		{
-			name:      "truncated block header",
-			blocks:    [][]byte{make([]byte, storage.DocBlockHeaderLen-1)},
-			wantErr:   "truncated doc block header at offset 0",
-			stopError: nil,
+			name:    "truncated block header",
+			blocks:  [][]byte{make([]byte, storage.DocBlockHeaderLen-1)},
+			wantErr: "truncated doc block header at offset 0",
 		},
 		{
 			name:    "truncated doc length",
@@ -132,6 +131,58 @@ func writeDocsFile(t *testing.T, blocks ...[]byte) string {
 	}
 	require.NoError(t, os.WriteFile(path, data, 0o600))
 	return path
+}
+
+func TestReplayResume(t *testing.T) {
+	path := writeDocsFile(t, packDocBlock(t, `{"n":1}`, `{"n":2}`), packDocBlock(t, `{"n":3}`))
+	frac := strings.TrimSuffix(path, ".docs")
+
+	var calls atomic.Int64
+	batches := make(chan string, 3)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 2 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		batches <- string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cmd := cmdReplay{frac: frac, address: srv.URL, mode: modeProxy, batchSize: 2}
+	require.ErrorContains(t, cmd.run(context.Background()), "status 400")
+
+	sent, err := os.ReadFile(replayTempPath(frac))
+	require.NoError(t, err)
+	require.Equal(t, "2\n", string(sent))
+
+	require.NoError(t, cmd.run(context.Background()))
+	require.EqualValues(t, 3, calls.Load())
+	require.NoFileExists(t, replayTempPath(frac))
+}
+
+func TestReplayAllExtensions(t *testing.T) {
+	for _, ext := range []string{
+		".sdocs",
+		".docs",
+	} {
+		t.Run(ext, func(t *testing.T) {
+			path := writeDocsFile(t, packDocBlock(t, `{"n":1}`))
+			frac := strings.TrimSuffix(path, ".docs")
+			require.NoError(t, os.Rename(path, frac+ext))
+
+			cmd := cmdReplay{frac: frac, mode: modeProxy, batchSize: 2, dryRun: true}
+			require.NoError(t, cmd.run(context.Background()))
+
+			require.NoError(t, os.Remove(frac+ext))
+		})
+	}
 }
 
 func TestProxySender(t *testing.T) {

@@ -105,8 +105,6 @@ func (s *storeSender) Send(ctx context.Context, docsList [][]byte) error {
 	return fmt.Errorf("giving up after %d attempts: %w", maxBulkTries, lastErr)
 }
 
-func (s *storeSender) close() {}
-
 func listReader(docs [][]byte) func() ([]byte, error) {
 	i := 0
 	return func() ([]byte, error) {
