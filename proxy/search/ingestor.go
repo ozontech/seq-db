@@ -49,6 +49,8 @@ const (
 // SearchStats carries observability data collected while executing a search.
 type SearchStats struct {
 	Query   string
+	From    seq.MID
+	To      seq.MID
 	Size    int
 	HasHist bool
 	HasAgg  bool
@@ -113,6 +115,8 @@ func (si *Ingestor) Search(
 
 	stats = &SearchStats{
 		Query:       string(sr.Q),
+		From:        sr.From,
+		To:          sr.To,
 		Size:        sr.Size + sr.Offset,
 		HasHist:     sr.Interval > 0,
 		HasAgg:      len(sr.AggQ) > 0,
@@ -707,8 +711,8 @@ func (si *Ingestor) searchHost(ctx context.Context, req *storeapi.SearchRequest,
 
 	var md metadata.MD
 	data, err := client.Search(ctx, req,
-		grpc.MaxCallRecvMsgSize(256*int(units.MiB)),
-		grpc.MaxCallSendMsgSize(256*int(units.MiB)),
+		grpc.MaxCallRecvMsgSize(config.MaxGrpcMessageSizeBytes),
+		grpc.MaxCallSendMsgSize(config.MaxGrpcMessageSizeBytes),
 		grpc.UseCompressor(gzip.Name),
 		grpc.Header(&md),
 	)

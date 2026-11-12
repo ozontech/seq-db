@@ -2,6 +2,11 @@ package config
 
 import "github.com/alecthomas/units"
 
+// MaxGrpcMessageSizeBytes is the max size of a single unary gRPC message
+// (request or response) accepted by and sent from store and proxy servers.
+// Overridden by [Config.Limits.GrpcMessageSize].
+var MaxGrpcMessageSizeBytes = 256 * int(units.MiB)
+
 var (
 	IndexWorkers  int
 	FetchWorkers  int

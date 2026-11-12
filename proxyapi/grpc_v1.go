@@ -25,7 +25,6 @@ import (
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	"github.com/ozontech/seq-db/proxy/search"
-	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/querytracer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
@@ -33,7 +32,7 @@ import (
 
 type SearchIngestor interface {
 	Search(ctx context.Context, sr *search.SearchRequest, tr *querytracer.Tracer) (*seq.QPR, search.DocsIterator, *search.SearchStats, error)
-	StreamSearch(ctx context.Context, sr *search.StreamSearchRequest, tr *querytracer.Tracer) (query.RecordProducer, func(), error)
+	StreamSearch(ctx context.Context, sr *search.StreamSearchRequest, tr *querytracer.Tracer) (*search.StreamResult, error)
 	Documents(ctx context.Context, r search.FetchRequest) (search.DocsIterator, error)
 	Status(ctx context.Context) *search.IngestorStatus
 	StartAsyncSearch(context.Context, search.AsyncRequest) (search.AsyncResponse, error)
@@ -197,7 +196,9 @@ func (g *grpcV1) doSearch(
 
 	obs := requestObservation{
 		start: time.Now(),
-		stats: &search.SearchStats{},
+		stats: &search.SearchStats{
+			Size: int(req.Size) + int(req.Offset),
+		},
 	}
 
 	span := trace.FromContext(ctx)
@@ -206,9 +207,12 @@ func (g *grpcV1) doSearch(
 	if req.Query == nil {
 		return nil, obs, status.Error(codes.InvalidArgument, "search query must be provided")
 	}
+	obs.stats.Query = req.Query.Query
 	if req.Query.From == nil || req.Query.To == nil {
 		return nil, obs, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
 	}
+	obs.stats.From = seq.MID(req.Query.From.AsTime().UnixNano())
+	obs.stats.To = seq.MID(req.Query.To.AsTime().UnixNano())
 	if req.Offset != 0 && req.OffsetId != "" {
 		return nil, obs, status.Error(codes.InvalidArgument, `only one of "offset" and "offset_id" must be provided`)
 	}

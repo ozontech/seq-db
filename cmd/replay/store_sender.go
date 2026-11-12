@@ -10,11 +10,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/pkg/storeapi"
-	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"
 )
@@ -50,7 +50,7 @@ func newStoreSenderWithClient(client storeapi.StoreApiClient, mapping seq.Mappin
 
 	return &storeSender{
 		client: client,
-		proc:   indexer.NewProcessor(mapping, tokenizers, 0, 0, 0),
+		proc:   indexer.NewProcessor(mapping, tokenizers, 0, 0),
 		comp:   indexer.GetDocsMetasCompressor(1, 1),
 	}
 }
@@ -84,8 +84,8 @@ func (s *storeSender) Send(ctx context.Context, docsList [][]byte) error {
 	var lastErr error
 	for attempt := 0; attempt < maxBulkTries; attempt++ {
 		_, err := s.client.Bulk(ctx, req,
-			grpc.MaxCallRecvMsgSize(bulk.MaxCallRecvMsgSize),
-			grpc.MaxCallSendMsgSize(bulk.MaxCallSendMsgSize))
+			grpc.MaxCallRecvMsgSize(config.MaxGrpcMessageSizeBytes),
+			grpc.MaxCallSendMsgSize(config.MaxGrpcMessageSizeBytes))
 		if err == nil {
 			return nil
 		}

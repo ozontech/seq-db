@@ -10,17 +10,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/fracmanager"
 	storeapiclient "github.com/ozontech/seq-db/pkg/storeapi"
-	"github.com/ozontech/seq-db/proxy/bulk"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storeapi"
 )
 
 var grpcMaxCallOpts = []grpc.CallOption{
-	grpc.MaxCallRecvMsgSize(bulk.MaxCallRecvMsgSize),
-	grpc.MaxCallSendMsgSize(bulk.MaxCallSendMsgSize),
+	grpc.MaxCallRecvMsgSize(config.MaxGrpcMessageSizeBytes),
+	grpc.MaxCallSendMsgSize(config.MaxGrpcMessageSizeBytes),
 }
 
 type staticMappingProvider struct {

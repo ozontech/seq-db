@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+
+	"github.com/ozontech/seq-db/seq"
 )
 
 type ColumnDesc struct {
@@ -106,6 +108,15 @@ func (s *Schema) Cols() []ColumnDesc {
 	return s.cols
 }
 
+// OptionalColumn resolves the column by name; nil when the column is absent.
+func OptionalColumn[T any](s *Schema, name string) *Column[T] {
+	c, err := s.Column[T](name)
+	if err != nil {
+		return nil
+	}
+	return &c
+}
+
 var (
 	columnGetters = map[DataType]any{
 		DataTypeSeqID:        (*RecordVals).AsSeqID,
@@ -141,21 +152,76 @@ var (
 		ColumnDesc{Name: DocsIDCol, Type: DataTypeSeqID},
 		ColumnDesc{Name: DocsDataCol, Type: DataTypeDocument},
 	)
-	AggsSchema = MustNewSchema(
-		ColumnDesc{Name: "token", Type: DataTypeString},
-		ColumnDesc{Name: "min", Type: DataTypeFloat64},
-		ColumnDesc{Name: "max", Type: DataTypeFloat64},
-		ColumnDesc{Name: "sum", Type: DataTypeFloat64},
-		ColumnDesc{Name: "total", Type: DataTypeUint64},
-		ColumnDesc{Name: "not_exists", Type: DataTypeUint64},
-		ColumnDesc{Name: "ts", Type: DataTypeUint64},
-		ColumnDesc{Name: "samples", Type: DataTypeFloat64Array},
-		ColumnDesc{Name: "values", Type: DataTypeStringArray},
-	)
-	AggResultSchema = MustNewSchema(
+)
+
+func AggResultSchemaFor(fn seq.AggFunc, timeseries bool) *Schema {
+	cols := make([]ColumnDesc, 0, 5)
+	cols = append(cols,
 		ColumnDesc{Name: "token", Type: DataTypeString},
 		ColumnDesc{Name: "value", Type: DataTypeFloat64},
-		ColumnDesc{Name: "ts", Type: DataTypeUint64},
-		ColumnDesc{Name: "quantiles", Type: DataTypeFloat64Array},
 	)
-)
+	if timeseries {
+		cols = append(cols, ColumnDesc{Name: "ts", Type: DataTypeUint64})
+	}
+	if fn == seq.AggFuncQuantile {
+		cols = append(cols, ColumnDesc{Name: "quantiles", Type: DataTypeFloat64Array})
+	}
+	if aggHasNotExists(fn) {
+		cols = append(cols, ColumnDesc{Name: "not_exists", Type: DataTypeUint64})
+	}
+	return MustNewSchema(cols...)
+}
+
+func AggsSchemaFor(fn seq.AggFunc, timeseries bool) *Schema {
+	inputCols := aggInputColsFor(fn)
+	cols := make([]ColumnDesc, 0, 2+len(inputCols))
+	cols = append(cols, ColumnDesc{Name: "token", Type: DataTypeString})
+	if timeseries {
+		cols = append(cols, ColumnDesc{Name: "ts", Type: DataTypeUint64})
+	}
+	cols = append(cols, inputCols...)
+	return MustNewSchema(cols...)
+}
+
+func aggInputColsFor(fn seq.AggFunc) []ColumnDesc {
+	var cols []ColumnDesc
+	switch fn {
+	case seq.AggFuncCount, seq.AggFuncUnique:
+		cols = []ColumnDesc{{Name: "total", Type: DataTypeUint64}}
+	case seq.AggFuncMin:
+		cols = []ColumnDesc{{Name: "min", Type: DataTypeFloat64}}
+	case seq.AggFuncMax:
+		cols = []ColumnDesc{{Name: "max", Type: DataTypeFloat64}}
+	case seq.AggFuncSum:
+		cols = []ColumnDesc{
+			{Name: "sum", Type: DataTypeFloat64},
+			{Name: "total", Type: DataTypeUint64},
+		}
+	case seq.AggFuncAvg:
+		cols = []ColumnDesc{
+			{Name: "sum", Type: DataTypeFloat64},
+			{Name: "total", Type: DataTypeUint64},
+		}
+	case seq.AggFuncQuantile:
+		// min and max are used for q=0/q=1.
+		cols = []ColumnDesc{
+			{Name: "min", Type: DataTypeFloat64},
+			{Name: "max", Type: DataTypeFloat64},
+			{Name: "samples", Type: DataTypeFloat64Array},
+		}
+	case seq.AggFuncUniqueCount:
+		cols = []ColumnDesc{{Name: "values", Type: DataTypeStringArray}}
+	}
+	if aggHasNotExists(fn) {
+		cols = append(cols, ColumnDesc{Name: "not_exists", Type: DataTypeUint64})
+	}
+	return cols
+}
+
+func aggHasNotExists(fn seq.AggFunc) bool {
+	switch fn {
+	case seq.AggFuncCount, seq.AggFuncUnique:
+		return false
+	}
+	return true
+}

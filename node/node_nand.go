@@ -15,14 +15,16 @@ func (n *nodeNAnd) String() string {
 }
 
 func NewNAnd(negative, regular Node) *nodeNAnd {
-	node := &nodeNAnd{neg: negative, reg: regular}
-	node.readNeg()
+	node := &nodeNAnd{neg: negative, reg: regular, negID: NullLID()}
 	node.readReg()
+	if !node.regID.IsNull() {
+		node.readNegGeq(node.regID)
+	}
 	return node
 }
 
-func (n *nodeNAnd) readNeg() {
-	n.negID = n.neg.Next()
+func (n *nodeNAnd) readNegGeq(nextID LID) {
+	n.negID = n.neg.NextGeq(nextID)
 }
 
 func (n *nodeNAnd) readReg() {
@@ -31,8 +33,8 @@ func (n *nodeNAnd) readReg() {
 
 func (n *nodeNAnd) Next() LID {
 	for !n.regID.IsNull() {
-		for n.negID.Less(n.regID) {
-			n.readNeg()
+		if n.negID.Less(n.regID) {
+			n.readNegGeq(n.regID)
 		}
 		if n.negID.IsNull() || n.negID != n.regID {
 			cur := n.regID

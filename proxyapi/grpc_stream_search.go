@@ -61,20 +61,9 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 
 	tr := querytracer.New(q.Explain, "proxy/StreamSearch")
 
-	var partialErr error
-	storesStream, cancelStreams, err := g.searchIngestor.StreamSearch(ctx, searchReq, tr)
+	storesStream, err := g.openStoreStreams(ctx, searchReq, tr)
 	if err != nil {
-		if errors.Is(err, consts.ErrPartialResponse) {
-			if shouldFailPartialResponse(ctx) {
-				cancelStreams()
-				return status.Error(codes.Internal, "partial response: not all shards returned results")
-			}
-			partialErr = err
-			metric.SearchPartial.Inc()
-		} else {
-			cancelStreams()
-			return status.Error(codes.Internal, err.Error())
-		}
+		return err
 	}
 
 	// Read control messages from the client concurrently with sending data.
@@ -108,33 +97,82 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	var toRecord func(*query.Record) *seqproxyapi.Record
 	if searchReq.Agg != nil {
 		typing = aggsTyping()
-		toRecord = aggToRecord
+		mapper := newAggRecordMapper(aggOutSchema(searchReq.Agg))
+		toRecord = mapper.toRecord
 	} else {
 		typing = docsTyping()
 		toRecord = docToRecord
 	}
-	outcome, err := g.streamSearchRecords(stream, storesStream, typing, toRecord, controlCh, recvErrCh, ctx)
+	outcome, err := g.streamSearchRecords(stream, storesStream.Records, typing, toRecord, controlCh, recvErrCh, ctx)
 	if err != nil {
 		// Streaming failed: cancel the stores so they stop producing.
-		cancelStreams()
+		storesStream.Cancel()
 		return err
 	}
 
 	// CANCEL: terminate immediately, no summary.
 	if outcome == outcomeCancel {
-		cancelStreams()
+		storesStream.Cancel()
 		return nil
 	}
 
 	// FINALIZE or data exhausted without an explicit control action: send the summary gathered from the store stream.
-	summary := storesStream.Finalize()
+	summary, err := g.finalizeStoreStreams(ctx, storesStream)
+	if err != nil {
+		return err
+	}
+	return g.sendSummary(stream, summary, tr, q.Explain)
+}
+
+func (g *grpcV1) openStoreStreams(
+	ctx context.Context,
+	req *search.StreamSearchRequest,
+	tr *querytracer.Tracer,
+) (*search.StreamResult, error) {
+	storesStream, err := g.searchIngestor.StreamSearch(ctx, req, tr)
+	if err != nil {
+		if errors.Is(err, consts.ErrIngestorQueryWantsOldData) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if storesStream.PartialErr != nil {
+		if shouldFailPartialResponse(ctx) {
+			storesStream.Cancel()
+			return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
+		}
+		metric.SearchPartial.Inc()
+	}
+	return storesStream, nil
+}
+
+func (g *grpcV1) finalizeStoreStreams(ctx context.Context, storesStream *search.StreamResult) (*query.Summary, error) {
+	summary, hasSuccessfulStream := storesStream.Finalize()
 	if summary == nil {
 		summary = &query.Summary{}
 	}
-	if partialErr != nil && summary.Err == nil {
-		summary.Err = partialErr
+
+	err := util.DeduplicateErrors([]error{storesStream.PartialErr, summary.Err})
+	if err == nil {
+		return summary, nil
 	}
-	return g.sendSummary(stream, summary, tr, q.Explain)
+
+	switch {
+	case errors.Is(err, consts.ErrTooManyFractionsHit):
+		summary.Err = err
+	case errors.Is(err, consts.ErrIngestorQueryWantsOldData):
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	case !hasSuccessfulStream:
+		return nil, status.Error(codes.Internal, err.Error())
+	case shouldFailPartialResponse(ctx):
+		return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
+	case errors.Is(err, consts.ErrPartialResponse):
+		summary.Err = err
+	default:
+		summary.Err = fmt.Errorf("%w: %w", consts.ErrPartialResponse, err)
+	}
+
+	return summary, nil
 }
 
 func (g *grpcV1) sendSummary(
@@ -172,10 +210,10 @@ func (g *grpcV1) sendSummary(
 
 func mapProxyErrorCode(err error) seqproxyapi.ErrorCode {
 	switch {
-	case errors.Is(err, consts.ErrPartialResponse):
-		return seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE
 	case errors.Is(err, consts.ErrTooManyFractionsHit):
 		return seqproxyapi.ErrorCode_ERROR_CODE_TOO_MANY_FRACTIONS_HIT
+	case errors.Is(err, consts.ErrPartialResponse):
+		return seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE
 	default:
 		return seqproxyapi.ErrorCode_ERROR_CODE_UNSPECIFIED
 	}
@@ -278,17 +316,13 @@ func aggsTyping() []*seqproxyapi.Typing {
 		{Title: "value", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64},
 		{Title: "ts", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
 		{Title: "quantiles", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64_ARRAY},
+		{Title: "not_exists", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
 	}
 }
 
 var (
 	docIDCol   = query.DocsSchema.MustColumn[seq.ID](query.DocsIDCol)
 	docDataCol = query.DocsSchema.MustColumn[*insaneJSON.Root](query.DocsDataCol)
-
-	aggKeyCol       = query.AggResultSchema.MustColumn[string]("token")
-	aggValueCol     = query.AggResultSchema.MustColumn[float64]("value")
-	aggTsCol        = query.AggResultSchema.MustColumn[uint64]("ts")
-	aggQuantilesCol = query.AggResultSchema.MustColumn[[]float64]("quantiles")
 )
 
 // converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
@@ -304,14 +338,48 @@ func docToRecord(r *query.Record) *seqproxyapi.Record {
 	}
 }
 
-// converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
-func aggToRecord(r *query.Record) *seqproxyapi.Record {
+type aggRecordMapper struct {
+	key       query.Column[string]
+	value     query.Column[float64]
+	ts        *query.Column[uint64]
+	quantiles *query.Column[[]float64]
+	notExists *query.Column[uint64]
+}
+
+func aggOutSchema(agg *search.AggQuery) *query.Schema {
+	return query.AggResultSchemaFor(agg.Func, agg.Interval > 0)
+}
+
+func newAggRecordMapper(out *query.Schema) aggRecordMapper {
+	return aggRecordMapper{
+		key:       out.MustColumn[string]("token"),
+		value:     out.MustColumn[float64]("value"),
+		ts:        query.OptionalColumn[uint64](out, "ts"),
+		quantiles: query.OptionalColumn[[]float64](out, "quantiles"),
+		notExists: query.OptionalColumn[uint64](out, "not_exists"),
+	}
+}
+
+func (m aggRecordMapper) toRecord(r *query.Record) *seqproxyapi.Record {
+	var ts uint64
+	if m.ts != nil {
+		ts = m.ts.Val(r)
+	}
+	var quantiles []float64
+	if m.quantiles != nil {
+		quantiles = m.quantiles.Val(r)
+	}
+	var notExists uint64
+	if m.notExists != nil {
+		notExists = m.notExists.Val(r)
+	}
 	return &seqproxyapi.Record{
 		RawData: [][]byte{
-			aggKeyCol.RawData(r),       // key
-			aggValueCol.RawData(r),     // value
-			aggTsCol.RawData(r),        // ts
-			aggQuantilesCol.RawData(r), // quantiles
+			m.key.RawData(r),                        // key
+			m.value.RawData(r),                      // value
+			encoding.Uint64ToBytes(ts),              // ts
+			encoding.Float64ArrayToBytes(quantiles), // quantiles
+			encoding.Uint64ToBytes(notExists),       // not_exists
 		},
 	}
 }

@@ -94,8 +94,22 @@ func IndexSearch(
 	sw *stopwatch.Stopwatch,
 ) (qpr *seq.QPR, err error) {
 	stats := &searchStats{}
+	cache := make(tidsCache)
 
-	m := sw.Start("get_lids_borders")
+	m := sw.Start("ast_resolve")
+	ast, empty, err := astResolve(params.AST, index, cache, sw)
+	m.Stop()
+	if err != nil {
+		return nil, err
+	}
+
+	if empty {
+		stats.UpdateMetrics()
+		return emptyQPR(params), nil
+	}
+
+	params.AST = ast
+	m = sw.Start("get_lids_borders")
 	minLID, maxLID := getLIDsBorders(params, index)
 	m.Stop()
 
@@ -114,7 +128,7 @@ func IndexSearch(
 	var evalTree node.BatchedNode
 	if !hasSkipLIDs {
 		evalTree, err = tryBuildBatchEvalTree(
-			params.AST, fracVer, index, queryOpt, minLID, maxLID, stats, params.Order, sw,
+			params.AST, fracVer, index, cache, queryOpt, minLID, maxLID, stats, params.Order, sw,
 		)
 	} else {
 		err = errBatchingUnsupported
@@ -129,7 +143,7 @@ func IndexSearch(
 		var nodeTree node.Node
 		nodeTree, err = buildEvalTree(params.AST, minLID, maxLID, stats, params.Order.IsReverse(),
 			func(token parser.Token) (node.Node, error) {
-				return evalLeaf(index, token, sw, stats, minLID, maxLID, params.Order)
+				return evalLeaf(index, token, cache, sw, stats, minLID, maxLID, params.Order)
 			},
 		)
 		if err != nil {
@@ -226,6 +240,15 @@ func IndexSearch(
 	stats.UpdateMetrics()
 
 	return qpr, nil
+}
+
+// emptyQPR is the result IndexSearch produces when the eval tree yields no LIDs.
+func emptyQPR(params SearchParams) *seq.QPR {
+	qpr := &seq.QPR{}
+	if params.HasHist() {
+		qpr.Histogram = map[seq.MID]uint64{}
+	}
+	return qpr
 }
 
 func iterateEvalTree(
