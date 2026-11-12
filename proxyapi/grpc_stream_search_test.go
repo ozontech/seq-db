@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -235,4 +237,25 @@ func (f *fakeProducer) Finalize() *query.Summary { return f.summary }
 func failPartialCtx(fail bool) context.Context {
 	return metadata.NewIncomingContext(context.Background(),
 		metadata.Pairs("fail-partial-response", strconv.FormatBool(fail)))
+}
+
+type emptyStream struct {
+	grpc.ServerStream
+}
+
+func (s emptyStream) Context() context.Context { return context.Background() }
+
+func (s emptyStream) Send(*seqproxyapi.StreamSearchResponse) error { return nil }
+
+func (s emptyStream) Recv() (*seqproxyapi.StreamSearchRequest, error) {
+	return nil, io.EOF
+}
+
+func TestGrpcV1_StreamSearchEmptyRequest(t *testing.T) {
+	g := newGrpcV1(APIConfig{}, nil, nil, nil, nil)
+
+	err := g.StreamSearch(emptyStream{})
+
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 }
