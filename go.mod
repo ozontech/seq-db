@@ -7,7 +7,7 @@ require (
 	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/RoaringBitmap/roaring/v2 v2.18.2
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
-	github.com/aws/aws-sdk-go-v2 v1.47.0
+	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.4
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.19.13
