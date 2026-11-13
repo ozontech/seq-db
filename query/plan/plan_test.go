@@ -42,7 +42,7 @@ func TestBuildDocsPipes(t *testing.T) {
 	assert.Equal(t, []string{"service"}, extractOp.Fields)
 	filterOp, ok := p.Ops[1].(*FilterOp)
 	require.True(t, ok)
-	assert.Equal(t, "service", filterOp.Cond.Field)
+	assert.Equal(t, "data.service", filterOp.Cond.Field)
 	assert.Equal(t, "api", filterOp.Cond.Value)
 	assert.True(t, filterOp.WithTotal)
 	projectOp, ok := p.Ops[2].(*ProjectOp)
@@ -84,12 +84,60 @@ func TestOpsSchemaChange(t *testing.T) {
 	extractOp := &ExtractOp{Fields: []string{"service"}, OpField: query.DocsDataCol}
 	producer, schema := extractOp.Apply(input, schema)
 	assert.Equal(t, 3, schema.Len())
-	assert.Equal(t, 2, schema.MustColumn[string]("service").Idx())
+	assert.Equal(t, 2, schema.MustColumn[string]("data.service").Idx())
 
-	filterOp := &FilterOp{Cond: parser.FilterCondition{Field: "service", Value: "api"}}
+	filterOp := &FilterOp{Cond: parser.FilterCondition{Field: "data.service", Value: "api"}}
 	producer, schema = filterOp.Apply(producer, schema)
 	assert.Equal(t, 3, schema.Len()) // filter does't change the schema
 	require.NotNil(t, producer)
+}
+
+func TestBuildFilterOnReservedColumn(t *testing.T) {
+	// filtering on a name that exists in the input schema extracts it under
+	// the qualified name instead of colliding with the document columns
+	seqql := &parser.SeqQLQuery{
+		Pipes: []parser.Pipe{
+			&parser.PipeFilter{Condition: parser.FilterCondition{Field: query.DocsIDCol, Value: "42"}},
+		},
+	}
+	p, err := build(seqql, "", false)
+	require.NoError(t, err)
+
+	require.Len(t, p.Ops, 2)
+	extractOp, ok := p.Ops[0].(*ExtractOp)
+	require.True(t, ok)
+	assert.Equal(t, []string{query.DocsIDCol}, extractOp.Fields)
+	filterOp, ok := p.Ops[1].(*FilterOp)
+	require.True(t, ok)
+	assert.Equal(t, "data.id", filterOp.Cond.Field)
+
+	var input query.RecordProducer = testProducer{}
+	_, schema := extractOp.Apply(input, query.DocsSchema)
+	_, schema = filterOp.Apply(input, schema)
+	assert.Equal(t, 3, schema.Len())
+	assert.Equal(t, 2, schema.MustColumn[string]("data.id").Idx())
+}
+
+func TestBuildFilterSameFieldTwice(t *testing.T) {
+	// the second filter reuses the column extracted by the first one
+	seqql := &parser.SeqQLQuery{
+		Pipes: []parser.Pipe{
+			&parser.PipeFilter{Condition: parser.FilterCondition{Field: "id", Value: "1"}},
+			&parser.PipeFilter{Condition: parser.FilterCondition{Field: "id", Value: "2"}},
+		},
+	}
+	p, err := build(seqql, "", false)
+	require.NoError(t, err)
+
+	require.Len(t, p.Ops, 3)
+	_, ok := p.Ops[0].(*ExtractOp)
+	require.True(t, ok)
+	filter1, ok := p.Ops[1].(*FilterOp)
+	require.True(t, ok)
+	assert.Equal(t, "1", filter1.Cond.Value)
+	filter2, ok := p.Ops[2].(*FilterOp)
+	require.True(t, ok)
+	assert.Equal(t, "2", filter2.Cond.Value)
 }
 
 func TestBuildDefaultOrder(t *testing.T) {

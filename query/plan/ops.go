@@ -24,12 +24,16 @@ type ExtractOp struct {
 func (op *ExtractOp) Apply(input query.RecordProducer, in *query.Schema) (query.RecordProducer, *query.Schema) {
 	descs := make([]query.ColumnDesc, len(op.Fields))
 	for i, f := range op.Fields {
-		descs[i] = query.ColumnDesc{Name: f, Type: query.DataTypeString}
+		descs[i] = query.ColumnDesc{Name: extractedColName(op.OpField, f), Type: query.DataTypeString}
 	}
 
 	out := in.Extend(descs...)
 	col := in.MustColumn[[]byte](op.OpField)
 	return exec.NewJSONFieldsExtractor(input, col, op.Fields...), out
+}
+
+func extractedColName(source, field string) string {
+	return source + "." + field
 }
 
 type FilterOp struct {
