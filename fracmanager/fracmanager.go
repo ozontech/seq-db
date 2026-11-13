@@ -23,8 +23,9 @@ import (
 
 // FracManager manages database fractions with lifecycle operations
 type FracManager struct {
-	mu sync.Mutex // todo: get rid of mutex after removing SealForcedForTests method
-	lc *lifecycleManager
+	mu      sync.Mutex // todo: get rid of mutex after removing SealForcedForTests method
+	lc      *lifecycleManager
+	cleaner *remoteCleaner
 }
 
 var defaultStorageState = StorageState{
@@ -50,7 +51,7 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 
 	// Load existing fractions into registry
 	loader := NewLoader(cfg, provider, infoCache)
-	registry, err := loader.Load(ctx)
+	registry, remotesRemoving, err := loader.Load(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -61,14 +62,24 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 		return nil, nil, err
 	}
 
+	fm := FracManager{
+		cleaner: newRemoteCleaner(infoCache, cfg.RemoteRemoveRetryDelay),
+	}
+
 	// Create lc manager to handle fraction maintenance
-	lc := newLifecycleManager(infoCache, provider, storageState, registry)
-	fm := FracManager{lc: lc}
+	lc := newLifecycleManager(infoCache, provider, storageState, registry, fm.cleaner)
+	fm.lc = lc
 
 	// Start background workers and get stop function
-	wg := sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(ctx)
+	wg := sync.WaitGroup{}
 
+	fm.cleaner.Start(ctx, &wg)
+	if cfg.OffloadingEnabled {
+		for _, remote := range remotesRemoving {
+			fm.cleaner.Add(&refCountedRemote{Remote: remote})
+		}
+	}
 	startStatsWorker(ctx, cfg, registry, &wg)
 	startMaintWorker(ctx, cfg, &fm, &wg)
 	startCacheWorker(ctx, cfg, cache, &wg)
@@ -261,6 +272,7 @@ func startMaintWorker(ctx context.Context, cfg *Config, fm *FracManager, wg *syn
 		defer wg.Done()
 
 		logger.Info("maintenance loop is started")
+
 		// Run maintenance at configured interval
 		util.RunEvery(ctx.Done(), cfg.MaintenanceDelay, func() {
 			fm.Maintain(ctx, cfg, &maintWg)

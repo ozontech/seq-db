@@ -37,7 +37,11 @@ type fractionRegistry struct {
 
 // NewFractionRegistry creates and initializes a new fraction registry instance.
 // Populates the registry with existing active, sealed and remote fractions.
-func NewFractionRegistry(active *frac.Active, sealed []*frac.Sealed, remotes []*frac.Remote) (*fractionRegistry, error) {
+func NewFractionRegistry(
+	active *frac.Active,
+	sealed []*frac.Sealed,
+	remotes []*frac.Remote,
+) (*fractionRegistry, error) {
 	if active == nil {
 		return nil, errors.New("active fraction must be specified")
 	}
@@ -198,7 +202,7 @@ func (r *fractionRegistry) rotateIfFull(maxSize uint64, ap activeProvider) (*ref
 	return &old.refCountedActive, wg.Wait, nil
 }
 
-func (r *fractionRegistry) suspendIfOverCapacity(maxQueue, maxSize uint64) {
+func (r *fractionRegistry) suspendIfOverCapacity(maxQueue, maxSize uint64, remoteOverflowed bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -210,6 +214,15 @@ func (r *fractionRegistry) suspendIfOverCapacity(maxQueue, maxSize uint64) {
 				zap.String("reason", "sealing queue size exceeded"),
 				zap.Uint64("limit", maxQueue),
 				zap.Int("queue_size", r.stats.sealing.count))
+			r.sappender.suspend(true)
+		}
+		return
+	}
+
+	if remoteOverflowed {
+		if !suspended {
+			logger.Warn("switching to read-only mode",
+				zap.String("reason", "remote deletion queue size exceeded"))
 			r.sappender.suspend(true)
 		}
 		return

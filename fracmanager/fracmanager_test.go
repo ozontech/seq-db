@@ -1,12 +1,17 @@
 package fracmanager
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/alecthomas/units"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/node"
@@ -93,4 +98,47 @@ func TestSealingOnShutdown(t *testing.T) {
 	_, ok = allFractions[1].(*syncAppender)
 	assert.True(t, ok, "new fraction should be active")
 	stop()
+}
+
+func TestRemoteCleanupOnStartup(t *testing.T) {
+	provider, tearDown := setupFractionProvider(t, &Config{
+		TotalSize:              uint64(units.MiB),
+		OffloadingEnabled:      true,
+		RemoteRemoveRetryDelay: time.Millisecond,
+		Fraction:               frac.Config{SkipSortDocs: true},
+	})
+	defer tearDown()
+
+	for _, markerSuffix := range []string{
+		consts.RemoteFractionTmpSuffix,
+		consts.RemoteFractionDeletingSuffix,
+	} {
+		t.Run(markerSuffix, func(t *testing.T) {
+			remote := makeOffloadedFraction(t, provider)
+			basePath := remote.BaseFileName
+			for _, suffix := range []string{
+				consts.DocsFileSuffix, consts.SdocsFileSuffix, consts.IndexFileSuffix,
+				consts.InfoFileSuffix, consts.TokenFileSuffix, consts.OffsetsFileSuffix,
+				consts.IDFileSuffix, consts.LIDFileSuffix,
+			} {
+				if err := os.Remove(basePath + suffix); !os.IsNotExist(err) {
+					require.NoError(t, err)
+				}
+			}
+			require.NoError(t, os.Rename(basePath+consts.RemoteFractionSuffix, basePath+markerSuffix))
+
+			fm, stop, err := New(t.Context(), provider.config, provider.s3cli, testSkipMaskProvider{})
+			require.NoError(t, err)
+			defer stop()
+
+			require.Zero(t, fm.lc.registry.statistics().remotes.count)
+			require.Eventually(t, func() bool {
+				_, err := os.Stat(basePath + markerSuffix)
+				return os.IsNotExist(err)
+			}, 5*time.Second, time.Millisecond)
+			exists, err := provider.s3cli.Exists(t.Context(), filepath.Base(basePath)+consts.DocsFileSuffix)
+			require.NoError(t, err)
+			assert.False(t, exists)
+		})
+	}
 }
