@@ -28,7 +28,11 @@ type storeSender struct {
 	metasBuf []byte
 }
 
-func newStoreSender(address string, mapping seq.Mapping) (*storeSender, error) {
+func newStoreSender(
+	address string,
+	mapping seq.Mapping,
+	caseSensitive bool,
+) (*storeSender, error) {
 	conn, err := grpc.NewClient(
 		address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -37,14 +41,22 @@ func newStoreSender(address string, mapping seq.Mapping) (*storeSender, error) {
 		return nil, fmt.Errorf("cannot create grpc client: %w", err)
 	}
 
-	return newStoreSenderWithClient(storeapi.NewStoreApiClient(conn), mapping), nil
+	return newStoreSenderWithClient(
+		storeapi.NewStoreApiClient(conn),
+		mapping,
+		caseSensitive,
+	), nil
 }
 
-func newStoreSenderWithClient(client storeapi.StoreApiClient, mapping seq.Mapping) *storeSender {
+func newStoreSenderWithClient(
+	client storeapi.StoreApiClient,
+	mapping seq.Mapping,
+	caseSensitive bool,
+) *storeSender {
 	tokenizers := map[seq.TokenizerType]tokenizer.Tokenizer{
-		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(consts.DefaultMaxTokenSize, false, true, consts.MaxTextFieldValueLength),
-		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(consts.DefaultMaxTokenSize, false, true),
-		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(consts.DefaultMaxTokenSize, false, true),
+		seq.TokenizerTypeText:    tokenizer.NewTextTokenizer(consts.DefaultMaxTokenSize, caseSensitive, true, consts.MaxTextFieldValueLength),
+		seq.TokenizerTypeKeyword: tokenizer.NewKeywordTokenizer(consts.DefaultMaxTokenSize, caseSensitive, true),
+		seq.TokenizerTypePath:    tokenizer.NewPathTokenizer(consts.DefaultMaxTokenSize, caseSensitive, true),
 		seq.TokenizerTypeExists:  tokenizer.NewExistsTokenizer(),
 	}
 

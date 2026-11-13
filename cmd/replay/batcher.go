@@ -17,7 +17,10 @@ type bulkSender interface {
 	Send(ctx context.Context, docs [][]byte) error
 }
 
-func newSender(mode, address, mappingPath string) (bulkSender, error) {
+func newSender(
+	mode, address, mappingPath string,
+	caseSensitive bool,
+) (bulkSender, error) {
 	switch mode {
 	case modeProxy:
 		return newProxySender(address), nil
@@ -31,7 +34,7 @@ func newSender(mode, address, mappingPath string) (bulkSender, error) {
 			return nil, err
 		}
 
-		s, err := newStoreSender(address, mapping)
+		s, err := newStoreSender(address, mapping, caseSensitive)
 		if err != nil {
 			return nil, err
 		}

@@ -20,12 +20,13 @@ import (
 )
 
 type cmdReplay struct {
-	frac        string
-	address     string
-	mode        string
-	batchSize   int
-	mappingPath string
-	dryRun      bool
+	frac          string
+	address       string
+	mode          string
+	batchSize     int
+	mappingPath   string
+	caseSensitive bool
+	dryRun        bool
 }
 
 func (c *cmdReplay) run(ctx context.Context) error {
@@ -33,7 +34,12 @@ func (c *cmdReplay) run(ctx context.Context) error {
 		return errors.New("batch-size must be positive")
 	}
 
-	sender, err := newSender(c.mode, c.address, c.mappingPath)
+	sender, err := newSender(
+		c.mode,
+		c.address,
+		c.mappingPath,
+		c.caseSensitive,
+	)
 	if err != nil {
 		return err
 	}

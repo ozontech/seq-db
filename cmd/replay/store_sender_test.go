@@ -82,7 +82,7 @@ func TestStoreSender(t *testing.T) {
 	mapping["level"] = seq.NewSingleType(seq.TokenizerTypeKeyword, "", 0)
 
 	client, st := newTestStore(t, mapping)
-	s := newStoreSenderWithClient(client, mapping)
+	s := newStoreSenderWithClient(client, mapping, false)
 
 	require.NoError(t, s.Send(context.Background(), docs))
 	st.WaitIdle()
@@ -110,7 +110,7 @@ func TestStoreSenderBatching(t *testing.T) {
 
 	mapping := seq.TestMapping
 	client, st := newTestStore(t, mapping)
-	s := newStoreSenderWithClient(client, mapping)
+	s := newStoreSenderWithClient(client, mapping, false)
 
 	// two batches through the same sender reuse buffers
 	require.NoError(t, s.Send(context.Background(), docs[:200]))
@@ -133,7 +133,7 @@ func itoa(i int) string {
 }
 
 func TestNewSenderRequiresMapping(t *testing.T) {
-	_, err := newSender(modeStore, "localhost:1", "")
+	_, err := newSender(modeStore, "localhost:1", "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "--mapping")
 }

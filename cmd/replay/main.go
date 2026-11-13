@@ -25,6 +25,7 @@ func main() {
 	app.Flag("address", "address of the proxy HTTP endpoint or the store gRPC endpoint").
 		Default("http://localhost:9002").StringVar(&replayCmd.address)
 	app.Flag("batch-size", "number of documents per bulk request").Default("1000").IntVar(&replayCmd.batchSize)
+	app.Flag("case-sensitive", "enable tokenizer case sensitivity").BoolVar(&replayCmd.caseSensitive)
 	app.Flag("mapping", "path to mapping YAML, required in store mode to build metas").ExistingFileVar(&replayCmd.mappingPath)
 	app.Flag("dry-run", "only read the docs file and count documents without sending").BoolVar(&replayCmd.dryRun)
 
