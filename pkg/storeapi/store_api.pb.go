@@ -301,7 +301,7 @@ type DataType int32
 const (
 	DataType_DATA_TYPE_BYTES         DataType = 0
 	DataType_DATA_TYPE_SEQ_ID        DataType = 1
-	DataType_DATA_TYPE_RAW_DOCUMENT  DataType = 2
+	DataType_DATA_TYPE_JSON          DataType = 2
 	DataType_DATA_TYPE_STRING        DataType = 3
 	DataType_DATA_TYPE_UINT32        DataType = 4
 	DataType_DATA_TYPE_UINT64        DataType = 5
@@ -317,7 +317,7 @@ var (
 	DataType_name = map[int32]string{
 		0:  "DATA_TYPE_BYTES",
 		1:  "DATA_TYPE_SEQ_ID",
-		2:  "DATA_TYPE_RAW_DOCUMENT",
+		2:  "DATA_TYPE_JSON",
 		3:  "DATA_TYPE_STRING",
 		4:  "DATA_TYPE_UINT32",
 		5:  "DATA_TYPE_UINT64",
@@ -330,7 +330,7 @@ var (
 	DataType_value = map[string]int32{
 		"DATA_TYPE_BYTES":         0,
 		"DATA_TYPE_SEQ_ID":        1,
-		"DATA_TYPE_RAW_DOCUMENT":  2,
+		"DATA_TYPE_JSON":          2,
 		"DATA_TYPE_STRING":        3,
 		"DATA_TYPE_UINT32":        4,
 		"DATA_TYPE_UINT64":        5,
@@ -3255,11 +3255,11 @@ const file_storeapi_store_api_proto_rawDesc = "" +
 	"\x16AsyncSearchStatusError\x10\x03*L\n" +
 	"\rControlAction\x12\x1e\n" +
 	"\x1aCONTROL_ACTION_UNSPECIFIED\x10\x00\x12\x1b\n" +
-	"\x17CONTROL_ACTION_FINALIZE\x10\x01*\x8d\x02\n" +
+	"\x17CONTROL_ACTION_FINALIZE\x10\x01*\x85\x02\n" +
 	"\bDataType\x12\x13\n" +
 	"\x0fDATA_TYPE_BYTES\x10\x00\x12\x14\n" +
-	"\x10DATA_TYPE_SEQ_ID\x10\x01\x12\x1a\n" +
-	"\x16DATA_TYPE_RAW_DOCUMENT\x10\x02\x12\x14\n" +
+	"\x10DATA_TYPE_SEQ_ID\x10\x01\x12\x12\n" +
+	"\x0eDATA_TYPE_JSON\x10\x02\x12\x14\n" +
 	"\x10DATA_TYPE_STRING\x10\x03\x12\x14\n" +
 	"\x10DATA_TYPE_UINT32\x10\x04\x12\x14\n" +
 	"\x10DATA_TYPE_UINT64\x10\x05\x12\x13\n" +

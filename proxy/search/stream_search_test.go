@@ -7,7 +7,6 @@ import (
 	"sync"
 	"testing"
 
-	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -189,7 +188,7 @@ func TestNewStreamSearchIteratorEOFOnPrefetch(t *testing.T) {
 func testTyping() []*storeapi.Typing {
 	return []*storeapi.Typing{
 		{Title: "id", Type: storeapi.DataType_DATA_TYPE_SEQ_ID},
-		{Title: "data", Type: storeapi.DataType_DATA_TYPE_RAW_DOCUMENT},
+		{Title: "data", Type: storeapi.DataType_DATA_TYPE_JSON},
 	}
 }
 
@@ -314,15 +313,15 @@ func (f *fakeStream) RecvMsg(any) error            { return nil }
 func TestSchemaFromTyping(t *testing.T) {
 	typing := []*storeapi.Typing{
 		{Title: "id", Type: storeapi.DataType_DATA_TYPE_SEQ_ID},
-		{Title: "data", Type: storeapi.DataType_DATA_TYPE_RAW_DOCUMENT},
+		{Title: "data", Type: storeapi.DataType_DATA_TYPE_JSON},
 	}
 
 	schema, types, err := schemaFromTyping(typing)
 	require.NoError(t, err)
 	assert.Equal(t, 2, schema.Len())
-	assert.Equal(t, []query.DataType{query.DataTypeSeqID, query.DataTypeDocument}, types)
+	assert.Equal(t, []query.DataType{query.DataTypeSeqID, query.DataTypeJSON}, types)
 	assert.Equal(t, 0, schema.MustColumn[seq.ID]("id").Idx())
-	assert.Equal(t, query.DataTypeDocument, schema.MustColumn[*insaneJSON.Root]("data").DataType())
+	assert.Equal(t, query.DataTypeJSON, schema.MustColumn[[]byte]("data").DataType())
 }
 
 func TestSchemaFromTypingDuplicateName(t *testing.T) {
@@ -343,11 +342,11 @@ func TestValidateShardSchemas(t *testing.T) {
 
 	docsTyping := []*storeapi.Typing{
 		{Title: "id", Type: storeapi.DataType_DATA_TYPE_SEQ_ID},
-		{Title: "data", Type: storeapi.DataType_DATA_TYPE_RAW_DOCUMENT},
+		{Title: "data", Type: storeapi.DataType_DATA_TYPE_JSON},
 	}
 	otherTyping := []*storeapi.Typing{
 		{Title: "id", Type: storeapi.DataType_DATA_TYPE_SEQ_ID},
-		{Title: "payload", Type: storeapi.DataType_DATA_TYPE_RAW_DOCUMENT},
+		{Title: "payload", Type: storeapi.DataType_DATA_TYPE_JSON},
 	}
 	aggsTyping := []*storeapi.Typing{
 		{Title: "token", Type: storeapi.DataType_DATA_TYPE_STRING},

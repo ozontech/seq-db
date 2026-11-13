@@ -3,13 +3,10 @@ package query
 import (
 	"fmt"
 
-	insaneJSON "github.com/ozontech/insane-json"
-
 	"github.com/ozontech/seq-db/query/encoding"
 	"github.com/ozontech/seq-db/seq"
 )
 
-// executors make use of val's index, executor's parameters has colIdx field
 type Record struct {
 	Vals []*RecordVals
 }
@@ -17,12 +14,6 @@ type Record struct {
 func NewRecord(vals []*RecordVals) *Record {
 	return &Record{
 		Vals: vals,
-	}
-}
-
-func (r *Record) Release() {
-	for _, v := range r.Vals {
-		v.Release()
 	}
 }
 
@@ -34,8 +25,8 @@ func (t DataType) String() string {
 		return "bytes"
 	case DataTypeSeqID:
 		return "seq_id"
-	case DataTypeDocument:
-		return "document"
+	case DataTypeJSON:
+		return "json"
 	case DataTypeString:
 		return "string"
 	case DataTypeUint32:
@@ -60,7 +51,7 @@ func (t DataType) String() string {
 const (
 	DataTypeBytes DataType = iota
 	DataTypeSeqID
-	DataTypeDocument
+	DataTypeJSON
 	DataTypeString
 	DataTypeUint32
 	DataTypeUint64
@@ -74,7 +65,7 @@ const (
 type RecordVals struct {
 	Type DataType
 
-	// decoded marks whether the doc/f64s/strs cache has been filled.
+	// decoded marks whether the f64s/strs cache has been filled.
 	// Exactly one cache field is used per val so a single flag covers all types.
 	decoded bool
 
@@ -84,7 +75,6 @@ type RecordVals struct {
 	// Scalars are decoded from rawData on every access — the decode is a
 	// single load, caching it in a struct field costs more (bigger struct,
 	// extra branch) than it saves.
-	doc  *insaneJSON.Root
 	f64s []float64
 	strs []string
 }
@@ -140,11 +130,10 @@ func NewStringArrayVals(v []string) *RecordVals {
 	return &RecordVals{Type: DataTypeStringArray, rawData: encoding.StringArrayToBytes(v)}
 }
 
-// NewDocVals aliases payload — no copy. The payload must stay unmodified until
-// the val is decoded (decoding is lazy: AsDoc may run in a downstream executor
-// long after this call) — so pooled or reused buffers are unsafe here.
-func NewDocVals(payload []byte) *RecordVals {
-	return &RecordVals{Type: DataTypeDocument, rawData: payload}
+// NewJSONVals aliases payload — no copy. The payload must stay unmodified for
+// as long as the val is alive — pooled or reused buffers are unsafe here.
+func NewJSONVals(payload []byte) *RecordVals {
+	return &RecordVals{Type: DataTypeJSON, rawData: payload}
 }
 
 func (rv *RecordVals) RawData() []byte {
@@ -167,21 +156,10 @@ func (rv *RecordVals) AsSeqID() seq.ID {
 	return encoding.SeqIDFromBytes(rv.rawData)
 }
 
-func (rv *RecordVals) AsDoc() *insaneJSON.Root {
-	rv.mustBe(DataTypeDocument)
-	if !rv.decoded {
-		root := insaneJSON.Spawn()
-		err := root.DecodeBytes(rv.rawData)
-		if err != nil {
-			panic(fmt.Errorf("error decoding document: %w", err))
-		}
-		if !root.IsObject() {
-			panic(fmt.Errorf("document is not an object: %s", rv.rawData))
-		}
-		rv.doc = root
-		rv.decoded = true
-	}
-	return rv.doc
+// AsJSON returns the raw json bytes without decoding.
+func (rv *RecordVals) AsJSON() []byte {
+	rv.mustBe(DataTypeJSON)
+	return rv.rawData
 }
 
 func (rv *RecordVals) AsString() string {
@@ -230,17 +208,4 @@ func (rv *RecordVals) AsStringArray() []string {
 		rv.decoded = true
 	}
 	return rv.strs
-}
-
-// Release returns the insaneJSON root allocated in AsDoc back to the library's
-// internal pool and invalidates the cache. It is idempotent: after
-// the first call the cache is cleared, so repeated calls are a no-op. Calling
-// it on a non-document val or a not-yet-decoded val is also a no-op. Safe to
-// invoke from every executor that has touched the val — the first caller wins.
-func (rv *RecordVals) Release() {
-	if rv.decoded {
-		insaneJSON.Release(rv.doc)
-	}
-	rv.doc = nil
-	rv.decoded = false
 }

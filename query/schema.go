@@ -122,7 +122,7 @@ var (
 		DataTypeSeqID:        (*RecordVals).AsSeqID,
 		DataTypeBytes:        (*RecordVals).AsBytes,
 		DataTypeString:       (*RecordVals).AsString,
-		DataTypeDocument:     (*RecordVals).AsDoc,
+		DataTypeJSON:         (*RecordVals).AsJSON,
 		DataTypeUint32:       (*RecordVals).AsUint32,
 		DataTypeUint64:       (*RecordVals).AsUint64,
 		DataTypeInt32:        (*RecordVals).AsInt32,
@@ -150,7 +150,7 @@ var (
 
 	DocsSchema = MustNewSchema(
 		ColumnDesc{Name: DocsIDCol, Type: DataTypeSeqID},
-		ColumnDesc{Name: DocsDataCol, Type: DataTypeDocument},
+		ColumnDesc{Name: DocsDataCol, Type: DataTypeJSON},
 	)
 )
 
