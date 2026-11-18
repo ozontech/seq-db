@@ -60,7 +60,7 @@ func TestReplayWithEmptyActive(t *testing.T) {
 	actives = append(actives, fp.CreateActive()) // last active frac is now empty
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	active, sealed, err := loader.replayAndSeal(t.Context(), actives, &epochTracker{})
 	assert.NoError(t, err)
 
 	// check
@@ -94,7 +94,7 @@ func TestReplayWithMultipleEmpty(t *testing.T) {
 	actives = append(actives, fp.CreateActive()) // last active frac is now empty
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	active, sealed, err := loader.replayAndSeal(t.Context(), actives, &epochTracker{})
 	assert.NoError(t, err)
 
 	// checks
@@ -125,7 +125,7 @@ func TestReplayMultiple(t *testing.T) {
 	actives = append(actives, active)
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	active, sealed, err := loader.replayAndSeal(t.Context(), actives, &epochTracker{})
 	assert.NoError(t, err)
 
 	// checks
@@ -147,7 +147,7 @@ func TestReplaySingleEmpty(t *testing.T) {
 	actives := []*frac.Active{fp.CreateActive()}
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	active, sealed, err := loader.replayAndSeal(t.Context(), actives, &epochTracker{})
 	assert.NoError(t, err)
 
 	// checks
@@ -176,7 +176,7 @@ func TestReplayContextCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Microsecond)
 	defer cancel()
 
-	_, _, err := loader.replayAndSeal(ctx, actives)
+	_, _, err := loader.replayAndSeal(ctx, actives, &epochTracker{})
 
 	// checks
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
@@ -193,7 +193,7 @@ func TestReplaySingleNonEmpty(t *testing.T) {
 	appendDocsToActive(t, actives[0], 500+rand.Intn(100))
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	active, sealed, err := loader.replayAndSeal(t.Context(), actives, &epochTracker{})
 	assert.NoError(t, err)
 
 	assert.Equal(t, 0, len(sealed), "sealed should be empty")

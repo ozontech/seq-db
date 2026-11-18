@@ -92,7 +92,7 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 		lc.SyncInfoCache()
 
 		// Seal active fraction
-		sealOnShutdown(appender.Active, provider, cfg.MinSealFracSize)
+		sealOnShutdown(appender.Active, provider, registry, cfg.MinSealFracSize)
 
 		logger.Info("fracmanager's workers are stopped", zap.Int64("took_ms", time.Since(n).Milliseconds()))
 	}
@@ -160,6 +160,14 @@ func (fm *FracManager) AcquireFractions() (List, func()) {
 
 func (fm *FracManager) AcquireFractionsInRange(from, to seq.MID) (List, func()) {
 	return fm.lc.registry.acquireFractionsInRange(from, to)
+}
+
+func (fm *FracManager) AcquireFractionsFunc(pred func(frac.Fraction) bool) (List, []func()) {
+	return fm.lc.registry.acquireFractionsFunc(pred)
+}
+
+func (fm *FracManager) OldestOpenEpoch() uint64 {
+	return fm.lc.registry.oldestOpenEpoch()
 }
 
 func (fm *FracManager) Oldest() uint64 {
@@ -271,8 +279,10 @@ func startMaintWorker(ctx context.Context, cfg *Config, fm *FracManager, wg *syn
 	}()
 }
 
-// SealOnShutdown seals the active fraction on storage shutdown
-func sealOnShutdown(active *frac.Active, provider *fractionProvider, minSealSize uint64) {
+func sealOnShutdown(
+	active *frac.Active, provider *fractionProvider,
+	registry *fractionRegistry, minSealSize uint64,
+) {
 	fracSize := active.Info().FullSize()
 
 	if minSealSize == 0 {
@@ -296,6 +306,7 @@ func sealOnShutdown(active *frac.Active, provider *fractionProvider, minSealSize
 		zap.Uint64("fill_size_mb", uint64(util.SizeToUnit(fracSize, "mb"))),
 	)
 
+	active.SetEpoch(registry.assignEpoch(time.Now()))
 	if _, err := provider.Seal(active); err != nil {
 		logger.Error("error sealing on shutdown", zap.Error(err))
 	}

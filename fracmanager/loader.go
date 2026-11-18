@@ -45,8 +45,10 @@ func (l *Loader) Load(ctx context.Context) (*fractionRegistry, error) {
 		return nil, err
 	}
 
+	epochs := newEpochTracker(l.config, lastEpoch(l.config.EpochLowerBound, locals, remotes))
+
 	// Stage 2: Replay active fractions and seal them
-	active, sealed, err := l.replayAndSeal(ctx, actives)
+	active, sealed, err := l.replayAndSeal(ctx, actives, &epochs)
 	if err != nil {
 		return nil, err
 	}
@@ -58,12 +60,14 @@ func (l *Loader) Load(ctx context.Context) (*fractionRegistry, error) {
 
 	// Stage 4: Combine all local fractions
 	locals = append(locals, sealed...)
-	return NewFractionRegistry(active, locals, remotes)
+	return NewFractionRegistry(active, locals, remotes, epochs)
 }
 
 // replayAndSeal replays active fractions and seals old ones
 // Key method for ensuring data consistency during restart
-func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*frac.Active, []*frac.Sealed, error) {
+func (l *Loader) replayAndSeal(
+	ctx context.Context, actives []*frac.Active, epochs *epochTracker,
+) (*frac.Active, []*frac.Sealed, error) {
 	if len(actives) == 0 {
 		return nil, nil, nil
 	}
@@ -74,6 +78,7 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 	sealed := make([]*frac.Sealed, len(actives)-1)
 
 	for i, a := range actives[:len(actives)-1] {
+		epoch := epochs.assign(time.Now())
 		g.Go(func() error {
 			// Replay operations from WAL to restore state
 			if err := a.Replay(ctx); err != nil {
@@ -85,6 +90,7 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 				return nil
 			}
 
+			a.SetEpoch(epoch)
 			s, err := l.provider.Seal(a)
 			if err != nil {
 				return err

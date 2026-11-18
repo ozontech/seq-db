@@ -271,6 +271,12 @@ type Config struct {
 		TickInterval time.Duration `config:"tick_interval" default:"1s"`
 	} `config:"compaction"`
 
+	Epoch struct {
+		Enabled      bool          `config:"enabled"`
+		Period       time.Duration `config:"period"`
+		MaxFractions int           `config:"max_fractions"`
+	} `config:"epoch"`
+
 	Indexing struct {
 		MaxTokenSize         int  `config:"max_token_size" default:"72"`
 		CaseSensitive        bool `config:"case_sensitive"`

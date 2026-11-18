@@ -125,6 +125,42 @@ offloading:
 			expectErr: true,
 		},
 		{
+			name: "Valid epoch",
+			cfg: createCfgFile(t, base+`
+epoch:
+  enabled: true
+  period: 15m
+  max_fractions: 64
+`),
+			expectErr: false,
+		},
+		{
+			name: "Valid disabled epoch without period and max_fractions",
+			cfg: createCfgFile(t, base+`
+epoch:
+  enabled: false
+`),
+			expectErr: false,
+		},
+		{
+			name: "Invalid epoch.period",
+			cfg: createCfgFile(t, base+`
+epoch:
+  enabled: true
+  max_fractions: 64
+`),
+			expectErr: true,
+		},
+		{
+			name: "Invalid epoch.max_fractions",
+			cfg: createCfgFile(t, base+`
+epoch:
+  enabled: true
+  period: 15m
+`),
+			expectErr: true,
+		},
+		{
 			name:      "Invalid sealing.lids.block_size",
 			cfg:       baseCfg,
 			env:       map[string]string{"SEQDB_SEALING_LIDS_BLOCK_SIZE": "-1"},

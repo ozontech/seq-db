@@ -10,6 +10,23 @@ import (
 	"github.com/ozontech/seq-db/seq"
 )
 
+func TestInfo_EpochJSON(t *testing.T) {
+	withoutEpoch, err := json.Marshal(&Info{Path: "test-frac"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(withoutEpoch), "epoch", "zero epoch must not be written")
+
+	var info Info
+	require.NoError(t, json.Unmarshal(withoutEpoch, &info))
+	assert.Equal(t, uint64(0), info.Epoch)
+
+	withEpoch, err := json.Marshal(&Info{Path: "test-frac", Epoch: 42})
+	require.NoError(t, err)
+	assert.Contains(t, string(withEpoch), `"epoch":42`)
+
+	require.NoError(t, json.Unmarshal(withEpoch, &info))
+	assert.Equal(t, uint64(42), info.Epoch)
+}
+
 func TestInfo_MarshalJSON(t *testing.T) {
 	info := &Info{
 		Path:         "test-frac",

@@ -145,6 +145,16 @@ Settings for background compaction, which merges small sealed fractions into lar
 | `compaction.stcs.bucket_lowerbound` | float64 | `0.5` | Lower size ratio for bucket membership (fraction size ≥ `bucket_lowerbound × avg(bucket)`) |
 | `compaction.stcs.bucket_upperbound` | float64 | `1.5` | Upper size ratio for bucket membership (fraction size ≤ `bucket_upperbound × avg(bucket)`) |
 
+## Epoch Configuration
+
+Settings for fraction epochs. An epoch is a group of fractions sealed within one period; its ID is stored in the fraction info.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `epoch.enabled` | bool | `false` | Master switch for fraction epochs |
+| `epoch.period` | Duration | - | Length of an epoch. Periods are aligned, so a new epoch starts at every multiple of the period. Must be greater than zero when epochs are enabled |
+| `epoch.max_fractions` | int | - | Maximum number of fractions in an epoch. When reached, a new epoch starts before the period ends. Must be greater than zero when epochs are enabled |
+
 ## Indexing Configuration
 
 Settings for document indexing behavior.
