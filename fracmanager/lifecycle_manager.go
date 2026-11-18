@@ -9,6 +9,7 @@ import (
 
 	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
+	"github.com/ozontech/seq-db/util"
 )
 
 // lifecycleManager manages the complete lifecycle of fractions.
@@ -119,17 +120,19 @@ func (lc *lifecycleManager) offloadLocal(ctx context.Context, sizeLimit uint64, 
 				logger.Info("do not offload local fraction",
 					zap.String("name", frac.Info().Name()),
 					zap.Time("created", time.UnixMilli(int64(frac.Info().CreationTime))))
-			} else {
-				logger.Info("offload local fraction",
-					zap.String("name", remote.Info().Name()),
-					zap.Time("created", time.UnixMilli(int64(remote.Info().CreationTime))))
+				return
 			}
+
+			logger.Info("offload local fraction",
+				zap.String("name", remote.Info().Name()),
+				zap.Time("created", time.UnixMilli(int64(remote.Info().CreationTime))))
 
 			// free up local resources
 			frac.Destroy()
 			maintenanceTruncateTotal.Add(1)
 			logger.Info("remove local fraction",
 				zap.String("name", frac.Info().Name()),
+				zap.String("reason", "offloaded to remote storage"),
 				zap.Time("created", time.UnixMilli(int64(frac.Info().CreationTime))))
 		})
 		if err != nil {
@@ -242,6 +245,7 @@ func (lc *lifecycleManager) cleanLocal(sizeLimit uint64, wg *sync.WaitGroup) {
 			maintenanceTruncateTotal.Add(1)
 			logger.Info("remove local fraction",
 				zap.String("name", info.Name()),
+				zap.String("reason", "occupied space limit exceeded"),
 				zap.Time("created", time.UnixMilli(int64(info.CreationTime))))
 		}()
 	}
@@ -256,14 +260,21 @@ func (lc *lifecycleManager) updateOldestMetric() {
 // removeOverflowed removes fractions from offloading queue that exceed size limit
 // Stops ongoing offloading tasks and cleans up both local and remote resources.
 func (lc *lifecycleManager) removeOverflowed(sizeLimit uint64, wg *sync.WaitGroup) {
-	evicted := lc.registry.evictOverflowed(sizeLimit)
-	for _, sealed := range evicted {
+	selected := lc.registry.selectOverflowed(sizeLimit)
+	for _, sealed := range selected {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			// Cancel the offloading task - this operation may take significant time
 			// hence executed in a separate goroutine to avoid blocking
 			lc.tasks.Cancel(sealed.BaseFileName)
+			sealed.Destroy()
+			maintenanceTruncateTotal.Add(1)
+			logger.Warn("remove local fraction",
+				zap.String("name", sealed.Info().Name()),
+				zap.String("reason", "offloading queue size exceeded"),
+				zap.Time("created", time.UnixMilli(int64(sealed.Info().CreationTime))),
+				util.ZapUint64AsSizeStr("size", sealed.Info().FullSize()))
 		}()
 	}
 }
