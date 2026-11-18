@@ -27,3 +27,4 @@ junit.xml
 /.devcontainer
 .perf-loop/
 .codegraph/
+.dev

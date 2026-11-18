@@ -474,3 +474,40 @@ func TestCleanRemoteBySizeIntegration(t *testing.T) {
 	assert.Less(t, stats.remotes.count, fracsCount/2, "at least one remote fraction is evicted")
 	assert.True(t, lc.flags.IsCapacityExceeded(), "capacity exceeded flag is set after remote deletion")
 }
+
+// TestPromoteToRemoteAfterOverflowSelection covers the offloading queue
+// single-exit invariant: selectOverflowed only selects candidates, while
+// promoteToRemote is the sole place that leaves the queue and updates
+// its stats. Decrementing in both places used to wrap the uint64 size
+// into a huge value and trip the capacity-based read-only mode.
+func TestPromoteToRemoteAfterOverflowSelection(t *testing.T) {
+	lc, tearDown := setupLifecycle(t, nil)
+	defer tearDown()
+
+	const fracSize = 100
+	info := common.NewInfo("frac_offloading", fracSize-1, 0)
+	info.IndexOnDisk = 1
+
+	sealed := frac.NewSealed(
+		info.Name(), nil, frac.NewIndexCache(), nil, info, &frac.Config{}, testSkipMaskProvider{},
+	)
+
+	lc.registry.mu.Lock()
+	lc.registry.offloading.Add(info.Name(), &refCountedSealed{Sealed: sealed})
+	lc.registry.stats.offloading.Add(info)
+	lc.registry.rebuildSnapshot()
+	lc.registry.mu.Unlock()
+
+	selected := lc.registry.selectOverflowed(fracSize / 2)
+	require.Len(t, selected, 1)
+	stats := lc.registry.statistics()
+	require.Equal(t, 1, stats.offloading.count, "selection must not mutate the offloading queue")
+	require.Equal(t, uint64(fracSize), stats.offloading.totalSizeOnDisk)
+
+	lc.registry.promoteToRemote(selected[0], nil)
+
+	stats = lc.registry.statistics()
+	assert.Zero(t, stats.offloading.count)
+	assert.Zero(t, stats.offloading.totalSizeOnDisk, "offloading stats must not underflow")
+	assert.Zero(t, stats.remotes.count)
+}
