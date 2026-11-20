@@ -92,6 +92,13 @@ func (c *Config) storeValidations() []validateFn {
 		greaterThan("compaction.tick_interval", 0, c.Compaction.TickInterval),
 	}
 
+	if c.Epoch.Enabled {
+		validations = append(validations,
+			greaterThan("epoch.period", 0, c.Epoch.Period),
+			greaterThan("epoch.max_fractions", 0, c.Epoch.MaxFractions),
+		)
+	}
+
 	if c.Offloading.Enabled {
 		validations = append(validations,
 			notEmpty("offloading.bucket", c.Offloading.Bucket),

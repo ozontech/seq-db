@@ -198,6 +198,12 @@ var (
 		Name:      "oldest_fraction_timestamp_seconds",
 		Help:      "Unix timestamp in seconds of the oldest fraction",
 	}, []string{"storage_type"})
+	currentEpoch = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "seq_db_store",
+		Subsystem: "common",
+		Name:      "current_epoch",
+		Help:      "ID of the epoch assigned to fractions that are rotated now",
+	})
 	fractionLoadErrors = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "seq_db_store",
 		Subsystem: "main",

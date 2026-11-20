@@ -26,7 +26,8 @@ type fractionRegistry struct {
 	offloading PartitionedCollection[*refCountedSealed] // fractions being offloaded (0-5 typical)
 	remotes    PartitionedCollection[*refCountedRemote] // offloaded fractions (can be thousands)
 
-	stats registryStats // size statistics for monitoring
+	stats  registryStats // size statistics for monitoring
+	epochs epochTracker
 
 	muAppender sync.RWMutex
 	sappender  *syncAppender // currently active writable fraction
@@ -37,7 +38,9 @@ type fractionRegistry struct {
 
 // NewFractionRegistry creates and initializes a new fraction registry instance.
 // Populates the registry with existing active, sealed and remote fractions.
-func NewFractionRegistry(active *frac.Active, sealed []*frac.Sealed, remotes []*frac.Remote) (*fractionRegistry, error) {
+func NewFractionRegistry(
+	active *frac.Active, sealed []*frac.Sealed, remotes []*frac.Remote, epochs epochTracker,
+) (*fractionRegistry, error) {
 	if active == nil {
 		return nil, errors.New("active fraction must be specified")
 	}
@@ -54,6 +57,7 @@ func NewFractionRegistry(active *frac.Active, sealed []*frac.Sealed, remotes []*
 
 	reg := fractionRegistry{
 		sappender: &syncAppender{refCountedActive: refCountedActive{Active: active}},
+		epochs:    epochs,
 
 		sealing:    map[string]*syncAppender{},
 		sealed:     NewPartitionedCollection(func(rcs *refCountedSealed) uint64 { return creationTime(rcs) }),
@@ -107,6 +111,42 @@ func (r *fractionRegistry) acquireFractionsInRange(from, to seq.MID) ([]frac.Fra
 	defer r.muSnapshot.RUnlock()
 
 	return r.snapshot.AcquireInRange(from, to)
+}
+
+func (r *fractionRegistry) acquireFractionsFunc(pred func(frac.Fraction) bool) ([]frac.Fraction, []func()) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	r.muSnapshot.RLock()
+	defer r.muSnapshot.RUnlock()
+
+	return r.snapshot.AcquireFunc(pred)
+}
+
+func (r *fractionRegistry) oldestOpenEpoch() uint64 {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	oldest := r.epochs.current
+	for _, a := range r.sealing {
+		oldest = min(oldest, a.Info().Epoch)
+	}
+	return oldest
+}
+
+func (r *fractionRegistry) rollEpoch(now time.Time) uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.epochs.roll(now)
+	return r.epochs.current
+}
+
+func (r *fractionRegistry) assignEpoch(now time.Time) uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.epochs.assign(now)
 }
 
 // statistics returns current size statistics of the registry.
@@ -163,6 +203,7 @@ func (r *fractionRegistry) rotateIfFull(maxSize uint64, ap activeProvider) (*ref
 
 	old := r.sappender
 
+	old.SetEpoch(r.epochs.assign(time.Now()))
 	r.sealing[old.Info().Name()] = old
 
 	r.setAppender(&syncAppender{refCountedActive: refCountedActive{Active: ap.CreateActive()}})
