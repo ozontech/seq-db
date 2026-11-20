@@ -16,7 +16,7 @@ type epochTracker struct {
 	fractions int
 }
 
-func newEpochTracker(cfg *Config, last uint64) epochTracker {
+func newEpochTracker(cfg *Config, last uint64, now time.Time) epochTracker {
 	if !cfg.EpochEnabled {
 		return epochTracker{}
 	}
@@ -25,20 +25,23 @@ func newEpochTracker(cfg *Config, last uint64) epochTracker {
 		period:       cfg.EpochPeriod,
 		maxFractions: cfg.EpochMaxFractions,
 		current:      last + 1,
+		slot:         now.Truncate(cfg.EpochPeriod),
 	}
 }
 
 func (e *epochTracker) roll(now time.Time) {
-	if e.fractions == 0 {
+	if !e.enabled {
 		return
 	}
 
-	expired := !now.Truncate(e.period).Equal(e.slot)
+	slot := now.Truncate(e.period)
+	expired := !slot.Equal(e.slot)
 	full := e.fractions >= e.maxFractions
 
 	if expired || full {
 		e.current++
 		e.fractions = 0
+		e.slot = slot
 	}
 }
 
@@ -48,11 +51,8 @@ func (e *epochTracker) assign(now time.Time) uint64 {
 	}
 
 	e.roll(now)
-	if e.fractions == 0 {
-		e.slot = now.Truncate(e.period)
-	}
-
 	e.fractions++
+
 	return e.current
 }
 

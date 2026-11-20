@@ -45,7 +45,11 @@ func (l *Loader) Load(ctx context.Context) (*fractionRegistry, error) {
 		return nil, err
 	}
 
-	epochs := newEpochTracker(l.config, lastEpoch(l.config.EpochLowerBound, locals, remotes))
+	epochs := newEpochTracker(
+		l.config,
+		lastEpoch(l.config.EpochLowerBound, locals, remotes),
+		time.Now(),
+	)
 
 	// Stage 2: Replay active fractions and seal them
 	active, sealed, err := l.replayAndSeal(ctx, actives, &epochs)

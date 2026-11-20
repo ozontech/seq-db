@@ -26,7 +26,7 @@ func setupLifecycle(t testing.TB, cfg *Config) (*lifecycleManager, func()) {
 	dataDir := provider.config.DataDir
 	infoCache := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 
-	epochs := newEpochTracker(provider.config, provider.config.EpochLowerBound)
+	epochs := newEpochTracker(provider.config, provider.config.EpochLowerBound, time.Now())
 	registry, err := NewFractionRegistry(provider.CreateActive(), nil, nil, epochs)
 	assert.NoError(t, err)
 
