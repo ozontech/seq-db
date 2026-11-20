@@ -420,13 +420,13 @@ func unmarshalAggs(dst []seq.AggregatableSamples, src []byte, version qprBinVers
 func marshalAggregatableSamples(s seq.AggregatableSamples, dst []byte) []byte {
 	rows := s.Count()
 	dst = binary.AppendUvarint(dst, uint64(s.Values.Func))
-	dst = binary.AppendUvarint(dst, uint64(len(s.Tokens)))
+	dst = appendInt(dst, len(s.Tokens))
 	dst = be.AppendUint64(dst, uint64(rows))
 
 	for i := range s.Tokens {
 		dst = appendColumn(dst, s.Tokens[i])
 	}
-	dst = appendPresence(dst, s.MIDs != nil)
+	dst = appendBool(dst, s.MIDs != nil)
 	if s.MIDs != nil {
 		dst = appendColumn(dst, s.MIDs)
 	}
@@ -440,7 +440,7 @@ func marshalAggregatableSamples(s seq.AggregatableSamples, dst []byte) []byte {
 	dst = appendColumn(dst, &values.Quantiles)
 	dst = appendColumn(dst, &values.UniqueIDs)
 
-	dst = appendPresence(dst, s.ValuesPool != nil)
+	dst = appendBool(dst, s.ValuesPool != nil)
 	if s.ValuesPool != nil {
 		dst = binary.AppendUvarint(dst, uint64(len(s.ValuesPool)))
 		for _, value := range s.ValuesPool {
@@ -460,11 +460,15 @@ func appendBlob(dst, data []byte) []byte {
 	return append(dst, data...)
 }
 
-func appendPresence(dst []byte, present bool) []byte {
+func appendBool(dst []byte, present bool) []byte {
 	if present {
 		return append(dst, 1)
 	}
 	return append(dst, 0)
+}
+
+func appendInt(dst []byte, value int) []byte {
+	return be.AppendUint64(dst, uint64(value))
 }
 
 func unmarshalAggregatableSamples(q *seq.AggregatableSamples, src []byte, version qprBinVersion, aggFunc seq.AggFunc) ([]byte, error) {
@@ -483,12 +487,9 @@ func unmarshalAggregatableSamplesV3(q *seq.AggregatableSamples, src []byte) ([]b
 	if err != nil {
 		return nil, err
 	}
-	width, src, err := readAggWidth(src)
+	width, src, err := readInt(src)
 	if err != nil {
 		return nil, err
-	}
-	if width == 0 {
-		return nil, fmt.Errorf("aggregation without token columns")
 	}
 	if len(src) < 8 {
 		return nil, fmt.Errorf("malformed agg rows")
@@ -501,7 +502,7 @@ func unmarshalAggregatableSamplesV3(q *seq.AggregatableSamples, src []byte) ([]b
 
 	tokens := make([]seq.StringColumn, width)
 	for i := range tokens {
-		data, tail, err := readBlob(src)
+		data, tail, err := readBytes(src)
 		if err != nil {
 			return nil, fmt.Errorf("invalid token column %d: %w", i, err)
 		}
@@ -516,7 +517,7 @@ func unmarshalAggregatableSamplesV3(q *seq.AggregatableSamples, src []byte) ([]b
 		tokens[i] = column
 	}
 
-	hasMIDs, src, err := readPresence(src)
+	hasMIDs, src, err := readBool(src)
 	if err != nil {
 		return nil, err
 	}
@@ -557,19 +558,19 @@ func readAggFunc(src []byte) (seq.AggFunc, []byte, error) {
 	return seq.AggFunc(value), src[n:], nil
 }
 
-func readAggWidth(src []byte) (int, []byte, error) {
-	value, n := binary.Uvarint(src)
-	if n <= 0 || value > math.MaxInt {
+func readInt(src []byte) (int, []byte, error) {
+	if len(src) < 8 {
 		return 0, nil, fmt.Errorf("invalid aggregation width")
 	}
-	if value > uint64(len(src)) {
+	value := be.Uint64(src)
+	if value > math.MaxInt || value > uint64(len(src)-8) {
 		return 0, nil, fmt.Errorf("invalid aggregation width")
 	}
-	return int(value), src[n:], nil
+	return int(value), src[8:], nil
 }
 
 func unmarshalInt64Column(src []byte) (seq.Int64Column, []byte, error) {
-	data, tail, err := readBlob(src)
+	data, tail, err := readBytes(src)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -581,7 +582,7 @@ func unmarshalInt64Column(src []byte) (seq.Int64Column, []byte, error) {
 }
 
 func unmarshalFloat64Column(src []byte) (seq.Float64Column, []byte, error) {
-	data, tail, err := readBlob(src)
+	data, tail, err := readBytes(src)
 	if err != nil {
 		return seq.Float64Column{}, nil, err
 	}
@@ -615,7 +616,7 @@ func unmarshalAggValues(src []byte, fn seq.AggFunc, rows int) (seq.AggValues, []
 	if err != nil {
 		return values, nil, err
 	}
-	quantileData, src, err := readBlob(src)
+	quantileData, src, err := readBytes(src)
 	if err != nil {
 		return values, nil, err
 	}
@@ -623,7 +624,7 @@ func unmarshalAggValues(src []byte, fn seq.AggFunc, rows int) (seq.AggValues, []
 	if err != nil {
 		return values, nil, err
 	}
-	uniqueIDsData, src, err := readBlob(src)
+	uniqueIDsData, src, err := readBytes(src)
 	if err != nil {
 		return values, nil, err
 	}
@@ -638,7 +639,7 @@ func unmarshalAggValues(src []byte, fn seq.AggFunc, rows int) (seq.AggValues, []
 }
 
 func unmarshalValuesPool(src []byte) ([]string, []byte, error) {
-	present, src, err := readPresence(src)
+	present, src, err := readBool(src)
 	if err != nil || !present {
 		return nil, src, err
 	}
@@ -652,7 +653,7 @@ func unmarshalValuesPool(src []byte) ([]string, []byte, error) {
 	src = src[n:]
 	pool := make([]string, 0, length)
 	for range length {
-		data, tail, err := readBlob(src)
+		data, tail, err := readBytes(src)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -670,7 +671,7 @@ func readAggregateNotExists(agg *seq.AggregatableSamples, src []byte) ([]byte, e
 	return src[8:], nil
 }
 
-func readBlob(src []byte) ([]byte, []byte, error) {
+func readBytes(src []byte) ([]byte, []byte, error) {
 	length, n := binary.Uvarint(src)
 	if n <= 0 {
 		return nil, nil, fmt.Errorf("malformed blob length")
@@ -682,7 +683,7 @@ func readBlob(src []byte) ([]byte, []byte, error) {
 	return src[:length], src[length:], nil
 }
 
-func readPresence(src []byte) (bool, []byte, error) {
+func readBool(src []byte) (bool, []byte, error) {
 	if len(src) == 0 {
 		return false, nil, fmt.Errorf("malformed presence flag")
 	}
