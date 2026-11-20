@@ -23,7 +23,6 @@ func TestQPRMarshalUnmarshal(t *testing.T) {
 		tail, err := unmarshalQPR(&out, rawQPR, math.MaxInt)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(tail))
-		qpr.ToCompressed()
 		require.Equal(t, qpr.IDs, out.IDs)
 		require.Equal(t, qpr.Histogram, out.Histogram)
 		require.Equal(t, qpr.Total, out.Total)

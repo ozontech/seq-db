@@ -233,10 +233,6 @@ func (g *GrpcV1) doSearch(
 		}
 	}
 
-	if proxyProtocol >= config.ProxyProtocolVersion2 {
-		qpr.ToCompressed()
-	}
-
 	return buildSearchResponseVersion(qpr, proxyProtocol), nil
 }
 

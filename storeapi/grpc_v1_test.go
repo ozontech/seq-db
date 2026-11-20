@@ -108,7 +108,7 @@ func TestBuildSearchResponseColumns(t *testing.T) {
 	agg.Values.Mins.Append(0)
 	agg.Values.Maxs.Append(0)
 
-	t.Run("proxy protocol v2 compressed columns", func(t *testing.T) {
+	t.Run("proxy protocol v2 columnar response", func(t *testing.T) {
 		resp := buildSearchResponseVersion(&seq.QPR{Aggs: []seq.AggregatableSamples{*agg}}, config.CurrentProxyProtocolVersion)
 		values := resp.Aggs[0].GetValues()
 		assert.NotNil(t, values)
@@ -143,7 +143,7 @@ func TestBuildSearchResponseColumns(t *testing.T) {
 		assert.Equal(t, []float64{4, 1}, gotFloat)
 	})
 
-	t.Run("proxy protocol v2 compressed mids", func(t *testing.T) {
+	t.Run("proxy protocol v2 columnar mids", func(t *testing.T) {
 		timeSeries := seq.NewAggregatableSamples(seq.AggFuncSum, 1, 3)
 		timeSeries.MIDs = seq.NewInt64Column(3)
 		appendSumRow := func(token string, mid int64, total int64, sum float64) {

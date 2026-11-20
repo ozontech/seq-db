@@ -959,61 +959,6 @@ func TestMergeQPRsKWay(t *testing.T) {
 	}, aggRows(agg))
 }
 
-func TestMergeCompressedColumns(t *testing.T) {
-	newQPR := func(codec stringColumnCodec, rows ...testAggRow) *QPR {
-		qpr := &QPR{Aggs: []AggregatableSamples{testAgg(AggFuncCount, rows...)}}
-		qpr.Aggs[0].Tokens[0] = qpr.Aggs[0].Tokens[0].compress(codec)
-		qpr.Aggs[0].Values.Totals = qpr.Aggs[0].Values.Totals.compress()
-		return qpr
-	}
-
-	left := newQPR(stringColumnCodecFrontZstd,
-		testAggRow{tokens: []string{"a"}, total: 2},
-		testAggRow{tokens: []string{"c"}, total: 1},
-	)
-	right := newQPR(stringColumnCodecZstd,
-		testAggRow{tokens: []string{"a"}, total: 3},
-		testAggRow{tokens: []string{"b"}, total: 4},
-	)
-
-	dst := &QPR{}
-	MergeQPRs(dst, []*QPR{left, right}, 10, 0, DocsOrderDesc)
-	require.IsType(t, &CompressedStringColumn{}, left.Aggs[0].Tokens[0])
-	require.IsType(t, &CompressedStringColumn{}, right.Aggs[0].Tokens[0])
-	require.IsType(t, &DeltaBitpackedInt64Column{}, left.Aggs[0].Values.Totals)
-	require.IsType(t, &DeltaBitpackedInt64Column{}, right.Aggs[0].Values.Totals)
-	require.IsType(t, &RawStringColumn{}, dst.Aggs[0].Tokens[0])
-	require.IsType(t, &RawInt64Column{}, dst.Aggs[0].Values.Totals)
-
-	result := dst.Aggs[0].Aggregate(AggregateArgs{Func: AggFuncCount})
-	require.Len(t, result.Buckets, 3)
-	require.Equal(t, "a", result.Buckets[0].Name)
-	require.Equal(t, float64(5), result.Buckets[0].Value)
-	require.Equal(t, "b", result.Buckets[1].Name)
-	require.Equal(t, float64(4), result.Buckets[1].Value)
-	require.Equal(t, "c", result.Buckets[2].Name)
-	require.Equal(t, float64(1), result.Buckets[2].Value)
-}
-
-func TestKWayMergeCompressedColumns(t *testing.T) {
-	newQPR := func(token string, total int64) *QPR {
-		agg := testAgg(AggFuncCount, testAggRow{tokens: []string{token}, total: total})
-		agg.Tokens[0] = agg.Tokens[0].compress(stringColumnCodecZstd)
-		agg.Values.Totals = agg.Values.Totals.compress()
-		return &QPR{Aggs: []AggregatableSamples{agg}}
-	}
-
-	dst := &QPR{}
-	MergeQPRs(dst, []*QPR{
-		newQPR("a", 1),
-		newQPR("a", 2),
-		newQPR("b", 3),
-	}, 10, 0, DocsOrderDesc)
-
-	require.Equal(t, []int64{3, 3}, totalsValues(dst.Aggs[0].Values.Totals))
-	require.Equal(t, []AggBin{{Token: "a"}, {Token: "b"}}, aggBins(dst.Aggs[0]))
-}
-
 func newMergeDst(width int) *AggregatableSamples {
 	return NewAggregatableSamples(AggFuncCount, width, 0)
 }

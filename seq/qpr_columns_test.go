@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"slices"
 	"testing"
-	"time"
 	"unsafe"
 
 	"github.com/stretchr/testify/require"
@@ -123,46 +121,12 @@ func buildStringColumn(t *testing.T, values ...string) StringColumn {
 	return col
 }
 
-func requireRawStringColumn(t *testing.T, col StringColumn) *RawStringColumn {
+func checkStringColumnRoundTrip(t *testing.T, values []string) {
 	t.Helper()
-	require.IsType(t, &RawStringColumn{}, col)
-	return col.(*RawStringColumn)
-}
-
-func requireCompressedStringColumn(t *testing.T, col StringColumn) *CompressedStringColumn {
-	t.Helper()
-	require.IsType(t, &CompressedStringColumn{}, col)
-	return col.(*CompressedStringColumn)
-}
-
-func multiBlockStringValues(blocks int) []string {
-	var values []string
-	total := 0
-	for i := 0; total <= blocks*stringColumnBlockSize; i++ {
-		v := fmt.Sprintf("row-%06d-%s", i, bytes.Repeat([]byte("x"), 92))
-		values = append(values, v)
-		total += len(v)
-	}
-	return values
-}
-
-func checkStringColumnForms(t *testing.T, values []string, minBlocks int) {
-	t.Helper()
-	raw := buildStringColumn(t, values...)
-	if minBlocks > 0 {
-		require.GreaterOrEqual(t, len(requireRawStringColumn(t, raw).blocks), minBlocks, "values must span several blocks")
-	}
-	for _, codec := range []stringColumnCodec{stringColumnCodecFrontZstd, stringColumnCodecZstd} {
-		col := raw.compress(codec)
-		if minBlocks > 0 {
-			require.GreaterOrEqual(t, len(requireCompressedStringColumn(t, col).blocks), minBlocks, "values must span several blocks")
-		}
-		requireColumnRows(t, col, values...)
-
-		decoded, err := UnmarshalStringColumn(col.AppendTo(nil))
-		require.NoError(t, err)
-		requireColumnRows(t, decoded, values...)
-	}
+	col := buildStringColumn(t, values...)
+	decoded, err := UnmarshalStringColumn(col.AppendTo(nil))
+	require.NoError(t, err)
+	requireColumnRows(t, decoded, values...)
 }
 
 func TestStringColumnIteration(t *testing.T) {
@@ -181,101 +145,56 @@ func TestStringColumnIteration(t *testing.T) {
 		return values
 	}
 	tests := []struct {
-		name      string
-		values    []string
-		minBlocks int
+		name   string
+		values []string
 	}{
-		{"empty", nil, 0},
-		{"single row", []string{"a"}, 0},
-		{"empty rows", []string{"", "", ""}, 0},
-		{"mixed empty", []string{"a", "", "abc", ""}, 0},
-		{"duplicates", []string{"b", "a", "a", "b", "a"}, 0},
-		{"unicode", []string{"héllo wörld", "привет", "日本語", ""}, 0},
-		{"sorted multi block", multiBlockStringValues(3), 3},
+		{"empty", nil},
+		{"single row", []string{"a"}},
+		{"empty rows", []string{"", "", ""}},
+		{"mixed empty", []string{"a", "", "abc", ""}},
+		{"duplicates", []string{"b", "a", "a", "b", "a"}},
+		{"unicode", []string{"héllo wörld", "привет", "日本語", ""}},
 	}
 	for _, rows := range []int{1, 2, 127, 128, 129, 1000, 5000} {
 		tests = append(tests, struct {
-			name      string
-			values    []string
-			minBlocks int
-		}{fmt.Sprintf("random rows=%d", rows), randomValues(rows), 0})
+			name   string
+			values []string
+		}{fmt.Sprintf("random rows=%d", rows), randomValues(rows)})
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			checkStringColumnForms(t, tt.values, tt.minBlocks)
+			checkStringColumnRoundTrip(t, tt.values)
 		})
 	}
-}
-
-func TestStringColumnIterationStepsCompressedBlocks(t *testing.T) {
-	values := multiBlockStringValues(3)
-	col := buildStringColumn(t, values...).compress(stringColumnCodecZstd)
-	compressed := requireCompressedStringColumn(t, col)
-	require.GreaterOrEqual(t, len(compressed.blocks), 3)
-
-	it := compressed.NewIter().(*compressedStringColumnIter)
-	var transitions []int
-	block := -1
-	rows := 0
-	for i := 0; it.Next(); i++ {
-		if it.blockIdx != block {
-			block = it.blockIdx
-			transitions = append(transitions, i)
-			require.Equal(t, compressed.blocks[block].rawLen, len(it.data), "only one block is decompressed at a time")
-			require.Equal(t, compressed.blocks[block].cnt+1, len(it.offsets))
-		}
-		require.Equal(t, values[i], string(it.Row()))
-		rows++
-	}
-	require.Equal(t, len(values), rows)
-
-	want := []int{0}
-	sum := 0
-	for i := range compressed.blocks[:len(compressed.blocks)-1] {
-		sum += compressed.blocks[i].cnt
-		want = append(want, sum)
-	}
-	require.Equal(t, want, transitions, "blocks must be stepped through in order")
-	require.Equal(t, len(compressed.blocks)-1, block)
 }
 
 func TestStringColumnIteratorsAreIndependent(t *testing.T) {
-	values := multiBlockStringValues(2)
-	raw := buildStringColumn(t, values...)
-	forms := []struct {
-		name string
-		col  StringColumn
-	}{
-		{"raw", raw},
-		{"front zstd", raw.compress(stringColumnCodecFrontZstd)},
-		{"zstd", raw.compress(stringColumnCodecZstd)},
+	values := []string{"a", "bb", "ccc", "dddd"}
+	col := buildStringColumn(t, values...)
+	a := col.NewIter()
+	b := col.NewIter()
+	require.True(t, a.Next())
+	require.True(t, b.Next())
+	i := 0
+	for {
+		require.Equal(t, values[i], string(a.Row()))
+		require.Equal(t, values[i], string(b.Row()))
+		aNext, bNext := a.Next(), b.Next()
+		require.Equal(t, aNext, bNext)
+		if !aNext {
+			break
+		}
+		i++
 	}
-	for _, form := range forms {
-		t.Run(form.name, func(t *testing.T) {
-			a := form.col.NewIter()
-			b := form.col.NewIter()
-			require.True(t, a.Next())
-			require.True(t, b.Next())
-			i := 0
-			for {
-				require.Equal(t, values[i], string(a.Row()))
-				require.Equal(t, values[i], string(b.Row()))
-				aNext, bNext := a.Next(), b.Next()
-				require.Equal(t, aNext, bNext)
-				if !aNext {
-					break
-				}
-				i++
-			}
-			require.Equal(t, len(values)-1, i)
-		})
-	}
+	require.Equal(t, len(values)-1, i)
 }
 
 func TestStringColumnOversizedRow(t *testing.T) {
-	big := bytes.Repeat([]byte("oversized!"), 10*1024) // 100KB, above the page size
+	big := bytes.Repeat([]byte("oversized!"), 10*1024) // 100KB
 	col := buildStringColumn(t, "small", string(big), "tail")
-	require.Equal(t, len(big)+len("small")+len("tail"), col.(*RawStringColumn).rawBytes)
+	decoded, err := UnmarshalStringColumn(col.AppendTo(nil))
+	require.NoError(t, err)
+	requireColumnRows(t, decoded, "small", string(big), "tail")
 }
 
 func TestStringColumnEmptyEncoding(t *testing.T) {
@@ -289,18 +208,29 @@ func TestStringColumnEmptyEncoding(t *testing.T) {
 	requireColumnRows(t, decoded)
 }
 
-func TestStringColumnHeaderWideCounts(t *testing.T) {
-	encoded := appendStringColumnHeader(nil, math.MaxInt, math.MaxInt, math.MaxInt, stringColumnCodecZstd)
-	require.Len(t, encoded, stringColumnHeaderSize)
-	require.Equal(t, uint64(math.MaxInt), binary.LittleEndian.Uint64(encoded[4:12]))
-	require.Equal(t, uint64(math.MaxInt), binary.LittleEndian.Uint64(encoded[12:20]))
-	require.Equal(t, uint64(math.MaxInt), binary.LittleEndian.Uint64(encoded[20:28]))
+func TestStringColumnEncoding(t *testing.T) {
+	col := buildStringColumn(t, "aaa", "bbbb")
+	encoded := col.AppendTo(nil)
+	require.Len(t, encoded, stringColumnHeaderSize+3*sizeOfUint32+7)
+	require.Equal(t, stringColumnMagic, encoded[0])
+	require.Equal(t, stringColumnFormatVersion, encoded[1])
+	require.Equal(t, uint64(2), binary.LittleEndian.Uint64(encoded[4:12]))
+	require.Equal(t, uint32(0), binary.LittleEndian.Uint32(encoded[stringColumnHeaderSize:]))
+	require.Equal(t, uint32(3), binary.LittleEndian.Uint32(encoded[stringColumnHeaderSize+sizeOfUint32:]))
+	require.Equal(t, uint32(7), binary.LittleEndian.Uint32(encoded[stringColumnHeaderSize+2*sizeOfUint32:]))
+	require.Equal(t, "aaabbbb", string(encoded[stringColumnHeaderSize+3*sizeOfUint32:]))
 
-	header, err := parseStringColumnHeader(encoded)
+	decoded, err := UnmarshalStringColumn(encoded)
 	require.NoError(t, err)
-	require.Equal(t, math.MaxInt, header.cnt)
-	require.Equal(t, math.MaxInt, header.blocks)
-	require.Equal(t, math.MaxInt, header.rawBytes)
+	require.Equal(t, encoded, decoded.AppendTo(nil))
+}
+
+func TestUnmarshalStringColumnAliasesInput(t *testing.T) {
+	encoded := buildStringColumn(t, "aaa", "bbbb").AppendTo(nil)
+	decoded, err := UnmarshalStringColumn(encoded)
+	require.NoError(t, err)
+	dataStart := stringColumnHeaderSize + 3*sizeOfUint32
+	require.Same(t, &encoded[dataStart], &decoded.(*RawStringColumn).data[0])
 }
 
 func TestUnmarshalStringColumnErrors(t *testing.T) {
@@ -315,8 +245,9 @@ func TestUnmarshalStringColumnErrors(t *testing.T) {
 		{"short header", valid[:10], "not enough data"},
 		{"bad magic", append([]byte{0x00}, valid[1:]...), "invalid string column magic"},
 		{"bad version", append([]byte{valid[0], 0x00}, valid[2:]...), "unsupported string column format version"},
-		{"bad codec", append([]byte{valid[0], valid[1], 0x02}, valid[3:]...), "unsupported string column codec"},
-		{"truncated index", valid[:stringColumnHeaderSize+stringColumnBlockEntrySize/2], "truncated string column block index"},
+		{"bad codec", append([]byte{valid[0], valid[1], 0x01}, valid[3:]...), "unsupported string column codec"},
+		{"truncated offsets", valid[:stringColumnHeaderSize+sizeOfUint32], "truncated string column offsets"},
+		{"truncated data", valid[:len(valid)-1], "data has"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -326,137 +257,20 @@ func TestUnmarshalStringColumnErrors(t *testing.T) {
 	}
 
 	corrupt := append([]byte(nil), valid...)
-	corrupt[4] = 42 // patch the total rows field
+	binary.LittleEndian.PutUint64(corrupt[4:12], math.MaxUint64)
 	_, err := UnmarshalStringColumn(corrupt)
-	require.ErrorContains(t, err, "do not match column rows")
+	require.ErrorContains(t, err, "too many rows")
+
+	offsetsStart := stringColumnHeaderSize
+	corrupt = append([]byte(nil), valid...)
+	binary.LittleEndian.PutUint32(corrupt[offsetsStart+sizeOfUint32:], 100) // second offset beyond data end
+	_, err = UnmarshalStringColumn(corrupt)
+	require.ErrorContains(t, err, "not monotonic")
 
 	corrupt = append([]byte(nil), valid...)
-	binary.LittleEndian.PutUint64(corrupt[12:20], math.MaxUint64)
+	binary.LittleEndian.PutUint32(corrupt[stringColumnHeaderSize+3*sizeOfUint32:], 100) // final offset beyond data end
 	_, err = UnmarshalStringColumn(corrupt)
-	require.ErrorContains(t, err, "too many blocks in string column")
-
-	_, err = UnmarshalStringColumn(valid[:len(valid)-1])
-	require.ErrorContains(t, err, "truncated string column block")
-}
-
-func TestStringColumnCodecSelection(t *testing.T) {
-	values := []string{"service-a", "service-b", "service-c"}
-	col := buildStringColumn(t, values...)
-	raw := requireRawStringColumn(t, col)
-
-	frontEncoded := raw.appendEncodedToWithCodec(nil, stringColumnCodecFrontZstd)
-	require.Equal(t, byte(stringColumnCodecFrontZstd), frontEncoded[2])
-	frontDecoded, err := UnmarshalStringColumn(frontEncoded)
-	require.NoError(t, err)
-	require.Equal(t, stringColumnCodecFrontZstd, frontDecoded.(*CompressedStringColumn).codec)
-	requireColumnRows(t, frontDecoded, values...)
-
-	zstdEncoded := raw.appendEncodedToWithCodec(nil, stringColumnCodecZstd)
-	require.Equal(t, byte(stringColumnCodecZstd), zstdEncoded[2])
-	zstdDecoded, err := UnmarshalStringColumn(zstdEncoded)
-	require.NoError(t, err)
-	require.Equal(t, stringColumnCodecZstd, zstdDecoded.(*CompressedStringColumn).codec)
-	requireColumnRows(t, zstdDecoded, values...)
-}
-
-func TestUnmarshalStringColumnAliasesInput(t *testing.T) {
-	encoded := buildStringColumn(t, "aaa", "bbbb").AppendTo(nil)
-	decoded, err := UnmarshalStringColumn(encoded)
-	require.NoError(t, err)
-	require.Same(t, &encoded[0], &decoded.(*CompressedStringColumn).data[0])
-}
-
-func TestStringColumnModes(t *testing.T) {
-	values := make([]string, 2000)
-	for i := range values {
-		values[i] = fmt.Sprintf("service-%04d/pod-%04d", i%97, i)
-	}
-
-	col := NewStringColumn(len(values))
-	for _, v := range values {
-		col.AppendString(v)
-	}
-	requireRawStringColumn(t, col)
-	requireColumnRows(t, col, values...)
-
-	encodedWhileRaw := col.AppendTo(nil)
-	requireRawStringColumn(t, col)
-	requireColumnRows(t, col, values...)
-
-	it := col.NewIter()
-	require.True(t, it.Next())
-	first := it.Row()
-	require.True(t, it.Next())
-	require.Equal(t, values[0], string(first))
-
-	col = col.compress(stringColumnCodecFrontZstd)
-	requireCompressedStringColumn(t, col)
-	requireColumnRows(t, col, values...)
-	require.Panics(t, func() { col.AppendString("compressed") })
-	require.Equal(t, encodedWhileRaw, col.AppendTo(nil), "encoding must not depend on the column mode")
-
-	// compress is idempotent
-	before := col.AppendTo(nil)
-	col = col.compress(stringColumnCodecFrontZstd)
-	require.Equal(t, before, col.AppendTo(nil))
-}
-
-func TestStringColumnCompressionRatio(t *testing.T) {
-	if testing.Short() {
-		t.Skip("compression report is skipped in short mode")
-	}
-	values := make([]string, 100_000)
-	for i := range values {
-		values[i] = fmt.Sprintf("10.%d.%d.%d", (i>>16)&0xFF, (i>>8)&0xFF, i&0xFF)
-	}
-	slices.Sort(values)
-
-	col := NewStringColumn(len(values))
-	for _, v := range values {
-		col.AppendString(v)
-	}
-
-	raw := 0
-	for _, v := range values {
-		raw += len(v)
-	}
-	encoded := col.AppendTo(nil)
-	t.Logf("rows=%d raw=%d encoded=%d blocks=%d ratio=%.2f",
-		len(values), raw, len(encoded), len(col.(*RawStringColumn).blocks), float64(raw)/float64(len(encoded)))
-	require.Less(t, len(encoded), raw)
-}
-
-func TestStringColumnFrontCoding(t *testing.T) {
-	t.Run("sorted rows are front coded", func(t *testing.T) {
-		values := make([]string, 2000)
-		for i := range values {
-			values[i] = fmt.Sprintf("10.%d.%d.%d", (i>>16)&0xFF, (i>>8)&0xFF, i&0xFF)
-		}
-		slices.Sort(values)
-
-		col := buildStringColumn(t, values...)
-		col = col.compress(stringColumnCodecFrontZstd)
-		compressed := requireCompressedStringColumn(t, col)
-		require.NotEmpty(t, compressed.blocks)
-		require.Equal(t, stringColumnCodecFrontZstd, compressed.codec)
-		requireColumnRows(t, col, values...)
-	})
-
-	t.Run("unshared rows use zstd-only codec", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(11))
-		col := NewStringColumn(0)
-		var values []string
-		for i := 0; i < 2000; i++ {
-			buf := make([]byte, 40)
-			rng.Read(buf)
-			values = append(values, string(buf))
-			col.Append(buf)
-		}
-		col = col.compress(stringColumnCodecZstd)
-		compressed := requireCompressedStringColumn(t, col)
-		require.Equal(t, stringColumnCodecZstd, compressed.codec)
-		requireColumnRows(t, col, values...)
-	})
+	require.ErrorContains(t, err, "data has")
 }
 
 func requireInt64Values(t *testing.T, col Int64Column, want ...int64) {
@@ -477,33 +291,55 @@ func requireInt64Values(t *testing.T, col Int64Column, want ...int64) {
 	require.Equal(t, want, got)
 }
 
-func checkInt64ColumnForms(t *testing.T, values []int64, minBlocks int) {
+func checkInt64ColumnRoundTrip(t *testing.T, values []int64) {
 	t.Helper()
-	raw := NewInt64Column(len(values))
+	col := NewInt64Column(len(values))
 	for _, v := range values {
-		raw.Append(v)
-	}
-	requireInt64Values(t, raw, values...)
-	if minBlocks > 0 {
-		require.GreaterOrEqual(t, len(raw.(*RawInt64Column).blocks), minBlocks, "values must span several blocks")
-	}
-
-	col := raw.compress()
-	if minBlocks > 0 {
-		require.GreaterOrEqual(t, len(col.(*DeltaBitpackedInt64Column).blocks), minBlocks, "values must span several blocks")
+		col.Append(v)
 	}
 	requireInt64Values(t, col, values...)
-
 	decoded, err := UnmarshalInt64Column(col.AppendTo(nil))
 	require.NoError(t, err)
 	requireInt64Values(t, decoded, values...)
 }
 
+func TestInt64ColumnIteration(t *testing.T) {
+	for _, rows := range []int{0, 1, 2, 127, 128, 129, 1000, 5000} {
+		t.Run(fmt.Sprintf("rows=%d", rows), func(t *testing.T) {
+			checkInt64ColumnRoundTrip(t, genInt64Values(rows))
+		})
+	}
+}
+
+func TestInt64ColumnRawAccess(t *testing.T) {
+	tests := []struct {
+		name   string
+		values []int64
+	}{
+		{"single", []int64{42}},
+		{"zeros", make([]int64, 1000)},
+		{"counts", []int64{5, 3, 1200, 1, 42, 0, 999, 3}},
+		{"negative values", []int64{-5, 3, -1200, 1, 42, 0, -999, 3}},
+		{"many values", genInt64Values(5000)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			col := NewInt64Column(len(tt.values))
+			for _, v := range tt.values {
+				col.Append(v)
+			}
+			for i, v := range tt.values {
+				require.Equal(t, v, col.At(i))
+			}
+
+			requireInt64Values(t, col, tt.values...)
+		})
+	}
+}
+
 func TestNewEmptyInt64Column(t *testing.T) {
 	column := NewEmptyInt64Column()
 	require.IsType(t, &RawInt64Column{}, column)
-	raw := column.(*RawInt64Column)
-	require.Empty(t, raw.blocks)
 	require.Zero(t, column.Len())
 	require.Equal(t, int(unsafe.Sizeof(RawInt64Column{})), column.MemUsage())
 	require.False(t, column.NewIter().Next())
@@ -528,149 +364,21 @@ func TestNewEmptyInt64Column(t *testing.T) {
 func TestColumnMemUsageTracksRetainedCapacity(t *testing.T) {
 	stringColumn := NewStringColumn(0)
 	rawString := stringColumn.(*RawStringColumn)
-	rawString.blocks[0].data = make([]byte, 0, 64)
-	rawString.blocks[0].offsets = make([]uint32, 0, 10)
+	rawString.data = make([]byte, 0, 64)
+	rawString.offsets = make([]uint32, 0, 10)
 	require.Equal(t,
 		int(unsafe.Sizeof(*rawString))+
-			cap(rawString.blocks)*int(unsafe.Sizeof(stringColumnBlock{}))+
-			cap(rawString.blocks[0].data)+
-			4*cap(rawString.blocks[0].offsets),
+			cap(rawString.data)+
+			sizeOfUint32*cap(rawString.offsets),
 		stringColumn.MemUsage(),
 	)
 
 	intColumn := NewInt64Column(2)
 	rawInt := intColumn.(*RawInt64Column)
 	require.Equal(t,
-		int(unsafe.Sizeof(*rawInt))+
-			cap(rawInt.blocks)*int(unsafe.Sizeof(int64ColumnBlock{}))+
-			cap(rawInt.blocks[0].values)*util.SizeOfInt64,
+		int(unsafe.Sizeof(*rawInt))+cap(rawInt.values)*sizeOfInt64,
 		intColumn.MemUsage(),
 	)
-
-	compressedString := buildStringColumn(t, "a", "b").
-		compress(stringColumnCodecZstd).(*CompressedStringColumn)
-	require.Equal(t,
-		int(unsafe.Sizeof(*compressedString))+
-			cap(compressedString.data)+
-			cap(compressedString.blocks)*int(unsafe.Sizeof(stringColumnBlockEntry{})),
-		compressedString.MemUsage(),
-	)
-
-	deltaInt := NewInt64Column(2)
-	deltaInt.Append(1)
-	deltaInt.Append(2)
-	deltaColumn := deltaInt.compress().(*DeltaBitpackedInt64Column)
-	require.Equal(t,
-		int(unsafe.Sizeof(*deltaColumn))+
-			cap(deltaColumn.data)+
-			cap(deltaColumn.blocks)*int(unsafe.Sizeof(int64ColumnBlockEntry{})),
-		deltaColumn.MemUsage(),
-	)
-}
-
-func TestInt64ColumnIteration(t *testing.T) {
-	for _, rows := range []int{
-		0, 1, 2, 127, 128, 129, 1000,
-		int64ColumnBlockValues - 1,
-		int64ColumnBlockValues,
-		int64ColumnBlockValues + 1,
-		2*int64ColumnBlockValues + 5,
-		3*int64ColumnBlockValues + 7,
-	} {
-		t.Run(fmt.Sprintf("rows=%d", rows), func(t *testing.T) {
-			minBlocks := 0
-			if rows > 2*int64ColumnBlockValues {
-				minBlocks = 3
-			}
-			checkInt64ColumnForms(t, genInt64Values(rows), minBlocks)
-		})
-	}
-}
-
-func TestInt64ColumnIterationStepsBlocks(t *testing.T) {
-	values := genInt64Values(3*int64ColumnBlockValues + 7)
-	raw := NewInt64Column(len(values))
-	for _, v := range values {
-		raw.Append(v)
-	}
-	col := raw.compress()
-	compressed := col.(*DeltaBitpackedInt64Column)
-	require.GreaterOrEqual(t, len(compressed.blocks), 3)
-
-	it := compressed.NewIter().(*deltaBitpackedInt64Iter)
-	var transitions []int
-	block := -1
-	for i := 0; it.Next(); i++ {
-		if it.blockIdx != block {
-			block = it.blockIdx
-			transitions = append(transitions, i)
-			require.Equal(t, compressed.blocks[block].cnt, len(it.values), "only one block is decompressed at a time")
-		}
-		require.Equal(t, values[i], it.Value())
-	}
-
-	want := []int{0}
-	sum := 0
-	for i := range compressed.blocks[:len(compressed.blocks)-1] {
-		sum += compressed.blocks[i].cnt
-		want = append(want, sum)
-	}
-	require.Equal(t, want, transitions, "blocks must be stepped through in order")
-	require.Equal(t, len(compressed.blocks)-1, block)
-}
-
-func TestInt64ColumnRawAccess(t *testing.T) {
-	tests := []struct {
-		name   string
-		values []int64
-	}{
-		{"single", []int64{42}},
-		{"zeros", make([]int64, 1000)},
-		{"counts", []int64{5, 3, 1200, 1, 42, 0, 999, 3}},
-		{"negative values", []int64{-5, 3, -1200, 1, 42, 0, -999, 3}},
-		{"block boundary", genInt64Values(int64ColumnBlockValues)},
-		{"block boundary plus one", genInt64Values(int64ColumnBlockValues + 1)},
-		{"multiple blocks", genInt64Values(5*int64ColumnBlockValues + 17)},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			col := NewInt64Column(len(tt.values))
-			for _, v := range tt.values {
-				col.Append(v)
-			}
-			for i, v := range tt.values {
-				require.Equal(t, v, col.At(i))
-			}
-
-			requireInt64Values(t, col, tt.values...)
-		})
-	}
-}
-
-func TestInt64ColumnModes(t *testing.T) {
-	values := genInt64Values(2*int64ColumnBlockValues + 3)
-
-	col := NewInt64Column(len(values))
-	for _, v := range values {
-		col.Append(v)
-	}
-	encodedWhileRaw := col.AppendTo(nil)
-
-	col = col.compress()
-	requireInt64Values(t, col, values...)
-	require.Equal(t, encodedWhileRaw, col.AppendTo(nil), "encoding must not depend on the column mode")
-
-	// compress is idempotent
-	col = col.compress()
-	require.Equal(t, encodedWhileRaw, col.AppendTo(nil))
-}
-
-func TestInt64ColumnCompressedAccessPanics(t *testing.T) {
-	col := NewInt64Column(1)
-	col.Append(1)
-	col = col.compress()
-	require.Panics(t, func() { col.Append(2) })
-	require.Panics(t, func() { col.At(0) })
 }
 
 func TestInt64ColumnAbsent(t *testing.T) {
@@ -679,8 +387,9 @@ func TestInt64ColumnAbsent(t *testing.T) {
 	agg := &AggregatableSamples{MIDs: col, Values: newAggValues(AggFuncUnique, 0)}
 	require.Zero(t, agg.Count())
 	qpr := &QPR{Aggs: []AggregatableSamples{*agg}}
-	qpr.ToCompressed()
-	require.Nil(t, agg.MIDs)
+	require.NotPanics(t, func() {
+		qpr.Aggs[0].Values.Totals.MemUsage()
+	})
 	require.Equal(t, int(unsafe.Sizeof(RawInt64Column{})), agg.Values.Totals.MemUsage())
 	require.Equal(t, int(unsafe.Sizeof(RawInt64Column{})), agg.Values.NotExists.MemUsage())
 }
@@ -698,50 +407,16 @@ func TestUnmarshalInt64ColumnErrors(t *testing.T) {
 	require.ErrorContains(t, err, "magic")
 	_, err = UnmarshalInt64Column([]byte{0x49, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
 	require.ErrorContains(t, err, "unsupported int64 column format version")
+	_, err = UnmarshalInt64Column([]byte{0x49, 0x01, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	require.ErrorContains(t, err, "unsupported int64 column codec")
 
 	corrupt := append([]byte(nil), valid...)
 	corrupt[4] = 42 // patch the values count
 	_, err = UnmarshalInt64Column(corrupt)
-	require.ErrorContains(t, err, "do not match column values")
+	require.ErrorContains(t, err, "malformed int64 column data")
 
 	_, err = UnmarshalInt64Column(valid[:len(valid)-1])
-	require.ErrorContains(t, err, "truncated int64 column block")
-}
-
-func TestInt64ColumnCompressionRatio(t *testing.T) {
-	if testing.Short() {
-		t.Skip("compression report is skipped in short mode")
-	}
-	rng := rand.New(rand.NewSource(7))
-	values := make([]int64, 100_000)
-	for i := range values {
-		values[i] = int64(1 + rng.Intn(1<<14)) // counter-like totals
-	}
-	col := NewInt64Column(len(values))
-	for _, v := range values {
-		col.Append(v)
-	}
-	encoded := col.AppendTo(nil)
-	t.Logf("values=%d raw=%d encoded=%d ratio=%.2f", len(values), 8*len(values), len(encoded),
-		float64(8*len(values))/float64(len(encoded)))
-	require.Less(t, len(encoded), 8*len(values))
-}
-
-func TestInt64ColumnDescendingMIDsCompressionRatio(t *testing.T) {
-	if testing.Short() {
-		t.Skip("compression report is skipped in short mode")
-	}
-	const rows = 100_000
-	col := NewInt64Column(rows)
-	for i := range rows {
-		bucket := (rows - 1 - i) / 1000
-		col.Append(int64(MID(uint64(bucket) * uint64(time.Minute))))
-	}
-
-	encoded := col.AppendTo(nil)
-	t.Logf("values=%d raw=%d encoded=%d ratio=%.2f", rows, 8*rows, len(encoded),
-		float64(8*rows)/float64(len(encoded)))
-	require.Less(t, len(encoded), 8*rows/20)
+	require.ErrorContains(t, err, "malformed int64 column data")
 }
 
 func genInt64Values(n int) []int64 {

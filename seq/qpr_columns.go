@@ -6,28 +6,16 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/ozontech/seq-db/packer"
 	"github.com/ozontech/seq-db/util"
-	"github.com/ozontech/seq-db/zstd"
 )
 
-const (
-	stringColumnMagic          byte = 0x43
-	stringColumnFormatVersion  byte = 2
-	stringColumnHeaderSize          = 28
-	stringColumnBlockEntrySize      = 16
-	stringColumnBlockSize           = 1024 * 1024
-	stringColumnZstdLevel           = 3
-)
-
-type stringColumnCodec byte
+const columnCodecNone byte = 0
 
 const (
-	// stringColumnCodecFrontZstd chained encoding - front coding and zstd. For sorted tokens can yield x2-x3 better
-	// compressed size comparing to using only zstd.
-	stringColumnCodecFrontZstd stringColumnCodec = iota
-	// stringColumnCodecZstd uses only zstd
-	stringColumnCodecZstd
+	stringColumnMagic         byte = 0x43
+	stringColumnFormatVersion byte = 1
+	stringColumnHeaderSize         = 16
+	sizeOfUint32                   = 4
 )
 
 // StringColumn is a string column used for QPR. Used only for legacy engine QPR, do not use anywhere else.
@@ -39,8 +27,6 @@ type StringColumn interface {
 	MemUsage() int
 	AppendTo(dst []byte) []byte
 	NewIter() StringColumnIter
-
-	compress(codec stringColumnCodec) StringColumn
 }
 
 type StringColumnIter interface {
@@ -48,565 +34,125 @@ type StringColumnIter interface {
 	Row() []byte
 }
 
-type stringColumnBlockEntry struct {
-	cnt        int
-	offset     int // offset of the block payload inside the column data
-	offsetsLen int
-	dataLen    int
-	rawLen     int
+func NewStringColumn(capacity int) StringColumn {
+	return &RawStringColumn{offsets: make([]uint32, 1, capacity+1)}
 }
 
-type stringColumnBlock struct {
+// RawStringColumn is the mutable raw string column.
+type RawStringColumn struct {
 	data    []byte
 	offsets []uint32
 }
 
-type stringColumnHeader struct {
-	codec    stringColumnCodec
-	cnt      int
-	blocks   int
-	rawBytes int
-}
-
-func NewStringColumn(capacity int) StringColumn {
-	return &RawStringColumn{
-		blocks: []stringColumnBlock{{offsets: make([]uint32, 1, capacity+1)}},
-	}
-}
-
-// RawStringColumn is the mutable uncompressed string column
-type RawStringColumn struct {
-	blocks   []stringColumnBlock
-	cnt      int
-	rawBytes int
-}
-
 func (c *RawStringColumn) Len() int {
-	return c.cnt
+	if len(c.offsets) == 0 {
+		return 0
+	}
+	return len(c.offsets) - 1
 }
 
 func (c *RawStringColumn) Append(value []byte) {
-	blk := c.openBlock()
-	blk.data = append(blk.data, value...)
-	c.appendRow(blk, len(value))
+	c.data = append(c.data, value...)
+	c.offsets = append(c.offsets, uint32(len(c.data)))
 }
 
 func (c *RawStringColumn) AppendString(value string) {
-	blk := c.openBlock()
-	blk.data = append(blk.data, value...)
-	c.appendRow(blk, len(value))
-}
-
-func (c *RawStringColumn) openBlock() *stringColumnBlock {
-	if len(c.blocks) == 0 {
-		c.blocks = []stringColumnBlock{{offsets: []uint32{0}}}
-		return &c.blocks[0]
-	}
-
-	blk := &c.blocks[len(c.blocks)-1]
-	if len(blk.offsets) != 0 {
-		return blk
-	}
-
-	capacity := 1
-	dataCapacity := 0
-	if len(c.blocks) > 1 {
-		previous := c.blocks[len(c.blocks)-2]
-		capacity = len(previous.offsets)
-		dataCapacity = min(len(previous.data), 2*stringColumnBlockSize)
-	}
-	blk.offsets = make([]uint32, 1, capacity)
-	blk.data = make([]byte, 0, dataCapacity)
-	return blk
-}
-
-func (c *RawStringColumn) appendRow(blk *stringColumnBlock, size int) {
-	blk.offsets = append(blk.offsets, uint32(len(blk.data)))
-	c.cnt++
-	c.rawBytes += size
-	if len(blk.data) >= stringColumnBlockSize {
-		c.blocks = append(c.blocks, stringColumnBlock{})
-	}
+	c.data = append(c.data, value...)
+	c.offsets = append(c.offsets, uint32(len(c.data)))
 }
 
 func (c *RawStringColumn) MemUsage() int {
-	total := int(unsafe.Sizeof(*c))
-	total += cap(c.blocks) * int(unsafe.Sizeof(stringColumnBlock{}))
-	for i := range c.blocks {
-		total += cap(c.blocks[i].data) + 4*cap(c.blocks[i].offsets)
-	}
-	return total
+	return int(unsafe.Sizeof(*c)) + cap(c.data) + sizeOfUint32*cap(c.offsets)
 }
 
 func (c *RawStringColumn) AppendTo(dst []byte) []byte {
-	return appendEncodedBlocks(dst, c.blocks, c.cnt, c.rawBytes, stringColumnCodecFrontZstd)
-}
-
-func (c *RawStringColumn) appendEncodedToWithCodec(dst []byte, codec stringColumnCodec) []byte {
-	return appendEncodedBlocks(dst, c.blocks, c.cnt, c.rawBytes, codec)
-}
-
-func (c *RawStringColumn) compress(codec stringColumnCodec) StringColumn {
-	encoded, err := UnmarshalStringColumn(appendEncodedBlocks(nil, c.blocks, c.cnt, c.rawBytes, codec))
-	if err != nil {
-		panic(fmt.Errorf("failed to compress string column: %w", err))
-	}
-	return encoded
-}
-
-func (c *RawStringColumn) NewIter() StringColumnIter {
-	return &rawStringColumnIter{c: c, rowIdx: -1, blockIdx: -1, firstRow: -1}
-}
-
-type rawStringColumnIter struct {
-	c        *RawStringColumn
-	firstRow int
-	rowIdx   int
-	blockIdx int
-}
-
-func (it *rawStringColumnIter) Next() bool {
-	if it.rowIdx+1 >= it.c.cnt {
-		it.rowIdx = it.c.cnt
-		return false
-	}
-	it.rowIdx++
-	if it.blockIdx < 0 {
-		it.blockIdx++
-		it.firstRow = it.rowIdx
-	} else if it.rowIdx >= it.firstRow+len(it.c.blocks[it.blockIdx].offsets)-1 {
-		it.openNextBlock()
-	}
-	return true
-}
-
-func (it *rawStringColumnIter) openNextBlock() {
-	it.blockIdx++
-	it.firstRow = it.rowIdx
-	for it.blockIdx < len(it.c.blocks) && len(it.c.blocks[it.blockIdx].offsets) <= 1 {
-		it.blockIdx++
-	}
-}
-
-func (it *rawStringColumnIter) Row() []byte {
-	blk := &it.c.blocks[it.blockIdx]
-	inBlk := it.rowIdx - it.firstRow
-	return blk.data[blk.offsets[inBlk]:blk.offsets[inBlk+1]]
-}
-
-func appendEncodedBlocks(dst []byte, blocks []stringColumnBlock, rows, rawBytes int, codec stringColumnCodec) []byte {
-	encoder := stringColumnEncoder{
-		blocks: make([]stringColumnBlockEntry, 0, len(blocks)),
-		codec:  codec,
-	}
-	for i := range blocks {
-		if len(blocks[i].offsets) <= 1 {
-			continue
+	rows := c.Len()
+	dst = appendStringColumnHeader(dst, rows)
+	if rows > 0 {
+		for _, offset := range c.offsets {
+			dst = binary.LittleEndian.AppendUint32(dst, offset)
 		}
-		encoder.appendBlock(blocks[i])
-	}
-
-	return encoder.appendTo(dst, rows, rawBytes)
-}
-
-type stringColumnEncoder struct {
-	payload []byte
-	blocks  []stringColumnBlockEntry
-	codec   stringColumnCodec
-	front   frontEncodeState
-}
-
-func (e *stringColumnEncoder) appendBlock(blk stringColumnBlock) {
-	var data []byte
-	var offsets []uint32
-	switch e.codec {
-	case stringColumnCodecFrontZstd:
-		data, offsets = frontEncode(blk.data, blk.offsets, &e.front)
-	case stringColumnCodecZstd:
-		data, offsets = blk.data, blk.offsets
-	default:
-		panic(fmt.Errorf("unsupported string column codec %d", e.codec))
-	}
-
-	offsetsStart := len(e.payload)
-	e.payload = packer.CompressDeltaBitpackUint32(e.payload, offsets, nil)
-	offsetsLen := len(e.payload) - offsetsStart
-
-	dataStart := len(e.payload)
-	e.payload = zstd.CompressLevel(data, e.payload, stringColumnZstdLevel)
-	e.blocks = append(e.blocks, stringColumnBlockEntry{
-		cnt:        len(blk.offsets) - 1,
-		offsetsLen: offsetsLen,
-		dataLen:    len(e.payload) - dataStart,
-		rawLen:     len(blk.data),
-	})
-}
-
-func (e *stringColumnEncoder) appendTo(dst []byte, rows, rawBytes int) []byte {
-	dst = appendStringColumnHeader(dst, rows, len(e.blocks), rawBytes, e.codec)
-	for i := range e.blocks {
-		dst = appendStringColumnBlock(dst, &e.blocks[i])
-	}
-	return append(dst, e.payload...)
-}
-
-type frontEncodeState struct {
-	suffix []byte
-	lens   []byte
-	offs   []uint32
-}
-
-func frontEncode(data []byte, offsets []uint32, s *frontEncodeState) ([]byte, []uint32) {
-	rows := len(offsets) - 1
-	suffix := s.suffix[:0]
-	lens := s.lens[:0]
-	offs := s.offs[:0]
-	offs = append(offs, 0)
-	for i := range rows {
-		cur := data[offsets[i]:offsets[i+1]]
-		shared := 0
-		if i > 0 {
-			prev := data[offsets[i-1]:offsets[i]]
-			shared = commonPrefix(prev, cur)
-		}
-		suffix = append(suffix, cur[shared:]...)
-		offs = append(offs, uint32(len(suffix)))
-		lens = binary.AppendUvarint(lens, uint64(shared))
-	}
-	suffix = append(suffix, lens...)
-	s.suffix = suffix
-	s.lens = lens
-	s.offs = offs
-	return s.suffix, offs
-}
-
-func commonPrefix(a, b []byte) int {
-	n := min(len(a), len(b))
-	i := 0
-	for i < n && a[i] == b[i] {
-		i++
-	}
-	return i
-}
-
-// CompressedStringColumn is immutable compressed string column.
-// Iteration keeps only at most one block at a time uncompressed to reduce memory footprint.
-type CompressedStringColumn struct {
-	data   []byte                   // encoded column bytes, header included
-	blocks []stringColumnBlockEntry // parsed block index pointing into data
-
-	cnt      int
-	rawBytes int
-	codec    stringColumnCodec
-}
-
-func (c *CompressedStringColumn) Len() int {
-	return c.cnt
-}
-
-func (c *CompressedStringColumn) Append(value []byte) {
-	panic("append to a compressed string column is not supported")
-}
-
-func (c *CompressedStringColumn) AppendString(value string) {
-	panic("append to a compressed string column is not supported")
-}
-
-func (c *CompressedStringColumn) MemUsage() int {
-	return int(unsafe.Sizeof(*c)) +
-		cap(c.data) +
-		cap(c.blocks)*int(unsafe.Sizeof(stringColumnBlockEntry{}))
-}
-
-func (c *CompressedStringColumn) AppendTo(dst []byte) []byte {
-	if len(c.data) == 0 {
-		return appendStringColumnHeader(dst, c.cnt, len(c.blocks), c.rawBytes, c.codec)
 	}
 	return append(dst, c.data...)
 }
 
-func (c *CompressedStringColumn) compress(stringColumnCodec) StringColumn {
-	return c
+func (c *RawStringColumn) NewIter() StringColumnIter {
+	return &rawStringColumnIter{c: c, row: -1}
 }
 
-func (c *CompressedStringColumn) NewIter() StringColumnIter {
-	return &compressedStringColumnIter{col: c, rowIdx: -1, blockIdx: -1, firstRowIdx: -1}
+type rawStringColumnIter struct {
+	c   *RawStringColumn
+	row int
 }
 
-type compressedStringColumnIter struct {
-	col         *CompressedStringColumn
-	firstRowIdx int // first row index of the current block
-	rowIdx      int // current row index
-	blockIdx    int // current block
-	data        []byte
-	offsets     []uint32
-	zbuf        []byte
-
-	frontBuf  []byte
-	frontOffs []uint32
-	frontLens []uint32
-}
-
-func (it *compressedStringColumnIter) Next() bool {
-	if it.rowIdx+1 >= it.col.cnt {
-		it.rowIdx = it.col.cnt
+func (it *rawStringColumnIter) Next() bool {
+	if it.row+1 >= it.c.Len() {
+		it.row = it.c.Len()
 		return false
 	}
-	it.rowIdx++
-	if it.blockIdx < 0 || it.rowIdx >= it.firstRowIdx+it.col.blocks[it.blockIdx].cnt {
-		it.loadBlock(it.blockIdx + 1)
-	}
+	it.row++
 	return true
 }
 
-func (it *compressedStringColumnIter) Row() []byte {
-	inBlock := it.rowIdx - it.firstRowIdx
-	return it.data[it.offsets[inBlock]:it.offsets[inBlock+1]]
+func (it *rawStringColumnIter) Row() []byte {
+	return it.c.data[it.c.offsets[it.row]:it.c.offsets[it.row+1]]
 }
 
-func (it *compressedStringColumnIter) loadBlock(block int) {
-	meta := &it.col.blocks[block]
-	payload := it.col.data[meta.offset : meta.offset+meta.offsetsLen+meta.dataLen]
-
-	rest, offsets, err := packer.DecompressDeltaBitpackUint32(payload[:meta.offsetsLen], it.offsets, nil)
-	if err != nil {
-		panic(fmt.Errorf("failed to decode string column offsets of block %d: %w", block, err))
-	}
-	if len(offsets) != meta.cnt+1 || offsets[0] != 0 {
-		panic(fmt.Errorf("inconsistent string column offsets in block %d", block))
-	}
-	it.offsets = offsets
-
-	it.zbuf, err = zstd.Decompress(rest[:meta.dataLen], it.zbuf[:0])
-	if err != nil {
-		panic(fmt.Errorf("failed to decode string column data of block %d: %w", block, err))
-	}
-
-	if it.col.codec == stringColumnCodecFrontZstd {
-		data, offs, err := it.frontDecode(it.zbuf, offsets)
-		if err != nil {
-			panic(fmt.Errorf("failed to decode front coded block %d: %w", block, err))
-		}
-		if int(offs[meta.cnt]) != meta.rawLen {
-			panic(fmt.Errorf("inconsistent string column data length in block %d: got %d, want %d",
-				block, offs[meta.cnt], meta.rawLen))
-		}
-		it.data, it.offsets = data, offs
-	} else {
-		if int(offsets[meta.cnt]) != meta.rawLen {
-			panic(fmt.Errorf("inconsistent string column data length in block %d: got %d, want %d",
-				block, offsets[meta.cnt], meta.rawLen))
-		}
-		it.data, it.offsets = it.zbuf, offsets
-	}
-	it.blockIdx = block
-	it.firstRowIdx = it.rowIdx
-}
-
-func (it *compressedStringColumnIter) frontDecode(data []byte, offsets []uint32) ([]byte, []uint32, error) {
-	rows := len(offsets) - 1
-	if rows < 1 || offsets[0] != 0 {
-		return nil, nil, fmt.Errorf("invalid offsets")
-	}
-	lens, err := it.decodeFrontLengths(data, offsets)
-	if err != nil {
-		return nil, nil, err
-	}
-	return it.rebuildFrontRows(data, offsets, lens)
-}
-
-func (it *compressedStringColumnIter) decodeFrontLengths(data []byte, offsets []uint32) ([]uint32, error) {
-	rows := len(offsets) - 1
-	suffixTotal := int(offsets[rows])
-	if suffixTotal > len(data) {
-		return nil, fmt.Errorf("suffixes exceed data: %d > %d", suffixTotal, len(data))
-	}
-
-	lens := it.frontLens[:0]
-	pos := suffixTotal
-	for range rows {
-		value, n := binary.Uvarint(data[pos:])
-		if n <= 0 || value > 1<<31 {
-			return nil, fmt.Errorf("invalid shared length")
-		}
-		lens = append(lens, uint32(value))
-		pos += n
-	}
-	if pos != len(data) {
-		return nil, fmt.Errorf("trailing bytes in shared lengths")
-	}
-	it.frontLens = lens
-	return lens, nil
-}
-
-func (it *compressedStringColumnIter) rebuildFrontRows(data []byte, offsets, lens []uint32) ([]byte, []uint32, error) {
-	rows := len(offsets) - 1
-	out := it.frontBuf[:0]
-	offs := it.frontOffs[:0]
-	prevStart := 0
-	for i := range rows {
-		start := len(out)
-		if i > 0 {
-			keep := int(lens[i])
-			if keep > start-prevStart {
-				return nil, nil, fmt.Errorf("shared length %d exceeds previous row", keep)
-			}
-			out = append(out, out[prevStart:prevStart+keep]...)
-		} else if lens[0] != 0 {
-			return nil, nil, fmt.Errorf("first row has non-zero shared length")
-		}
-		out = append(out, data[offsets[i]:offsets[i+1]]...)
-		offs = append(offs, uint32(start))
-		prevStart = start
-	}
-	offs = append(offs, uint32(len(out)))
-	it.frontBuf = out
-	it.frontOffs = offs
-	return out, offs, nil
-}
-
-func UnmarshalStringColumn(data []byte) (StringColumn, error) {
-	header, err := parseStringColumnHeader(data)
-	if err != nil {
-		return nil, err
-	}
-	if header.blocks == 0 {
-		if header.cnt != 0 {
-			return nil, fmt.Errorf("%d rows in a string column without blocks", header.cnt)
-		}
-		return &CompressedStringColumn{codec: header.codec}, nil
-	}
-	if header.cnt == 0 {
-		return nil, fmt.Errorf("string column with %d blocks has no rows", header.blocks)
-	}
-
-	blocks, err := parseStringColumnBlocks(data, header.blocks)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateStringColumnTotals(header, blocks); err != nil {
-		return nil, err
-	}
-	return &CompressedStringColumn{
-		data:     data,
-		blocks:   blocks,
-		cnt:      header.cnt,
-		rawBytes: header.rawBytes,
-		codec:    header.codec,
-	}, nil
-}
-
-func parseStringColumnHeader(data []byte) (stringColumnHeader, error) {
-	if len(data) < stringColumnHeaderSize {
-		return stringColumnHeader{}, fmt.Errorf("not enough data for string column header: %d", len(data))
-	}
-	if data[0] != stringColumnMagic {
-		return stringColumnHeader{}, fmt.Errorf("invalid string column magic byte %d", data[0])
-	}
-	if data[1] != stringColumnFormatVersion {
-		return stringColumnHeader{}, fmt.Errorf("unsupported string column format version %d", data[1])
-	}
-
-	codec := stringColumnCodec(data[2])
-	switch codec {
-	case stringColumnCodecFrontZstd, stringColumnCodecZstd:
-	default:
-		return stringColumnHeader{}, fmt.Errorf("unsupported string column codec %d", data[2])
-	}
-	rows := binary.LittleEndian.Uint64(data[4:12])
-	blocks := binary.LittleEndian.Uint64(data[12:20])
-	rawBytes := binary.LittleEndian.Uint64(data[20:28])
-	if rows > uint64(math.MaxInt) {
-		return stringColumnHeader{}, fmt.Errorf("too many rows in string column %d", rows)
-	}
-	if blocks > uint64(math.MaxInt) {
-		return stringColumnHeader{}, fmt.Errorf("too many blocks in string column %d", blocks)
-	}
-	if rawBytes > uint64(math.MaxInt) {
-		return stringColumnHeader{}, fmt.Errorf("too many raw bytes in string column %d", rawBytes)
-	}
-	return stringColumnHeader{
-		codec:    codec,
-		cnt:      int(rows),
-		blocks:   int(blocks),
-		rawBytes: int(rawBytes),
-	}, nil
-}
-
-func parseStringColumnBlocks(data []byte, blocks int) ([]stringColumnBlockEntry, error) {
-	maxBlocks := (len(data) - stringColumnHeaderSize) / stringColumnBlockEntrySize
-	if blocks > maxBlocks {
-		return nil, fmt.Errorf("truncated string column block index: %d bytes", len(data))
-	}
-	indexSize := stringColumnHeaderSize + blocks*stringColumnBlockEntrySize
-
-	meta := make([]stringColumnBlockEntry, 0, blocks)
-	offset := uint64(indexSize)
-	dataLen := uint64(len(data))
-	for i := range blocks {
-		entry := data[stringColumnHeaderSize+i*stringColumnBlockEntrySize:]
-		block := stringColumnBlockEntry{
-			cnt:        int(binary.LittleEndian.Uint32(entry[0:4])),
-			offsetsLen: int(binary.LittleEndian.Uint32(entry[4:8])),
-			dataLen:    int(binary.LittleEndian.Uint32(entry[8:12])),
-			rawLen:     int(binary.LittleEndian.Uint32(entry[12:16])),
-		}
-		if block.cnt == 0 {
-			return nil, fmt.Errorf("string column block %d has no rows", i)
-		}
-		if block.offsetsLen < 4 {
-			return nil, fmt.Errorf("string column block %d has invalid offsets length %d", i, block.offsetsLen)
-		}
-		block.offset = int(offset)
-		offset += uint64(block.offsetsLen) + uint64(block.dataLen)
-		if offset > dataLen {
-			return nil, fmt.Errorf("truncated string column block %d payload", i)
-		}
-		meta = append(meta, block)
-	}
-	return meta, nil
-}
-
-func validateStringColumnTotals(header stringColumnHeader, meta []stringColumnBlockEntry) error {
-	rows := uint64(0)
-	rawBytes := uint64(0)
-	for i := range meta {
-		rows += uint64(meta[i].cnt)
-		rawBytes += uint64(meta[i].rawLen)
-	}
-	if rows != uint64(header.cnt) {
-		return fmt.Errorf("string column block rows %d do not match column rows %d", rows, header.cnt)
-	}
-	if rawBytes != uint64(header.rawBytes) {
-		return fmt.Errorf("string column block bytes %d do not match column bytes %d", rawBytes, header.rawBytes)
-	}
-	return nil
-}
-
-func appendStringColumnHeader(dst []byte, rows, blocks, rawBytes int, codec stringColumnCodec) []byte {
+func appendStringColumnHeader(dst []byte, rows int) []byte {
 	var header [stringColumnHeaderSize]byte
 	header[0] = stringColumnMagic
 	header[1] = stringColumnFormatVersion
-	header[2] = byte(codec)
+	header[2] = columnCodecNone
 	binary.LittleEndian.PutUint64(header[4:12], uint64(rows))
-	binary.LittleEndian.PutUint64(header[12:20], uint64(blocks))
-	binary.LittleEndian.PutUint64(header[20:28], uint64(rawBytes))
 	return append(dst, header[:]...)
 }
 
-func appendStringColumnBlock(dst []byte, block *stringColumnBlockEntry) []byte {
-	dst = binary.LittleEndian.AppendUint32(dst, uint32(block.cnt))
-	dst = binary.LittleEndian.AppendUint32(dst, uint32(block.offsetsLen))
-	dst = binary.LittleEndian.AppendUint32(dst, uint32(block.dataLen))
-	return binary.LittleEndian.AppendUint32(dst, uint32(block.rawLen))
+func UnmarshalStringColumn(data []byte) (StringColumn, error) {
+	if len(data) < stringColumnHeaderSize {
+		return nil, fmt.Errorf("not enough data for string column header: %d", len(data))
+	}
+	if data[0] != stringColumnMagic {
+		return nil, fmt.Errorf("invalid string column magic byte %d", data[0])
+	}
+	if data[1] != stringColumnFormatVersion {
+		return nil, fmt.Errorf("unsupported string column format version %d", data[1])
+	}
+	if data[2] != columnCodecNone {
+		return nil, fmt.Errorf("unsupported string column codec %d", data[2])
+	}
+	rows := binary.LittleEndian.Uint64(data[4:12])
+	if rows > uint64(math.MaxInt) {
+		return nil, fmt.Errorf("too many rows in string column %d", rows)
+	}
+	if rows == 0 {
+		return &RawStringColumn{}, nil
+	}
+
+	offsetsSize := (int(rows) + 1) * sizeOfUint32
+	if len(data) < stringColumnHeaderSize+offsetsSize {
+		return nil, fmt.Errorf("truncated string column offsets: %d bytes", len(data))
+	}
+	offsets := make([]uint32, rows+1)
+	for i := range offsets {
+		offsets[i] = binary.LittleEndian.Uint32(data[stringColumnHeaderSize+i*sizeOfUint32:])
+	}
+	columnData := data[stringColumnHeaderSize+offsetsSize:]
+	if uint64(offsets[len(offsets)-1]) != uint64(len(columnData)) {
+		return nil, fmt.Errorf("string column offsets end at %d but data has %d bytes", offsets[len(offsets)-1], len(columnData))
+	}
+	for i := 1; i < len(offsets)-1; i++ {
+		if offsets[i] > offsets[i+1] {
+			return nil, fmt.Errorf("string column offsets are not monotonic at row %d", i)
+		}
+	}
+	return &RawStringColumn{data: columnData, offsets: offsets}, nil
 }
 
 const (
 	int64ColumnMagic         byte = 0x49
 	int64ColumnFormatVersion byte = 1
 	int64ColumnHeaderSize         = 16
-	int64ColumnEntrySize          = 16
-	int64ColumnBlockValues        = 128 * 1024 / 8
+	sizeOfInt64                   = 8
 )
 
 // Int64Column is a int64 column used for QPR. Used only for legacy engine QPR, do not use anywhere else.
@@ -618,7 +164,6 @@ type Int64Column interface {
 	MemUsage() int
 	AppendTo(dst []byte) []byte
 	NewIter() Int64ColumnIter
-	compress() Int64Column
 }
 
 type Int64ColumnIter interface {
@@ -626,354 +171,102 @@ type Int64ColumnIter interface {
 	Value() int64
 }
 
-type int64ColumnBlockEntry struct {
-	cnt     int
-	offset  int
-	dataLen int
-	rawLen  int
-}
-
-type int64ColumnBlock struct {
-	values []int64
-}
-
-type int64ColumnHeader struct {
-	cnt    int
-	blocks int
-}
-
 func NewInt64Column(capacity int) Int64Column {
 	if capacity == 0 {
 		return NewEmptyInt64Column()
 	}
-	blkCap := min(capacity, int64ColumnBlockValues)
-	return &RawInt64Column{
-		blocks: []int64ColumnBlock{{values: make([]int64, 0, blkCap)}},
-	}
+	return &RawInt64Column{values: make([]int64, 0, capacity)}
 }
 
 func NewEmptyInt64Column() Int64Column {
 	return &RawInt64Column{}
 }
 
+// RawInt64Column is the mutable raw int64 column.
 type RawInt64Column struct {
-	blocks []int64ColumnBlock
-	rows   int
+	values []int64
 }
 
 func (c *RawInt64Column) Len() int {
-	return c.rows
+	return len(c.values)
 }
 
 func (c *RawInt64Column) MemUsage() int {
-	total := int(unsafe.Sizeof(*c))
-	total += cap(c.blocks) * int(unsafe.Sizeof(int64ColumnBlock{}))
-	for i := range c.blocks {
-		total += cap(c.blocks[i].values) * util.SizeOfInt64
-	}
-	return total
+	return int(unsafe.Sizeof(*c)) + cap(c.values)*sizeOfInt64
 }
 
 func (c *RawInt64Column) Append(v int64) {
-	if len(c.blocks) == 0 {
-		c.blocks = []int64ColumnBlock{{}}
-	}
-	blk := &c.blocks[len(c.blocks)-1]
-	blk.values = append(blk.values, v)
-	c.rows++
-	if len(blk.values) == int64ColumnBlockValues {
-		c.blocks = append(c.blocks, int64ColumnBlock{})
-	}
+	c.values = append(c.values, v)
 }
 
 func (c *RawInt64Column) At(idx int) int64 {
-	return c.blocks[idx/int64ColumnBlockValues].values[idx%int64ColumnBlockValues]
+	return c.values[idx]
 }
 
 func (c *RawInt64Column) AppendTo(dst []byte) []byte {
-	return appendEncodedInt64Blocks(dst, c.blocks, c.rows)
-}
-
-func (c *RawInt64Column) compress() Int64Column {
-	encoded, err := UnmarshalInt64Column(appendEncodedInt64Blocks(nil, c.blocks, c.rows))
-	if err != nil {
-		panic(fmt.Errorf("failed to compress int64 column: %w", err))
+	dst = appendInt64ColumnHeader(dst, c.Len())
+	for _, value := range c.values {
+		dst = binary.LittleEndian.AppendUint64(dst, uint64(value))
 	}
-	return encoded
+	return dst
 }
 
 func (c *RawInt64Column) NewIter() Int64ColumnIter {
-	return &rawInt64ColumnIter{col: c, row: -1, blockIdx: -1, firstRow: -1}
+	return &rawInt64ColumnIter{c: c, row: -1}
 }
 
 type rawInt64ColumnIter struct {
-	col      *RawInt64Column
-	firstRow int
-	row      int
-	blockIdx int
+	c   *RawInt64Column
+	row int
 }
 
 func (it *rawInt64ColumnIter) Next() bool {
-	if it.row+1 >= it.col.rows {
-		it.row = it.col.rows
+	if it.row+1 >= len(it.c.values) {
+		it.row = len(it.c.values)
 		return false
 	}
 	it.row++
-	if it.blockIdx < 0 {
-		it.blockIdx++
-		it.firstRow = it.row
-	} else if it.row >= it.firstRow+len(it.col.blocks[it.blockIdx].values) {
-		it.openNextBlock()
-	}
 	return true
-}
-
-func (it *rawInt64ColumnIter) openNextBlock() {
-	it.blockIdx++
-	it.firstRow = it.row
-	for it.blockIdx < len(it.col.blocks) && len(it.col.blocks[it.blockIdx].values) == 0 {
-		it.blockIdx++
-	}
 }
 
 func (it *rawInt64ColumnIter) Value() int64 {
-	return it.col.blocks[it.blockIdx].values[it.row-it.firstRow]
+	return it.c.values[it.row]
 }
 
-func appendEncodedInt64Blocks(dst []byte, blocks []int64ColumnBlock, rows int) []byte {
-	if rows == 0 {
-		return appendInt64ColumnHeader(dst, 0, 0)
-	}
-	encoder := int64ColumnEncoder{
-		blocks:  make([]int64ColumnBlockEntry, 0, len(blocks)),
-		values:  make([]uint64, 0, int64ColumnBlockValues),
-		packBuf: make([]uint64, 0, int64ColumnBlockValues+5*(int64ColumnBlockValues/256)+1),
-	}
-	for _, blk := range blocks {
-		if len(blk.values) == 0 {
-			continue
-		}
-		encoder.appendBlock(blk)
-	}
-	return encoder.appendTo(dst, rows)
-}
-
-type int64ColumnEncoder struct {
-	payload []byte
-	blocks  []int64ColumnBlockEntry
-	values  []uint64
-	packBuf []uint64 // reusable buffer
-}
-
-func (e *int64ColumnEncoder) appendBlock(blk int64ColumnBlock) {
-	e.values = e.values[:0]
-	for _, value := range blk.values {
-		e.values = append(e.values, uint64(value))
-	}
-
-	start := len(e.payload)
-	e.payload = packer.CompressDeltaBitpackUint64(e.payload, e.values, e.packBuf[:0])
-	e.blocks = append(e.blocks, int64ColumnBlockEntry{
-		cnt:     len(blk.values),
-		dataLen: len(e.payload) - start,
-		rawLen:  len(blk.values) * 8,
-	})
-}
-
-func (e *int64ColumnEncoder) appendTo(dst []byte, rows int) []byte {
-	dst = appendInt64ColumnHeader(dst, rows, len(e.blocks))
-	for i := range e.blocks {
-		dst = appendInt64ColumnBlock(dst, &e.blocks[i])
-	}
-	return append(dst, e.payload...)
-}
-
-// DeltaBitpackedInt64Column is the compressed form of an int64 column. Iteration
-// keeps only at most one block at a time uncompressed to reduce memory footprint.
-type DeltaBitpackedInt64Column struct {
-	data   []byte                  // encoded column bytes, header included
-	blocks []int64ColumnBlockEntry // parsed block index pointing into data
-	cnt    int
-}
-
-func (c *DeltaBitpackedInt64Column) Len() int {
-	return c.cnt
-}
-
-func (c *DeltaBitpackedInt64Column) MemUsage() int {
-	return int(unsafe.Sizeof(*c)) +
-		cap(c.data) +
-		cap(c.blocks)*int(unsafe.Sizeof(int64ColumnBlockEntry{}))
-}
-
-func (c *DeltaBitpackedInt64Column) Append(v int64) {
-	panic("append to a compressed int64 column is not supported")
-}
-
-func (c *DeltaBitpackedInt64Column) At(idx int) int64 {
-	panic("random access to a compressed int64 column is not supported")
-}
-
-func (c *DeltaBitpackedInt64Column) AppendTo(dst []byte) []byte {
-	if len(c.data) == 0 {
-		var header [int64ColumnHeaderSize]byte
-		header[0] = int64ColumnMagic
-		header[1] = int64ColumnFormatVersion
-		binary.LittleEndian.PutUint32(header[4:8], uint32(c.cnt))
-		return append(dst, header[:]...)
-	}
-	return append(dst, c.data...)
-}
-
-func (c *DeltaBitpackedInt64Column) compress() Int64Column {
-	return c
-}
-
-func (c *DeltaBitpackedInt64Column) NewIter() Int64ColumnIter {
-	return &deltaBitpackedInt64Iter{c: c, rowIdx: -1, blockIdx: -1, firstRowIdx: -1}
-}
-
-type deltaBitpackedInt64Iter struct {
-	c           *DeltaBitpackedInt64Column
-	rowIdx      int // current row index
-	blockIdx    int // current block index
-	firstRowIdx int // index of the first row in the current block
-	values      []uint64
-	unpackBuf   []uint64
-}
-
-func (it *deltaBitpackedInt64Iter) Next() bool {
-	if it.rowIdx+1 >= it.c.cnt {
-		it.rowIdx = it.c.cnt
-		return false
-	}
-	it.rowIdx++
-	if it.blockIdx < 0 || it.rowIdx >= it.firstRowIdx+it.c.blocks[it.blockIdx].cnt {
-		it.loadBlock(it.blockIdx + 1)
-	}
-	return true
-}
-
-func (it *deltaBitpackedInt64Iter) Value() int64 {
-	return int64(it.values[it.rowIdx-it.firstRowIdx])
-}
-
-func (it *deltaBitpackedInt64Iter) loadBlock(blockIdx int) {
-	meta := &it.c.blocks[blockIdx]
-	payload := it.c.data[meta.offset : meta.offset+meta.dataLen]
-	compressedLen := len(payload)/util.SizeOfInt64 + 1
-	if cap(it.unpackBuf) < compressedLen {
-		it.unpackBuf = make([]uint64, 0, compressedLen)
-	}
-	rest, values, err := packer.DecompressDeltaBitpackUint64(payload, it.values[:0], it.unpackBuf[:0])
-	if err != nil {
-		panic(fmt.Errorf("failed to decode int64 column block %d: %w", blockIdx, err))
-	}
-	if len(rest) != 0 || len(values) != meta.cnt {
-		panic(fmt.Errorf("inconsistent int64 column block %d", blockIdx))
-	}
-	it.values = values
-	it.blockIdx = blockIdx
-	it.firstRowIdx = it.rowIdx
-}
-
-func UnmarshalInt64Column(data []byte) (Int64Column, error) {
-	header, err := parseInt64ColumnHeader(data)
-	if err != nil {
-		return nil, err
-	}
-	if header.blocks == 0 {
-		if header.cnt != 0 {
-			return nil, fmt.Errorf("%d values in an int64 column without blocks", header.cnt)
-		}
-		return &DeltaBitpackedInt64Column{}, nil
-	}
-	if header.cnt == 0 {
-		return nil, fmt.Errorf("int64 column with %d blocks has no values", header.blocks)
-	}
-
-	meta, err := parseInt64ColumnBlocks(data, header.blocks)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateInt64ColumnRows(header, meta); err != nil {
-		return nil, err
-	}
-	return &DeltaBitpackedInt64Column{data: data, blocks: meta, cnt: header.cnt}, nil
-}
-
-func parseInt64ColumnHeader(data []byte) (int64ColumnHeader, error) {
-	if len(data) < int64ColumnHeaderSize {
-		return int64ColumnHeader{}, fmt.Errorf("not enough data for int64 column header: %d", len(data))
-	}
-	if data[0] != int64ColumnMagic {
-		return int64ColumnHeader{}, fmt.Errorf("invalid int64 column magic byte %d", data[0])
-	}
-	if data[1] != int64ColumnFormatVersion {
-		return int64ColumnHeader{}, fmt.Errorf("unsupported int64 column format version %d", data[1])
-	}
-	return int64ColumnHeader{
-		cnt:    int(binary.LittleEndian.Uint32(data[4:8])),
-		blocks: int(binary.LittleEndian.Uint32(data[8:12])),
-	}, nil
-}
-
-func parseInt64ColumnBlocks(data []byte, blocks int) ([]int64ColumnBlockEntry, error) {
-	indexSize := int64ColumnHeaderSize + blocks*int64ColumnEntrySize
-	if len(data) < indexSize {
-		return nil, fmt.Errorf("truncated int64 column block index: %d bytes", len(data))
-	}
-
-	meta := make([]int64ColumnBlockEntry, 0, blocks)
-	offset := indexSize
-	for i := range blocks {
-		entry := data[int64ColumnHeaderSize+i*int64ColumnEntrySize:]
-		block := int64ColumnBlockEntry{
-			cnt:     int(binary.LittleEndian.Uint32(entry[0:4])),
-			dataLen: int(binary.LittleEndian.Uint32(entry[4:8])),
-			rawLen:  int(binary.LittleEndian.Uint32(entry[8:12])),
-		}
-		if block.cnt == 0 {
-			return nil, fmt.Errorf("int64 column block %d has no values", i)
-		}
-		if block.rawLen != block.cnt*8 {
-			return nil, fmt.Errorf("int64 column block %d has invalid raw length %d", i, block.rawLen)
-		}
-		block.offset = offset
-		offset += block.dataLen
-		if offset > len(data) {
-			return nil, fmt.Errorf("truncated int64 column block %d payload", i)
-		}
-		meta = append(meta, block)
-	}
-	return meta, nil
-}
-
-func validateInt64ColumnRows(header int64ColumnHeader, meta []int64ColumnBlockEntry) error {
-	total := 0
-	for i := range meta {
-		total += meta[i].cnt
-	}
-	if total != header.cnt {
-		return fmt.Errorf("int64 column block values %d do not match column values %d", total, header.cnt)
-	}
-	return nil
-}
-
-func appendInt64ColumnHeader(dst []byte, rows, blocks int) []byte {
+func appendInt64ColumnHeader(dst []byte, cnt int) []byte {
 	var header [int64ColumnHeaderSize]byte
 	header[0] = int64ColumnMagic
 	header[1] = int64ColumnFormatVersion
-	binary.LittleEndian.PutUint32(header[4:8], uint32(rows))
-	binary.LittleEndian.PutUint32(header[8:12], uint32(blocks))
+	header[2] = columnCodecNone
+	binary.LittleEndian.PutUint32(header[4:8], uint32(cnt))
 	return append(dst, header[:]...)
 }
 
-func appendInt64ColumnBlock(dst []byte, block *int64ColumnBlockEntry) []byte {
-	dst = binary.LittleEndian.AppendUint32(dst, uint32(block.cnt))
-	dst = binary.LittleEndian.AppendUint32(dst, uint32(block.dataLen))
-	dst = binary.LittleEndian.AppendUint32(dst, uint32(block.rawLen))
-	return binary.LittleEndian.AppendUint32(dst, 0)
+func UnmarshalInt64Column(data []byte) (Int64Column, error) {
+	if len(data) < int64ColumnHeaderSize {
+		return nil, fmt.Errorf("not enough data for int64 column header: %d", len(data))
+	}
+	if data[0] != int64ColumnMagic {
+		return nil, fmt.Errorf("invalid int64 column magic byte %d", data[0])
+	}
+	if data[1] != int64ColumnFormatVersion {
+		return nil, fmt.Errorf("unsupported int64 column format version %d", data[1])
+	}
+	if data[2] != columnCodecNone {
+		return nil, fmt.Errorf("unsupported int64 column codec %d", data[2])
+	}
+	cnt := int(binary.LittleEndian.Uint32(data[4:8]))
+	if uint64(len(data)-int64ColumnHeaderSize) != uint64(cnt)*sizeOfInt64 {
+		return nil, fmt.Errorf("malformed int64 column data")
+	}
+	column := &RawInt64Column{}
+	if cnt > 0 {
+		column.values = make([]int64, cnt)
+		for i := range column.values {
+			column.values[i] = int64(binary.LittleEndian.Uint64(data[int64ColumnHeaderSize+i*sizeOfInt64:]))
+		}
+	}
+	return column, nil
 }
 
 const (
@@ -1091,7 +384,6 @@ const (
 	arraysColumnMagic         byte = 0x41
 	arraysColumnFormatVersion byte = 1
 	arraysColumnHeaderSize         = 16
-	sizeOfUint32                   = 4
 )
 
 // ArraysColumn a column of arrays of type T. Values are kept in a single flat slice divided by offsets to reduce

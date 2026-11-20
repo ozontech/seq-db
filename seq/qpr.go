@@ -1004,28 +1004,6 @@ func (h *SamplesContainer) InsertValueIndex(poolIdx uint32, cnt int64) {
 	h.Total += cnt
 }
 
-func (q *QPR) ToCompressed() {
-	for i := range q.Aggs {
-		for j := range q.Aggs[i].Tokens {
-			// TODO comment this
-			codec := stringColumnCodecZstd
-			if j == 0 {
-				if q.Aggs[i].MIDs == nil {
-					codec = stringColumnCodecFrontZstd
-				} else {
-					codec = stringColumnCodecZstd
-				}
-			}
-			q.Aggs[i].Tokens[j] = q.Aggs[i].Tokens[j].compress(codec)
-		}
-		q.Aggs[i].Values.Totals = q.Aggs[i].Values.Totals.compress()
-		q.Aggs[i].Values.NotExists = q.Aggs[i].Values.NotExists.compress()
-		if q.Aggs[i].MIDs != nil {
-			q.Aggs[i].MIDs = q.Aggs[i].MIDs.compress()
-		}
-	}
-}
-
 // MergeQPRs merges several qprs into dst. The provided qprs are not modified.
 func MergeQPRs(dst *QPR, qprs []*QPR, limit int, histInterval MID, order DocsOrder) {
 	if len(qprs) == 0 {
