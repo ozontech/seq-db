@@ -338,6 +338,7 @@ type Config struct {
 		MaxTotalSize           Bytes  `config:"max_total_size" default:"1GiB"`
 		MaxSizePerRequest      Bytes  `config:"max_size_per_request" default:"100MiB"`
 		MaxDocumentsPerRequest int64  `config:"max_documents_per_request" default:"100000"`
+		MaxQprMemory           Bytes  `config:"max_qpr_memory"`
 	} `config:"async_search"`
 
 	API struct {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"net"
 	_ "net/http/pprof"
@@ -325,6 +326,7 @@ func startStore(
 					Workers:           cfg.AsyncSearch.Concurrency,
 					MaxSize:           int(cfg.AsyncSearch.MaxTotalSize),
 					MaxSizePerRequest: int(cfg.AsyncSearch.MaxSizePerRequest),
+					MaxQprMemory:      int(cmp.Or(cfg.AsyncSearch.MaxQprMemory, cfg.Limits.QprMemoryUsage)),
 				},
 			},
 			Fetch: storeapi.FetchConfig{
