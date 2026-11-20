@@ -48,6 +48,14 @@ func (sr *SearchRequest) GetAPISearchRequest() *storeapi.SearchRequest {
 	}
 }
 
+func (sr *SearchRequest) aggFuncs() []seq.AggFunc {
+	aggFuncs := make([]seq.AggFunc, len(sr.AggQ))
+	for i, aggQ := range sr.AggQ {
+		aggFuncs[i] = aggQ.Func
+	}
+	return aggFuncs
+}
+
 func convertToAggsQuery(aggs []AggQuery) []*storeapi.AggQuery {
 	buf := make([]storeapi.AggQuery, len(aggs))
 	aggQ := make([]*storeapi.AggQuery, len(aggs))

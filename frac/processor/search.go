@@ -219,7 +219,7 @@ func IndexSearch(
 				m.Stop()
 				return nil, err
 			}
-			if len(aggsResult[i].SamplesByBin) > aggLimits.MaxGroupTokens && aggLimits.MaxGroupTokens > 0 {
+			if aggsResult[i].Count() > aggLimits.MaxGroupTokens && aggLimits.MaxGroupTokens > 0 {
 				return nil, consts.ErrTooManyGroupTokens
 			}
 		}
@@ -247,6 +247,12 @@ func emptyQPR(params SearchParams) *seq.QPR {
 	qpr := &seq.QPR{}
 	if params.HasHist() {
 		qpr.Histogram = map[seq.MID]uint64{}
+	}
+	if params.HasAgg() {
+		qpr.Aggs = make([]seq.AggregatableSamples, len(params.AggQ))
+		for i, query := range params.AggQ {
+			qpr.Aggs[i] = *seq.NewAggregatableSamples(query.Func, 1, 0)
+		}
 	}
 	return qpr
 }
@@ -476,10 +482,14 @@ func getLIDsBorders(params SearchParams, idsIndex idsIndex) (uint32, uint32) {
 
 func MergeQPRs(qprs []*seq.QPR, params SearchParams) *seq.QPR {
 	if len(qprs) == 0 {
-		return &seq.QPR{
+		result := &seq.QPR{
 			Histogram: make(map[seq.MID]uint64),
 			Aggs:      make([]seq.AggregatableSamples, len(params.AggQ)),
 		}
+		for i, query := range params.AggQ {
+			result.Aggs[i] = *seq.NewAggregatableSamples(query.Func, 1, 0)
+		}
+		return result
 	}
 	qpr := qprs[0]
 	if len(qprs) > 1 {

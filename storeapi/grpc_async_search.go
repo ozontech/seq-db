@@ -54,7 +54,7 @@ func (g *GrpcV1) StartAsyncSearch(
 }
 
 func (g *GrpcV1) FetchAsyncSearchResult(
-	_ context.Context,
+	ctx context.Context,
 	r *storeapi.FetchAsyncSearchResultRequest,
 ) (*storeapi.FetchAsyncSearchResultResponse, error) {
 	fr, exists := g.asyncSearcher.FetchSearchResult(asyncsearcher.FetchSearchResultRequest{
@@ -66,7 +66,8 @@ func (g *GrpcV1) FetchAsyncSearchResult(
 		return nil, status.Error(codes.NotFound, "search not found")
 	}
 
-	resp := buildSearchResponse(&fr.QPR)
+	proxyProtocol := proxyProtocolFromContext(ctx)
+	resp := buildSearchResponseVersion(&fr.QPR, proxyProtocol)
 
 	errs := make([]string, 0, len(fr.QPR.Errors))
 	for _, e := range fr.QPR.Errors {
