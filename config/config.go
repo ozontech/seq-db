@@ -271,10 +271,21 @@ type Config struct {
 		TickInterval time.Duration `config:"tick_interval" default:"1s"`
 	} `config:"compaction"`
 
+	// Epoch configures grouping of fractions into epochs.
+	// An epoch is a group of consecutive fractions sealed by the same store.
+	// Its ID is a monotonically increasing counter stored in the fraction info.
 	Epoch struct {
-		Enabled      bool          `config:"enabled"`
-		Period       time.Duration `config:"period"`
-		MaxFractions int           `config:"max_fractions"`
+		// Enabled turns on assigning epochs to fractions when they are sealed.
+		// Fractions sealed while it is off belong to epoch 0.
+		Enabled bool `config:"enabled"`
+		// Period specifies how long an epoch stays open. Epochs switch on
+		// wall-clock boundaries of Period, not relative to the store start.
+		// Must be greater than zero when epochs are enabled.
+		Period time.Duration `config:"period"`
+		// MaxFractions specifies how many fractions an epoch can hold. A full
+		// epoch is closed even if Period has not elapsed yet.
+		// Must be greater than zero when epochs are enabled.
+		MaxFractions int `config:"max_fractions"`
 	} `config:"epoch"`
 
 	Indexing struct {
