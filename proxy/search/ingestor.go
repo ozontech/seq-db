@@ -173,9 +173,13 @@ func (si *Ingestor) Search(
 	queryDuration := time.Since(startTime)
 
 	t := time.Now()
+	aggs := make([]seq.AggregatableSamples, len(sr.AggQ))
+	for i, aggQ := range sr.AggQ {
+		aggs[i] = *seq.NewAggregatableSamples(aggQ.Func, 1, 0)
+	}
 	qpr = &seq.QPR{
 		Histogram: make(map[seq.MID]uint64),
-		Aggs:      make([]seq.AggregatableSamples, len(sr.AggQ)),
+		Aggs:      aggs,
 	}
 	seq.MergeQPRs(qpr, qprs, sr.Offset+sr.Size, sr.Interval, sr.Order)
 	mergeDuration := time.Since(t)

@@ -70,6 +70,13 @@ func TestQPRMarshalUnmarshal(t *testing.T) {
 	}
 }
 
+func TestUnmarshalAggsRejectsZeroWidth(t *testing.T) {
+	src := []byte{byte(seq.AggFuncCount), 0} // func varint, zero width varint
+	var agg seq.AggregatableSamples
+	_, err := unmarshalAggregatableSamplesV3(&agg, src)
+	require.ErrorContains(t, err, "aggregation without token columns")
+}
+
 func TestUnmarshalAggsDoesNotAliasPooledBuffer(t *testing.T) {
 	agg := testAgg(seq.AggFuncCount, 1,
 		testAggRow{tokens: []string{"a"}, total: 1},

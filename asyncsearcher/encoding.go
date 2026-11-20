@@ -487,6 +487,9 @@ func unmarshalAggregatableSamplesV3(q *seq.AggregatableSamples, src []byte) ([]b
 	if err != nil {
 		return nil, err
 	}
+	if width == 0 {
+		return nil, fmt.Errorf("aggregation without token columns")
+	}
 	if len(src) < 8 {
 		return nil, fmt.Errorf("malformed agg rows")
 	}

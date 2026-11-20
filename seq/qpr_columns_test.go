@@ -381,6 +381,22 @@ func TestColumnMemUsageTracksRetainedCapacity(t *testing.T) {
 	)
 }
 
+func TestEmptyAggregatableSamplesPerFunc(t *testing.T) {
+	for _, fn := range []AggFunc{
+		AggFuncCount, AggFuncSum, AggFuncMin, AggFuncMax,
+		AggFuncAvg, AggFuncQuantile, AggFuncUnique, AggFuncUniqueCount,
+	} {
+		agg := NewAggregatableSamples(fn, 1, 0)
+		require.Len(t, agg.Tokens, 1)
+		require.NotNil(t, agg.Values.Totals)
+		require.NotNil(t, agg.Values.NotExists)
+
+		result := agg.Aggregate(AggregateArgs{Func: fn, Quantiles: []float64{0.5}})
+		require.Emptyf(t, result.Buckets, "func %d", fn)
+		agg.MemUsage()
+	}
+}
+
 func TestInt64ColumnAbsent(t *testing.T) {
 	var col Int64Column
 	require.Nil(t, col)

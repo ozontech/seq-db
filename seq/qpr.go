@@ -365,17 +365,11 @@ type AggregateArgs struct {
 func (q *AggregatableSamples) Aggregate(args AggregateArgs) AggregationResult {
 	buckets := make([]AggregationBucket, 0, q.Count())
 
-	var it StringColumnIter
-	if len(q.Tokens) > 0 {
-		it = q.Tokens[0].NewIter()
-	}
+	it := q.Tokens[0].NewIter()
 	var totals Int64ColumnIter
 	switch q.Values.Func {
 	case AggFuncCount, AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile, AggFuncUniqueCount:
 		totals = q.Values.Totals.NewIter()
-	}
-	if it == nil {
-		return AggregationResult{NotExists: q.NotExists}
 	}
 	for i := 0; it.Next(); i++ {
 		total := int64(0)
