@@ -20,6 +20,19 @@ func TestRangeBytes(t *testing.T) {
 	assert.Panics(t, func() { rangeBytes(100, 0) })
 }
 
+func TestReaderWithSize(t *testing.T) {
+	r := NewReaderWithSize(t.Context(), nil, "custom/key", 42)
+
+	stat, err := r.Stat()
+	require.NoError(t, err)
+	assert.Equal(t, int64(42), stat.Size())
+	assert.Equal(t, "custom/key", stat.Name())
+
+	offset, err := r.Seek(-2, io.SeekEnd)
+	require.NoError(t, err)
+	assert.Equal(t, int64(40), offset)
+}
+
 func TestReader(t *testing.T) {
 	bucket := uuid.New().String()
 
@@ -38,7 +51,7 @@ func TestReader(t *testing.T) {
 	f, data, remove := generateFileWithRandomContent(t)
 	defer remove()
 
-	require.NoError(t, NewUploader(s3cli).Upload(t.Context(), f))
+	require.NoError(t, NewUploader(s3cli).Upload(t.Context(), path.Base(f.Name()), f))
 
 	t.Run("read-whole-file", func(t *testing.T) {
 		reader := NewReader(t.Context(), s3cli, path.Base(f.Name()))

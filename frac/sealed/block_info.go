@@ -10,14 +10,14 @@ import (
 	"github.com/ozontech/seq-db/logger"
 )
 
-const seqDBMagic = "SEQM"
+const SeqDBMagic = "SEQM"
 
 type BlockInfo struct {
 	Info *common.Info
 }
 
 func (b *BlockInfo) Pack(buf []byte) []byte {
-	buf = append(buf, []byte(seqDBMagic)...)
+	buf = append(buf, []byte(SeqDBMagic)...)
 
 	bin, err := json.Marshal(b.Info)
 	if err != nil {
@@ -29,12 +29,12 @@ func (b *BlockInfo) Pack(buf []byte) []byte {
 }
 
 func (b *BlockInfo) Unpack(data []byte) error {
-	if len(data) < 4 || string(data[:4]) != seqDBMagic {
+	if len(data) < len(SeqDBMagic) || string(data[:len(SeqDBMagic)]) != SeqDBMagic {
 		return errors.New("seq-db index file header corrupted")
 	}
 
 	b.Info = &common.Info{}
-	if err := json.Unmarshal(data[4:], b.Info); err != nil {
+	if err := json.Unmarshal(data[len(SeqDBMagic):], b.Info); err != nil {
 		return errors.New("stats unmarshaling error")
 	}
 	b.Info.MetaOnDisk = 0 // todo: make this correction on sealing and remove this next time

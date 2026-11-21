@@ -324,6 +324,33 @@ func TestDiscover_RemoteFileWithInfo(t *testing.T) {
 	assert.Greater(t, stat.Size(), int64(0), ".remote must contain serialized info")
 }
 
+func TestDiscover_RemoteLegacyInfoFile(t *testing.T) {
+	fp, loader, tearDown := setupLoaderTest(t, nil)
+	defer tearDown()
+
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 10)
+	s, err := fp.Seal(a)
+	require.NoError(t, err)
+
+	r, err := fp.Offload(t.Context(), s)
+	require.NoError(t, err)
+	info, err := os.ReadFile(s.BaseFileName + consts.InfoFileSuffix)
+	require.NoError(t, err)
+	s.Suicide()
+	require.NoError(t, os.WriteFile(r.BaseFileName+consts.RemoteFractionSuffix, info, 0o666))
+
+	actives, locals, remotes, remotesRemoving, err := loader.discover(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, actives)
+	assert.Empty(t, locals)
+	assert.Empty(t, remotesRemoving)
+	require.Len(t, remotes, 1)
+	assert.Equal(t, r.Info().Name(), remotes[0].Info().Name())
+	assert.Equal(t, r.Info().DocsTotal, remotes[0].Info().DocsTotal)
+	assert.False(t, remotes[0].IsSingleIndex())
+}
+
 // TestDiscover_EmptyRemote_NewIndex verifies that a fraction with empty .remote
 // and no .index in S3 (but split files exist) is detected as non-legacy remote.
 // No .frac-cache
@@ -457,6 +484,7 @@ func TestLoadRemote_Legacy(t *testing.T) {
 
 	baseName := "seq-db-TESTLEGACYLOAD"
 	basePath := filepath.Join(fp.config.DataDir, baseName)
+	createEmptyRemoteFile(t, basePath)
 
 	// Create cached Info with IndexOnDisk > 0 (legacy, fast path).
 	cachedInfo := &common.Info{

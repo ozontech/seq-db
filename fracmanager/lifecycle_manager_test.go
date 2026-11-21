@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -317,8 +318,12 @@ func addRemotes(lc *lifecycleManager, specs ...remoteSpec) {
 	now := time.Now()
 	for i, s := range specs {
 		name := fmt.Sprintf("frac_remote_%d_%d", now.UnixNano(), i)
-		info := common.NewInfo(name, max(s.size, 1)-1, 0)
+		basePath := filepath.Join(lc.provider.config.DataDir, name)
+		info := common.NewInfo(basePath, max(s.size, 1)-1, 0)
 		info.IndexOnDisk = 1
+		if err := os.WriteFile(basePath+consts.RemoteFractionSuffix, nil, 0o666); err != nil {
+			panic(err)
+		}
 
 		ts := now.Add(-time.Duration(s.minutesAgo) * time.Minute)
 		info.CreationTime = uint64(ts.UnixMilli())
@@ -328,7 +333,7 @@ func addRemotes(lc *lifecycleManager, specs ...remoteSpec) {
 
 		remote := frac.NewRemote(
 			context.Background(),
-			name,
+			basePath,
 			nil,
 			frac.NewIndexCache(),
 			nil,

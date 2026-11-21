@@ -298,68 +298,59 @@ func (f *Sealed) init(full bool) {
 func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) error {
 	f.init(false)
 
+	files := map[remoteFileRole]storage.ImmutableFile{
+		remoteFileDocs: f.docsFile,
+	}
+
 	if f.IsSingleIndex() {
-		return f.offloadLegacy(ctx, u)
+		files[remoteFileIndex] = f.legacyFile
+		return f.offloadFiles(ctx, u, files)
 	}
 
-	infoScr := f.BaseFileName + consts.InfoFileSuffix
-	infoDstTmp := f.BaseFileName + consts.RemoteFractionTmpSuffix
-	// persist frac.info -> frac._remote (durable link, survives crash).
-	if err := util.DurableHardLink(infoScr, infoDstTmp); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			return err
-		}
-		// frac._remote already exists - it is retry of a previous attempt, not a failure.
-	}
-
-	g, gctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return u.Upload(gctx, f.docsFile) })
-	g.Go(func() error { return u.Upload(gctx, f.tokenFile) })
-	g.Go(func() error { return u.Upload(gctx, f.offsetsFile) })
-	g.Go(func() error { return u.Upload(gctx, f.idFile) })
-	g.Go(func() error { return u.Upload(gctx, f.lidFile) })
-
-	g.Go(func() error {
-		infoFile, err := os.Open(f.BaseFileName + consts.InfoFileSuffix)
-		if err != nil {
-			return err
-		}
-		defer infoFile.Close()
-		return u.Upload(gctx, infoFile)
-	})
-
-	if err := g.Wait(); err != nil {
+	infoFile, err := os.Open(f.BaseFileName + consts.InfoFileSuffix)
+	if err != nil {
 		return err
 	}
+	defer infoFile.Close()
 
-	infoDst := f.BaseFileName + consts.RemoteFractionSuffix
-	if err := util.DurableRenameFile(infoDstTmp, infoDst); err != nil { // rename frac._remote -> frac.remote
-		return err
-	}
+	files[remoteFileInfo] = infoFile
+	files[remoteFileTokens] = f.tokenFile
+	files[remoteFileOffsets] = f.offsetsFile
+	files[remoteFileIDs] = f.idFile
+	files[remoteFileLIDs] = f.lidFile
 
-	return nil
+	return f.offloadFiles(ctx, u, files)
 }
 
-func (f *Sealed) offloadLegacy(ctx context.Context, u storage.Uploader) error {
+func (f *Sealed) offloadFiles(ctx context.Context, u storage.Uploader, files map[remoteFileRole]storage.ImmutableFile) error {
+	manifest, err := newRemoteManifest(f.info, files)
+	if err != nil {
+		return err
+	}
+
 	tmp := f.BaseFileName + consts.RemoteFractionTmpSuffix
-	if err := util.DurableTouchFile(tmp); err != nil { // create empty frac._remote
+	// Persist the prepared manifest in frac._remote before uploading any objects.
+	// Retries recreate it; writeRemoteManifest safely replaces an old hardlink to .info.
+	if err := writeRemoteManifest(tmp, manifest); err != nil {
 		return err
 	}
 
 	g, gctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return u.Upload(gctx, f.docsFile) })
-	g.Go(func() error { return u.Upload(gctx, f.legacyFile) })
-
+	for role, manifestFile := range manifest.Files {
+		file := files[role]
+		g.Go(func() error {
+			if _, err := file.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+			return u.Upload(gctx, manifestFile.Key, file)
+		})
+	}
 	if err := g.Wait(); err != nil {
 		return err
 	}
 
-	dst := f.BaseFileName + consts.RemoteFractionSuffix
-	if err := util.DurableRenameFile(tmp, dst); err != nil { // rename frac._remote -> frac.remote
-		return err
-	}
-
-	return nil
+	// Rename frac._remote -> frac.remote to commit the completed offload.
+	return util.DurableRenameFile(tmp, f.BaseFileName+consts.RemoteFractionSuffix)
 }
 
 func (f *Sealed) Release() {
