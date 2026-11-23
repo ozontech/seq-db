@@ -376,9 +376,11 @@ func (r *fractionRegistry) evictRemote(
 	return evicted
 }
 
-// evictOverflowed removes oldest fractions from offloading queue when it exceeds size limit.
+// selectOverflowed selects oldest fractions from the offloading queue that exceed size limit.
 // Used when offloading queue grows too large due to slow remote storage performance.
-func (r *fractionRegistry) evictOverflowed(sizeLimit uint64) (evicted []*refCountedSealed) {
+// Selection only: the fractions leave the queue in promoteToRemote
+// when their canceled offloading tasks complete.
+func (r *fractionRegistry) selectOverflowed(sizeLimit uint64) (selected []*refCountedSealed) {
 	if sizeLimit == 0 {
 		return nil
 	}
@@ -391,22 +393,20 @@ func (r *fractionRegistry) evictOverflowed(sizeLimit uint64) (evicted []*refCoun
 		return nil
 	}
 
+	var releasingSize uint64
+
 loop:
-	// filter fractions
 	for r.offloading.Len() > 0 {
 		for _, s := range r.offloading.GetByPartition(r.offloading.MinPartition()) {
-			evicted = append(evicted, s)
-			r.stats.offloading.Sub(s.Info())
-			r.offloading.Del(s.Info().Name())
-			if r.stats.offloading.totalSizeOnDisk <= sizeLimit {
+			selected = append(selected, s)
+			releasingSize += s.Info().FullSize()
+			if r.stats.offloading.totalSizeOnDisk-releasingSize <= sizeLimit {
 				break loop
 			}
 		}
 	}
 
-	r.rebuildSnapshot()
-
-	return evicted
+	return selected
 }
 
 // promoteToSealed moves fractions from sealing to local queue when sealing completes.
