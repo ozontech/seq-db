@@ -66,7 +66,8 @@ func (e *Executor) compact(t task) (*sealed.PreloadedData, error) {
 
 	logger.Info(
 		"compacting fractions",
-		zap.Time("bin", t.bin),
+		zap.Uint64("epoch", t.bin.epoch),
+		zap.Time("bin", t.bin.window),
 		zap.Strings("names", names),
 		zap.String("bucket_size", t.bucketSize),
 	)

@@ -23,6 +23,7 @@ type mockSealingSource struct {
 	pos        []seq.DocPos
 	blocks     []uint64
 	docsOnDisk uint64
+	epoch      uint64
 	fields     map[string]map[string][]uint32
 }
 
@@ -32,6 +33,7 @@ func (m *mockSealingSource) Info() *common.Info {
 		DocsTotal:  uint32(len(m.ids)),
 		DocsOnDisk: m.docsOnDisk,
 
+		Epoch:        m.epoch,
 		CreationTime: uint64(time.Now().UnixMilli()),
 
 		From: slices.MinFunc(m.ids, func(x, y seq.ID) int {
@@ -132,6 +134,7 @@ func TestMergeSource(t *testing.T) {
 
 		blocks:     []uint64{0},
 		docsOnDisk: 1024,
+		epoch:      7,
 	}
 
 	second := &mockSealingSource{
@@ -154,6 +157,7 @@ func TestMergeSource(t *testing.T) {
 
 		blocks:     []uint64{0},
 		docsOnDisk: 2048,
+		epoch:      7,
 	}
 
 	source := NewMergeSource("inmemory", []Source{first, second})
@@ -259,6 +263,8 @@ func TestMergeSource(t *testing.T) {
 		require.Equal(t, merged.DocsTotal, finfo.DocsTotal+sinfo.DocsTotal)
 		require.Equal(t, merged.DocsOnDisk, finfo.DocsOnDisk+sinfo.DocsOnDisk)
 		require.Equal(t, merged.DocsRaw, finfo.DocsRaw+sinfo.DocsRaw)
+
+		require.Equal(t, uint64(7), merged.Epoch)
 
 		// Validate correctness of distribution.
 		require.NotNil(t, merged.Distribution)

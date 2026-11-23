@@ -544,13 +544,26 @@ func (r *fractionRegistry) claimForCompaction(names []string) ([]*refCountedSeal
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, name := range names {
+	var epoch uint64
+	for i, name := range names {
 		// NOTE(dkharms): If offloading pressure is high on the oldest fractions,
 		// compaction may repeatedly fail to claim them and get into livelock.
-		if _, ok := r.sealed.Get(name); !ok {
+		s, ok := r.sealed.Get(name)
+		if !ok {
 			return nil, fmt.Errorf(
 				"fraction %q is not available for compaction",
 				name,
+			)
+		}
+
+		if i == 0 {
+			epoch = s.Info().Epoch
+		}
+
+		if s.Info().Epoch != epoch {
+			return nil, fmt.Errorf(
+				"fraction %q belongs to epoch %d, expected epoch %d",
+				name, s.Info().Epoch, epoch,
 			)
 		}
 	}

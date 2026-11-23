@@ -38,8 +38,13 @@ type fraction interface {
 	Info() *common.Info
 }
 
+type bin struct {
+	epoch  uint64
+	window time.Time
+}
+
 type task struct {
-	bin        time.Time
+	bin        bin
 	bucketSize string
 
 	filename string
@@ -130,16 +135,16 @@ func (p *planner) pick() (task, bool) {
 
 	bins := p.distribute(p.cfg.TimeWindow, snapshot)
 	compactionBins.Set(float64(len(bins)))
-	times := p.prioritize(bins)
+	ordered := p.prioritize(bins)
 
-	for _, t := range times {
+	for _, b := range ordered {
 		picked := strategySTCS{
 			mergeTrigger:     p.cfg.MergeTrigger,
 			mergeFanIn:       p.cfg.MergeFanIn,
 			mergeFanOutSize:  p.cfg.MergeFanOutSize,
 			bucketLowerbound: p.cfg.BucketLowerbound,
 			bucketUpperbound: p.cfg.BucketUpperbound,
-		}.Pick(bins[t])
+		}.Pick(bins[b])
 
 		if len(picked.fracs) == 0 {
 			// No candidates were found.
@@ -153,7 +158,7 @@ func (p *planner) pick() (task, bool) {
 		}
 
 		return task{
-			bin:        t,
+			bin:        b,
 			bucketSize: bucketSize,
 
 			filename: p.fm.FractionName(),
@@ -198,8 +203,8 @@ func (p *planner) pick() (task, bool) {
 	return task{}, false
 }
 
-func (p *planner) distribute(window time.Duration, fracs []fraction) map[time.Time][]fraction {
-	bins := make(map[time.Time][]fraction)
+func (p *planner) distribute(window time.Duration, fracs []fraction) map[bin][]fraction {
+	bins := make(map[bin][]fraction)
 
 	for _, f := range fracs {
 		// TODO(dkharms): Group by time-range fraction cover.
@@ -208,25 +213,28 @@ func (p *planner) distribute(window time.Duration, fracs []fraction) map[time.Ti
 		// not by creation time, but by time-range they cover.
 		creation := time.UnixMilli(int64(f.Info().CreationTime))
 
-		bin := creation.Truncate(window)
-		bins[bin] = append(bins[bin], f)
+		b := bin{
+			epoch:  f.Info().Epoch,
+			window: creation.Truncate(window),
+		}
+
+		bins[b] = append(bins[b], f)
 	}
 
 	return bins
 }
 
-func (p *planner) prioritize(bins map[time.Time][]fraction) []time.Time {
+func (p *planner) prioritize(bins map[bin][]fraction) []bin {
 	ordered := slices.Collect(maps.Keys(bins))
 
 	// Prioritize bins with the most fractions above target since they hurt search the most.
 	// Older bins are preferred on ties since they have been sitting above target longer.
-	slices.SortFunc(ordered, func(x, y time.Time) int {
-		xcount := len(bins[x])
-		ycount := len(bins[y])
-		if xcount == ycount {
-			return -x.Compare(y)
-		}
-		return -cmp.Compare(xcount, ycount)
+	slices.SortFunc(ordered, func(x, y bin) int {
+		return cmp.Or(
+			-cmp.Compare(len(bins[x]), len(bins[y])),
+			-x.window.Compare(y.window),
+			-cmp.Compare(x.epoch, y.epoch),
+		)
 	})
 
 	return ordered

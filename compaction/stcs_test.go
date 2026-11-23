@@ -10,11 +10,17 @@ import (
 )
 
 type mockFraction struct {
-	indexOnDisk uint64
+	indexOnDisk  uint64
+	epoch        uint64
+	creationTime uint64
 }
 
 func (m *mockFraction) Info() *common.Info {
-	return &common.Info{IndexOnDisk: m.indexOnDisk}
+	return &common.Info{
+		IndexOnDisk:  m.indexOnDisk,
+		Epoch:        m.epoch,
+		CreationTime: m.creationTime,
+	}
 }
 
 func makeFracs(sizes ...uint64) []fraction {

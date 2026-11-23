@@ -274,6 +274,7 @@ type Config struct {
 	// Epoch configures grouping of fractions into epochs.
 	// An epoch is a group of consecutive fractions sealed by the same store.
 	// Its ID is a monotonically increasing counter stored in the fraction info.
+	// Compaction never merges fractions of different epochs.
 	Epoch struct {
 		// Enabled turns on assigning epochs to fractions when they are sealed.
 		// Fractions sealed while it is off belong to epoch 0.

@@ -80,6 +80,7 @@ func (s *MergeSource) prepareInfo() *common.Info {
 
 	info.From, info.To = from, to
 	info.SealingTime = info.CreationTime
+	info.Epoch = s.sources[0].Info().Epoch
 
 	// TODO(dkharms): This is workaround which will
 	// force compacted fraction to stay in the same bin.
