@@ -306,6 +306,9 @@ func startStore(
 			OffloadingQueueSize:       uint64(float64(cfg.Storage.TotalSize) * cfg.Offloading.QueueSizePercent / 100),
 			OffloadingRemoteTotalSize: uint64(cfg.Offloading.RemoteTotalSize),
 			CompactionEnabled:         cfg.Compaction.Enabled,
+			EpochEnabled:              cfg.Epoch.Enabled,
+			EpochPeriod:               cfg.Epoch.Period,
+			EpochMaxFractions:         cfg.Epoch.MaxFractions,
 		},
 		API: storeapi.APIConfig{
 			StoreMode: configMode,

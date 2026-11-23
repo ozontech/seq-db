@@ -40,6 +40,7 @@ type Info struct {
 	To           seq.MID               `json:"to"`
 	CreationTime uint64                `json:"creation_time"`
 	SealingTime  uint64                `json:"sealing_time"`
+	Epoch        uint64                `json:"epoch,omitempty"`
 	Distribution *seq.MIDsDistribution `json:"distribution"`
 }
 

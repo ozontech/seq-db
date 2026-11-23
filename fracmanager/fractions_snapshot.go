@@ -100,6 +100,23 @@ func (fs *fractionsSnapshot) AcquireInRange(from, to seq.MID) ([]frac.Fraction, 
 	}
 }
 
+func (fs *fractionsSnapshot) AcquireFunc(pred func(frac.Fraction) bool) ([]frac.Fraction, []func()) {
+	fracs := make(List, 0)
+	releases := make([]func(), 0)
+
+	for i, f := range fs.fractions {
+		if pred(f) {
+			c := fs.counters[i]
+			c.Inc()
+
+			fracs = append(fracs, f)
+			releases = append(releases, c.Dec)
+		}
+	}
+
+	return fracs, releases
+}
+
 func (fs *fractionsSnapshot) AcquireOne(name string) (frac.Fraction, func(), bool) {
 	i, ok := fs.names[name]
 	if !ok {

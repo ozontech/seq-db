@@ -44,6 +44,7 @@ func newLifecycleManager(
 func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.WaitGroup) {
 	lc.registry.suspendIfOverCapacity(cfg.SealingQueueLen, cfg.SuspendThreshold())
 
+	currentEpoch.Set(float64(lc.registry.rollEpoch(time.Now())))
 	lc.rotate(cfg.FracSize, wg)
 	if cfg.OffloadingEnabled {
 		lc.offloadLocal(ctx, cfg.TotalSize, cfg.OffloadingRetryDelay, wg)

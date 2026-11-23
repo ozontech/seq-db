@@ -309,6 +309,13 @@ func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount 
 	f.info.DocsRaw += sizeCount
 }
 
+func (f *Active) SetEpoch(epoch uint64) {
+	f.infoMu.Lock()
+	defer f.infoMu.Unlock()
+
+	f.info.Epoch = epoch
+}
+
 func (f *Active) String() string {
 	return fracToString(f, "active")
 }

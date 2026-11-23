@@ -38,6 +38,12 @@ type Config struct {
 	OffloadingRemoteTotalSize uint64
 
 	CompactionEnabled bool
+
+	EpochEnabled      bool
+	EpochPeriod       time.Duration
+	EpochMaxFractions int
+	// TODO(dkharms): Not a setting. Derive it from filter files on startup.
+	EpochLowerBound uint64
 }
 
 func FillConfigWithDefault(config *Config) *Config {
