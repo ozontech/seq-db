@@ -60,7 +60,7 @@ func TestAggHour(t *testing.T) {
 func TestAggValuesToQPR(t *testing.T) {
 	values := []string{"a", "b"}
 
-	t.Run("compressed columns", func(t *testing.T) {
+	t.Run("columns", func(t *testing.T) {
 		tokens := seq.NewStringColumn(len(values))
 		for _, v := range values {
 			tokens.AppendString(v)
@@ -131,7 +131,7 @@ func TestAggValuesToQPR(t *testing.T) {
 		assert.ErrorContains(t, err, "not enough data")
 	})
 
-	t.Run("compressed mids", func(t *testing.T) {
+	t.Run("mids", func(t *testing.T) {
 		tokens := seq.NewStringColumn(len(values))
 		for _, v := range values {
 			tokens.AppendString(v)
@@ -282,13 +282,6 @@ func TestAggValuesToQPRAllColumns(t *testing.T) {
 			require.Equal(t, values.UniqueIDs.Len(), agg.Values.UniqueIDs.Len())
 		})
 	}
-}
-
-func arrayColumnRows(offsets []int) int {
-	if len(offsets) == 0 {
-		return 0
-	}
-	return len(offsets) - 1
 }
 
 func TestResponseToQPRLegacyAggregation(t *testing.T) {

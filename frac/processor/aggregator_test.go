@@ -53,19 +53,19 @@ func TestSingleSourceCountAggregator(t *testing.T) {
 
 func TestSortAggBinCounts(t *testing.T) {
 	rows := []aggBinCount{
-		{token: "a", mid: 1},
-		{token: "b", mid: 2},
-		{token: "a", mid: 2},
-		{token: "b", mid: consts.DummyMID},
+		{AggBin: seq.AggBin{Token: "a", MID: 1}},
+		{AggBin: seq.AggBin{Token: "b", MID: 2}},
+		{AggBin: seq.AggBin{Token: "a", MID: 2}},
+		{AggBin: seq.AggBin{Token: "b", MID: consts.DummyMID}},
 	}
 
 	sortAggBinCounts(rows)
 
 	require.Equal(t, []aggBinCount{
-		{token: "a", mid: 2},
-		{token: "b", mid: 2},
-		{token: "a", mid: 1},
-		{token: "b", mid: consts.DummyMID},
+		{AggBin: seq.AggBin{Token: "a", MID: 2}},
+		{AggBin: seq.AggBin{Token: "b", MID: 2}},
+		{AggBin: seq.AggBin{Token: "a", MID: 1}},
+		{AggBin: seq.AggBin{Token: "b", MID: consts.DummyMID}},
 	}, rows)
 }
 

@@ -690,6 +690,175 @@ func (s *IntegrationTestSuite) TestAgg() {
 		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[1], "y1"), "wrong doc count")
 	}
 
+	const (
+		bucketNum     = 5
+		docsPerBucket = 10
+	)
+	bulkDataset := func(prefix string, level func(bucket, i int) int) {
+		docs := make([]string, 0, bucketNum*docsPerBucket)
+		for bucket := range bucketNum {
+			service := fmt.Sprintf("%s-%d", prefix, bucket)
+			for i := range docsPerBucket {
+				docs = append(docs, fmt.Sprintf(`{"service":%q,"level":%d}`, service, level(bucket, i)))
+			}
+		}
+
+		bulksNum := getBulkIterationsNum(env)
+		if bulksNum >= 2 && rand.Intn(2) == 0 {
+			bulksNum = 2
+		}
+		chunks := make([][]string, bulksNum)
+		for i, doc := range docs {
+			chunks[i%bulksNum] = append(chunks[i%bulksNum], doc)
+		}
+		for _, chunk := range chunks {
+			setup.Bulk(t, env.IngestorBulkAddr(), chunk)
+		}
+		env.WaitIdle()
+	}
+
+	searchAgg := func(prefix string, aggQuery search.AggQuery) seq.AggregatableSamples {
+		query := fmt.Sprintf(`service:%s-*`, prefix)
+		qpr, _, err := env.Search(query, 1, setup.WithAggQuery(aggQuery), setup.NoFetch())
+		require.NoError(t, err)
+		require.Len(t, qpr.Aggs, 1)
+		require.Nil(t, qpr.Aggs[0].MIDs)
+		return qpr.Aggs[0]
+	}
+
+	aggregateBuckets := func(agg seq.AggregatableSamples, args seq.AggregateArgs) map[string]seq.AggregationBucket {
+		t.Helper()
+		result := agg.Aggregate(args)
+		require.Len(t, result.Buckets, bucketNum)
+		require.Zero(t, result.NotExists)
+
+		buckets := make(map[string]seq.AggregationBucket, bucketNum)
+		for _, bucket := range result.Buckets {
+			buckets[bucket.Name] = bucket
+		}
+		return buckets
+	}
+
+	requireValues := func(agg seq.AggregatableSamples, fn seq.AggFunc, prefix string, want func(bucket int) float64) {
+		t.Helper()
+		buckets := aggregateBuckets(agg, seq.AggregateArgs{Func: fn})
+		for bucket := range bucketNum {
+			name := fmt.Sprintf("%s-%d", prefix, bucket)
+			require.Equal(t, want(bucket), buckets[name].Value)
+		}
+	}
+
+	t.Run("count", func(t *testing.T) {
+		prefix := "aggregation-count"
+		bulkDataset(prefix, func(bucket, i int) int { return i })
+
+		agg := searchAgg(prefix, search.AggQuery{GroupBy: "service", Func: seq.AggFuncCount})
+		requireValues(agg, seq.AggFuncCount, prefix, func(int) float64 { return docsPerBucket })
+	})
+
+	t.Run("sum", func(t *testing.T) {
+		prefix := "aggregation-sum"
+		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:   "level",
+			GroupBy: "service",
+			Func:    seq.AggFuncSum,
+		})
+		requireValues(agg, seq.AggFuncSum, prefix, func(bucket int) float64 {
+			return float64(bucket*docsPerBucket*docsPerBucket) + 45
+		})
+	})
+
+	t.Run("min", func(t *testing.T) {
+		prefix := "aggregation-min"
+		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:   "level",
+			GroupBy: "service",
+			Func:    seq.AggFuncMin,
+		})
+		requireValues(agg, seq.AggFuncMin, prefix, func(bucket int) float64 {
+			return float64(bucket * docsPerBucket)
+		})
+	})
+
+	t.Run("max", func(t *testing.T) {
+		prefix := "aggregation-max"
+		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:   "level",
+			GroupBy: "service",
+			Func:    seq.AggFuncMax,
+		})
+		requireValues(agg, seq.AggFuncMax, prefix, func(bucket int) float64 {
+			return float64((bucket+1)*docsPerBucket - 1)
+		})
+	})
+
+	t.Run("avg", func(t *testing.T) {
+		prefix := "aggregation-avg"
+		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:   "level",
+			GroupBy: "service",
+			Func:    seq.AggFuncAvg,
+		})
+		requireValues(agg, seq.AggFuncAvg, prefix, func(bucket int) float64 {
+			return float64(bucket*docsPerBucket) + 4.5
+		})
+	})
+
+	t.Run("quantile", func(t *testing.T) {
+		prefix := "aggregation-quantile"
+		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:     "level",
+			GroupBy:   "service",
+			Func:      seq.AggFuncQuantile,
+			Quantiles: []float64{0.5},
+		})
+		buckets := aggregateBuckets(agg, seq.AggregateArgs{
+			Func:      seq.AggFuncQuantile,
+			Quantiles: []float64{0.5},
+		})
+		for bucket := range bucketNum {
+			name := fmt.Sprintf("%s-%d", prefix, bucket)
+			require.Equal(t, float64(bucket*docsPerBucket+5), buckets[name].Value)
+			require.Equal(t, []float64{float64(bucket*docsPerBucket + 5)}, buckets[name].Quantiles)
+		}
+	})
+
+	t.Run("unique", func(t *testing.T) {
+		prefix := "aggregation-unique"
+		bulkDataset(prefix, func(bucket, i int) int { return i % bucketNum })
+
+		agg := searchAgg(prefix, search.AggQuery{GroupBy: "level", Func: seq.AggFuncUnique})
+		buckets := aggregateBuckets(agg, seq.AggregateArgs{Func: seq.AggFuncUnique})
+		for bucket := range bucketNum {
+			name := strconv.Itoa(bucket)
+			require.Contains(t, buckets, name)
+			require.Zero(t, buckets[name].Value)
+		}
+	})
+
+	t.Run("unique_count", func(t *testing.T) {
+		prefix := "aggregation-unique-count"
+		bulkDataset(prefix, func(bucket, i int) int { return i % bucketNum })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:   "level",
+			GroupBy: "service",
+			Func:    seq.AggFuncUniqueCount,
+		})
+		requireValues(agg, seq.AggFuncUniqueCount, prefix, func(int) float64 { return bucketNum })
+		require.NotEmpty(t, agg.ValuesPool)
+	})
+
 	env.SealAll()
 
 	for _, withTotal := range []bool{true, false} {
@@ -1023,183 +1192,6 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 			delete(levelStrings, val)
 		}
 		require.Empty(t, levelStrings)
-	})
-}
-
-func (s *IntegrationTestSuite) TestAggregation() {
-	t := s.T()
-
-	env := setup.NewTestingEnv(s.Config)
-	defer env.StopAll()
-
-	const (
-		bucketNum     = 5
-		docsPerBucket = 10
-	)
-	bulkDataset := func(prefix string, level func(bucket, i int) int) {
-		docs := make([]string, 0, bucketNum*docsPerBucket)
-		for bucket := range bucketNum {
-			service := fmt.Sprintf("%s-%d", prefix, bucket)
-			for i := range docsPerBucket {
-				docs = append(docs, fmt.Sprintf(`{"service":%q,"level":%d}`, service, level(bucket, i)))
-			}
-		}
-
-		bulksNum := getBulkIterationsNum(env)
-		// force less bulks so that sometimes some stores will return empty QPRs
-		if bulksNum >= 2 && rand.Intn(2) == 0 {
-			bulksNum = 2
-		}
-		chunks := make([][]string, bulksNum)
-		for i, doc := range docs {
-			chunks[i%bulksNum] = append(chunks[i%bulksNum], doc)
-		}
-		for _, chunk := range chunks {
-			setup.Bulk(t, env.IngestorBulkAddr(), chunk)
-		}
-		env.WaitIdle()
-	}
-
-	searchAgg := func(prefix string, aggQuery search.AggQuery) seq.AggregatableSamples {
-		query := fmt.Sprintf(`service:%s-*`, prefix)
-		qpr, _, err := env.Search(query, 1, setup.WithAggQuery(aggQuery), setup.NoFetch())
-		require.NoError(t, err)
-		require.Len(t, qpr.Aggs, 1)
-		require.Nil(t, qpr.Aggs[0].MIDs)
-		return qpr.Aggs[0]
-	}
-
-	aggregateBuckets := func(agg seq.AggregatableSamples, args seq.AggregateArgs) map[string]seq.AggregationBucket {
-		t.Helper()
-		result := agg.Aggregate(args)
-		require.Len(t, result.Buckets, bucketNum)
-		require.Zero(t, result.NotExists)
-
-		buckets := make(map[string]seq.AggregationBucket, bucketNum)
-		for _, bucket := range result.Buckets {
-			buckets[bucket.Name] = bucket
-		}
-		return buckets
-	}
-
-	requireValues := func(agg seq.AggregatableSamples, fn seq.AggFunc, prefix string, want func(bucket int) float64) {
-		t.Helper()
-		buckets := aggregateBuckets(agg, seq.AggregateArgs{Func: fn})
-		for bucket := range bucketNum {
-			name := fmt.Sprintf("%s-%d", prefix, bucket)
-			require.Equal(t, want(bucket), buckets[name].Value)
-		}
-	}
-
-	t.Run("count", func(t *testing.T) {
-		prefix := "aggregation-count"
-		bulkDataset(prefix, func(bucket, i int) int { return i })
-
-		agg := searchAgg(prefix, search.AggQuery{GroupBy: "service", Func: seq.AggFuncCount})
-		requireValues(agg, seq.AggFuncCount, prefix, func(int) float64 { return docsPerBucket })
-	})
-
-	t.Run("sum", func(t *testing.T) {
-		prefix := "aggregation-sum"
-		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
-
-		agg := searchAgg(prefix, search.AggQuery{
-			Field:   "level",
-			GroupBy: "service",
-			Func:    seq.AggFuncSum,
-		})
-		requireValues(agg, seq.AggFuncSum, prefix, func(bucket int) float64 {
-			return float64(bucket*docsPerBucket*docsPerBucket) + 45
-		})
-	})
-
-	t.Run("min", func(t *testing.T) {
-		prefix := "aggregation-min"
-		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
-
-		agg := searchAgg(prefix, search.AggQuery{
-			Field:   "level",
-			GroupBy: "service",
-			Func:    seq.AggFuncMin,
-		})
-		requireValues(agg, seq.AggFuncMin, prefix, func(bucket int) float64 {
-			return float64(bucket * docsPerBucket)
-		})
-	})
-
-	t.Run("max", func(t *testing.T) {
-		prefix := "aggregation-max"
-		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
-
-		agg := searchAgg(prefix, search.AggQuery{
-			Field:   "level",
-			GroupBy: "service",
-			Func:    seq.AggFuncMax,
-		})
-		requireValues(agg, seq.AggFuncMax, prefix, func(bucket int) float64 {
-			return float64((bucket+1)*docsPerBucket - 1)
-		})
-	})
-
-	t.Run("avg", func(t *testing.T) {
-		prefix := "aggregation-avg"
-		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
-
-		agg := searchAgg(prefix, search.AggQuery{
-			Field:   "level",
-			GroupBy: "service",
-			Func:    seq.AggFuncAvg,
-		})
-		requireValues(agg, seq.AggFuncAvg, prefix, func(bucket int) float64 {
-			return float64(bucket*docsPerBucket) + 4.5
-		})
-	})
-
-	t.Run("quantile", func(t *testing.T) {
-		prefix := "aggregation-quantile"
-		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
-
-		agg := searchAgg(prefix, search.AggQuery{
-			Field:     "level",
-			GroupBy:   "service",
-			Func:      seq.AggFuncQuantile,
-			Quantiles: []float64{0.5},
-		})
-		buckets := aggregateBuckets(agg, seq.AggregateArgs{
-			Func:      seq.AggFuncQuantile,
-			Quantiles: []float64{0.5},
-		})
-		for bucket := range bucketNum {
-			name := fmt.Sprintf("%s-%d", prefix, bucket)
-			require.Equal(t, float64(bucket*docsPerBucket+5), buckets[name].Value)
-			require.Equal(t, []float64{float64(bucket*docsPerBucket + 5)}, buckets[name].Quantiles)
-		}
-	})
-
-	t.Run("unique", func(t *testing.T) {
-		prefix := "aggregation-unique"
-		bulkDataset(prefix, func(bucket, i int) int { return i % bucketNum })
-
-		agg := searchAgg(prefix, search.AggQuery{GroupBy: "level", Func: seq.AggFuncUnique})
-		buckets := aggregateBuckets(agg, seq.AggregateArgs{Func: seq.AggFuncUnique})
-		for bucket := range bucketNum {
-			name := strconv.Itoa(bucket)
-			require.Contains(t, buckets, name)
-			require.Zero(t, buckets[name].Value)
-		}
-	})
-
-	t.Run("unique_count", func(t *testing.T) {
-		prefix := "aggregation-unique-count"
-		bulkDataset(prefix, func(bucket, i int) int { return i % bucketNum })
-
-		agg := searchAgg(prefix, search.AggQuery{
-			Field:   "level",
-			GroupBy: "service",
-			Func:    seq.AggFuncUniqueCount,
-		})
-		requireValues(agg, seq.AggFuncUniqueCount, prefix, func(int) float64 { return bucketNum })
-		require.NotEmpty(t, agg.ValuesPool)
 	})
 }
 

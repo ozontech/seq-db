@@ -531,7 +531,7 @@ func unmarshalAggregatableSamplesV3(q *seq.AggregatableSamples, src []byte) ([]b
 		agg.MIDs = mids
 	}
 
-	agg.Values, src, err = unmarshalAggValues(src, fn, int(rows))
+	agg.Values, src, err = unmarshalAggValues(src, fn)
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +584,7 @@ func unmarshalFloat64Column(src []byte) (seq.Float64Column, []byte, error) {
 	return column, tail, nil
 }
 
-func unmarshalAggValues(src []byte, fn seq.AggFunc, rows int) (seq.AggValues, []byte, error) {
+func unmarshalAggValues(src []byte, fn seq.AggFunc) (seq.AggValues, []byte, error) {
 	values := seq.NewAggValuesFromSamples(fn, nil)
 	var err error
 	values.Totals, src, err = unmarshalInt64Column(src)

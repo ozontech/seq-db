@@ -234,24 +234,20 @@ type sourceCounter interface {
 }
 
 type aggBinCount struct {
-	token string
-	mid   seq.MID
+	seq.AggBin
 	count int64
 }
 
 func sortAggBinCounts(rows []aggBinCount) {
 	slices.SortFunc(rows, func(left, right aggBinCount) int {
-		return cmp.Or(
-			cmp.Compare(right.mid, left.mid),
-			cmp.Compare(left.token, right.token),
-		)
+		return seq.CompareAggBin(left.AggBin, right.AggBin)
 	})
 }
 
 func aggSamplesFromCounts(rows []aggBinCount) seq.AggregatableSamples {
 	result := seq.NewAggregatableSamples(seq.AggFuncCount, 1, len(rows))
 	for i := range rows {
-		result.AppendSamples([]string{rows[i].token}, rows[i].mid, seq.SamplesContainer{Total: rows[i].count})
+		result.AppendSamples([]string{rows[i].Token}, rows[i].MID, seq.SamplesContainer{Total: rows[i].count})
 	}
 	return *result
 }
@@ -286,16 +282,20 @@ func (c *plainSourceCounter) get(group SourcedIterator) []aggBinCount {
 	bins := make([]aggBinCount, 0, sources)
 	for source, cnt := range c.countBySource.all() {
 		bins = append(bins, aggBinCount{
-			token: group.ValueBySource(source),
-			mid:   consts.DummyMID,
+			AggBin: seq.AggBin{
+				Token: group.ValueBySource(source),
+				MID:   consts.DummyMID,
+			},
 			count: int64(cnt),
 		})
 	}
 
 	if c.notExistsCnt > 0 {
 		bins = append(bins, aggBinCount{
-			token: "_not_exists",
-			mid:   consts.DummyMID,
+			AggBin: seq.AggBin{
+				Token: "_not_exists",
+				MID:   consts.DummyMID,
+			},
 			count: c.notExistsCnt,
 		})
 	}
@@ -337,8 +337,10 @@ func (c *tsSourceCounter) get(group SourcedIterator) []aggBinCount {
 	rows := make([]aggBinCount, 0, sources)
 	for source, bin := range c.counts.all() {
 		rows = append(rows, aggBinCount{
-			token: group.ValueBySource(source),
-			mid:   bin.MID,
+			AggBin: seq.AggBin{
+				Token: group.ValueBySource(source),
+				MID:   bin.MID,
+			},
 			count: int64(bin.count),
 		})
 	}
@@ -347,8 +349,10 @@ func (c *tsSourceCounter) get(group SourcedIterator) []aggBinCount {
 	// we also have to spread [notExists] across different time bins.
 	if c.notExistsCnt > 0 {
 		rows = append(rows, aggBinCount{
-			token: "_not_exists",
-			mid:   consts.DummyMID,
+			AggBin: seq.AggBin{
+				Token: "_not_exists",
+				MID:   consts.DummyMID,
+			},
 			count: c.notExistsCnt,
 		})
 	}

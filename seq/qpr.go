@@ -264,17 +264,6 @@ func (q *AggregatableSamples) AppendSamples(tokens []string, mid MID, samples Sa
 	q.Values.appendRow(&samples)
 }
 
-func (q *AggregatableSamples) AppendRowBytes(tokens [][]byte, mid MID, samples SamplesContainer) {
-	if len(tokens) != len(q.Tokens) {
-		return
-	}
-	for i, token := range tokens {
-		q.Tokens[i].Append(token)
-	}
-	q.appendMID(mid)
-	q.Values.appendRow(&samples)
-}
-
 func (q *AggregatableSamples) appendMID(mid MID) {
 	if mid == consts.DummyMID && q.MIDs == nil {
 		return
@@ -303,7 +292,7 @@ func (q *AggregatableSamples) Count() int {
 }
 
 func (q *AggregatableSamples) RowMID(idx int) MID {
-	if q.MIDs == nil || idx >= q.MIDs.Len() {
+	if q.MIDs == nil {
 		return consts.DummyMID
 	}
 	return MID(q.MIDs.At(idx))
