@@ -1,4 +1,4 @@
-package frac
+package active
 
 import (
 	"bytes"
@@ -16,8 +16,7 @@ import (
 
 	"github.com/ozontech/seq-db/bytespool"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
-	"github.com/ozontech/seq-db/indexwriter"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
@@ -30,10 +29,10 @@ type (
 )
 
 type ActiveSealingSource struct {
-	params common.SealParams // Sealing parameters
+	params frac.SealParams // Sealing parameters
 
-	info    *common.Info // fraction Info
-	created time.Time    // Creation time of the source
+	info    *frac.Info // fraction Info
+	created time.Time  // Creation time of the source
 
 	blocksOffsets []uint64 // Document block offsets
 
@@ -54,7 +53,7 @@ type ActiveSealingSource struct {
 	docsReader   storage.DocsReader    // Document storage reader
 }
 
-func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSealingSource, error) {
+func NewActiveSealingSource(active *Active, params frac.SealParams) (*ActiveSealingSource, error) {
 	info := *active.info // copy
 
 	sortedLIDs := active.GetAllDocuments()
@@ -125,20 +124,20 @@ func sortFields(tl *TokenList) ([]string, [][]uint32) {
 	return fields, fieldTIDs
 }
 
-func (src *ActiveSealingSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
-	return func(yield func(indexwriter.DocLocation, error) bool) {
+func (src *ActiveSealingSource) IDs() iter.Seq2[frac.DocLocation, error] {
+	return func(yield func(frac.DocLocation, error) bool) {
 		mids := src.mids.vals
 		rids := src.rids.vals
 
 		// System ID and DocPos are not stored in `src.sortedLIDs`.
 		// However we do have to yield them to preserve 1-based indexing for ids.
-		dloc := indexwriter.DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}
+		dloc := frac.DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}
 		if !yield(dloc, nil) {
 			return
 		}
 
 		for i, lid := range src.sortedLIDs {
-			dloc := indexwriter.DocLocation{
+			dloc := frac.DocLocation{
 				First: seq.ID{
 					MID: seq.MID(mids[lid]),
 					RID: seq.RID(rids[lid]),
@@ -185,12 +184,12 @@ func (src *ActiveSealingSource) prepareLids() {
 	}
 }
 
-func (src *ActiveSealingSource) Info() *common.Info {
+func (src *ActiveSealingSource) Info() *frac.Info {
 	return src.info
 }
 
-func (src *ActiveSealingSource) TokenTriplets() iter.Seq2[string, iter.Seq2[indexwriter.TokenLIDs, error]] {
-	return func(yield func(string, iter.Seq2[indexwriter.TokenLIDs, error]) bool) {
+func (src *ActiveSealingSource) TokenTriplets() iter.Seq2[string, iter.Seq2[frac.TokenLIDs, error]] {
+	return func(yield func(string, iter.Seq2[frac.TokenLIDs, error]) bool) {
 		for idx, field := range src.fields {
 			if !yield(field, src.postingsForField(field, idx)) {
 				return
@@ -199,9 +198,9 @@ func (src *ActiveSealingSource) TokenTriplets() iter.Seq2[string, iter.Seq2[inde
 	}
 }
 
-func (src *ActiveSealingSource) postingsForField(field string, idx int) iter.Seq2[indexwriter.TokenLIDs, error] {
+func (src *ActiveSealingSource) postingsForField(field string, idx int) iter.Seq2[frac.TokenLIDs, error] {
 	var lidsbuf []uint32
-	return func(yield func(indexwriter.TokenLIDs, error) bool) {
+	return func(yield func(frac.TokenLIDs, error) bool) {
 		for _, tid := range src.fieldTIDs[idx] {
 			token := src.tokens[tid]
 
@@ -212,7 +211,7 @@ func (src *ActiveSealingSource) postingsForField(field string, idx int) iter.Seq
 				lidsbuf = append(lidsbuf, src.oldToNewLIDs[lid])
 			}
 
-			tpost := indexwriter.TokenLIDs{First: token, Second: lidsbuf}
+			tpost := frac.TokenLIDs{First: token, Second: lidsbuf}
 			if !yield(tpost, nil) {
 				return
 			}

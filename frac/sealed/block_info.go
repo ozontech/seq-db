@@ -6,14 +6,14 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 )
 
 const seqDBMagic = "SEQM"
 
 type BlockInfo struct {
-	Info *common.Info
+	Info *frac.Info
 }
 
 func (b *BlockInfo) Pack(buf []byte) []byte {
@@ -33,7 +33,7 @@ func (b *BlockInfo) Unpack(data []byte) error {
 		return errors.New("seq-db index file header corrupted")
 	}
 
-	b.Info = &common.Info{}
+	b.Info = &frac.Info{}
 	if err := json.Unmarshal(data[4:], b.Info); err != nil {
 		return errors.New("stats unmarshaling error")
 	}

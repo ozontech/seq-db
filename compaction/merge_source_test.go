@@ -13,8 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/ozontech/seq-db/frac/common"
-	"github.com/ozontech/seq-db/indexwriter"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
 )
 
@@ -26,8 +25,8 @@ type mockSealingSource struct {
 	fields     map[string]map[string][]uint32
 }
 
-func (m *mockSealingSource) Info() *common.Info {
-	return &common.Info{
+func (m *mockSealingSource) Info() *frac.Info {
+	return &frac.Info{
 		DocsRaw:    m.docsOnDisk,
 		DocsTotal:  uint32(len(m.ids)),
 		DocsOnDisk: m.docsOnDisk,
@@ -48,15 +47,15 @@ func (m *mockSealingSource) BlockOffsets() []uint64 {
 	return m.blocks
 }
 
-func (m *mockSealingSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
-	return func(yield func(indexwriter.DocLocation, error) bool) {
-		docloc := indexwriter.DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}
+func (m *mockSealingSource) IDs() iter.Seq2[frac.DocLocation, error] {
+	return func(yield func(frac.DocLocation, error) bool) {
+		docloc := frac.DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}
 		if !yield(docloc, nil) {
 			return
 		}
 
 		for i, id := range m.ids {
-			docloc = indexwriter.DocLocation{First: id, Second: m.pos[i]}
+			docloc = frac.DocLocation{First: id, Second: m.pos[i]}
 			if !yield(docloc, nil) {
 				return
 			}
@@ -64,14 +63,14 @@ func (m *mockSealingSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
 	}
 }
 
-func (m *mockSealingSource) TokenTriplets() iter.Seq2[string, iter.Seq2[indexwriter.TokenLIDs, error]] {
+func (m *mockSealingSource) TokenTriplets() iter.Seq2[string, iter.Seq2[frac.TokenLIDs, error]] {
 	fields := make([]string, 0, len(m.fields))
 	for f := range m.fields {
 		fields = append(fields, f)
 	}
 
 	slices.Sort(fields)
-	return func(yield func(string, iter.Seq2[indexwriter.TokenLIDs, error]) bool) {
+	return func(yield func(string, iter.Seq2[frac.TokenLIDs, error]) bool) {
 		for _, field := range fields {
 			if !yield(field, m.postingsForField(field)) {
 				return
@@ -80,8 +79,8 @@ func (m *mockSealingSource) TokenTriplets() iter.Seq2[string, iter.Seq2[indexwri
 	}
 }
 
-func (m *mockSealingSource) postingsForField(field string) iter.Seq2[indexwriter.TokenLIDs, error] {
-	return func(yield func(indexwriter.TokenLIDs, error) bool) {
+func (m *mockSealingSource) postingsForField(field string) iter.Seq2[frac.TokenLIDs, error] {
+	return func(yield func(frac.TokenLIDs, error) bool) {
 		tokens := make([]string, 0, len(m.fields[field]))
 		for t := range m.fields[field] {
 			tokens = append(tokens, t)
@@ -89,7 +88,7 @@ func (m *mockSealingSource) postingsForField(field string) iter.Seq2[indexwriter
 
 		slices.Sort(tokens)
 		for _, tok := range tokens {
-			posting := indexwriter.TokenLIDs{
+			posting := frac.TokenLIDs{
 				First:  []byte(tok),
 				Second: m.fields[field][tok],
 			}

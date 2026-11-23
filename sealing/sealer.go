@@ -6,19 +6,16 @@ import (
 	"path/filepath"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed"
+
 	"github.com/ozontech/seq-db/indexwriter"
 	"github.com/ozontech/seq-db/util"
 )
 
-// Source defines the contract for data sources that can be sealed.
-// Provides access to all necessary data components for index creation.
-type Source = indexwriter.Source
-
 // Seal writes five index files (.info, .token, .offsets, .id, .lid) for the fraction
 // and returns PreloadedData for fast initialization of the sealed fraction.
-func Seal(src Source, params common.SealParams) (*sealed.PreloadedData, error) {
+func Seal(src frac.Source, params frac.SealParams) (*sealed.PreloadedData, error) {
 	info := src.Info()
 	info.ConstRegularBlockSize = params.TokenBlockSize
 	if info.ConstRegularBlockSize == 0 {

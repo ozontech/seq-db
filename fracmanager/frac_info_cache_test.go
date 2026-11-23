@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	testscommon "github.com/ozontech/seq-db/tests/common"
 )
 
@@ -21,13 +21,13 @@ func loadFracCacheContent(dataDir string) ([]byte, error) {
 	return content, err
 }
 
-func loadFracCache(dataDir string) (map[string]*common.Info, error) {
+func loadFracCache(dataDir string) (map[string]*frac.Info, error) {
 	content, err := loadFracCacheContent(dataDir)
 	if err != nil {
 		return nil, err
 	}
 
-	fracCache := make(map[string]*common.Info)
+	fracCache := make(map[string]*frac.Info)
 	err = json.Unmarshal(content, &fracCache)
 	if err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func TestRemoveFraction(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, contents, []byte("{}"))
 
-	newInfo := &common.Info{
+	newInfo := &frac.Info{
 		Path:                  "/data/c",
 		Ver:                   "1.3",
 		DocsTotal:             0,
@@ -138,7 +138,7 @@ func TestRemoveFraction(t *testing.T) {
 
 	m, err := loadFracCache(dataDir)
 	assert.NoError(t, err)
-	expected := map[string]*common.Info{"c": newInfo}
+	expected := map[string]*frac.Info{"c": newInfo}
 
 	assert.Equal(t, expected, m)
 	f.Remove("c")
@@ -162,7 +162,7 @@ func TestWriteToDisk(t *testing.T) {
 	f := NewFracInfoCache(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 	f.LoadFromDisk(filepath.Join(dataDir, consts.FracCacheFileSuffix))
 
-	newInfo := &common.Info{
+	newInfo := &frac.Info{
 		Path:                  "/data/c",
 		Ver:                   "1.3",
 		DocsTotal:             0,
@@ -229,7 +229,7 @@ func TestUnusedFractionsCleanup(t *testing.T) {
 	err := writeToFracCache(dataDir, consts.FracCacheFileSuffix, dummyFracFixture)
 	assert.NoError(t, err)
 
-	expected := map[string]*common.Info{}
+	expected := map[string]*frac.Info{}
 
 	cacheFile := filepath.Join(dataDir, consts.FracCacheFileSuffix)
 	diskFracCache := NewFracInfoCacheFromDisk(cacheFile)

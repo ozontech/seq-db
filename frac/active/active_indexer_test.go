@@ -1,4 +1,4 @@
-package frac_test
+package active_test
 
 import (
 	"bytes"
@@ -14,11 +14,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/RoaringBitmap/roaring/v2"
+
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/indexer"
+
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric/stopwatch"
+	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/tests/common"
@@ -78,16 +83,28 @@ func getTestProcessor() *indexer.Processor {
 	return indexer.NewProcessor(mapping, tokenizers, 0, 0)
 }
 
+type testSkipMaskProvider struct{}
+
+func (testSkipMaskProvider) GetIDsIteratorByFrac(string, uint32, uint32, bool) (node.Node, bool, func() error, error) {
+	return nil, false, nil, nil
+}
+
+func (testSkipMaskProvider) GetIDsBitmapByFrac(string, uint32, uint32) (*roaring.Bitmap, error) {
+	return nil, nil
+}
+
+func (testSkipMaskProvider) RemoveFrac(string) {}
+
 func BenchmarkIndexer(b *testing.B) {
 	logger.SetLevel(zapcore.FatalLevel)
-	idx, stop := frac.NewActiveIndexer(8, 8)
+	idx, stop := active.NewActiveIndexer(8, 8)
 	defer stop()
 
 	allLogs, err := readFileAllAtOnce(filepath.Join(common.TestDataDir, "k8s.logs"))
 	readers := splitLogsToBulks(allLogs, 1000)
 	assert.NoError(b, err)
 
-	active := frac.NewActive(
+	fr := active.NewActive(
 		filepath.Join(b.TempDir(), "test"),
 		idx,
 		storage.NewReadLimiter(1, nil),
@@ -111,17 +128,17 @@ func BenchmarkIndexer(b *testing.B) {
 		wg := sync.WaitGroup{}
 		for _, meta := range bulks {
 			wg.Add(1)
-			idx.Index(active, meta, &wg, stopwatch.New())
+			idx.Index(fr, meta, &wg, stopwatch.New())
 		}
 		wg.Wait()
 	}
 }
 
 func TestIndexerDuplicateIDWithinBulk(t *testing.T) {
-	idx, stop := frac.NewActiveIndexer(1, 1)
+	idx, stop := active.NewActiveIndexer(1, 1)
 	defer stop()
 
-	active := frac.NewActive(
+	fr := active.NewActive(
 		filepath.Join(t.TempDir(), "test"),
 		idx,
 		storage.NewReadLimiter(1, nil),
@@ -130,7 +147,7 @@ func TestIndexerDuplicateIDWithinBulk(t *testing.T) {
 		&frac.Config{},
 		testSkipMaskProvider{},
 	)
-	defer active.Release()
+	defer fr.Release()
 
 	processor := getTestProcessor()
 	docs := [][]byte{
@@ -160,10 +177,10 @@ func TestIndexerDuplicateIDWithinBulk(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	idx.Index(active, storage.CompressWalBlock(raw, nil, 3), &wg, stopwatch.New())
+	idx.Index(fr, storage.CompressWalBlock(raw, nil, 3), &wg, stopwatch.New())
 	wg.Wait()
 
-	assert.Equal(t, uint32(2), active.Info().DocsTotal)
-	assert.Equal(t, active.Info().DocsTotal, active.MIDs.Len()-1)
-	assert.Len(t, active.GetAllDocuments(), int(active.Info().DocsTotal))
+	assert.Equal(t, uint32(2), fr.Info().DocsTotal)
+	assert.Equal(t, fr.Info().DocsTotal, fr.MIDs.Len()-1)
+	assert.Len(t, fr.GetAllDocuments(), int(fr.Info().DocsTotal))
 }

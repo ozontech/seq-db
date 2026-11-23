@@ -7,7 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 )
 
@@ -83,11 +83,11 @@ func (lc *lifecycleManager) SyncInfoCache() {
 // rotate checks if active fraction needs rotation based on size limit.
 // Creates new active fraction and starts sealing the previous one.
 func (lc *lifecycleManager) rotate(maxSize uint64, wg *sync.WaitGroup) {
-	active, waitBeforeSealing, err := lc.registry.rotateIfFull(maxSize, lc.provider)
+	a, waitBeforeSealing, err := lc.registry.rotateIfFull(maxSize, lc.provider)
 	if err != nil {
 		logger.Fatal("active fraction rotation error", zap.Error(err))
 	}
-	if active == nil {
+	if a == nil {
 		return
 	}
 
@@ -98,14 +98,14 @@ func (lc *lifecycleManager) rotate(maxSize uint64, wg *sync.WaitGroup) {
 		defer lc.sealingWg.Done()
 
 		waitBeforeSealing()
-		sealed, err := lc.provider.Seal(active.Active)
+		s, err := lc.provider.Seal(a.Active)
 		if err != nil {
 			logger.Fatal("sealing error", zap.Error(err))
 		}
 
-		lc.infoCache.Add(sealed.Info())
-		lc.registry.promoteToSealed(active, sealed)
-		active.Destroy()
+		lc.infoCache.Add(s.Info())
+		lc.registry.promoteToSealed(a, s)
+		a.Destroy()
 	}()
 }
 
@@ -116,32 +116,32 @@ func (lc *lifecycleManager) offloadLocal(ctx context.Context, sizeLimit uint64, 
 	if err != nil {
 		logger.Fatal("error releasing old fractions:", zap.Error(err))
 	}
-	for _, frac := range toOffload {
+	for _, s := range toOffload {
 		wg.Add(1)
-		_, err := lc.tasks.Run(frac.BaseFileName, ctx, func(ctx context.Context) {
+		_, err := lc.tasks.Run(s.BaseFileName, ctx, func(ctx context.Context) {
 			defer wg.Done()
 
-			remote := lc.offloadWithRetry(ctx, frac.Sealed, retryDelay)
+			r := lc.offloadWithRetry(ctx, s.Sealed, retryDelay)
 
-			lc.registry.promoteToRemote(frac, remote)
+			lc.registry.promoteToRemote(s, r)
 
-			if remote == nil {
-				lc.infoCache.Remove(frac.Info().Name())
+			if r == nil {
+				lc.infoCache.Remove(s.Info().Name())
 				logger.Info("do not offload local fraction",
-					zap.String("name", frac.Info().Name()),
-					zap.Time("created", time.UnixMilli(int64(frac.Info().CreationTime))))
+					zap.String("name", s.Info().Name()),
+					zap.Time("created", time.UnixMilli(int64(s.Info().CreationTime))))
 			} else {
 				logger.Info("offload local fraction",
-					zap.String("name", remote.Info().Name()),
-					zap.Time("created", time.UnixMilli(int64(remote.Info().CreationTime))))
+					zap.String("name", r.Info().Name()),
+					zap.Time("created", time.UnixMilli(int64(r.Info().CreationTime))))
 			}
 
 			// free up local resources
-			frac.Destroy()
+			s.Destroy()
 			maintenanceTruncateTotal.Add(1)
 			logger.Info("remove local fraction",
-				zap.String("name", frac.Info().Name()),
-				zap.Time("created", time.UnixMilli(int64(frac.Info().CreationTime))))
+				zap.String("name", s.Info().Name()),
+				zap.Time("created", time.UnixMilli(int64(s.Info().CreationTime))))
 		})
 		if err != nil {
 			panic(err) // we do not expect error here
@@ -151,17 +151,17 @@ func (lc *lifecycleManager) offloadLocal(ctx context.Context, sizeLimit uint64, 
 
 // OffloadWithRetry attempts to offload a fraction with retries until success or cancellation.
 // Returns the remote fraction instance and a boolean indicating whether offloading was not canceled.
-func (lc *lifecycleManager) offloadWithRetry(ctx context.Context, sealed *frac.Sealed, retryDelay time.Duration) *frac.Remote {
+func (lc *lifecycleManager) offloadWithRetry(ctx context.Context, s *sealed.Sealed, retryDelay time.Duration) *sealed.Remote {
 	start := time.Now()
 	for i := 0; ; i++ {
-		remote, err := lc.tryOffload(ctx, sealed)
+		r, err := lc.tryOffload(ctx, s)
 		if err == nil {
-			return remote
+			return r
 		}
 
 		logger.Warn(
 			"fail to offload fraction",
-			zap.String("name", sealed.BaseFileName),
+			zap.String("name", s.BaseFileName),
 			zap.Duration("offloading_time", time.Since(start)),
 			zap.Int("attempts", i),
 			zap.Error(err),
@@ -171,7 +171,7 @@ func (lc *lifecycleManager) offloadWithRetry(ctx context.Context, sealed *frac.S
 		case <-ctx.Done():
 			logger.Info(
 				"fraction offloading was stopped",
-				zap.String("name", sealed.BaseFileName),
+				zap.String("name", s.BaseFileName),
 				zap.Duration("offloading_time", time.Since(start)),
 				zap.Int("attempts", i),
 				zap.Error(ctx.Err()),
@@ -185,9 +185,9 @@ func (lc *lifecycleManager) offloadWithRetry(ctx context.Context, sealed *frac.S
 
 // tryOffload performs a single offload attempt and records metrics.
 // Measures offloading duration and tracks success/failure statistics.
-func (lc *lifecycleManager) tryOffload(ctx context.Context, sealed *frac.Sealed) (*frac.Remote, error) {
+func (lc *lifecycleManager) tryOffload(ctx context.Context, s *sealed.Sealed) (*sealed.Remote, error) {
 	now := time.Now()
-	remote, err := lc.provider.Offload(ctx, sealed)
+	r, err := lc.provider.Offload(ctx, s)
 	offloadingDuration := time.Since(now).Seconds()
 
 	if err != nil {
@@ -199,7 +199,7 @@ func (lc *lifecycleManager) tryOffload(ctx context.Context, sealed *frac.Sealed)
 	offloadingTotal.WithLabelValues("success").Inc()
 	offloadingDurationSeconds.Observe(float64(offloadingDuration))
 
-	return remote, nil
+	return r, nil
 }
 
 // cleanRemote deletes outdated remote fractions based on retention policy.
@@ -255,13 +255,13 @@ func (lc *lifecycleManager) updateOldestMetric() {
 // Stops ongoing offloading tasks and cleans up both local and remote resources.
 func (lc *lifecycleManager) removeOverflowed(sizeLimit uint64, wg *sync.WaitGroup) {
 	evicted := lc.registry.evictOverflowed(sizeLimit)
-	for _, sealed := range evicted {
+	for _, s := range evicted {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			// Cancel the offloading task - this operation may take significant time
 			// hence executed in a separate goroutine to avoid blocking
-			lc.tasks.Cancel(sealed.BaseFileName)
+			lc.tasks.Cancel(s.BaseFileName)
 		}()
 	}
 }

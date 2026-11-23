@@ -13,6 +13,7 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
@@ -43,7 +44,7 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 	FillConfigWithDefault(cfg)
 
 	readLimiter := storage.NewReadLimiter(config.ReaderWorkers, storeBytesRead)
-	idx, stopIdx := frac.NewActiveIndexer(config.IndexWorkers, config.IndexWorkers)
+	idx, stopIdx := active.NewActiveIndexer(config.IndexWorkers, config.IndexWorkers)
 	cache := NewCacheMaintainer(cfg.CacheSize, cfg.SortCacheSize, newDefaultCacheMetrics())
 	provider := newFractionProvider(cfg, s3cli, cache, readLimiter, idx, skipMaskProvider)
 	infoCache := NewFracInfoCache(filepath.Join(cfg.DataDir, consts.FracCacheFileSuffix))
@@ -114,8 +115,8 @@ type CompactionSnapshot struct {
 	claimed []*refCountedSealed
 }
 
-func (cs *CompactionSnapshot) Fractions() []*frac.Sealed {
-	result := make([]*frac.Sealed, len(cs.claimed))
+func (cs *CompactionSnapshot) Fractions() []*sealed.Sealed {
+	result := make([]*sealed.Sealed, len(cs.claimed))
 	for i, f := range cs.claimed {
 		result[i] = f.Sealed
 	}
@@ -132,7 +133,7 @@ func (fm *FracManager) FractionName() string {
 	return fm.lc.provider.fractionName()
 }
 
-func (fm *FracManager) SealedFractionsSnapshot() []*frac.Sealed {
+func (fm *FracManager) SealedFractionsSnapshot() []*sealed.Sealed {
 	return fm.lc.registry.sealedSnapshot()
 }
 
@@ -283,12 +284,12 @@ func startMaintWorker(ctx context.Context, cfg *Config, fm *FracManager, wg *syn
 }
 
 // SealOnShutdown seals the active fraction on storage shutdown
-func sealOnShutdown(active *frac.Active, provider *fractionProvider, minSealSize uint64) {
-	fracSize := active.Info().FullSize()
+func sealOnShutdown(a *active.Active, provider *fractionProvider, minSealSize uint64) {
+	fracSize := a.Info().FullSize()
 
 	if minSealSize == 0 {
 		logger.Info("sealing skipped: sealing on shutdown is disabled",
-			zap.String("frac", active.BaseFileName),
+			zap.String("frac", a.BaseFileName),
 			zap.Uint64("size_mb", uint64(util.SizeToUnit(fracSize, "mb"))),
 		)
 		return
@@ -296,19 +297,19 @@ func sealOnShutdown(active *frac.Active, provider *fractionProvider, minSealSize
 
 	if fracSize < minSealSize {
 		logger.Info("sealing skipped: fraction too small",
-			zap.String("frac", active.BaseFileName),
+			zap.String("frac", a.BaseFileName),
 			zap.Uint64("size_mb", uint64(util.SizeToUnit(fracSize, "mb"))),
 		)
 		return
 	}
 
 	logger.Info("fraction sealed before shutdown",
-		zap.String("frac", active.BaseFileName),
+		zap.String("frac", a.BaseFileName),
 		zap.Uint64("fill_size_mb", uint64(util.SizeToUnit(fracSize, "mb"))),
 	)
 
-	if _, err := provider.Seal(active); err != nil {
+	if _, err := provider.Seal(a); err != nil {
 		logger.Error("error sealing on shutdown", zap.Error(err))
 	}
-	active.Release()
+	a.Release()
 }

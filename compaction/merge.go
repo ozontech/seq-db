@@ -7,12 +7,12 @@ import (
 	"os"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/indexwriter"
 )
 
-func Merge(filename string, params common.SealParams, srcs ...Source) (*sealed.PreloadedData, error) {
+func Merge(filename string, params frac.SealParams, srcs ...Source) (*sealed.PreloadedData, error) {
 	w := indexwriter.New(params)
 	src := NewMergeSource(filename, srcs)
 

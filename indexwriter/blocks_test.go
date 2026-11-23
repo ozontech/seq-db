@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
@@ -23,8 +24,8 @@ type mockSource struct {
 	tokenLIDs    [][]uint32
 }
 
-func (m *mockSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenLIDs, error]] {
-	return func(yield func(string, iter.Seq2[TokenLIDs, error]) bool) {
+func (m *mockSource) TokenTriplet() iter.Seq2[string, iter.Seq2[frac.TokenLIDs, error]] {
+	return func(yield func(string, iter.Seq2[frac.TokenLIDs, error]) bool) {
 		start := 0
 		for i, field := range m.fields {
 			end := int(m.fieldMaxTIDs[i])
@@ -36,24 +37,24 @@ func (m *mockSource) TokenTriplet() iter.Seq2[string, iter.Seq2[TokenLIDs, error
 	}
 }
 
-func (m *mockSource) tokensForField(start, end int) iter.Seq2[TokenLIDs, error] {
-	return func(yield func(TokenLIDs, error) bool) {
+func (m *mockSource) tokensForField(start, end int) iter.Seq2[frac.TokenLIDs, error] {
+	return func(yield func(frac.TokenLIDs, error) bool) {
 		for j := start; j < end; j++ {
 			var lidsbuf []uint32
 			if j < len(m.tokenLIDs) {
 				lidsbuf = m.tokenLIDs[j]
 			}
-			if !yield(TokenLIDs{First: m.tokens[j], Second: lidsbuf}, nil) {
+			if !yield(frac.TokenLIDs{First: m.tokens[j], Second: lidsbuf}, nil) {
 				return
 			}
 		}
 	}
 }
 
-func (m *mockSource) ID() iter.Seq2[DocLocation, error] {
-	return func(yield func(DocLocation, error) bool) {
+func (m *mockSource) ID() iter.Seq2[frac.DocLocation, error] {
+	return func(yield func(frac.DocLocation, error) bool) {
 		for i, id := range m.ids {
-			if !yield(DocLocation{First: id, Second: m.pos[i]}, nil) {
+			if !yield(frac.DocLocation{First: id, Second: m.pos[i]}, nil) {
 				return
 			}
 		}

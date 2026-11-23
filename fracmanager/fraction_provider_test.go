@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/storage"
 	"github.com/ozontech/seq-db/storage/s3"
 )
@@ -37,7 +37,7 @@ func setupFractionProvider(t testing.TB, cfg *Config) (*fractionProvider, func()
 	cfg.SealParams.LIDBlockSize = int(64 * units.KB)
 	rl := storage.NewReadLimiter(1, nil)
 	s3cli, stopS3 := setupS3Client(t)
-	idx, stopIdx := frac.NewActiveIndexer(1, 1)
+	idx, stopIdx := active.NewActiveIndexer(1, 1)
 	cache := NewCacheMaintainer(uint64(units.MB), uint64(units.MB), nil)
 	provider := newFractionProvider(cfg, s3cli, cache, rl, idx, testSkipMaskProvider{})
 	return provider, func() {

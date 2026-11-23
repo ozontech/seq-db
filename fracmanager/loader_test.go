@@ -15,7 +15,8 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/active"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/seq"
 )
@@ -28,7 +29,7 @@ func setupLoaderTest(t testing.TB, cfg *Config) (*fractionProvider, *Loader, fun
 	return fp, loader, tearDown
 }
 
-func appendDocsToActive(t testing.TB, active *frac.Active, docCount int) {
+func appendDocsToActive(t testing.TB, a *active.Active, docCount int) {
 	dp := indexer.NewTestDocProvider()
 	for i := 1; i <= docCount; i++ {
 		doc := []byte("{\"timestamp\": 0, \"message\": \"msg\"}")
@@ -38,7 +39,7 @@ func appendDocsToActive(t testing.TB, active *frac.Active, docCount int) {
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	err := active.Append(docs, metas, &wg)
+	err := a.Append(docs, metas, &wg)
 	assert.NoError(t, err)
 	wg.Wait()
 }
@@ -51,26 +52,26 @@ func TestReplayWithEmptyActive(t *testing.T) {
 	defer tearDown()
 
 	// fill data
-	actives := make([]*frac.Active, 0, fracCount)
+	actives := make([]*active.Active, 0, fracCount)
 	for i := 0; i < fracCount; i++ {
-		active := fp.CreateActive()
-		appendDocsToActive(t, active, 500+rand.Intn(100))
-		actives = append(actives, active)
+		a := fp.CreateActive()
+		appendDocsToActive(t, a, 500+rand.Intn(100))
+		actives = append(actives, a)
 	}
 	actives = append(actives, fp.CreateActive()) // last active frac is now empty
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	a, sealedFracs, err := loader.replayAndSeal(t.Context(), actives)
 	assert.NoError(t, err)
 
 	// check
-	assert.Equal(t, fracCount, len(sealed), "should replay same number of fractions")
+	assert.Equal(t, fracCount, len(sealedFracs), "should replay same number of fractions")
 	for i := 0; i < fracCount; i++ {
-		assert.Equal(t, actives[i].Info().Name(), sealed[i].Info().Name(), "fraction %d should have same name", i)
-		assert.Equal(t, actives[i].Info().DocsTotal, sealed[i].Info().DocsTotal, "fraction %d should have same doc count", i)
+		assert.Equal(t, actives[i].Info().Name(), sealedFracs[i].Info().Name(), "fraction %d should have same name", i)
+		assert.Equal(t, actives[i].Info().DocsTotal, sealedFracs[i].Info().DocsTotal, "fraction %d should have same doc count", i)
 	}
-	assert.Equal(t, actives[fracCount].Info().Name(), active.Info().Name(), "last replayed fraction should have the same name as last fraction")
-	assert.Equal(t, uint32(0), active.Info().DocsTotal, "last fraction should have no documents")
+	assert.Equal(t, actives[fracCount].Info().Name(), a.Info().Name(), "last replayed fraction should have the same name as last fraction")
+	assert.Equal(t, uint32(0), a.Info().DocsTotal, "last fraction should have no documents")
 }
 
 func TestReplayWithMultipleEmpty(t *testing.T) {
@@ -81,29 +82,29 @@ func TestReplayWithMultipleEmpty(t *testing.T) {
 	defer tearDown()
 
 	// fill data
-	nonEmpty := make([]*common.Info, 0)
-	actives := make([]*frac.Active, 0, fracCount)
+	nonEmpty := make([]*frac.Info, 0)
+	actives := make([]*active.Active, 0, fracCount)
 	for i := 0; i < fracCount; i++ {
-		active := fp.CreateActive()
+		a := fp.CreateActive()
 		if i%3 == 0 {
-			appendDocsToActive(t, active, 500+rand.Intn(100))
-			nonEmpty = append(nonEmpty, active.Info())
+			appendDocsToActive(t, a, 500+rand.Intn(100))
+			nonEmpty = append(nonEmpty, a.Info())
 		}
-		actives = append(actives, active)
+		actives = append(actives, a)
 	}
 	actives = append(actives, fp.CreateActive()) // last active frac is now empty
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	a, sealedFracs, err := loader.replayAndSeal(t.Context(), actives)
 	assert.NoError(t, err)
 
 	// checks
-	assert.Equal(t, len(nonEmpty), len(sealed), "non empty frac count doesn't match")
+	assert.Equal(t, len(nonEmpty), len(sealedFracs), "non empty frac count doesn't match")
 	for i, info := range nonEmpty {
-		assert.Equal(t, info.Name(), sealed[i].Info().Name(), "fraction %d should have same name", i)
-		assert.Equal(t, info.DocsTotal, sealed[i].Info().DocsTotal, "fraction %d should have same doc count", i)
+		assert.Equal(t, info.Name(), sealedFracs[i].Info().Name(), "fraction %d should have same name", i)
+		assert.Equal(t, info.DocsTotal, sealedFracs[i].Info().DocsTotal, "fraction %d should have same doc count", i)
 	}
-	assert.Equal(t, uint32(0), active.Info().DocsTotal, "new active fraction should be empty")
+	assert.Equal(t, uint32(0), a.Info().DocsTotal, "new active fraction should be empty")
 }
 
 func TestReplayMultiple(t *testing.T) {
@@ -114,28 +115,28 @@ func TestReplayMultiple(t *testing.T) {
 	defer tearDown()
 
 	// fill data
-	actives := make([]*frac.Active, 0, fracCount)
+	actives := make([]*active.Active, 0, fracCount)
 	for i := 0; i < fracCount; i++ {
-		active := fp.CreateActive()
-		appendDocsToActive(t, active, 500+rand.Intn(100))
-		actives = append(actives, active)
+		a := fp.CreateActive()
+		appendDocsToActive(t, a, 500+rand.Intn(100))
+		actives = append(actives, a)
 	}
-	active := fp.CreateActive()
-	appendDocsToActive(t, active, 5)
-	actives = append(actives, active)
+	a := fp.CreateActive()
+	appendDocsToActive(t, a, 5)
+	actives = append(actives, a)
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	a, sealedFracs, err := loader.replayAndSeal(t.Context(), actives)
 	assert.NoError(t, err)
 
 	// checks
-	assert.Equal(t, len(actives), len(sealed)+1, "should replay same number of fractions")
+	assert.Equal(t, len(actives), len(sealedFracs)+1, "should replay same number of fractions")
 	for i := 0; i < fracCount; i++ {
-		assert.Equal(t, actives[i].Info().Name(), sealed[i].Info().Name(), "fraction %d should have the same name", i)
-		assert.Equal(t, actives[i].Info().DocsTotal, sealed[i].Info().DocsTotal, "fraction %d should have the same doc count", i)
+		assert.Equal(t, actives[i].Info().Name(), sealedFracs[i].Info().Name(), "fraction %d should have the same name", i)
+		assert.Equal(t, actives[i].Info().DocsTotal, sealedFracs[i].Info().DocsTotal, "fraction %d should have the same doc count", i)
 	}
-	assert.Equal(t, actives[fracCount].Info().Name(), active.Info().Name(), "new active fraction should have the same name")
-	assert.Equal(t, uint32(5), active.Info().DocsTotal, "new active fraction should not be empty")
+	assert.Equal(t, actives[fracCount].Info().Name(), a.Info().Name(), "new active fraction should have the same name")
+	assert.Equal(t, uint32(5), a.Info().DocsTotal, "new active fraction should not be empty")
 }
 
 func TestReplaySingleEmpty(t *testing.T) {
@@ -144,16 +145,16 @@ func TestReplaySingleEmpty(t *testing.T) {
 	defer tearDown()
 
 	// fill data: one empty fraction
-	actives := []*frac.Active{fp.CreateActive()}
+	actives := []*active.Active{fp.CreateActive()}
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	a, sealedFracs, err := loader.replayAndSeal(t.Context(), actives)
 	assert.NoError(t, err)
 
 	// checks
-	assert.Equal(t, len(sealed), 0, "no sealed")
-	assert.Equal(t, actives[0].Info().Name(), active.Info().Name(), "replayed fraction should have the same name")
-	assert.Equal(t, uint32(0), active.Info().DocsTotal, "no docs")
+	assert.Equal(t, len(sealedFracs), 0, "no sealed")
+	assert.Equal(t, actives[0].Info().Name(), a.Info().Name(), "replayed fraction should have the same name")
+	assert.Equal(t, uint32(0), a.Info().DocsTotal, "no docs")
 }
 
 func TestReplayContextCancel(t *testing.T) {
@@ -164,11 +165,11 @@ func TestReplayContextCancel(t *testing.T) {
 	defer tearDown()
 
 	// fill data
-	actives := make([]*frac.Active, 0, fracCount)
+	actives := make([]*active.Active, 0, fracCount)
 	for i := 0; i < fracCount; i++ {
-		active := fp.CreateActive()
-		appendDocsToActive(t, active, 500+rand.Intn(100))
-		actives = append(actives, active)
+		a := fp.CreateActive()
+		appendDocsToActive(t, a, 500+rand.Intn(100))
+		actives = append(actives, a)
 	}
 	actives = append(actives, fp.CreateActive())
 
@@ -189,16 +190,16 @@ func TestReplaySingleNonEmpty(t *testing.T) {
 	defer tearDown()
 
 	// fill data
-	actives := []*frac.Active{fp.CreateActive()}
+	actives := []*active.Active{fp.CreateActive()}
 	appendDocsToActive(t, actives[0], 500+rand.Intn(100))
 
 	// replay and seal
-	active, sealed, err := loader.replayAndSeal(t.Context(), actives)
+	a, sealedFracs, err := loader.replayAndSeal(t.Context(), actives)
 	assert.NoError(t, err)
 
-	assert.Equal(t, 0, len(sealed), "sealed should be empty")
-	assert.Equal(t, active.Info().Name(), actives[0].Info().Name(), "should have the same name")
-	assert.Equal(t, active.Info().DocsTotal, actives[0].Info().DocsTotal, "should have the same doc count for replayed frac")
+	assert.Equal(t, 0, len(sealedFracs), "sealed should be empty")
+	assert.Equal(t, a.Info().Name(), actives[0].Info().Name(), "should have the same name")
+	assert.Equal(t, a.Info().DocsTotal, actives[0].Info().DocsTotal, "should have the same doc count for replayed frac")
 }
 
 func TestDiscover(t *testing.T) {
@@ -209,7 +210,7 @@ func TestDiscover(t *testing.T) {
 	defer tearDown()
 
 	// make some sealed fracs
-	expectedSealed := map[string]*frac.Sealed{}
+	expectedSealed := map[string]*sealed.Sealed{}
 	for range fracCount {
 		a := fp.CreateActive()
 		appendDocsToActive(t, a, 10+rand.Intn(10))
@@ -219,7 +220,7 @@ func TestDiscover(t *testing.T) {
 	}
 
 	// make half sealed fracs remote
-	expectedRemote := map[string]*frac.Remote{}
+	expectedRemote := map[string]*sealed.Remote{}
 	for n, s := range expectedSealed {
 		if rand.Intn(2) != 0 {
 			continue
@@ -385,7 +386,7 @@ func TestDiscover_EmptyRemote_CacheLegacy(t *testing.T) {
 
 	// Add cached Info with BinaryDataVer < V3 (simulating legacy)
 	// and IndexOnDisk > 0 so NewRemote fast path (info.IndexOnDisk > 0) works.
-	cachedInfo := &common.Info{
+	cachedInfo := &frac.Info{
 		Path:          basePath,
 		DocsTotal:     r.Info().DocsTotal,
 		BinaryDataVer: config.BinaryDataV2, // < V3 — legacy
@@ -459,7 +460,7 @@ func TestLoadRemote_Legacy(t *testing.T) {
 	basePath := filepath.Join(fp.config.DataDir, baseName)
 
 	// Create cached Info with IndexOnDisk > 0 (legacy, fast path).
-	cachedInfo := &common.Info{
+	cachedInfo := &frac.Info{
 		Path:          basePath,
 		BinaryDataVer: config.BinaryDataV2,
 		DocsTotal:     100,

@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/ozontech/seq-db/config"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -48,7 +49,7 @@ type unpackedIDBlock struct {
 }
 
 func tokenBlock(
-	it iter.Seq2[string, iter.Seq2[TokenLIDs, error]],
+	it iter.Seq2[string, iter.Seq2[frac.TokenLIDs, error]],
 	accumulate func([]uint32) error, blockCapacity int, tokenFreqAbsThreshold int,
 ) iter.Seq2[tokenFieldBlock, error] {
 	return func(yield func(tokenFieldBlock, error) bool) {
@@ -183,7 +184,7 @@ func newTokenTableEntry(
 
 // idBlock accumulates scalar (ID, position) pairs into sealed ID blocks.
 // A new block is yielded every `blockCapacity` IDs.
-func idBlock(ids iter.Seq2[DocLocation, error], blockCapacity int) iter.Seq2[unpackedIDBlock, error] {
+func idBlock(ids iter.Seq2[frac.DocLocation, error], blockCapacity int) iter.Seq2[unpackedIDBlock, error] {
 	return func(yield func(unpackedIDBlock, error) bool) {
 		var block unpackedIDBlock
 

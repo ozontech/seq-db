@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/mappingprovider"
@@ -18,11 +17,11 @@ import (
 
 type fakeFrac struct {
 	frac.Fraction
-	info common.Info
+	info frac.Info
 	dp   fakeDP
 }
 
-func (f *fakeFrac) Info() *common.Info {
+func (f *fakeFrac) Info() *frac.Info {
 	return &f.info
 }
 
@@ -63,7 +62,7 @@ func TestAsyncSearcherMaintain(t *testing.T) {
 	}
 
 	fracs := fakeFractionProvider{
-		&fakeFrac{info: common.Info{Path: "1"}},
+		&fakeFrac{info: frac.Info{Path: "1"}},
 	}
 	r.NoError(as.StartSearch(req, fracs))
 
@@ -100,11 +99,11 @@ func TestMerge(t *testing.T) {
 			as := MustStartAsync(cfg, mp, nil)
 
 			frac1 := &fakeFrac{
-				info: common.Info{Path: "1", From: seq.TimeToMID(now.Add(-time.Minute * 11)), To: seq.TimeToMID(now.Add(-time.Minute * 6))},
+				info: frac.Info{Path: "1", From: seq.TimeToMID(now.Add(-time.Minute * 11)), To: seq.TimeToMID(now.Add(-time.Minute * 6))},
 				dp:   fakeDP{qpr: seq.QPR{IDs: []seq.IDSource{{ID: seq.ID{MID: 1}}}, Total: 1}},
 			}
 			frac2 := &fakeFrac{
-				info: common.Info{Path: "2", From: seq.TimeToMID(now.Add(-time.Minute * 6)), To: seq.TimeToMID(now.Add(-time.Minute * 1))},
+				info: frac.Info{Path: "2", From: seq.TimeToMID(now.Add(-time.Minute * 6)), To: seq.TimeToMID(now.Add(-time.Minute * 1))},
 				dp:   fakeDP{qpr: seq.QPR{IDs: []seq.IDSource{{ID: seq.ID{MID: 2}}}, Total: 1}},
 			}
 			provider := &fakeFractionProvider{frac1, frac2}
@@ -217,7 +216,7 @@ func TestAsyncSearchProgressCountsEmptyIntervals(t *testing.T) {
 
 	// Interval that produces no results, but it must be counted as processed
 	provider := &fakeFractionProvider{
-		&fakeFrac{info: common.Info{Path: "1", From: 0, To: seq.DurationToMID(defaultSearchInterval)}},
+		&fakeFrac{info: frac.Info{Path: "1", From: 0, To: seq.DurationToMID(defaultSearchInterval)}},
 	}
 
 	req := AsyncSearchRequest{
@@ -244,10 +243,10 @@ func TestAsyncSearchProgressCountsEmptyIntervals(t *testing.T) {
 // simulating the in-flight search being interrupted by cancellation.
 type blockingFrac struct {
 	frac.Fraction
-	info common.Info
+	info frac.Info
 }
 
-func (f *blockingFrac) Info() *common.Info {
+func (f *blockingFrac) Info() *frac.Info {
 	return &f.info
 }
 
@@ -270,7 +269,7 @@ func TestAsyncSearchCancelDoesNotSetError(t *testing.T) {
 	as := MustStartAsync(cfg, mp, nil)
 
 	provider := &fakeFractionProvider{
-		&blockingFrac{info: common.Info{Path: "1", From: 0, To: seq.DurationToMID(defaultSearchInterval)}},
+		&blockingFrac{info: frac.Info{Path: "1", From: 0, To: seq.DurationToMID(defaultSearchInterval)}},
 	}
 
 	req := AsyncSearchRequest{
@@ -299,10 +298,10 @@ func TestAsyncSearchCancelDoesNotSetError(t *testing.T) {
 // rangedFakeFrac intersects with a range only if its info does.
 type rangedFakeFrac struct {
 	frac.Fraction
-	info common.Info
+	info frac.Info
 }
 
-func (f *rangedFakeFrac) Info() *common.Info {
+func (f *rangedFakeFrac) Info() *frac.Info {
 	return &f.info
 }
 
@@ -328,8 +327,8 @@ func TestNarrowSearchInterval(t *testing.T) {
 	interval := seq.DurationToMID(defaultSearchInterval)
 
 	fracs := fracmanager.List{
-		&rangedFakeFrac{info: common.Info{Path: "1", From: interval, To: 2 * interval, DocsTotal: 1}},
-		&rangedFakeFrac{info: common.Info{Path: "2", From: 3 * interval, To: 4 * interval, DocsTotal: 1}},
+		&rangedFakeFrac{info: frac.Info{Path: "1", From: interval, To: 2 * interval, DocsTotal: 1}},
+		&rangedFakeFrac{info: frac.Info{Path: "2", From: 3 * interval, To: 4 * interval, DocsTotal: 1}},
 	}
 
 	tests := []struct {

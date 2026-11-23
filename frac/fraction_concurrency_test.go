@@ -18,8 +18,9 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/sealing"
@@ -67,10 +68,10 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	fracPath := filepath.Join(tmpDir, "test_fraction")
 	defer testcommon.RemoveDir(fracPath)
 
-	activeIndexer, stop := frac.NewActiveIndexer(numIndexWorkers, 1000)
+	activeIndexer, stop := active.NewActiveIndexer(numIndexWorkers, 1000)
 	defer stop()
 
-	active := frac.NewActive(
+	a := active.NewActive(
 		fracPath,
 		activeIndexer,
 		storage.NewReadLimiter(numReaders/2, nil),
@@ -134,7 +135,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 				docsBlock, metasBlock := compressor.DocsMetas()
 
 				wg.Add(1)
-				err = active.Append(docsBlock, metasBlock, &wg)
+				err = a.Append(docsBlock, metasBlock, &wg)
 				if err != nil {
 					return fmt.Errorf("writer %d: appending docs failed: %w", writerId, err)
 				}
@@ -151,7 +152,7 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 					}
 					searchParams.AST = ast.Root
 
-					_, err = active.Search(t.Context(), searchParams)
+					_, err = a.Search(t.Context(), searchParams)
 					if err != nil {
 						return err
 					}
@@ -165,12 +166,12 @@ func TestConcurrentAppendAndQuery(t *testing.T) {
 	err := writersGroup.Wait()
 	assert.NoError(t, err, "concurrent writers should complete without errors")
 
-	readTest(t, active, numReaders, numQueries, docs, fromTime, toTime, mapping)
+	readTest(t, a, numReaders, numQueries, docs, fromTime, toTime, mapping)
 
-	sealed, err := seal(active)
+	s, err := seal(a)
 	assert.NoError(t, err, "sealing error")
 
-	readTest(t, sealed, numReaders, numQueries, docs, fromTime, toTime, mapping)
+	readTest(t, s, numReaders, numQueries, docs, fromTime, toTime, mapping)
 }
 
 // TestConcurrentColdQueriesSealedFrac tests concurrent cold querying against a sealed fraction.
@@ -191,31 +192,31 @@ func TestConcurrentColdQueriesSealedFrac(t *testing.T) {
 	mapping := getTestMapping()
 	tokenizers := getTestTokenizers()
 
-	active, stop := createActiveFraction(fracPath, numIndexWorkers, numReaders)
-	fillActiveFraction(t, active, bulks, mapping, tokenizers, numWriters)
+	a, stop := createActiveFraction(fracPath, numIndexWorkers, numReaders)
+	fillActiveFraction(t, a, bulks, mapping, tokenizers, numWriters)
 	stop()
 
-	activeSealingSource, err := frac.NewActiveSealingSource(active, getTestSealParams())
+	activeSealingSource, err := active.NewActiveSealingSource(a, getTestSealParams())
 	assert.NoError(t, err)
 
 	preloaded, err := sealing.Seal(activeSealingSource, getTestSealParams())
 	assert.NoError(t, err)
-	active.Release()
+	a.Release()
 
 	for range numIterations {
-		sealed := frac.NewSealedPreloaded(
+		s := sealed.NewSealedPreloaded(
 			fracPath,
 			preloaded,
 			storage.NewReadLimiter(128, nil),
-			frac.NewIndexCache(),
+			sealed.NewIndexCache(),
 			cache.NewConcurrentCache[[]byte](nil, nil),
 			&frac.Config{},
 			testSkipMaskProvider{},
 		)
 
-		readTestUniqueQueries(t, sealed, numReaders, docs, toTime, mapping)
+		readTestUniqueQueries(t, s, numReaders, docs, toTime, mapping)
 
-		sealed.Release()
+		s.Release()
 	}
 }
 
@@ -238,8 +239,8 @@ func getTestTokenizers() map[seq.TokenizerType]tokenizer.Tokenizer {
 	}
 }
 
-func getTestSealParams() common.SealParams {
-	return common.SealParams{
+func getTestSealParams() frac.SealParams {
+	return frac.SealParams{
 		IDsZstdLevel:           1,
 		LIDsZstdLevel:          1,
 		TokenListZstdLevel:     1,
@@ -584,10 +585,10 @@ func generatesMessages(numMessages, bulkSize int, nestedIndexes bool) ([]*testDo
 	return docs, bulks, fromTime, toTime
 }
 
-func createActiveFraction(fracPath string, numIndexWorkers, numReaders int) (*frac.Active, func()) {
-	activeIndexer, stop := frac.NewActiveIndexer(numIndexWorkers, 1000)
+func createActiveFraction(fracPath string, numIndexWorkers, numReaders int) (*active.Active, func()) {
+	activeIndexer, stop := active.NewActiveIndexer(numIndexWorkers, 1000)
 
-	active := frac.NewActive(
+	a := active.NewActive(
 		fracPath,
 		activeIndexer,
 		storage.NewReadLimiter(numReaders/2, nil),
@@ -597,10 +598,10 @@ func createActiveFraction(fracPath string, numIndexWorkers, numReaders int) (*fr
 		testSkipMaskProvider{},
 	)
 
-	return active, stop
+	return a, stop
 }
 
-func fillActiveFraction(t *testing.T, active *frac.Active, bulks [][]string, mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, numWriters int) {
+func fillActiveFraction(t *testing.T, a *active.Active, bulks [][]string, mapping seq.Mapping, tokenizers map[seq.TokenizerType]tokenizer.Tokenizer, numWriters int) {
 	bulksPerWriter := len(bulks) / numWriters
 
 	writersGroup, writeCtx := errgroup.WithContext(t.Context())
@@ -641,7 +642,7 @@ func fillActiveFraction(t *testing.T, active *frac.Active, bulks [][]string, map
 				docsBlock, metasBlock := compressor.DocsMetas()
 
 				wg.Add(1)
-				err = active.Append(docsBlock, metasBlock, &wg)
+				err = a.Append(docsBlock, metasBlock, &wg)
 				if err != nil {
 					return fmt.Errorf("writer %d: appending docs failed: %w", writerId, err)
 				}
@@ -655,8 +656,8 @@ func fillActiveFraction(t *testing.T, active *frac.Active, bulks [][]string, map
 	assert.NoError(t, err, "filling active fraction should complete without errors")
 }
 
-func seal(active *frac.Active) (*frac.Sealed, error) {
-	activeSealingSource, err := frac.NewActiveSealingSource(active, getTestSealParams())
+func seal(a *active.Active) (*sealed.Sealed, error) {
+	activeSealingSource, err := active.NewActiveSealingSource(a, getTestSealParams())
 	if err != nil {
 		return nil, err
 	}
@@ -665,16 +666,16 @@ func seal(active *frac.Active) (*frac.Sealed, error) {
 		return nil, err
 	}
 
-	sealed := frac.NewSealedPreloaded(
-		active.BaseFileName,
+	s := sealed.NewSealedPreloaded(
+		a.BaseFileName,
 		preloaded,
 		storage.NewReadLimiter(128, nil),
-		frac.NewIndexCache(),
+		sealed.NewIndexCache(),
 		cache.NewConcurrentCache[[]byte](nil, nil),
 		&frac.Config{},
 		testSkipMaskProvider{},
 	)
 
-	active.Release()
-	return sealed, nil
+	a.Release()
+	return s, nil
 }

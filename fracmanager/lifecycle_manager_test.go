@@ -15,8 +15,8 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage/s3"
@@ -317,7 +317,7 @@ func addRemotes(lc *lifecycleManager, specs ...remoteSpec) {
 	now := time.Now()
 	for i, s := range specs {
 		name := fmt.Sprintf("frac_remote_%d_%d", now.UnixNano(), i)
-		info := common.NewInfo(name, max(s.size, 1)-1, 0)
+		info := frac.NewInfo(name, max(s.size, 1)-1, 0)
 		info.IndexOnDisk = 1
 
 		ts := now.Add(-time.Duration(s.minutesAgo) * time.Minute)
@@ -326,11 +326,11 @@ func addRemotes(lc *lifecycleManager, specs ...remoteSpec) {
 		// minute) - the eviction order comes from it
 		info.To = seq.MillisToMID(uint64(ts.UnixMilli()))
 
-		remote := frac.NewRemote(
+		remote := sealed.NewRemote(
 			context.Background(),
 			name,
 			nil,
-			frac.NewIndexCache(),
+			sealed.NewIndexCache(),
 			nil,
 			info,
 			&frac.Config{},
@@ -471,7 +471,7 @@ func TestEvictRemote(t *testing.T) {
 			addRemotes(lc, tt.specs...)
 
 			if tt.offloadingSize > 0 {
-				offloading := common.NewInfo("frac_offloading", tt.offloadingSize-1, 0)
+				offloading := frac.NewInfo("frac_offloading", tt.offloadingSize-1, 0)
 				offloading.IndexOnDisk = 1 // FullSize == offloadingSize
 
 				lc.registry.mu.Lock()

@@ -1,4 +1,4 @@
-package frac
+package sealed
 
 import (
 	"time"
@@ -6,8 +6,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/config"
-	"github.com/ozontech/seq-db/frac/common"
-	"github.com/ozontech/seq-db/frac/sealed"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/logger"
@@ -26,7 +25,7 @@ type LegacyLoader struct {
 
 // Load populates blocksData from a single legacy .index file.
 // It starts at block 1 (block 0 is the Info block, already read by loadHeader).
-func (l *LegacyLoader) Load(blocksData *sealed.BlocksData, info *common.Info, reader storage.IndexReader) {
+func (l *LegacyLoader) Load(blocksData *BlocksData, info *frac.Info, reader storage.IndexReader) {
 	t := time.Now()
 
 	l.reader = reader
@@ -77,7 +76,7 @@ func (l *LegacyLoader) skipSection() {
 }
 
 // loadIDs reads the BlockOffsets block and then scans MID/RID/Pos triplets.
-func (l *LegacyLoader) loadIDs(info *common.Info) (seqids.Table, []uint64, error) {
+func (l *LegacyLoader) loadIDs(info *frac.Info) (seqids.Table, []uint64, error) {
 	var buf []byte
 
 	data, _, err := l.reader.ReadIndexBlock(l.blockIndex, buf)
@@ -85,7 +84,7 @@ func (l *LegacyLoader) loadIDs(info *common.Info) (seqids.Table, []uint64, error
 		return seqids.Table{}, nil, err
 	}
 
-	var offsets sealed.BlockOffsets
+	var offsets BlockOffsets
 	if err := offsets.Unpack(data, info.BinaryDataVer); err != nil {
 		return seqids.Table{}, nil, err
 	}
@@ -178,12 +177,12 @@ type Loader struct {
 }
 
 // Load populates blocksData from the .offsets, .id, and .lid files.
-func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, readers IndexReaders) {
+func (l *Loader) Load(blocksData *BlocksData, info *frac.Info, readers IndexReaders) {
 	t := time.Now()
 
 	var (
 		err          error
-		blockOffsets sealed.BlockOffsets
+		blockOffsets BlockOffsets
 	)
 
 	blockOffsets, err = l.loadBlocksOffsets(readers.Offsets, info.BinaryDataVer)
@@ -217,17 +216,17 @@ func (l *Loader) Load(blocksData *sealed.BlocksData, info *common.Info, readers 
 func (l *Loader) loadBlocksOffsets(
 	r storage.IndexReader,
 	fracVer config.BinaryDataVersion,
-) (sealed.BlockOffsets, error) {
+) (BlockOffsets, error) {
 	data, _, err := r.ReadIndexBlock(0, l.buf)
 	l.buf = data
 
 	if err != nil {
-		return sealed.BlockOffsets{}, err
+		return BlockOffsets{}, err
 	}
 
-	var b sealed.BlockOffsets
+	var b BlockOffsets
 	if err := b.Unpack(data, fracVer); err != nil {
-		return sealed.BlockOffsets{}, err
+		return BlockOffsets{}, err
 	}
 
 	return b, nil
@@ -235,7 +234,7 @@ func (l *Loader) loadBlocksOffsets(
 
 // loadIDsTable scans block headers in the .id file to build seqids.Table.
 // Blocks are stored as (MIDs, RIDs, Pos) triplets; we only need MIDs headers.
-func (l *Loader) loadIDsTable(r storage.IndexReader, info *common.Info) seqids.Table {
+func (l *Loader) loadIDsTable(r storage.IndexReader, info *frac.Info) seqids.Table {
 	table := seqids.Table{
 		StartBlockIndex: 0,
 		IDsTotal:        info.DocsTotal + 1, // Increment by one for [seq.SystemID]

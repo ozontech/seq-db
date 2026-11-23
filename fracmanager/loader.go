@@ -9,7 +9,8 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 )
 
@@ -38,7 +39,7 @@ func NewLoader(config *Config, provider *fractionProvider, infoCache *fracInfoCa
 
 // Load is the main method for loading all fractions
 // Coordinates the entire process: discovery, validation, recovery, and ordering
-func (l *Loader) Load(ctx context.Context) (*fractionRegistry, []*frac.Remote, error) {
+func (l *Loader) Load(ctx context.Context) (*fractionRegistry, []*sealed.Remote, error) {
 	// Stage 1: Discover all fractions in filesystem
 	actives, locals, remotes, remotesRemoving, err := l.discover(ctx)
 	if err != nil {
@@ -46,20 +47,20 @@ func (l *Loader) Load(ctx context.Context) (*fractionRegistry, []*frac.Remote, e
 	}
 
 	// Stage 2: Replay active fractions and seal them
-	active, sealed, err := l.replayAndSeal(ctx, actives)
+	a, sealedFracs, err := l.replayAndSeal(ctx, actives)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Stage 3: Create new active fraction if no existing ones
-	if active == nil {
-		active = l.provider.CreateActive()
+	if a == nil {
+		a = l.provider.CreateActive()
 	}
 
 	// Stage 4: Combine all local fractions
-	locals = append(locals, sealed...)
+	locals = append(locals, sealedFracs...)
 
-	registry, err := NewFractionRegistry(active, locals, remotes)
+	registry, err := NewFractionRegistry(a, locals, remotes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -68,7 +69,7 @@ func (l *Loader) Load(ctx context.Context) (*fractionRegistry, []*frac.Remote, e
 
 // replayAndSeal replays active fractions and seals old ones
 // Key method for ensuring data consistency during restart
-func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*frac.Active, []*frac.Sealed, error) {
+func (l *Loader) replayAndSeal(ctx context.Context, actives []*active.Active) (*active.Active, []*sealed.Sealed, error) {
 	if len(actives) == 0 {
 		return nil, nil, nil
 	}
@@ -76,7 +77,7 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(l.config.ReplayWorkers)
 
-	sealed := make([]*frac.Sealed, len(actives)-1)
+	sealedFracs := make([]*sealed.Sealed, len(actives)-1)
 
 	for i, a := range actives[:len(actives)-1] {
 		g.Go(func() error {
@@ -95,7 +96,7 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 				return err
 			}
 			a.Release()
-			sealed[i] = s
+			sealedFracs[i] = s
 
 			return nil
 		})
@@ -109,14 +110,14 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 	}
 
 	n := 0
-	for i, s := range sealed { // skip empty
+	for i, s := range sealedFracs { // skip empty
 		if s != nil {
-			sealed[n] = sealed[i]
+			sealedFracs[n] = sealedFracs[i]
 			n++
 		}
 	}
 
-	return last, sealed[:n], nil
+	return last, sealedFracs[:n], nil
 }
 
 // discover discovers all fractions in filesystem
@@ -125,10 +126,10 @@ func (l *Loader) replayAndSeal(ctx context.Context, actives []*frac.Active) (*fr
 // (remote zombies) are returned in remotesRemoving: they are not
 // searchable, their partial remote files are deleted by the remote cleaner.
 func (l *Loader) discover(ctx context.Context) (
-	actives []*frac.Active,
-	locals []*frac.Sealed,
-	remotes []*frac.Remote,
-	remotesRemoving []*frac.Remote,
+	actives []*active.Active,
+	locals []*sealed.Sealed,
+	remotes []*sealed.Remote,
+	remotesRemoving []*sealed.Remote,
 	err error,
 ) {
 	manifests, err := analyzeFiles(l.scanFiles())
@@ -139,10 +140,10 @@ func (l *Loader) discover(ctx context.Context) (
 	total := len(manifests)
 	logProgress := progressLogger(time.Millisecond * 500)
 
-	actives = make([]*frac.Active, 0)
-	locals = make([]*frac.Sealed, 0, total)
-	remotes = make([]*frac.Remote, 0, total)
-	remotesRemoving = make([]*frac.Remote, 0)
+	actives = make([]*active.Active, 0)
+	locals = make([]*sealed.Sealed, 0, total)
+	remotes = make([]*sealed.Remote, 0, total)
+	remotesRemoving = make([]*sealed.Remote, 0)
 
 	loadedInfoCache := NewFracInfoCacheFromDisk(l.infoCache.fullPath)
 
@@ -175,7 +176,7 @@ func (l *Loader) discover(ctx context.Context) (
 }
 
 // loadSealed loads a sealed fraction using cache
-func (l *Loader) loadSealed(basePath string, loadedInfoCache *fracInfoCache) *frac.Sealed {
+func (l *Loader) loadSealed(basePath string, loadedInfoCache *fracInfoCache) *sealed.Sealed {
 	info, found := loadedInfoCache.Get(filepath.Base(basePath))
 	l.updateStats(found)
 
@@ -185,7 +186,7 @@ func (l *Loader) loadSealed(basePath string, loadedInfoCache *fracInfoCache) *fr
 }
 
 // loadRemote loads a remote fraction
-func (l *Loader) loadRemote(ctx context.Context, basePath string, loadedInfoCache *fracInfoCache) *frac.Remote {
+func (l *Loader) loadRemote(ctx context.Context, basePath string, loadedInfoCache *fracInfoCache) *sealed.Remote {
 	info, found := loadedInfoCache.Get(filepath.Base(basePath))
 	l.updateStats(found)
 

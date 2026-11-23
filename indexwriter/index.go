@@ -2,45 +2,19 @@ package indexwriter
 
 import (
 	"io"
-	"iter"
 	"math"
 
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
-	"github.com/ozontech/seq-db/util"
 	"github.com/ozontech/seq-db/zstd"
 )
-
-type (
-	DocLocation = util.Pair[seq.ID, seq.DocPos]
-	TokenLIDs   = util.Pair[[]byte, []uint32]
-)
-
-// Source defines the data required to write all index files for a fraction.
-type Source interface {
-	// Info returns metadata describing this source.
-	Info() *common.Info
-
-	// ID returns an iterator over stored document identifiers paired with
-	// their positions, in descending [seq.ID] order.
-	IDs() iter.Seq2[DocLocation, error]
-
-	// BlockOffsets returns byte offsets to each document block
-	// within this source's `.docs` file.
-	BlockOffsets() []uint64
-
-	// TokenTriplet iterates over fields in lexicographic order.
-	// For each field, it yields tokens (lexicographically sorted)
-	// paired with the local document ID list for that token.
-	TokenTriplets() iter.Seq2[string, iter.Seq2[TokenLIDs, error]]
-}
 
 // indexBlock is one compressed (or not) block with its registry metadata.
 type indexBlock struct {
@@ -56,7 +30,7 @@ func (i indexBlock) bin(pos int64) (storage.IndexBlockHeader, []byte) {
 }
 
 type IndexWriter struct {
-	params common.SealParams
+	params frac.SealParams
 
 	buf1       []byte
 	buf2       []byte
@@ -69,7 +43,7 @@ type IndexWriter struct {
 	tokenTable token.Table
 }
 
-func New(params common.SealParams) *IndexWriter {
+func New(params frac.SealParams) *IndexWriter {
 	lidsPacker := lids.NewBlockPacker()
 	if params.LIDsBitmapThreshold != 0 {
 		lidsPacker.LidsBitmapThreshold = params.LIDsBitmapThreshold
@@ -108,7 +82,7 @@ func (s *IndexWriter) IDsTable() seqids.Table {
 }
 
 // WriteOffsetsFile writes the .offsets file containing a single BlockOffsets block.
-func (s *IndexWriter) WriteOffsetsFile(ws io.WriteSeeker, src Source) error {
+func (s *IndexWriter) WriteOffsetsFile(ws io.WriteSeeker, src frac.Source) error {
 	w, err := newWriter(ws)
 	if err != nil {
 		return err
@@ -123,7 +97,7 @@ func (s *IndexWriter) WriteOffsetsFile(ws io.WriteSeeker, src Source) error {
 	return w.finalize()
 }
 
-func (s *IndexWriter) WriteIDFile(ws io.WriteSeeker, src Source) error {
+func (s *IndexWriter) WriteIDFile(ws io.WriteSeeker, src frac.Source) error {
 	w, err := newWriter(ws)
 	if err != nil {
 		return err
@@ -151,7 +125,7 @@ func (s *IndexWriter) WriteIDFile(ws io.WriteSeeker, src Source) error {
 	return w.finalize()
 }
 
-func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src Source) error {
+func (s *IndexWriter) WriteTokenTriplet(tws, lws io.WriteSeeker, src frac.Source) error {
 	tw, err := newWriter(tws)
 	if err != nil {
 		return err
@@ -214,7 +188,7 @@ func (s *IndexWriter) finalizeTokenFile(w *writer, allFieldsTables []token.Field
 	return w.finalize()
 }
 
-func (s *IndexWriter) WriteInfoFile(ws io.Writer, src Source) error {
+func (s *IndexWriter) WriteInfoFile(ws io.Writer, src frac.Source) error {
 	block := sealed.BlockInfo{Info: src.Info()}
 	_, err := ws.Write(s.packInfoBlock(block).payload)
 	return err

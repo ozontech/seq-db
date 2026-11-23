@@ -29,8 +29,9 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/frac/processor"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/parser"
@@ -96,9 +97,9 @@ type FractionTestSuite struct {
 	mapping       seq.Mapping
 	mappingYAML   []byte
 	tokenizers    map[seq.TokenizerType]tokenizer.Tokenizer
-	activeIndexer *frac.ActiveIndexer
+	activeIndexer *active.ActiveIndexer
 	stopIndexer   func()
-	sealParams    common.SealParams
+	sealParams    frac.SealParams
 
 	fraction frac.Fraction
 
@@ -106,7 +107,7 @@ type FractionTestSuite struct {
 }
 
 func (s *FractionTestSuite) SetupSuiteCommon() {
-	s.activeIndexer, s.stopIndexer = frac.NewActiveIndexer(4, 10)
+	s.activeIndexer, s.stopIndexer = active.NewActiveIndexer(4, 10)
 }
 
 func (s *FractionTestSuite) TearDownSuiteCommon() {
@@ -135,7 +136,7 @@ func (s *FractionTestSuite) SetupTestCommon() {
 	s.mapping, err = seq.ReadMapping(s.mappingYAML)
 	s.Require().NoError(err)
 
-	s.sealParams = common.SealParams{
+	s.sealParams = frac.SealParams{
 		IDsZstdLevel:           1,
 		LIDsZstdLevel:          1,
 		TokenListZstdLevel:     1,
@@ -2172,7 +2173,7 @@ func (s *FractionTestSuite) TestMIDDistribution() {
 
 	s.insertDocuments(docs)
 
-	_, ok := s.fraction.(*frac.Active)
+	_, ok := s.fraction.(*active.Active)
 	if ok {
 		s.Require().Nil(s.fraction.Info().Distribution, "active fraction has MID distribution")
 		return
@@ -2211,13 +2212,13 @@ func (s *FractionTestSuite) TestFractionInfo() {
 	s.Require().Equal(seq.MID(946731654000000000), info.To, "to doesn't match")
 
 	switch s.fraction.(type) {
-	case *frac.Active:
+	case *active.Active:
 		s.Require().True(info.MetaOnDisk >= uint64(250) && info.MetaOnDisk <= uint64(400),
 			"meta on disk doesn't match. actual value: %d", info.MetaOnDisk)
 		s.Require().Equal(uint64(0), info.IndexOnDisk, "index on disk doesn't match")
-	case *frac.Sealed:
+	case *sealed.Sealed:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
-	case *frac.Remote:
+	case *sealed.Remote:
 		s.Require().Equal(uint64(0), info.MetaOnDisk, "meta on disk doesn't match. actual value")
 	default:
 		s.Require().Fail("unsupported fraction type")
@@ -2711,10 +2712,10 @@ func (s *FractionTestSuite) AssertHist(
 	}
 }
 
-func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
+func (s *FractionTestSuite) newActive(bulks ...[]string) *active.Active {
 	baseName := filepath.Join(s.tmpDir, randomHex(12))
 
-	active := frac.NewActive(
+	a := active.NewActive(
 		baseName,
 		s.activeIndexer,
 		storage.NewReadLimiter(1, nil),
@@ -2751,34 +2752,34 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
 		docsBlock, metasBlock := compressor.DocsMetas()
 
 		wg.Add(1)
-		err = active.Append(docsBlock, metasBlock, &wg)
+		err = a.Append(docsBlock, metasBlock, &wg)
 		s.Require().NoError(err, "append to active failed")
 	}
 	wg.Wait()
-	return active
+	return a
 }
 
-func (s *FractionTestSuite) newSealed(bulks ...[]string) *frac.Sealed {
-	active := s.newActive(bulks...)
+func (s *FractionTestSuite) newSealed(bulks ...[]string) *sealed.Sealed {
+	a := s.newActive(bulks...)
 
-	activeSealingSource, err := frac.NewActiveSealingSource(active, s.sealParams)
+	activeSealingSource, err := active.NewActiveSealingSource(a, s.sealParams)
 	s.Require().NoError(err, "Sealing source creation failed")
 
 	preloaded, err := sealing.Seal(activeSealingSource, s.sealParams)
 	s.Require().NoError(err, "Sealing failed")
 
-	sealed := frac.NewSealedPreloaded(
-		active.BaseFileName,
+	sf := sealed.NewSealedPreloaded(
+		a.BaseFileName,
 		preloaded,
 		storage.NewReadLimiter(1, nil),
-		frac.NewIndexCache(),
+		sealed.NewIndexCache(),
 		cache.NewConcurrentCache[[]byte](nil, nil),
 		s.config,
 		testSkipMaskProvider{},
 	)
 
-	active.Release()
-	return sealed
+	a.Release()
+	return sf
 }
 
 /*
@@ -2804,8 +2805,8 @@ func (s *ActiveFractionTestSuite) SetupTest() {
 }
 
 func (s *ActiveFractionTestSuite) TearDownTest() {
-	if active, ok := s.fraction.(*frac.Active); ok {
-		active.Release()
+	if a, ok := s.fraction.(*active.Active); ok {
+		a.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Active type")
 	}
@@ -2822,7 +2823,7 @@ ActiveReplayedFractionTestSuite run tests for active fraction which was replayed
 */
 type ActiveReplayedFractionTestSuite struct {
 	FractionTestSuite
-	originalFrac *frac.Active
+	originalFrac *active.Active
 }
 
 func (s *ActiveReplayedFractionTestSuite) SetupSuite() {
@@ -2843,11 +2844,11 @@ func (s *ActiveReplayedFractionTestSuite) SetupTest() {
 	}
 }
 
-func (s *ActiveReplayedFractionTestSuite) Replay(f *frac.Active) frac.Fraction {
+func (s *ActiveReplayedFractionTestSuite) Replay(f *active.Active) frac.Fraction {
 	s.originalFrac = f
 	fracFileName := f.BaseFileName
 
-	replayedFrac := frac.NewActive(
+	replayedFrac := active.NewActive(
 		fracFileName,
 		s.activeIndexer,
 		storage.NewReadLimiter(1, nil),
@@ -2865,8 +2866,8 @@ func (s *ActiveReplayedFractionTestSuite) Replay(f *frac.Active) frac.Fraction {
 
 func (s *ActiveReplayedFractionTestSuite) TearDownTest() {
 	s.originalFrac.Release()
-	if active, ok := s.fraction.(*frac.Active); ok {
-		active.Release()
+	if a, ok := s.fraction.(*active.Active); ok {
+		a.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Active type")
 	}
@@ -2900,8 +2901,8 @@ func (s *SealedFractionTestSuite) SetupTest() {
 }
 
 func (s *SealedFractionTestSuite) TearDownTest() {
-	if sealed, ok := s.fraction.(*frac.Sealed); ok {
-		sealed.Release()
+	if sf, ok := s.fraction.(*sealed.Sealed); ok {
+		sf.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
 	}
@@ -2936,8 +2937,8 @@ func (s *SealedLoadedFractionTestSuite) SetupTest() {
 }
 
 func (s *SealedLoadedFractionTestSuite) TearDownTest() {
-	if sealed, ok := s.fraction.(*frac.Sealed); ok {
-		sealed.Release()
+	if sf, ok := s.fraction.(*sealed.Sealed); ok {
+		sf.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
 	}
@@ -2948,22 +2949,22 @@ func (s *SealedLoadedFractionTestSuite) TearDownSuite() {
 	s.TearDownSuiteCommon()
 }
 
-func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *frac.Sealed {
-	sealed := s.newSealed(bulks...)
-	sealed.Release()
+func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *sealed.Sealed {
+	fr := s.newSealed(bulks...)
+	fr.Release()
 
-	sealed = frac.NewSealed(
-		sealed.BaseFileName,
+	fr = sealed.NewSealed(
+		fr.BaseFileName,
 		storage.NewReadLimiter(1, nil),
-		frac.NewIndexCache(),
+		sealed.NewIndexCache(),
 		cache.NewConcurrentCache[[]byte](nil, nil),
 		nil,
 		s.config,
 		testSkipMaskProvider{},
 	)
 
-	s.fraction = sealed
-	return sealed
+	s.fraction = fr
+	return fr
 }
 
 /*
@@ -2995,8 +2996,8 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 		if s.fraction != nil {
 			s.Require().Fail("can insert docs only once")
 		}
-		sealed := s.newSealed(bulks...)
-		defer sealed.Suicide()
+		fr := s.newSealed(bulks...)
+		defer fr.Suicide()
 
 		s3cli, err := s3.NewClient(
 			s.s3server.URL,
@@ -3007,16 +3008,16 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 		)
 		s.Require().NoError(err, "s3 client setup failed")
 
-		err = sealed.Offload(context.Background(), s3.NewUploader(s3cli))
+		err = fr.Offload(context.Background(), s3.NewUploader(s3cli))
 		s.Require().NoError(err, "offload failed")
 
-		remoteFrac := frac.NewRemote(
+		remoteFrac := sealed.NewRemote(
 			context.Background(),
-			sealed.BaseFileName,
+			fr.BaseFileName,
 			storage.NewReadLimiter(1, nil),
-			frac.NewIndexCache(),
+			sealed.NewIndexCache(),
 			cache.NewConcurrentCache[[]byte](nil, nil),
-			sealed.Info(),
+			fr.Info(),
 			s.config,
 			s3cli,
 			testSkipMaskProvider{},
@@ -3027,7 +3028,7 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 }
 
 func (s *RemoteFractionTestSuite) TearDownTest() {
-	if remote, ok := s.fraction.(*frac.Remote); ok {
+	if remote, ok := s.fraction.(*sealed.Remote); ok {
 		s.Require().NoError(remote.Suicide(s.T().Context()))
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Remote type")
@@ -3061,8 +3062,8 @@ func (s *CompactedFractionTestSuite) SetupTest() {
 }
 
 func (s *CompactedFractionTestSuite) TearDownTest() {
-	if sealed, ok := s.fraction.(*frac.Sealed); ok {
-		sealed.Release()
+	if sf, ok := s.fraction.(*sealed.Sealed); ok {
+		sf.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
 	}
@@ -3075,7 +3076,7 @@ func (s *CompactedFractionTestSuite) TearDownSuite() {
 
 // newCompacted flattens all bulks into one doc list, splits it in half,
 // seals each half as a separate fraction, and merges them with compaction.Merge.
-func (s *CompactedFractionTestSuite) newCompacted(bulks ...[]string) *frac.Sealed {
+func (s *CompactedFractionTestSuite) newCompacted(bulks ...[]string) *sealed.Sealed {
 	// Flatten all documents because we are going to reorganize it.
 	var docs []string
 	for _, b := range bulks {
@@ -3105,16 +3106,16 @@ func (s *CompactedFractionTestSuite) newCompacted(bulks ...[]string) *frac.Seale
 
 		preloaded, err := compaction.Merge(
 			mergedBase, s.sealParams,
-			frac.NewSealedSource(merged),
-			frac.NewSealedSource(current),
+			sealed.NewSealedSource(merged),
+			sealed.NewSealedSource(current),
 		)
 
 		s.Require().NoError(err)
-		merged = frac.NewSealedPreloaded(
+		merged = sealed.NewSealedPreloaded(
 			mergedBase,
 			preloaded,
 			storage.NewReadLimiter(1, nil),
-			frac.NewIndexCache(),
+			sealed.NewIndexCache(),
 			cache.NewConcurrentCache[[]byte](nil, nil),
 			s.config,
 			testSkipMaskProvider{},
@@ -3173,8 +3174,8 @@ func (s *LegacySealedLoadedFractionTestSuite) SetupTest() {
 }
 
 func (s *LegacySealedLoadedFractionTestSuite) TearDownTest() {
-	if sealed, ok := s.fraction.(*frac.Sealed); ok {
-		sealed.Release()
+	if sf, ok := s.fraction.(*sealed.Sealed); ok {
+		sf.Release()
 	} else {
 		s.Require().Nil(s.fraction, "fraction is not of Sealed type")
 	}
@@ -3207,21 +3208,21 @@ func (s *LegacySealedLoadedFractionTestSuite) sealDocs(bulks ...[]string) string
 	return fracName
 }
 
-func (s *LegacySealedLoadedFractionTestSuite) newLegacySealedLoaded(bulks ...[]string) *frac.Sealed {
+func (s *LegacySealedLoadedFractionTestSuite) newLegacySealedLoaded(bulks ...[]string) *sealed.Sealed {
 	filename := s.sealDocs(bulks...)
 
-	sealed := frac.NewSealed(
+	fr := sealed.NewSealed(
 		filename,
 		storage.NewReadLimiter(1, nil),
-		frac.NewIndexCache(),
+		sealed.NewIndexCache(),
 		cache.NewConcurrentCache[[]byte](nil, nil),
 		nil,
 		s.config,
 		testSkipMaskProvider{},
 	)
 
-	s.fraction = sealed
-	return sealed
+	s.fraction = fr
+	return fr
 }
 
 func readerFromBulks(bulks ...[]string) io.Reader {
@@ -3270,18 +3271,18 @@ func TestLegacySealedFractionTestSuite(t *testing.T) {
 // and the deletion is retried by the next cleanup cycle.
 func (s *RemoteFractionTestSuite) TestSuicideDeletionOrder() {
 	s.insertDocuments([]string{`{"timestamp":"2000-01-01T13:00:00Z","service":"service_a","message":"m","level":"1"}`})
-	remote := s.fraction.(*frac.Remote)
+	remote := s.fraction.(*sealed.Remote)
 	s.fraction = nil // prevent TearDownTest from calling Suicide again
 
 	// Unsuccessful suicide: remote storage is unreachable, so the marker
 	// must be renamed to .remote.del (deletion intent) and stay on
 	// disk; the fraction is no longer searchable but recoverable.
 	failingS3 := s.newBrokenS3Client()
-	brokenRemote := frac.NewRemote(
+	brokenRemote := sealed.NewRemote(
 		context.Background(),
 		remote.BaseFileName,
 		storage.NewReadLimiter(1, nil),
-		frac.NewIndexCache(),
+		sealed.NewIndexCache(),
 		cache.NewConcurrentCache[[]byte](nil, nil),
 		remote.Info(),
 		s.config,

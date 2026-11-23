@@ -1,4 +1,4 @@
-package frac
+package sealed
 
 import (
 	"context"
@@ -6,11 +6,10 @@ import (
 	"hash/maphash"
 	"math"
 
-	"github.com/RoaringBitmap/roaring/v2"
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
@@ -25,16 +24,10 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-type skipMaskProvider interface {
-	GetIDsIteratorByFrac(fracName string, minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error)
-	GetIDsBitmapByFrac(fracName string, minLID, maxLID uint32) (*roaring.Bitmap, error)
-	RemoveFrac(fracName string)
-}
-
 type sealedDataProvider struct {
 	ctx    context.Context
-	info   *common.Info
-	config *Config
+	info   *frac.Info
+	config *frac.Config
 
 	exprTIDsCache cache.Cache[ExprTIDs]
 
@@ -53,7 +46,7 @@ type sealedDataProvider struct {
 	// This value is used in metrics to distinguish between operations over local and remote fractions.
 	fractionTypeLabel string
 
-	skipMaskProvider skipMaskProvider
+	skipMaskProvider frac.SkipMaskProvider
 }
 
 func (dp *sealedDataProvider) getIDsIndex() *sealedIDsIndex {
@@ -100,7 +93,7 @@ func (dp *sealedDataProvider) Fetch(ids []seq.ID, noSkipMasks bool) ([][]byte, e
 	sw := stopwatch.New()
 
 	defer sw.Export(
-		fetcherStagesSeconds,
+		frac.FetcherStagesSeconds,
 		stopwatch.SetLabel("fraction_type", dp.fractionTypeLabel),
 	)
 
@@ -128,7 +121,7 @@ func (dp *sealedDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	sw := stopwatch.New()
 
 	defer sw.Export(
-		fractionSearchMetric(params),
+		frac.SearchMetric(params),
 		stopwatch.SetLabel("fraction_type", dp.fractionTypeLabel),
 	)
 
@@ -411,7 +404,7 @@ type sealedFetchIndex struct {
 	fracName         string
 	idsIndex         *sealedIDsIndex
 	docsReader       *storage.DocsReader
-	skipMaskProvider skipMaskProvider
+	skipMaskProvider frac.SkipMaskProvider
 }
 
 func (fi *sealedFetchIndex) GetDocPos(ids []seq.ID, noSkipMasks bool) ([]seq.DocPos, error) {
@@ -504,7 +497,7 @@ func (fi *sealedFetchIndex) getDocPosByLIDs(localIDs []seq.LID) []seq.DocPos {
 type sealedSearchIndex struct {
 	*sealedIDsIndex
 	*sealedTokenIndex
-	skipMaskProvider skipMaskProvider
+	skipMaskProvider frac.SkipMaskProvider
 }
 
 func (si *sealedSearchIndex) GetSkipLIDs(minLID, maxLID uint32, reverse bool) (node.Node, bool, func() error, error) {

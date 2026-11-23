@@ -1,4 +1,4 @@
-package frac
+package active
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/metric"
@@ -26,15 +26,15 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-var _ Fraction = (*Active)(nil)
+var _ frac.Fraction = (*Active)(nil)
 
 type Active struct {
-	Config *Config
+	Config *frac.Config
 
 	BaseFileName string
 
 	infoMu sync.RWMutex
-	info   *common.Info
+	info   *frac.Info
 
 	MIDs *UInt64s
 	RIDs *UInt64s
@@ -58,7 +58,7 @@ type Active struct {
 	writer  *ActiveWriter
 	indexer *ActiveIndexer
 
-	skipMaskProvider skipMaskProvider
+	skipMaskProvider frac.SkipMaskProvider
 }
 
 func NewActive(
@@ -67,8 +67,8 @@ func NewActive(
 	readLimiter *storage.ReadLimiter,
 	docsCache *cache.ConcurrentCache[[]byte],
 	sortCache *cache.ConcurrentCache[[]byte],
-	cfg *Config,
-	skipMaskProvider skipMaskProvider,
+	cfg *frac.Config,
+	skipMaskProvider frac.SkipMaskProvider,
 ) *Active {
 	docsFile, docsStats := mustOpenFile(baseFileName+consts.DocsFileSuffix, config.SkipFsync)
 	walFile, writer, walReader, walSize := mustOpenWalWriter(baseFileName, readLimiter, docsFile, docsStats)
@@ -94,7 +94,7 @@ func NewActive(
 		writer:  writer,
 
 		BaseFileName: baseFileName,
-		info:         common.NewInfo(baseFileName, uint64(docsStats.Size()), walSize),
+		info:         frac.NewInfo(baseFileName, uint64(docsStats.Size()), walSize),
 		Config:       cfg,
 
 		skipMaskProvider: skipMaskProvider,
@@ -310,7 +310,7 @@ func (f *Active) UpdateStats(minMID, maxMID seq.MID, docCount uint32, sizeCount 
 }
 
 func (f *Active) String() string {
-	return fracToString(f, "active")
+	return frac.FractionToString(f, "active")
 }
 
 func (f *Active) Fetch(ctx context.Context, ids []seq.ID, noSkipMasks bool) ([][]byte, error) {
@@ -369,7 +369,7 @@ func (f *Active) createDataProvider(ctx context.Context) *activeDataProvider {
 	}
 }
 
-func (f *Active) Info() *common.Info {
+func (f *Active) Info() *frac.Info {
 	f.infoMu.RLock()
 	defer f.infoMu.RUnlock()
 

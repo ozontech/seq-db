@@ -4,7 +4,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/util"
 )
@@ -20,7 +20,7 @@ type fracsStats struct {
 	totalSizeOnDisk uint64 // Total storage size, including documents, index and metadata
 }
 
-func (s *fracsStats) Set(info *common.Info) {
+func (s *fracsStats) Set(info *frac.Info) {
 	s.count = 1
 	s.docsCount = uint64(info.DocsTotal)
 	s.docsSizeRaw = info.DocsRaw
@@ -31,7 +31,7 @@ func (s *fracsStats) Set(info *common.Info) {
 
 // Add incorporates fraction information into the statistics
 // Updates all aggregate metrics with the values from the provided fraction info
-func (s *fracsStats) Add(info *common.Info) {
+func (s *fracsStats) Add(info *frac.Info) {
 	s.count++
 	s.docsCount += uint64(info.DocsTotal)
 	s.docsSizeRaw += info.DocsRaw
@@ -42,7 +42,7 @@ func (s *fracsStats) Add(info *common.Info) {
 
 // Sub removes fraction information from the statistics
 // Decrements all aggregate metrics with the values from the provided fraction info
-func (s *fracsStats) Sub(info *common.Info) {
+func (s *fracsStats) Sub(info *frac.Info) {
 	s.count--
 	s.docsCount -= uint64(info.DocsTotal)
 	s.docsSizeRaw -= info.DocsRaw

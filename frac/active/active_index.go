@@ -1,11 +1,11 @@
-package frac
+package active
 
 import (
 	"context"
 	"math"
 	"slices"
 
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/metric/stopwatch"
@@ -17,8 +17,8 @@ import (
 
 type activeDataProvider struct {
 	ctx    context.Context
-	config *Config
-	info   *common.Info
+	config *frac.Config
+	info   *frac.Info
 
 	mids *UInt64s
 	rids *UInt64s
@@ -31,7 +31,7 @@ type activeDataProvider struct {
 
 	idsIndex *activeIDsIndex
 
-	skipMaskProvider skipMaskProvider
+	skipMaskProvider frac.SkipMaskProvider
 }
 
 func (dp *activeDataProvider) release() {
@@ -71,7 +71,7 @@ func (dp *activeDataProvider) Fetch(ids []seq.ID, noSkipMasks bool) ([][]byte, e
 	sw := stopwatch.New()
 
 	defer sw.Export(
-		fetcherStagesSeconds,
+		frac.FetcherStagesSeconds,
 		stopwatch.SetLabel("fraction_type", "active"),
 	)
 
@@ -118,7 +118,7 @@ func (dp *activeDataProvider) Search(params processor.SearchParams) (*seq.QPR, e
 	sw := stopwatch.New()
 
 	defer sw.Export(
-		fractionSearchMetric(params),
+		frac.SearchMetric(params),
 		stopwatch.SetLabel("fraction_type", "active"),
 	)
 
@@ -205,7 +205,7 @@ func (p *activeIDsIndex) LessOrEqual(lid seq.LID, id seq.ID) bool {
 type activeSearchIndex struct {
 	*activeIDsIndex
 	*activeTokenIndex
-	skipMaskProvider skipMaskProvider
+	skipMaskProvider frac.SkipMaskProvider
 	fracName         string
 }
 
@@ -299,7 +299,7 @@ type activeFetchIndex struct {
 	docsPositions    *DocsPositions
 	idsToLids        *ActiveLIDs
 	docsReader       *storage.DocsReader
-	skipMaskProvider skipMaskProvider
+	skipMaskProvider frac.SkipMaskProvider
 	fracName         string
 }
 
