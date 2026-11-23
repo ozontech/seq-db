@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
-
-	"github.com/ozontech/seq-db/query/encoding"
 )
 
 func TestAggregationBucketMarshalJSON(t *testing.T) {
@@ -152,74 +150,9 @@ func TestFetchAsyncSearchResultResponseMarshalJSON(t *testing.T) {
 func TestRecordMarshalJSON(t *testing.T) {
 	r := require.New(t)
 
-	t.Run("documents", func(t *testing.T) {
-		ns := time.Date(2025, 7, 8, 10, 19, 8, 742000000, time.UTC).UnixNano()
-		rec := &Record{RawData: [][]byte{
-			[]byte("46e48be997010000-e70163d0fa7582e4"),
-			encoding.Uint64ToBytes(uint64(ns)),
-			[]byte(`{"message":"some_message","level":3}`),
-		}}
-
-		raw, err := json.Marshal(rec)
-		r.NoError(err)
-		r.Equal(
-			`["46e48be997010000-e70163d0fa7582e4","2025-07-08T10:19:08.742Z",{"message":"some_message","level":3}]`,
-			string(raw),
-		)
-	})
-
-	t.Run("aggregation buckets", func(t *testing.T) {
-		tsNs := time.Date(2025, 7, 8, 10, 19, 8, 742000000, time.UTC).UnixNano()
-		rec := &Record{RawData: [][]byte{
-			[]byte("service-a"),
-			encoding.Float64ToBytes(42.5),
-			encoding.Uint64ToBytes(uint64(tsNs)),
-			encoding.Float64ArrayToBytes(nil), // no quantiles
-			encoding.Uint64ToBytes(7),
-		}}
-
-		raw, err := json.Marshal(rec)
-		r.NoError(err)
-		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z",[],7]`, string(raw))
-	})
-
-	t.Run("aggregation bucket with quantiles", func(t *testing.T) {
-		tsNs := time.Date(2025, 7, 8, 10, 19, 8, 742000000, time.UTC).UnixNano()
-		rec := &Record{RawData: [][]byte{
-			[]byte("service-a"),
-			encoding.Float64ToBytes(42.5),
-			encoding.Uint64ToBytes(uint64(tsNs)),
-			encoding.Float64ArrayToBytes([]float64{5.5, 9.1}),
-			encoding.Uint64ToBytes(0),
-		}}
-
-		raw, err := json.Marshal(rec)
-		r.NoError(err)
-		r.Equal(`["service-a",42.5,"2025-07-08T10:19:08.742Z",[5.5,9.1],0]`, string(raw))
-	})
-
-	t.Run("aggregation bucket with NaN", func(t *testing.T) {
-		rec := &Record{RawData: [][]byte{
-			[]byte("service-a"),
-			encoding.Float64ToBytes(math.NaN()),
-			make([]byte, 8),
-			encoding.Float64ArrayToBytes(nil),
-			make([]byte, 8),
-		}}
-
-		raw, err := json.Marshal(rec)
-		r.NoError(err)
-		r.Equal(`["service-a","NaN","",[],0]`, string(raw))
-	})
-
-	t.Run("unknown layout falls back to raw bytes", func(t *testing.T) {
-		// 4 cells used to be the aggregation layout; now it is an unknown one.
-		rec := &Record{RawData: [][]byte{[]byte("only"), []byte("two"), []byte("three"), []byte("four")}}
-		raw, err := json.Marshal(rec)
-		r.NoError(err)
-		// encoding/json marshals [][]byte as an array of base64 strings.
-		var decoded [][]byte
-		r.NoError(json.Unmarshal(raw, &decoded))
-		r.Equal(rec.RawData, decoded)
-	})
+	// Without a schema from the stream header, a record renders as raw cells with base64-encoded bytes.
+	rec := &Record{RawData: [][]byte{[]byte("only"), []byte("two")}}
+	raw, err := json.Marshal(rec)
+	r.NoError(err)
+	r.Equal(`{"raw_data":["b25seQ==","dHdv"]}`, string(raw))
 }

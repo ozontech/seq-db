@@ -2211,8 +2211,8 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 			case *seqproxyapi.StreamSearchResponse_Data:
 				for _, rec := range v.Data.GetBatch().GetRecords() {
 					raw := rec.GetRawData()
-					// [key:STRING, value:FLOAT64, ts:UINT64, quantiles:FLOAT64_ARRAY, not_exists:UINT64] — proxy agg schema.
-					r.Len(raw, 5)
+					// [key:STRING, value:FLOAT64, ts:UINT64]
+					r.Len(raw, 3)
 					value := math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
 					ts := binary.LittleEndian.Uint64(raw[2])
 					got[ts] += value
@@ -2262,11 +2262,11 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 			case *seqproxyapi.StreamSearchResponse_Data:
 				for _, rec := range v.Data.GetBatch().GetRecords() {
 					raw := rec.GetRawData()
-					// [key:STRING, value:FLOAT64, ts:UINT64, quantiles:FLOAT64_ARRAY, not_exists:UINT64].
-					r.Len(raw, 5)
+					// [key:STRING, value:FLOAT64, quantiles:FLOAT64_ARRAY, not_exists:UINT64].
+					r.Len(raw, 4)
 					gotRecords++
 					value = math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
-					quantiles = encoding.Float64ArrayFromBytes(raw[3])
+					quantiles = encoding.Float64ArrayFromBytes(raw[2])
 				}
 			case *seqproxyapi.StreamSearchResponse_Summary:
 				r.Equal(1, gotRecords, "one bucket per `service` group")
@@ -2310,7 +2310,7 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 			case *seqproxyapi.StreamSearchResponse_Data:
 				for _, rec := range v.Data.GetBatch().GetRecords() {
 					raw := rec.GetRawData()
-					r.Len(raw, 5)
+					r.Len(raw, 3)
 					gotRecords++
 					value = math.Float64frombits(binary.LittleEndian.Uint64(raw[1]))
 				}

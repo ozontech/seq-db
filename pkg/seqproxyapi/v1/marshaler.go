@@ -10,9 +10,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
-
-	"github.com/ozontech/seq-db/query/encoding"
-	"github.com/ozontech/seq-db/seq"
 )
 
 var (
@@ -62,11 +59,7 @@ type rawValueBucket struct {
 
 // MarshalJSON overrides "value" field to encode math.NaN and math.Inf as string.
 func (b *Aggregation_Bucket) MarshalJSON() ([]byte, error) {
-	val := json.RawMessage(strconv.FormatFloat(b.Value, 'f', -1, 64))
-	// Convert math.NaN and math.Inf to quoted string.
-	if math.IsNaN(b.Value) || math.IsInf(b.Value, 0) {
-		val = json.RawMessage(strconv.Quote(string(val)))
-	}
+	val := marshalFloat64(b.Value)
 
 	bucket := rawValueBucket{
 		TestAggBucket: (*TestAggBucket)(b),
@@ -267,73 +260,11 @@ func (i *AsyncSearchesListItem) MarshalJSON() ([]byte, error) {
 	return pbMarshaller.Marshal(i)
 }
 
-// streamSearchDocColumns is the number of columns carried by a document record
-// produced by StreamSearch: [id, time, data].
-const streamSearchDocColumns = 3
-
-// streamSearchAggColumns is the number of columns carried by an aggregation
-// record: [key, value, ts, quantiles, not_exists].
-const streamSearchAggColumns = 5
-
-// MarshalJSON formats a StreamSearch record into a human-readable JSON array.
-// The record kind is distinguished by the column count:
-//
-//   - documents (3 cells): [id, time(nanoseconds, little-endian uint64), data]
-//   - aggregation buckets (5 cells): [key, value(little-endian float64),
-//     ts(nanoseconds, little-endian uint64), quantiles(little-endian float64
-//     array), not_exists(little-endian uint64)]
-//
-// For any other layout the raw cells are emitted as-is (base64 for bytes).
-func (r *Record) MarshalJSON() ([]byte, error) {
-	cells := r.GetRawData()
-	switch len(cells) {
-	case streamSearchDocColumns:
-		// cells[1] is a little-endian uint64 storing the document MID (nanoseconds).
-		var ts time.Time
-		if len(cells[1]) == 8 {
-			ts = seq.MID(encoding.Uint64FromBytes(cells[1])).Time()
-		}
-		return json.Marshal([]any{
-			string(cells[0]), // id
-			ts.UTC().Format(time.RFC3339Nano),
-			json.RawMessage(cells[2]), // data, inlined as JSON
-		})
-	case streamSearchAggColumns:
-		return marshalAggRecord(cells)
-	default:
-		return json.Marshal(cells)
+// marshalFloat64 renders a float64 as a JSON number, quoting math.NaN and math.Inf as strings.
+func marshalFloat64(v float64) json.RawMessage {
+	val := json.RawMessage(strconv.FormatFloat(v, 'f', -1, 64))
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return json.RawMessage(strconv.Quote(string(val)))
 	}
-}
-
-// marshalAggRecord renders an aggregation record: [key, value, ts, quantiles, not_exists].
-func marshalAggRecord(cells [][]byte) ([]byte, error) {
-	// cells[1] is a little-endian float64 storing the aggregation value.
-	var value float64
-	if len(cells[1]) == 8 {
-		value = encoding.Float64FromBytes(cells[1])
-	}
-	val := json.RawMessage(strconv.FormatFloat(value, 'f', -1, 64))
-	if math.IsNaN(value) || math.IsInf(value, 0) {
-		val = json.RawMessage(strconv.Quote(string(val)))
-	}
-	// cells[2] is a little-endian uint64 storing the bucket MID (nanoseconds).
-	// A zero MID (no timestamp) is rendered as an empty string.
-	formattedTime := ""
-	if len(cells[2]) == 8 {
-		if ns := encoding.Uint64FromBytes(cells[2]); ns != 0 {
-			formattedTime = time.Unix(0, int64(ns)).UTC().Format(time.RFC3339Nano)
-		}
-	}
-	// cells[4] is a little-endian uint64 storing the not_exists count.
-	var notExists uint64
-	if len(cells[4]) == 8 {
-		notExists = encoding.Uint64FromBytes(cells[4])
-	}
-	return json.Marshal([]any{
-		string(cells[0]),                         // key
-		val,                                      // value
-		formattedTime,                            // ts
-		encoding.Float64ArrayFromBytes(cells[3]), // quantiles
-		notExists,                                // not_exists
-	})
+	return val
 }
