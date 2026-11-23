@@ -241,6 +241,47 @@ func TestPendingDestroy(t *testing.T) {
 	release2()
 }
 
+func TestClaimForCompaction(t *testing.T) {
+	lc, tearDown := setupLifecycle(t, &Config{
+		Fraction:          frac.Config{SkipSortDocs: true},
+		EpochEnabled:      true,
+		EpochPeriod:       100 * 365 * 24 * time.Hour,
+		EpochMaxFractions: 2,
+	})
+	defer tearDown()
+
+	wg := sync.WaitGroup{}
+	for range 3 {
+		appendDocsToActive(t, lc.registry.appender().Active, 10)
+		lc.rotate(0, &wg)
+	}
+	wg.Wait()
+
+	sealed := lc.registry.sealedSnapshot()
+	epochs := make(map[uint64][]string)
+	for _, s := range sealed {
+		epochs[s.Info().Epoch] = append(epochs[s.Info().Epoch], s.Info().Name())
+	}
+	require.Len(t, epochs[1], 2)
+	require.Len(t, epochs[2], 1)
+
+	mixed := []string{epochs[1][0], epochs[2][0]}
+
+	_, err := lc.registry.claimForCompaction(mixed)
+	require.Error(t, err)
+	require.Empty(t, lc.registry.compacting)
+
+	disabled, err := NewFractionRegistry(lc.provider.CreateActive(), sealed, nil, epochTracker{})
+	require.NoError(t, err)
+
+	_, err = disabled.claimForCompaction(mixed)
+	require.Error(t, err, "epochs are checked even when they are disabled")
+
+	claimed, err := lc.registry.claimForCompaction(epochs[1])
+	require.NoError(t, err)
+	require.Len(t, claimed, 2)
+}
+
 type remoteSpec struct {
 	minutesAgo int // creation time and last-doc time, minutes back from now
 	size       uint64
