@@ -10,8 +10,6 @@ import (
 	_ "google.golang.org/grpc/encoding/gzip" // Register gzip compressor
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/alecthomas/units"
-
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
@@ -49,8 +47,8 @@ func initServer() *grpc.Server {
 	opts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(interceptors...),
 		grpc.ChainStreamInterceptor(streamInterceptors...),
-		grpc.MaxRecvMsgSize(int(units.MiB) * 256),
-		grpc.MaxSendMsgSize(int(units.MiB) * 256),
+		grpc.MaxRecvMsgSize(config.MaxGrpcMessageSizeBytes),
+		grpc.MaxSendMsgSize(config.MaxGrpcMessageSizeBytes),
 		grpc.StatsHandler(&tracing.ServerHandler{}),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			MaxConnectionIdle:     time.Minute * 2,

@@ -7,7 +7,6 @@ import (
 	"sync"
 	"testing"
 
-	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -41,13 +40,23 @@ func TestStreamSearchIteratorReadsAllRecords(t *testing.T) {
 }
 
 func TestStreamSearchIteratorEmptyStream(t *testing.T) {
-	// EOF right after the header: an empty result, not an error.
-	it, stream := newTestIterator(t)
-	stream.setRecvErr(io.EOF)
+	it, stream := newTestIterator(t, summaryMsg(0, storeapi.SearchErrorCode_NO_ERROR))
 
 	assert.Empty(t, collectAll(it))
 	assert.Zero(t, it.Finalize().Total)
 	assert.False(t, stream.isCanceled(), "Finalize must not cancel the stream context")
+}
+
+func TestStreamSearchIteratorEOFWithoutSummary(t *testing.T) {
+	it, stream := newTestIterator(t, dataMsg(testRecord(seq.SimpleID(1), "doc1")))
+	stream.setRecvErr(io.EOF)
+
+	assert.NotNil(t, it.Next())
+	assert.Nil(t, it.Next())
+
+	summary := it.Finalize()
+	require.ErrorIs(t, summary.Err, io.ErrUnexpectedEOF)
+	assert.False(t, stream.isCanceled(), "Finalize must drain, not cancel")
 }
 
 func TestStreamSearchIteratorSummaryAfterExhausted(t *testing.T) {
@@ -128,13 +137,14 @@ func TestStreamSearchIteratorNextAfterRecvError(t *testing.T) {
 }
 
 func TestStreamSearchIteratorUnexpectedHeader(t *testing.T) {
-	it, stream := newTestIterator(t)
+	it, stream := newTestIterator(t, dataMsg(testRecord(seq.SimpleID(1), "doc1")))
 	stream.push(&storeapi.StreamSearchResponse{
 		ResponseType: &storeapi.StreamSearchResponse_Header{
 			Header: &storeapi.ResponseHeader{Typing: testTyping()},
 		},
 	})
 
+	assert.NotNil(t, it.Next())
 	assert.Nil(t, it.Next())
 	summary := it.Finalize()
 	require.Error(t, summary.Err)
@@ -162,7 +172,6 @@ func TestNewStreamSearchIteratorPrefetchedErrorSummary(t *testing.T) {
 }
 
 func TestNewStreamSearchIteratorEOFOnPrefetch(t *testing.T) {
-	// EOF on prefetch: no data and no summary, an empty result.
 	stream := newFakeStream()
 	stream.setRecvErr(io.EOF)
 	it, err := NewStreamSearchIterator(
@@ -171,18 +180,15 @@ func TestNewStreamSearchIteratorEOFOnPrefetch(t *testing.T) {
 		stream,
 		stream.markCanceled,
 	)
-	require.NoError(t, err)
-
-	assert.Nil(t, it.Next())
-	summary := it.Finalize()
-	assert.Nil(t, summary.Err)
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	assert.Nil(t, it)
 	assert.False(t, stream.isCanceled())
 }
 
 func testTyping() []*storeapi.Typing {
 	return []*storeapi.Typing{
 		{Title: "id", Type: storeapi.DataType_DATA_TYPE_SEQ_ID},
-		{Title: "data", Type: storeapi.DataType_DATA_TYPE_RAW_DOCUMENT},
+		{Title: "data", Type: storeapi.DataType_DATA_TYPE_JSON},
 	}
 }
 
@@ -307,15 +313,15 @@ func (f *fakeStream) RecvMsg(any) error            { return nil }
 func TestSchemaFromTyping(t *testing.T) {
 	typing := []*storeapi.Typing{
 		{Title: "id", Type: storeapi.DataType_DATA_TYPE_SEQ_ID},
-		{Title: "data", Type: storeapi.DataType_DATA_TYPE_RAW_DOCUMENT},
+		{Title: "data", Type: storeapi.DataType_DATA_TYPE_JSON},
 	}
 
 	schema, types, err := schemaFromTyping(typing)
 	require.NoError(t, err)
 	assert.Equal(t, 2, schema.Len())
-	assert.Equal(t, []query.DataType{query.DataTypeSeqID, query.DataTypeDocument}, types)
+	assert.Equal(t, []query.DataType{query.DataTypeSeqID, query.DataTypeJSON}, types)
 	assert.Equal(t, 0, schema.MustColumn[seq.ID]("id").Idx())
-	assert.Equal(t, query.DataTypeDocument, schema.MustColumn[*insaneJSON.Root]("data").DataType())
+	assert.Equal(t, query.DataTypeJSON, schema.MustColumn[[]byte]("data").DataType())
 }
 
 func TestSchemaFromTypingDuplicateName(t *testing.T) {
@@ -336,11 +342,11 @@ func TestValidateShardSchemas(t *testing.T) {
 
 	docsTyping := []*storeapi.Typing{
 		{Title: "id", Type: storeapi.DataType_DATA_TYPE_SEQ_ID},
-		{Title: "data", Type: storeapi.DataType_DATA_TYPE_RAW_DOCUMENT},
+		{Title: "data", Type: storeapi.DataType_DATA_TYPE_JSON},
 	}
 	otherTyping := []*storeapi.Typing{
 		{Title: "id", Type: storeapi.DataType_DATA_TYPE_SEQ_ID},
-		{Title: "payload", Type: storeapi.DataType_DATA_TYPE_RAW_DOCUMENT},
+		{Title: "payload", Type: storeapi.DataType_DATA_TYPE_JSON},
 	}
 	aggsTyping := []*storeapi.Typing{
 		{Title: "token", Type: storeapi.DataType_DATA_TYPE_STRING},
@@ -364,7 +370,10 @@ func TestValidateShardSchemas(t *testing.T) {
 
 	t.Run("expected schema mismatch", func(t *testing.T) {
 		streams := []*StreamSearchIterator{newIterator(docsTyping), newIterator(docsTyping)}
-		err := validateShardSchemas(streams, query.AggsSchema)
+		err := validateShardSchemas(streams, query.MustNewSchema(
+			query.ColumnDesc{Name: "token", Type: query.DataTypeString},
+			query.ColumnDesc{Name: "val", Type: query.DataTypeFloat64},
+		))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "shard schema mismatch")
 	})

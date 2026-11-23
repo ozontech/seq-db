@@ -16,8 +16,6 @@ var errBatchingUnsupported = errors.New("batching unsupported")
 // maxBatchedTIDsPerLeaf limits number of TIDs for a single OrMulti node
 const maxBatchedTIDsPerLeaf = 5
 
-type leafTIDsCache map[parser.Token][]uint32
-
 // tryBuildBatchEvalTree tries to build a batched eval tree if possible.
 //
 // Returns errBatchingUnsupported when the non-batched path should be used.
@@ -25,6 +23,7 @@ func tryBuildBatchEvalTree(
 	root *parser.ASTNode,
 	fracVer config.BinaryDataVersion,
 	ti tokenIndex,
+	cache tidsCache,
 	queryOpts QueryOptimizationConfig,
 	minLID, maxLID uint32,
 	stats *searchStats,
@@ -43,7 +42,6 @@ func tryBuildBatchEvalTree(
 		return nil, errBatchingUnsupported
 	}
 
-	cache := make(leafTIDsCache)
 	cost, err := calculateQueryIterationCost(root, ti, cache, minLID, maxLID)
 	if err != nil {
 		return nil, err
@@ -92,7 +90,7 @@ func astSupportsBatching(root *parser.ASTNode) bool {
 func calculateQueryIterationCost(
 	root *parser.ASTNode,
 	ti tokenIndex,
-	cache leafTIDsCache,
+	cache tidsCache,
 	minLID, maxLID uint32,
 ) (uint64, error) {
 	if root == nil {
@@ -144,14 +142,14 @@ func leafIterationCost(
 	ti tokenIndex,
 	field string,
 	token parser.Token,
-	cache leafTIDsCache,
+	cache tidsCache,
 	minLID, maxLID uint32,
 ) (uint64, error) {
 	if parser.IsMatchAll(token) {
 		return uint64(maxLID - minLID + 1), nil
 	}
 
-	tids, err := ti.GetTIDsByTokenExpr(token)
+	tids, err := cache.get(ti, token)
 	if err != nil {
 		return 0, err
 	}
@@ -160,7 +158,6 @@ func leafIterationCost(
 	if len(tids) > maxBatchedTIDsPerLeaf {
 		return 0, errBatchingUnsupported
 	}
-	cache[token] = tids
 	if len(tids) == 0 {
 		return 0, nil
 	}
@@ -219,7 +216,7 @@ func buildBatchEvalTree(
 func evalBatchLeaf(
 	ti tokenIndex,
 	token parser.Token,
-	cache leafTIDsCache,
+	cache tidsCache,
 	sw *stopwatch.Stopwatch,
 	stats *searchStats,
 	minLID, maxLID uint32,
@@ -232,13 +229,9 @@ func evalBatchLeaf(
 		return node.NewRangeBatched(minLID, maxLID, order.IsDesc()), nil
 	}
 
-	tids, ok := cache[token]
-	if !ok {
-		var err error
-		tids, err = ti.GetTIDsByTokenExpr(token)
-		if err != nil {
-			return nil, err
-		}
+	tids, err := cache.get(ti, token)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(tids) == 0 {

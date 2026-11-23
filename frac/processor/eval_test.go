@@ -146,7 +146,16 @@ func TestMatchAllDoesNotTouchIndex(t *testing.T) {
 		Field: seq.TokenAll,
 		Terms: []parser.Term{{Kind: parser.TermSymbol, Data: "*"}},
 	}
-	leaf, err := evalLeaf(p, token, stopwatch.New(), &searchStats{}, 2, 7, seq.DocsOrderDesc)
+	leaf, err := evalLeaf(
+		p,
+		token,
+		make(tidsCache),
+		stopwatch.New(),
+		&searchStats{},
+		2,
+		7,
+		seq.DocsOrderDesc,
+	)
 	require.NoError(t, err)
 	assert.Equal(t, []uint32{2, 3, 4, 5, 6, 7}, readAll(leaf))
 

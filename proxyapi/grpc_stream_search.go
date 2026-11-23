@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	insaneJSON "github.com/ozontech/insane-json"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -42,7 +41,7 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	// The first message must carry the search query.
 	req, err := stream.Recv()
 	if err == io.EOF {
-		return nil
+		return status.Error(codes.InvalidArgument, "no search query provided")
 	}
 	if err != nil {
 		return err
@@ -61,20 +60,9 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 
 	tr := querytracer.New(q.Explain, "proxy/StreamSearch")
 
-	var partialErr error
-	storesStream, cancelStreams, err := g.searchIngestor.StreamSearch(ctx, searchReq, tr)
+	storesStream, err := g.openStoreStreams(ctx, searchReq, tr)
 	if err != nil {
-		if errors.Is(err, consts.ErrPartialResponse) {
-			if shouldFailPartialResponse(ctx) {
-				cancelStreams()
-				return status.Error(codes.Internal, "partial response: not all shards returned results")
-			}
-			partialErr = err
-			metric.SearchPartial.Inc()
-		} else {
-			cancelStreams()
-			return status.Error(codes.Internal, err.Error())
-		}
+		return err
 	}
 
 	// Read control messages from the client concurrently with sending data.
@@ -107,34 +95,82 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	var typing []*seqproxyapi.Typing
 	var toRecord func(*query.Record) *seqproxyapi.Record
 	if searchReq.Agg != nil {
-		typing = aggsTyping()
+		typing = schemaToTyping(aggOutSchema(searchReq.Agg))
 		toRecord = aggToRecord
 	} else {
 		typing = docsTyping()
 		toRecord = docToRecord
 	}
-	outcome, err := g.streamSearchRecords(stream, storesStream, typing, toRecord, controlCh, recvErrCh, ctx)
+	outcome, err := g.streamSearchRecords(stream, storesStream.Records, typing, toRecord, controlCh, recvErrCh, ctx)
 	if err != nil {
 		// Streaming failed: cancel the stores so they stop producing.
-		cancelStreams()
+		storesStream.Cancel()
 		return err
 	}
 
 	// CANCEL: terminate immediately, no summary.
 	if outcome == outcomeCancel {
-		cancelStreams()
+		storesStream.Cancel()
 		return nil
 	}
 
 	// FINALIZE or data exhausted without an explicit control action: send the summary gathered from the store stream.
-	summary := storesStream.Finalize()
+	summary, err := g.finalizeStoreStreams(ctx, storesStream)
+	if err != nil {
+		return err
+	}
+	return g.sendSummary(stream, summary, tr, q.Explain)
+}
+
+func (g *grpcV1) openStoreStreams(
+	ctx context.Context,
+	req *search.StreamSearchRequest,
+	tr *querytracer.Tracer,
+) (*search.StreamResult, error) {
+	storesStream, err := g.searchIngestor.StreamSearch(ctx, req, tr)
+	if err != nil {
+		if errors.Is(err, consts.ErrIngestorQueryWantsOldData) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if storesStream.PartialErr != nil {
+		if shouldFailPartialResponse(ctx) {
+			storesStream.Cancel()
+			return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
+		}
+		metric.SearchPartial.Inc()
+	}
+	return storesStream, nil
+}
+
+func (g *grpcV1) finalizeStoreStreams(ctx context.Context, storesStream *search.StreamResult) (*query.Summary, error) {
+	summary, hasSuccessfulStream := storesStream.Finalize()
 	if summary == nil {
 		summary = &query.Summary{}
 	}
-	if partialErr != nil && summary.Err == nil {
-		summary.Err = partialErr
+
+	err := util.DeduplicateErrors([]error{storesStream.PartialErr, summary.Err})
+	if err == nil {
+		return summary, nil
 	}
-	return g.sendSummary(stream, summary, tr, q.Explain)
+
+	switch {
+	case errors.Is(err, consts.ErrTooManyFractionsHit):
+		summary.Err = err
+	case errors.Is(err, consts.ErrIngestorQueryWantsOldData):
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	case !hasSuccessfulStream:
+		return nil, status.Error(codes.Internal, err.Error())
+	case shouldFailPartialResponse(ctx):
+		return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
+	case errors.Is(err, consts.ErrPartialResponse):
+		summary.Err = err
+	default:
+		summary.Err = fmt.Errorf("%w: %w", consts.ErrPartialResponse, err)
+	}
+
+	return summary, nil
 }
 
 func (g *grpcV1) sendSummary(
@@ -172,10 +208,10 @@ func (g *grpcV1) sendSummary(
 
 func mapProxyErrorCode(err error) seqproxyapi.ErrorCode {
 	switch {
-	case errors.Is(err, consts.ErrPartialResponse):
-		return seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE
 	case errors.Is(err, consts.ErrTooManyFractionsHit):
 		return seqproxyapi.ErrorCode_ERROR_CODE_TOO_MANY_FRACTIONS_HIT
+	case errors.Is(err, consts.ErrPartialResponse):
+		return seqproxyapi.ErrorCode_ERROR_CODE_PARTIAL_RESPONSE
 	default:
 		return seqproxyapi.ErrorCode_ERROR_CODE_UNSPECIFIED
 	}
@@ -266,29 +302,25 @@ func sendRecords(stream seqproxyapi.SeqProxyApi_StreamSearchServer, records []*s
 func docsTyping() []*seqproxyapi.Typing {
 	return []*seqproxyapi.Typing{
 		{Title: "id", Type: seqproxyapi.DataType_DATA_TYPE_SEQ_ID},
-		{Title: "time", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
-		{Title: "data", Type: seqproxyapi.DataType_DATA_TYPE_RAW_DOCUMENT},
+		{Title: "time", Type: seqproxyapi.DataType_DATA_TYPE_UINT64}, // extract time from id
+		{Title: "data", Type: seqproxyapi.DataType_DATA_TYPE_JSON},
 	}
 }
 
-// hardcoded schema
-func aggsTyping() []*seqproxyapi.Typing {
-	return []*seqproxyapi.Typing{
-		{Title: "key", Type: seqproxyapi.DataType_DATA_TYPE_STRING},
-		{Title: "value", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64},
-		{Title: "ts", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
-		{Title: "quantiles", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64_ARRAY},
+func schemaToTyping(out *query.Schema) []*seqproxyapi.Typing {
+	typing := make([]*seqproxyapi.Typing, 0, out.Len())
+	for _, c := range out.Cols() {
+		typing = append(typing, &seqproxyapi.Typing{
+			Title: c.Name,
+			Type:  seqproxyapi.MustProtoDataType(c.Type),
+		})
 	}
+	return typing
 }
 
 var (
 	docIDCol   = query.DocsSchema.MustColumn[seq.ID](query.DocsIDCol)
-	docDataCol = query.DocsSchema.MustColumn[*insaneJSON.Root](query.DocsDataCol)
-
-	aggKeyCol       = query.AggResultSchema.MustColumn[string]("token")
-	aggValueCol     = query.AggResultSchema.MustColumn[float64]("value")
-	aggTsCol        = query.AggResultSchema.MustColumn[uint64]("ts")
-	aggQuantilesCol = query.AggResultSchema.MustColumn[[]float64]("quantiles")
+	docDataCol = query.DocsSchema.MustColumn[[]byte](query.DocsDataCol)
 )
 
 // converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
@@ -304,19 +336,26 @@ func docToRecord(r *query.Record) *seqproxyapi.Record {
 	}
 }
 
-// converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
+func aggOutSchema(agg *search.AggQuery) *query.Schema {
+	return query.AggResultSchemaFor(agg.Func, agg.Interval > 0)
+}
+
 func aggToRecord(r *query.Record) *seqproxyapi.Record {
-	return &seqproxyapi.Record{
-		RawData: [][]byte{
-			aggKeyCol.RawData(r),       // key
-			aggValueCol.RawData(r),     // value
-			aggTsCol.RawData(r),        // ts
-			aggQuantilesCol.RawData(r), // quantiles
-		},
+	cells := make([][]byte, len(r.Vals))
+	for i, v := range r.Vals {
+		cells[i] = v.RawData()
 	}
+	return &seqproxyapi.Record{RawData: cells}
 }
 
 func buildSearchReq(q *seqproxyapi.StreamSearchQuery) (*search.StreamSearchRequest, error) {
+	if q.From == nil || q.To == nil {
+		return nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
+	}
+	if q.From.AsTime().After(q.To.AsTime()) {
+		return nil, status.Error(codes.InvalidArgument, `"from" timestamp must not be after "to" timestamp`)
+	}
+
 	seqql, err := parser.ParseSeqQL(q.Query, nil)
 	if err != nil {
 		return nil, err

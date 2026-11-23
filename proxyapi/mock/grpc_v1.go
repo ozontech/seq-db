@@ -13,7 +13,6 @@ import (
 
 	seqproxyapi "github.com/ozontech/seq-db/pkg/seqproxyapi/v1"
 	search "github.com/ozontech/seq-db/proxy/search"
-	query "github.com/ozontech/seq-db/query"
 	querytracer "github.com/ozontech/seq-db/querytracer"
 	seq "github.com/ozontech/seq-db/seq"
 )
@@ -162,13 +161,12 @@ func (mr *MockSearchIngestorMockRecorder) Status(ctx interface{}) *gomock.Call {
 }
 
 // StreamSearch mocks base method.
-func (m *MockSearchIngestor) StreamSearch(ctx context.Context, sr *search.StreamSearchRequest, tr *querytracer.Tracer) (query.RecordProducer, func(), error) {
+func (m *MockSearchIngestor) StreamSearch(ctx context.Context, sr *search.StreamSearchRequest, tr *querytracer.Tracer) (*search.StreamResult, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StreamSearch", ctx, sr, tr)
-	ret0, _ := ret[0].(query.RecordProducer)
-	ret1, _ := ret[1].(func())
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret0, _ := ret[0].(*search.StreamResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // StreamSearch indicates an expected call of StreamSearch.

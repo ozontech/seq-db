@@ -80,6 +80,7 @@ func matchAllNode(minLID, maxLID uint32, asc bool) node.Node {
 func evalLeaf(
 	ti tokenIndex,
 	token parser.Token,
+	cache tidsCache,
 	sw *stopwatch.Stopwatch,
 	stats *searchStats,
 	minLID, maxLID uint32,
@@ -91,14 +92,12 @@ func evalLeaf(
 		return matchAllNode(minLID, maxLID, order.IsDesc()), nil
 	}
 
-	m := sw.Start("get_tids_by_token_expr")
-	tids, err := ti.GetTIDsByTokenExpr(token)
-	m.Stop()
+	tids, err := cache.get(ti, token)
 	if err != nil {
 		return nil, err
 	}
 
-	m = sw.Start("get_lids_from_tids")
+	m := sw.Start("get_lids_from_tids")
 	lidsTids := ti.GetLIDsFromTIDs(tids, stats, minLID, maxLID, order)
 	m.Stop()
 
@@ -120,8 +119,8 @@ type Aggregator interface {
 	Next(lids []node.LID) error
 	// Aggregate processes and returns the final aggregation result.
 	Aggregate() (seq.AggregatableSamples, error)
-	// Dispose releases resources held by the aggregator.
-	Dispose()
+	// Release releases resources held by the aggregator.
+	Release()
 }
 
 type AggLimits struct {

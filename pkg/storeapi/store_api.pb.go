@@ -301,7 +301,7 @@ type DataType int32
 const (
 	DataType_DATA_TYPE_BYTES         DataType = 0
 	DataType_DATA_TYPE_SEQ_ID        DataType = 1
-	DataType_DATA_TYPE_RAW_DOCUMENT  DataType = 2
+	DataType_DATA_TYPE_JSON          DataType = 2
 	DataType_DATA_TYPE_STRING        DataType = 3
 	DataType_DATA_TYPE_UINT32        DataType = 4
 	DataType_DATA_TYPE_UINT64        DataType = 5
@@ -317,7 +317,7 @@ var (
 	DataType_name = map[int32]string{
 		0:  "DATA_TYPE_BYTES",
 		1:  "DATA_TYPE_SEQ_ID",
-		2:  "DATA_TYPE_RAW_DOCUMENT",
+		2:  "DATA_TYPE_JSON",
 		3:  "DATA_TYPE_STRING",
 		4:  "DATA_TYPE_UINT32",
 		5:  "DATA_TYPE_UINT64",
@@ -330,7 +330,7 @@ var (
 	DataType_value = map[string]int32{
 		"DATA_TYPE_BYTES":         0,
 		"DATA_TYPE_SEQ_ID":        1,
-		"DATA_TYPE_RAW_DOCUMENT":  2,
+		"DATA_TYPE_JSON":          2,
 		"DATA_TYPE_STRING":        3,
 		"DATA_TYPE_UINT32":        4,
 		"DATA_TYPE_UINT64":        5,
@@ -2470,10 +2470,12 @@ func (x *Record) GetRawData() [][]byte {
 }
 
 type ResponseSummary struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Total         uint64                 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
-	Error         *Error                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
-	Explain       *ExplainEntry          `protobuf:"bytes,3,opt,name=explain,proto3,oneof" json:"explain,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Total   uint64                 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
+	Error   *Error                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	Explain *ExplainEntry          `protobuf:"bytes,3,opt,name=explain,proto3,oneof" json:"explain,omitempty"`
+	// Aggregation-level not_exists
+	NotExists     int64 `protobuf:"varint,4,opt,name=not_exists,json=notExists,proto3" json:"not_exists,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2527,6 +2529,13 @@ func (x *ResponseSummary) GetExplain() *ExplainEntry {
 		return x.Explain
 	}
 	return nil
+}
+
+func (x *ResponseSummary) GetNotExists() int64 {
+	if x != nil {
+		return x.NotExists
+	}
+	return 0
 }
 
 type Error struct {
@@ -3204,12 +3213,14 @@ const file_storeapi_store_api_proto_rawDesc = "" +
 	"\fRecordsBatch\x12%\n" +
 	"\arecords\x18\x01 \x03(\v2\v.api.RecordR\arecords\"#\n" +
 	"\x06Record\x12\x19\n" +
-	"\braw_data\x18\x01 \x03(\fR\arawData\"\x87\x01\n" +
+	"\braw_data\x18\x01 \x03(\fR\arawData\"\xa6\x01\n" +
 	"\x0fResponseSummary\x12\x14\n" +
 	"\x05total\x18\x01 \x01(\x04R\x05total\x12 \n" +
 	"\x05error\x18\x02 \x01(\v2\n" +
 	".api.ErrorR\x05error\x120\n" +
-	"\aexplain\x18\x03 \x01(\v2\x11.api.ExplainEntryH\x00R\aexplain\x88\x01\x01B\n" +
+	"\aexplain\x18\x03 \x01(\v2\x11.api.ExplainEntryH\x00R\aexplain\x88\x01\x01\x12\x1d\n" +
+	"\n" +
+	"not_exists\x18\x04 \x01(\x03R\tnotExistsB\n" +
 	"\n" +
 	"\b_explain\"K\n" +
 	"\x05Error\x12(\n" +
@@ -3244,11 +3255,11 @@ const file_storeapi_store_api_proto_rawDesc = "" +
 	"\x16AsyncSearchStatusError\x10\x03*L\n" +
 	"\rControlAction\x12\x1e\n" +
 	"\x1aCONTROL_ACTION_UNSPECIFIED\x10\x00\x12\x1b\n" +
-	"\x17CONTROL_ACTION_FINALIZE\x10\x01*\x8d\x02\n" +
+	"\x17CONTROL_ACTION_FINALIZE\x10\x01*\x85\x02\n" +
 	"\bDataType\x12\x13\n" +
 	"\x0fDATA_TYPE_BYTES\x10\x00\x12\x14\n" +
-	"\x10DATA_TYPE_SEQ_ID\x10\x01\x12\x1a\n" +
-	"\x16DATA_TYPE_RAW_DOCUMENT\x10\x02\x12\x14\n" +
+	"\x10DATA_TYPE_SEQ_ID\x10\x01\x12\x12\n" +
+	"\x0eDATA_TYPE_JSON\x10\x02\x12\x14\n" +
 	"\x10DATA_TYPE_STRING\x10\x03\x12\x14\n" +
 	"\x10DATA_TYPE_UINT32\x10\x04\x12\x14\n" +
 	"\x10DATA_TYPE_UINT64\x10\x05\x12\x13\n" +
