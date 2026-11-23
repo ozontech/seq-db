@@ -186,6 +186,7 @@ id: configuration
 | `async_search.concurrency` | int | - | Уровень параллелизма для асинхронных поисков |
 | `async_search.max_total_size` | Bytes | `1GiB` | - |
 | `async_search.max_size_per_request` | Bytes | `100MiB` | - |
+| `async_search.max_qpr_memory` | Bytes | - | Максимальная память одного смерженного QPR асинхронного поиска; по умолчанию берётся из `limits.qpr_memory_usage` |
 
 ## Конфигурация API
 
