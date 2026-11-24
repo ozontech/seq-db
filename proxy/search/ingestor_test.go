@@ -63,7 +63,7 @@ func TestAggValuesToQPR(t *testing.T) {
 	t.Run("columns", func(t *testing.T) {
 		tokens := seq.NewStringColumn(len(values))
 		for _, v := range values {
-			tokens.AppendString(v)
+			tokens.Append([]byte(v))
 		}
 		totals := seq.NewInt64Column(len(values))
 		totals.Append(2)
@@ -88,8 +88,8 @@ func TestAggValuesToQPR(t *testing.T) {
 			Sums:      sums.AppendTo(nil),
 			Mins:      mins.AppendTo(nil),
 			Maxs:      maxs.AppendTo(nil),
-			Quantiles: seq.ArraysColumn[float64]{}.AppendTo(nil),
-			UniqueIds: seq.ArraysColumn[uint32]{}.AppendTo(nil),
+			Quantiles: (&seq.ArraysColumn[float64]{}).AppendTo(nil),
+			UniqueIds: (&seq.ArraysColumn[uint32]{}).AppendTo(nil),
 		}
 
 		agg, err := aggValuesToQPR(encoded)
@@ -100,7 +100,7 @@ func TestAggValuesToQPR(t *testing.T) {
 	t.Run("missing array columns are rejected", func(t *testing.T) {
 		tokens := seq.NewStringColumn(len(values))
 		for _, v := range values {
-			tokens.AppendString(v)
+			tokens.Append([]byte(v))
 		}
 		totals := seq.NewInt64Column(len(values))
 		totals.Append(2)
@@ -134,7 +134,7 @@ func TestAggValuesToQPR(t *testing.T) {
 	t.Run("mids", func(t *testing.T) {
 		tokens := seq.NewStringColumn(len(values))
 		for _, v := range values {
-			tokens.AppendString(v)
+			tokens.Append([]byte(v))
 		}
 		mids := seq.NewInt64Column(len(values))
 		mids.Append(2)
@@ -151,8 +151,8 @@ func TestAggValuesToQPR(t *testing.T) {
 			Sums:      seq.NewFloat64Column(0).AppendTo(nil),
 			Mins:      seq.NewFloat64Column(0).AppendTo(nil),
 			Maxs:      seq.NewFloat64Column(0).AppendTo(nil),
-			Quantiles: seq.ArraysColumn[float64]{}.AppendTo(nil),
-			UniqueIds: seq.ArraysColumn[uint32]{}.AppendTo(nil),
+			Quantiles: (&seq.ArraysColumn[float64]{}).AppendTo(nil),
+			UniqueIds: (&seq.ArraysColumn[uint32]{}).AppendTo(nil),
 		}
 
 		agg, err := aggValuesToQPR(encoded)
@@ -167,11 +167,11 @@ func TestAggValuesToQPR(t *testing.T) {
 
 	t.Run("multiple token columns", func(t *testing.T) {
 		firstTokens := seq.NewStringColumn(len(values))
-		firstTokens.AppendString("a")
-		firstTokens.AppendString("b")
+		firstTokens.Append([]byte("a"))
+		firstTokens.Append([]byte("b"))
 		secondTokens := seq.NewStringColumn(len(values))
-		secondTokens.AppendString("z")
-		secondTokens.AppendString("a")
+		secondTokens.Append([]byte("z"))
+		secondTokens.Append([]byte("a"))
 		totals := seq.NewInt64Column(len(values))
 		totals.Append(2)
 		totals.Append(1)
@@ -186,8 +186,8 @@ func TestAggValuesToQPR(t *testing.T) {
 			Sums:      seq.NewFloat64Column(0).AppendTo(nil),
 			Mins:      seq.NewFloat64Column(0).AppendTo(nil),
 			Maxs:      seq.NewFloat64Column(0).AppendTo(nil),
-			Quantiles: seq.ArraysColumn[float64]{}.AppendTo(nil),
-			UniqueIds: seq.ArraysColumn[uint32]{}.AppendTo(nil),
+			Quantiles: (&seq.ArraysColumn[float64]{}).AppendTo(nil),
+			UniqueIds: (&seq.ArraysColumn[uint32]{}).AppendTo(nil),
 		}
 
 		agg, err := aggValuesToQPR(encoded)
@@ -210,7 +210,7 @@ func TestAggValuesToQPR(t *testing.T) {
 	t.Run("mismatched mids are rejected", func(t *testing.T) {
 		tokens := seq.NewStringColumn(len(values))
 		for _, v := range values {
-			tokens.AppendString(v)
+			tokens.Append([]byte(v))
 		}
 		mids := seq.NewInt64Column(1)
 		mids.Append(1)
@@ -248,7 +248,7 @@ func TestAggValuesToQPRAllColumns(t *testing.T) {
 	for _, fn := range funcs {
 		t.Run(fn.String(), func(t *testing.T) {
 			tokens := seq.NewStringColumn(1)
-			tokens.AppendString("a")
+			tokens.Append([]byte("a"))
 			values := seq.NewAggValuesFromSamples(fn, []seq.SamplesContainer{{
 				Total:     1,
 				NotExists: 2,
@@ -335,9 +335,16 @@ func TestResponseToQPRLegacyAggregation(t *testing.T) {
 		tokens = append(tokens, string(it.Value()))
 	}
 	require.Equal(t, []string{"a", "b", "z"}, tokens)
-	require.Equal(t, seq.MID(now.UnixNano()), agg.RowMID(0))
-	require.Equal(t, seq.MID(now.Add(-time.Minute).UnixNano()), agg.RowMID(2))
-	require.Equal(t, map[uint32]struct{}{3: {}}, agg.RowSamples(0).Values)
+
+	mids := agg.MIDs.NewIter()
+	samples := agg.Values.NewSamplesIter()
+	samples.Next()
+	mids.Next()
+	require.Equal(t, seq.MID(now.UnixNano()), seq.MID(mids.Value()))
+	require.Equal(t, map[uint32]struct{}{3: {}}, samples.Samples().Values)
+	mids.Next()
+	mids.Next()
+	require.Equal(t, seq.MID(now.Add(-time.Minute).UnixNano()), seq.MID(mids.Value()))
 }
 
 func TestResponseToQPRLegacyWithoutAggFuncs(t *testing.T) {
@@ -406,12 +413,12 @@ func TestMixedLegacyColumnarUniqueCountMerge(t *testing.T) {
 	require.NoError(t, err)
 
 	tokens := seq.NewStringColumn(1)
-	tokens.AppendString("svc")
+	tokens.Append([]byte("svc"))
 	totals := seq.NewInt64Column(1)
 	totals.Append(2)
 	notExists := seq.NewInt64Column(1)
 	notExists.Append(0)
-	uniqueIds := seq.ArraysColumn[uint32]{}
+	uniqueIds := seq.NewArraysColumn[uint32](0)
 	uniqueIds.Append([]uint32{0, 1})
 	values := seq.NewAggValuesFromSamples(seq.AggFuncUniqueCount, []seq.SamplesContainer{{
 		Total: 2,
@@ -484,8 +491,8 @@ func TestAggValuesToQPRZeroRows(t *testing.T) {
 		Sums:      seq.NewFloat64Column(0).AppendTo(nil),
 		Mins:      seq.NewFloat64Column(0).AppendTo(nil),
 		Maxs:      seq.NewFloat64Column(0).AppendTo(nil),
-		Quantiles: seq.ArraysColumn[float64]{}.AppendTo(nil),
-		UniqueIds: seq.ArraysColumn[uint32]{}.AppendTo(nil),
+		Quantiles: (&seq.ArraysColumn[float64]{}).AppendTo(nil),
+		UniqueIds: (&seq.ArraysColumn[uint32]{}).AppendTo(nil),
 	}
 
 	agg, err := aggValuesToQPR(encoded)
@@ -500,7 +507,7 @@ func TestAggValuesToQPRZeroRows(t *testing.T) {
 	require.Zero(t, result.NotExists)
 }
 
-func stringColumnRows(t *testing.T, column seq.StringColumn) []string {
+func stringColumnRows(t *testing.T, column seq.Column[[]byte]) []string {
 	t.Helper()
 	var rows []string
 	it := column.NewIter()
@@ -536,7 +543,7 @@ func requireAggTokens(t *testing.T, agg *seq.AggregatableSamples, want ...string
 	assert.Equal(t, want, got)
 }
 
-func sumsFromColumn(column seq.Float64Column) []float64 {
+func sumsFromColumn(column seq.Column[float64]) []float64 {
 	var got []float64
 	it := column.NewIter()
 	for it.Next() {

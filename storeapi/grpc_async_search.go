@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/ozontech/seq-db/asyncsearcher"
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/seq"
@@ -67,6 +68,10 @@ func (g *GrpcV1) FetchAsyncSearchResult(
 	}
 
 	proxyProtocol := proxyProtocolFromContext(ctx)
+	if proxyProtocol >= config.ProxyProtocolVersion2 {
+		fr.QPR.ToCompressed()
+	}
+
 	resp := buildSearchResponseVersion(&fr.QPR, proxyProtocol)
 
 	errs := make([]string, 0, len(fr.QPR.Errors))

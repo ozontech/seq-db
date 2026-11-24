@@ -23,6 +23,7 @@ func TestQPRMarshalUnmarshal(t *testing.T) {
 		tail, err := unmarshalQPR(&out, rawQPR, math.MaxInt)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(tail))
+		qpr.ToCompressed()
 		require.Equal(t, qpr.IDs, out.IDs)
 		require.Equal(t, qpr.Histogram, out.Histogram)
 		require.Equal(t, qpr.Total, out.Total)
@@ -127,7 +128,7 @@ func testAgg(fn seq.AggFunc, width int, rows ...testAggRow) seq.AggregatableSamp
 	}
 	for _, row := range rows {
 		for i, token := range row.tokens {
-			agg.Tokens[i].AppendString(token)
+			agg.Tokens[i].Append([]byte(token))
 		}
 		if withMIDs {
 			agg.MIDs.Append(int64(row.mid))
@@ -207,15 +208,17 @@ func marshalLegacyAggregatableSamples(s seq.AggregatableSamples, dst []byte, ver
 	rows := s.Count()
 	dst = be.AppendUint64(dst, uint64(rows))
 	prevMID := seq.MID(0)
-	var tokens seq.StringColumnIter
+	var tokens seq.Iter[[]byte]
 	if len(s.Tokens) > 0 {
 		tokens = s.Tokens[0].NewIter()
 	}
-	var mids seq.Int64ColumnIter
+	var mids seq.Iter[int64]
 	if s.MIDs != nil {
 		mids = s.MIDs.NewIter()
 	}
-	for i := range rows {
+	samples := s.Values.NewSamplesIter()
+	samples.Next()
+	for range rows {
 		var token string
 		if tokens.Next() {
 			token = string(tokens.Value())
@@ -230,36 +233,11 @@ func marshalLegacyAggregatableSamples(s seq.AggregatableSamples, dst []byte, ver
 		dst = binary.AppendVarint(dst, delta)
 		dst = binary.AppendUvarint(dst, uint64(len(sample.Token)))
 		dst = append(dst, sample.Token...)
-		dst = marshalLegacySamplesContainer(legacyRowSamples(&s.Values, i), dst)
+		dst = marshalLegacySamplesContainer(samples.Samples(), dst)
+		samples.Next()
 	}
 	dst = be.AppendUint64(dst, uint64(s.NotExists))
 	return dst
-}
-
-func legacyRowSamples(values *seq.AggValues, row int) *seq.SamplesContainer {
-	samples := &seq.SamplesContainer{}
-	switch values.Func {
-	case seq.AggFuncCount, seq.AggFuncSum, seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncAvg, seq.AggFuncQuantile, seq.AggFuncUniqueCount:
-		samples.Total = values.Totals.At(row)
-		if values.Func != seq.AggFuncCount {
-			samples.NotExists = values.NotExists.At(row)
-		}
-	}
-	switch values.Func {
-	case seq.AggFuncSum, seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncAvg, seq.AggFuncQuantile:
-		samples.Sum = values.Sums.At(row)
-		samples.Min = values.Mins.At(row)
-		samples.Max = values.Maxs.At(row)
-		if values.Func == seq.AggFuncQuantile {
-			samples.Samples = values.Quantiles.At(row)
-		}
-	case seq.AggFuncUniqueCount:
-		samples.Values = make(map[uint32]struct{}, len(values.UniqueIDs.At(row)))
-		for _, id := range values.UniqueIDs.At(row) {
-			samples.Values[id] = struct{}{}
-		}
-	}
-	return samples
 }
 
 func marshalLegacySamplesContainer(h *seq.SamplesContainer, dst []byte) []byte {
@@ -290,7 +268,7 @@ func TestQPRVersion1Compatibility(t *testing.T) {
 			seq.MID(1761812502463): 743,
 		},
 		Aggs: []seq.AggregatableSamples{{
-			Tokens: []seq.StringColumn{stringColumn("_not_exists", "seq-db store", "seq-db store")},
+			Tokens: []seq.Column[[]byte]{stringColumn("_not_exists", "seq-db store", "seq-db store")},
 			MIDs: midsColumn(
 				consts.DummyMID,
 				seq.MID(1761812502456),
@@ -350,7 +328,7 @@ func TestQPRSortsAggBins(t *testing.T) {
 	unsortedQPR := seq.QPR{
 		Histogram: map[seq.MID]uint64{},
 		Aggs: []seq.AggregatableSamples{{
-			Tokens: []seq.StringColumn{stringColumn("b", "a", "a")},
+			Tokens: []seq.Column[[]byte]{stringColumn("b", "a", "a")},
 			MIDs:   midsColumn(2, 3, 1),
 			Values: seq.NewAggValuesFromSamples(seq.AggFuncCount, []seq.SamplesContainer{
 				{}, {}, {},
@@ -465,76 +443,44 @@ func requireAggsEqual(t *testing.T, expected, actual seq.AggregatableSamples) {
 
 func testAggRows(agg seq.AggregatableSamples) []testAggRow {
 	rows := make([]testAggRow, 0, agg.Count())
-	iters := make([]seq.StringColumnIter, len(agg.Tokens))
-	var mids seq.Int64ColumnIter
-	var totals seq.Int64ColumnIter
-	var notExists seq.Int64ColumnIter
+	iters := make([]seq.Iter[[]byte], len(agg.Tokens))
+	var mids seq.Iter[int64]
 	for i := range iters {
 		iters[i] = agg.Tokens[i].NewIter()
-	}
-	for i := range iters {
-		if !iters[i].Next() {
-			return rows
-		}
+		iters[i].Next()
 	}
 	if agg.MIDs != nil {
 		mids = agg.MIDs.NewIter()
+		mids.Next()
 	}
-	if agg.Values.Totals != nil {
-		totals = agg.Values.Totals.NewIter()
-	}
-	if agg.Values.NotExists != nil {
-		notExists = agg.Values.NotExists.NewIter()
-	}
-	for row := range agg.Count() {
+	samples := agg.Values.NewSamplesIter()
+	samples.Next()
+	for range agg.Count() {
 		var mid seq.MID
-		if mids != nil && mids.Next() {
+		if mids != nil {
 			mid = seq.MID(mids.Value())
+			mids.Next()
 		}
 		item := testAggRow{mid: mid}
 		for i := range iters {
 			item.tokens = append(item.tokens, string(iters[i].Value()))
 		}
-		switch agg.Values.Func {
-		case seq.AggFuncCount:
-			if totals.Next() {
-				item.total = totals.Value()
+		s := samples.Samples()
+		item.total = s.Total
+		item.notExists = s.NotExists
+		item.sum = s.Sum
+		item.min = s.Min
+		item.max = s.Max
+		item.samples = append([]float64(nil), s.Samples...)
+		if s.Values != nil {
+			item.uniqueIDs = make([]uint32, 0, len(s.Values))
+			for id := range s.Values {
+				item.uniqueIDs = append(item.uniqueIDs, id)
 			}
-		case seq.AggFuncSum, seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncAvg:
-			if totals.Next() {
-				item.total = totals.Value()
-			}
-			if notExists.Next() {
-				item.notExists = notExists.Value()
-			}
-			switch agg.Values.Func {
-			case seq.AggFuncSum, seq.AggFuncAvg:
-				item.sum = agg.Values.Sums.At(row)
-			case seq.AggFuncMin:
-				item.min = agg.Values.Mins.At(row)
-			case seq.AggFuncMax:
-				item.max = agg.Values.Maxs.At(row)
-			}
-		case seq.AggFuncQuantile:
-			if totals.Next() {
-				item.total = totals.Value()
-			}
-			if notExists.Next() {
-				item.notExists = notExists.Value()
-			}
-			item.min = agg.Values.Mins.At(row)
-			item.max = agg.Values.Maxs.At(row)
-			item.samples = agg.Values.Quantiles.At(row)
-		case seq.AggFuncUniqueCount:
-			if totals.Next() {
-				item.total = totals.Value()
-			}
-			if notExists.Next() {
-				item.notExists = notExists.Value()
-			}
-			item.uniqueIDs = agg.Values.UniqueIDs.At(row)
+			slices.Sort(item.uniqueIDs)
 		}
 		rows = append(rows, item)
+		samples.Next()
 		for i := range iters {
 			iters[i].Next()
 		}
@@ -583,15 +529,15 @@ func getRandomQPR(size int) seq.QPR {
 	}
 }
 
-func stringColumn(values ...string) seq.StringColumn {
+func stringColumn(values ...string) seq.Column[[]byte] {
 	column := seq.NewStringColumn(len(values))
 	for _, value := range values {
-		column.AppendString(value)
+		column.Append([]byte(value))
 	}
 	return column
 }
 
-func midsColumn(values ...seq.MID) seq.Int64Column {
+func midsColumn(values ...seq.MID) seq.Column[int64] {
 	column := seq.NewInt64Column(len(values))
 	for _, value := range values {
 		column.Append(int64(value))
@@ -599,7 +545,7 @@ func midsColumn(values ...seq.MID) seq.Int64Column {
 	return column
 }
 
-func stringColumnValues(column seq.StringColumn) []string {
+func stringColumnValues(column seq.Column[[]byte]) []string {
 	values := make([]string, 0, column.Len())
 	it := column.NewIter()
 	for it.Next() {
@@ -608,7 +554,7 @@ func stringColumnValues(column seq.StringColumn) []string {
 	return values
 }
 
-func int64ColumnValues(column seq.Int64Column) []int64 {
+func int64ColumnValues(column seq.Column[int64]) []int64 {
 	values := make([]int64, 0, column.Len())
 	it := column.NewIter()
 	for it.Next() {

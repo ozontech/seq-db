@@ -965,26 +965,32 @@ type aggBinRow struct {
 func sortedAggBins(agg seq.AggregatableSamples) []aggBinRow {
 	bins := make([]aggBinRow, 0, agg.Count())
 	tokens := agg.Tokens[0].NewIter()
-	for idx := 0; tokens.Next(); idx++ {
+	var mids seq.Iter[int64]
+	if agg.MIDs != nil {
+		mids = agg.MIDs.NewIter()
+	}
+	samples := agg.Values.NewSamplesIter()
+	for tokens.Next() {
+		mid := seq.MID(consts.DummyMID)
+		if mids != nil {
+			mids.Next()
+			mid = seq.MID(mids.Value())
+		}
+		samples.Next()
+		s := samples.Samples()
 		bin := aggBinRow{
-			token: string(tokens.Value()),
-			mid:   agg.RowMID(idx),
+			token:   string(tokens.Value()),
+			mid:     mid,
+			total:   s.Total,
+			sum:     s.Sum,
+			min:     s.Min,
+			max:     s.Max,
+			samples: append([]float64(nil), s.Samples...),
 		}
-		switch agg.Values.Func {
-		case seq.AggFuncCount:
-			bin.total = agg.Values.Totals.At(idx)
-		case seq.AggFuncSum, seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncAvg, seq.AggFuncQuantile:
-			bin.total = agg.Values.Totals.At(idx)
-			bin.sum = agg.Values.Sums.At(idx)
-			bin.min = agg.Values.Mins.At(idx)
-			bin.max = agg.Values.Maxs.At(idx)
-			if agg.Values.Func == seq.AggFuncQuantile {
-				bin.samples = agg.Values.Quantiles.At(idx)
-			}
-		case seq.AggFuncUniqueCount:
-			bin.total = agg.Values.Totals.At(idx)
-			bin.uniqueIDs = agg.Values.UniqueIDs.At(idx)
+		for id := range s.Values {
+			bin.uniqueIDs = append(bin.uniqueIDs, id)
 		}
+		slices.Sort(bin.uniqueIDs)
 		bins = append(bins, bin)
 	}
 	slices.SortFunc(bins, func(a, b aggBinRow) int {
@@ -2622,11 +2628,22 @@ func findAggBin(agg seq.AggregatableSamples, bin seq.AggBin) *seq.SamplesContain
 	}
 	target := []byte(bin.Token)
 	tokens := agg.Tokens[0].NewIter()
-	for idx := 0; tokens.Next(); idx++ {
+	var mids seq.Iter[int64]
+	if agg.MIDs != nil {
+		mids = agg.MIDs.NewIter()
+	}
+	samples := agg.Values.NewSamplesIter()
+	for tokens.Next() {
+		mid := seq.MID(consts.DummyMID)
+		if mids != nil {
+			mids.Next()
+			mid = seq.MID(mids.Value())
+		}
+		samples.Next()
 		c := 0
-		if bin.MID < agg.RowMID(idx) {
+		if bin.MID < mid {
 			c = -1
-		} else if bin.MID > agg.RowMID(idx) {
+		} else if bin.MID > mid {
 			c = 1
 		}
 		if c == 0 {
@@ -2636,7 +2653,7 @@ func findAggBin(agg seq.AggregatableSamples, bin seq.AggBin) *seq.SamplesContain
 			break
 		}
 		if c == 0 {
-			return agg.RowSamples(idx)
+			return samples.Samples()
 		}
 	}
 	return nil

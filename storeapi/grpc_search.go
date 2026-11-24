@@ -233,6 +233,10 @@ func (g *GrpcV1) doSearch(
 		}
 	}
 
+	if proxyProtocol >= config.ProxyProtocolVersion2 {
+		qpr.ToCompressed()
+	}
+
 	return buildSearchResponseVersion(qpr, proxyProtocol), nil
 }
 
@@ -310,14 +314,25 @@ func aggValuesToLegacyProto(dst *storeapi.SearchResponse_Agg, fromAgg *seq.Aggre
 	// TODO(dkharms): We can remove this variable since [Agg] is deprecated.
 	counts := make(map[string]uint64, rows)
 
-	var tokens seq.StringColumnIter
+	var tokens seq.Iter[[]byte]
+	var mids seq.Iter[int64]
 	if len(fromAgg.Tokens) > 0 {
 		tokens = fromAgg.Tokens[0].NewIter()
 	}
-	for idx := 0; tokens != nil && tokens.Next(); idx++ {
+	if fromAgg.MIDs != nil {
+		mids = fromAgg.MIDs.NewIter()
+		mids.Next()
+	}
+	samples := fromAgg.Values.NewSamplesIter()
+	samples.Next()
+	for ; tokens != nil && tokens.Next(); samples.Next() {
 		token := string(tokens.Value())
-		mid := fromAgg.RowMID(idx)
-		hist := legacyHistogramProto(fromAgg.RowSamples(idx))
+		mid := seq.MID(consts.DummyMID)
+		if mids != nil {
+			mid = seq.MID(mids.Value())
+			mids.Next()
+		}
+		hist := legacyHistogramProto(samples.Samples())
 
 		dst.Timeseries = append(dst.Timeseries, &storeapi.SearchResponse_Bin{
 			Label: token,

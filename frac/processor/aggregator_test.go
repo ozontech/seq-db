@@ -318,7 +318,9 @@ func TestSingleTreeCountAggregator(t *testing.T) {
 	}
 
 	r.Equal(1, result.Count())
-	r.Equal(int64(1), result.RowSamples(0).Total)
+	samples := result.Values.NewSamplesIter()
+	samples.Next()
+	r.Equal(int64(1), samples.Samples().Total)
 }
 
 func TestAggregatorLimitExceeded(t *testing.T) {

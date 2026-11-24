@@ -22,14 +22,14 @@ func assertAggsEqual(t *testing.T, actual, expected []AggregatableSamples) {
 	}
 }
 
-func columnRows(col Int64Column) int {
+func columnRows(col Column[int64]) int {
 	if col == nil {
 		return 0
 	}
 	return col.Len()
 }
 
-func totalsValues(col Int64Column) []int64 {
+func totalsValues(col Column[int64]) []int64 {
 	if col == nil {
 		return nil
 	}
@@ -41,7 +41,7 @@ func totalsValues(col Int64Column) []int64 {
 	return values
 }
 
-func midValues(col Int64Column) []MID {
+func midValues(col Column[int64]) []MID {
 	if col == nil {
 		return nil
 	}
@@ -73,7 +73,7 @@ func testAgg(fn AggFunc, rows ...testAggRow) AggregatableSamples {
 	agg := NewAggregatableSamples(fn, tokenCnt, len(rows))
 	for _, row := range rows {
 		for i, token := range row.tokens {
-			agg.Tokens[i].AppendString(token)
+			agg.Tokens[i].Append([]byte(token))
 		}
 		agg.appendMID(row.mid)
 		switch fn {
@@ -104,10 +104,17 @@ func testAgg(fn AggFunc, rows ...testAggRow) AggregatableSamples {
 
 func aggRows(agg AggregatableSamples) []testAggRow {
 	rows := make([]testAggRow, 0, agg.Count())
-	iters := make([]StringColumnIter, len(agg.Tokens))
+	iters := make([]Iter[[]byte], len(agg.Tokens))
 	for i := range iters {
 		iters[i] = agg.Tokens[i].NewIter()
 	}
+	var mids Iter[int64]
+	if agg.MIDs != nil {
+		mids = agg.MIDs.NewIter()
+		mids.Next()
+	}
+	samples := agg.Values.NewSamplesIter()
+	samples.Next()
 	for idx := 0; idx < agg.Count(); idx++ {
 		next := true
 		for i := range iters {
@@ -116,35 +123,29 @@ func aggRows(agg AggregatableSamples) []testAggRow {
 		if !next {
 			break
 		}
-		item := testAggRow{mid: agg.RowMID(idx)}
+		item := testAggRow{mid: MID(consts.DummyMID)}
+		if mids != nil {
+			item.mid = MID(mids.Value())
+			mids.Next()
+		}
 		for i := range iters {
 			item.tokens = append(item.tokens, string(iters[i].Value()))
 		}
-		switch agg.Values.Func {
-		case AggFuncCount:
-			item.total = agg.Values.Totals.At(idx)
-		case AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg:
-			item.total = agg.Values.Totals.At(idx)
-			item.notExists = agg.Values.NotExists.At(idx)
-			switch agg.Values.Func {
-			case AggFuncSum, AggFuncAvg:
-				item.sum = agg.Values.Sums.At(idx)
-			case AggFuncMin:
-				item.min = agg.Values.Mins.At(idx)
-			case AggFuncMax:
-				item.max = agg.Values.Maxs.At(idx)
+		s := samples.Samples()
+		item.total = s.Total
+		item.notExists = s.NotExists
+		item.sum = s.Sum
+		item.min = s.Min
+		item.max = s.Max
+		item.samples = append([]float64(nil), s.Samples...)
+		if s.Values != nil {
+			item.uniqueIDs = make([]uint32, 0, len(s.Values))
+			for id := range s.Values {
+				item.uniqueIDs = append(item.uniqueIDs, id)
 			}
-		case AggFuncQuantile:
-			item.total = agg.Values.Totals.At(idx)
-			item.notExists = agg.Values.NotExists.At(idx)
-			item.min = agg.Values.Mins.At(idx)
-			item.max = agg.Values.Maxs.At(idx)
-			item.samples = agg.Values.Quantiles.At(idx)
-		case AggFuncUniqueCount:
-			item.total = agg.Values.Totals.At(idx)
-			item.notExists = agg.Values.NotExists.At(idx)
-			item.uniqueIDs = agg.Values.UniqueIDs.At(idx)
+			slices.Sort(item.uniqueIDs)
 		}
+		samples.Next()
 		rows = append(rows, item)
 	}
 	return rows
@@ -680,12 +681,22 @@ func testAggRowBin(row testAggRow) AggBin {
 
 func aggBins(agg AggregatableSamples) []AggBin {
 	bins := make([]AggBin, 0, agg.Count())
-	var it StringColumnIter
+	var it Iter[[]byte]
+	var mids Iter[int64]
 	if len(agg.Tokens) > 0 {
 		it = agg.Tokens[0].NewIter()
 	}
-	for i := 0; it.Next(); i++ {
-		bins = append(bins, AggBin{Token: string(it.Value()), MID: agg.RowMID(i)})
+	if agg.MIDs != nil {
+		mids = agg.MIDs.NewIter()
+		mids.Next()
+	}
+	for it.Next() {
+		mid := MID(consts.DummyMID)
+		if mids != nil {
+			mid = MID(mids.Value())
+			mids.Next()
+		}
+		bins = append(bins, AggBin{Token: string(it.Value()), MID: mid})
 	}
 	return bins
 }
@@ -837,9 +848,9 @@ func TestMergeAggregatableSamplesOrder(t *testing.T) {
 	}, aggBins(left))
 
 	assert.Equal(t, []testAggRow{
-		{tokens: []string{"a"}, mid: 2, total: 1, sum: 1},
-		{tokens: []string{"b"}, mid: 2, total: 3, sum: 10},
-		{tokens: []string{"a"}, mid: 1, total: 1, sum: 2},
+		{tokens: []string{"a"}, mid: 2, total: 1, sum: 1, min: 1, max: 1},
+		{tokens: []string{"b"}, mid: 2, total: 3, sum: 10, min: 3, max: 4},
+		{tokens: []string{"a"}, mid: 1, total: 1, sum: 2, min: 2, max: 2},
 	}, aggRows(left))
 }
 
@@ -914,6 +925,60 @@ func TestMultiColumnAggregatableSamplesOrder(t *testing.T) {
 	}
 	require.Equal(t, []MID{2, 1, 1, consts.DummyMID}, midValues(agg.MIDs))
 	require.Equal(t, []string{"a", "a", "a", "z", "b", "z", "c", "a"}, tokens)
+}
+
+func TestMergeCompressedColumns(t *testing.T) {
+	newQPR := func(rows ...testAggRow) *QPR {
+		qpr := &QPR{Aggs: []AggregatableSamples{testAgg(AggFuncCount, rows...)}}
+		agg := &qpr.Aggs[0]
+		agg.Tokens[0] = agg.Tokens[0].Compress(frontCoding{}, zstdCodec[[]byte]{})
+		agg.Values.Totals = agg.Values.Totals.Compress(bitpack{})
+		return qpr
+	}
+
+	left := newQPR(
+		testAggRow{tokens: []string{"a"}, total: 2},
+		testAggRow{tokens: []string{"c"}, total: 1},
+	)
+	right := newQPR(
+		testAggRow{tokens: []string{"a"}, total: 3},
+		testAggRow{tokens: []string{"b"}, total: 4},
+	)
+
+	dst := &QPR{}
+	MergeQPRs(dst, []*QPR{left, right}, 10, 0, DocsOrderDesc)
+	require.IsType(t, &compressedColumn[[]byte]{}, left.Aggs[0].Tokens[0])
+	require.IsType(t, &compressedColumn[int64]{}, left.Aggs[0].Values.Totals)
+	require.IsType(t, &StringColumn{}, dst.Aggs[0].Tokens[0])
+	require.IsType(t, &Int64Column{}, dst.Aggs[0].Values.Totals)
+
+	result := dst.Aggs[0].Aggregate(AggregateArgs{Func: AggFuncCount})
+	require.Len(t, result.Buckets, 3)
+	require.Equal(t, "a", result.Buckets[0].Name)
+	require.Equal(t, float64(5), result.Buckets[0].Value)
+	require.Equal(t, "b", result.Buckets[1].Name)
+	require.Equal(t, float64(4), result.Buckets[1].Value)
+	require.Equal(t, "c", result.Buckets[2].Name)
+	require.Equal(t, float64(1), result.Buckets[2].Value)
+}
+
+func TestKWayMergeCompressedColumns(t *testing.T) {
+	newQPR := func(token string, total int64) *QPR {
+		agg := testAgg(AggFuncCount, testAggRow{tokens: []string{token}, total: total})
+		agg.Tokens[0] = agg.Tokens[0].Compress(zstdCodec[[]byte]{})
+		agg.Values.Totals = agg.Values.Totals.Compress(bitpack{})
+		return &QPR{Aggs: []AggregatableSamples{agg}}
+	}
+
+	dst := &QPR{}
+	MergeQPRs(dst, []*QPR{
+		newQPR("a", 1),
+		newQPR("a", 2),
+		newQPR("b", 3),
+	}, 10, 0, DocsOrderDesc)
+
+	require.Equal(t, []int64{3, 3}, totalsValues(dst.Aggs[0].Values.Totals))
+	require.Equal(t, []AggBin{{Token: "a"}, {Token: "b"}}, aggBins(dst.Aggs[0]))
 }
 
 func TestMergeQPRsKWay(t *testing.T) {
