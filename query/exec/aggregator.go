@@ -8,6 +8,7 @@ import (
 
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/util"
 )
 
 type ExecutorState byte
@@ -153,7 +154,7 @@ func (a *DistributedAggregator) drainInput(input query.RecordProducer) {
 
 func (a *DistributedAggregator) Finalize() *query.Summary {
 	var total, notExists uint64
-	var firstErr error
+	errs := make([]error, 0, len(a.inputs))
 	for _, i := range a.inputs {
 		s := i.Finalize()
 		if s == nil {
@@ -161,11 +162,11 @@ func (a *DistributedAggregator) Finalize() *query.Summary {
 		}
 		total += s.Total
 		notExists += s.NotExists
-		if firstErr == nil && s.Err != nil {
-			firstErr = s.Err
+		if s.Err != nil {
+			errs = append(errs, s.Err)
 		}
 	}
-	return &query.Summary{Total: total, NotExists: notExists, Err: firstErr}
+	return &query.Summary{Total: total, NotExists: notExists, Err: util.DeduplicateErrors(errs)}
 }
 
 func (a *DistributedAggregator) sortBuckets() {

@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -95,21 +96,50 @@ func BenchmarkOr(b *testing.B) {
 	}
 }
 
+// BenchmarkAnd traverses AND of two static asc leaves over LID sets of different density
 func BenchmarkAnd(b *testing.B) {
 	sizes := []int{1000, 10_000, 1_000_000}
+	densities := []struct {
+		name string
+		k    func(size int) int
+	}{
+		{"random", nil},
+		{"dense", func(size int) int { return 2 }},
+		{"medium", func(size int) int { return int(math.Sqrt(float64(size))) }},
+		{"sparse", func(size int) int { return size / 64 }},
+	}
 
 	for _, s := range sizes {
-		b.Run(fmt.Sprintf("size=%d", s), func(b *testing.B) {
-			r := rand.New(rand.NewSource(benchRandSeed))
-			res := make([]uint32, 0, s)
-			n := NewAnd(newNodeStaticSize(r, s), newNodeStaticSize(r, s))
+		for _, d := range densities {
+			b.Run(fmt.Sprintf("size=%d/density=%s", s, d.name), func(b *testing.B) {
+				r := rand.New(rand.NewSource(benchRandSeed))
+				dataA, _ := Generate(r, s)
+				var dataB []uint32
+				if d.k != nil {
+					k := d.k(s)
+					dataB = make([]uint32, 0, s/k+1)
+					for i := 0; i < len(dataA); i += k {
+						dataB = append(dataB, dataA[i])
+					}
+				} else {
+					dataB, _ = Generate(r, s)
+				}
 
-			for b.Loop() {
-				res = readAllInto(n, res)
-			}
+				// control run: the intersection must be exactly dataB
+				want := readAllIntoGeq(NewAnd(NewStatic(dataA, true), NewStatic(dataB, true)), nil)
+				if d.k != nil {
+					assert.Equal(b, len(dataB), len(want))
+				}
 
-			assert.Equal(b, cap(res), s)
-		})
+				res := make([]uint32, 0, s)
+				for b.Loop() {
+					n := NewAnd(NewStatic(dataA, true), NewStatic(dataB, true))
+					res = readAllInto(n, res[:0])
+				}
+				assert.Equal(b, len(want), len(res))
+				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*len(want)), "ns/match")
+			})
+		}
 	}
 }
 

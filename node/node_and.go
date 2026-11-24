@@ -17,9 +17,11 @@ func (n *nodeAnd) String() string {
 }
 
 func NewAnd(left, right Node) *nodeAnd {
-	node := &nodeAnd{left: left, right: right}
+	node := &nodeAnd{left: left, right: right, rightID: NullLID()}
 	node.readLeft()
-	node.readRight()
+	if !node.leftID.IsNull() {
+		node.readRightGeq(node.leftID)
+	}
 	return node
 }
 

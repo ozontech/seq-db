@@ -30,6 +30,11 @@ RUN CGO_ENABLED=${CGO_ENABLED} GOEXPERIMENT=${GOEXPERIMENT} go build -trimpath \
     -ldflags "-w -s" \
     -o fraction ./cmd/fraction
 
+RUN CGO_ENABLED=${CGO_ENABLED} GOEXPERIMENT=${GOEXPERIMENT} go build -trimpath \
+    -tags 'netgo osusergo' \
+    -ldflags "-w -s" \
+    -o replay ./cmd/replay
+
 # Deploy
 FROM $APP_IMAGE
 
@@ -37,5 +42,6 @@ WORKDIR /seq-db
 
 COPY --from=build /seq-db/seq-db /seq-db/seq-db
 COPY --from=build /seq-db/fraction /seq-db/fraction
+COPY --from=build /seq-db/replay /seq-db/replay
 
 ENTRYPOINT [ "./seq-db" ]

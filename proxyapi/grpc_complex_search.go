@@ -3,7 +3,6 @@ package proxyapi
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 
@@ -100,43 +99,29 @@ func (g *grpcV1) useStreamSearch(
 
 	streamSearchReq, err := buildStreamSearchReqFromComplexSearchReq(req)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, `can't build stream search request`)
+		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("can't build stream search request: %s", err.Error()))
 	}
 
-	var partialErr error
-	storesStream, cancelStreams, err := g.searchIngestor.StreamSearch(ctx, streamSearchReq, tr)
+	storesStream, err := g.openStoreStreams(ctx, streamSearchReq, tr)
 	if err != nil {
-		if errors.Is(err, consts.ErrPartialResponse) {
-			if shouldFailPartialResponse(ctx) {
-				cancelStreams()
-				return nil, status.Error(codes.Internal, "partial response: not all shards returned results")
-			}
-			partialErr = err
-			metric.SearchPartial.Inc()
-		} else {
-			cancelStreams()
-			return nil, status.Error(codes.Internal, err.Error())
-		}
+		return nil, err
 	}
 
 	var docs []*seqproxyapi.Document
 	var aggs []*seqproxyapi.Aggregation
 	if streamSearchReq.Agg != nil {
-		aggs = readAggregations(storesStream, aggOutSchema(streamSearchReq.Agg))
+		aggs = readAggregations(storesStream.Records, aggOutSchema(streamSearchReq.Agg))
 	} else {
-		docs = readDocuments(storesStream)
+		docs = readDocuments(storesStream.Records)
 	}
 
 	// finalize to get summary
-	summary := storesStream.Finalize()
-	if summary == nil {
-		summary = &query.Summary{}
+	summary, err := g.finalizeStoreStreams(ctx, storesStream)
+	if err != nil {
+		return nil, err
 	}
 	if len(aggs) == 1 {
 		aggs[0].NotExists = int64(summary.NotExists)
-	}
-	if partialErr != nil && summary.Err == nil {
-		summary.Err = partialErr
 	}
 
 	tr.Done()
@@ -221,6 +206,16 @@ func shouldUseStreamSearch(useStreamSearch bool, req *seqproxyapi.ComplexSearchR
 func buildStreamSearchReqFromComplexSearchReq(
 	req *seqproxyapi.ComplexSearchRequest,
 ) (*search.StreamSearchRequest, error) {
+	if req.Query == nil {
+		return nil, status.Error(codes.InvalidArgument, "search query must be provided")
+	}
+	if req.Query.From == nil || req.Query.To == nil {
+		return nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
+	}
+	if req.Query.From.AsTime().After(req.Query.To.AsTime()) {
+		return nil, status.Error(codes.InvalidArgument, `"from" timestamp must not be after "to" timestamp`)
+	}
+
 	seqql, err := parser.ParseSeqQL(req.Query.Query, nil)
 	if err != nil {
 		return nil, fmt.Errorf("parse query: %w", err)

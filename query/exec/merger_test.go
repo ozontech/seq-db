@@ -1,9 +1,11 @@
 package exec
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/seq"
@@ -516,4 +518,64 @@ func collectRecords(p query.RecordProducer) []*query.Record {
 		out = append(out, r)
 	}
 	return out
+}
+
+func TestMergerCombineSummariesErrors(t *testing.T) {
+	sameErr := errors.New("connection reset")
+
+	tests := []struct {
+		name      string
+		leftErr   error
+		rightErr  error
+		wantCount int
+		wantTexts []string
+	}{
+		{
+			name:      "no errors",
+			wantCount: 0,
+		},
+		{
+			name:      "single error",
+			leftErr:   sameErr,
+			wantCount: 1,
+			wantTexts: []string{"connection reset"},
+		},
+		{
+			name:      "duplicate errors collapsed",
+			leftErr:   sameErr,
+			rightErr:  errors.New("connection reset"),
+			wantCount: 1,
+			wantTexts: []string{"connection reset"},
+		},
+		{
+			name:      "distinct errors joined",
+			leftErr:   errors.New("connection reset"),
+			rightErr:  errors.New("deadline exceeded"),
+			wantCount: 1,
+			wantTexts: []string{"connection reset", "deadline exceeded"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			merger := NewMerger(
+				&testProducer{data: makeMergerUint32Records([]uint32{1}), err: tc.leftErr},
+				&testProducer{data: makeMergerUint32Records([]uint32{2}), err: tc.rightErr},
+				query.Uint32Column(0),
+				seq.DocsOrderAsc,
+			)
+
+			collectRecords(merger)
+			summary := merger.Finalize()
+
+			if tc.wantCount == 0 {
+				assert.Nil(t, summary.Err)
+				return
+			}
+			require.NotNil(t, summary.Err)
+			for _, text := range tc.wantTexts {
+				assert.Contains(t, summary.Err.Error(), text)
+			}
+		})
+	}
 }

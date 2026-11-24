@@ -16,8 +16,6 @@ var errBatchingUnsupported = errors.New("batching unsupported")
 // maxBatchedTIDsPerLeaf limits number of TIDs for a single OrMulti node
 const maxBatchedTIDsPerLeaf = 5
 
-type leafTIDsCache map[parser.Token][]uint32
-
 // tryBuildBatchEvalTree tries to build a batched eval tree if possible.
 //
 // Returns errBatchingUnsupported when the non-batched path should be used.
@@ -25,6 +23,7 @@ func tryBuildBatchEvalTree(
 	root *parser.ASTNode,
 	fracVer config.BinaryDataVersion,
 	ti tokenIndex,
+	cache tidsCache,
 	queryOpts QueryOptimizationConfig,
 	minLID, maxLID uint32,
 	stats *searchStats,
@@ -43,7 +42,6 @@ func tryBuildBatchEvalTree(
 		return nil, errBatchingUnsupported
 	}
 
-	cache := make(leafTIDsCache)
 	cost, err := calculateQueryIterationCost(root, ti, cache)
 	if err != nil {
 		return nil, err
@@ -86,7 +84,7 @@ func astSupportsBatching(root *parser.ASTNode) bool {
 	}
 }
 
-func calculateQueryIterationCost(root *parser.ASTNode, ti tokenIndex, cache leafTIDsCache) (uint64, error) {
+func calculateQueryIterationCost(root *parser.ASTNode, ti tokenIndex, cache tidsCache) (uint64, error) {
 	if root == nil {
 		return 0, fmt.Errorf("empty AST")
 	}
@@ -126,8 +124,8 @@ func calculateQueryIterationCost(root *parser.ASTNode, ti tokenIndex, cache leaf
 	}
 }
 
-func leafIterationCost(ti tokenIndex, field string, token parser.Token, cache leafTIDsCache) (uint64, error) {
-	tids, err := ti.GetTIDsByTokenExpr(token)
+func leafIterationCost(ti tokenIndex, field string, token parser.Token, cache tidsCache) (uint64, error) {
+	tids, err := cache.get(ti, token)
 	if err != nil {
 		return 0, err
 	}
@@ -136,7 +134,6 @@ func leafIterationCost(ti tokenIndex, field string, token parser.Token, cache le
 	if len(tids) > maxBatchedTIDsPerLeaf {
 		return 0, errBatchingUnsupported
 	}
-	cache[token] = tids
 	if len(tids) == 0 {
 		return 0, nil
 	}
@@ -195,7 +192,7 @@ func buildBatchEvalTree(
 func evalBatchLeaf(
 	ti tokenIndex,
 	token parser.Token,
-	cache leafTIDsCache,
+	cache tidsCache,
 	sw *stopwatch.Stopwatch,
 	stats *searchStats,
 	minLID, maxLID uint32,
@@ -203,13 +200,9 @@ func evalBatchLeaf(
 ) (node.BatchedNode, error) {
 	stats.LeavesTotal++
 
-	tids, ok := cache[token]
-	if !ok {
-		var err error
-		tids, err = ti.GetTIDsByTokenExpr(token)
-		if err != nil {
-			return nil, err
-		}
+	tids, err := cache.get(ti, token)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(tids) == 0 {
