@@ -22,6 +22,8 @@ type lifecycleManager struct {
 	cleaner   *remoteCleaner
 	tasks     *TaskManager // Background offloading tasks
 
+	remoteOverflowed bool
+
 	sealingWg sync.WaitGroup // todo: get rid after removing SealAll in tests
 }
 
@@ -45,7 +47,7 @@ func newLifecycleManager(
 // Maintain performs periodic lifecycle management tasks.
 // It coordinates rotation, offloading, cleanup based on configuration.
 func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.WaitGroup) {
-	lc.registry.suspendIfOverCapacity(cfg.SealingQueueLen, cfg.SuspendThreshold(), lc.cleaner.IsOverflowed())
+	lc.registry.suspendIfOverCapacity(cfg.SealingQueueLen, cfg.SuspendThreshold(), lc.isRemoteOverflowed())
 
 	lc.rotate(cfg.FracSize, wg)
 	if cfg.OffloadingEnabled {
@@ -59,6 +61,16 @@ func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.
 	}
 	lc.updateOldestMetric()
 	lc.SyncInfoCache()
+}
+
+func (lc *lifecycleManager) isRemoteOverflowed() bool {
+	size := lc.cleaner.Size()
+	if size >= maxPendingRemotes {
+		lc.remoteOverflowed = true
+	} else if size*2 <= maxPendingRemotes {
+		lc.remoteOverflowed = false
+	}
+	return lc.remoteOverflowed
 }
 
 // SyncInfoCache synchronizes the info cache with disk state.

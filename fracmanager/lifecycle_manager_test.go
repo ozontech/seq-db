@@ -154,6 +154,34 @@ func TestSuspendIfOverCapacity(t *testing.T) {
 	}
 }
 
+func TestRemoteQueueOverflowed(t *testing.T) {
+	cleaner, provider := setupRemoteCleanerTest(t)
+	lc := &lifecycleManager{cleaner: cleaner}
+
+	remotes := make([]*refCountedRemote, 0, maxPendingRemotes)
+	for i := range maxPendingRemotes {
+		remote := makeZombieRemote(t, provider, fmt.Sprint(i))
+		remotes = append(remotes, remote)
+		cleaner.Add(remote)
+	}
+	assert.True(t, lc.isRemoteOverflowed())
+
+	half := maxPendingRemotes/2 + 1
+	for _, remote := range remotes[half:] {
+		remote.Dec()
+	}
+	remotes = remotes[:half]
+	cleaner.clean()
+	assert.Equal(t, half, cleaner.Size())
+	assert.True(t, lc.isRemoteOverflowed(), "above half of the limit should stay overflowed")
+
+	remotes[half-1].Dec()
+	remotes = remotes[:half-1]
+	cleaner.clean()
+	assert.Equal(t, maxPendingRemotes/2, cleaner.Size())
+	assert.False(t, lc.isRemoteOverflowed(), "at half of the limit overflow should be cleared")
+}
+
 func TestOldestMetrics(t *testing.T) {
 	lc, tearDown := setupLifecycle(t, nil)
 	defer tearDown()

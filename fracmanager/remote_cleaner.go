@@ -23,7 +23,6 @@ type remoteCleaner struct {
 	pending      sync.Map
 	mu           sync.Mutex
 	pendingCount int
-	overflowed   bool
 }
 
 func newRemoteCleaner(infoCache *fracInfoCache, retryDelay time.Duration) *remoteCleaner {
@@ -53,15 +52,12 @@ func (c *remoteCleaner) Add(remote *refCountedRemote) {
 	}
 	remoteCleanerPendingFractions.Inc()
 	c.pendingCount++
-	if c.pendingCount >= maxPendingRemotes {
-		c.overflowed = true
-	}
 }
 
-func (c *remoteCleaner) IsOverflowed() bool {
+func (c *remoteCleaner) Size() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.overflowed
+	return c.pendingCount
 }
 
 func (c *remoteCleaner) run() {
@@ -100,9 +96,6 @@ func (c *remoteCleaner) clean() {
 		c.mu.Lock()
 		c.pending.Delete(name)
 		c.pendingCount--
-		if c.pendingCount*2 <= maxPendingRemotes {
-			c.overflowed = false
-		}
 		remoteCleanerPendingFractions.Dec()
 		c.mu.Unlock()
 		logger.Info("removed remote fraction", zap.String("name", remote.BaseFileName))

@@ -51,6 +51,21 @@ func TestFracManifestStage(t *testing.T) {
 			want:  fracStageZombieRemote,
 		},
 		{
+			name:  "offload intent with docs renamed",
+			files: []string{consts.RemoteFractionTmpSuffix, consts.SdocsDelFileSuffix, consts.InfoFileSuffix, consts.TokenFileSuffix, consts.OffsetsFileSuffix, consts.IDFileSuffix, consts.LIDFileSuffix},
+			want:  fracStageZombieRemote,
+		},
+		{
+			name:  "offload intent with docs renamed legacy",
+			files: []string{consts.RemoteFractionTmpSuffix, consts.DocsDelFileSuffix, consts.IndexFileSuffix},
+			want:  fracStageZombieRemote,
+		},
+		{
+			name:  "offload intent with partial index",
+			files: []string{consts.RemoteFractionTmpSuffix, consts.SdocsFileSuffix, consts.TokenFileSuffix, consts.OffsetsFileSuffix, consts.IDFileSuffix, consts.LIDFileSuffix},
+			want:  fracStageZombieRemote,
+		},
+		{
 			// Local files are gone but deletion was interrupted.
 			name:  "deleting marker",
 			files: []string{consts.RemoteFractionDeletingSuffix},

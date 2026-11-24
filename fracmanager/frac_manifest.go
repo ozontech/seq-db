@@ -124,16 +124,12 @@ func (m *fracManifest) AddExtension(ext string) error {
 type fracStage int
 
 const (
-	fracStageUnknown fracStage = iota // unknown state - requires analysis
-	fracStageActive                   // active fraction - accepts new data
-	fracStageSealed                   // sealed fraction - read-only
-	fracStageRemote                   // remote fraction - data stored in external storage
-	fracStageZombie                   // partially deleted fraction - requires cleanup
-	// fracStageZombieRemote is a fraction whose offloading to remote storage
-	// started (._remote intent marker) but never committed (.remote missing),
-	// and local files are gone - so its partial files in remote storage
-	// can never be overwritten and must be cleaned up there.
-	fracStageZombieRemote
+	fracStageUnknown      fracStage = iota // unknown state - requires analysis
+	fracStageActive                        // active fraction - accepts new data
+	fracStageSealed                        // sealed fraction - read-only
+	fracStageRemote                        // remote fraction - data stored in external storage
+	fracStageZombie                        // partially deleted fraction - requires cleanup
+	fracStageZombieRemote                  // remote deletion was interrupted -- requires cleanup
 )
 
 // Stage determines the current stage of the fraction based on file presence
@@ -156,7 +152,7 @@ func (m *fracManifest) Stage() fracStage {
 		// gone too, the fraction is a remote zombie - its partial files in
 		// remote storage can never be overwritten and must be cleaned there.
 		// Otherwise local files are intact and offloading will be retried.
-		if !m.hasDocsFile() && !m.hasAllIndexFiles() {
+		if !(m.hasDocsFile() && m.hasAllIndexFiles()) {
 			return fracStageZombieRemote
 		}
 	}
@@ -319,10 +315,6 @@ func filterValid(
 			continue
 
 		case fracStageZombieRemote:
-			// Offloading was interrupted and local files are gone.
-			// Local leftovers are removed, the partial remote files are
-			// deleted later by maintenance ticks (the fraction is passed
-			// through to the loader, keeping its ._remote marker).
 			removeAllExceptRemoteTmp(manifest.basePath)
 		}
 

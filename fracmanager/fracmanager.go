@@ -23,9 +23,8 @@ import (
 
 // FracManager manages database fractions with lifecycle operations
 type FracManager struct {
-	mu      sync.Mutex // todo: get rid of mutex after removing SealForcedForTests method
-	lc      *lifecycleManager
-	cleaner *remoteCleaner
+	mu sync.Mutex // todo: get rid of mutex after removing SealForcedForTests method
+	lc *lifecycleManager
 }
 
 var defaultStorageState = StorageState{
@@ -62,22 +61,22 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 		return nil, nil, err
 	}
 
-	fm := FracManager{
-		cleaner: newRemoteCleaner(infoCache, cfg.RemoteRemoveRetryDelay),
-	}
+	cleaner := newRemoteCleaner(infoCache, cfg.RemoteRemoveRetryDelay)
 
 	// Create lc manager to handle fraction maintenance
-	lc := newLifecycleManager(infoCache, provider, storageState, registry, fm.cleaner)
-	fm.lc = lc
+	lc := newLifecycleManager(infoCache, provider, storageState, registry, cleaner)
+	fm := FracManager{
+		lc: lc,
+	}
 
 	// Start background workers and get stop function
 	ctx, cancel := context.WithCancel(ctx)
 	wg := sync.WaitGroup{}
 
-	fm.cleaner.Start(ctx, &wg)
+	cleaner.Start(ctx, &wg)
 	if cfg.OffloadingEnabled {
 		for _, remote := range remotesRemoving {
-			fm.cleaner.Add(&refCountedRemote{Remote: remote})
+			cleaner.Add(&refCountedRemote{Remote: remote})
 		}
 	}
 	startStatsWorker(ctx, cfg, registry, &wg)

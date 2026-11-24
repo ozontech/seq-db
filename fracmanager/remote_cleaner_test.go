@@ -128,37 +128,33 @@ func TestRemoteCleanerRetry(t *testing.T) {
 	assert.Zero(t, cleaner.pendingCount)
 }
 
-func TestRemoteCleanerQueueLimit(t *testing.T) {
+func makeZombieRemote(t testing.TB, provider *fractionProvider, name string) *refCountedRemote {
+	remote := &refCountedRemote{Remote: frac.NewRemoteZombie(
+		t.Context(), filepath.Join(provider.config.DataDir, name), provider.s3cli, testSkipMaskProvider{},
+	)}
+	remote.Inc()
+	return remote
+}
+
+func TestRemoteCleanerSize(t *testing.T) {
 	cleaner, provider := setupRemoteCleanerTest(t)
 	remotes := make([]*refCountedRemote, 0, maxPendingRemotes+1)
 	for i := range maxPendingRemotes + 1 {
-		remote := &refCountedRemote{Remote: frac.NewRemoteZombie(
-			t.Context(), filepath.Join(provider.config.DataDir, fmt.Sprint(i)), provider.s3cli, testSkipMaskProvider{},
-		)}
-		remote.Inc()
+		remote := makeZombieRemote(t, provider, fmt.Sprint(i))
 		remotes = append(remotes, remote)
 		cleaner.Add(remote)
 		cleaner.Add(&refCountedRemote{Remote: remote.Remote})
-		assert.Equal(t, i+1 >= maxPendingRemotes, cleaner.IsOverflowed())
+		assert.Equal(t, i+1, cleaner.Size())
 	}
 	require.Equal(t, maxPendingRemotes+1, cleaner.pendingCount)
 
-	for _, tc := range []struct {
-		count      int
-		overflowed bool
-	}{
-		{maxPendingRemotes - 1, true},
-		{maxPendingRemotes/2 + 1, true},
-		{maxPendingRemotes / 2, false},
-		{0, false},
-	} {
-		for _, remote := range remotes[tc.count:] {
+	for _, count := range []int{maxPendingRemotes - 1, maxPendingRemotes / 2, 0} {
+		for _, remote := range remotes[count:] {
 			remote.Dec()
 		}
-		remotes = remotes[:tc.count]
+		remotes = remotes[:count]
 		cleaner.clean()
-		assert.Equal(t, tc.count, cleaner.pendingCount)
-		assert.Equal(t, tc.overflowed, cleaner.IsOverflowed(), "pending: %d", tc.count)
+		assert.Equal(t, count, cleaner.Size())
 	}
 }
 
