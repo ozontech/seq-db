@@ -135,7 +135,7 @@ func TestASTResolver(t *testing.T) {
 				index.present[p] = true
 			}
 
-			got, empty, err := astResolve(q.Root, index, make(tidsCache), stopwatch.New())
+			got, empty, err := astResolve(q.Root, index, make(tidsCache), stopwatch.New(), 0)
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantEmpty, empty)
@@ -198,7 +198,7 @@ func TestASTResolverOrder(t *testing.T) {
 				freqs: tt.freqs,
 			}
 
-			got, empty, err := astResolve(q.Root, index, make(tidsCache), stopwatch.New())
+			got, empty, err := astResolve(q.Root, index, make(tidsCache), stopwatch.New(), 0)
 			require.NoError(t, err)
 			require.False(t, empty)
 

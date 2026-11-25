@@ -34,6 +34,8 @@ type mergeTask struct {
 	tokenLIDs *TokenLIDs
 }
 
+const minMergeQueue = 10000
+
 func NewActiveIndexer(workerCount, chLen int) (*ActiveIndexer, func()) {
 	idx := ActiveIndexer{
 		ch:          make(chan *indexTask, chLen),
@@ -176,6 +178,12 @@ func (ai *ActiveIndexer) appendWorker(index int) {
 
 		m = sw.Start("put_lids_queue")
 		tokensToMerge := addLIDsToTokens(tokenLIDsPlaces, groups)
+		// _all_ no longer comes in document metas, so it has no group in the
+		// collector; instead its posting list is fed directly with the LIDs
+		// just assigned to this batch, since it matches every document.
+		if allLIDs := active.TokenList.GetAllTokenLIDs(); allLIDs.PutLIDsInQueue(lids) > minMergeQueue {
+			tokensToMerge = append(tokensToMerge, allLIDs)
+		}
 		ai.sendTokensToMergeWorkers(active, tokensToMerge)
 		m.Stop()
 
@@ -202,8 +210,6 @@ func (ai *ActiveIndexer) sendTokensToMergeWorkers(frac *Active, tokens []*TokenL
 }
 
 func addLIDsToTokens(tlids []*TokenLIDs, lids [][]uint32) []*TokenLIDs {
-	const minMergeQueue = 10000
-
 	needMerge := make([]*TokenLIDs, 0, len(tlids))
 	for i, tl := range tlids {
 		if l := tl.PutLIDsInQueue(lids[i]); l > minMergeQueue {

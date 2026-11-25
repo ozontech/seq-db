@@ -84,6 +84,15 @@ func TestLIDBatch_And(t *testing.T) {
 			wantRightRes: nil,
 		},
 		{
+			name:         "desc overlap right extends below left",
+			left:         []uint32{3, 4, 5, 6, 7, 8, 9, 10},
+			right:        []uint32{1, 5, 8, 10, 12},
+			asc:          false,
+			wantResult:   []uint32{5, 8, 10},
+			wantLeftRes:  nil,
+			wantRightRes: []uint32{1, 5, 8, 10, 12},
+		},
+		{
 			name:         "identical inputs have no residuals",
 			left:         []uint32{2, 4, 9},
 			right:        []uint32{2, 4, 9},
@@ -176,6 +185,15 @@ func TestLIDBatch_Or(t *testing.T) {
 			wantResult:   []uint32{10, 11},
 			wantLeftRes:  []uint32{1, 2, 3},
 			wantRightRes: nil,
+		},
+		{
+			name:         "desc overlap right extends below left",
+			left:         []uint32{3, 4, 5, 6, 7, 8, 9, 10},
+			right:        []uint32{1, 8, 12},
+			asc:          false,
+			wantResult:   []uint32{3, 4, 5, 6, 7, 8, 9, 10, 12},
+			wantLeftRes:  nil,
+			wantRightRes: []uint32{1},
 		},
 		{
 			name:         "empty left",

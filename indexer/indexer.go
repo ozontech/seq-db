@@ -22,7 +22,7 @@ type indexer struct {
 
 // Index returns a list of metadata of the given json node.
 // Return at least one metadata. May return more if there are nested fields in the mapping.
-// Each metadata has special token _all_, we use to find stored documents.
+// A metadata without indexed fields has no tokens at all.
 // Each indexed field has special token _exists_,
 // we use it to find documents that have this field in search and aggregate requests.
 //
@@ -38,8 +38,7 @@ func (i *indexer) Index(node *insaneJSON.Node, id seq.ID, size uint32) {
 	m := i.metas
 	parent := m[0]
 	for j := 1; j < len(m); j++ {
-		// Copy tokens from the parent, except of the _all_ token.
-		m[j].Tokens = append(m[j].Tokens, parent.Tokens[1:]...)
+		m[j].Tokens = append(m[j].Tokens, parent.Tokens...)
 	}
 }
 
@@ -150,11 +149,6 @@ func (i *indexer) appendMeta(id seq.ID, size uint32) {
 
 	i.metas[n].ID = id
 	i.metas[n].Size = size
-
-	i.metas[n].Tokens = append(i.metas[n].Tokens, tokenizer.MetaToken{
-		Key:   seq.AllTokenName,
-		Value: []byte{},
-	})
 }
 
 func (i *indexer) appendNestedMeta() {

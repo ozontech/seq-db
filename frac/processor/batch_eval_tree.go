@@ -42,7 +42,7 @@ func tryBuildBatchEvalTree(
 		return nil, errBatchingUnsupported
 	}
 
-	cost, err := calculateQueryIterationCost(root, ti, cache)
+	cost, err := calculateQueryIterationCost(root, ti, cache, minLID, maxLID)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +66,9 @@ func astSupportsBatching(root *parser.ASTNode) bool {
 
 	switch v := root.Value.(type) {
 	case *parser.Literal:
+		if parser.IsMatchAll(v) {
+			return true
+		}
 		return len(v.Terms) == 1 && v.Terms[0].Kind == parser.TermText
 	case *parser.Range:
 		return true
@@ -84,23 +87,34 @@ func astSupportsBatching(root *parser.ASTNode) bool {
 	}
 }
 
-func calculateQueryIterationCost(root *parser.ASTNode, ti tokenIndex, cache tidsCache) (uint64, error) {
+func calculateQueryIterationCost(
+	root *parser.ASTNode,
+	ti tokenIndex,
+	cache tidsCache,
+	minLID, maxLID uint32,
+) (uint64, error) {
 	if root == nil {
 		return 0, fmt.Errorf("empty AST")
 	}
 
 	switch token := root.Value.(type) {
 	case *parser.Literal:
-		return leafIterationCost(ti, token.Field, token, cache)
+		return leafIterationCost(ti, token.Field, token, cache, minLID, maxLID)
 	case *parser.Range:
-		return leafIterationCost(ti, token.Field, token, cache)
+		return leafIterationCost(ti, token.Field, token, cache, minLID, maxLID)
 	case *parser.Logical:
 		if len(root.Children) == 0 {
 			return 0, nil
 		}
 		childCosts := make([]uint64, len(root.Children))
 		for i, child := range root.Children {
-			c, err := calculateQueryIterationCost(child, ti, cache)
+			c, err := calculateQueryIterationCost(
+				child,
+				ti,
+				cache,
+				minLID,
+				maxLID,
+			)
 			if err != nil {
 				return 0, err
 			}
@@ -124,7 +138,17 @@ func calculateQueryIterationCost(root *parser.ASTNode, ti tokenIndex, cache tids
 	}
 }
 
-func leafIterationCost(ti tokenIndex, field string, token parser.Token, cache tidsCache) (uint64, error) {
+func leafIterationCost(
+	ti tokenIndex,
+	field string,
+	token parser.Token,
+	cache tidsCache,
+	minLID, maxLID uint32,
+) (uint64, error) {
+	if parser.IsMatchAll(token) {
+		return uint64(maxLID - minLID + 1), nil
+	}
+
 	tids, err := cache.get(ti, token)
 	if err != nil {
 		return 0, err
@@ -199,6 +223,11 @@ func evalBatchLeaf(
 	order seq.DocsOrder,
 ) (node.BatchedNode, error) {
 	stats.LeavesTotal++
+
+	if parser.IsMatchAll(token) {
+		stats.NodesTotal++
+		return node.NewRangeBatched(minLID, maxLID, order.IsDesc()), nil
+	}
 
 	tids, err := cache.get(ti, token)
 	if err != nil {

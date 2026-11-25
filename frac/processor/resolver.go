@@ -47,11 +47,17 @@ type planNode struct {
 func astResolve(
 	root *parser.ASTNode, ti tokenIndex,
 	cache tidsCache, sw *stopwatch.Stopwatch,
+	lidsCount uint64,
 ) (*parser.ASTNode, bool, error) {
 	plan := flatten(root)
 	sortByCost(plan)
 
-	r := astResolver{ti: ti, cache: cache, sw: sw}
+	r := astResolver{
+		ti:        ti,
+		cache:     cache,
+		lidsCount: lidsCount,
+		sw:        sw,
+	}
 	empty, err := r.estimateNodeSize(plan)
 	if err != nil || empty {
 		return nil, empty, err
@@ -150,9 +156,10 @@ func resolveCost(p *planNode) int {
 }
 
 type astResolver struct {
-	ti    tokenIndex
-	cache tidsCache
-	sw    *stopwatch.Stopwatch
+	ti        tokenIndex
+	cache     tidsCache
+	lidsCount uint64
+	sw        *stopwatch.Stopwatch
 }
 
 func (r *astResolver) estimateNodeSize(p *planNode) (bool, error) {
@@ -181,7 +188,17 @@ func (r *astResolver) estimateNodeSize(p *planNode) (bool, error) {
 
 func (r *astResolver) estimateLeafSize(p *planNode) (bool, error) {
 	m := r.sw.Start("get_tids_by_token_expr")
+
+	if parser.IsMatchAll(p.ast.Value) {
+		p.size = r.lidsCount
+
+		m.Stop()
+
+		return r.lidsCount == 0, nil
+	}
+
 	tids, err := r.cache.get(r.ti, p.ast.Value)
+
 	m.Stop()
 
 	if err != nil || len(tids) == 0 {
