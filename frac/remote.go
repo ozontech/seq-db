@@ -42,6 +42,8 @@ type Remote struct {
 
 	info *common.Info
 
+	manifest *remoteManifest
+
 	docsFile  storage.ImmutableFile
 	docsCache *cache.ConcurrentCache[[]byte]
 
@@ -93,11 +95,21 @@ func NewRemote(
 		skipMaskProvider: skipMaskProvider,
 	}
 
-	// Fast path if fraction-info cache exists AND it has valid index size.
-	//
-	// Usually it means that this fraction was created by [fracmanager.FracManager] after offloading
-	// and info is already present. Or fraction's info was persisted in `.frac-cache`.
-	if info != nil && info.IndexOnDisk > 0 {
+	// A non-empty .remote is authoritative even when the fraction-info cache has a valid index size.
+	// The cache can skip info loading only for an empty legacy marker.
+	cached := info != nil && info.IndexOnDisk > 0
+	loaded, err := f.tryLoadLocal(cached)
+	if err != nil {
+		logger.Fatal(
+			"cannot load local remote fraction metadata",
+			zap.String("fraction", filepath.Base(f.BaseFileName)),
+			zap.Error(err),
+		)
+	}
+	if loaded {
+		if f.manifest == nil && f.info.IndexOnDisk == 0 {
+			f.computeIndexSize()
+		}
 		return f
 	}
 
@@ -118,16 +130,15 @@ func NewRemote(
 
 // NewRemoteZombie creates a stub for a fraction pending remote deletion
 // (offloading interrupted before commit, or deletion interrupted mid-way).
-// It skips info loading entirely: deletion only needs the base name and
-// the S3 client, and loading info would require reaching S3, which must
-// not prevent the store from starting up.
+// It uses a local manifest when available, otherwise legacy object keys,
+// and never reaches S3 during initialization.
 func NewRemoteZombie(
 	ctx context.Context,
 	baseFile string,
 	s3cli *s3.Client,
 	skipMaskProvider skipMaskProvider,
 ) *Remote {
-	return &Remote{
+	f := &Remote{
 		ctx:              ctx,
 		initMu:           &sync.RWMutex{},
 		docsCache:        cache.NewConcurrentCache[[]byte](nil, nil),
@@ -136,6 +147,53 @@ func NewRemoteZombie(
 		BaseFileName:     baseFile,
 		s3cli:            s3cli,
 		skipMaskProvider: skipMaskProvider,
+	}
+	f.tryLoadZombieManifest()
+	return f
+}
+
+func (f *Remote) tryLoadZombieManifest() {
+	for _, suffix := range []string{
+		consts.RemoteFractionDeletingSuffix,
+		consts.RemoteFractionTmpSuffix,
+	} {
+		data, err := os.ReadFile(f.BaseFileName + suffix)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				logger.Warn(
+					"cannot read local remote zombie metadata",
+					zap.String("fraction", filepath.Base(f.BaseFileName)),
+					zap.Error(err),
+				)
+			}
+			continue
+		}
+
+		if !hasRemoteManifestMagic(data) {
+			continue
+		}
+
+		manifest, err := parseRemoteManifest(data)
+		if err != nil {
+			logger.Warn(
+				"cannot parse local remote zombie manifest",
+				zap.String("fraction", filepath.Base(f.BaseFileName)),
+				zap.Error(err),
+			)
+			continue
+		}
+		if manifest.Info.Name() != filepath.Base(f.BaseFileName) {
+			logger.Warn(
+				"remote zombie manifest fraction name does not match",
+				zap.String("fraction", filepath.Base(f.BaseFileName)),
+				zap.String("manifest_fraction", manifest.Info.Name()),
+			)
+			continue
+		}
+
+		f.manifest = manifest
+		f.info = manifest.Info
+		return
 	}
 }
 
@@ -270,18 +328,7 @@ func (f *Remote) Suicide(ctx context.Context) error {
 		return fmt.Errorf("can't rename remote marker to deleting marker: %w", err)
 	}
 
-	files := []string{
-		filepath.Base(f.BaseFileName) + consts.DocsFileSuffix,
-		filepath.Base(f.BaseFileName) + consts.SdocsFileSuffix,
-		// Legacy single-file format.
-		filepath.Base(f.BaseFileName) + consts.IndexFileSuffix,
-		// New split format.
-		filepath.Base(f.BaseFileName) + consts.InfoFileSuffix,
-		filepath.Base(f.BaseFileName) + consts.TokenFileSuffix,
-		filepath.Base(f.BaseFileName) + consts.OffsetsFileSuffix,
-		filepath.Base(f.BaseFileName) + consts.IDFileSuffix,
-		filepath.Base(f.BaseFileName) + consts.LIDFileSuffix,
-	}
+	files := f.remoteKeys()
 
 	err := f.s3cli.Remove(ctx, files...)
 	if err != nil {
@@ -299,6 +346,24 @@ func (f *Remote) Suicide(ctx context.Context) error {
 	return nil
 }
 
+func (f *Remote) remoteKeys() []string {
+	if f.manifest != nil {
+		return f.manifest.keys()
+	}
+	return []string{
+		filepath.Base(f.BaseFileName) + consts.DocsFileSuffix,
+		filepath.Base(f.BaseFileName) + consts.SdocsFileSuffix,
+		// Legacy single-file format.
+		filepath.Base(f.BaseFileName) + consts.IndexFileSuffix,
+		// New split format.
+		filepath.Base(f.BaseFileName) + consts.InfoFileSuffix,
+		filepath.Base(f.BaseFileName) + consts.TokenFileSuffix,
+		filepath.Base(f.BaseFileName) + consts.OffsetsFileSuffix,
+		filepath.Base(f.BaseFileName) + consts.IDFileSuffix,
+		filepath.Base(f.BaseFileName) + consts.LIDFileSuffix,
+	}
+}
+
 func (f *Remote) String() string {
 	return fracToString(f, "remote")
 }
@@ -307,23 +372,13 @@ func (f *Remote) IsSingleIndex() bool {
 	return f.info.BinaryDataVer < config.BinaryDataV3
 }
 
-// loadInfo loads the remote fraction information from available sources in priority order:
-//  1. Local non-empty *.remote file (offload stores info inside .remote itself).
-//  2. Remote .info file on S3 (legacy but still supported).
-//  3. Legacy *.index file on S3 (oldest scenario).
+// loadInfo loads legacy remote fraction information from S3 in priority order:
+//  1. Remote .info file.
+//  2. Legacy .index file.
+//
+// Manifests and local SEQM info are handled by tryLoadLocal before this fallback.
 func (f *Remote) loadInfo() error {
-	err := f.tryLoadInfoLocal()
-	if err == nil {
-		return nil
-	}
-
-	logger.Warn(
-		"cannot open local info file for remote fraction, falling back to S3",
-		zap.String("fraction", f.BaseFileName),
-		zap.Error(err),
-	)
-
-	err = f.tryLoadInfoRemote()
+	err := f.tryLoadInfoRemote()
 	if err == nil {
 		return nil
 	}
@@ -337,32 +392,51 @@ func (f *Remote) loadInfo() error {
 	return f.loadInfoLegacy()
 }
 
-// tryLoadInfoLocal attempts to load fraction information from a local non-empty
-// .remote file. This is the most preferred and modern approach, where all data
-// is already present on disk. An empty .remote is a legacy marker and means the
-// fraction was offloaded before info was stored inside .remote.
-func (f *Remote) tryLoadInfoLocal() (err error) {
-	var (
-		file *os.File
-		stat os.FileInfo
-	)
-
-	if file, err = os.Open(f.BaseFileName + consts.RemoteFractionSuffix); err != nil {
-		return err
+// tryLoadLocal loads the fraction manifest or legacy info from the local .remote file.
+// A non-empty file is authoritative: manifest or legacy SEQM info. An empty marker
+// allows cached info to skip the S3 fallback. The result reports whether initialization
+// can stop here.
+func (f *Remote) tryLoadLocal(cached bool) (bool, error) {
+	data, err := os.ReadFile(f.BaseFileName + consts.RemoteFractionSuffix)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("read local remote fraction metadata: %w", err)
+	}
+	if len(data) == 0 {
+		return cached, nil
 	}
 
-	defer file.Close()
-
-	if stat, err = file.Stat(); err != nil {
-		return err
+	if hasRemoteManifestMagic(data) {
+		manifest, err := parseRemoteManifest(data)
+		if err != nil {
+			return false, fmt.Errorf("parse local remote manifest: %w", err)
+		}
+		if manifest.Info.Name() != filepath.Base(f.BaseFileName) {
+			return false, fmt.Errorf(
+				"remote manifest fraction name %q does not match %q",
+				manifest.Info.Name(),
+				filepath.Base(f.BaseFileName),
+			)
+		}
+		f.manifest = manifest
+		f.info = manifest.Info
+		return true, nil
 	}
 
-	if stat.Size() == 0 {
-		return errors.New("it's a legacy empty *.remote file")
+	const legacyInfoMagic = sealed.SeqDBMagic
+	if len(data) < len(legacyInfoMagic) || string(data[:len(legacyInfoMagic)]) != legacyInfoMagic {
+		return false, errors.New("unknown local remote fraction metadata format")
 	}
 
-	f.info, err = loadInfo(file)
-	return err
+	var blockInfo sealed.BlockInfo
+	if err := blockInfo.Unpack(data); err != nil {
+		return false, fmt.Errorf("unpack local legacy remote info: %w", err)
+	}
+	f.info = blockInfo.Info
+
+	return true, nil
 }
 
 // tryLoadInfoRemote attempts to load fraction information from a remote .info file
@@ -472,6 +546,17 @@ func (f *Remote) openIndex() error {
 
 // openRemoteFile returns (nil, nil) if the file is missing and mustExist is false.
 func (f *Remote) openRemoteFile(suffix string, mustExist bool) (storage.ImmutableFile, error) {
+	if f.manifest != nil {
+		file, ok := f.manifest.file(remoteFileRoleBySuffix(suffix))
+		if !ok {
+			if mustExist {
+				return nil, fmt.Errorf("remote manifest is missing %q file", suffix)
+			}
+			return nil, nil
+		}
+		return s3.NewReaderWithSize(f.ctx, f.s3cli, file.Key, file.Size), nil
+	}
+
 	name := filepath.Base(f.BaseFileName) + suffix
 	ok, err := f.s3cli.Exists(f.ctx, name)
 	if err != nil {
@@ -489,6 +574,27 @@ func (f *Remote) openRemoteFile(suffix string, mustExist bool) (storage.Immutabl
 	}
 
 	return s3.NewReader(f.ctx, f.s3cli, name), nil
+}
+
+func remoteFileRoleBySuffix(suffix string) remoteFileRole {
+	switch suffix {
+	case consts.DocsFileSuffix, consts.SdocsFileSuffix:
+		return remoteFileDocs
+	case consts.InfoFileSuffix:
+		return remoteFileInfo
+	case consts.TokenFileSuffix:
+		return remoteFileTokens
+	case consts.OffsetsFileSuffix:
+		return remoteFileOffsets
+	case consts.IDFileSuffix:
+		return remoteFileIDs
+	case consts.LIDFileSuffix:
+		return remoteFileLIDs
+	case consts.IndexFileSuffix:
+		return remoteFileIndex
+	default:
+		return ""
+	}
 }
 
 func (f *Remote) openDocs() error {

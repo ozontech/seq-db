@@ -18,5 +18,5 @@ type ImmutableFile interface {
 }
 
 type Uploader interface {
-	Upload(context.Context, ImmutableFile) error
+	Upload(ctx context.Context, key string, file ImmutableFile) error
 }

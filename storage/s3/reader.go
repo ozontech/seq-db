@@ -33,6 +33,10 @@ func NewReader(ctx context.Context, c *Client, filename string) *reader {
 	return &reader{c: c, filename: filename, ctx: ctx}
 }
 
+func NewReaderWithSize(ctx context.Context, c *Client, filename string, size int64) *reader {
+	return &reader{c: c, filename: filename, ctx: ctx, size: &size}
+}
+
 func (r *reader) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
@@ -153,6 +157,10 @@ func (r *reader) Name() string {
 }
 
 func (r *reader) Stat() (os.FileInfo, error) {
+	if r.size != nil {
+		return &fileStat{name: r.filename, size: *r.size}, nil
+	}
+
 	out, err := r.c.cli.HeadObject(r.ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(r.c.bucket),
 		Key:    aws.String(r.filename),

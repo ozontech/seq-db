@@ -2966,6 +2966,23 @@ func (s *SealedLoadedFractionTestSuite) newSealedLoaded(bulks ...[]string) *frac
 	return sealed
 }
 
+type failAfterUploader struct {
+	delegate  storage.Uploader
+	mu        sync.Mutex
+	remaining int
+}
+
+func (u *failAfterUploader) Upload(ctx context.Context, key string, file storage.ImmutableFile) error {
+	u.mu.Lock()
+	if u.remaining == 0 {
+		u.mu.Unlock()
+		return fmt.Errorf("injected upload failure")
+	}
+	u.remaining--
+	u.mu.Unlock()
+	return u.delegate.Upload(ctx, key, file)
+}
+
 /*
 RemoteFractionTestSuite runs tests for remote fraction. Fraction is first sealed, then uploaded
 to fakes3 backend.
@@ -2975,6 +2992,7 @@ type RemoteFractionTestSuite struct {
 
 	s3Backend *s3mem.Backend
 	s3server  *httptest.Server
+	s3cli     *s3.Client
 }
 
 func (s *RemoteFractionTestSuite) SetupSuite() {
@@ -2991,6 +3009,15 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 	err := s.s3Backend.CreateBucket(bucketName)
 	s.Require().NoError(err, "create bucket failed")
 
+	s.s3cli, err = s3.NewClient(
+		s.s3server.URL,
+		"ACCESS_KEY",
+		"SECRET_KEY",
+		"eu-west-3",
+		bucketName,
+	)
+	s.Require().NoError(err, "s3 client setup failed")
+
 	s.insertDocuments = func(bulks ...[]string) {
 		if s.fraction != nil {
 			s.Require().Fail("can insert docs only once")
@@ -2998,16 +3025,7 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 		sealed := s.newSealed(bulks...)
 		defer sealed.Suicide()
 
-		s3cli, err := s3.NewClient(
-			s.s3server.URL,
-			"ACCESS_KEY",
-			"SECRET_KEY",
-			"eu-west-3",
-			bucketName,
-		)
-		s.Require().NoError(err, "s3 client setup failed")
-
-		err = sealed.Offload(context.Background(), s3.NewUploader(s3cli))
+		err = sealed.Offload(context.Background(), s3.NewUploader(s.s3cli))
 		s.Require().NoError(err, "offload failed")
 
 		remoteFrac := frac.NewRemote(
@@ -3018,12 +3036,76 @@ func (s *RemoteFractionTestSuite) SetupTest() {
 			cache.NewConcurrentCache[[]byte](nil, nil),
 			sealed.Info(),
 			s.config,
-			s3cli,
+			s.s3cli,
 			testSkipMaskProvider{},
 		)
 
 		s.fraction = remoteFrac
 	}
+}
+
+func (s *RemoteFractionTestSuite) TestOffloadFailureRetry() {
+	docs := []string{`{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message"}`}
+	sealed := s.newSealed(docs)
+	defer sealed.Suicide()
+
+	infoPath := sealed.BaseFileName + consts.InfoFileSuffix
+	pendingPath := sealed.BaseFileName + consts.RemoteFractionTmpSuffix
+	committedPath := sealed.BaseFileName + consts.RemoteFractionSuffix
+	originalInfo, err := os.ReadFile(infoPath)
+	s.Require().NoError(err)
+	s.Require().NoError(os.Link(infoPath, pendingPath))
+
+	failing := &failAfterUploader{delegate: s3.NewUploader(s.s3cli), remaining: 2}
+	err = sealed.Offload(context.Background(), failing)
+	s.Require().Error(err)
+	s.Require().FileExists(pendingPath)
+	s.Require().NoFileExists(committedPath)
+
+	infoAfterFailure, err := os.ReadFile(infoPath)
+	s.Require().NoError(err)
+	s.Require().Equal(originalInfo, infoAfterFailure)
+
+	s.Require().NoError(sealed.Offload(context.Background(), s3.NewUploader(s.s3cli)))
+	s.Require().NoFileExists(pendingPath)
+	s.Require().FileExists(committedPath)
+
+	s.fraction = frac.NewRemote(
+		context.Background(),
+		sealed.BaseFileName,
+		storage.NewReadLimiter(1, nil),
+		frac.NewIndexCache(),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		nil,
+		s.config,
+		s.s3cli,
+		testSkipMaskProvider{},
+	)
+	s.AssertSearch("message:first", docs, []int{0})
+}
+
+func (s *RemoteFractionTestSuite) TestManifestOverridesCachedInfo() {
+	docs := []string{`{"timestamp":"2000-01-01T13:00:25Z","service":"service_a","message":"first message"}`}
+	sealed := s.newSealed(docs)
+	defer sealed.Suicide()
+	s.Require().NoError(sealed.Offload(context.Background(), s3.NewUploader(s.s3cli)))
+
+	cachedInfo := *sealed.Info()
+	cachedInfo.DocsTotal = 999
+	s.fraction = frac.NewRemote(
+		context.Background(),
+		sealed.BaseFileName,
+		storage.NewReadLimiter(1, nil),
+		frac.NewIndexCache(),
+		cache.NewConcurrentCache[[]byte](nil, nil),
+		&cachedInfo,
+		s.config,
+		s.s3cli,
+		testSkipMaskProvider{},
+	)
+
+	s.Require().Equal(uint32(1), s.fraction.Info().DocsTotal)
+	s.AssertSearch("message:first", docs, []int{0})
 }
 
 func (s *RemoteFractionTestSuite) TearDownTest() {
