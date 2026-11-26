@@ -18,7 +18,6 @@ type Column[T any] interface {
 	Append(value T)
 	AppendTo(dst []byte) []byte
 	NewIter() Iter[T]
-	Segment() Column[T]
 	MemUsage() int
 	Compress(codecs ...Codec[T]) Column[T]
 }
@@ -69,7 +68,61 @@ func compressWith[T any](c Column[T], codecs []Codec[T]) Column[T] {
 }
 
 func compressSegmented[T any](c Column[T], codecs ...Codec[T]) Column[T] {
-	return c.Segment().Compress(codecs...)
+	return segmentColumn(c).Compress(codecs...)
+}
+
+func segmentColumn[T any](c Column[T]) Column[T] {
+	var segments []Column[T]
+	segment := newColumn[T]()
+	size := 0
+	it := c.NewIter()
+	for it.Next() {
+		value := it.Value()
+		segment.Append(value)
+		size += valueSize(value)
+		if size >= columnSegmentSize {
+			segments = append(segments, segment)
+			segment = newColumn[T]()
+			size = 0
+		}
+	}
+	if segment.Len() > 0 {
+		segments = append(segments, segment)
+	}
+	return &segmentedColumn[T]{segments: segments, cnt: c.Len()}
+}
+
+func newColumn[T any]() Column[T] {
+	if c, ok := any(NewStringColumn(0)).(Column[T]); ok {
+		return c
+	}
+	if c, ok := any(NewInt64Column(0)).(Column[T]); ok {
+		return c
+	}
+	if c, ok := any(NewFloat64Column(0)).(Column[T]); ok {
+		return c
+	}
+	if c, ok := any(NewArraysColumn[float64](0)).(Column[T]); ok {
+		return c
+	}
+	if c, ok := any(NewArraysColumn[uint32](0)).(Column[T]); ok {
+		return c
+	}
+	var zero T
+	panic(fmt.Errorf("unsupported column item type %T", zero))
+}
+
+func valueSize[T any](value T) int {
+	switch v := any(value).(type) {
+	case []byte:
+		return len(v)
+	case []float64:
+		return len(v) * util.SizeOfFloat64
+	case []uint32:
+		return len(v) * util.SizeOfUint32
+	default:
+		return util.SizeOfUint64
+	}
 }
 
 // compressedColumn is a column payload encoded with a codec. The payload is
@@ -97,14 +150,6 @@ func (c *compressedColumn[T]) AppendTo(dst []byte) []byte {
 	dst = append(dst, byte(c.codec))
 	dst = binary.AppendUvarint(dst, uint64(len(c.payload)))
 	return append(dst, c.payload...)
-}
-
-func (c *compressedColumn[T]) Segment() Column[T] {
-	column, err := c.decompress()
-	if err != nil {
-		panic(err)
-	}
-	return column.Segment()
 }
 
 func (c *compressedColumn[T]) Compress(...Codec[T]) Column[T] {
@@ -160,10 +205,6 @@ func (c *segmentedColumn[T]) AppendTo(dst []byte) []byte {
 		dst = append(dst, blob...)
 	}
 	return dst
-}
-
-func (c *segmentedColumn[T]) Segment() Column[T] {
-	return c
 }
 
 func (c *segmentedColumn[T]) Compress(codecs ...Codec[T]) Column[T] {
@@ -387,34 +428,8 @@ func (c *StringColumn) Compress(codecs ...Codec[[]byte]) Column[[]byte] {
 	return compressWith(c, codecs)
 }
 
-func (c *StringColumn) Segment() Column[[]byte] {
-	rows := c.Len()
-	var segments []Column[[]byte]
-	for start := 0; start < rows; {
-		end := start + 1
-		for end < rows && c.offsets[end+1]-c.offsets[start] <= columnSegmentSize {
-			end++
-		}
-		segment, err := decodeStringColumn(end-start, c.appendRows(nil, start, end))
-		if err != nil {
-			panic(err)
-		}
-		segments = append(segments, segment)
-		start = end
-	}
-	return &segmentedColumn[[]byte]{segments: segments, cnt: rows}
-}
-
 func UnpackStringColumn(data []byte) (Column[[]byte], error) {
 	return unpackColumn[[]byte](data)
-}
-
-func (c *StringColumn) appendRows(dst []byte, start, end int) []byte {
-	dst = binary.LittleEndian.AppendUint32(dst, 0)
-	for row := start; row < end; row++ {
-		dst = binary.LittleEndian.AppendUint32(dst, c.offsets[row+1]-c.offsets[start])
-	}
-	return append(dst, c.data[c.offsets[start]:c.offsets[end]]...)
 }
 
 type stringColumnIter struct {
@@ -593,27 +608,6 @@ func (c *Int64Column) Compress(codecs ...Codec[int64]) Column[int64] {
 	return compressWith(c, codecs)
 }
 
-func (c *Int64Column) Segment() Column[int64] {
-	var segments []Column[int64]
-	stride := columnSegmentSize / util.SizeOfUint64
-	for start := 0; start < len(c.values); start += stride {
-		end := min(start+stride, len(c.values))
-		segment, err := decodeInt64Column(end-start, c.appendRows(nil, start, end))
-		if err != nil {
-			panic(err)
-		}
-		segments = append(segments, segment)
-	}
-	return &segmentedColumn[int64]{segments: segments, cnt: len(c.values)}
-}
-
-func (c *Int64Column) appendRows(dst []byte, start, end int) []byte {
-	for _, value := range c.values[start:end] {
-		dst = binary.LittleEndian.AppendUint64(dst, uint64(value))
-	}
-	return dst
-}
-
 func UnpackInt64Column(data []byte) (Column[int64], error) {
 	return unpackColumn[int64](data)
 }
@@ -716,27 +710,6 @@ func (c *Float64Column) Compress(codecs ...Codec[float64]) Column[float64] {
 	return compressWith(c, codecs)
 }
 
-func (c *Float64Column) Segment() Column[float64] {
-	var segments []Column[float64]
-	stride := columnSegmentSize / util.SizeOfFloat64
-	for start := 0; start < len(c.values); start += stride {
-		end := min(start+stride, len(c.values))
-		segment, err := decodeFloat64Column(end-start, c.appendRows(nil, start, end))
-		if err != nil {
-			panic(err)
-		}
-		segments = append(segments, segment)
-	}
-	return &segmentedColumn[float64]{segments: segments, cnt: len(c.values)}
-}
-
-func (c *Float64Column) appendRows(dst []byte, start, end int) []byte {
-	for _, value := range c.values[start:end] {
-		dst = binary.LittleEndian.AppendUint64(dst, math.Float64bits(value))
-	}
-	return dst
-}
-
 func UnpackFloat64Column(data []byte) (Column[float64], error) {
 	return unpackColumn[float64](data)
 }
@@ -836,35 +809,8 @@ func (c *ArraysColumn[T]) Compress(codecs ...Codec[[]T]) Column[[]T] {
 	return compressWith(c, codecs)
 }
 
-func (c *ArraysColumn[T]) Segment() Column[[]T] {
-	rows := c.Len()
-	var segments []Column[[]T]
-	for start := 0; start < rows; {
-		end := start + 1
-		for end < rows && (c.Offsets[end+1]-c.Offsets[start])*arraysValueSize[T]() <= columnSegmentSize {
-			end++
-		}
-		segment, err := decodeArraysColumn[T](end-start, c.appendRows(nil, start, end))
-		if err != nil {
-			panic(err)
-		}
-		segments = append(segments, segment)
-		start = end
-	}
-	return &segmentedColumn[[]T]{segments: segments, cnt: rows}
-}
-
 func UnpackArraysColumn[T arrayItem](data []byte) (Column[[]T], error) {
 	return unpackColumn[[]T](data)
-}
-
-func (c *ArraysColumn[T]) appendRows(dst []byte, start, end int) []byte {
-	dst = appendArraysValues(dst, c.Values[c.Offsets[start]:c.Offsets[end]])
-	dst = binary.LittleEndian.AppendUint64(dst, 0)
-	for row := start; row < end; row++ {
-		dst = binary.LittleEndian.AppendUint64(dst, uint64(c.Offsets[row+1]-c.Offsets[start]))
-	}
-	return dst
 }
 
 type arraysColumnIter[T arrayItem] struct {

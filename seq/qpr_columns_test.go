@@ -123,7 +123,7 @@ func TestPackedColumnTypes(t *testing.T) {
 		{"float64", NewFloat64Column(0).AppendTo(nil), columnTypeFloat64, 0},
 		{"float64 arrays", quantiles.AppendTo(nil), columnTypeArraysFloat64, 0},
 		{"uint32 arrays", uniqueIDs.AppendTo(nil), columnTypeArraysUint32, 0},
-		{"segmented", strings.Segment().AppendTo(nil), columnTypeSegmented, 0},
+		{"segmented", segmentColumn(strings).AppendTo(nil), columnTypeSegmented, 0},
 		{"zstd", strings.Compress(zstdCodec[[]byte]{}).AppendTo(nil), columnTypeCompressed, codecZstd},
 		{"front coding", strings.Compress(frontCoding{}).AppendTo(nil), columnTypeCompressed, codecFrontCoding},
 		{"bitpack", int64Column(1).Compress(deltaBitpack{}).AppendTo(nil), columnTypeCompressed, codecDeltaBitpack},
@@ -142,7 +142,7 @@ func TestPackedColumnTypes(t *testing.T) {
 
 func TestStringColumnSegmentedLayout(t *testing.T) {
 	values := multiSegmentStringValues(3)
-	col := buildStringColumn(t, values...).Segment().Compress(zstdCodec[[]byte]{})
+	col := compressSegmented(buildStringColumn(t, values...), zstdCodec[[]byte]{})
 	segmented := col.(*segmentedColumn[[]byte])
 	require.GreaterOrEqual(t, len(segmented.segments), 3)
 
@@ -158,7 +158,7 @@ func TestStringColumnSegmentedLayout(t *testing.T) {
 
 func TestStringColumnIteratorsAreIndependent(t *testing.T) {
 	values := multiSegmentStringValues(2)
-	col := buildStringColumn(t, values...).Segment().Compress(frontCoding{}, zstdCodec[[]byte]{})
+	col := compressSegmented(buildStringColumn(t, values...), frontCoding{}, zstdCodec[[]byte]{})
 	a := col.NewIter()
 	b := col.NewIter()
 	require.True(t, a.Next())
@@ -181,7 +181,7 @@ func TestSegmentThenCompressComposition(t *testing.T) {
 	values := multiSegmentStringValues(2)
 	raw := buildStringColumn(t, values...)
 
-	segmented := raw.Segment().(*segmentedColumn[[]byte])
+	segmented := segmentColumn(raw).(*segmentedColumn[[]byte])
 	require.GreaterOrEqual(t, len(segmented.segments), 2)
 	for i := range segmented.segments {
 		require.IsType(t, &StringColumn{}, segmented.segments[i], "segments must be raw before compression")
@@ -203,11 +203,66 @@ func TestSegmentThenCompressComposition(t *testing.T) {
 	requireColumnRows(t, compressedDirect, values...)
 }
 
+func segmentLens[T any](t *testing.T, c Column[T]) []int {
+	t.Helper()
+	segmented := segmentColumn(c)
+	require.IsType(t, &segmentedColumn[T]{}, segmented)
+	lens := make([]int, 0)
+	for _, segment := range segmented.(*segmentedColumn[T]).segments {
+		lens = append(lens, segment.Len())
+	}
+	return lens
+}
+
+func TestSegmentColumn(t *testing.T) {
+	valuesPerSegment := columnSegmentSize / util.SizeOfUint64
+
+	t.Run("int64", func(t *testing.T) {
+		col := NewInt64Column(0)
+		want := make([]int64, 2*valuesPerSegment+5)
+		for i := range want {
+			want[i] = int64(i)
+			col.Append(int64(i))
+		}
+		require.Equal(t, []int{valuesPerSegment, valuesPerSegment, 5}, segmentLens(t, col))
+		requireInt64Values(t, segmentColumn(col), want...)
+	})
+
+	t.Run("string", func(t *testing.T) {
+		row := string(bytes.Repeat([]byte("x"), columnSegmentSize/4))
+		require.Equal(t, []int{4, 3}, segmentLens(t, buildStringColumn(t, row, row, row, row, row, row, row)))
+
+		oversized := string(bytes.Repeat([]byte("x"), columnSegmentSize+1))
+		require.Equal(t, []int{1, 1}, segmentLens(t, buildStringColumn(t, oversized, "a")))
+	})
+
+	t.Run("float64 arrays", func(t *testing.T) {
+		row := make([]float64, columnSegmentSize/util.SizeOfFloat64/2)
+		col := NewArraysColumn[float64](0)
+		for range 5 {
+			col.Append(row)
+		}
+		require.Equal(t, []int{2, 2, 1}, segmentLens(t, col))
+	})
+
+	t.Run("uint32 arrays", func(t *testing.T) {
+		col := NewArraysColumn[uint32](0)
+		col.Append(make([]uint32, columnSegmentSize/util.SizeOfUint32))
+		col.Append([]uint32{1})
+		require.Equal(t, []int{1, 1}, segmentLens(t, col))
+	})
+
+	t.Run("compressed column", func(t *testing.T) {
+		compressed := buildStringColumn(t, "a", "b", "c").Compress(zstdCodec[[]byte]{})
+		requireColumnRows(t, segmentColumn(compressed), "a", "b", "c")
+	})
+}
+
 func TestSegmentedColumnMixesRawAndCompressedSegments(t *testing.T) {
 	values := multiSegmentStringValues(2)
 	raw := buildStringColumn(t, values...)
 
-	segmented := raw.Segment().Compress(zstdCodec[[]byte]{}).(*segmentedColumn[[]byte])
+	segmented := compressSegmented(raw, zstdCodec[[]byte]{}).(*segmentedColumn[[]byte])
 	rawSegment := NewStringColumn(0)
 	it := raw.NewIter()
 	for range segmented.segments[0].Len() {
@@ -319,7 +374,7 @@ func TestUnpackStringColumnErrors(t *testing.T) {
 }
 
 func TestUnpackSegmentedStringColumnErrors(t *testing.T) {
-	valid := buildStringColumn(t, "a", "b", "c").Segment().Compress(zstdCodec[[]byte]{}).AppendTo(nil)
+	valid := compressSegmented(buildStringColumn(t, "a", "b", "c"), zstdCodec[[]byte]{}).AppendTo(nil)
 
 	segmentStart := func() int {
 		_, n := binary.Uvarint(valid[columnHeaderSize+util.SizeOfUint32:])
@@ -403,7 +458,7 @@ func TestUnpackColumnKindMismatch(t *testing.T) {
 }
 
 func TestUnpackSegmentedColumnAliasesInput(t *testing.T) {
-	encoded := buildStringColumn(t, "aaa", "bbbb").Segment().Compress(zstdCodec[[]byte]{}).AppendTo(nil)
+	encoded := compressSegmented(buildStringColumn(t, "aaa", "bbbb"), zstdCodec[[]byte]{}).AppendTo(nil)
 	column, err := UnpackStringColumn(encoded)
 	require.NoError(t, err)
 	segmented := column.(*segmentedColumn[[]byte])
@@ -698,7 +753,7 @@ func TestColumnMemUsageTracksRetainedCapacity(t *testing.T) {
 		int(unsafe.Sizeof(*compressed))+cap(compressed.payload),
 		compressed.MemUsage())
 
-	segmentedString := buildStringColumn(t, "a", "b").Segment().Compress(zstdCodec[[]byte]{}).(*segmentedColumn[[]byte])
+	segmentedString := compressSegmented(buildStringColumn(t, "a", "b"), zstdCodec[[]byte]{}).(*segmentedColumn[[]byte])
 	var segment Column[[]byte]
 	total := int(unsafe.Sizeof(*segmentedString)) + cap(segmentedString.segments)*int(unsafe.Sizeof(segment))
 	for i := range segmentedString.segments {
