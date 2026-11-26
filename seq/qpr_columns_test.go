@@ -126,7 +126,7 @@ func TestPackedColumnTypes(t *testing.T) {
 		{"segmented", strings.Segment().AppendTo(nil), columnTypeSegmented, 0},
 		{"zstd", strings.Compress(zstdCodec[[]byte]{}).AppendTo(nil), columnTypeCompressed, codecZstd},
 		{"front coding", strings.Compress(frontCoding{}).AppendTo(nil), columnTypeCompressed, codecFrontCoding},
-		{"bitpack", int64Column(1).Compress(bitpack{}).AppendTo(nil), columnTypeCompressed, codecBitpack},
+		{"bitpack", int64Column(1).Compress(deltaBitpack{}).AppendTo(nil), columnTypeCompressed, codecDeltaBitpack},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -352,7 +352,7 @@ func TestUnpackSegmentedStringColumnErrors(t *testing.T) {
 		{"segment of unknown type", withSegmentType(0x7f), "segment 0: unsupported column type"},
 		{"segment of another kind", withSegmentType(byte(columnTypeInt64)), "does not match the column kind"},
 		{"segment with unknown codec", withSegmentCodec(0x7f), "does not match the column kind"},
-		{"segment with codec of another kind", withSegmentCodec(byte(codecBitpack)), "does not match the column kind"},
+		{"segment with codec of another kind", withSegmentCodec(byte(codecDeltaBitpack)), "does not match the column kind"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -467,9 +467,9 @@ func checkInt64ColumnChains(t *testing.T, values []int64) {
 	raw := int64Column(values...)
 	requireInt64Values(t, raw, values...)
 	for _, codecs := range [][]Codec[int64]{
-		{bitpack{}},
+		{deltaBitpack{}},
 		{zstdCodec[int64]{}},
-		{bitpack{}, zstdCodec[int64]{}},
+		{deltaBitpack{}, zstdCodec[int64]{}},
 	} {
 		col := raw.Compress(codecs...)
 		requireInt64Values(t, col, values...)
@@ -554,7 +554,7 @@ func TestInt64ColumnCompressionRatio(t *testing.T) {
 	for i := range values {
 		values[i] = int64(1 + rng.Intn(1<<14))
 	}
-	col := int64Column(values...).Compress(bitpack{})
+	col := int64Column(values...).Compress(deltaBitpack{})
 	encoded := col.AppendTo(nil)
 	t.Logf("values=%d raw=%d encoded=%d ratio=%.2f", len(values), 8*len(values), len(encoded),
 		float64(8*len(values))/float64(len(encoded)))
@@ -572,7 +572,7 @@ func TestInt64ColumnDescendingMIDsCompressionRatio(t *testing.T) {
 		col.Append(int64(MID(uint64(bucket) * 60_000_000_000)))
 	}
 
-	encoded := col.Compress(bitpack{}).AppendTo(nil)
+	encoded := col.Compress(deltaBitpack{}).AppendTo(nil)
 	t.Logf("values=%d raw=%d encoded=%d ratio=%.2f", rows, 8*rows, len(encoded),
 		float64(8*rows)/float64(len(encoded)))
 	require.Less(t, len(encoded), 8*rows/20)

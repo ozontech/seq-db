@@ -932,7 +932,7 @@ func TestMergeCompressedColumns(t *testing.T) {
 		qpr := &QPR{Aggs: []AggregatableSamples{testAgg(AggFuncCount, rows...)}}
 		agg := &qpr.Aggs[0]
 		agg.Tokens[0] = agg.Tokens[0].Compress(frontCoding{}, zstdCodec[[]byte]{})
-		agg.Values.Totals = agg.Values.Totals.Compress(bitpack{})
+		agg.Values.Totals = agg.Values.Totals.Compress(deltaBitpack{})
 		return qpr
 	}
 
@@ -966,7 +966,7 @@ func TestKWayMergeCompressedColumns(t *testing.T) {
 	newQPR := func(token string, total int64) *QPR {
 		agg := testAgg(AggFuncCount, testAggRow{tokens: []string{token}, total: total})
 		agg.Tokens[0] = agg.Tokens[0].Compress(zstdCodec[[]byte]{})
-		agg.Values.Totals = agg.Values.Totals.Compress(bitpack{})
+		agg.Values.Totals = agg.Values.Totals.Compress(deltaBitpack{})
 		return &QPR{Aggs: []AggregatableSamples{agg}}
 	}
 

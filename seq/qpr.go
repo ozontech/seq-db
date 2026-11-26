@@ -903,26 +903,30 @@ func (h *SamplesContainer) InsertValueIndex(poolIdx uint32, cnt int64) {
 	h.Total += cnt
 }
 
+// ToCompressed compresses nested columns so that proxy can merge several QPRs with minimum memory footprint
 func (q *QPR) ToCompressed() {
 	for i := range q.Aggs {
 		for j := range q.Aggs[i].Tokens {
 			codecs := []Codec[[]byte]{zstdCodec[[]byte]{}}
+			// If agg is not timeseries, then sort order is same as (tokens[0] asc, tokens[1] asc).
+			// The first token column is asc ordered, front coding improves the final compressed result for sorted string column.
 			if j == 0 && q.Aggs[i].MIDs == nil {
 				codecs = []Codec[[]byte]{frontCoding{}, zstdCodec[[]byte]{}}
 			}
-			q.Aggs[i].Tokens[j] = compressInSegments(q.Aggs[i].Tokens[j], codecs...)
+			q.Aggs[i].Tokens[j] = compressSegmented(q.Aggs[i].Tokens[j], codecs...)
 		}
-		values := &q.Aggs[i].Values
-		values.Totals = compressInSegments(values.Totals, bitpack{})
-		values.NotExists = compressInSegments(values.NotExists, bitpack{})
-		values.Sums = compressInSegments(values.Sums, zstdCodec[float64]{})
-		values.Mins = compressInSegments(values.Mins, zstdCodec[float64]{})
-		values.Maxs = compressInSegments(values.Maxs, zstdCodec[float64]{})
-		values.Quantiles = compressInSegments(values.Quantiles, zstdCodec[[]float64]{})
-		values.UniqueIDs = compressInSegments(values.UniqueIDs, zstdCodec[[]uint32]{})
 		if q.Aggs[i].MIDs != nil {
-			q.Aggs[i].MIDs = compressInSegments(q.Aggs[i].MIDs, bitpack{})
+			q.Aggs[i].MIDs = compressSegmented(q.Aggs[i].MIDs, deltaBitpack{})
 		}
+
+		values := &q.Aggs[i].Values
+		values.Totals = compressSegmented(values.Totals, deltaBitpack{})
+		values.NotExists = compressSegmented(values.NotExists, deltaBitpack{})
+		values.Sums = compressSegmented(values.Sums, zstdCodec[float64]{})
+		values.Mins = compressSegmented(values.Mins, zstdCodec[float64]{})
+		values.Maxs = compressSegmented(values.Maxs, zstdCodec[float64]{})
+		values.Quantiles = compressSegmented(values.Quantiles, zstdCodec[[]float64]{})
+		values.UniqueIDs = compressSegmented(values.UniqueIDs, zstdCodec[[]uint32]{})
 	}
 }
 

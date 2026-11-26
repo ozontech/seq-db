@@ -12,14 +12,14 @@ import (
 )
 
 // Column Used only for legacy engine QPR, do not use anywhere else.
-// TODO(cheb0) delete this when query engine is complete
+// TODO(cheb0) delete this when new query engine is complete
 type Column[T any] interface {
 	Len() int
 	Append(value T)
-	MemUsage() int
 	AppendTo(dst []byte) []byte
 	NewIter() Iter[T]
 	Segment() Column[T]
+	MemUsage() int
 	Compress(codecs ...Codec[T]) Column[T]
 }
 
@@ -50,7 +50,7 @@ type codecID byte
 const (
 	codecZstd codecID = iota + 1
 	codecFrontCoding
-	codecBitpack
+	codecDeltaBitpack
 )
 
 const (
@@ -68,7 +68,7 @@ func compressWith[T any](c Column[T], codecs []Codec[T]) Column[T] {
 	return c
 }
 
-func compressInSegments[T any](c Column[T], codecs ...Codec[T]) Column[T] {
+func compressSegmented[T any](c Column[T], codecs ...Codec[T]) Column[T] {
 	return c.Segment().Compress(codecs...)
 }
 
@@ -327,8 +327,8 @@ func codecByID[T any](id codecID) (Codec[T], error) {
 		codec = zstdCodec[T]{}
 	case codecFrontCoding:
 		codec, _ = any(frontCoding{}).(Codec[T])
-	case codecBitpack:
-		codec, _ = any(bitpack{}).(Codec[T])
+	case codecDeltaBitpack:
+		codec, _ = any(deltaBitpack{}).(Codec[T])
 	}
 	if codec == nil {
 		return nil, fmt.Errorf("column codec %d does not match the column kind", id)
@@ -586,7 +586,7 @@ func (c *Int64Column) AppendTo(dst []byte) []byte {
 }
 
 func (c *Int64Column) NewIter() Iter[int64] {
-	return &int64ColumnIter{c: c, row: -1}
+	return &int64ColumnIter{c: c, rowIdx: -1}
 }
 
 func (c *Int64Column) Compress(codecs ...Codec[int64]) Column[int64] {
@@ -619,21 +619,21 @@ func UnpackInt64Column(data []byte) (Column[int64], error) {
 }
 
 type int64ColumnIter struct {
-	c   *Int64Column
-	row int
+	c      *Int64Column
+	rowIdx int
 }
 
 func (it *int64ColumnIter) Next() bool {
-	if it.row+1 >= len(it.c.values) {
-		it.row = len(it.c.values)
+	if it.rowIdx+1 >= len(it.c.values) {
+		it.rowIdx = len(it.c.values)
 		return false
 	}
-	it.row++
+	it.rowIdx++
 	return true
 }
 
 func (it *int64ColumnIter) Value() int64 {
-	return it.c.values[it.row]
+	return it.c.values[it.rowIdx]
 }
 
 func decodeInt64Column(rows int, payload []byte) (Column[int64], error) {
@@ -650,19 +650,19 @@ func decodeInt64Column(rows int, payload []byte) (Column[int64], error) {
 	return column, nil
 }
 
-type bitpack struct{}
+type deltaBitpack struct{}
 
-func (bitpack) Compress(c Column[int64]) Column[int64] {
+func (deltaBitpack) Compress(c Column[int64]) Column[int64] {
 	col := c.(*Int64Column)
 	values := make([]uint64, len(col.values))
 	for i, value := range col.values {
 		values[i] = uint64(value)
 	}
 	payload := packer.CompressDeltaBitpackUint64(nil, values, nil)
-	return &compressedColumn[int64]{codec: codecBitpack, payload: payload, rows: len(values)}
+	return &compressedColumn[int64]{codec: codecDeltaBitpack, payload: payload, rows: len(values)}
 }
 
-func (bitpack) Decompress(payload []byte, rows int) (Column[int64], error) {
+func (deltaBitpack) Decompress(payload []byte, rows int) (Column[int64], error) {
 	rest, values, err := packer.DecompressDeltaBitpackUint64(payload, nil, nil)
 	if err != nil {
 		return nil, err
