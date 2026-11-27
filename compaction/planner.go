@@ -3,6 +3,7 @@ package compaction
 import (
 	"cmp"
 	"context"
+	"errors"
 	"maps"
 	"math/bits"
 	"slices"
@@ -11,7 +12,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/fracmanager"
@@ -42,8 +42,8 @@ type task struct {
 	bin        time.Time
 	bucketSize string
 
-	filename string
-	snapshot *fracmanager.CompactionSnapshot
+	filename    string
+	replacement *fracmanager.Replacement
 
 	onComplete func(*sealed.PreloadedData, error)
 }
@@ -101,7 +101,7 @@ func (p *planner) init() {
 				select {
 				case p.tasks <- task:
 				case <-time.NewTimer(time.Second).C:
-					p.fm.ReleaseSnapshot(task.snapshot)
+					task.replacement.Release()
 					// If all executor workers are busy for some long period of time,
 					// we want to drop the task because it might contain stale decision.
 					compactionSkipped.Inc()
@@ -147,8 +147,24 @@ func (p *planner) pick() (task, bool) {
 		}
 
 		bucketSize := util.SizeStr(ceilPowerOfTwo(picked.sizeAvg))
-		csnapshot, err := p.fm.ClaimForCompaction(names(picked.fracs))
+		sourceNames := names(picked.fracs)
+		filename := p.fm.FractionName()
+
+		replacement, err := p.fm.StartReplacement(filename, sourceNames)
 		if err != nil {
+			if errors.Is(err, fracmanager.ErrReplacementClaim) {
+				logger.Debug(
+					"fraction replacement claim failed",
+					zap.Error(err),
+					zap.Strings("sources", sourceNames),
+				)
+			} else {
+				logger.Warn(
+					"failed to start fraction replacement",
+					zap.Error(err),
+					zap.Strings("sources", sourceNames),
+				)
+			}
 			continue
 		}
 
@@ -156,8 +172,8 @@ func (p *planner) pick() (task, bool) {
 			bin:        t,
 			bucketSize: bucketSize,
 
-			filename: p.fm.FractionName(),
-			snapshot: csnapshot,
+			filename:    filename,
+			replacement: replacement,
 
 			onComplete: func(s *sealed.PreloadedData, err error) {
 				if err != nil {
@@ -166,31 +182,35 @@ func (p *planner) pick() (task, bool) {
 					logger.Error(
 						"failed to compact fractions",
 						zap.Error(err),
-						zap.Any("snapshot", names(csnapshot.Fractions())),
+						zap.Strings("sources", sourceNames),
 					)
 
-					p.fm.ReleaseSnapshot(csnapshot)
+					replacement.Release()
 					return
 				}
 
 				if s == nil {
 					logger.Info(
 						"compaction did not produce fraction",
-						zap.Any("snapshot", names(csnapshot.Fractions())),
+						zap.Strings("sources", sourceNames),
 					)
 
-					p.fm.ReleaseSnapshot(csnapshot)
+					replacement.Release()
+					return
+				}
+
+				if err := replacement.Commit(s); err != nil {
+					compactionResultTotal.WithLabelValues(bucketSize, "error").Inc()
+					logger.Error(
+						"failed to commit fraction replacement",
+						zap.Error(err),
+						zap.Strings("sources", sourceNames),
+					)
+					replacement.Release()
 					return
 				}
 
 				compactionResultTotal.WithLabelValues(bucketSize, "success").Inc()
-
-				p.fm.SubstituteWithSealed(s, csnapshot)
-				csnapshot.Destroy()
-
-				// We have destroyed all sealed fractions which participated
-				// in compaction and now stale. So we can drop compaction plan.
-				util.RemoveFile(s.Info.Path + consts.CompactionPlan)
 			},
 		}, true
 	}

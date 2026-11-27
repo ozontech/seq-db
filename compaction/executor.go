@@ -55,7 +55,7 @@ func (e *Executor) compact(t task) (*sealed.PreloadedData, error) {
 		srcs  []Source
 	)
 
-	for _, f := range t.snapshot.Fractions() {
+	for _, f := range t.replacement.Fractions() {
 		names = append(names, f.Info().Name())
 		srcs = append(srcs, frac.NewSealedSource(f))
 

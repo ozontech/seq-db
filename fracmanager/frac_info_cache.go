@@ -83,6 +83,17 @@ func (fc *fracInfoCache) Add(info *common.Info) {
 	fc.cache[name] = info
 }
 
+func (fc *fracInfoCache) Replace(produced *common.Info, consumed ...string) {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+
+	fc.version++
+	for _, name := range consumed {
+		delete(fc.cache, name)
+	}
+	fc.cache[produced.Name()] = produced
+}
+
 // Remove removes a fraction from [sealedFracCache].
 // The data is synced with the disk on [sealedFracCache.SyncWithDisk] call.
 func (fc *fracInfoCache) Remove(name string) {

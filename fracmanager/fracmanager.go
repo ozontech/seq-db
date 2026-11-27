@@ -13,7 +13,6 @@ import (
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/storage"
@@ -110,54 +109,12 @@ func New(ctx context.Context, cfg *Config, s3cli *s3.Client, skipMaskProvider sk
 	return &fm, stop, nil
 }
 
-type CompactionSnapshot struct {
-	claimed []*refCountedSealed
-}
-
-func (cs *CompactionSnapshot) Fractions() []*frac.Sealed {
-	result := make([]*frac.Sealed, len(cs.claimed))
-	for i, f := range cs.claimed {
-		result[i] = f.Sealed
-	}
-	return result
-}
-
-func (cs *CompactionSnapshot) Destroy() {
-	for _, f := range cs.claimed {
-		f.Destroy()
-	}
-}
-
 func (fm *FracManager) FractionName() string {
 	return fm.lc.provider.fractionName()
 }
 
 func (fm *FracManager) SealedFractionsSnapshot() []*frac.Sealed {
 	return fm.lc.registry.sealedSnapshot()
-}
-
-func (fm *FracManager) ClaimForCompaction(names []string) (*CompactionSnapshot, error) {
-	claimed, err := fm.lc.registry.claimForCompaction(names)
-	if err != nil {
-		return nil, err
-	}
-	return &CompactionSnapshot{claimed: claimed}, nil
-}
-
-func (fm *FracManager) ReleaseSnapshot(snapshot *CompactionSnapshot) {
-	fm.lc.registry.releaseSnapshot(snapshot)
-}
-
-func (fm *FracManager) SubstituteWithSealed(produced *sealed.PreloadedData, snapshot *CompactionSnapshot) {
-	fm.lc.registry.substituteWithSealed(
-		fm.lc.provider.NewSealedPreloaded(produced.Info.Path, produced),
-		snapshot.claimed...,
-	)
-
-	fm.lc.infoCache.Add(produced.Info)
-	for _, f := range snapshot.claimed {
-		fm.lc.infoCache.Remove(f.Info().Name())
-	}
 }
 
 func (fm *FracManager) AcquireFraction(name string) (frac.Fraction, func(), bool) {
