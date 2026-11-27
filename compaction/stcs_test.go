@@ -6,15 +6,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 )
 
 type mockFraction struct {
 	indexOnDisk uint64
 }
 
-func (m *mockFraction) Info() *common.Info {
-	return &common.Info{IndexOnDisk: m.indexOnDisk}
+func (m *mockFraction) Info() *frac.Info {
+	return &frac.Info{IndexOnDisk: m.indexOnDisk}
 }
 
 func makeFracs(sizes ...uint64) []fraction {

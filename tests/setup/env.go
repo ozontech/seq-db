@@ -23,7 +23,7 @@ import (
 
 	"github.com/ozontech/seq-db/buildinfo"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/mappingprovider"
@@ -95,7 +95,7 @@ func (cfg *TestingEnvConfig) GetFracManagerConfig(replicaID string) fracmanager.
 		c = fracmanager.FillConfigWithDefault(&fracmanager.Config{
 			FracSize:  256 * uint64(units.MiB),
 			TotalSize: 1 * uint64(units.GiB),
-			SealParams: common.SealParams{
+			SealParams: frac.SealParams{
 				IDsZstdLevel:           fastestZstdLevel,
 				LIDsZstdLevel:          fastestZstdLevel,
 				TokenListZstdLevel:     fastestZstdLevel,

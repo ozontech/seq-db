@@ -10,7 +10,7 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/node"
 	"github.com/ozontech/seq-db/sealing"
 	"github.com/ozontech/seq-db/seq"
@@ -51,11 +51,11 @@ func sealFraction(
 		return fmt.Errorf("cannot read docs: %w", err)
 	}
 
-	activeIndexer, stopIndexer := frac.NewActiveIndexer(4, 10)
+	activeIndexer, stopIndexer := active.NewActiveIndexer(4, 10)
 	defer stopIndexer()
 
 	base := fracName
-	active := frac.NewActive(
+	fr := active.NewActive(
 		base,
 		activeIndexer,
 		storage.NewReadLimiter(1, nil),
@@ -66,13 +66,13 @@ func sealFraction(
 		},
 		stubSkipMaskProvider{},
 	)
-	defer active.Release()
+	defer fr.Release()
 
-	if err := docs.readDocs(active); err != nil {
+	if err := docs.readDocs(fr); err != nil {
 		return fmt.Errorf("cannot read docs: %w", err)
 	}
 
-	sealParams := common.SealParams{
+	sealParams := frac.SealParams{
 		IDsZstdLevel:           1,
 		LIDsZstdLevel:          1,
 		TokenListZstdLevel:     1,
@@ -85,7 +85,7 @@ func sealFraction(
 		LIDsBitmapThreshold:    25,
 	}
 
-	src, err := frac.NewActiveSealingSource(active, sealParams)
+	src, err := active.NewActiveSealingSource(fr, sealParams)
 	if err != nil {
 		return fmt.Errorf("cannot create sealing source: %w", err)
 	}

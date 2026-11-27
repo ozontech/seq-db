@@ -7,24 +7,23 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/ozontech/seq-db/frac/common"
-	"github.com/ozontech/seq-db/indexwriter"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/seq"
 )
 
 type Source interface {
-	indexwriter.Source
+	frac.Source
 	DocsReader() (io.ReadCloser, error)
 }
 
 type MergeSource struct {
 	filename string
 
-	// sources is a slice of [sealing.Source]
+	// sources is a slice of [frac.Source]
 	// which provide view into underlying fractions.
 	sources []Source
 
-	info     *common.Info
+	info     *frac.Info
 	infoOnce sync.Once
 
 	offsets     []uint64
@@ -63,8 +62,8 @@ func NewMergeSource(filename string, sources []Source) *MergeSource {
 	return s
 }
 
-func (s *MergeSource) prepareInfo() *common.Info {
-	info := common.NewInfo(s.filename, 0, 0)
+func (s *MergeSource) prepareInfo() *frac.Info {
+	info := frac.NewInfo(s.filename, 0, 0)
 
 	var (
 		from     seq.MID = seq.MaxID.MID
@@ -89,7 +88,7 @@ func (s *MergeSource) prepareInfo() *common.Info {
 	return info
 }
 
-func (s *MergeSource) Info() *common.Info {
+func (s *MergeSource) Info() *frac.Info {
 	s.infoOnce.Do(func() {
 		for i := range s.sources {
 			sinfo := s.sources[i].Info()
@@ -127,7 +126,7 @@ func (s *MergeSource) BlockOffsets() []uint64 {
 	return s.offsets
 }
 
-func (s *MergeSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
+func (s *MergeSource) IDs() iter.Seq2[frac.DocLocation, error] {
 	// TODO(dkharms): For now, I will use stupid-simple linear scan for k-way merge.
 	//
 	// Its time complexity O(k*n) so it's not efficient enough if we compare it
@@ -138,16 +137,16 @@ func (s *MergeSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
 	// and it is around log(k) vs 2*log(k).
 
 	type cursor struct {
-		next func() (indexwriter.DocLocation, error, bool)
+		next func() (frac.DocLocation, error, bool)
 		stop func()
 
-		loc    indexwriter.DocLocation
+		loc    frac.DocLocation
 		lidOld uint32
 
 		ok bool
 	}
 
-	return func(yield func(indexwriter.DocLocation, error) bool) {
+	return func(yield func(frac.DocLocation, error) bool) {
 		var cursors []cursor
 
 		defer func() {
@@ -171,7 +170,7 @@ func (s *MergeSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
 			})
 
 			if err != nil {
-				yield(indexwriter.DocLocation{}, err)
+				yield(frac.DocLocation{}, err)
 				return
 			}
 		}
@@ -179,7 +178,7 @@ func (s *MergeSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
 		lid := uint32(1)
 		// We've previosly dropped [seq.SystemID] from
 		// iterators however we do have to emit one such id.
-		if !yield(indexwriter.DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}, nil) {
+		if !yield(frac.DocLocation{First: seq.SystemID, Second: seq.SystemDocPos}, nil) {
 			return
 		}
 
@@ -217,7 +216,7 @@ func (s *MergeSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
 			blockIdx, offset := c.loc.Second.Unpack()
 			minDocPos := seq.PackDocPos(uint32(s.docBlockCount[idx]+int(blockIdx)), offset)
 
-			if !yield(indexwriter.DocLocation{First: minID, Second: minDocPos}, nil) {
+			if !yield(frac.DocLocation{First: minID, Second: minDocPos}, nil) {
 				return
 			}
 
@@ -229,7 +228,7 @@ func (s *MergeSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
 			c.lidOld += 1
 
 			if err != nil {
-				yield(indexwriter.DocLocation{}, err)
+				yield(frac.DocLocation{}, err)
 				return
 			}
 
@@ -239,7 +238,7 @@ func (s *MergeSource) IDs() iter.Seq2[indexwriter.DocLocation, error] {
 	}
 }
 
-func (s *MergeSource) TokenTriplets() iter.Seq2[string, iter.Seq2[indexwriter.TokenLIDs, error]] {
+func (s *MergeSource) TokenTriplets() iter.Seq2[string, iter.Seq2[frac.TokenLIDs, error]] {
 	// TODO(dkharms): For now, I will use stupid-simple linear scan for k-way merge.
 	//
 	// Its time complexity O(k*n) so it's not efficient enough if we compare it
@@ -250,11 +249,11 @@ func (s *MergeSource) TokenTriplets() iter.Seq2[string, iter.Seq2[indexwriter.To
 	// and it is around log(k) vs 2*log(k).
 
 	type cursor struct {
-		next func() (string, iter.Seq2[indexwriter.TokenLIDs, error], bool)
+		next func() (string, iter.Seq2[frac.TokenLIDs, error], bool)
 		stop func()
 
 		field string
-		tokIt iter.Seq2[indexwriter.TokenLIDs, error]
+		tokIt iter.Seq2[frac.TokenLIDs, error]
 
 		ok bool
 	}
@@ -282,7 +281,7 @@ func (s *MergeSource) TokenTriplets() iter.Seq2[string, iter.Seq2[indexwriter.To
 		return field, set
 	}
 
-	return func(yield func(string, iter.Seq2[indexwriter.TokenLIDs, error]) bool) {
+	return func(yield func(string, iter.Seq2[frac.TokenLIDs, error]) bool) {
 		var cursors []cursor
 
 		for i := range s.sources {
@@ -312,7 +311,7 @@ func (s *MergeSource) TokenTriplets() iter.Seq2[string, iter.Seq2[indexwriter.To
 
 			var (
 				idxs  []int
-				iters []iter.Seq2[indexwriter.TokenLIDs, error]
+				iters []iter.Seq2[frac.TokenLIDs, error]
 			)
 
 			for i, c := range cursors {
@@ -339,14 +338,14 @@ func (s *MergeSource) TokenTriplets() iter.Seq2[string, iter.Seq2[indexwriter.To
 }
 
 func (s *MergeSource) postingsForField(
-	idxs []int, iters []iter.Seq2[indexwriter.TokenLIDs, error],
-) iter.Seq2[indexwriter.TokenLIDs, error] {
+	idxs []int, iters []iter.Seq2[frac.TokenLIDs, error],
+) iter.Seq2[frac.TokenLIDs, error] {
 	type cursor struct {
-		next func() (indexwriter.TokenLIDs, error, bool)
+		next func() (frac.TokenLIDs, error, bool)
 		stop func()
 
 		idx     int
-		posting indexwriter.TokenLIDs
+		posting frac.TokenLIDs
 
 		ok bool
 	}
@@ -380,7 +379,7 @@ func (s *MergeSource) postingsForField(
 	// all calls within current field.
 	var lidRenamed []uint32
 
-	return func(yield func(indexwriter.TokenLIDs, error) bool) {
+	return func(yield func(frac.TokenLIDs, error) bool) {
 		var cursors []cursor
 
 		defer func() {
@@ -400,7 +399,7 @@ func (s *MergeSource) postingsForField(
 			})
 
 			if err != nil {
-				yield(indexwriter.TokenLIDs{}, err)
+				yield(frac.TokenLIDs{}, err)
 				return
 			}
 		}
@@ -425,7 +424,7 @@ func (s *MergeSource) postingsForField(
 				c.posting, err, c.ok = c.next()
 
 				if err != nil {
-					yield(indexwriter.TokenLIDs{}, err)
+					yield(frac.TokenLIDs{}, err)
 					return
 				}
 
@@ -433,7 +432,7 @@ func (s *MergeSource) postingsForField(
 			}
 
 			slices.Sort(lidRenamed)
-			if !yield(indexwriter.TokenLIDs{First: token, Second: lidRenamed}, nil) {
+			if !yield(frac.TokenLIDs{First: token, Second: lidRenamed}, nil) {
 				return
 			}
 

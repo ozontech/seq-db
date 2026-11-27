@@ -11,7 +11,7 @@ import (
 
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/storage"
 )
 
@@ -29,7 +29,7 @@ var decodableKinds = []string{kindInfo, kindDoc, kindID, kindToken, kindOffsets}
 
 type infoRecord struct {
 	Kind string `json:"kind"`
-	*common.Info
+	*frac.Info
 }
 
 func (r infoRecord) MarshalJSON() ([]byte, error) {
@@ -107,10 +107,10 @@ func decodeFraction(
 		return err
 	}
 
-	f := frac.NewSealed(
+	f := sealed.NewSealed(
 		fracName,
 		storage.NewReadLimiter(1, nil),
-		frac.NewIndexCache(),
+		sealed.NewIndexCache(),
 		cache.NewConcurrentCache[[]byte](nil, nil),
 		nil,
 		&frac.Config{},
@@ -118,7 +118,7 @@ func decodeFraction(
 	)
 	defer f.Release()
 
-	src := frac.NewSealedSource(f)
+	src := sealed.NewSealedSource(f)
 
 	buf := bufio.NewWriter(w)
 	enc := json.NewEncoder(buf)
@@ -149,7 +149,7 @@ func decodeFraction(
 	return buf.Flush()
 }
 
-func writeDocs(src *frac.SealedSource, enc *json.Encoder) error {
+func writeDocs(src *sealed.SealedSource, enc *json.Encoder) error {
 	for loc, err := range src.DocBlocks() {
 		if err != nil {
 			return err
@@ -179,7 +179,7 @@ func writeDocs(src *frac.SealedSource, enc *json.Encoder) error {
 	return nil
 }
 
-func writeIDs(src *frac.SealedSource, enc *json.Encoder) error {
+func writeIDs(src *sealed.SealedSource, enc *json.Encoder) error {
 	lid := uint32(0)
 	for loc, err := range src.IDs() {
 		if err != nil {
@@ -205,7 +205,7 @@ func writeIDs(src *frac.SealedSource, enc *json.Encoder) error {
 	return nil
 }
 
-func writeTokens(src *frac.SealedSource, enc *json.Encoder, withoutPostings bool) error {
+func writeTokens(src *sealed.SealedSource, enc *json.Encoder, withoutPostings bool) error {
 	tid := uint32(1) // TID 0 is reserved for the system token
 	for field, postings := range src.TokenTriplets() {
 		for triplet, err := range postings {

@@ -302,8 +302,8 @@ type Config struct {
 
 	Offloading struct {
 		Enabled bool `config:"enabled"`
-		// Retention sets TTL for [frac.Remote] fractions.
-		// By default no retention is configured and all [frac.Remote] fractions are kept forever.
+		// Retention sets TTL for [sealed.Remote] fractions.
+		// By default no retention is configured and all [sealed.Remote] fractions are kept forever.
 		Retention time.Duration `config:"retention"`
 		// RemoteTotalSize specifies upper bound of how much space can be occupied
 		// by sealed fractions of this store before they get deleted from S3.
@@ -312,7 +312,7 @@ type Config struct {
 
 		// Endpoint configures S3 endpoint for S3 client.
 		Endpoint string `config:"endpoint" default:"https://s3.us-east-1.amazonaws.com/"`
-		// Bucket configures the name of S3 bucket where [frac.Remote] fractions will be stored.
+		// Bucket configures the name of S3 bucket where [sealed.Remote] fractions will be stored.
 		Bucket string `config:"bucket"`
 		Region string `config:"region" default:"us-east-1"`
 

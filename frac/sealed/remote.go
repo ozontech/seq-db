@@ -1,4 +1,4 @@
-package frac
+package sealed
 
 import (
 	"context"
@@ -13,9 +13,8 @@ import (
 	"github.com/ozontech/seq-db/cache"
 	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/frac/processor"
-	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -26,7 +25,7 @@ import (
 	"github.com/ozontech/seq-db/util"
 )
 
-var _ Fraction = (*Remote)(nil)
+var _ frac.Fraction = (*Remote)(nil)
 
 // Remote fraction is a fraction that is backed by remote storage.
 //
@@ -36,11 +35,11 @@ var _ Fraction = (*Remote)(nil)
 type Remote struct {
 	ctx context.Context
 
-	Config *Config
+	Config *frac.Config
 
 	BaseFileName string
 
-	info *common.Info
+	info *frac.Info
 
 	docsFile  storage.ImmutableFile
 	docsCache *cache.ConcurrentCache[[]byte]
@@ -57,12 +56,12 @@ type Remote struct {
 
 	initMu     *sync.RWMutex
 	isInited   bool
-	blocksData sealed.BlocksData
+	blocksData BlocksData
 
 	s3cli       *s3.Client
 	readLimiter *storage.ReadLimiter
 
-	skipMaskProvider skipMaskProvider
+	skipMaskProvider frac.SkipMaskProvider
 }
 
 func NewRemote(
@@ -71,10 +70,10 @@ func NewRemote(
 	readLimiter *storage.ReadLimiter,
 	indexCache *IndexCache,
 	docsCache *cache.ConcurrentCache[[]byte],
-	info *common.Info,
-	cfg *Config,
+	info *frac.Info,
+	cfg *frac.Config,
 	s3cli *s3.Client,
-	skipMaskProvider skipMaskProvider,
+	skipMaskProvider frac.SkipMaskProvider,
 ) *Remote {
 	f := &Remote{
 		ctx: ctx,
@@ -125,14 +124,14 @@ func NewRemoteZombie(
 	ctx context.Context,
 	baseFile string,
 	s3cli *s3.Client,
-	skipMaskProvider skipMaskProvider,
+	skipMaskProvider frac.SkipMaskProvider,
 ) *Remote {
 	return &Remote{
 		ctx:              ctx,
 		initMu:           &sync.RWMutex{},
 		docsCache:        cache.NewConcurrentCache[[]byte](nil, nil),
 		indexCache:       NewIndexCache(),
-		info:             &common.Info{Path: baseFile},
+		info:             &frac.Info{Path: baseFile},
 		BaseFileName:     baseFile,
 		s3cli:            s3cli,
 		skipMaskProvider: skipMaskProvider,
@@ -251,7 +250,7 @@ func (f *Remote) docsReader() storage.DocsReader {
 	)
 }
 
-func (f *Remote) Info() *common.Info {
+func (f *Remote) Info() *frac.Info {
 	return f.info
 }
 
@@ -300,7 +299,7 @@ func (f *Remote) Suicide(ctx context.Context) error {
 }
 
 func (f *Remote) String() string {
-	return fracToString(f, "remote")
+	return frac.FractionToString(f, "remote")
 }
 
 func (f *Remote) IsSingleIndex() bool {

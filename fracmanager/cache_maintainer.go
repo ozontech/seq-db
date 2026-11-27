@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/cache"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/frac/sealed/lids"
 	"github.com/ozontech/seq-db/frac/sealed/seqids"
 	"github.com/ozontech/seq-db/frac/sealed/token"
@@ -146,8 +146,8 @@ func (cm *CacheMaintainer) CreateSortDocsCache() *cache.ConcurrentCache[[]byte] 
 	return newCache[[]byte](cm, sortName)
 }
 
-func (cm *CacheMaintainer) CreateIndexCache() *frac.IndexCache {
-	return &frac.IndexCache{
+func (cm *CacheMaintainer) CreateIndexCache() *sealed.IndexCache {
+	return &sealed.IndexCache{
 		LegacyRegistry: newCache[[]byte](cm, indexName),
 
 		// Each index file gets its own registry cache (they all use key=1 internally).
@@ -165,7 +165,7 @@ func (cm *CacheMaintainer) CreateIndexCache() *frac.IndexCache {
 
 		LIDs: newCache[*lids.Block](cm, lidsName),
 
-		ExprTIDs: newCache[frac.ExprTIDs](cm, exprTIDsName),
+		ExprTIDs: newCache[sealed.ExprTIDs](cm, exprTIDsName),
 	}
 }
 

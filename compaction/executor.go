@@ -7,13 +7,12 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/frac"
-	"github.com/ozontech/seq-db/frac/common"
 	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 )
 
 type Executor struct {
-	params common.SealParams
+	params frac.SealParams
 
 	workers int
 	wg      sync.WaitGroup
@@ -21,7 +20,7 @@ type Executor struct {
 	p *planner
 }
 
-func NewExecutor(workers int, params common.SealParams, p *planner) *Executor {
+func NewExecutor(workers int, params frac.SealParams, p *planner) *Executor {
 	e := Executor{params: params, workers: workers, p: p}
 	e.init()
 	return &e
@@ -57,7 +56,7 @@ func (e *Executor) compact(t task) (*sealed.PreloadedData, error) {
 
 	for _, f := range t.snapshot.Fractions() {
 		names = append(names, f.Info().Name())
-		srcs = append(srcs, frac.NewSealedSource(f))
+		srcs = append(srcs, sealed.NewSealedSource(f))
 
 		compactionBytesTotal.
 			WithLabelValues(t.bucketSize).

@@ -9,6 +9,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/logger"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/util"
@@ -37,12 +39,8 @@ type fractionRegistry struct {
 
 // NewFractionRegistry creates and initializes a new fraction registry instance.
 // Populates the registry with existing active, sealed and remote fractions.
-func NewFractionRegistry(
-	active *frac.Active,
-	sealed []*frac.Sealed,
-	remotes []*frac.Remote,
-) (*fractionRegistry, error) {
-	if active == nil {
+func NewFractionRegistry(a *active.Active, sealedFracs []*sealed.Sealed, remotes []*sealed.Remote) (*fractionRegistry, error) {
+	if a == nil {
 		return nil, errors.New("active fraction must be specified")
 	}
 
@@ -57,17 +55,17 @@ func NewFractionRegistry(
 	}
 
 	reg := fractionRegistry{
-		sappender: &syncAppender{refCountedActive: refCountedActive{Active: active}},
+		sappender: &syncAppender{refCountedActive: refCountedActive{Active: a}},
 
 		sealing:    map[string]*syncAppender{},
-		sealed:     NewPartitionedCollection(func(rcs *refCountedSealed) uint64 { return creationTime(rcs) }),
+		sealed:     NewPartitionedCollection(func(s *refCountedSealed) uint64 { return creationTime(s) }),
 		compacting: map[string]*refCountedSealed{},
-		offloading: NewPartitionedCollection(func(rcs *refCountedSealed) uint64 { return lastDocTime(rcs) }),
+		offloading: NewPartitionedCollection(func(s *refCountedSealed) uint64 { return lastDocTime(s) }),
 		remotes:    NewPartitionedCollection(func(rcr *refCountedRemote) uint64 { return lastDocTime(rcr) }),
 	}
 
 	// initialize local sealed fractions
-	for _, s := range sealed {
+	for _, s := range sealedFracs {
 		reg.stats.sealed.Add(s.Info())
 		reg.sealed.Add(s.Info().Name(), &refCountedSealed{Sealed: s})
 	}
@@ -139,7 +137,7 @@ func (r *fractionRegistry) oldestLocal() uint64 {
 }
 
 type activeProvider interface {
-	CreateActive() *frac.Active
+	CreateActive() *active.Active
 }
 
 func (r *fractionRegistry) setAppender(appender *syncAppender) {
@@ -169,7 +167,7 @@ func (r *fractionRegistry) rotateIfFull(maxSize uint64, ap activeProvider) (*ref
 
 	r.sealing[old.Info().Name()] = old
 
-	r.setAppender(&syncAppender{refCountedActive: refCountedActive{Active: ap.CreateActive()}})
+	r.setAppender(&syncAppender{Active: ap.CreateActive()})
 
 	if err := old.finalize(); err != nil {
 		return nil, nil, err
@@ -285,9 +283,9 @@ func (r *fractionRegistry) evictLocalForOffload(sizeLimit uint64) ([]*refCounted
 		return nil, err
 	}
 
-	for _, sealed := range evicted {
-		r.offloading.Add(sealed.Info().Name(), sealed)
-		r.stats.offloading.Add(sealed.Info())
+	for _, s := range evicted {
+		r.offloading.Add(s.Info().Name(), s)
+		r.stats.offloading.Add(s.Info())
 	}
 
 	return evicted, nil
@@ -423,23 +421,23 @@ loop:
 }
 
 // promoteToSealed moves fractions from sealing to local queue when sealing completes.
-func (r *fractionRegistry) promoteToSealed(active *refCountedActive, sealed ...*frac.Sealed) {
+func (r *fractionRegistry) promoteToSealed(a *refCountedActive, sealedFracs ...*sealed.Sealed) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, f := range sealed {
+	for _, f := range sealedFracs {
 		info := f.Info()
 		r.sealed.Add(info.Name(), &refCountedSealed{Sealed: f})
 		r.stats.sealed.Add(info)
 	}
 
-	r.stats.sealing.Sub(active.Info())
-	delete(r.sealing, active.Info().Name())
+	r.stats.sealing.Sub(a.Info())
+	delete(r.sealing, a.Info().Name())
 
 	r.rebuildSnapshot()
 }
 
-func (r *fractionRegistry) substituteWithSealed(produced *frac.Sealed, consumed ...*refCountedSealed) {
+func (r *fractionRegistry) substituteWithSealed(produced *sealed.Sealed, consumed ...*refCountedSealed) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -463,7 +461,7 @@ func (r *fractionRegistry) substituteWithSealed(produced *frac.Sealed, consumed 
 
 // promoteToRemote moves fractions from offloading to remote queue when offloading completes.
 // Special case: handles fractions that don't require offloading (remote == nil).
-func (r *fractionRegistry) promoteToRemote(sealed *refCountedSealed, remote *frac.Remote) {
+func (r *fractionRegistry) promoteToRemote(s *refCountedSealed, remote *sealed.Remote) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -472,17 +470,17 @@ func (r *fractionRegistry) promoteToRemote(sealed *refCountedSealed, remote *fra
 		r.stats.remotes.Add(remote.Info())
 	}
 
-	r.offloading.Del(sealed.Info().Name())
-	r.stats.offloading.Sub(sealed.Info())
+	r.offloading.Del(s.Info().Name())
+	r.stats.offloading.Sub(s.Info())
 
 	r.rebuildSnapshot()
 }
 
-func (r *fractionRegistry) sealedSnapshot() []*frac.Sealed {
+func (r *fractionRegistry) sealedSnapshot() []*sealed.Sealed {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	result := make([]*frac.Sealed, 0, r.sealed.Len())
+	result := make([]*sealed.Sealed, 0, r.sealed.Len())
 	for s := range r.sealed.All() {
 		result = append(result, s.Sealed)
 	}

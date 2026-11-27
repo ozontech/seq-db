@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/active"
 	"github.com/ozontech/seq-db/indexer"
 	"github.com/ozontech/seq-db/seq"
 	"github.com/ozontech/seq-db/tokenizer"
@@ -40,7 +40,7 @@ func newDocReader(
 }
 
 func (d *docReader) readDocs(
-	f *frac.Active,
+	f *active.Active,
 ) error {
 	var wg sync.WaitGroup
 

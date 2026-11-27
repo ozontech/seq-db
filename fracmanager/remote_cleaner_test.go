@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac"
+	"github.com/ozontech/seq-db/frac/sealed"
 	"github.com/ozontech/seq-db/storage/s3"
 )
 
@@ -40,9 +40,9 @@ func setupRemoteCleanerTest(t testing.TB) (*remoteCleaner, *fractionProvider) {
 func makeOffloadedFraction(t testing.TB, provider *fractionProvider) *refCountedRemote {
 	a := provider.CreateActive()
 	appendDocsToActive(t, a, 10)
-	sealed, err := provider.Seal(a)
+	s, err := provider.Seal(a)
 	require.NoError(t, err)
-	remote, err := provider.Offload(t.Context(), sealed)
+	remote, err := provider.Offload(t.Context(), s)
 	require.NoError(t, err)
 	return &refCountedRemote{Remote: remote}
 }
@@ -97,7 +97,7 @@ func TestRemoteCleanerRetry(t *testing.T) {
 	remote := makeOffloadedFraction(t, provider)
 	cleaner.infoCache.Add(remote.Info())
 
-	broken := &refCountedRemote{Remote: frac.NewRemoteZombie(
+	broken := &refCountedRemote{Remote: sealed.NewRemoteZombie(
 		t.Context(),
 		remote.BaseFileName,
 		newBrokenS3Client(t),
@@ -129,7 +129,7 @@ func TestRemoteCleanerRetry(t *testing.T) {
 }
 
 func makeZombieRemote(t testing.TB, provider *fractionProvider, name string) *refCountedRemote {
-	remote := &refCountedRemote{Remote: frac.NewRemoteZombie(
+	remote := &refCountedRemote{Remote: sealed.NewRemoteZombie(
 		t.Context(), filepath.Join(provider.config.DataDir, name), provider.s3cli, testSkipMaskProvider{},
 	)}
 	remote.Inc()
@@ -164,7 +164,7 @@ func TestRemoteCleanerTimeout(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, listener.Close()) })
 	client, err := s3.NewClient("http://"+listener.Addr().String(), "ACCESS_KEY", "SECRET_KEY", "eu-west-3", "bucket")
 	require.NoError(t, err)
-	remote := &refCountedRemote{Remote: frac.NewRemoteZombie(
+	remote := &refCountedRemote{Remote: sealed.NewRemoteZombie(
 		t.Context(), filepath.Join(t.TempDir(), "blocked"), client, testSkipMaskProvider{},
 	)}
 	cleaner := newRemoteCleaner(nil, time.Millisecond)

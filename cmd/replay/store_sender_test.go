@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/ozontech/seq-db/config"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 	"github.com/ozontech/seq-db/fracmanager"
 	storeapiclient "github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/seq"
@@ -42,7 +42,7 @@ func newTestStore(t *testing.T, mapping seq.Mapping) (storeapiclient.StoreApiCli
 			DataDir:   dataDir,
 			FracSize:  16 * uint64(units.MiB),
 			TotalSize: 1 * uint64(units.GiB),
-			SealParams: common.SealParams{
+			SealParams: frac.SealParams{
 				DocBlockSize: int(units.MiB),
 			},
 		}),

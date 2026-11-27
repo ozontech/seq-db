@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ozontech/seq-db/consts"
-	"github.com/ozontech/seq-db/frac/common"
+	"github.com/ozontech/seq-db/frac"
 )
 
 // sealAndDecode seals docs (one JSON document per element, empty elements
@@ -76,7 +76,7 @@ func (c *collectedContent) Write(p []byte) (int, error) {
 		switch probe.Kind {
 		case kindInfo:
 			require.Nil(c.t, c.Info, "duplicate info record")
-			var info common.Info
+			var info frac.Info
 			err := json.Unmarshal([]byte(line), &info)
 			c.check(err)
 			c.Info = &infoRecord{Kind: probe.Kind, Info: &info}
