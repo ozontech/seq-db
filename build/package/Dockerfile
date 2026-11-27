@@ -38,10 +38,22 @@ RUN CGO_ENABLED=${CGO_ENABLED} GOEXPERIMENT=${GOEXPERIMENT} go build -trimpath \
 # Deploy
 FROM $APP_IMAGE
 
+# Run as a non-privileged user (CIS Docker Benchmark 4.1).
+ARG SEQ_DB_UID=1001
+ARG SEQ_DB_GID=1001
+
+RUN groupadd --gid ${SEQ_DB_GID} seq-db \
+    && useradd --uid ${SEQ_DB_UID} --gid ${SEQ_DB_GID} --shell /usr/sbin/nologin seq-db
+
 WORKDIR /seq-db
 
 COPY --from=build /seq-db/seq-db /seq-db/seq-db
 COPY --from=build /seq-db/fraction /seq-db/fraction
 COPY --from=build /seq-db/replay /seq-db/replay
+
+RUN mkdir -p /seq-db/data /seq-db/logs \
+    && chown -R seq-db:seq-db /seq-db
+
+USER seq-db
 
 ENTRYPOINT [ "./seq-db" ]
