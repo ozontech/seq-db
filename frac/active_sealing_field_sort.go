@@ -2,7 +2,6 @@ package frac
 
 import (
 	"context"
-	"encoding/binary"
 	"iter"
 	"slices"
 
@@ -10,6 +9,7 @@ import (
 
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/seq"
+	"github.com/ozontech/seq-db/storage"
 )
 
 func (src *ActiveSealingSource) sortDocsByField(field string) error {
@@ -110,10 +110,7 @@ func (src *ActiveSealingSource) docsInOrder(order []uint32) iter.Seq2[Document, 
 		for _, lid := range order[1:] {
 			id := src.documentID(src.sortedLIDs[lid-1])
 			blockIndex, offset := src.docPosMap[id].Unpack()
-			block := blocks[blockIndex]
-			docLen := binary.LittleEndian.Uint32(block[offset:])
-			doc := block[offset+4 : offset+4+uint64(docLen)]
-			if !yield(Document{First: id, Second: doc}, nil) {
+			if !yield(Document{First: id, Second: storage.ExtractDoc(blocks[blockIndex], offset)}, nil) {
 				return
 			}
 		}
