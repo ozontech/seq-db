@@ -40,9 +40,9 @@ func setupRemoteCleanerTest(t testing.TB) (*remoteCleaner, *fractionProvider) {
 func makeOffloadedFraction(t testing.TB, provider *fractionProvider) *refCountedRemote {
 	a := provider.CreateActive()
 	appendDocsToActive(t, a, 10)
-	sealed, err := provider.Seal(a)
+	s, err := provider.Seal(a)
 	require.NoError(t, err)
-	remote, err := provider.Offload(t.Context(), sealed)
+	remote, err := provider.Offload(t.Context(), s)
 	require.NoError(t, err)
 	return &refCountedRemote{Remote: remote}
 }
