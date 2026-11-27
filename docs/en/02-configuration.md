@@ -187,6 +187,7 @@ Configuration for asynchronous search operations.
 | `async_search.max_total_size` | Bytes | `1GiB` | - |
 | `async_search.max_size_per_request` | Bytes | `100MiB` | - |
 | `async_search.max_documents_per_request` | int | `100000` | - |
+| `async_search.max_qpr_memory` | Bytes | - | Max heap memory a single merged async search QPR can use; defaults to `limits.qpr_memory_usage` |
 
 ## API Configuration
 

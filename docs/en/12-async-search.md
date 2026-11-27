@@ -27,5 +27,6 @@ Configuration parameters are:
 * `concurrency` [int] - number of concurrent async search executions.
 * `max_total_size` [bytes] - maximum total size of all async searches data per store.
 * `max_size_per_request` [bytes] - maximum total size of a single async search data per store.
+* `max_qpr_memory` [bytes] - maximum heap memory a single merged async search result (QPR) can use. Defaults to `limits.qpr_memory_usage`.
 
 Configuration parameters are part of `async_search` object in the config file.
