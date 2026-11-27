@@ -372,18 +372,18 @@ func aggValuesToProto(from *seq.AggregatableSamples) *storeapi.SearchResponse_Ag
 	values := &from.Values
 	encoded := &storeapi.SearchResponse_AggValues{Func: storeapi.MustProtoAggFunc(values.Func)}
 	for i := range from.Tokens {
-		encoded.Tokens = append(encoded.Tokens, from.Tokens[i].AppendTo(nil))
+		encoded.Tokens = append(encoded.Tokens, from.Tokens[i].Pack())
 	}
 	if from.MIDs != nil {
-		encoded.Mids = from.MIDs.AppendTo(nil)
+		encoded.Mids = from.MIDs.Pack()
 	}
-	encoded.Totals = values.Totals.AppendTo(nil)
-	encoded.NotExists = values.NotExists.AppendTo(nil)
-	encoded.Sums = values.Sums.AppendTo(nil)
-	encoded.Mins = values.Mins.AppendTo(nil)
-	encoded.Maxs = values.Maxs.AppendTo(nil)
-	encoded.Quantiles = values.Quantiles.AppendTo(nil)
-	encoded.UniqueIds = values.UniqueIDs.AppendTo(nil)
+	encoded.Totals = values.Totals.Pack()
+	encoded.NotExists = values.NotExists.Pack()
+	encoded.Sums = values.Sums.Pack()
+	encoded.Mins = values.Mins.Pack()
+	encoded.Maxs = values.Maxs.Pack()
+	encoded.Quantiles = values.Quantiles.Pack()
+	encoded.UniqueIds = values.UniqueIDs.Pack()
 	return encoded
 }
 

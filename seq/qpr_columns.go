@@ -16,7 +16,7 @@ import (
 type Column[T any] interface {
 	Len() int
 	Append(value T)
-	AppendTo(dst []byte) []byte
+	Pack() []byte
 	NewIter() Iter[T]
 	MemUsage() int
 	Compress(codecs ...Codec[T]) Column[T]
@@ -68,15 +68,15 @@ func compressWith[T any](c Column[T], codecs []Codec[T]) Column[T] {
 }
 
 // compressedColumn is a column payload encoded with a codec. The payload is
-// decoded only when the column is iterated.
+// decoded on-demand when the column is iterated.
 type compressedColumn[T any] struct {
 	codec   codecID
 	payload []byte
-	rows    int
+	cnt     int
 }
 
 func (c *compressedColumn[T]) Len() int {
-	return c.rows
+	return c.cnt
 }
 
 func (c *compressedColumn[T]) Append(value T) {
@@ -87,8 +87,9 @@ func (c *compressedColumn[T]) MemUsage() int {
 	return int(unsafe.Sizeof(*c)) + cap(c.payload)
 }
 
-func (c *compressedColumn[T]) AppendTo(dst []byte) []byte {
-	dst = appendColumnHeader(dst, columnTypeCompressed, c.rows)
+func (c *compressedColumn[T]) Pack() []byte {
+	dst := make([]byte, 0, columnHeaderSize+1+binary.MaxVarintLen64+len(c.payload))
+	dst = appendColumnHeader(dst, columnTypeCompressed, c.cnt)
 	dst = append(dst, byte(c.codec))
 	dst = binary.AppendUvarint(dst, uint64(len(c.payload)))
 	return append(dst, c.payload...)
@@ -111,7 +112,7 @@ func (c *compressedColumn[T]) decompress() (Column[T], error) {
 	if err != nil {
 		return nil, err
 	}
-	return codec.Decompress(c.payload, c.rows)
+	return codec.Decompress(c.payload, c.cnt)
 }
 
 func appendColumnHeader(dst []byte, typ columnType, rows int) []byte {
@@ -174,7 +175,7 @@ func unpackCompressedColumn[T any](src []byte, rows int) (Column[T], error) {
 	if uint64(len(src[n:])) < payloadLen {
 		return nil, fmt.Errorf("truncated compressed column payload")
 	}
-	return &compressedColumn[T]{codec: codec, payload: src[n : n+int(payloadLen)], rows: rows}, nil
+	return &compressedColumn[T]{codec: codec, payload: src[n : n+int(payloadLen)], cnt: rows}, nil
 }
 
 func unpackSegmentedColumn[T any](src []byte, rows int) (Column[T], error) {
@@ -272,8 +273,9 @@ func (c *StringColumn) MemUsage() int {
 	return int(unsafe.Sizeof(*c)) + cap(c.data) + util.SizeOfUint32*cap(c.offsets)
 }
 
-func (c *StringColumn) AppendTo(dst []byte) []byte {
+func (c *StringColumn) Pack() []byte {
 	rows := c.Len()
+	dst := make([]byte, 0, columnHeaderSize+(rows+1)*util.SizeOfUint32+len(c.data))
 	dst = appendColumnHeader(dst, columnTypeString, rows)
 	if rows > 0 {
 		for _, offset := range c.offsets {
@@ -364,7 +366,8 @@ func (c *Int64Column) Append(v int64) {
 	c.values = append(c.values, v)
 }
 
-func (c *Int64Column) AppendTo(dst []byte) []byte {
+func (c *Int64Column) Pack() []byte {
+	dst := make([]byte, 0, columnHeaderSize+c.Len()*util.SizeOfUint64)
 	dst = appendColumnHeader(dst, columnTypeInt64, c.Len())
 	for _, value := range c.values {
 		dst = binary.LittleEndian.AppendUint64(dst, uint64(value))
@@ -439,7 +442,8 @@ func (c *Float64Column) Append(value float64) {
 	c.values = append(c.values, value)
 }
 
-func (c *Float64Column) AppendTo(dst []byte) []byte {
+func (c *Float64Column) Pack() []byte {
+	dst := make([]byte, 0, columnHeaderSize+c.Len()*util.SizeOfFloat64)
 	dst = appendColumnHeader(dst, columnTypeFloat64, c.Len())
 	for _, value := range c.values {
 		dst = binary.LittleEndian.AppendUint64(dst, math.Float64bits(value))
@@ -532,8 +536,9 @@ func (c *ArraysColumn[T]) MemUsage() int {
 	return int(unsafe.Sizeof(*c)) + cap(c.Values)*int(unsafe.Sizeof(value)) + cap(c.Offsets)*util.SizeOfInt
 }
 
-func (c *ArraysColumn[T]) AppendTo(dst []byte) []byte {
+func (c *ArraysColumn[T]) Pack() []byte {
 	rows := c.Len()
+	dst := make([]byte, 0, columnHeaderSize+len(c.Values)*arraysValueSize[T]()+(rows+1)*util.SizeOfUint64)
 	dst = appendColumnHeader(dst, arraysColumnType[T](), rows)
 	dst = appendArraysValues(dst, c.Values)
 	offsets := c.Offsets
@@ -663,14 +668,17 @@ func (frontCoding) Compress(c Column[[]byte]) Column[[]byte] {
 		prevStart, prevEnd = start, end
 	}
 
-	payload := make([]byte, 0, (rows+1)*util.SizeOfUint32+int(offsets[rows])+len(lens))
+	bb := codecBufferPool.Get()
+	defer codecBufferPool.Put(bb)
+	bb.B = bb.B[:0]
 	for _, offset := range offsets {
-		payload = binary.LittleEndian.AppendUint32(payload, offset)
+		bb.B = binary.LittleEndian.AppendUint32(bb.B, offset)
 	}
 	for row := range rows {
-		payload = append(payload, col.data[int(col.offsets[row])+int(shared[row]):int(col.offsets[row+1])]...)
+		bb.B = append(bb.B, col.data[int(col.offsets[row])+int(shared[row]):int(col.offsets[row+1])]...)
 	}
-	return &compressedColumn[[]byte]{codec: codecFrontCoding, payload: append(payload, lens...), rows: rows}
+	bb.B = append(bb.B, lens...)
+	return &compressedColumn[[]byte]{codec: codecFrontCoding, payload: copyExact(bb.B), cnt: rows}
 }
 
 func (frontCoding) Decompress(payload []byte, rows int) (Column[[]byte], error) {
@@ -743,8 +751,10 @@ func (deltaBitpack) Compress(c Column[int64]) Column[int64] {
 	for i, value := range col.values {
 		values[i] = uint64(value)
 	}
-	payload := packer.CompressDeltaBitpackUint64(nil, values, nil)
-	return &compressedColumn[int64]{codec: codecDeltaBitpack, payload: payload, rows: len(values)}
+	bb := codecBufferPool.Get()
+	defer codecBufferPool.Put(bb)
+	bb.B = packer.CompressDeltaBitpackUint64(bb.B[:0], values, nil)
+	return &compressedColumn[int64]{codec: codecDeltaBitpack, payload: copyExact(bb.B), cnt: len(values)}
 }
 
 func (deltaBitpack) Decompress(payload []byte, rows int) (Column[int64], error) {
@@ -764,12 +774,23 @@ func (deltaBitpack) Decompress(payload []byte, rows int) (Column[int64], error) 
 
 type zstdCodec[T any] struct{}
 
+var codecBufferPool util.BufferPool
+
 func (zstdCodec[T]) Compress(c Column[T]) Column[T] {
+	bb := codecBufferPool.Get()
+	defer codecBufferPool.Put(bb)
+	bb.B = zstd.CompressLevel(c.Pack(), bb.B[:0], columnZstdLevel)
 	return &compressedColumn[T]{
 		codec:   codecZstd,
-		payload: zstd.CompressLevel(c.AppendTo(nil), nil, columnZstdLevel),
-		rows:    c.Len(),
+		payload: copyExact(bb.B),
+		cnt:     c.Len(),
 	}
+}
+
+func copyExact(src []byte) []byte {
+	dst := make([]byte, len(src))
+	copy(dst, src)
+	return dst
 }
 
 func (zstdCodec[T]) Decompress(payload []byte, _ int) (Column[T], error) {
@@ -804,13 +825,19 @@ func (c *segmentedColumn[T]) MemUsage() int {
 	return total
 }
 
-func (c *segmentedColumn[T]) AppendTo(dst []byte) []byte {
+func (c *segmentedColumn[T]) Pack() []byte {
+	blobs := make([][]byte, len(c.segments))
+	size := columnHeaderSize + util.SizeOfUint32
+	for i := range c.segments {
+		blobs[i] = c.segments[i].Pack()
+		size += binary.MaxVarintLen64 + len(blobs[i])
+	}
+	dst := make([]byte, 0, size)
 	dst = appendColumnHeader(dst, columnTypeSegmented, c.cnt)
 	dst = binary.LittleEndian.AppendUint32(dst, uint32(len(c.segments)))
 	for i := range c.segments {
-		blob := c.segments[i].AppendTo(nil)
-		dst = binary.AppendUvarint(dst, uint64(len(blob)))
-		dst = append(dst, blob...)
+		dst = binary.AppendUvarint(dst, uint64(len(blobs[i])))
+		dst = append(dst, blobs[i]...)
 	}
 	return dst
 }

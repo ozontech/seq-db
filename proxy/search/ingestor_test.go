@@ -82,14 +82,14 @@ func TestAggValuesToQPR(t *testing.T) {
 		maxs.Append(1)
 		encoded := &storeapi.SearchResponse_AggValues{
 			Func:      storeapi.AggFunc_AGG_FUNC_SUM,
-			Tokens:    [][]byte{tokens.AppendTo(nil)},
-			Totals:    totals.AppendTo(nil),
-			NotExists: notExists.AppendTo(nil),
-			Sums:      sums.AppendTo(nil),
-			Mins:      mins.AppendTo(nil),
-			Maxs:      maxs.AppendTo(nil),
-			Quantiles: (&seq.ArraysColumn[float64]{}).AppendTo(nil),
-			UniqueIds: (&seq.ArraysColumn[uint32]{}).AppendTo(nil),
+			Tokens:    [][]byte{tokens.Pack()},
+			Totals:    totals.Pack(),
+			NotExists: notExists.Pack(),
+			Sums:      sums.Pack(),
+			Mins:      mins.Pack(),
+			Maxs:      maxs.Pack(),
+			Quantiles: (&seq.ArraysColumn[float64]{}).Pack(),
+			UniqueIds: (&seq.ArraysColumn[uint32]{}).Pack(),
 		}
 
 		agg, err := aggValuesToQPR(encoded)
@@ -119,12 +119,12 @@ func TestAggValuesToQPR(t *testing.T) {
 		maxs.Append(1)
 		encoded := &storeapi.SearchResponse_AggValues{
 			Func:      storeapi.AggFunc_AGG_FUNC_SUM,
-			Tokens:    [][]byte{tokens.AppendTo(nil)},
-			Totals:    totals.AppendTo(nil),
-			NotExists: notExists.AppendTo(nil),
-			Sums:      sums.AppendTo(nil),
-			Mins:      mins.AppendTo(nil),
-			Maxs:      maxs.AppendTo(nil),
+			Tokens:    [][]byte{tokens.Pack()},
+			Totals:    totals.Pack(),
+			NotExists: notExists.Pack(),
+			Sums:      sums.Pack(),
+			Mins:      mins.Pack(),
+			Maxs:      maxs.Pack(),
 		}
 
 		_, err := aggValuesToQPR(encoded)
@@ -144,15 +144,15 @@ func TestAggValuesToQPR(t *testing.T) {
 		totals.Append(1)
 		encoded := &storeapi.SearchResponse_AggValues{
 			Func:      storeapi.AggFunc_AGG_FUNC_COUNT,
-			Tokens:    [][]byte{tokens.AppendTo(nil)},
-			Mids:      mids.AppendTo(nil),
-			Totals:    totals.AppendTo(nil),
-			NotExists: seq.NewInt64Column(0).AppendTo(nil),
-			Sums:      seq.NewFloat64Column(0).AppendTo(nil),
-			Mins:      seq.NewFloat64Column(0).AppendTo(nil),
-			Maxs:      seq.NewFloat64Column(0).AppendTo(nil),
-			Quantiles: (&seq.ArraysColumn[float64]{}).AppendTo(nil),
-			UniqueIds: (&seq.ArraysColumn[uint32]{}).AppendTo(nil),
+			Tokens:    [][]byte{tokens.Pack()},
+			Mids:      mids.Pack(),
+			Totals:    totals.Pack(),
+			NotExists: seq.NewInt64Column(0).Pack(),
+			Sums:      seq.NewFloat64Column(0).Pack(),
+			Mins:      seq.NewFloat64Column(0).Pack(),
+			Maxs:      seq.NewFloat64Column(0).Pack(),
+			Quantiles: (&seq.ArraysColumn[float64]{}).Pack(),
+			UniqueIds: (&seq.ArraysColumn[uint32]{}).Pack(),
 		}
 
 		agg, err := aggValuesToQPR(encoded)
@@ -178,16 +178,16 @@ func TestAggValuesToQPR(t *testing.T) {
 		encoded := &storeapi.SearchResponse_AggValues{
 			Func: storeapi.AggFunc_AGG_FUNC_COUNT,
 			Tokens: [][]byte{
-				firstTokens.AppendTo(nil),
-				secondTokens.AppendTo(nil),
+				firstTokens.Pack(),
+				secondTokens.Pack(),
 			},
-			Totals:    totals.AppendTo(nil),
-			NotExists: seq.NewEmptyInt64Column().AppendTo(nil),
-			Sums:      seq.NewFloat64Column(0).AppendTo(nil),
-			Mins:      seq.NewFloat64Column(0).AppendTo(nil),
-			Maxs:      seq.NewFloat64Column(0).AppendTo(nil),
-			Quantiles: (&seq.ArraysColumn[float64]{}).AppendTo(nil),
-			UniqueIds: (&seq.ArraysColumn[uint32]{}).AppendTo(nil),
+			Totals:    totals.Pack(),
+			NotExists: seq.NewEmptyInt64Column().Pack(),
+			Sums:      seq.NewFloat64Column(0).Pack(),
+			Mins:      seq.NewFloat64Column(0).Pack(),
+			Maxs:      seq.NewFloat64Column(0).Pack(),
+			Quantiles: (&seq.ArraysColumn[float64]{}).Pack(),
+			UniqueIds: (&seq.ArraysColumn[uint32]{}).Pack(),
 		}
 
 		agg, err := aggValuesToQPR(encoded)
@@ -217,15 +217,15 @@ func TestAggValuesToQPR(t *testing.T) {
 		values := seq.NewAggValuesFromSamples(seq.AggFuncSum, []seq.SamplesContainer{{}})
 		encoded := &storeapi.SearchResponse_AggValues{
 			Func:      storeapi.AggFunc_AGG_FUNC_SUM,
-			Tokens:    [][]byte{tokens.AppendTo(nil)},
-			Mids:      mids.AppendTo(nil),
-			Totals:    values.Totals.AppendTo(nil),
-			NotExists: values.NotExists.AppendTo(nil),
-			Sums:      values.Sums.AppendTo(nil),
-			Mins:      values.Mins.AppendTo(nil),
-			Maxs:      values.Maxs.AppendTo(nil),
-			Quantiles: values.Quantiles.AppendTo(nil),
-			UniqueIds: values.UniqueIDs.AppendTo(nil),
+			Tokens:    [][]byte{tokens.Pack()},
+			Mids:      mids.Pack(),
+			Totals:    values.Totals.Pack(),
+			NotExists: values.NotExists.Pack(),
+			Sums:      values.Sums.Pack(),
+			Mins:      values.Mins.Pack(),
+			Maxs:      values.Maxs.Pack(),
+			Quantiles: values.Quantiles.Pack(),
+			UniqueIds: values.UniqueIDs.Pack(),
 		}
 
 		_, err := aggValuesToQPR(encoded)
@@ -260,14 +260,14 @@ func TestAggValuesToQPRAllColumns(t *testing.T) {
 			}})
 			encoded := &storeapi.SearchResponse_AggValues{
 				Func:      storeapi.MustProtoAggFunc(fn),
-				Tokens:    [][]byte{tokens.AppendTo(nil)},
-				Totals:    values.Totals.AppendTo(nil),
-				NotExists: values.NotExists.AppendTo(nil),
-				Sums:      values.Sums.AppendTo(nil),
-				Mins:      values.Mins.AppendTo(nil),
-				Maxs:      values.Maxs.AppendTo(nil),
-				Quantiles: values.Quantiles.AppendTo(nil),
-				UniqueIds: values.UniqueIDs.AppendTo(nil),
+				Tokens:    [][]byte{tokens.Pack()},
+				Totals:    values.Totals.Pack(),
+				NotExists: values.NotExists.Pack(),
+				Sums:      values.Sums.Pack(),
+				Mins:      values.Mins.Pack(),
+				Maxs:      values.Maxs.Pack(),
+				Quantiles: values.Quantiles.Pack(),
+				UniqueIds: values.UniqueIDs.Pack(),
 			}
 
 			agg, err := aggValuesToQPR(encoded)
@@ -427,14 +427,14 @@ func TestMixedLegacyColumnarUniqueCountMerge(t *testing.T) {
 		Aggs: []*storeapi.SearchResponse_Agg{{
 			Values: &storeapi.SearchResponse_AggValues{
 				Func:      storeapi.AggFunc_AGG_FUNC_UNIQUE_COUNT,
-				Tokens:    [][]byte{tokens.AppendTo(nil)},
-				Totals:    totals.AppendTo(nil),
-				NotExists: notExists.AppendTo(nil),
-				Sums:      values.Sums.AppendTo(nil),
-				Mins:      values.Mins.AppendTo(nil),
-				Maxs:      values.Maxs.AppendTo(nil),
-				Quantiles: values.Quantiles.AppendTo(nil),
-				UniqueIds: uniqueIds.AppendTo(nil),
+				Tokens:    [][]byte{tokens.Pack()},
+				Totals:    totals.Pack(),
+				NotExists: notExists.Pack(),
+				Sums:      values.Sums.Pack(),
+				Mins:      values.Mins.Pack(),
+				Maxs:      values.Maxs.Pack(),
+				Quantiles: values.Quantiles.Pack(),
+				UniqueIds: uniqueIds.Pack(),
 			},
 			ValuesPool: []string{"pod-c", "pod-d"},
 		}},
@@ -485,14 +485,14 @@ func TestResponseToQPRReturnsAggregationDecodeError(t *testing.T) {
 func TestAggValuesToQPRZeroRows(t *testing.T) {
 	encoded := &storeapi.SearchResponse_AggValues{
 		Func:      storeapi.AggFunc_AGG_FUNC_QUANTILE,
-		Tokens:    [][]byte{seq.NewStringColumn(0).AppendTo(nil)},
-		Totals:    seq.NewEmptyInt64Column().AppendTo(nil),
-		NotExists: seq.NewEmptyInt64Column().AppendTo(nil),
-		Sums:      seq.NewFloat64Column(0).AppendTo(nil),
-		Mins:      seq.NewFloat64Column(0).AppendTo(nil),
-		Maxs:      seq.NewFloat64Column(0).AppendTo(nil),
-		Quantiles: (&seq.ArraysColumn[float64]{}).AppendTo(nil),
-		UniqueIds: (&seq.ArraysColumn[uint32]{}).AppendTo(nil),
+		Tokens:    [][]byte{seq.NewStringColumn(0).Pack()},
+		Totals:    seq.NewEmptyInt64Column().Pack(),
+		NotExists: seq.NewEmptyInt64Column().Pack(),
+		Sums:      seq.NewFloat64Column(0).Pack(),
+		Mins:      seq.NewFloat64Column(0).Pack(),
+		Maxs:      seq.NewFloat64Column(0).Pack(),
+		Quantiles: (&seq.ArraysColumn[float64]{}).Pack(),
+		UniqueIds: (&seq.ArraysColumn[uint32]{}).Pack(),
 	}
 
 	agg, err := aggValuesToQPR(encoded)

@@ -451,8 +451,8 @@ func marshalAggregatableSamples(s seq.AggregatableSamples, dst []byte) []byte {
 	return be.AppendUint64(dst, uint64(s.NotExists))
 }
 
-func appendColumn(dst []byte, column interface{ AppendTo([]byte) []byte }) []byte {
-	return appendBlob(dst, column.AppendTo(nil))
+func appendColumn(dst []byte, column interface{ Pack() []byte }) []byte {
+	return appendBlob(dst, column.Pack())
 }
 
 func appendBlob(dst, data []byte) []byte {

@@ -61,7 +61,7 @@ func checkStringColumnChains(t *testing.T, values []string) {
 		col := raw.Compress(codecs...)
 		requireColumnRows(t, col, values...)
 
-		decoded, err := UnpackStringColumn(col.AppendTo(nil))
+		decoded, err := UnpackStringColumn(col.Pack())
 		require.NoError(t, err)
 		requireColumnRows(t, decoded, values...)
 	}
@@ -118,15 +118,15 @@ func TestPackedColumnTypes(t *testing.T) {
 		wantType  columnType
 		wantCodec codecID
 	}{
-		{"string", strings.AppendTo(nil), columnTypeString, 0},
-		{"int64", int64Column(1).AppendTo(nil), columnTypeInt64, 0},
-		{"float64", NewFloat64Column(0).AppendTo(nil), columnTypeFloat64, 0},
-		{"float64 arrays", quantiles.AppendTo(nil), columnTypeArraysFloat64, 0},
-		{"uint32 arrays", uniqueIDs.AppendTo(nil), columnTypeArraysUint32, 0},
-		{"segmented", segmentColumn(strings).AppendTo(nil), columnTypeSegmented, 0},
-		{"zstd", strings.Compress(zstdCodec[[]byte]{}).AppendTo(nil), columnTypeCompressed, codecZstd},
-		{"front coding", strings.Compress(frontCoding{}).AppendTo(nil), columnTypeCompressed, codecFrontCoding},
-		{"bitpack", int64Column(1).Compress(deltaBitpack{}).AppendTo(nil), columnTypeCompressed, codecDeltaBitpack},
+		{"string", strings.Pack(), columnTypeString, 0},
+		{"int64", int64Column(1).Pack(), columnTypeInt64, 0},
+		{"float64", NewFloat64Column(0).Pack(), columnTypeFloat64, 0},
+		{"float64 arrays", quantiles.Pack(), columnTypeArraysFloat64, 0},
+		{"uint32 arrays", uniqueIDs.Pack(), columnTypeArraysUint32, 0},
+		{"segmented", segmentColumn(strings).Pack(), columnTypeSegmented, 0},
+		{"zstd", strings.Compress(zstdCodec[[]byte]{}).Pack(), columnTypeCompressed, codecZstd},
+		{"front coding", strings.Compress(frontCoding{}).Pack(), columnTypeCompressed, codecFrontCoding},
+		{"bitpack", int64Column(1).Compress(deltaBitpack{}).Pack(), columnTypeCompressed, codecDeltaBitpack},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -194,7 +194,7 @@ func TestSegmentThenCompressComposition(t *testing.T) {
 	}
 	requireColumnRows(t, compressed, values...)
 
-	decoded, err := UnpackStringColumn(compressed.AppendTo(nil))
+	decoded, err := UnpackStringColumn(compressed.Pack())
 	require.NoError(t, err)
 	requireColumnRows(t, decoded, values...)
 
@@ -273,7 +273,7 @@ func TestSegmentedColumnMixesRawAndCompressedSegments(t *testing.T) {
 
 	requireColumnRows(t, segmented, values...)
 
-	decoded, err := UnpackStringColumn(segmented.AppendTo(nil))
+	decoded, err := UnpackStringColumn(segmented.Pack())
 	require.NoError(t, err)
 	requireColumnRows(t, decoded, values...)
 }
@@ -292,7 +292,7 @@ func TestNestedCodecs(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, &StringColumn{}, decoded)
 
-	unpacked, err := UnpackStringColumn(zstdColumn.AppendTo(nil))
+	unpacked, err := UnpackStringColumn(zstdColumn.Pack())
 	require.NoError(t, err)
 	requireColumnRows(t, unpacked, "service-a/pod-1", "service-a/pod-2", "service-b/pod-1")
 }
@@ -310,15 +310,15 @@ func TestStringColumnSegmentedAppendPanics(t *testing.T) {
 func TestStringColumnCompressIsIdempotent(t *testing.T) {
 	col := buildStringColumn(t, "a", "b", "c")
 	compressed := col.Compress(frontCoding{}, zstdCodec[[]byte]{})
-	before := compressed.AppendTo(nil)
+	before := compressed.Pack()
 	again := compressed.Compress(frontCoding{}, zstdCodec[[]byte]{})
-	require.Equal(t, before, again.AppendTo(nil))
+	require.Equal(t, before, again.Pack())
 	requireColumnRows(t, again, "a", "b", "c")
 }
 
 func TestStringColumnEmptyEncoding(t *testing.T) {
 	col := NewStringColumn(0)
-	encoded := col.AppendTo(nil)
+	encoded := col.Pack()
 	require.Len(t, encoded, columnHeaderSize)
 
 	decoded, err := UnpackStringColumn(encoded)
@@ -329,13 +329,13 @@ func TestStringColumnEmptyEncoding(t *testing.T) {
 	require.Zero(t, compressed.Len())
 	requireColumnRows(t, compressed)
 
-	decodedCompressed, err := UnpackStringColumn(compressed.AppendTo(nil))
+	decodedCompressed, err := UnpackStringColumn(compressed.Pack())
 	require.NoError(t, err)
 	require.Zero(t, decodedCompressed.Len())
 }
 
 func TestUnpackStringColumnErrors(t *testing.T) {
-	valid := buildStringColumn(t, "a", "b", "c").AppendTo(nil)
+	valid := buildStringColumn(t, "a", "b", "c").Pack()
 
 	tests := []struct {
 		name string
@@ -374,7 +374,7 @@ func TestUnpackStringColumnErrors(t *testing.T) {
 }
 
 func TestUnpackSegmentedStringColumnErrors(t *testing.T) {
-	valid := compressSegmented(buildStringColumn(t, "a", "b", "c"), zstdCodec[[]byte]{}).AppendTo(nil)
+	valid := compressSegmented(buildStringColumn(t, "a", "b", "c"), zstdCodec[[]byte]{}).Pack()
 
 	segmentStart := func() int {
 		_, n := binary.Uvarint(valid[columnHeaderSize+util.SizeOfUint32:])
@@ -418,7 +418,7 @@ func TestUnpackSegmentedStringColumnErrors(t *testing.T) {
 }
 
 func TestUnpackCompressedColumnErrors(t *testing.T) {
-	valid := buildStringColumn(t, "a", "b").Compress(zstdCodec[[]byte]{}).AppendTo(nil)
+	valid := buildStringColumn(t, "a", "b").Compress(zstdCodec[[]byte]{}).Pack()
 
 	tests := []struct {
 		name string
@@ -443,22 +443,22 @@ func TestUnpackCompressedColumnErrors(t *testing.T) {
 }
 
 func TestUnpackColumnKindMismatch(t *testing.T) {
-	strings := buildStringColumn(t, "a", "b").AppendTo(nil)
+	strings := buildStringColumn(t, "a", "b").Pack()
 	_, err := UnpackInt64Column(strings)
 	require.ErrorContains(t, err, "does not match the column kind")
 
 	quantiles := NewArraysColumn[float64](1)
 	quantiles.Append([]float64{1})
-	_, err = UnpackArraysColumn[uint32](quantiles.AppendTo(nil))
+	_, err = UnpackArraysColumn[uint32](quantiles.Pack())
 	require.ErrorContains(t, err, "does not match the column kind")
 
-	frontCoded := buildStringColumn(t, "a").Compress(frontCoding{}).AppendTo(nil)
+	frontCoded := buildStringColumn(t, "a").Compress(frontCoding{}).Pack()
 	_, err = UnpackInt64Column(frontCoded)
 	require.ErrorContains(t, err, "does not match the column kind")
 }
 
 func TestUnpackSegmentedColumnAliasesInput(t *testing.T) {
-	encoded := compressSegmented(buildStringColumn(t, "aaa", "bbbb"), zstdCodec[[]byte]{}).AppendTo(nil)
+	encoded := compressSegmented(buildStringColumn(t, "aaa", "bbbb"), zstdCodec[[]byte]{}).Pack()
 	column, err := UnpackStringColumn(encoded)
 	require.NoError(t, err)
 	segmented := column.(*segmentedColumn[[]byte])
@@ -486,7 +486,7 @@ func TestStringColumnCompressionRatio(t *testing.T) {
 	}
 
 	col := buildStringColumn(t, values...)
-	encoded := col.Compress(frontCoding{}, zstdCodec[[]byte]{}).AppendTo(nil)
+	encoded := col.Compress(frontCoding{}, zstdCodec[[]byte]{}).Pack()
 	t.Logf("rows=%d raw=%d encoded=%d ratio=%.2f", len(values), raw, len(encoded), float64(raw)/float64(len(encoded)))
 	require.Less(t, len(encoded), raw)
 }
@@ -529,7 +529,7 @@ func checkInt64ColumnChains(t *testing.T, values []int64) {
 		col := raw.Compress(codecs...)
 		requireInt64Values(t, col, values...)
 
-		decoded, err := UnpackInt64Column(col.AppendTo(nil))
+		decoded, err := UnpackInt64Column(col.Pack())
 		require.NoError(t, err)
 		requireInt64Values(t, decoded, values...)
 	}
@@ -567,20 +567,20 @@ func TestNewEmptyInt64Column(t *testing.T) {
 	require.Equal(t, int(unsafe.Sizeof(Int64Column{})), column.MemUsage())
 	require.False(t, column.NewIter().Next())
 
-	encoded := column.AppendTo(nil)
+	encoded := column.Pack()
 	require.Len(t, encoded, columnHeaderSize)
 	decoded, err := UnpackInt64Column(encoded)
 	require.NoError(t, err)
 	requireInt64Values(t, decoded)
 
 	allocations := testing.AllocsPerRun(100, func() {
-		encoded = column.AppendTo(encoded[:0])
+		encoded = column.Pack()
 	})
-	require.Zero(t, allocations)
+	require.Equal(t, float64(1), allocations)
 }
 
 func TestUnpackInt64ColumnErrors(t *testing.T) {
-	valid := int64Column(1, 2, 3).AppendTo(nil)
+	valid := int64Column(1, 2, 3).Pack()
 
 	_, err := UnpackInt64Column(nil)
 	require.ErrorContains(t, err, "not enough data")
@@ -610,7 +610,7 @@ func TestInt64ColumnCompressionRatio(t *testing.T) {
 		values[i] = int64(1 + rng.Intn(1<<14))
 	}
 	col := int64Column(values...).Compress(deltaBitpack{})
-	encoded := col.AppendTo(nil)
+	encoded := col.Pack()
 	t.Logf("values=%d raw=%d encoded=%d ratio=%.2f", len(values), 8*len(values), len(encoded),
 		float64(8*len(values))/float64(len(encoded)))
 	require.Less(t, len(encoded), 8*len(values))
@@ -627,7 +627,7 @@ func TestInt64ColumnDescendingMIDsCompressionRatio(t *testing.T) {
 		col.Append(int64(MID(uint64(bucket) * 60_000_000_000)))
 	}
 
-	encoded := col.Compress(deltaBitpack{}).AppendTo(nil)
+	encoded := col.Compress(deltaBitpack{}).Pack()
 	t.Logf("values=%d raw=%d encoded=%d ratio=%.2f", rows, 8*rows, len(encoded),
 		float64(8*rows)/float64(len(encoded)))
 	require.Less(t, len(encoded), 8*rows/20)
@@ -663,13 +663,13 @@ func TestFloat64ColumnChains(t *testing.T) {
 	col := raw.Compress(zstdCodec[float64]{})
 	requireFloat64Values(t, col, want...)
 
-	decoded, err := UnpackFloat64Column(col.AppendTo(nil))
+	decoded, err := UnpackFloat64Column(col.Pack())
 	require.NoError(t, err)
 	requireFloat64Values(t, decoded, want...)
 
 	empty := NewFloat64Column(0).Compress(zstdCodec[float64]{})
 	require.Zero(t, empty.Len())
-	decodedEmpty, err := UnpackFloat64Column(empty.AppendTo(nil))
+	decodedEmpty, err := UnpackFloat64Column(empty.Pack())
 	require.NoError(t, err)
 	require.Zero(t, decodedEmpty.Len())
 }
@@ -678,7 +678,7 @@ func TestUnpackFloat64ColumnErrors(t *testing.T) {
 	valid := NewFloat64Column(2)
 	valid.Append(1)
 	valid.Append(2)
-	encoded := valid.AppendTo(nil)
+	encoded := valid.Pack()
 
 	tests := []struct {
 		name string
@@ -722,13 +722,13 @@ func TestArraysColumnChains(t *testing.T) {
 	requireRowsEqual(quantiles, []float64{1}, []float64{-2, 3})
 	requireRowsEqual(quantiles.Compress(zstdCodec[[]float64]{}), []float64{1}, []float64{-2, 3})
 
-	decoded, err := UnpackArraysColumn[float64](quantiles.Compress(zstdCodec[[]float64]{}).AppendTo(nil))
+	decoded, err := UnpackArraysColumn[float64](quantiles.Compress(zstdCodec[[]float64]{}).Pack())
 	require.NoError(t, err)
 	requireRowsEqual(decoded, []float64{1}, []float64{-2, 3})
 
 	empty := NewArraysColumn[uint32](0).Compress(zstdCodec[[]uint32]{})
 	require.Zero(t, empty.Len())
-	decodedEmpty, err := UnpackArraysColumn[uint32](empty.AppendTo(nil))
+	decodedEmpty, err := UnpackArraysColumn[uint32](empty.Pack())
 	require.NoError(t, err)
 	require.Zero(t, decodedEmpty.Len())
 }
@@ -749,6 +749,11 @@ func TestColumnMemUsageTracksRetainedCapacity(t *testing.T) {
 	)
 
 	compressed := buildStringColumn(t, "a", "b").Compress(zstdCodec[[]byte]{}).(*compressedColumn[[]byte])
+	require.Equal(t, len(compressed.payload), cap(compressed.payload))
+	frontCoded := buildStringColumn(t, "a", "b").Compress(frontCoding{}).(*compressedColumn[[]byte])
+	require.Equal(t, len(frontCoded.payload), cap(frontCoded.payload))
+	bitpacked := int64Column(1, 2, 3).Compress(deltaBitpack{}).(*compressedColumn[int64])
+	require.Equal(t, len(bitpacked.payload), cap(bitpacked.payload))
 	require.Equal(t,
 		int(unsafe.Sizeof(*compressed))+cap(compressed.payload),
 		compressed.MemUsage())
