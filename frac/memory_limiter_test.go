@@ -3,57 +3,69 @@ package frac
 import (
 	"context"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestMemoryLimiter(t *testing.T) {
-	l := NewMemoryLimiter(100)
+func TestMemoryLimiterWaitsForRelease(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		first, second uint64
+	}{
+		{name: "within limit", first: 60, second: 60},
+		{name: "clamped to limit", first: 1000, second: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				l := NewMemoryLimiter(100)
+				release, err := l.Acquire(t.Context(), tc.first)
+				require.NoError(t, err)
 
-	release, err := l.Acquire(context.Background(), 60)
-	require.NoError(t, err)
-	type acquireResult struct {
-		release func()
-		err     error
+				acquired := make(chan error, 1)
+				go func() {
+					release, err := l.Acquire(t.Context(), tc.second)
+					if err == nil {
+						release()
+					}
+					acquired <- err
+				}()
+				synctest.Wait()
+				require.Empty(t, acquired)
+
+				release()
+				synctest.Wait()
+				require.NoError(t, <-acquired)
+			})
+		})
 	}
-	acquired := make(chan acquireResult)
-	go func() {
-		release, err := l.Acquire(context.Background(), 60)
-		acquired <- acquireResult{release, err}
-	}()
+}
 
-	select {
-	case <-acquired:
-		t.Fatal("acquired over the limit")
-	case <-time.After(50 * time.Millisecond):
-	}
+func TestMemoryLimiterCancel(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := NewMemoryLimiter(100)
+		release, err := l.Acquire(t.Context(), 100)
+		require.NoError(t, err)
+		defer release()
 
-	release()
-	select {
-	case r := <-acquired:
-		require.NoError(t, r.err)
-		release = r.release
-	case <-time.After(time.Second):
-		t.Fatal("not acquired after release")
-	}
-	release()
+		ctx, cancel := context.WithCancel(t.Context())
+		acquired := make(chan error, 1)
+		go func() {
+			_, err := l.Acquire(ctx, 1)
+			acquired <- err
+		}()
+		synctest.Wait()
+		require.Empty(t, acquired)
 
-	release, err = l.Acquire(context.Background(), 1000)
-	require.NoError(t, err)
-	release()
+		cancel()
+		synctest.Wait()
+		require.ErrorIs(t, <-acquired, context.Canceled)
+	})
+}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	release, err = l.Acquire(ctx, 100)
-	require.NoError(t, err)
-	cancel()
-	_, err = l.Acquire(ctx, 1)
-	require.ErrorIs(t, err, context.Canceled)
-	release()
-	require.True(t, l.sem.TryAcquire(100))
-
-	var unlimited *MemoryLimiter
-	release, err = unlimited.Acquire(context.Background(), 1<<40)
+func TestMemoryLimiterNil(t *testing.T) {
+	var l *MemoryLimiter
+	release, err := l.Acquire(t.Context(), 1<<40)
 	require.NoError(t, err)
 	release()
 }
