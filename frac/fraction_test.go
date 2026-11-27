@@ -2761,7 +2761,7 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
 func (s *FractionTestSuite) newSealed(bulks ...[]string) *frac.Sealed {
 	active := s.newActive(bulks...)
 
-	activeSealingSource, err := frac.NewActiveSealingSource(active, s.sealParams)
+	activeSealingSource, err := frac.NewActiveSealingSource(active, s.sealParams, nil)
 	s.Require().NoError(err, "Sealing source creation failed")
 
 	preloaded, err := sealing.Seal(activeSealingSource, s.sealParams)

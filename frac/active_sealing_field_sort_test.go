@@ -95,7 +95,7 @@ func TestSortDocsByField(t *testing.T) {
 			s.sealParams.DocBlockSize = 1
 			active := s.newActive(tc.docs)
 			defer active.Release()
-			src, err := frac.NewActiveSealingSource(active, s.sealParams)
+			src, err := frac.NewActiveSealingSource(active, s.sealParams, nil)
 			require.NoError(t, err)
 			var blocksByLID []uint32
 			for loc, err := range src.IDs() {

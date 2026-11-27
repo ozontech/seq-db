@@ -238,6 +238,16 @@ docs_sorting:
   enabled: true
   field: service
 `),
+			env: map[string]string{"SEQDB_RESOURCES_SORT_DOCS_MEMORY_LIMIT": "1GiB"},
+		},
+		{
+			name: "Invalid docs_sorting.field without sort_docs_memory_limit",
+			cfg: createCfgFile(t, base+`
+docs_sorting:
+  enabled: true
+  field: service
+`),
+			expectErr: true,
 		},
 		{
 			name: "Valid docs_sorting enabled",

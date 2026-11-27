@@ -96,6 +96,12 @@ func (c *Config) storeValidations() []validateFn {
 		greaterThan("compaction.tick_interval", 0, c.Compaction.TickInterval),
 	}
 
+	if c.DocsSorting.Field != "" {
+		validations = append(validations,
+			greaterThan("resources.sort_docs_memory_limit", 0, c.Resources.SortDocsMemoryLimit),
+		)
+	}
+
 	if c.Offloading.Enabled {
 		validations = append(validations,
 			notEmpty("offloading.bucket", c.Offloading.Bucket),

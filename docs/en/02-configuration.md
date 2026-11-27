@@ -98,7 +98,8 @@ Resource allocation settings.
 | `resources.reader_workers` | int | runtime.GOMAXPROCS | Number of workers for readers pool. By default this setting is equal to runtime.GOMAXPROCS |
 | `resources.search_workers` | int | runtime.GOMAXPROCS | Number of workers for searchers pool. By default this setting is equal to runtime.GOMAXPROCS |
 | `resources.cache_size` | Bytes | 30% of available RAM | Maxium size of cache. By default this setting is equal to 30% of available RAM |
-| `resources.sort_docs_cache_size` | Bytes | - | Size of the sorted documents cache |
+| `resources.sort_docs_cache_size` | Bytes | - | Size of the sorted documents cache. Not used when `docs_sorting.field` is set |
+| `resources.sort_docs_memory_limit` | Bytes | - | Total size of raw documents that fractions being sorted by `docs_sorting.field` may load into memory at once. Required when `docs_sorting.field` is set |
 | `resources.skip_fsync` | bool | `false` | Whether to skip fsync operations |
 
 ## Compression Configuration

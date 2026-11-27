@@ -228,9 +228,10 @@ type Config struct {
 		ReplayWorkers int `config:"replay_workers" default:"2"`
 		// CacheSize specifies maxium size of cache.
 		// By default this setting is equal to 30% of available RAM.
-		CacheSize         Bytes `config:"cache_size"`
-		SortDocsCacheSize Bytes `config:"sort_docs_cache_size"`
-		SkipFsync         bool  `config:"skip_fsync"`
+		CacheSize           Bytes `config:"cache_size"`
+		SortDocsCacheSize   Bytes `config:"sort_docs_cache_size"`
+		SortDocsMemoryLimit Bytes `config:"sort_docs_memory_limit"`
+		SkipFsync           bool  `config:"skip_fsync"`
 	} `config:"resources"`
 
 	Compression struct {

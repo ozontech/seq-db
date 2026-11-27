@@ -52,16 +52,19 @@ type ActiveSealingSource struct {
 	docPosMap    map[seq.ID]seq.DocPos // Original document positions
 	docPosSorted []seq.DocPos          // Document positions after sorting
 	docsReader   storage.DocsReader    // Document storage reader
+
+	memoryLimiter *MemoryLimiter
 }
 
-func NewActiveSealingSource(active *Active, params common.SealParams) (*ActiveSealingSource, error) {
+func NewActiveSealingSource(active *Active, params common.SealParams, memoryLimiter *MemoryLimiter) (*ActiveSealingSource, error) {
 	info := *active.info // copy
 
 	sortedLIDs := active.GetAllDocuments()
 	fields, fieldTIDs := sortFields(active.TokenList)
 
 	src := ActiveSealingSource{
-		params: params,
+		params:        params,
+		memoryLimiter: memoryLimiter,
 
 		info:    &info,
 		created: time.Now(),

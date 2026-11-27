@@ -1,6 +1,8 @@
 package frac
 
 import (
+	"context"
+	"encoding/binary"
 	"iter"
 	"slices"
 
@@ -88,16 +90,32 @@ func (src *ActiveSealingSource) documentID(lid uint32) seq.ID {
 
 func (src *ActiveSealingSource) docsInOrder(order []uint32) iter.Seq2[Document, error] {
 	return func(yield func(Document, error) bool) {
+		release, err := src.memoryLimiter.Acquire(context.Background(), src.info.DocsRaw)
+		if err != nil {
+			yield(Document{}, err)
+			return
+		}
+		defer release()
+
+		blocks := make([][]byte, len(src.blocksOffsets))
+		for i := range blocks {
+			block, _, err := src.docsReader.Load(uint32(i))
+			if err != nil {
+				yield(Document{}, err)
+				return
+			}
+			blocks[i] = block
+		}
+
 		if !yield(Document{First: seq.SystemID}, nil) {
 			return
 		}
 		for _, lid := range order[1:] {
 			id := src.documentID(src.sortedLIDs[lid-1])
-			doc, err := src.doc(src.docPosMap[id])
-			if err != nil {
-				yield(Document{}, err)
-				return
-			}
+			blockIndex, offset := src.docPosMap[id].Unpack()
+			block := blocks[blockIndex]
+			docLen := binary.LittleEndian.Uint32(block[offset:])
+			doc := block[offset+4 : offset+4+uint64(docLen)]
 			if !yield(Document{First: id, Second: doc}, nil) {
 				return
 			}
