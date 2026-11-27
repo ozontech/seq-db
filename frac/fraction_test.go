@@ -93,6 +93,7 @@ type FractionTestSuite struct {
 	suite.Suite
 	tmpDir        string
 	config        *frac.Config
+	sortDocsField string
 	mapping       seq.Mapping
 	mappingYAML   []byte
 	tokenizers    map[seq.TokenizerType]tokenizer.Tokenizer
@@ -114,7 +115,7 @@ func (s *FractionTestSuite) TearDownSuiteCommon() {
 }
 
 func (s *FractionTestSuite) SetupTestCommon() {
-	s.config = &frac.Config{}
+	s.config = &frac.Config{SortDocsField: s.sortDocsField}
 	s.config.Search.QueryOptimization = frac.QueryOptimizationConfig{
 		BatchExecution: frac.BatchExecutionConfig{
 			Enabled:       true,
@@ -2761,7 +2762,7 @@ func (s *FractionTestSuite) newActive(bulks ...[]string) *frac.Active {
 func (s *FractionTestSuite) newSealed(bulks ...[]string) *frac.Sealed {
 	active := s.newActive(bulks...)
 
-	activeSealingSource, err := frac.NewActiveSealingSource(active, s.sealParams)
+	activeSealingSource, err := frac.NewActiveSealingSource(active, s.sealParams, nil)
 	s.Require().NoError(err, "Sealing source creation failed")
 
 	preloaded, err := sealing.Seal(activeSealingSource, s.sealParams)

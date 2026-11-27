@@ -222,6 +222,47 @@ sealing:
 			env:       map[string]string{"SEQDB_SEALING_TOKENS_BLOCK_SIZE": "32KiB"},
 			expectErr: false,
 		},
+		{
+			name: "Invalid docs_sorting disabled with non-empty field",
+			cfg: createCfgFile(t, base+`
+docs_sorting:
+  enabled: false
+  field: service
+`),
+			expectErr: true,
+		},
+		{
+			name: "Valid docs_sotring enabled with non-empty field",
+			cfg: createCfgFile(t, base+`
+docs_sorting:
+  enabled: true
+  field: service
+`),
+			env: map[string]string{"SEQDB_RESOURCES_SORT_DOCS_MEMORY_LIMIT": "1GiB"},
+		},
+		{
+			name: "Invalid docs_sorting.field without sort_docs_memory_limit",
+			cfg: createCfgFile(t, base+`
+docs_sorting:
+  enabled: true
+  field: service
+`),
+			expectErr: true,
+		},
+		{
+			name: "Valid docs_sorting enabled",
+			cfg: createCfgFile(t, base+`
+docs_sorting:
+  enabled: true
+`),
+		},
+		{
+			name: "Valid docs_sotring disabled",
+			cfg: createCfgFile(t, base+`
+docs_sorting:
+  enabled: false
+`),
+		},
 	}
 
 	for _, tt := range tests {

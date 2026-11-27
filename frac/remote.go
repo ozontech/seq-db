@@ -273,6 +273,7 @@ func (f *Remote) Suicide(ctx context.Context) error {
 	files := []string{
 		filepath.Base(f.BaseFileName) + consts.DocsFileSuffix,
 		filepath.Base(f.BaseFileName) + consts.SdocsFileSuffix,
+		filepath.Base(f.BaseFileName) + consts.StdocsFileSuffix,
 		// Legacy single-file format.
 		filepath.Base(f.BaseFileName) + consts.IndexFileSuffix,
 		// New split format.
@@ -496,23 +497,18 @@ func (f *Remote) openDocs() error {
 		return nil
 	}
 
-	docsFile, err := f.openRemoteFile(consts.DocsFileSuffix, false)
-	if err != nil {
-		return err
-	}
-
-	if docsFile == nil {
-		docsFile, err = f.openRemoteFile(consts.SdocsFileSuffix, false)
+	for _, suffix := range []string{consts.DocsFileSuffix, consts.SdocsFileSuffix, consts.StdocsFileSuffix} {
+		docsFile, err := f.openRemoteFile(suffix, false)
 		if err != nil {
 			return err
 		}
-		if docsFile == nil {
-			return fmt.Errorf("missing %q and %q files", consts.DocsFileSuffix, consts.SdocsFileSuffix)
+
+		if docsFile != nil {
+			f.docsFile = docsFile
+			return nil
 		}
 	}
-
-	f.docsFile = docsFile
-	return nil
+	return fmt.Errorf("missing documents file for %q", f.BaseFileName)
 }
 
 func (f *Remote) computeIndexSize() {

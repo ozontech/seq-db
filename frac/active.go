@@ -404,6 +404,7 @@ func (f *Active) Suicide() {
 	util.RemoveFile(f.walFile.Name())
 	util.RemoveFile(f.docsFile.Name())
 	util.RemoveFile(f.BaseFileName + consts.SdocsFileSuffix)
+	util.RemoveFile(f.BaseFileName + consts.StdocsFileSuffix)
 }
 
 func (f *Active) releaseMem() {

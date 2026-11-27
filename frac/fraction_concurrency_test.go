@@ -195,7 +195,7 @@ func TestConcurrentColdQueriesSealedFrac(t *testing.T) {
 	fillActiveFraction(t, active, bulks, mapping, tokenizers, numWriters)
 	stop()
 
-	activeSealingSource, err := frac.NewActiveSealingSource(active, getTestSealParams())
+	activeSealingSource, err := frac.NewActiveSealingSource(active, getTestSealParams(), nil)
 	assert.NoError(t, err)
 
 	preloaded, err := sealing.Seal(activeSealingSource, getTestSealParams())
@@ -656,7 +656,7 @@ func fillActiveFraction(t *testing.T, active *frac.Active, bulks [][]string, map
 }
 
 func seal(active *frac.Active) (*frac.Sealed, error) {
-	activeSealingSource, err := frac.NewActiveSealingSource(active, getTestSealParams())
+	activeSealingSource, err := frac.NewActiveSealingSource(active, getTestSealParams(), nil)
 	if err != nil {
 		return nil, err
 	}

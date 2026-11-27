@@ -109,7 +109,7 @@ func runSealingBench(b *testing.B, cfg *frac.Config) {
 	assert.NoError(b, err)
 
 	seal := func(active *frac.Active, params common.SealParams) (*sealed.PreloadedData, error) {
-		src, err := frac.NewActiveSealingSource(active, params)
+		src, err := frac.NewActiveSealingSource(active, params, nil)
 		assert.NoError(b, err)
 		return sealing.Seal(src, params)
 	}

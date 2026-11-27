@@ -8,6 +8,10 @@ import (
 type validateFn func() error
 
 func (c *Config) Validate(mode string) error {
+	if c.DocsSorting.Field != "" && !c.DocsSorting.Enabled {
+		return fmt.Errorf("docs_sorting.field requires docs_sorting.enabled")
+	}
+
 	validations := []validateFn{
 		notEmpty("mapping.path", c.Mapping.Path),
 		inRange("tracing.sampling_rate", 0, 1, c.Tracing.SamplingRate),
@@ -90,6 +94,12 @@ func (c *Config) storeValidations() []validateFn {
 		greaterOrEqThan("compaction.workers", 0, c.Compaction.Workers),
 		greaterThan("compaction.time_window", 0, c.Compaction.TimeWindow),
 		greaterThan("compaction.tick_interval", 0, c.Compaction.TickInterval),
+	}
+
+	if c.DocsSorting.Field != "" {
+		validations = append(validations,
+			greaterThan("resources.sort_docs_memory_limit", 0, c.Resources.SortDocsMemoryLimit),
+		)
 	}
 
 	if c.Offloading.Enabled {

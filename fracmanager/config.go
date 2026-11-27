@@ -22,14 +22,15 @@ type Config struct {
 	suspendThreshold uint64
 	SealingQueueLen  uint64
 
-	ReplayWorkers     int
-	MaintenanceDelay  time.Duration
-	CacheCleanupDelay time.Duration
-	CacheGCDelay      time.Duration
-	SealParams        common.SealParams
-	SortCacheSize     uint64 // size for docs cache for active fraction
-	Fraction          frac.Config
-	MinSealFracSize   uint64
+	ReplayWorkers       int
+	MaintenanceDelay    time.Duration
+	CacheCleanupDelay   time.Duration
+	CacheGCDelay        time.Duration
+	SealParams          common.SealParams
+	SortCacheSize       uint64 // size for docs cache for active fraction
+	SortDocsMemoryLimit uint64
+	Fraction            frac.Config
+	MinSealFracSize     uint64
 
 	OffloadingEnabled         bool
 	OffloadingQueueSize       uint64
@@ -86,8 +87,9 @@ func FillConfigWithDefault(config *Config) *Config {
 		config.ReplayWorkers = consts.DefaultReplayWorkers
 	}
 
-	// Document sorting is enabled.
-	if !config.Fraction.SkipSortDocs {
+	if config.Fraction.SortDocsField != "" {
+		config.SortCacheSize = 0
+	} else if !config.Fraction.SkipSortDocs {
 		const (
 			SdocsCacheSizeMultiplier = 8
 			SdocsCacheSizeMaxRatio   = 0.8

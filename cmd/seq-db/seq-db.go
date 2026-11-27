@@ -113,6 +113,7 @@ func main() {
 		cfg.Mapping.Path,
 		mappingprovider.WithUpdatePeriod(cfg.Mapping.UpdatePeriod),
 		mappingprovider.WithIndexAllFields(enableIndexingForAllFields(cfg.Mapping.Path)),
+		mappingprovider.WithSortingKeywordField(cfg.DocsSorting.Field),
 	)
 	if err != nil {
 		logger.Fatal("load mapping error", zap.Error(err))
@@ -255,17 +256,18 @@ func startStore(
 
 	sconfig := storeapi.StoreConfig{
 		FracManager: fracmanager.Config{
-			DataDir:           cfg.Storage.DataDir,
-			FracSize:          uint64(cfg.Storage.FracSize),
-			TotalSize:         uint64(cfg.Storage.TotalSize),
-			SealingQueueLen:   uint64(cfg.Storage.SealingQueueLen),
-			CacheSize:         uint64(cfg.Resources.CacheSize),
-			SortCacheSize:     uint64(cfg.Resources.SortDocsCacheSize),
-			ReplayWorkers:     cfg.Resources.ReplayWorkers,
-			MaintenanceDelay:  0,
-			CacheGCDelay:      0,
-			CacheCleanupDelay: 0,
-			MinSealFracSize:   uint64(cfg.Storage.FracSize) * consts.DefaultMinSealPercent / 100,
+			DataDir:             cfg.Storage.DataDir,
+			FracSize:            uint64(cfg.Storage.FracSize),
+			TotalSize:           uint64(cfg.Storage.TotalSize),
+			SealingQueueLen:     uint64(cfg.Storage.SealingQueueLen),
+			CacheSize:           uint64(cfg.Resources.CacheSize),
+			SortCacheSize:       uint64(cfg.Resources.SortDocsCacheSize),
+			SortDocsMemoryLimit: uint64(cfg.Resources.SortDocsMemoryLimit),
+			ReplayWorkers:       cfg.Resources.ReplayWorkers,
+			MaintenanceDelay:    0,
+			CacheGCDelay:        0,
+			CacheCleanupDelay:   0,
+			MinSealFracSize:     uint64(cfg.Storage.FracSize) * consts.DefaultMinSealPercent / 100,
 			SealParams: common.SealParams{
 				IDsZstdLevel:                 cfg.Compression.SealedZstdCompressionLevel,
 				LIDsZstdLevel:                cfg.Compression.SealedZstdCompressionLevel,
@@ -297,8 +299,9 @@ func startStore(
 						},
 					},
 				},
-				SkipSortDocs: !cfg.DocsSorting.Enabled,
-				KeepWalFile:  false,
+				SkipSortDocs:  !cfg.DocsSorting.Enabled,
+				SortDocsField: cfg.DocsSorting.Field,
+				KeepWalFile:   false,
 			},
 			OffloadingEnabled:         cfg.Offloading.Enabled,
 			OffloadingRetention:       cfg.Offloading.Retention,

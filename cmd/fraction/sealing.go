@@ -85,7 +85,7 @@ func sealFraction(
 		LIDsBitmapThreshold:    25,
 	}
 
-	src, err := frac.NewActiveSealingSource(active, sealParams)
+	src, err := frac.NewActiveSealingSource(active, sealParams, nil)
 	if err != nil {
 		return fmt.Errorf("cannot create sealing source: %w", err)
 	}

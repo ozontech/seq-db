@@ -98,7 +98,8 @@ id: configuration
 | `resources.reader_workers` | int | runtime.GOMAXPROCS | Количество воркеров для пула чтения. По умолчанию эта настройка равна runtime.GOMAXPROCS |
 | `resources.search_workers` | int | runtime.GOMAXPROCS | Количество воркеров для пула поиска. По умолчанию эта настройка равна runtime.GOMAXPROCS |
 | `resources.cache_size` | Bytes | 30% доступной RAM | Максимальный размер кэша. По умолчанию эта настройка равна 30% доступной оперативной памяти |
-| `resources.sort_docs_cache_size` | Bytes | - | Размер кэша отсортированных документов |
+| `resources.sort_docs_cache_size` | Bytes | - | Размер кэша отсортированных документов. Не используется, если задан `docs_sorting.field` |
+| `resources.sort_docs_memory_limit` | Bytes | - | Суммарный объём несжатых документов, который фракции, сортируемые по `docs_sorting.field`, могут одновременно загрузить в память. Обязателен при наличии `docs_sorting.field` |
 | `resources.skip_fsync` | bool | `false` | Пропускать ли операции fsync |
 
 ## Конфигурация сжатия
@@ -174,6 +175,7 @@ id: configuration
 | Параметр | Тип | Значение по умолчанию | Описание |
 |----------|-----|----------------------|-----------|
 | `docs_sorting.enabled` | bool | `false` | Включает/отключает сортировку документов |
+| `docs_sorting.field` | string | `""` | Keyword-поле для группировки документов перед сортировкой по времени. Требует `docs_sorting.enabled`; пустое значение сохраняет сортировку только по времени. Новые фракции используют тип файла `.stdocs` |
 | `docs_sorting.doc_block_size` | Bytes | - | Устанавливает размер блока документов. Большой размер потребляет больше оперативной памяти, но улучшает коэффициент сжатия |
 
 ## Конфигурация асинхронного поиска

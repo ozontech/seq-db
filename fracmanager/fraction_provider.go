@@ -44,6 +44,8 @@ type fractionProvider struct {
 
 	mu          sync.Mutex
 	ulidEntropy io.Reader // Entropy source for ULID generation
+
+	sortDocsLimiter *frac.MemoryLimiter
 }
 
 func newFractionProvider(
@@ -51,7 +53,12 @@ func newFractionProvider(
 	readLimiter *storage.ReadLimiter, indexer *frac.ActiveIndexer,
 	skipMaskProvider skipMaskProvider,
 ) *fractionProvider {
+	var sortDocsLimiter *frac.MemoryLimiter
+	if cfg != nil && !cfg.Fraction.SkipSortDocs && cfg.Fraction.SortDocsField != "" && cfg.SortDocsMemoryLimit > 0 {
+		sortDocsLimiter = frac.NewMemoryLimiter(cfg.SortDocsMemoryLimit)
+	}
 	return &fractionProvider{
+		sortDocsLimiter:  sortDocsLimiter,
 		s3cli:            s3cli,
 		config:           cfg,
 		cacheProvider:    cp,
@@ -145,7 +152,7 @@ func (fp *fractionProvider) Seal(a *frac.Active) (*frac.Sealed, error) {
 	sealsTotal.Inc()
 	now := time.Now()
 
-	src, err := frac.NewActiveSealingSource(a, fp.config.SealParams)
+	src, err := frac.NewActiveSealingSource(a, fp.config.SealParams, fp.sortDocsLimiter)
 	if err != nil {
 		return nil, err
 	}

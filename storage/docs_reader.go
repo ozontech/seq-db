@@ -75,13 +75,15 @@ func (r *DocsReader) ReadDocsFunc(blockIndex uint32, docOffsets []uint64, cb fun
 
 func extractDocsFromBlockFunc(block []byte, docOffsets []uint64, cb func([]byte) error) error {
 	for _, offset := range docOffsets {
-		size := binary.LittleEndian.Uint32(block[offset:])
-		docStart := offset + 4
-		docEnd := docStart + uint64(size)
-		doc := block[docStart:docEnd]
-		if err := cb(doc); err != nil {
+		if err := cb(ExtractDoc(block, offset)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func ExtractDoc(block []byte, offset uint64) []byte {
+	size := binary.LittleEndian.Uint32(block[offset:])
+	docStart := offset + 4
+	return block[docStart : docStart+uint64(size)]
 }

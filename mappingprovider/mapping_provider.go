@@ -3,6 +3,7 @@ package mappingprovider
 import (
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -16,6 +17,12 @@ import (
 const defaultUpdatePeriod = 30 * time.Second
 
 type Option func(*MappingProvider)
+
+func WithSortingKeywordField(field string) Option {
+	return func(p *MappingProvider) {
+		p.sortingKeywordField = field
+	}
+}
 
 func WithUpdatePeriod(up time.Duration) Option {
 	return func(p *MappingProvider) {
@@ -37,13 +44,14 @@ func WithIndexAllFields(enabled bool) Option {
 }
 
 type MappingProvider struct {
-	filePath       string
-	updatePeriod   time.Duration
-	checksum       [sha256.Size]byte
-	mapping        seq.Mapping
-	rawMapping     *seq.RawMapping
-	mu             sync.RWMutex
-	indexAllFields bool
+	filePath            string
+	updatePeriod        time.Duration
+	checksum            [sha256.Size]byte
+	mapping             seq.Mapping
+	rawMapping          *seq.RawMapping
+	mu                  sync.RWMutex
+	indexAllFields      bool
+	sortingKeywordField string
 }
 
 func New(
@@ -60,6 +68,9 @@ func New(
 	}
 
 	if p.mapping != nil {
+		if err := p.validateMapping(p.mapping); err != nil {
+			return nil, err
+		}
 		return p, nil
 	}
 
@@ -121,6 +132,9 @@ func (p *MappingProvider) initMapping() error {
 	if err != nil {
 		return err
 	}
+	if err := p.validateMapping(mapping); err != nil {
+		return err
+	}
 
 	p.mapping = mapping
 	p.rawMapping = seq.NewRawMapping(mapping)
@@ -149,6 +163,11 @@ func (p *MappingProvider) reloadMapping() {
 		return
 	}
 
+	if err := p.validateMapping(newMapping); err != nil {
+		logger.Error("rejecting mapping update", zap.Error(err))
+		return
+	}
+
 	p.updateMapping(newMapping)
 
 	p.checksum = newChecksum
@@ -163,6 +182,16 @@ func (p *MappingProvider) updateMapping(m seq.Mapping) {
 
 	p.mapping = m
 	p.rawMapping = newRawMapping
+}
+
+func (p *MappingProvider) validateMapping(m seq.Mapping) error {
+	if p.sortingKeywordField == "" || p.indexAllFields {
+		return nil
+	}
+	if field, ok := m[p.sortingKeywordField]; !ok || field.Main.TokenizerType != seq.TokenizerTypeKeyword {
+		return fmt.Errorf("document sorting field %q must exist and have type keyword", p.sortingKeywordField)
+	}
+	return nil
 }
 
 func (p *MappingProvider) calcChecksum(data []byte) [sha256.Size]byte {
