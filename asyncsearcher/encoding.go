@@ -437,8 +437,8 @@ func marshalAggregatableSamples(s seq.AggregatableSamples, dst []byte) []byte {
 	dst = appendColumn(dst, values.Sums)
 	dst = appendColumn(dst, values.Mins)
 	dst = appendColumn(dst, values.Maxs)
-	dst = appendColumn(dst, &values.Quantiles)
-	dst = appendColumn(dst, &values.UniqueIDs)
+	dst = appendColumn(dst, values.Quantiles)
+	dst = appendColumn(dst, values.UniqueIDs)
 
 	dst = appendBool(dst, s.ValuesPool != nil)
 	if s.ValuesPool != nil {
@@ -451,8 +451,8 @@ func marshalAggregatableSamples(s seq.AggregatableSamples, dst []byte) []byte {
 	return be.AppendUint64(dst, uint64(s.NotExists))
 }
 
-func appendColumn(dst []byte, column interface{ AppendTo([]byte) []byte }) []byte {
-	return appendBlob(dst, column.AppendTo(nil))
+func appendColumn(dst []byte, column interface{ Pack() []byte }) []byte {
+	return appendBlob(dst, column.Pack())
 }
 
 func appendBlob(dst, data []byte) []byte {
@@ -497,14 +497,14 @@ func unmarshalAggregatableSamplesV3(q *seq.AggregatableSamples, src []byte) ([]b
 	rows := be.Uint64(src)
 	src = src[8:]
 
-	tokens := make([]seq.StringColumn, tokensCnt)
+	tokens := make([]seq.Column[[]byte], tokensCnt)
 	for i := range tokens {
 		data, tail, err := readBytes(src)
 		if err != nil {
 			return nil, fmt.Errorf("invalid token column %d: %w", i, err)
 		}
 		src = tail
-		column, err := seq.UnmarshalStringColumn(data)
+		column, err := seq.UnpackStringColumn(data)
 		if err != nil {
 			return nil, fmt.Errorf("invalid token column %d: %w", i, err)
 		}
@@ -560,26 +560,26 @@ func readInt(src []byte) (int, []byte, error) {
 	return int(value), src[8:], nil
 }
 
-func unmarshalInt64Column(src []byte) (seq.Int64Column, []byte, error) {
+func unmarshalInt64Column(src []byte) (seq.Column[int64], []byte, error) {
 	data, tail, err := readBytes(src)
 	if err != nil {
 		return nil, nil, err
 	}
-	column, err := seq.UnmarshalInt64Column(data)
+	column, err := seq.UnpackInt64Column(data)
 	if err != nil {
 		return nil, nil, err
 	}
 	return column, tail, nil
 }
 
-func unmarshalFloat64Column(src []byte) (seq.Float64Column, []byte, error) {
+func unmarshalFloat64Column(src []byte) (seq.Column[float64], []byte, error) {
 	data, tail, err := readBytes(src)
 	if err != nil {
-		return seq.Float64Column{}, nil, err
+		return nil, nil, err
 	}
-	column, err := seq.UnmarshalFloat64Column(data)
+	column, err := seq.UnpackFloat64Column(data)
 	if err != nil {
-		return seq.Float64Column{}, nil, err
+		return nil, nil, err
 	}
 	return column, tail, nil
 }
@@ -611,7 +611,7 @@ func unmarshalAggValues(src []byte, fn seq.AggFunc) (seq.AggValues, []byte, erro
 	if err != nil {
 		return values, nil, err
 	}
-	values.Quantiles, err = seq.UnmarshalArraysColumn[float64](quantileData)
+	values.Quantiles, err = seq.UnpackArraysColumn[float64](quantileData)
 	if err != nil {
 		return values, nil, err
 	}
@@ -619,7 +619,7 @@ func unmarshalAggValues(src []byte, fn seq.AggFunc) (seq.AggValues, []byte, erro
 	if err != nil {
 		return values, nil, err
 	}
-	values.UniqueIDs, err = seq.UnmarshalArraysColumn[uint32](uniqueIDsData)
+	values.UniqueIDs, err = seq.UnpackArraysColumn[uint32](uniqueIDsData)
 	if err != nil {
 		return values, nil, err
 	}

@@ -228,8 +228,8 @@ func SortAggBinSamples(bins []AggBinSamples) {
 // AggregatableSamples is an aggregation partial state.
 // All columns Values must be sorted via the following comparator: (MID desc, Tokens asc)
 type AggregatableSamples struct {
-	Tokens     []StringColumn
-	MIDs       Int64Column // nil for ordinary aggs
+	Tokens     []Column[[]byte]
+	MIDs       Column[int64] // nil for ordinary aggs
 	Values     AggValues
 	NotExists  int64
 	ValuesPool []string
@@ -237,7 +237,7 @@ type AggregatableSamples struct {
 
 func NewAggregatableSamples(fn AggFunc, tokens, capacity int) *AggregatableSamples {
 	agg := &AggregatableSamples{
-		Tokens: make([]StringColumn, tokens),
+		Tokens: make([]Column[[]byte], tokens),
 		Values: newAggValues(fn, capacity),
 	}
 	for i := range agg.Tokens {
@@ -246,7 +246,7 @@ func NewAggregatableSamples(fn AggFunc, tokens, capacity int) *AggregatableSampl
 	return agg
 }
 
-func NewAggregatableSamplesFromColumns(fn AggFunc, tokens []StringColumn) *AggregatableSamples {
+func NewAggregatableSamplesFromColumns(fn AggFunc, tokens []Column[[]byte]) *AggregatableSamples {
 	return &AggregatableSamples{
 		Tokens: tokens,
 		Values: newAggValues(fn, 0),
@@ -258,7 +258,7 @@ func (q *AggregatableSamples) AppendSamples(tokens []string, mid MID, samples Sa
 		return
 	}
 	for i, token := range tokens {
-		q.Tokens[i].AppendString(token)
+		q.Tokens[i].Append([]byte(token))
 	}
 	q.appendMID(mid)
 	q.Values.appendRow(&samples)
@@ -291,40 +291,6 @@ func (q *AggregatableSamples) Count() int {
 	return q.tokenCount()
 }
 
-func (q *AggregatableSamples) RowMID(idx int) MID {
-	if q.MIDs == nil {
-		return consts.DummyMID
-	}
-	return MID(q.MIDs.At(idx))
-}
-
-func (q *AggregatableSamples) RowSamples(idx int) *SamplesContainer {
-	values := &q.Values
-	samples := &SamplesContainer{}
-	switch values.Func {
-	case AggFuncCount, AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile, AggFuncUniqueCount:
-		samples.Total = values.Totals.At(idx)
-		if values.Func != AggFuncCount {
-			samples.NotExists = values.NotExists.At(idx)
-		}
-	}
-	switch values.Func {
-	case AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile:
-		samples.Sum = values.Sums.At(idx)
-		samples.Min = values.Mins.At(idx)
-		samples.Max = values.Maxs.At(idx)
-		if values.Func == AggFuncQuantile {
-			samples.Samples = values.Quantiles.At(idx)
-		}
-	case AggFuncUniqueCount:
-		samples.Values = make(map[uint32]struct{}, len(values.UniqueIDs.At(idx)))
-		for _, id := range values.UniqueIDs.At(idx) {
-			samples.Values[id] = struct{}{}
-		}
-	}
-	return samples
-}
-
 func cmpSign(c int) int {
 	if c < 0 {
 		return -1
@@ -354,23 +320,27 @@ type AggregateArgs struct {
 func (q *AggregatableSamples) Aggregate(args AggregateArgs) AggregationResult {
 	buckets := make([]AggregationBucket, 0, q.Count())
 
-	it := q.Tokens[0].NewIter()
-	var totals Int64ColumnIter
-	switch q.Values.Func {
-	case AggFuncCount, AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile, AggFuncUniqueCount:
-		totals = q.Values.Totals.NewIter()
+	tokens := q.Tokens[0].NewIter()
+	var mids Iter[int64]
+	if q.MIDs != nil {
+		mids = q.MIDs.NewIter()
+		mids.Next()
 	}
-	for i := 0; it.Next(); i++ {
-		total := int64(0)
-		if totals != nil && totals.Next() {
-			total = totals.Value()
+	samples := q.Values.NewSamplesIter()
+	samples.Next()
+	for tokens.Next() {
+		mid := MID(consts.DummyMID)
+		if mids != nil {
+			mid = MID(mids.Value())
+			mids.Next()
 		}
-		mid := q.RowMID(i)
 		if args.SkipWithoutTimestamp && mid == consts.DummyMID {
+			samples.Next()
 			continue
 		}
-		bin := AggBin{MID: mid, Token: string(it.Value())}
-		buckets = append(buckets, q.aggBucket(bin, i, total, args))
+		bin := AggBin{MID: mid, Token: string(tokens.Value())}
+		buckets = append(buckets, aggBucket(bin, samples.Samples(), args))
+		samples.Next()
 	}
 
 	sortBuckets(args.Func, buckets)
@@ -420,27 +390,26 @@ func sortBuckets(aggFunc AggFunc, buckets []AggregationBucket) {
 	slices.SortFunc(buckets, sortFunc)
 }
 
-func (q *AggregatableSamples) aggBucket(bin AggBin, idx int, total int64, args AggregateArgs) AggregationBucket {
+func aggBucket(bin AggBin, samples *SamplesContainer, args AggregateArgs) AggregationBucket {
 	var (
 		value     float64
 		quantiles []float64
 	)
-	hist := &q.Values
 
 	switch args.Func {
 	case AggFuncCount, AggFuncUnique:
 		if args.Func == AggFuncCount {
-			value = float64(total)
+			value = float64(samples.Total)
 		}
 	case AggFuncSum:
-		value = hist.Sums.At(idx)
+		value = samples.Sum
 	case AggFuncMin:
-		value = hist.Mins.At(idx)
+		value = samples.Min
 	case AggFuncMax:
-		value = hist.Maxs.At(idx)
+		value = samples.Max
 	case AggFuncAvg:
-		if total != 0 {
-			value = hist.Sums.At(idx) / float64(total)
+		if samples.Total != 0 {
+			value = samples.Sum / float64(samples.Total)
 		}
 	case AggFuncQuantile:
 		if len(args.Quantiles) == 0 {
@@ -448,16 +417,16 @@ func (q *AggregatableSamples) aggBucket(bin AggBin, idx int, total int64, args A
 		}
 		quantiles = make([]float64, 0, len(args.Quantiles))
 		for _, q := range args.Quantiles {
-			quantiles = append(quantiles, hist.quantile(idx, q))
+			quantiles = append(quantiles, quantile(samples, q))
 		}
 		value = quantiles[0]
 	case AggFuncUniqueCount:
-		value = float64(hist.uniqueCount(idx))
+		value = float64(len(samples.Values))
 	default:
 		panic(fmt.Errorf("unimplemented aggregation func"))
 	}
 
-	if total == 0 && args.Func != AggFuncCount && args.Func != AggFuncUnique {
+	if samples.Total == 0 && args.Func != AggFuncCount && args.Func != AggFuncUnique {
 		value = math.NaN()
 	}
 
@@ -466,16 +435,8 @@ func (q *AggregatableSamples) aggBucket(bin AggBin, idx int, total int64, args A
 		MID:       bin.MID,
 		Value:     value,
 		Quantiles: quantiles,
-		NotExists: bucketNotExists(hist, idx),
+		NotExists: samples.NotExists,
 	}
-}
-
-func bucketNotExists(values *AggValues, row int) int64 {
-	switch values.Func {
-	case AggFuncCount, AggFuncUnique:
-		return 0
-	}
-	return values.NotExists.At(row)
 }
 
 func (q *AggregatableSamples) Merge(aggs []AggregatableSamples) {
@@ -503,7 +464,7 @@ func (q *AggregatableSamples) Merge(aggs []AggregatableSamples) {
 	}
 
 	out := &AggregatableSamples{
-		Tokens:     make([]StringColumn, tokenCnt),
+		Tokens:     make([]Column[[]byte], tokenCnt),
 		Values:     newAggValues(q.Values.Func, 0),
 		NotExists:  q.NotExists,
 		ValuesPool: q.ValuesPool,
@@ -560,18 +521,17 @@ func appendValuesPool(pool *[]string, index map[string]uint32, src []string) []u
 }
 
 type mergeCursor struct {
-	aggs          *AggregatableSamples
-	tokensIters   []StringColumnIter
-	midsIter      Int64ColumnIter
-	totalsIter    Int64ColumnIter
-	notExistsIter Int64ColumnIter
-	idx           int
-	remap         []uint32
+	aggs        *AggregatableSamples
+	tokensIters []Iter[[]byte]
+	midsIter    Iter[int64]
+	samples     *samplesIter
+	idx         int
+	remap       []uint32
 }
 
 func (c *mergeCursor) init() {
 	c.idx = 0
-	c.tokensIters = make([]StringColumnIter, len(c.aggs.Tokens))
+	c.tokensIters = make([]Iter[[]byte], len(c.aggs.Tokens))
 	for i := range c.aggs.Tokens {
 		c.tokensIters[i] = c.aggs.Tokens[i].NewIter()
 		c.tokensIters[i].Next()
@@ -580,16 +540,8 @@ func (c *mergeCursor) init() {
 		c.midsIter = c.aggs.MIDs.NewIter()
 		c.midsIter.Next()
 	}
-	switch c.aggs.Values.Func {
-	case AggFuncCount, AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile, AggFuncUniqueCount:
-		c.totalsIter = c.aggs.Values.Totals.NewIter()
-		c.totalsIter.Next()
-	}
-	switch c.aggs.Values.Func {
-	case AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile, AggFuncUniqueCount:
-		c.notExistsIter = c.aggs.Values.NotExists.NewIter()
-		c.notExistsIter.Next()
-	}
+	c.samples = c.aggs.Values.NewSamplesIter()
+	c.samples.Next()
 }
 
 func (c *mergeCursor) next() bool {
@@ -603,27 +555,8 @@ func (c *mergeCursor) next() bool {
 	if c.midsIter != nil {
 		c.midsIter.Next()
 	}
-	if c.totalsIter != nil {
-		c.totalsIter.Next()
-	}
-	if c.notExistsIter != nil {
-		c.notExistsIter.Next()
-	}
+	c.samples.Next()
 	return true
-}
-
-func (c *mergeCursor) total() int64 {
-	if c.totalsIter == nil {
-		return 0
-	}
-	return c.totalsIter.Value()
-}
-
-func (c *mergeCursor) notExists() int64 {
-	if c.notExistsIter == nil {
-		return 0
-	}
-	return c.notExistsIter.Value()
 }
 
 func (c *mergeCursor) mid() MID {
@@ -760,28 +693,18 @@ func (b *mergeAggBin) binEquals(c *mergeCursor) bool {
 }
 
 func setCursorSamples(samples *SamplesContainer, cursor *mergeCursor) {
-	values := &cursor.aggs.Values
-	samples.Total = cursor.total()
-	samples.NotExists = 0
-	samples.Sum = 0
-	samples.Min = 0
-	samples.Max = 0
-	samples.Samples = samples.Samples[:0]
+	src := cursor.samples.Samples()
+	samples.Total = src.Total
+	samples.NotExists = src.NotExists
+	samples.Sum = src.Sum
+	samples.Min = src.Min
+	samples.Max = src.Max
+	samples.Samples = append(samples.Samples[:0], src.Samples...)
 	if samples.Values != nil {
 		clear(samples.Values)
 	}
-	switch values.Func {
-	case AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile:
-		samples.NotExists = cursor.notExists()
-		samples.Sum = values.Sums.At(cursor.idx)
-		samples.Min = values.Mins.At(cursor.idx)
-		samples.Max = values.Maxs.At(cursor.idx)
-		if values.Func == AggFuncQuantile {
-			samples.Samples = append(samples.Samples, values.Quantiles.At(cursor.idx)...)
-		}
-	case AggFuncUniqueCount:
-		samples.NotExists = cursor.notExists()
-		for _, id := range values.UniqueIDs.At(cursor.idx) {
+	if src.Values != nil {
+		for id := range src.Values {
 			if len(cursor.remap) > 0 {
 				id = cursor.remap[id]
 			}
@@ -978,6 +901,33 @@ func (h *SamplesContainer) InsertValueIndex(poolIdx uint32, cnt int64) {
 	}
 	h.Values[poolIdx] = struct{}{}
 	h.Total += cnt
+}
+
+// ToCompressed compresses nested columns so that proxy can merge several QPRs with minimum memory footprint
+func (q *QPR) ToCompressed() {
+	for i := range q.Aggs {
+		for j := range q.Aggs[i].Tokens {
+			codecs := []Codec[[]byte]{zstdCodec[[]byte]{}}
+			// If agg is not timeseries, then sort order is same as (tokens[0] asc, tokens[1] asc).
+			// The first token column is asc ordered, front coding improves the final compressed result for sorted string column.
+			if j == 0 && q.Aggs[i].MIDs == nil {
+				codecs = []Codec[[]byte]{frontCoding{}, zstdCodec[[]byte]{}}
+			}
+			q.Aggs[i].Tokens[j] = compressSegmented(q.Aggs[i].Tokens[j], codecs...)
+		}
+		if q.Aggs[i].MIDs != nil {
+			q.Aggs[i].MIDs = compressSegmented(q.Aggs[i].MIDs, deltaBitpack{})
+		}
+
+		values := &q.Aggs[i].Values
+		values.Totals = compressSegmented(values.Totals, deltaBitpack{})
+		values.NotExists = compressSegmented(values.NotExists, deltaBitpack{})
+		values.Sums = compressSegmented(values.Sums, zstdCodec[float64]{})
+		values.Mins = compressSegmented(values.Mins, zstdCodec[float64]{})
+		values.Maxs = compressSegmented(values.Maxs, zstdCodec[float64]{})
+		values.Quantiles = compressSegmented(values.Quantiles, zstdCodec[[]float64]{})
+		values.UniqueIDs = compressSegmented(values.UniqueIDs, zstdCodec[[]uint32]{})
+	}
 }
 
 // MergeQPRs merges several qprs into dst. The provided qprs are not modified.

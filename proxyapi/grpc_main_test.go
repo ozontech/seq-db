@@ -271,7 +271,7 @@ func makeGetAggRespData(totalSize int64, bucketsCnt int) *testGetAggResp {
 	remainCnt := totalSize - docCnt*(int64(bucketsCnt)-1)
 
 	bucketKey := "bucket0"
-	qprAgg.Tokens[0].AppendString(bucketKey)
+	qprAgg.Tokens[0].Append([]byte(bucketKey))
 	qprAgg.Values.Totals.Append(remainCnt)
 
 	bucket := &seqproxyapi.Aggregation_Bucket{
@@ -281,7 +281,7 @@ func makeGetAggRespData(totalSize int64, bucketsCnt int) *testGetAggResp {
 	buckets = append(buckets, bucket)
 	for i := 1; i < bucketsCnt; i++ {
 		bucketKey = "bucket" + strconv.Itoa(i)
-		qprAgg.Tokens[0].AppendString(bucketKey)
+		qprAgg.Tokens[0].Append([]byte(bucketKey))
 		qprAgg.Values.Totals.Append(docCnt)
 
 		bucket = &seqproxyapi.Aggregation_Bucket{

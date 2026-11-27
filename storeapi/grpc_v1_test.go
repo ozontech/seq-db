@@ -95,13 +95,13 @@ func TestProxyProtocolFromContext(t *testing.T) {
 
 func TestBuildSearchResponseColumns(t *testing.T) {
 	agg := seq.NewAggregatableSamples(seq.AggFuncSum, 1, 2)
-	agg.Tokens[0].AppendString("a")
+	agg.Tokens[0].Append([]byte("a"))
 	agg.Values.Totals.Append(2)
 	agg.Values.NotExists.Append(7)
 	agg.Values.Sums.Append(4)
 	agg.Values.Mins.Append(0)
 	agg.Values.Maxs.Append(0)
-	agg.Tokens[0].AppendString("b")
+	agg.Tokens[0].Append([]byte("b"))
 	agg.Values.Totals.Append(1)
 	agg.Values.NotExists.Append(8)
 	agg.Values.Sums.Append(1)
@@ -113,11 +113,11 @@ func TestBuildSearchResponseColumns(t *testing.T) {
 		values := resp.Aggs[0].GetValues()
 		assert.NotNil(t, values)
 
-		tokenColumn, err := seq.UnmarshalStringColumn(values.Tokens[0])
+		tokenColumn, err := seq.UnpackStringColumn(values.Tokens[0])
 		assert.NoError(t, err)
 		requireRowsEqual(t, tokenColumn, "a", "b")
 		assert.Empty(t, values.Mids)
-		totals, err := seq.UnmarshalInt64Column(values.Totals)
+		totals, err := seq.UnpackInt64Column(values.Totals)
 		assert.NoError(t, err)
 		var got []int64
 		it := totals.NewIter()
@@ -125,7 +125,7 @@ func TestBuildSearchResponseColumns(t *testing.T) {
 			got = append(got, it.Value())
 		}
 		assert.Equal(t, []int64{2, 1}, got)
-		notExists, err := seq.UnmarshalInt64Column(values.NotExists)
+		notExists, err := seq.UnpackInt64Column(values.NotExists)
 		assert.NoError(t, err)
 		got = nil
 		it = notExists.NewIter()
@@ -133,7 +133,7 @@ func TestBuildSearchResponseColumns(t *testing.T) {
 			got = append(got, it.Value())
 		}
 		assert.Equal(t, []int64{7, 8}, got)
-		sums, err := seq.UnmarshalFloat64Column(values.Sums)
+		sums, err := seq.UnpackFloat64Column(values.Sums)
 		assert.NoError(t, err)
 		floatIt := sums.NewIter()
 		gotFloat := make([]float64, 0)
@@ -147,7 +147,7 @@ func TestBuildSearchResponseColumns(t *testing.T) {
 		timeSeries := seq.NewAggregatableSamples(seq.AggFuncSum, 1, 3)
 		timeSeries.MIDs = seq.NewInt64Column(3)
 		appendSumRow := func(token string, mid int64, total int64, sum float64) {
-			timeSeries.Tokens[0].AppendString(token)
+			timeSeries.Tokens[0].Append([]byte(token))
 			timeSeries.MIDs.Append(mid)
 			timeSeries.Values.Totals.Append(total)
 			timeSeries.Values.NotExists.Append(0)
@@ -161,7 +161,7 @@ func TestBuildSearchResponseColumns(t *testing.T) {
 
 		resp := buildSearchResponseVersion(&seq.QPR{Aggs: []seq.AggregatableSamples{*timeSeries}}, config.CurrentProxyProtocolVersion)
 		values := resp.Aggs[0].GetValues()
-		mids, err := seq.UnmarshalInt64Column(values.Mids)
+		mids, err := seq.UnpackInt64Column(values.Mids)
 		assert.NoError(t, err)
 
 		var got []int64
@@ -174,7 +174,7 @@ func TestBuildSearchResponseColumns(t *testing.T) {
 
 	t.Run("legacy zero-row aggregation", func(t *testing.T) {
 		qpr := &seq.QPR{
-			Aggs: make([]seq.AggregatableSamples, 1),
+			Aggs: []seq.AggregatableSamples{*seq.NewAggregatableSamples(seq.AggFuncCount, 1, 0)},
 		}
 
 		resp := buildSearchResponseVersion(qpr, config.ProxyProtocolVersion1)
@@ -223,7 +223,7 @@ func TestAggValuesToProtoAllColumns(t *testing.T) {
 	}
 }
 
-func requireRowsEqual(t *testing.T, col seq.StringColumn, want ...string) {
+func requireRowsEqual(t *testing.T, col seq.Column[[]byte], want ...string) {
 	t.Helper()
 	var got []string
 	it := col.NewIter()

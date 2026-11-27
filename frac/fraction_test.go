@@ -791,9 +791,11 @@ func (s *FractionTestSuite) TestBasicAggregation() {
 		s.Require().Equal(len(expected), len(qpr.Aggs))
 		for i := range expected {
 			tokens := qpr.Aggs[i].Tokens[0].NewIter()
-			for idx := 0; tokens.Next(); idx++ {
+			samples := qpr.Aggs[i].Values.NewSamplesIter()
+			for tokens.Next() {
+				samples.Next()
 				token := string(tokens.Value())
-				s.Require().Equalf(int64(expected[i][token]), qpr.Aggs[i].RowSamples(idx).Total, "failed for token %s", token)
+				s.Require().Equalf(int64(expected[i][token]), samples.Samples().Total, "failed for token %s", token)
 			}
 		}
 	}
@@ -2495,8 +2497,10 @@ func assertTotalScaled(s *FractionTestSuite, expTotal, actTotal uint64, ds uint3
 func samplesToMap(agg seq.AggregatableSamples) map[string]uint64 {
 	res := make(map[string]uint64, agg.Count())
 	tokens := agg.Tokens[0].NewIter()
-	for idx := 0; tokens.Next(); idx++ {
-		res[string(tokens.Value())] = uint64(agg.RowSamples(idx).Total)
+	samples := agg.Values.NewSamplesIter()
+	for tokens.Next() {
+		samples.Next()
+		res[string(tokens.Value())] = uint64(samples.Samples().Total)
 	}
 	return res
 }

@@ -278,14 +278,17 @@ func TestSearcher_MergeAggregations(t *testing.T) {
 	assert.Equal(t, 2, qpr.Aggs[0].Count())
 
 	agg := qpr.Aggs[0]
-	assert.Equal(t, int64(7), agg.Values.Totals.At(0))
-	assert.Equal(t, float64(1), agg.Values.Mins.At(0))
-	assert.Equal(t, float64(35), agg.Values.Maxs.At(0))
-	assert.Equal(t, float64(107), agg.Values.Sums.At(0))
-	assert.Equal(t, int64(1), agg.Values.Totals.At(1))
-	assert.Equal(t, float64(5), agg.Values.Mins.At(1))
-	assert.Equal(t, float64(5), agg.Values.Maxs.At(1))
-	assert.Equal(t, float64(5), agg.Values.Sums.At(1))
+	samples := agg.Values.NewSamplesIter()
+	samples.Next()
+	assert.Equal(t, int64(7), samples.Samples().Total)
+	assert.Equal(t, float64(1), samples.Samples().Min)
+	assert.Equal(t, float64(35), samples.Samples().Max)
+	assert.Equal(t, float64(107), samples.Samples().Sum)
+	samples.Next()
+	assert.Equal(t, int64(1), samples.Samples().Total)
+	assert.Equal(t, float64(5), samples.Samples().Min)
+	assert.Equal(t, float64(5), samples.Samples().Max)
+	assert.Equal(t, float64(5), samples.Samples().Sum)
 }
 
 func TestFracsLimit(t *testing.T) {
@@ -360,7 +363,7 @@ type fakeAggRow struct {
 func newFakeQPRWithAgg(rows ...fakeAggRow) *seq.QPR {
 	agg := seq.NewAggregatableSamples(seq.AggFuncSum, 1, len(rows))
 	for _, row := range rows {
-		agg.Tokens[0].AppendString(row.token)
+		agg.Tokens[0].Append([]byte(row.token))
 		agg.Values.Totals.Append(row.total)
 		agg.Values.NotExists.Append(0)
 		agg.Values.Sums.Append(row.sum)

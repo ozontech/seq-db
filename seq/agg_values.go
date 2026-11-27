@@ -9,42 +9,26 @@ import (
 // AggValues agg columns. All columns are non-nil (at least empty) for simplicity.
 type AggValues struct {
 	Func      AggFunc
-	Totals    Int64Column
-	NotExists Int64Column
-	Sums      Float64Column
-	Mins      Float64Column
-	Maxs      Float64Column
-	Quantiles ArraysColumn[float64]
-	UniqueIDs ArraysColumn[uint32]
+	Totals    Column[int64]
+	NotExists Column[int64]
+	Sums      Column[float64]
+	Mins      Column[float64]
+	Maxs      Column[float64]
+	Quantiles Column[[]float64]
+	UniqueIDs Column[[]uint32]
 }
 
 func newAggValues(fn AggFunc, capacity int) AggValues {
-	values := AggValues{
+	return AggValues{
 		Func:      fn,
-		Totals:    NewEmptyInt64Column(),
-		NotExists: NewEmptyInt64Column(),
+		Totals:    NewInt64Column(capacity),
+		NotExists: NewInt64Column(capacity),
+		Sums:      NewFloat64Column(capacity),
+		Mins:      NewFloat64Column(capacity),
+		Maxs:      NewFloat64Column(capacity),
+		Quantiles: NewArraysColumn[float64](capacity),
+		UniqueIDs: NewArraysColumn[uint32](capacity),
 	}
-	switch fn {
-	case AggFuncCount, AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile, AggFuncUniqueCount:
-		values.Totals = NewInt64Column(capacity)
-	}
-	switch fn {
-	case AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile, AggFuncUniqueCount:
-		values.NotExists = NewInt64Column(capacity)
-	}
-	switch fn {
-	case AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile:
-		values.Sums = NewFloat64Column(capacity)
-		values.Mins = NewFloat64Column(capacity)
-		values.Maxs = NewFloat64Column(capacity)
-	}
-	if fn == AggFuncQuantile {
-		values.Quantiles = newArraysColumn[float64](capacity)
-	}
-	if fn == AggFuncUniqueCount {
-		values.UniqueIDs = newArraysColumn[uint32](capacity)
-	}
-	return values
 }
 
 func NewAggValuesFromSamples(fn AggFunc, samples []SamplesContainer) AggValues {
@@ -83,28 +67,105 @@ func (v *AggValues) appendRow(samples *SamplesContainer) {
 	}
 }
 
-func (v *AggValues) quantile(row int, quantile float64) float64 {
-	if quantile < 0 || quantile > 1 {
-		panic("BUG: invalid quantile")
+// NewSamplesIter walks the values row by row. The returned container is reused
+// between Next calls and must be consumed before the next one.
+func (v *AggValues) NewSamplesIter() *samplesIter {
+	it := &samplesIter{values: v}
+	switch v.Func {
+	case AggFuncCount, AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile, AggFuncUniqueCount:
+		it.totals = v.Totals.NewIter()
 	}
-	samples := v.Quantiles.At(row)
-	if len(samples) == 0 {
-		return math.NaN()
+	switch v.Func {
+	case AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile, AggFuncUniqueCount:
+		it.notExists = v.NotExists.NewIter()
 	}
-	if quantile == 0 {
-		return v.Mins.At(row)
+	switch v.Func {
+	case AggFuncSum, AggFuncMin, AggFuncMax, AggFuncAvg, AggFuncQuantile:
+		it.sums = v.Sums.NewIter()
+		it.mins = v.Mins.NewIter()
+		it.maxs = v.Maxs.NewIter()
 	}
-	if quantile == 1 {
-		return v.Maxs.At(row)
+	if v.Func == AggFuncQuantile {
+		it.quantiles = v.Quantiles.NewIter()
 	}
-	samples = slices.Clone(samples)
-	slices.Sort(samples)
-	index := int(float64(len(samples)-1)*quantile + 0.5)
-	return samples[index]
+	if v.Func == AggFuncUniqueCount {
+		it.uniqueIDs = v.UniqueIDs.NewIter()
+	}
+	return it
 }
 
-func (v *AggValues) uniqueCount(row int) int {
-	return len(v.UniqueIDs.At(row))
+type samplesIter struct {
+	values    *AggValues
+	totals    Iter[int64]
+	notExists Iter[int64]
+	sums      Iter[float64]
+	mins      Iter[float64]
+	maxs      Iter[float64]
+	quantiles Iter[[]float64]
+	uniqueIDs Iter[[]uint32]
+	samples   SamplesContainer
+}
+
+func (it *samplesIter) Next() bool {
+	s := &it.samples
+	s.Total = 0
+	s.NotExists = 0
+	s.Sum = 0
+	s.Min = 0
+	s.Max = 0
+	s.Samples = s.Samples[:0]
+	if s.Values != nil {
+		clear(s.Values)
+	}
+	if it.totals != nil && it.totals.Next() {
+		s.Total = it.totals.Value()
+	}
+	if it.notExists != nil && it.notExists.Next() {
+		s.NotExists = it.notExists.Value()
+	}
+	if it.sums != nil && it.sums.Next() {
+		it.mins.Next()
+		it.maxs.Next()
+		s.Sum = it.sums.Value()
+		s.Min = it.mins.Value()
+		s.Max = it.maxs.Value()
+	}
+	if it.quantiles != nil && it.quantiles.Next() {
+		s.Samples = append(s.Samples, it.quantiles.Value()...)
+	}
+	if it.uniqueIDs != nil && it.uniqueIDs.Next() {
+		if s.Values == nil {
+			s.Values = make(map[uint32]struct{})
+		}
+		for _, id := range it.uniqueIDs.Value() {
+			s.Values[id] = struct{}{}
+		}
+	}
+	return true
+}
+
+func (it *samplesIter) Samples() *SamplesContainer {
+	return &it.samples
+}
+
+func quantile(samples *SamplesContainer, q float64) float64 {
+	if q < 0 || q > 1 {
+		panic("BUG: invalid quantile")
+	}
+	values := samples.Samples
+	if len(values) == 0 {
+		return math.NaN()
+	}
+	if q == 0 {
+		return samples.Min
+	}
+	if q == 1 {
+		return samples.Max
+	}
+	values = slices.Clone(values)
+	slices.Sort(values)
+	index := int(float64(len(values)-1)*q + 0.5)
+	return values[index]
 }
 
 func (v *AggValues) memUsage() int {

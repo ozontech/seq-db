@@ -129,9 +129,11 @@ func (s *SingleTestSuite) TestSearchAgg() {
 		r.Equal(len(expected), len(qpr.Aggs))
 		for i := range expected {
 			tokens := qpr.Aggs[i].Tokens[0].NewIter()
-			for idx := 0; tokens.Next(); idx++ {
+			samples := qpr.Aggs[i].Values.NewSamplesIter()
+			for tokens.Next() {
+				samples.Next()
 				token := string(tokens.Value())
-				r.Equalf(int64(expected[i][token]), qpr.Aggs[i].RowSamples(idx).Total, "failed for token %s", token)
+				r.Equalf(int64(expected[i][token]), samples.Samples().Total, "failed for token %s", token)
 			}
 		}
 	}

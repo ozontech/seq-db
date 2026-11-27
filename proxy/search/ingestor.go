@@ -622,10 +622,10 @@ func aggValuesToQPR(from *storeapi.SearchResponse_AggValues) (seq.AggregatableSa
 	if len(from.Tokens) == 0 {
 		return seq.AggregatableSamples{}, fmt.Errorf("token columns are missing")
 	}
-	tokens := make([]seq.StringColumn, len(from.Tokens))
+	tokens := make([]seq.Column[[]byte], len(from.Tokens))
 	var tokenRows int
 	for i, encoded := range from.Tokens {
-		column, err := seq.UnmarshalStringColumn(encoded)
+		column, err := seq.UnpackStringColumn(encoded)
 		if err != nil {
 			return seq.AggregatableSamples{}, fmt.Errorf("decode token column %d: %w", i, err)
 		}
@@ -641,7 +641,7 @@ func aggValuesToQPR(from *storeapi.SearchResponse_AggValues) (seq.AggregatableSa
 	}
 	agg := seq.NewAggregatableSamplesFromColumns(fn, tokens)
 	if len(from.Mids) > 0 {
-		mids, err := seq.UnmarshalInt64Column(from.Mids)
+		mids, err := seq.UnpackInt64Column(from.Mids)
 		if err != nil {
 			return seq.AggregatableSamples{}, err
 		}
@@ -652,37 +652,37 @@ func aggValuesToQPR(from *storeapi.SearchResponse_AggValues) (seq.AggregatableSa
 	}
 
 	values := &agg.Values
-	totals, err := seq.UnmarshalInt64Column(from.Totals)
+	totals, err := seq.UnpackInt64Column(from.Totals)
 	if err != nil {
 		return seq.AggregatableSamples{}, err
 	}
 	values.Totals = totals
-	notExists, err := seq.UnmarshalInt64Column(from.NotExists)
+	notExists, err := seq.UnpackInt64Column(from.NotExists)
 	if err != nil {
 		return seq.AggregatableSamples{}, err
 	}
 	values.NotExists = notExists
-	sums, err := seq.UnmarshalFloat64Column(from.Sums)
+	sums, err := seq.UnpackFloat64Column(from.Sums)
 	if err != nil {
 		return seq.AggregatableSamples{}, err
 	}
 	values.Sums = sums
-	mins, err := seq.UnmarshalFloat64Column(from.Mins)
+	mins, err := seq.UnpackFloat64Column(from.Mins)
 	if err != nil {
 		return seq.AggregatableSamples{}, err
 	}
 	values.Mins = mins
-	maxs, err := seq.UnmarshalFloat64Column(from.Maxs)
+	maxs, err := seq.UnpackFloat64Column(from.Maxs)
 	if err != nil {
 		return seq.AggregatableSamples{}, err
 	}
 	values.Maxs = maxs
-	quantiles, err := seq.UnmarshalArraysColumn[float64](from.Quantiles)
+	quantiles, err := seq.UnpackArraysColumn[float64](from.Quantiles)
 	if err != nil {
 		return seq.AggregatableSamples{}, err
 	}
 	values.Quantiles = quantiles
-	uniqueIDs, err := seq.UnmarshalArraysColumn[uint32](from.UniqueIds)
+	uniqueIDs, err := seq.UnpackArraysColumn[uint32](from.UniqueIds)
 	if err != nil {
 		return seq.AggregatableSamples{}, err
 	}
