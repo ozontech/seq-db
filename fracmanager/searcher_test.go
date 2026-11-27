@@ -254,15 +254,11 @@ func TestSearcher_MergeAggregations(t *testing.T) {
 	searcher := NewSearcher(4, SearcherCfg{})
 
 	frac1 := newFakeFrac(0, 50, newFakeQPRWithAgg(
-		map[seq.AggBin]*seq.SamplesContainer{
-			{Token: "gateway"}: {Min: 1, Max: 30, Sum: 70, Total: 5},
-			{Token: "proxy"}:   {Min: 5, Max: 5, Sum: 5, Total: 1},
-		},
+		fakeAggRow{token: "gateway", total: 5, sum: 70, min: 1, max: 30},
+		fakeAggRow{token: "proxy", total: 1, sum: 5, min: 5, max: 5},
 	))
 	frac2 := newFakeFrac(0, 50, newFakeQPRWithAgg(
-		map[seq.AggBin]*seq.SamplesContainer{
-			{Token: "gateway"}: {Min: 2, Max: 35, Sum: 37, Total: 2},
-		},
+		fakeAggRow{token: "gateway", total: 2, sum: 37, min: 2, max: 35},
 	))
 
 	params := processor.SearchParams{
@@ -278,19 +274,17 @@ func TestSearcher_MergeAggregations(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, qpr.Aggs, 1)
-	assert.Len(t, qpr.Aggs[0].SamplesByBin, 2)
+	assert.Equal(t, 2, qpr.Aggs[0].Count())
 
-	gatewaySamples := qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "gateway"}]
-	assert.Equal(t, int64(7), gatewaySamples.Total)
-	assert.Equal(t, float64(1), gatewaySamples.Min)
-	assert.Equal(t, float64(35), gatewaySamples.Max)
-	assert.Equal(t, float64(107), gatewaySamples.Sum)
-
-	proxySamples := qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "proxy"}]
-	assert.Equal(t, int64(1), proxySamples.Total)
-	assert.Equal(t, float64(5), proxySamples.Min)
-	assert.Equal(t, float64(5), proxySamples.Max)
-	assert.Equal(t, float64(5), proxySamples.Sum)
+	agg := qpr.Aggs[0]
+	assert.Equal(t, int64(7), agg.Values.Totals.At(0))
+	assert.Equal(t, float64(1), agg.Values.Mins.At(0))
+	assert.Equal(t, float64(35), agg.Values.Maxs.At(0))
+	assert.Equal(t, float64(107), agg.Values.Sums.At(0))
+	assert.Equal(t, int64(1), agg.Values.Totals.At(1))
+	assert.Equal(t, float64(5), agg.Values.Mins.At(1))
+	assert.Equal(t, float64(5), agg.Values.Maxs.At(1))
+	assert.Equal(t, float64(5), agg.Values.Sums.At(1))
 }
 
 func TestFracsLimit(t *testing.T) {
@@ -354,14 +348,26 @@ func newFakeQPRWithHist(ids []int, histogram map[seq.MID]uint64) *seq.QPR {
 	}
 }
 
-func newFakeQPRWithAgg(aggData map[seq.AggBin]*seq.SamplesContainer) *seq.QPR {
-	agg := seq.AggregatableSamples{
-		SamplesByBin: aggData,
-		NotExists:    0,
-	}
+type fakeAggRow struct {
+	token string
+	total int64
+	sum   float64
+	min   float64
+	max   float64
+}
 
+func newFakeQPRWithAgg(rows ...fakeAggRow) *seq.QPR {
+	agg := seq.NewAggregatableSamples(seq.AggFuncSum, 1, len(rows))
+	for _, row := range rows {
+		agg.Tokens[0].AppendString(row.token)
+		agg.Values.Totals.Append(row.total)
+		agg.Values.NotExists.Append(0)
+		agg.Values.Sums.Append(row.sum)
+		agg.Values.Mins.Append(row.min)
+		agg.Values.Maxs.Append(row.max)
+	}
 	return &seq.QPR{
-		Aggs: []seq.AggregatableSamples{agg},
+		Aggs: []seq.AggregatableSamples{*agg},
 	}
 }
 

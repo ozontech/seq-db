@@ -96,6 +96,7 @@ const (
 
 	// StoreProtocolVersionHeader reports store protocol version
 	StoreProtocolVersionHeader = "x-seq-protocol-id"
+	ProxyProtocolVersionHeader = "x-seq-proxy-protocol-id"
 )
 
 var (

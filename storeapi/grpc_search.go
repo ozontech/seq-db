@@ -11,9 +11,11 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ozontech/seq-db/config"
 	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/frac/processor"
 	"github.com/ozontech/seq-db/logger"
@@ -44,7 +46,9 @@ func (g *GrpcV1) Search(ctx context.Context, req *storeapi.SearchRequest) (*stor
 	}
 
 	tr := querytracer.New(req.Explain, "store/Search")
-	data, err := g.doSearch(ctx, req, tr)
+	proxyProtocol := proxyProtocolFromContext(ctx)
+
+	data, err := g.doSearch(ctx, req, tr, proxyProtocol)
 	if err != nil {
 		span.SetStatus(trace.Status{Code: 1, Message: err.Error()})
 		logger.Error("search error", zap.Error(err), zap.Object("request", (*searchRequestMarshaler)(req)))
@@ -69,6 +73,7 @@ func (g *GrpcV1) doSearch(
 	ctx context.Context,
 	req *storeapi.SearchRequest,
 	tr *querytracer.Tracer,
+	proxyProtocol config.ProxyProtocolVersion,
 ) (*storeapi.SearchResponse, error) {
 	metric.SearchInFlightQueriesTotal.Inc()
 	defer metric.SearchInFlightQueriesTotal.Dec()
@@ -228,7 +233,7 @@ func (g *GrpcV1) doSearch(
 		}
 	}
 
-	return buildSearchResponse(qpr), nil
+	return buildSearchResponseVersion(qpr, proxyProtocol), nil
 }
 
 func (g *GrpcV1) searchDocs(ctx context.Context, sp processor.SearchParams, tr *querytracer.Tracer) (*seq.QPR, error) {
@@ -253,7 +258,7 @@ func (g *GrpcV1) earlierThanOldestFrac(from uint64) bool {
 	return oldestCt == 0 || oldestCt > from
 }
 
-func buildSearchResponse(qpr *seq.QPR) *storeapi.SearchResponse {
+func buildSearchResponseVersion(qpr *seq.QPR, proxyProtocol config.ProxyProtocolVersion) *storeapi.SearchResponse {
 	idSourcesBuf := make([]storeapi.SearchResponse_IdWithHint, len(qpr.IDs))
 	idSources := make([]*storeapi.SearchResponse_IdWithHint, len(qpr.IDs))
 	for i := range qpr.IDs {
@@ -277,50 +282,17 @@ func buildSearchResponse(qpr *seq.QPR) *storeapi.SearchResponse {
 	aggsBuf := make([]storeapi.SearchResponse_Agg, len(qpr.Aggs))
 	aggs := make([]*storeapi.SearchResponse_Agg, len(qpr.Aggs))
 
-	for i, fromAgg := range qpr.Aggs {
-		curAgg := &aggsBuf[i]
-
-		from := fromAgg.SamplesByBin
-		to := make(map[string]*storeapi.SearchResponse_Histogram, len(from))
-
-		// TODO(dkharms): We can remove this variable since [Agg] is deprecated.
-		toAgg := make(map[string]uint64, len(from))
-
-		for bin, hist := range from {
-			pbhist := &storeapi.SearchResponse_Histogram{
-				Min:       hist.Min,
-				Max:       hist.Max,
-				Sum:       hist.Sum,
-				Total:     hist.Total,
-				Samples:   hist.Samples,
-				NotExists: hist.NotExists,
-			}
-
-			if len(hist.Values) > 0 {
-				pbhist.Values = make([]uint32, 0, len(hist.Values))
-				for idx := range hist.Values {
-					pbhist.Values = append(pbhist.Values, idx)
-				}
-			}
-
-			curAgg.Timeseries = append(curAgg.Timeseries,
-				&storeapi.SearchResponse_Bin{
-					Label: bin.Token,
-					Ts:    timestamppb.New(bin.MID.Time()),
-					Hist:  pbhist,
-				},
-			)
-
-			to[bin.Token] = pbhist
-			toAgg[bin.Token] = uint64(hist.Total)
+	for i := range qpr.Aggs {
+		fromAgg := &qpr.Aggs[i]
+		if proxyProtocol >= config.ProxyProtocolVersion2 {
+			curAgg := &aggsBuf[i]
+			curAgg.NotExists = fromAgg.NotExists
+			curAgg.ValuesPool = fromAgg.ValuesPool
+			curAgg.Values = aggValuesToProto(fromAgg)
+			aggs[i] = curAgg
+		} else {
+			aggs[i] = aggValuesToLegacyProto(&aggsBuf[i], fromAgg)
 		}
-
-		curAgg.NotExists = fromAgg.NotExists
-		curAgg.AggHistogram = to
-		curAgg.Agg = toAgg
-		curAgg.ValuesPool = fromAgg.ValuesPool
-
-		aggs[i] = curAgg
 	}
 
 	return &storeapi.SearchResponse{
@@ -329,6 +301,75 @@ func buildSearchResponse(qpr *seq.QPR) *storeapi.SearchResponse {
 		Aggs:      aggs,
 		Total:     qpr.Total,
 	}
+}
+
+func aggValuesToLegacyProto(dst *storeapi.SearchResponse_Agg, fromAgg *seq.AggregatableSamples) *storeapi.SearchResponse_Agg {
+	rows := fromAgg.Count()
+	histograms := make(map[string]*storeapi.SearchResponse_Histogram, rows)
+
+	// TODO(dkharms): We can remove this variable since [Agg] is deprecated.
+	counts := make(map[string]uint64, rows)
+
+	var tokens seq.StringColumnIter
+	if len(fromAgg.Tokens) > 0 {
+		tokens = fromAgg.Tokens[0].NewIter()
+	}
+	for idx := 0; tokens != nil && tokens.Next(); idx++ {
+		token := string(tokens.Value())
+		mid := fromAgg.RowMID(idx)
+		hist := legacyHistogramProto(fromAgg.RowSamples(idx))
+
+		dst.Timeseries = append(dst.Timeseries, &storeapi.SearchResponse_Bin{
+			Label: token,
+			Ts:    timestamppb.New(mid.Time()),
+			Hist:  hist,
+		})
+		histograms[token] = hist
+		counts[token] = uint64(hist.Total)
+	}
+
+	dst.NotExists = fromAgg.NotExists
+	dst.AggHistogram = histograms
+	dst.Agg = counts
+	dst.ValuesPool = fromAgg.ValuesPool
+	return dst
+}
+
+func legacyHistogramProto(hist *seq.SamplesContainer) *storeapi.SearchResponse_Histogram {
+	result := &storeapi.SearchResponse_Histogram{
+		Min:       hist.Min,
+		Max:       hist.Max,
+		Sum:       hist.Sum,
+		Total:     hist.Total,
+		Samples:   hist.Samples,
+		NotExists: hist.NotExists,
+	}
+	if len(hist.Values) > 0 {
+		result.Values = make([]uint32, 0, len(hist.Values))
+		for id := range hist.Values {
+			result.Values = append(result.Values, id)
+		}
+	}
+	return result
+}
+
+func aggValuesToProto(from *seq.AggregatableSamples) *storeapi.SearchResponse_AggValues {
+	values := &from.Values
+	encoded := &storeapi.SearchResponse_AggValues{Func: storeapi.MustProtoAggFunc(values.Func)}
+	for i := range from.Tokens {
+		encoded.Tokens = append(encoded.Tokens, from.Tokens[i].AppendTo(nil))
+	}
+	if from.MIDs != nil {
+		encoded.Mids = from.MIDs.AppendTo(nil)
+	}
+	encoded.Totals = values.Totals.AppendTo(nil)
+	encoded.NotExists = values.NotExists.AppendTo(nil)
+	encoded.Sums = values.Sums.AppendTo(nil)
+	encoded.Mins = values.Mins.AppendTo(nil)
+	encoded.Maxs = values.Maxs.AppendTo(nil)
+	encoded.Quantiles = values.Quantiles.AppendTo(nil)
+	encoded.UniqueIds = values.UniqueIDs.AppendTo(nil)
+	return encoded
 }
 
 func aggQueriesFromProto(aggs []*storeapi.AggQuery) ([]processor.AggQuery, error) {
@@ -430,4 +471,16 @@ func (s *searchRequestMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) err
 	enc.AddBool("with_total", s.WithTotal)
 
 	return nil
+}
+
+func proxyProtocolFromContext(ctx context.Context) config.ProxyProtocolVersion {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return config.ProxyProtocolVersion1
+	}
+	values := md.Get(consts.ProxyProtocolVersionHeader)
+	if len(values) == 0 {
+		return config.ProxyProtocolVersion1
+	}
+	return config.ParseProxyProtocolVersion(values[0])
 }

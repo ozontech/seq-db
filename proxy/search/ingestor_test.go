@@ -9,8 +9,12 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ozontech/seq-db/consts"
 	"github.com/ozontech/seq-db/pkg/storeapi"
 	"github.com/ozontech/seq-db/proxy/search/mock"
 	"github.com/ozontech/seq-db/proxy/stores"
@@ -51,6 +55,516 @@ func TestAggHour(t *testing.T) {
 	times, docs, _ := searchIngestor.aggregate(nil, nil, seq.TimeToMID(now.Add(time.Hour)), seq.DurationToMID(time.Hour), ids)
 	assert.Equal(t, 2, len(docs), "wrong bucket count")
 	assert.Equal(t, 2, len(times), "wrong bucket count")
+}
+
+func TestAggValuesToQPR(t *testing.T) {
+	values := []string{"a", "b"}
+
+	t.Run("columns", func(t *testing.T) {
+		tokens := seq.NewStringColumn(len(values))
+		for _, v := range values {
+			tokens.AppendString(v)
+		}
+		totals := seq.NewInt64Column(len(values))
+		totals.Append(2)
+		totals.Append(1)
+		notExists := seq.NewInt64Column(len(values))
+		notExists.Append(7)
+		notExists.Append(8)
+		sums := seq.NewFloat64Column(len(values))
+		sums.Append(4)
+		sums.Append(1)
+		mins := seq.NewFloat64Column(len(values))
+		mins.Append(1)
+		mins.Append(1)
+		maxs := seq.NewFloat64Column(len(values))
+		maxs.Append(3)
+		maxs.Append(1)
+		encoded := &storeapi.SearchResponse_AggValues{
+			Func:      storeapi.AggFunc_AGG_FUNC_SUM,
+			Tokens:    [][]byte{tokens.AppendTo(nil)},
+			Totals:    totals.AppendTo(nil),
+			NotExists: notExists.AppendTo(nil),
+			Sums:      sums.AppendTo(nil),
+			Mins:      mins.AppendTo(nil),
+			Maxs:      maxs.AppendTo(nil),
+			Quantiles: seq.ArraysColumn[float64]{}.AppendTo(nil),
+			UniqueIds: seq.ArraysColumn[uint32]{}.AppendTo(nil),
+		}
+
+		agg, err := aggValuesToQPR(encoded)
+		assert.NoError(t, err)
+		requireAggTokens(t, &agg, values...)
+	})
+
+	t.Run("missing array columns are rejected", func(t *testing.T) {
+		tokens := seq.NewStringColumn(len(values))
+		for _, v := range values {
+			tokens.AppendString(v)
+		}
+		totals := seq.NewInt64Column(len(values))
+		totals.Append(2)
+		totals.Append(1)
+		notExists := seq.NewInt64Column(len(values))
+		notExists.Append(7)
+		notExists.Append(8)
+		sums := seq.NewFloat64Column(len(values))
+		sums.Append(4)
+		sums.Append(1)
+		mins := seq.NewFloat64Column(len(values))
+		mins.Append(1)
+		mins.Append(1)
+		maxs := seq.NewFloat64Column(len(values))
+		maxs.Append(3)
+		maxs.Append(1)
+		encoded := &storeapi.SearchResponse_AggValues{
+			Func:      storeapi.AggFunc_AGG_FUNC_SUM,
+			Tokens:    [][]byte{tokens.AppendTo(nil)},
+			Totals:    totals.AppendTo(nil),
+			NotExists: notExists.AppendTo(nil),
+			Sums:      sums.AppendTo(nil),
+			Mins:      mins.AppendTo(nil),
+			Maxs:      maxs.AppendTo(nil),
+		}
+
+		_, err := aggValuesToQPR(encoded)
+		assert.ErrorContains(t, err, "not enough data")
+	})
+
+	t.Run("mids", func(t *testing.T) {
+		tokens := seq.NewStringColumn(len(values))
+		for _, v := range values {
+			tokens.AppendString(v)
+		}
+		mids := seq.NewInt64Column(len(values))
+		mids.Append(2)
+		mids.Append(1)
+		totals := seq.NewInt64Column(len(values))
+		totals.Append(2)
+		totals.Append(1)
+		encoded := &storeapi.SearchResponse_AggValues{
+			Func:      storeapi.AggFunc_AGG_FUNC_COUNT,
+			Tokens:    [][]byte{tokens.AppendTo(nil)},
+			Mids:      mids.AppendTo(nil),
+			Totals:    totals.AppendTo(nil),
+			NotExists: seq.NewInt64Column(0).AppendTo(nil),
+			Sums:      seq.NewFloat64Column(0).AppendTo(nil),
+			Mins:      seq.NewFloat64Column(0).AppendTo(nil),
+			Maxs:      seq.NewFloat64Column(0).AppendTo(nil),
+			Quantiles: seq.ArraysColumn[float64]{}.AppendTo(nil),
+			UniqueIds: seq.ArraysColumn[uint32]{}.AppendTo(nil),
+		}
+
+		agg, err := aggValuesToQPR(encoded)
+		assert.NoError(t, err)
+		var got []seq.MID
+		it := agg.MIDs.NewIter()
+		for it.Next() {
+			got = append(got, seq.MID(it.Value()))
+		}
+		assert.Equal(t, []seq.MID{2, 1}, got)
+	})
+
+	t.Run("multiple token columns", func(t *testing.T) {
+		firstTokens := seq.NewStringColumn(len(values))
+		firstTokens.AppendString("a")
+		firstTokens.AppendString("b")
+		secondTokens := seq.NewStringColumn(len(values))
+		secondTokens.AppendString("z")
+		secondTokens.AppendString("a")
+		totals := seq.NewInt64Column(len(values))
+		totals.Append(2)
+		totals.Append(1)
+		encoded := &storeapi.SearchResponse_AggValues{
+			Func: storeapi.AggFunc_AGG_FUNC_COUNT,
+			Tokens: [][]byte{
+				firstTokens.AppendTo(nil),
+				secondTokens.AppendTo(nil),
+			},
+			Totals:    totals.AppendTo(nil),
+			NotExists: seq.NewEmptyInt64Column().AppendTo(nil),
+			Sums:      seq.NewFloat64Column(0).AppendTo(nil),
+			Mins:      seq.NewFloat64Column(0).AppendTo(nil),
+			Maxs:      seq.NewFloat64Column(0).AppendTo(nil),
+			Quantiles: seq.ArraysColumn[float64]{}.AppendTo(nil),
+			UniqueIds: seq.ArraysColumn[uint32]{}.AppendTo(nil),
+		}
+
+		agg, err := aggValuesToQPR(encoded)
+		assert.NoError(t, err)
+		require.Len(t, agg.Tokens, 2)
+		require.Equal(t, 2, agg.Count())
+		require.Equal(t, []string{"a", "b"}, stringColumnRows(t, agg.Tokens[0]))
+		require.Equal(t, []string{"z", "a"}, stringColumnRows(t, agg.Tokens[1]))
+	})
+
+	t.Run("invalid token column is rejected", func(t *testing.T) {
+		encoded := &storeapi.SearchResponse_AggValues{
+			Func:   storeapi.AggFunc_AGG_FUNC_SUM,
+			Tokens: [][]byte{[]byte("ab")},
+		}
+		_, err := aggValuesToQPR(encoded)
+		assert.ErrorContains(t, err, "not enough data")
+	})
+
+	t.Run("mismatched mids are rejected", func(t *testing.T) {
+		tokens := seq.NewStringColumn(len(values))
+		for _, v := range values {
+			tokens.AppendString(v)
+		}
+		mids := seq.NewInt64Column(1)
+		mids.Append(1)
+		values := seq.NewAggValuesFromSamples(seq.AggFuncSum, []seq.SamplesContainer{{}})
+		encoded := &storeapi.SearchResponse_AggValues{
+			Func:      storeapi.AggFunc_AGG_FUNC_SUM,
+			Tokens:    [][]byte{tokens.AppendTo(nil)},
+			Mids:      mids.AppendTo(nil),
+			Totals:    values.Totals.AppendTo(nil),
+			NotExists: values.NotExists.AppendTo(nil),
+			Sums:      values.Sums.AppendTo(nil),
+			Mins:      values.Mins.AppendTo(nil),
+			Maxs:      values.Maxs.AppendTo(nil),
+			Quantiles: values.Quantiles.AppendTo(nil),
+			UniqueIds: values.UniqueIDs.AppendTo(nil),
+		}
+
+		_, err := aggValuesToQPR(encoded)
+		assert.ErrorContains(t, err, "invalid mids column length")
+	})
+}
+
+func TestAggValuesToQPRAllColumns(t *testing.T) {
+	funcs := []seq.AggFunc{
+		seq.AggFuncCount,
+		seq.AggFuncSum,
+		seq.AggFuncMin,
+		seq.AggFuncMax,
+		seq.AggFuncAvg,
+		seq.AggFuncQuantile,
+		seq.AggFuncUnique,
+		seq.AggFuncUniqueCount,
+	}
+
+	for _, fn := range funcs {
+		t.Run(fn.String(), func(t *testing.T) {
+			tokens := seq.NewStringColumn(1)
+			tokens.AppendString("a")
+			values := seq.NewAggValuesFromSamples(fn, []seq.SamplesContainer{{
+				Total:     1,
+				NotExists: 2,
+				Sum:       3,
+				Min:       4,
+				Max:       5,
+				Samples:   []float64{6},
+				Values:    map[uint32]struct{}{7: {}},
+			}})
+			encoded := &storeapi.SearchResponse_AggValues{
+				Func:      storeapi.MustProtoAggFunc(fn),
+				Tokens:    [][]byte{tokens.AppendTo(nil)},
+				Totals:    values.Totals.AppendTo(nil),
+				NotExists: values.NotExists.AppendTo(nil),
+				Sums:      values.Sums.AppendTo(nil),
+				Mins:      values.Mins.AppendTo(nil),
+				Maxs:      values.Maxs.AppendTo(nil),
+				Quantiles: values.Quantiles.AppendTo(nil),
+				UniqueIds: values.UniqueIDs.AppendTo(nil),
+			}
+
+			agg, err := aggValuesToQPR(encoded)
+			require.NoError(t, err)
+			require.Equal(t, 1, agg.Count())
+			require.Equal(t, values.Totals.Len(), agg.Values.Totals.Len())
+			require.Equal(t, values.NotExists.Len(), agg.Values.NotExists.Len())
+			require.Equal(t, values.Sums.Len(), agg.Values.Sums.Len())
+			require.Equal(t, values.Mins.Len(), agg.Values.Mins.Len())
+			require.Equal(t, values.Maxs.Len(), agg.Values.Maxs.Len())
+			require.Equal(t, values.Quantiles.Len(), agg.Values.Quantiles.Len())
+			require.Equal(t, values.UniqueIDs.Len(), agg.Values.UniqueIDs.Len())
+		})
+	}
+}
+
+func TestResponseToQPRLegacyAggregation(t *testing.T) {
+	now := time.Unix(1000000, 0)
+	resp := &storeapi.SearchResponse{
+		Aggs: []*storeapi.SearchResponse_Agg{{
+			Timeseries: []*storeapi.SearchResponse_Bin{
+				{
+					Label: "b",
+					Ts:    timestamppb.New(now),
+					Hist: &storeapi.SearchResponse_Histogram{
+						Total:  2,
+						Values: []uint32{3, 3},
+					},
+				},
+				{
+					Label: "a",
+					Ts:    timestamppb.New(now),
+					Hist: &storeapi.SearchResponse_Histogram{
+						Total:  1,
+						Values: []uint32{3},
+					},
+				},
+				{
+					Label: "z",
+					Ts:    timestamppb.New(now.Add(-time.Minute)),
+					Hist: &storeapi.SearchResponse_Histogram{
+						Total: 4,
+					},
+				},
+			},
+			NotExists: 7,
+			ValuesPool: []string{
+				"value",
+			},
+		}},
+	}
+
+	qpr, err := responseToQPR(resp, 11, false, []seq.AggFunc{seq.AggFuncUniqueCount})
+	require.NoError(t, err)
+	require.Len(t, qpr.Aggs, 1)
+
+	agg := qpr.Aggs[0]
+	require.Equal(t, seq.AggFunc(seq.AggFuncUniqueCount), agg.Values.Func)
+	require.Equal(t, int64(7), agg.NotExists)
+	require.Equal(t, []string{"value"}, agg.ValuesPool)
+
+	var tokens []string
+	it := agg.Tokens[0].NewIter()
+	for it.Next() {
+		tokens = append(tokens, string(it.Value()))
+	}
+	require.Equal(t, []string{"a", "b", "z"}, tokens)
+	require.Equal(t, seq.MID(now.UnixNano()), agg.RowMID(0))
+	require.Equal(t, seq.MID(now.Add(-time.Minute).UnixNano()), agg.RowMID(2))
+	require.Equal(t, map[uint32]struct{}{3: {}}, agg.RowSamples(0).Values)
+}
+
+func TestResponseToQPRLegacyWithoutAggFuncs(t *testing.T) {
+	now := time.Unix(1000000, 0)
+	resp := &storeapi.SearchResponse{
+		Aggs: []*storeapi.SearchResponse_Agg{{
+			Timeseries: []*storeapi.SearchResponse_Bin{{
+				Label: "zero",
+				Ts:    timestamppb.New(now),
+				Hist: &storeapi.SearchResponse_Histogram{
+					Total: 1,
+				},
+			}},
+		}},
+	}
+
+	qpr, err := responseToQPR(resp, 11, false, nil)
+	require.Nil(t, qpr)
+	require.ErrorContains(t, err, "no agg func for legacy aggregation 0")
+}
+
+func TestResponseToQPRLegacyRequestedNumericAggregation(t *testing.T) {
+	now := time.Unix(1000000, 0)
+	resp := &storeapi.SearchResponse{
+		Aggs: []*storeapi.SearchResponse_Agg{{
+			Timeseries: []*storeapi.SearchResponse_Bin{{
+				Label: "zero",
+				Ts:    timestamppb.New(now),
+				Hist: &storeapi.SearchResponse_Histogram{
+					Total: 1,
+				},
+			}},
+		}},
+	}
+	sr := &SearchRequest{
+		AggQ: []AggQuery{{Func: seq.AggFuncMin}},
+	}
+
+	qpr, err := responseToQPR(resp, 11, false, sr.aggFuncs())
+	require.NoError(t, err)
+	require.Len(t, qpr.Aggs, 1)
+
+	agg := qpr.Aggs[0]
+	require.Equal(t, seq.AggFunc(seq.AggFuncMin), agg.Values.Func)
+
+	result := agg.Aggregate(seq.AggregateArgs{Func: seq.AggFuncMin})
+	require.Len(t, result.Buckets, 1)
+	require.Equal(t, 0.0, result.Buckets[0].Value)
+}
+
+func TestMixedLegacyColumnarUniqueCountMerge(t *testing.T) {
+	legacyResp := &storeapi.SearchResponse{
+		Aggs: []*storeapi.SearchResponse_Agg{{
+			Timeseries: []*storeapi.SearchResponse_Bin{{
+				Label: "svc",
+				Ts:    timestamppb.New(time.Unix(0, 0)),
+				Hist: &storeapi.SearchResponse_Histogram{
+					Total:  2,
+					Values: []uint32{0, 1},
+				},
+			}},
+			ValuesPool: []string{"pod-a", "pod-b"},
+		}},
+	}
+	legacyQPR, err := responseToQPR(legacyResp, 1, false, []seq.AggFunc{seq.AggFuncUniqueCount})
+	require.NoError(t, err)
+
+	tokens := seq.NewStringColumn(1)
+	tokens.AppendString("svc")
+	totals := seq.NewInt64Column(1)
+	totals.Append(2)
+	notExists := seq.NewInt64Column(1)
+	notExists.Append(0)
+	uniqueIds := seq.ArraysColumn[uint32]{}
+	uniqueIds.Append([]uint32{0, 1})
+	values := seq.NewAggValuesFromSamples(seq.AggFuncUniqueCount, []seq.SamplesContainer{{
+		Total: 2,
+	}})
+	columnarResp := &storeapi.SearchResponse{
+		Aggs: []*storeapi.SearchResponse_Agg{{
+			Values: &storeapi.SearchResponse_AggValues{
+				Func:      storeapi.AggFunc_AGG_FUNC_UNIQUE_COUNT,
+				Tokens:    [][]byte{tokens.AppendTo(nil)},
+				Totals:    totals.AppendTo(nil),
+				NotExists: notExists.AppendTo(nil),
+				Sums:      values.Sums.AppendTo(nil),
+				Mins:      values.Mins.AppendTo(nil),
+				Maxs:      values.Maxs.AppendTo(nil),
+				Quantiles: values.Quantiles.AppendTo(nil),
+				UniqueIds: uniqueIds.AppendTo(nil),
+			},
+			ValuesPool: []string{"pod-c", "pod-d"},
+		}},
+	}
+	columnarQPR, err := responseToQPR(columnarResp, 2, false, []seq.AggFunc{seq.AggFuncUniqueCount})
+	require.NoError(t, err)
+
+	mergeAndAggregate := func(qprs []*seq.QPR) []seq.AggregationResult {
+		dst := &seq.QPR{}
+		for _, qpr := range qprs {
+			seq.MergeQPRs(dst, []*seq.QPR{qpr}, 0, 0, 0)
+		}
+		return dst.Aggregate([]seq.AggregateArgs{{Func: seq.AggFuncUniqueCount}})
+	}
+
+	for _, tc := range []struct {
+		name string
+		qprs []*seq.QPR
+	}{
+		{"legacy first", []*seq.QPR{legacyQPR, columnarQPR}},
+		{"columnar first", []*seq.QPR{columnarQPR, legacyQPR}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := mergeAndAggregate(tc.qprs)
+			require.Len(t, result, 1)
+			require.Len(t, result[0].Buckets, 1)
+			require.Equal(t, "svc", result[0].Buckets[0].Name)
+			require.Equal(t, float64(4), result[0].Buckets[0].Value)
+		})
+	}
+}
+
+func TestResponseToQPRReturnsAggregationDecodeError(t *testing.T) {
+	resp := &storeapi.SearchResponse{
+		Aggs: []*storeapi.SearchResponse_Agg{{
+			Values: &storeapi.SearchResponse_AggValues{
+				Tokens: [][]byte{[]byte("invalid")},
+			},
+		}},
+	}
+
+	qpr, err := responseToQPR(resp, 11, false, nil)
+	require.Nil(t, qpr)
+	require.ErrorContains(t, err, "decode aggregation 0")
+	require.ErrorContains(t, err, "decode token column 0")
+}
+
+func TestAggValuesToQPRZeroRows(t *testing.T) {
+	encoded := &storeapi.SearchResponse_AggValues{
+		Func:      storeapi.AggFunc_AGG_FUNC_QUANTILE,
+		Tokens:    [][]byte{seq.NewStringColumn(0).AppendTo(nil)},
+		Totals:    seq.NewEmptyInt64Column().AppendTo(nil),
+		NotExists: seq.NewEmptyInt64Column().AppendTo(nil),
+		Sums:      seq.NewFloat64Column(0).AppendTo(nil),
+		Mins:      seq.NewFloat64Column(0).AppendTo(nil),
+		Maxs:      seq.NewFloat64Column(0).AppendTo(nil),
+		Quantiles: seq.ArraysColumn[float64]{}.AppendTo(nil),
+		UniqueIds: seq.ArraysColumn[uint32]{}.AppendTo(nil),
+	}
+
+	agg, err := aggValuesToQPR(encoded)
+	require.NoError(t, err)
+	require.Zero(t, agg.Count())
+
+	result := agg.Aggregate(seq.AggregateArgs{
+		Func:      seq.AggFuncQuantile,
+		Quantiles: []float64{0.5},
+	})
+	require.Empty(t, result.Buckets)
+	require.Zero(t, result.NotExists)
+}
+
+func stringColumnRows(t *testing.T, column seq.StringColumn) []string {
+	t.Helper()
+	var rows []string
+	it := column.NewIter()
+	for it.Next() {
+		rows = append(rows, string(it.Value()))
+	}
+	return rows
+}
+
+func requireAggTokens(t *testing.T, agg *seq.AggregatableSamples, want ...string) {
+	t.Helper()
+	assert.Equal(t, seq.AggFunc(1), agg.Values.Func)
+	assert.Nil(t, agg.MIDs)
+	totals := []int64{}
+	totalsIt := agg.Values.Totals.NewIter()
+	for totalsIt.Next() {
+		totals = append(totals, totalsIt.Value())
+	}
+	assert.Equal(t, []int64{2, 1}, totals)
+	notExists := []int64{}
+	notExistsIt := agg.Values.NotExists.NewIter()
+	for notExistsIt.Next() {
+		notExists = append(notExists, notExistsIt.Value())
+	}
+	assert.Equal(t, []int64{7, 8}, notExists)
+	require.Equal(t, []float64{4, 1}, sumsFromColumn(agg.Values.Sums))
+
+	var got []string
+	it := agg.Tokens[0].NewIter()
+	for it.Next() {
+		got = append(got, string(it.Value()))
+	}
+	assert.Equal(t, want, got)
+}
+
+func sumsFromColumn(column seq.Float64Column) []float64 {
+	var got []float64
+	it := column.NewIter()
+	for it.Next() {
+		got = append(got, it.Value())
+	}
+	return got
+}
+
+func TestSearchHostProxyProtocol(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	client := mock.NewMockStoreApiClient(ctrl)
+	si := NewIngestor(Config{}, map[string]storeapi.StoreApiClient{"store-1": client})
+
+	var seenVersions []string
+	resp := &storeapi.SearchResponse{Total: 1}
+	call := func(ctx context.Context, _ *storeapi.SearchRequest, _ ...grpc.CallOption) (*storeapi.SearchResponse, error) {
+		md, _ := metadata.FromOutgoingContext(ctx)
+		seenVersions = append(seenVersions, md.Get(consts.ProxyProtocolVersionHeader)[0])
+		return resp, nil
+	}
+	client.EXPECT().Search(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(call).Times(1)
+
+	got, _, err := si.searchHost(context.Background(), &storeapi.SearchRequest{}, "store-1")
+	require.NoError(t, err)
+	require.Equal(t, resp, got)
+	require.Equal(t, []string{"2"}, seenVersions)
 }
 
 func TestStatus(t *testing.T) {

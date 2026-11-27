@@ -109,6 +109,19 @@ message SearchResponse {
     Histogram hist = 3;
   }
 
+  message AggValues {
+    AggFunc func = 1;
+    repeated bytes tokens = 2;
+    bytes mids = 3;
+    bytes not_exists = 4;
+    bytes sums = 5;
+    bytes mins = 6;
+    bytes maxs = 7;
+    bytes quantiles = 8;
+    bytes unique_ids = 9;
+    bytes totals = 10;
+  }
+
   message Agg {
     map<string, uint64> agg = 1 [deprecated = true];
     map<string, Histogram> agg_histogram = 2;
@@ -121,6 +134,7 @@ message SearchResponse {
     // ]
     repeated Bin timeseries = 4;
     repeated string values_pool = 5;
+    optional AggValues values = 6;
   }
 
   bytes data = 1 [deprecated = true];

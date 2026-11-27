@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"maps"
 	"math"
 	"math/rand"
 	"net/http"
@@ -665,13 +664,12 @@ func (s *IntegrationTestSuite) TestAgg() {
 		qpr, _, err := env.Search(`service:x1`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
-		r.NotNil(qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}], qpr.Aggs[0].SamplesByBin)
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
 
 		qpr, _, err = env.Search(`service:x*`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
 
 		aggQ := setup.WithAggQuery(
 			"service",
@@ -681,16 +679,185 @@ func (s *IntegrationTestSuite) TestAgg() {
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[1].SamplesByBin[seq.AggBin{Token: "y1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[1], "y1"), "wrong doc count")
 
 		qpr, _, err = env.Search(`service:x*`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[1].SamplesByBin[seq.AggBin{Token: "y1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[1], "y1"), "wrong doc count")
 	}
+
+	const (
+		bucketNum     = 5
+		docsPerBucket = 10
+	)
+	bulkDataset := func(prefix string, level func(bucket, i int) int) {
+		docs := make([]string, 0, bucketNum*docsPerBucket)
+		for bucket := range bucketNum {
+			service := fmt.Sprintf("%s-%d", prefix, bucket)
+			for i := range docsPerBucket {
+				docs = append(docs, fmt.Sprintf(`{"service":%q,"level":%d}`, service, level(bucket, i)))
+			}
+		}
+
+		bulksNum := getBulkIterationsNum(env)
+		if bulksNum >= 2 && rand.Intn(2) == 0 {
+			bulksNum = 2
+		}
+		chunks := make([][]string, bulksNum)
+		for i, doc := range docs {
+			chunks[i%bulksNum] = append(chunks[i%bulksNum], doc)
+		}
+		for _, chunk := range chunks {
+			setup.Bulk(t, env.IngestorBulkAddr(), chunk)
+		}
+		env.WaitIdle()
+	}
+
+	searchAgg := func(prefix string, aggQuery search.AggQuery) seq.AggregatableSamples {
+		query := fmt.Sprintf(`service:%s-*`, prefix)
+		qpr, _, err := env.Search(query, 1, setup.WithAggQuery(aggQuery), setup.NoFetch())
+		require.NoError(t, err)
+		require.Len(t, qpr.Aggs, 1)
+		require.Nil(t, qpr.Aggs[0].MIDs)
+		return qpr.Aggs[0]
+	}
+
+	aggregateBuckets := func(agg seq.AggregatableSamples, args seq.AggregateArgs) map[string]seq.AggregationBucket {
+		t.Helper()
+		result := agg.Aggregate(args)
+		require.Len(t, result.Buckets, bucketNum)
+		require.Zero(t, result.NotExists)
+
+		buckets := make(map[string]seq.AggregationBucket, bucketNum)
+		for _, bucket := range result.Buckets {
+			buckets[bucket.Name] = bucket
+		}
+		return buckets
+	}
+
+	requireValues := func(agg seq.AggregatableSamples, fn seq.AggFunc, prefix string, want func(bucket int) float64) {
+		t.Helper()
+		buckets := aggregateBuckets(agg, seq.AggregateArgs{Func: fn})
+		for bucket := range bucketNum {
+			name := fmt.Sprintf("%s-%d", prefix, bucket)
+			require.Equal(t, want(bucket), buckets[name].Value)
+		}
+	}
+
+	t.Run("count", func(t *testing.T) {
+		prefix := "aggregation-count"
+		bulkDataset(prefix, func(bucket, i int) int { return i })
+
+		agg := searchAgg(prefix, search.AggQuery{GroupBy: "service", Func: seq.AggFuncCount})
+		requireValues(agg, seq.AggFuncCount, prefix, func(int) float64 { return docsPerBucket })
+	})
+
+	t.Run("sum", func(t *testing.T) {
+		prefix := "aggregation-sum"
+		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:   "level",
+			GroupBy: "service",
+			Func:    seq.AggFuncSum,
+		})
+		requireValues(agg, seq.AggFuncSum, prefix, func(bucket int) float64 {
+			return float64(bucket*docsPerBucket*docsPerBucket) + 45
+		})
+	})
+
+	t.Run("min", func(t *testing.T) {
+		prefix := "aggregation-min"
+		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:   "level",
+			GroupBy: "service",
+			Func:    seq.AggFuncMin,
+		})
+		requireValues(agg, seq.AggFuncMin, prefix, func(bucket int) float64 {
+			return float64(bucket * docsPerBucket)
+		})
+	})
+
+	t.Run("max", func(t *testing.T) {
+		prefix := "aggregation-max"
+		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:   "level",
+			GroupBy: "service",
+			Func:    seq.AggFuncMax,
+		})
+		requireValues(agg, seq.AggFuncMax, prefix, func(bucket int) float64 {
+			return float64((bucket+1)*docsPerBucket - 1)
+		})
+	})
+
+	t.Run("avg", func(t *testing.T) {
+		prefix := "aggregation-avg"
+		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:   "level",
+			GroupBy: "service",
+			Func:    seq.AggFuncAvg,
+		})
+		requireValues(agg, seq.AggFuncAvg, prefix, func(bucket int) float64 {
+			return float64(bucket*docsPerBucket) + 4.5
+		})
+	})
+
+	t.Run("quantile", func(t *testing.T) {
+		prefix := "aggregation-quantile"
+		bulkDataset(prefix, func(bucket, i int) int { return bucket*docsPerBucket + i })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:     "level",
+			GroupBy:   "service",
+			Func:      seq.AggFuncQuantile,
+			Quantiles: []float64{0.5},
+		})
+		buckets := aggregateBuckets(agg, seq.AggregateArgs{
+			Func:      seq.AggFuncQuantile,
+			Quantiles: []float64{0.5},
+		})
+		for bucket := range bucketNum {
+			name := fmt.Sprintf("%s-%d", prefix, bucket)
+			require.Equal(t, float64(bucket*docsPerBucket+5), buckets[name].Value)
+			require.Equal(t, []float64{float64(bucket*docsPerBucket + 5)}, buckets[name].Quantiles)
+		}
+	})
+
+	t.Run("unique", func(t *testing.T) {
+		prefix := "aggregation-unique"
+		bulkDataset(prefix, func(bucket, i int) int { return i % bucketNum })
+
+		agg := searchAgg(prefix, search.AggQuery{GroupBy: "level", Func: seq.AggFuncUnique})
+		buckets := aggregateBuckets(agg, seq.AggregateArgs{Func: seq.AggFuncUnique})
+		for bucket := range bucketNum {
+			name := strconv.Itoa(bucket)
+			require.Contains(t, buckets, name)
+			require.Zero(t, buckets[name].Value)
+		}
+	})
+
+	t.Run("unique_count", func(t *testing.T) {
+		prefix := "aggregation-unique-count"
+		bulkDataset(prefix, func(bucket, i int) int { return i % bucketNum })
+
+		agg := searchAgg(prefix, search.AggQuery{
+			Field:   "level",
+			GroupBy: "service",
+			Func:    seq.AggFuncUniqueCount,
+		})
+		requireValues(agg, seq.AggFuncUniqueCount, prefix, func(int) float64 { return bucketNum })
+		require.NotEmpty(t, agg.ValuesPool)
+	})
 
 	env.SealAll()
 
@@ -698,12 +865,12 @@ func (s *IntegrationTestSuite) TestAgg() {
 		qpr, _, err := env.Search(`service:x1`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
 
 		qpr, _, err = env.Search(`service:x*`, 10, setup.WithAggQuery("service"), setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
 
 		aggQ := setup.WithAggQuery(
 			"service",
@@ -713,16 +880,117 @@ func (s *IntegrationTestSuite) TestAgg() {
 		r.NoError(err, "should be no errors")
 		r.Equal(getTotal(allDocsNum/3, withTotal), qpr.Total, "wrong doc count")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[1].SamplesByBin[seq.AggBin{Token: "y1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[1], "y1"), "wrong doc count")
 
 		qpr, _, err = env.Search(`service:x*`, 10, aggQ, setup.NoFetch(), setup.WithTotal(withTotal))
 		r.NoError(err, "should be no errors")
 		r.Equal(2, len(qpr.Aggs), "wrong agg count")
 		r.Equal(getTotal(allDocsNum, withTotal), qpr.Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: "x1"}].Total, "wrong doc count")
-		r.Equal(int64(allDocsNum/3), qpr.Aggs[1].SamplesByBin[seq.AggBin{Token: "y1"}].Total, "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[0], "x1"), "wrong doc count")
+		r.Equal(int64(allDocsNum/3), aggTotal(qpr.Aggs[1], "y1"), "wrong doc count")
 	}
+}
+
+func (s *IntegrationTestSuite) TestAggZeroRows() {
+	t := s.T()
+
+	env := setup.NewTestingEnv(s.Config)
+	defer env.StopAll()
+
+	setup.Bulk(t, env.IngestorBulkAddr(), []string{
+		`{"service":"present","level":1}`,
+	})
+	env.WaitIdle()
+
+	aggQueries := []search.AggQuery{
+		{GroupBy: "service", Func: seq.AggFuncCount},
+		{
+			GroupBy:  "service",
+			Func:     seq.AggFuncCount,
+			Interval: seq.DurationToMID(time.Minute),
+		},
+		{
+			Field:    "level",
+			GroupBy:  "service",
+			Func:     seq.AggFuncSum,
+			Interval: seq.DurationToMID(time.Minute),
+		},
+		{
+			Field:     "level",
+			GroupBy:   "service",
+			Func:      seq.AggFuncQuantile,
+			Quantiles: []float64{0.5},
+			Interval:  seq.DurationToMID(time.Minute),
+		},
+		{
+			Field:    "level",
+			GroupBy:  "service",
+			Func:     seq.AggFuncUniqueCount,
+			Interval: seq.DurationToMID(time.Minute),
+		},
+	}
+	options := []setup.SearchOption{setup.NoFetch(), setup.WithTotal(false)}
+	for _, aggQuery := range aggQueries {
+		options = append(options, setup.WithAggQuery(aggQuery))
+	}
+
+	qpr, _, err := env.Search(`service:absent`, 10, options...)
+	require.NoError(t, err)
+	require.Len(t, qpr.Aggs, len(aggQueries))
+
+	for i, aggQuery := range aggQueries {
+		require.Zero(t, qpr.Aggs[i].Count())
+
+		result := qpr.Aggs[i].Aggregate(seq.AggregateArgs{
+			Func:      aggQuery.Func,
+			Quantiles: aggQuery.Quantiles,
+		})
+		require.Empty(t, result.Buckets)
+		require.Zero(t, result.NotExists)
+	}
+}
+
+type aggBinRow struct {
+	token     string
+	mid       seq.MID
+	total     int64
+	sum       float64
+	min       float64
+	max       float64
+	samples   []float64
+	uniqueIDs []uint32
+}
+
+func sortedAggBins(agg seq.AggregatableSamples) []aggBinRow {
+	bins := make([]aggBinRow, 0, agg.Count())
+	tokens := agg.Tokens[0].NewIter()
+	for idx := 0; tokens.Next(); idx++ {
+		bin := aggBinRow{
+			token: string(tokens.Value()),
+			mid:   agg.RowMID(idx),
+		}
+		switch agg.Values.Func {
+		case seq.AggFuncCount:
+			bin.total = agg.Values.Totals.At(idx)
+		case seq.AggFuncSum, seq.AggFuncMin, seq.AggFuncMax, seq.AggFuncAvg, seq.AggFuncQuantile:
+			bin.total = agg.Values.Totals.At(idx)
+			bin.sum = agg.Values.Sums.At(idx)
+			bin.min = agg.Values.Mins.At(idx)
+			bin.max = agg.Values.Maxs.At(idx)
+			if agg.Values.Func == seq.AggFuncQuantile {
+				bin.samples = agg.Values.Quantiles.At(idx)
+			}
+		case seq.AggFuncUniqueCount:
+			bin.total = agg.Values.Totals.At(idx)
+			bin.uniqueIDs = agg.Values.UniqueIDs.At(idx)
+		}
+		bins = append(bins, bin)
+	}
+	slices.SortFunc(bins, func(a, b aggBinRow) int {
+		return a.mid.Time().Compare(b.mid.Time())
+	})
+	return bins
 }
 
 func (s *IntegrationTestSuite) TestTimeseries() {
@@ -743,13 +1011,12 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		timeBins = append(timeBins, timeBins[i-1].Add(time.Second*30))
 	}
 
-	var (
-		docs      []string
-		nextBin   = 10
-		batchSize = timeBinsCount * nextBin
-	)
+	nextBin := 10
+	batchSize := timeBinsCount * nextBin
+	bulksNum := getBulkIterationsNum(env)
 
 	bulkDataset := func(service string, level func(i int) int) {
+		docs := make([]string, 0, batchSize)
 		for i := range batchSize {
 			first, err := json.Marshal(map[string]any{
 				"ts":      timeBins[i/nextBin],
@@ -767,7 +1034,11 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 
 			docs = append(docs, string(first), string(second))
 		}
-		setup.Bulk(t, env.IngestorBulkAddr(), docs)
+
+		// send multiple bulks so that at least a couple of stores get the bulks
+		for chunk := range slices.Chunk(docs, len(docs)/bulksNum) {
+			setup.Bulk(t, env.IngestorBulkAddr(), chunk)
+		}
 		env.WaitIdle()
 	}
 
@@ -781,12 +1052,10 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedAggBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, int64(nextBin), hist[bins[i]].Total)
+			require.Equal(t, int64(nextBin), bins[i].total)
 		}
 	})
 
@@ -801,13 +1070,11 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedAggBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, float64(nextBin*i), hist[bins[i]].Min)
-			require.Equal(t, "nginx-min", bins[i].Token)
+			require.Equal(t, float64(nextBin*i), bins[i].min)
+			require.Equal(t, "nginx-min", bins[i].token)
 		}
 	})
 
@@ -821,12 +1088,10 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedAggBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, float64(nextBin*(i+1)-1), hist[bins[i]].Max)
+			require.Equal(t, float64(nextBin*(i+1)-1), bins[i].max)
 		}
 	})
 
@@ -840,12 +1105,10 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedAggBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, float64(1), hist[bins[i]].Sum/float64(hist[bins[i]].Total))
+			require.Equal(t, float64(1), bins[i].sum/float64(bins[i].total))
 		}
 	})
 
@@ -859,12 +1122,10 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedAggBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, float64(nextBin), hist[bins[i]].Sum)
+			require.Equal(t, float64(nextBin), bins[i].sum)
 		}
 	})
 
@@ -879,13 +1140,29 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedAggBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, float64(nextBin*i+5), hist[bins[i]].Quantile(0.5))
+			require.Equal(t, float64(nextBin*i+5), timeBinQuantile(bins[i].samples, 0.5))
 		}
+	})
+
+	t.Run("unique", func(t *testing.T) {
+		bulkDataset("nginx-unique", func(i int) int { return i % nextBin })
+
+		qpr, _, err := env.Search(`service:"nginx-unique"`, 1024, setup.WithAggQuery(search.AggQuery{
+			GroupBy: "level",
+			Func:    seq.AggFuncUnique,
+		}))
+		require.NoError(t, err)
+
+		result := qpr.Aggs[0].Aggregate(seq.AggregateArgs{Func: seq.AggFuncUnique})
+		require.Len(t, result.Buckets, nextBin)
+		for i := range nextBin {
+			require.Equal(t, strconv.Itoa(i), result.Buckets[i].Name)
+			require.Zero(t, result.Buckets[i].Value)
+		}
+		require.Zero(t, result.NotExists)
 	})
 
 	t.Run("unique_count", func(t *testing.T) {
@@ -899,13 +1176,11 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 		}))
 		require.NoError(t, err)
 
-		hist := qpr.Aggs[0].SamplesByBin
-		require.Len(t, hist, timeBinsCount)
-
-		bins := sortedTimeBins(hist)
+		bins := sortedAggBins(qpr.Aggs[0])
+		require.Len(t, bins, timeBinsCount)
 		for i := range timeBinsCount {
-			require.Equal(t, "nginx-unique-count", bins[i].Token)
-			require.Equal(t, int64(nextBin), int64(len(hist[bins[i]].Values)))
+			require.Equal(t, "nginx-unique-count", bins[i].token)
+			require.Equal(t, int64(nextBin), int64(len(bins[i].uniqueIDs)))
 		}
 
 		require.NotEmpty(t, qpr.Aggs[0].ValuesPool)
@@ -920,12 +1195,11 @@ func (s *IntegrationTestSuite) TestTimeseries() {
 	})
 }
 
-func sortedTimeBins(hist map[seq.AggBin]*seq.SamplesContainer) []seq.AggBin {
-	keys := slices.Collect(maps.Keys(hist))
-	slices.SortFunc(keys, func(a, b seq.AggBin) int {
-		return a.MID.Time().Compare(b.MID.Time())
-	})
-	return keys
+func timeBinQuantile(values []float64, quantile float64) float64 {
+	values = slices.Clone(values)
+	slices.Sort(values)
+	index := int(float64(len(values)-1)*quantile + 0.5)
+	return values[index]
 }
 
 func (s *IntegrationTestSuite) TestAggNoTotal() {
@@ -993,7 +1267,7 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 		assert.Equal(t, size, len(qpr.IDs), "we must get only size ids")
 		for i := 0; i < parts; i++ {
 			k := "x" + strconv.Itoa(i)
-			assert.Equal(t, int(aggCnt), int(qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: k}].Total), "we expect 1/%d of all documents", parts)
+			assert.Equal(t, int(aggCnt), int(aggTotal(qpr.Aggs[0], k)), "we expect 1/%d of all documents", parts)
 		}
 
 		qpr, _, err = searchNoTotal("service", 0)
@@ -1002,7 +1276,7 @@ func (s *IntegrationTestSuite) TestAggNoTotal() {
 		assert.Equal(t, size, len(qpr.IDs), "we must get only size ids")
 		for i := 0; i < parts; i++ {
 			k := "x" + strconv.Itoa(i)
-			assert.Equal(t, int(aggCnt), int(qpr.Aggs[0].SamplesByBin[seq.AggBin{Token: k}].Total), "we expect 1/%d of all documents", parts)
+			assert.Equal(t, int(aggCnt), int(aggTotal(qpr.Aggs[0], k)), "we expect 1/%d of all documents", parts)
 		}
 
 		// histogram
@@ -2336,4 +2610,34 @@ func (s *IntegrationTestSuite) TestStreamSearch() {
 		_, err := stream.Recv()
 		r.ErrorIs(err, status.Error(codes.InvalidArgument, "first message must be a search query"))
 	})
+}
+
+func aggTotal(agg seq.AggregatableSamples, token string) int64 {
+	return findAggBin(agg, seq.AggBin{Token: token}).Total
+}
+
+func findAggBin(agg seq.AggregatableSamples, bin seq.AggBin) *seq.SamplesContainer {
+	if len(agg.Tokens) != 1 {
+		return nil
+	}
+	target := []byte(bin.Token)
+	tokens := agg.Tokens[0].NewIter()
+	for idx := 0; tokens.Next(); idx++ {
+		c := 0
+		if bin.MID < agg.RowMID(idx) {
+			c = -1
+		} else if bin.MID > agg.RowMID(idx) {
+			c = 1
+		}
+		if c == 0 {
+			c = bytes.Compare(tokens.Value(), target)
+		}
+		if c > 0 {
+			break
+		}
+		if c == 0 {
+			return agg.RowSamples(idx)
+		}
+	}
+	return nil
 }
