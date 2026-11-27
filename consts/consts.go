@@ -88,7 +88,10 @@ const (
 	RemoteFractionDeletingSuffix = ".remote.del"
 
 	FracCacheFileSuffix = ".frac-cache"
-	CompactionPlan      = ".compaction-plan"
+
+	// keep legacy file extension to avoid migration
+	ReplacementPlan    = ".compaction-plan"
+	ReplacementPlanTmp = "._compaction-plan"
 
 	// tracing
 	JaegerDebugKey = "jaeger-debug-id"

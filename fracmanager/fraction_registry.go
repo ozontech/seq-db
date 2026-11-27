@@ -22,7 +22,7 @@ type fractionRegistry struct {
 
 	sealing    map[string]*syncAppender                 // fractions being sealed (0-5 typical)
 	sealed     PartitionedCollection[*refCountedSealed] // local sealed fractions (can be thousands)
-	compacting map[string]*refCountedSealed             // fractions participating in compaction
+	replacing  map[string]*refCountedSealed             // fractions being replaced
 	offloading PartitionedCollection[*refCountedSealed] // fractions being offloaded (0-5 typical)
 	remotes    PartitionedCollection[*refCountedRemote] // offloaded fractions (can be thousands)
 
@@ -61,7 +61,7 @@ func NewFractionRegistry(
 
 		sealing:    map[string]*syncAppender{},
 		sealed:     NewPartitionedCollection(func(rcs *refCountedSealed) uint64 { return creationTime(rcs) }),
-		compacting: map[string]*refCountedSealed{},
+		replacing:  map[string]*refCountedSealed{},
 		offloading: NewPartitionedCollection(func(rcs *refCountedSealed) uint64 { return lastDocTime(rcs) }),
 		remotes:    NewPartitionedCollection(func(rcr *refCountedRemote) uint64 { return lastDocTime(rcr) }),
 	}
@@ -439,19 +439,19 @@ func (r *fractionRegistry) promoteToSealed(active *refCountedActive, sealed ...*
 	r.rebuildSnapshot()
 }
 
-func (r *fractionRegistry) substituteWithSealed(produced *frac.Sealed, consumed ...*refCountedSealed) {
+func (r *fractionRegistry) replaceWithSealed(produced *frac.Sealed, consumed ...*refCountedSealed) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	for _, f := range consumed {
 		info := f.Info()
 
-		if _, ok := r.compacting[info.Name()]; !ok {
-			panic("BUG: fraction state was changed during compaction")
+		if _, ok := r.replacing[info.Name()]; !ok {
+			panic("BUG: fraction state was changed during replacement")
 		}
 
 		r.stats.compacting.Sub(info)
-		delete(r.compacting, info.Name())
+		delete(r.replacing, info.Name())
 	}
 
 	info := produced.Info()
@@ -490,18 +490,18 @@ func (r *fractionRegistry) sealedSnapshot() []*frac.Sealed {
 	return result
 }
 
-func (r *fractionRegistry) releaseSnapshot(snapshot *CompactionSnapshot) {
+func (r *fractionRegistry) releaseReplacement(claimed []*refCountedSealed) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, f := range snapshot.claimed {
+	for _, f := range claimed {
 		info := f.Info()
 
-		if _, ok := r.compacting[info.Name()]; !ok {
-			panic("BUG: fraction state was changed during compaction")
+		if _, ok := r.replacing[info.Name()]; !ok {
+			panic("BUG: fraction state was changed during replacement")
 		}
 
-		delete(r.compacting, info.Name())
+		delete(r.replacing, info.Name())
 		r.stats.compacting.Sub(info)
 
 		r.sealed.Add(info.Name(), f)
@@ -512,18 +512,15 @@ func (r *fractionRegistry) releaseSnapshot(snapshot *CompactionSnapshot) {
 	// operations change of state (compacting to sealed) is not observable.
 }
 
-func (r *fractionRegistry) claimForCompaction(names []string) ([]*refCountedSealed, error) {
+func (r *fractionRegistry) claimForReplacement(names []string) ([]*refCountedSealed, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	for _, name := range names {
 		// NOTE(dkharms): If offloading pressure is high on the oldest fractions,
-		// compaction may repeatedly fail to claim them and get into livelock.
+		// replacement may repeatedly fail to claim them and get into livelock.
 		if _, ok := r.sealed.Get(name); !ok {
-			return nil, fmt.Errorf(
-				"fraction %q is not available for compaction",
-				name,
-			)
+			return nil, fmt.Errorf("fraction %q is not available for replacement", name)
 		}
 	}
 
@@ -534,7 +531,7 @@ func (r *fractionRegistry) claimForCompaction(names []string) ([]*refCountedSeal
 		r.sealed.Del(name)
 		r.stats.sealed.Sub(s.Info())
 
-		r.compacting[name] = s
+		r.replacing[name] = s
 		r.stats.compacting.Add(s.Info())
 
 		claimed = append(claimed, s)
@@ -549,7 +546,7 @@ func (r *fractionRegistry) claimForCompaction(names []string) ([]*refCountedSeal
 // rebuildSnapshot reconstructs the all fractions list
 func (r *fractionRegistry) rebuildSnapshot() {
 	capacity := r.remotes.Len() + r.offloading.Len() +
-		r.sealed.Len() + len(r.compacting) + len(r.sealing) + 1
+		r.sealed.Len() + len(r.replacing) + len(r.sealing) + 1
 
 	// allocate extra capacity to accommodate appender rotation that may occur during snapshot lifetime
 	all := newFractionsSnapshot(capacity + 1)
@@ -566,7 +563,7 @@ func (r *fractionRegistry) rebuildSnapshot() {
 		all.AddSealed(s)
 	}
 
-	for _, c := range r.compacting {
+	for _, c := range r.replacing {
 		all.AddSealed(c)
 	}
 
