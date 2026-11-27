@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	insaneJSON "github.com/ozontech/insane-json"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -42,7 +41,7 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	// The first message must carry the search query.
 	req, err := stream.Recv()
 	if err == io.EOF {
-		return nil
+		return status.Error(codes.InvalidArgument, "no search query provided")
 	}
 	if err != nil {
 		return err
@@ -96,9 +95,8 @@ func (g *grpcV1) StreamSearch(stream seqproxyapi.SeqProxyApi_StreamSearchServer)
 	var typing []*seqproxyapi.Typing
 	var toRecord func(*query.Record) *seqproxyapi.Record
 	if searchReq.Agg != nil {
-		typing = aggsTyping()
-		mapper := newAggRecordMapper(aggOutSchema(searchReq.Agg))
-		toRecord = mapper.toRecord
+		typing = schemaToTyping(aggOutSchema(searchReq.Agg))
+		toRecord = aggToRecord
 	} else {
 		typing = docsTyping()
 		toRecord = docToRecord
@@ -304,25 +302,25 @@ func sendRecords(stream seqproxyapi.SeqProxyApi_StreamSearchServer, records []*s
 func docsTyping() []*seqproxyapi.Typing {
 	return []*seqproxyapi.Typing{
 		{Title: "id", Type: seqproxyapi.DataType_DATA_TYPE_SEQ_ID},
-		{Title: "time", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
-		{Title: "data", Type: seqproxyapi.DataType_DATA_TYPE_RAW_DOCUMENT},
+		{Title: "time", Type: seqproxyapi.DataType_DATA_TYPE_UINT64}, // extract time from id
+		{Title: "data", Type: seqproxyapi.DataType_DATA_TYPE_JSON},
 	}
 }
 
-// hardcoded schema
-func aggsTyping() []*seqproxyapi.Typing {
-	return []*seqproxyapi.Typing{
-		{Title: "key", Type: seqproxyapi.DataType_DATA_TYPE_STRING},
-		{Title: "value", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64},
-		{Title: "ts", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
-		{Title: "quantiles", Type: seqproxyapi.DataType_DATA_TYPE_FLOAT64_ARRAY},
-		{Title: "not_exists", Type: seqproxyapi.DataType_DATA_TYPE_UINT64},
+func schemaToTyping(out *query.Schema) []*seqproxyapi.Typing {
+	typing := make([]*seqproxyapi.Typing, 0, out.Len())
+	for _, c := range out.Cols() {
+		typing = append(typing, &seqproxyapi.Typing{
+			Title: c.Name,
+			Type:  seqproxyapi.MustProtoDataType(c.Type),
+		})
 	}
+	return typing
 }
 
 var (
 	docIDCol   = query.DocsSchema.MustColumn[seq.ID](query.DocsIDCol)
-	docDataCol = query.DocsSchema.MustColumn[*insaneJSON.Root](query.DocsDataCol)
+	docDataCol = query.DocsSchema.MustColumn[[]byte](query.DocsDataCol)
 )
 
 // converts *query.Record to *seqproxyapi.Record according to hardcoded schemas from both store and proxy
@@ -338,53 +336,26 @@ func docToRecord(r *query.Record) *seqproxyapi.Record {
 	}
 }
 
-type aggRecordMapper struct {
-	key       query.Column[string]
-	value     query.Column[float64]
-	ts        *query.Column[uint64]
-	quantiles *query.Column[[]float64]
-	notExists *query.Column[uint64]
-}
-
 func aggOutSchema(agg *search.AggQuery) *query.Schema {
 	return query.AggResultSchemaFor(agg.Func, agg.Interval > 0)
 }
 
-func newAggRecordMapper(out *query.Schema) aggRecordMapper {
-	return aggRecordMapper{
-		key:       out.MustColumn[string]("token"),
-		value:     out.MustColumn[float64]("value"),
-		ts:        query.OptionalColumn[uint64](out, "ts"),
-		quantiles: query.OptionalColumn[[]float64](out, "quantiles"),
-		notExists: query.OptionalColumn[uint64](out, "not_exists"),
+func aggToRecord(r *query.Record) *seqproxyapi.Record {
+	cells := make([][]byte, len(r.Vals))
+	for i, v := range r.Vals {
+		cells[i] = v.RawData()
 	}
-}
-
-func (m aggRecordMapper) toRecord(r *query.Record) *seqproxyapi.Record {
-	var ts uint64
-	if m.ts != nil {
-		ts = m.ts.Val(r)
-	}
-	var quantiles []float64
-	if m.quantiles != nil {
-		quantiles = m.quantiles.Val(r)
-	}
-	var notExists uint64
-	if m.notExists != nil {
-		notExists = m.notExists.Val(r)
-	}
-	return &seqproxyapi.Record{
-		RawData: [][]byte{
-			m.key.RawData(r),                        // key
-			m.value.RawData(r),                      // value
-			encoding.Uint64ToBytes(ts),              // ts
-			encoding.Float64ArrayToBytes(quantiles), // quantiles
-			encoding.Uint64ToBytes(notExists),       // not_exists
-		},
-	}
+	return &seqproxyapi.Record{RawData: cells}
 }
 
 func buildSearchReq(q *seqproxyapi.StreamSearchQuery) (*search.StreamSearchRequest, error) {
+	if q.From == nil || q.To == nil {
+		return nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
+	}
+	if q.From.AsTime().After(q.To.AsTime()) {
+		return nil, status.Error(codes.InvalidArgument, `"from" timestamp must not be after "to" timestamp`)
+	}
+
 	seqql, err := parser.ParseSeqQL(q.Query, nil)
 	if err != nil {
 		return nil, err

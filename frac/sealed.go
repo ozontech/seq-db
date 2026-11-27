@@ -321,7 +321,6 @@ func (f *Sealed) Offload(ctx context.Context, u storage.Uploader) error {
 	})
 
 	if err := g.Wait(); err != nil {
-		// TODO: Clean S3 zombies + remove frac._remote
 		return err
 	}
 
@@ -344,7 +343,6 @@ func (f *Sealed) offloadLegacy(ctx context.Context, u storage.Uploader) error {
 	g.Go(func() error { return u.Upload(gctx, f.legacyFile) })
 
 	if err := g.Wait(); err != nil {
-		// TODO: Clean S3 zombies + remove frac._remote
 		return err
 	}
 

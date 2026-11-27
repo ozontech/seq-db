@@ -1,56 +1,80 @@
 package exec
 
 import (
-	insaneJSON "github.com/ozontech/insane-json"
+	"slices"
+
+	"github.com/buger/jsonparser"
 
 	"github.com/ozontech/seq-db/query"
 )
 
-type DocFieldsExtractor struct {
-	input  query.RecordProducer
-	docCol query.Column[*insaneJSON.Root]
+var nullFieldValue = []byte("null")
 
-	// extractFields lists scalar JSON fields to extract out of the document column as string values.
+type JSONFieldsExtractor struct {
+	input query.RecordProducer
+	col   query.Column[[]byte]
+
 	extractFields []string
-
-	// roots holds every record whose val has been decoded (spawned an insaneJSON root).
-	// They are released back to the library pool in Finalize.
-	roots []*query.Record
+	paths         [][]string
 }
 
-func NewDocFieldsExtractor(
+func NewJSONFieldsExtractor(
 	input query.RecordProducer,
-	docCol query.Column[*insaneJSON.Root],
+	col query.Column[[]byte],
 	extractFields ...string,
-) *DocFieldsExtractor {
-	return &DocFieldsExtractor{
+) *JSONFieldsExtractor {
+	paths := make([][]string, len(extractFields))
+	for i, f := range extractFields {
+		paths[i] = []string{f}
+	}
+	return &JSONFieldsExtractor{
 		input:         input,
-		docCol:        docCol,
+		col:           col,
 		extractFields: extractFields,
+		paths:         paths,
 	}
 }
 
-func (e *DocFieldsExtractor) Next() *query.Record {
+func (e *JSONFieldsExtractor) Next() *query.Record {
 	r := e.input.Next()
 	if r == nil {
 		return nil
 	}
 
-	root := e.docCol.Val(r)
-	for _, field := range e.extractFields {
-		// now we treat everything as strings, but later will support other types as well
-		fieldVal := root.Dig(field).AsBytes()
-		r.Vals = append(r.Vals, query.NewRecordVals(query.DataTypeString, fieldVal))
+	doc := e.col.Val(r)
+	base := len(r.Vals)
+	r.Vals = slices.Grow(r.Vals, len(e.extractFields))
+
+	// pre fill vals in case of not found paths
+	for range e.extractFields {
+		// now treat everything as strings, but later will support other types as well
+		r.Vals = append(r.Vals, query.NewRecordVals(query.DataTypeString, nil))
 	}
-	e.roots = append(e.roots, r)
+
+	jsonparser.EachKey(doc, func(i int, value []byte, dataType jsonparser.ValueType, _ error) {
+		if i >= 0 {
+			r.Vals[base+i] = query.NewRecordVals(query.DataTypeString, jsonFieldValue(value, dataType))
+		}
+	}, e.paths...)
 
 	return r
 }
 
-func (e *DocFieldsExtractor) Finalize() *query.Summary {
-	for _, r := range e.roots {
-		r.Release()
-	}
-	e.roots = nil
+func (e *JSONFieldsExtractor) Finalize() *query.Summary {
 	return e.input.Finalize()
+}
+
+func jsonFieldValue(value []byte, dataType jsonparser.ValueType) []byte {
+	switch dataType {
+	case jsonparser.String:
+		unescaped, err := jsonparser.Unescape(value, nil)
+		if err != nil {
+			return nil
+		}
+		return unescaped
+	case jsonparser.Null:
+		return nullFieldValue
+	default:
+		return value
+	}
 }

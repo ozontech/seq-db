@@ -19,7 +19,10 @@ type lifecycleManager struct {
 	provider  *fractionProvider // provider for fraction operations
 	flags     *StateManager     // storage state flags
 	registry  *fractionRegistry // fraction state registry
-	tasks     *TaskManager      // Background offloading tasks
+	cleaner   *remoteCleaner
+	tasks     *TaskManager // Background offloading tasks
+
+	remoteOverflowed bool
 
 	sealingWg sync.WaitGroup // todo: get rid after removing SealAll in tests
 }
@@ -29,12 +32,14 @@ func newLifecycleManager(
 	provider *fractionProvider,
 	flags *StateManager,
 	registry *fractionRegistry,
+	cleaner *remoteCleaner,
 ) *lifecycleManager {
 	return &lifecycleManager{
 		infoCache: infoCache,
 		provider:  provider,
 		flags:     flags,
 		registry:  registry,
+		cleaner:   cleaner,
 		tasks:     NewTaskManager(),
 	}
 }
@@ -42,7 +47,7 @@ func newLifecycleManager(
 // Maintain performs periodic lifecycle management tasks.
 // It coordinates rotation, offloading, cleanup based on configuration.
 func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.WaitGroup) {
-	lc.registry.suspendIfOverCapacity(cfg.SealingQueueLen, cfg.SuspendThreshold())
+	lc.registry.suspendIfOverCapacity(cfg.SealingQueueLen, cfg.SuspendThreshold(), lc.isRemoteOverflowed())
 
 	lc.rotate(cfg.FracSize, wg)
 	if cfg.OffloadingEnabled {
@@ -50,16 +55,22 @@ func (lc *lifecycleManager) Maintain(ctx context.Context, cfg *Config, wg *sync.
 		if cfg.OffloadingQueueSize > 0 {
 			lc.removeOverflowed(cfg.OffloadingQueueSize, wg)
 		}
-		lc.cleanRemote(
-			cfg.OffloadingRetention,
-			cfg.OffloadingRemoteTotalSize,
-			wg,
-		)
+		lc.cleanRemote(cfg.OffloadingRetention, cfg.OffloadingRemoteTotalSize)
 	} else {
 		lc.cleanLocal(cfg.TotalSize, wg)
 	}
 	lc.updateOldestMetric()
 	lc.SyncInfoCache()
+}
+
+func (lc *lifecycleManager) isRemoteOverflowed() bool {
+	size := lc.cleaner.Size()
+	if size >= maxPendingRemotes {
+		lc.remoteOverflowed = true
+	} else if size*2 <= maxPendingRemotes {
+		lc.remoteOverflowed = false
+	}
+	return lc.remoteOverflowed
 }
 
 // SyncInfoCache synchronizes the info cache with disk state.
@@ -192,11 +203,7 @@ func (lc *lifecycleManager) tryOffload(ctx context.Context, sealed *frac.Sealed)
 }
 
 // cleanRemote deletes outdated remote fractions based on retention policy.
-func (lc *lifecycleManager) cleanRemote(
-	retention time.Duration,
-	sizeLimitS3 uint64,
-	wg *sync.WaitGroup,
-) {
+func (lc *lifecycleManager) cleanRemote(retention time.Duration, sizeLimitS3 uint64) {
 	toDelete := lc.registry.evictRemote(retention, sizeLimitS3)
 
 	if len(toDelete) > 0 && !lc.flags.IsCapacityExceeded() {
@@ -205,17 +212,8 @@ func (lc *lifecycleManager) cleanRemote(
 		}
 	}
 
-	wg.Add(len(toDelete))
 	for _, remote := range toDelete {
-		go func() {
-			defer wg.Done()
-			info := remote.Info()
-			lc.infoCache.Remove(info.Name())
-			remote.Destroy()
-			logger.Info("remove remote fraction",
-				zap.String("name", info.Name()),
-				zap.Time("created", time.UnixMilli(int64(info.CreationTime))))
-		}()
+		lc.cleaner.Add(remote)
 	}
 }
 

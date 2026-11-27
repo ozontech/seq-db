@@ -71,6 +71,8 @@ func Build(params BuildParams) (*Plan, error) {
 	}
 
 	var limit, offset int
+	extracted := make(map[string]bool)
+
 	for _, pipe := range params.SeqQL.Pipes {
 		switch pipe := pipe.(type) {
 		case *parser.PipeStats:
@@ -81,14 +83,16 @@ func Build(params BuildParams) (*Plan, error) {
 			p.Scan.AggQ = []processor.AggQuery{aggQ}
 			p.Schema = query.AggsSchemaFor(aggQ.Func, aggQ.Interval > 0)
 		case *parser.PipeFilter:
-			// we need to extract the field so filter can compare based on it.
-			if _, err := params.Input.Index(pipe.Condition.Field); err == nil {
-				return nil, fmt.Errorf("cannot filter on reserved column %q", pipe.Condition.Field)
+			// the filter needs its field to be extracted. don't extract already extracted field
+			if !extracted[pipe.Condition.Field] {
+				p.Ops = append(p.Ops, &ExtractOp{Fields: []string{pipe.Condition.Field}, OpField: params.DocField})
+				extracted[pipe.Condition.Field] = true
 			}
-			p.Ops = append(p.Ops,
-				&ExtractOp{Fields: []string{pipe.Condition.Field}, OpField: params.DocField},
-				&FilterOp{Cond: pipe.Condition, WithTotal: params.WithTotal},
-			)
+			p.Ops = append(p.Ops, &FilterOp{Cond: parser.FilterCondition{
+				// filter by extracted field's title - `data.<field>`
+				Field: extractedColName(params.DocField, pipe.Condition.Field),
+				Value: pipe.Condition.Value,
+			}, WithTotal: params.WithTotal})
 		case *parser.PipeFields:
 			p.Ops = append(p.Ops, &ProjectOp{Fields: pipe.Fields, AllowList: !pipe.Except, OpField: params.DocField})
 		case *parser.PipeSort:

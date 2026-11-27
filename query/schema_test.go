@@ -3,7 +3,6 @@ package query
 import (
 	"testing"
 
-	insaneJSON "github.com/ozontech/insane-json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -13,7 +12,7 @@ import (
 func TestNewSchemaDuplicateName(t *testing.T) {
 	_, err := NewSchema(
 		ColumnDesc{Name: "id", Type: DataTypeSeqID},
-		ColumnDesc{Name: "id", Type: DataTypeDocument},
+		ColumnDesc{Name: "id", Type: DataTypeJSON},
 	)
 	assert.Error(t, err)
 	assert.Equal(t, err.Error(), `duplicate column name: id`)
@@ -37,9 +36,9 @@ func TestColumnAllTypes(t *testing.T) {
 		assert.Equal(t, DataTypeString, c.DataType())
 	})
 	t.Run("document", func(t *testing.T) {
-		s := MustNewSchema(ColumnDesc{Name: "d", Type: DataTypeDocument})
-		c := s.MustColumn[*insaneJSON.Root]("d")
-		assert.Equal(t, DataTypeDocument, c.DataType())
+		s := MustNewSchema(ColumnDesc{Name: "d", Type: DataTypeJSON})
+		c := s.MustColumn[[]byte]("d")
+		assert.Equal(t, DataTypeJSON, c.DataType())
 	})
 	t.Run("numeric", func(t *testing.T) {
 		s := MustNewSchema(
@@ -88,7 +87,7 @@ func TestColumnTypeMismatch(t *testing.T) {
 
 	_, err = DocsSchema.Column[float64]("data")
 	require.Error(t, err)
-	assert.Equal(t, err.Error(), `column "data" has type document, incompatible with float64`)
+	assert.Equal(t, err.Error(), `column "data" has type json, incompatible with float64`)
 }
 
 func TestMustColumnPanics(t *testing.T) {
@@ -103,14 +102,14 @@ func TestMustColumnPanics(t *testing.T) {
 func TestSchemaEqual(t *testing.T) {
 	base := MustNewSchema(
 		ColumnDesc{Name: "id", Type: DataTypeSeqID},
-		ColumnDesc{Name: "data", Type: DataTypeDocument},
+		ColumnDesc{Name: "data", Type: DataTypeJSON},
 	)
 	same := MustNewSchema(
 		ColumnDesc{Name: "id", Type: DataTypeSeqID},
-		ColumnDesc{Name: "data", Type: DataTypeDocument},
+		ColumnDesc{Name: "data", Type: DataTypeJSON},
 	)
 	reordered := MustNewSchema(
-		ColumnDesc{Name: "data", Type: DataTypeDocument},
+		ColumnDesc{Name: "data", Type: DataTypeJSON},
 		ColumnDesc{Name: "id", Type: DataTypeSeqID},
 	)
 	retyped := MustNewSchema(

@@ -1,8 +1,6 @@
 package plan
 
 import (
-	insaneJSON "github.com/ozontech/insane-json"
-
 	"github.com/ozontech/seq-db/parser"
 	"github.com/ozontech/seq-db/query"
 	"github.com/ozontech/seq-db/query/exec"
@@ -26,12 +24,16 @@ type ExtractOp struct {
 func (op *ExtractOp) Apply(input query.RecordProducer, in *query.Schema) (query.RecordProducer, *query.Schema) {
 	descs := make([]query.ColumnDesc, len(op.Fields))
 	for i, f := range op.Fields {
-		descs[i] = query.ColumnDesc{Name: f, Type: query.DataTypeString}
+		descs[i] = query.ColumnDesc{Name: extractedColName(op.OpField, f), Type: query.DataTypeString}
 	}
 
 	out := in.Extend(descs...)
-	docCol := in.MustColumn[*insaneJSON.Root](op.OpField)
-	return exec.NewDocFieldsExtractor(input, docCol, op.Fields...), out
+	col := in.MustColumn[[]byte](op.OpField)
+	return exec.NewJSONFieldsExtractor(input, col, op.Fields...), out
+}
+
+func extractedColName(source, field string) string {
+	return source + "." + field
 }
 
 type FilterOp struct {
@@ -52,8 +54,8 @@ type ProjectOp struct {
 }
 
 func (op *ProjectOp) Apply(input query.RecordProducer, in *query.Schema) (query.RecordProducer, *query.Schema) {
-	docCol := in.MustColumn[*insaneJSON.Root](op.OpField)
-	return exec.NewDocProjector(input, docCol, &exec.FieldsFilter{
+	col := in.MustColumn[[]byte](op.OpField)
+	return exec.NewJSONProjector(input, col, &exec.FieldsFilter{
 		Fields:    op.Fields,
 		AllowList: op.AllowList,
 	}), in

@@ -165,7 +165,7 @@ func makeDocumentRecord(id seq.ID, payload []byte) *query.Record {
 	return &query.Record{
 		Vals: []*query.RecordVals{
 			query.NewSeqIDVals(id),
-			query.NewDocVals(payload),
+			query.NewJSONVals(payload),
 		},
 	}
 }

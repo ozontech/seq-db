@@ -99,7 +99,7 @@ func (g *grpcV1) useStreamSearch(
 
 	streamSearchReq, err := buildStreamSearchReqFromComplexSearchReq(req)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, `can't build stream search request`)
+		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("can't build stream search request: %s", err.Error()))
 	}
 
 	storesStream, err := g.openStoreStreams(ctx, streamSearchReq, tr)
@@ -206,6 +206,16 @@ func shouldUseStreamSearch(useStreamSearch bool, req *seqproxyapi.ComplexSearchR
 func buildStreamSearchReqFromComplexSearchReq(
 	req *seqproxyapi.ComplexSearchRequest,
 ) (*search.StreamSearchRequest, error) {
+	if req.Query == nil {
+		return nil, status.Error(codes.InvalidArgument, "search query must be provided")
+	}
+	if req.Query.From == nil || req.Query.To == nil {
+		return nil, status.Error(codes.InvalidArgument, `search query "from" and "to" fields must be provided`)
+	}
+	if req.Query.From.AsTime().After(req.Query.To.AsTime()) {
+		return nil, status.Error(codes.InvalidArgument, `"from" timestamp must not be after "to" timestamp`)
+	}
+
 	seqql, err := parser.ParseSeqQL(req.Query.Query, nil)
 	if err != nil {
 		return nil, fmt.Errorf("parse query: %w", err)
