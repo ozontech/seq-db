@@ -408,6 +408,9 @@ func cleanupFrac(m *fracManifest) {
 		cleanupRemoteFrac(m)
 	case fracStageSealed:
 		cleanupSealedFrac(m)
+	case fracStageActive:
+		removeSdocs(m)
+		removeStdocs(m)
 	}
 	cleanupTemporary(m) // always clean up temporary files
 }

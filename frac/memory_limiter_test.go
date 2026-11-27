@@ -13,11 +13,14 @@ func TestMemoryLimiter(t *testing.T) {
 
 	release, err := l.Acquire(context.Background(), 60)
 	require.NoError(t, err)
-	acquired := make(chan func())
+	type acquireResult struct {
+		release func()
+		err     error
+	}
+	acquired := make(chan acquireResult)
 	go func() {
 		release, err := l.Acquire(context.Background(), 60)
-		require.NoError(t, err)
-		acquired <- release
+		acquired <- acquireResult{release, err}
 	}()
 
 	select {
@@ -28,7 +31,9 @@ func TestMemoryLimiter(t *testing.T) {
 
 	release()
 	select {
-	case release = <-acquired:
+	case r := <-acquired:
+		require.NoError(t, r.err)
+		release = r.release
 	case <-time.After(time.Second):
 		t.Fatal("not acquired after release")
 	}

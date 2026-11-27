@@ -468,7 +468,7 @@ func (f *Remote) openDocs() error {
 		return nil
 	}
 
-	for _, suffix := range []string{consts.StdocsFileSuffix, consts.DocsFileSuffix, consts.SdocsFileSuffix} {
+	for _, suffix := range []string{consts.DocsFileSuffix, consts.SdocsFileSuffix, consts.StdocsFileSuffix} {
 		docsFile, err := f.openRemoteFile(suffix, false)
 		if err != nil {
 			return err

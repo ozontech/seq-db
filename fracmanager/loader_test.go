@@ -558,6 +558,7 @@ func TestDiscoverInterruptedStdocsSorting(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(name+consts.StdocsFileSuffix, nil, 0o600))
 	require.NoError(t, os.WriteFile(name+consts.StdocsTmpFileSuffix, nil, 0o600))
+	require.NoError(t, os.WriteFile(name+consts.SdocsFileSuffix, nil, 0o600))
 
 	actives, locals, remotes, err := loader.discover(t.Context())
 
@@ -567,6 +568,8 @@ func TestDiscoverInterruptedStdocsSorting(t *testing.T) {
 	require.Len(t, actives, 1)
 	defer actives[0].Release()
 	require.NoFileExists(t, name+consts.StdocsTmpFileSuffix)
+	require.NoFileExists(t, name+consts.StdocsFileSuffix)
+	require.NoFileExists(t, name+consts.SdocsFileSuffix)
 	require.NoError(t, actives[0].Replay(t.Context()))
 	docs, err := actives[0].Fetch(t.Context(), []seq.ID{seq.SimpleID(1)}, false)
 	require.NoError(t, err)

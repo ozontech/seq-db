@@ -26,7 +26,6 @@ func (src *ActiveSealingSource) sortDocsByField(field string) error {
 	var previous seq.ID
 	var lastLIDForDuplicate uint32
 
-	// give same new LID for duplicate doc ids
 	for i, lid := range src.sortedLIDs {
 		newLID := uint32(i + 1)
 		id := src.documentID(lid)
@@ -59,7 +58,6 @@ func (src *ActiveSealingSource) sortDocsByField(field string) error {
 		}
 	}
 
-	// add docs without needed field to end
 	for lid := 1; lid < lidCount; lid++ {
 		if added.Test(uint(lid)) {
 			continue
@@ -71,7 +69,6 @@ func (src *ActiveSealingSource) sortDocsByField(field string) error {
 		return err
 	}
 
-	// rewrite src.docPosSorted, because src.saveDocs changes it
 	positions := make([]seq.DocPos, lidCount)
 	for i, lid := range newOrder {
 		positions[lid] = src.docPosSorted[i]

@@ -412,7 +412,6 @@ func removeFile(baseFilename, suffix string) {
 			zap.Error(err),
 		)
 	}
-
 }
 
 func (f *Sealed) Suicide() {
@@ -457,13 +456,6 @@ func (f *Sealed) Suicide() {
 		return
 	}
 
-	if err := os.Remove(f.BaseFileName + consts.SdocsDelFileSuffix); err != nil && !errors.Is(err, os.ErrNotExist) {
-		logger.Error(
-			"can't remove sdocs del file",
-			zap.String("frac", f.BaseFileName),
-			zap.Error(err),
-		)
-	}
 	removeFile(f.BaseFileName, consts.SdocsDelFileSuffix)
 	removeFile(f.BaseFileName, consts.StdocsDelFileSuffix)
 
